@@ -1,15 +1,9 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { HarnessConfig } from '../config.js';
 import type { PersistedRunEvent } from '../domain/runs.js';
+import { adapterFor, type ModelUsage } from './harness/adapter.js';
 
-export interface ModelUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
+export type { ModelUsage };
 
 export interface RunUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
@@ -34,14 +28,17 @@ export interface CollectUsageInput {
 
 /**
  * Per-harness usage collection, per ADR-0001: ACP `usage` on the prompt
- * result first (aggregate, always cheap), the harness's native session
- * log for the per-model breakdown when available. Returns null when no
- * source reported any tokens — "unavailable", never a fake zero.
+ * result first (aggregate, always cheap), the harness's Usage Collector
+ * (harness/adapter.ts) for the per-model breakdown when available.
+ * Returns null when no source reported any tokens — "unavailable",
+ * never a fake zero.
  */
 export function collectUsage(input: CollectUsageInput): RunUsage | null {
+  const collector = adapterFor(input.harnessId).usage;
   const totals = totalsFromAcp(input.promptResult?.usage);
-  const models = modelsFromSessionLog(input);
-  const toolCalls = tallyToolCalls(input.events);
+  const file = sessionLogFile(input);
+  const models = collector && file ? collector.modelsFromSessionLog(file) : {};
+  const toolCalls = tallyToolCalls(input.events, (payload) => collector?.toolName(payload) ?? null);
 
   if (!totals && Object.keys(models).length === 0) return null;
   return {
@@ -65,64 +62,26 @@ function totalsFromAcp(usage: Record<string, unknown> | undefined): RunUsage['to
   };
 }
 
-/**
- * Claude Code writes `<sessionLogDir>/<slug(cwd)>/<sessionId>.jsonl` where
- * the slug replaces every non-alphanumeric character with '-', and the
- * ACP sessionId equals the log filename (spike finding). Each assistant
- * message line carries `message.model` + `message.usage`; chunked
- * messages repeat the same message id, so dedupe on it.
- */
 function sessionLogFile(input: CollectUsageInput): string | null {
-  const logDir = input.harness.sessionLogDir ?? defaultSessionLogDir(input.harnessId);
-  if (!logDir || !input.sessionId) return null;
-  const slug = input.cwd.replace(/[^a-zA-Z0-9]/g, '-');
-  return join(logDir, slug, `${input.sessionId}.jsonl`);
+  const collector = adapterFor(input.harnessId).usage;
+  if (!collector) return null;
+  return collector.sessionLogFile({
+    sessionLogDir: input.harness.sessionLogDir,
+    cwd: input.cwd,
+    sessionId: input.sessionId,
+  });
 }
 
-function modelsFromSessionLog(input: CollectUsageInput): Record<string, ModelUsage> {
-  const file = sessionLogFile(input);
-  if (!file || !existsSync(file)) return {};
-
-  const models: Record<string, ModelUsage> = {};
-  const seen = new Set<string>();
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    let entry: any;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const message = entry?.message;
-    if (entry?.type !== 'assistant' || !message?.model || !message?.usage) continue;
-    const key = typeof message.id === 'string' ? message.id : line;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const bucket = (models[message.model] ??= {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    });
-    bucket.inputTokens += num(message.usage.input_tokens);
-    bucket.outputTokens += num(message.usage.output_tokens);
-    bucket.cacheReadTokens += num(message.usage.cache_read_input_tokens);
-    bucket.cacheWriteTokens += num(message.usage.cache_creation_input_tokens);
-  }
-  return models;
-}
-
-function defaultSessionLogDir(harnessId: string): string | null {
-  return harnessId === 'claude' ? join(homedir(), '.claude', 'projects') : null;
-}
-
-function tallyToolCalls(events: PersistedRunEvent[]): Record<string, number> {
+function tallyToolCalls(
+  events: PersistedRunEvent[],
+  preferredName: (payload: unknown) => string | null,
+): Record<string, number> {
   const tally: Record<string, number> = {};
   for (const event of events) {
     if (event.type !== 'session_update') continue;
     const payload = event.payload as any;
     if (payload?.sessionUpdate !== 'tool_call') continue;
-    const name = payload?._meta?.claudeCode?.toolName ?? payload?.title ?? payload?.kind ?? 'unknown';
+    const name = preferredName(payload) ?? payload?.title ?? payload?.kind ?? 'unknown';
     tally[name] = (tally[name] ?? 0) + 1;
   }
   return tally;

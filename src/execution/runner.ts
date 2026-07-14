@@ -3,8 +3,9 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
+import { adapterFor } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, type RunUsage } from './usage.js';
-import type { AppConfig } from '../config.js';
+import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpConnection } from '../acp/connection.js';
 import { DomainError } from '../domain/errors.js';
@@ -106,20 +107,15 @@ export class Runner {
 
   private spawnHarness(
     task: TaskRow,
-    harness: AppConfig['harnesses'][keyof AppConfig['harnesses']],
+    harness: HarnessConfig,
     cwd: string,
     extraEnv: Record<string, string>,
   ): ChildProcess {
     const env: Record<string, string | undefined> = {
       ...process.env,
       ...harness.env,
-      // The Claude adapter refuses to start nested inside a Claude Code
-      // session (spike finding); AgentDeck itself may have been launched
-      // from one.
-      CLAUDECODE: undefined,
-      CLAUDE_CODE_ENTRYPOINT: undefined,
-      ANTHROPIC_MODEL: task.model,
       AGENTDECK_MODEL: task.model,
+      ...adapterFor(task.harness).spawnEnv(task.model),
       ...extraEnv,
     };
     return spawn(harness.command, harness.args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -156,7 +152,7 @@ export class Runner {
     }
   }
 
-  private async drive(task: TaskRow, run: RunRow, harness: AppConfig['harnesses']['claude']): Promise<void> {
+  private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig): Promise<void> {
     const record = (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => {
       const event = this.runStore.appendEvent(run.id, { type, payload });
       this.events.onRunEvent?.(event);
@@ -267,7 +263,7 @@ export class Runner {
   private async collectUsageSafe(
     task: TaskRow,
     run: RunRow,
-    harness: AppConfig['harnesses']['claude'],
+    harness: HarnessConfig,
     workspace: Workspace,
     promptResult: { stopReason?: string; usage?: Record<string, unknown> } | undefined,
   ): Promise<string | null> {
