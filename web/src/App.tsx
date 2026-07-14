@@ -4,6 +4,7 @@ import type { AppConfig, Task } from './types';
 import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetail } from './components/TaskDetail';
+import { subscribe } from './ws';
 
 export function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -25,8 +26,21 @@ export function App() {
   useEffect(() => {
     api.config().then(setConfig).catch(() => {});
     refresh();
-    const timer = setInterval(refresh, 2000);
-    return () => clearInterval(timer);
+    // Live updates over WebSocket; slow polling as a reconnect safety net.
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'task_changed') {
+        setTasks((current) => {
+          const rest = current.filter((t) => t.id !== msg.task.id);
+          return [...rest, msg.task];
+        });
+        setOpenTask((current) => (current && current.id === msg.task.id ? msg.task : current));
+      }
+    });
+    const timer = setInterval(refresh, 10_000);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
   }, [refresh]);
 
   return (

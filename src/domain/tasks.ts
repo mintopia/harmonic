@@ -35,6 +35,7 @@ export class TaskService {
   constructor(
     private readonly db: Db,
     private readonly getConfig: () => AppConfig,
+    private readonly onChanged: (task: TaskRow) => void = () => {},
   ) {}
 
   create(input: CreateTaskInput): TaskRow {
@@ -58,6 +59,7 @@ export class TaskService {
       })
       .returning()
       .get();
+    this.onChanged(row);
     return row;
   }
 
@@ -82,12 +84,14 @@ export class TaskService {
         throw new DomainError('validation', `harness '${input.harness}' is not configured`);
       }
     }
-    return this.db
+    const row = this.db
       .update(tasks)
       .set({ ...input, updatedAt: Date.now() })
       .where(eq(tasks.id, id))
       .returning()
       .get()!;
+    this.onChanged(row);
+    return row;
   }
 
   /** Promote a draft to ready. */
@@ -113,7 +117,9 @@ export class TaskService {
     if (feedback && feedback.trim().length > 0) {
       patch.prompt = `${task.prompt}\n\n## Feedback from previous attempt\n\n${feedback.trim()}`;
     }
-    return this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
+    const row = this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
+    this.onChanged(row);
+    return row;
   }
 
   cancel(id: number): TaskRow {
@@ -125,11 +131,13 @@ export class TaskService {
   }
 
   setState(id: number, state: TaskState): TaskRow {
-    return this.db
+    const row = this.db
       .update(tasks)
       .set({ state, updatedAt: Date.now() })
       .where(eq(tasks.id, id))
       .returning()
       .get()!;
+    this.onChanged(row);
+    return row;
   }
 }

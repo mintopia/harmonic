@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
+import fastifyWebsocket from '@fastify/websocket';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,8 @@ import { Runner } from '../execution/runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { configRoutes } from './routes/config.js';
+import { wsRoutes } from './ws.js';
+import { EventBus } from './bus.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -25,24 +28,30 @@ export interface AppContext {
   tasks: TaskService;
   runs: RunStore;
   runner: Runner;
+  bus: EventBus;
 }
 
 export type App = FastifyInstance & { ctx: AppContext };
 
 export async function buildApp(opts: AppOptions): Promise<App> {
   const db = openDb(opts.dataDir);
+  const bus = new EventBus();
   const configStore = new ConfigStore(db, opts.configOverrides);
-  const tasks = new TaskService(db, () => configStore.get());
+  const tasks = new TaskService(db, () => configStore.get(), (task) => bus.emit('task_changed', task));
   const runs = new RunStore(db);
   // Crash recovery before anything can execute: orphaned runs are failed
   // as "interrupted", never silently re-run.
   runs.markInterrupted();
-  const runner = new Runner(runs, tasks, () => configStore.get());
-  const ctx: AppContext = { db, configStore, tasks, runs, runner };
+  const runner = new Runner(runs, tasks, () => configStore.get(), {
+    onRunEvent: (event) => bus.emit('run_event', event),
+    onRunFinished: (run) => bus.emit('run_changed', run),
+  });
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
   app.addHook('onClose', async () => runner.shutdown());
+  await app.register(fastifyWebsocket);
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof DomainError) {
@@ -60,6 +69,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   await app.register(taskRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });
+  await app.register(wsRoutes, { prefix: '/api' });
 
   // Serve the embedded SPA when a build exists (dist/web next to dist/server code).
   const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'web');

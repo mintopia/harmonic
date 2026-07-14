@@ -1,6 +1,6 @@
 # Live Run Event streaming and replay
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -20,12 +20,24 @@ render from one representation — no separate storage or format.
 
 ## Acceptance criteria
 
-- [ ] Watching a running Task shows Run Events arriving live without refresh
-- [ ] Message chunks, thoughts, tool calls, and plan updates are each rendered distinctly
-- [ ] Subagent activity appears in the stream where the Harness surfaces it
-- [ ] Any historical Run's full event stream can be replayed from the Run's page
-- [ ] Tests drive the stub harness and assert events arrive over the WebSocket stream in order
+- [x] Watching a running Task shows Run Events arriving live without refresh
+- [x] Message chunks, thoughts, tool calls, and plan updates are each rendered distinctly
+- [x] Subagent activity appears in the stream where the Harness surfaces it
+- [x] Any historical Run's full event stream can be replayed from the Run's page
+- [x] Tests drive the stub harness and assert events arrive over the WebSocket stream in order
 
 ## Blocked by
 
 - `03-execute-a-run-over-acp-direct-mode.md`
+
+## Comments
+
+**2026-07-14 (agent):** Done. `EventBus` fans run events, run state
+changes, and task state changes out to a firehose WebSocket at `/api/ws`
+(src/server/ws.ts); the SPA subscribes with auto-reconnect (web/src/ws.ts)
+so the board and open task detail update live without polling. The event
+stream renders message chunks, thoughts, tool calls (with a subagent badge
+from `parentToolUseId`), and plan snapshots distinctly; replay loads the
+same persisted records over REST and live events append to it — one
+representation. Tests assert in-order WS delivery while the task is still
+running and replay/stream equality.

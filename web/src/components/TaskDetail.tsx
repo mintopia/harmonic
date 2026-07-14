@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Run, RunEvent, Task } from '../types';
 import { EventStream } from './EventStream';
+import { subscribe } from '../ws';
 
 const RUN_STATE_STYLES: Record<Run['state'], string> = {
   running: 'bg-amber-900/70 text-amber-300',
@@ -17,29 +18,42 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
 
   useEffect(() => {
     let live = true;
-    const load = () =>
-      api.taskRuns(task.id).then(({ runs }) => {
-        if (!live) return;
-        setRuns(runs);
-        setSelectedRunId((current) => current ?? runs[runs.length - 1]?.id ?? null);
-      });
-    load();
-    const timer = setInterval(load, 2000);
+    api.taskRuns(task.id).then(({ runs }) => {
+      if (!live) return;
+      setRuns(runs);
+      setSelectedRunId((current) => current ?? runs[runs.length - 1]?.id ?? null);
+    });
+    // New runs and state changes arrive over the socket.
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'run_changed' && msg.run.taskId === task.id) {
+        setRuns((current) => {
+          const rest = current.filter((r) => r.id !== msg.run.id);
+          return [...rest, msg.run].sort((a, b) => a.attempt - b.attempt);
+        });
+      }
+    });
     return () => {
       live = false;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [task.id]);
 
   useEffect(() => {
     if (selectedRunId === null) return;
     let live = true;
-    const load = () => api.runEvents(selectedRunId).then(({ events }) => live && setEvents(events));
-    load();
-    const timer = setInterval(load, 1000);
+    // Replay: load the persisted stream, then append live events as they
+    // arrive — one representation for both.
+    api.runEvents(selectedRunId).then(({ events }) => live && setEvents(events));
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'run_event' && msg.event.runId === selectedRunId) {
+        setEvents((current) =>
+          current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
+        );
+      }
+    });
     return () => {
       live = false;
-      clearInterval(timer);
+      unsubscribe();
     };
   }, [selectedRunId]);
 
