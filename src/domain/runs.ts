@@ -93,20 +93,16 @@ export class RunStore {
 
   /**
    * Crash recovery, run at boot: any run still marked running was orphaned
-   * by a restart. Fail it (reason "interrupted") and fail its task — never
-   * silently re-run on a possibly dirty working directory.
+   * by a restart. Fail it (reason "interrupted") and return it so the
+   * caller can fail its task (and notify) — never silently re-run on a
+   * possibly dirty working directory.
    */
-  markInterrupted(): number {
+  markInterrupted(): RunRow[] {
     const orphans = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
     for (const run of orphans) {
       this.update(run.id, { state: 'failed', reason: 'interrupted', finishedAt: Date.now() });
-      this.db
-        .update(tasks)
-        .set({ state: 'failed', updatedAt: Date.now() })
-        .where(eq(tasks.id, run.taskId))
-        .run();
     }
-    return orphans.length;
+    return orphans;
   }
 }
 

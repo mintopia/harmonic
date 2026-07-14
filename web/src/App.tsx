@@ -9,6 +9,7 @@ import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
 import { StatsPage } from './components/StatsPage';
 import { TableView } from './components/TableView';
+import { Channels } from './components/Channels';
 
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -17,6 +18,7 @@ export function App() {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
   const [showKeys, setShowKeys] = useState(false);
+  const [showChannels, setShowChannels] = useState(false);
   const [view, setView] = useState<'board' | 'table' | 'stats'>('board');
   const [error, setError] = useState<string | null>(null);
 
@@ -112,6 +114,9 @@ export function App() {
         >
           New Task
         </button>
+        <button onClick={() => setShowChannels(true)} className="text-sm text-zinc-400 hover:text-zinc-100">
+          Channels
+        </button>
         <button onClick={() => setShowKeys(true)} className="text-sm text-zinc-400 hover:text-zinc-100">
           Keys
         </button>
@@ -139,6 +144,7 @@ export function App() {
 
       {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}
       {showKeys && <ApiKeys onClose={() => setShowKeys(false)} />}
+      {showChannels && <Channels onClose={() => setShowChannels(false)} />}
 
       {editing !== null && config && (
         <TaskForm

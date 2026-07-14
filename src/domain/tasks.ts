@@ -49,11 +49,26 @@ const CANCELLABLE_STATES: TaskState[] = [
   'failed',
 ];
 
+export type TaskNotification =
+  | 'task.created'
+  | 'run.started'
+  | 'task.awaiting-review'
+  | 'task.completed'
+  | 'task.failed';
+
+const STATE_NOTIFICATIONS: Partial<Record<TaskState, TaskNotification>> = {
+  running: 'run.started',
+  'awaiting-review': 'task.awaiting-review',
+  completed: 'task.completed',
+  failed: 'task.failed',
+};
+
 export class TaskService {
   constructor(
     private readonly db: Db,
     private readonly getConfig: () => AppConfig,
     private readonly onChanged: (task: TaskRow) => void = () => {},
+    private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
   ) {}
 
   create(input: CreateTaskInput): TaskRow {
@@ -85,6 +100,7 @@ export class TaskService {
       this.db.insert(taskDependencies).values(dependsOn.map((dependsOnId) => ({ taskId: row.id, dependsOnId }))).run();
     }
     this.onChanged(row);
+    this.onNotify('task.created', row);
     return row;
   }
 
@@ -187,6 +203,8 @@ export class TaskService {
       .returning()
       .get()!;
     this.onChanged(row);
+    const notification = STATE_NOTIFICATIONS[state];
+    if (notification) this.onNotify(notification, row);
     // Completion is what satisfies dependents (accepted, not merely
     // finished) — unblock any whose last unmet dependency this was.
     if (state === 'completed') {

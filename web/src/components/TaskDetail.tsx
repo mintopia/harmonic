@@ -87,6 +87,68 @@ function Dependencies({ task }: { task: Task }) {
   );
 }
 
+function NotifyOverrides({ taskId }: { taskId: number }) {
+  const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
+  const [attached, setAttached] = useState<number[]>([]);
+
+  const load = () =>
+    Promise.all([
+      fetch('/api/channels').then((r) => r.json()) as Promise<{ channels: { id: number; name: string }[] }>,
+      fetch(`/api/tasks/${taskId}/channels`).then((r) => r.json()) as Promise<{ channelIds: number[] }>,
+    ]).then(([c, t]) => {
+      setChannels(c.channels);
+      setAttached(t.channelIds);
+    });
+  useEffect(() => {
+    load();
+  }, [taskId]);
+
+  if (channels.length === 0) return null;
+  const candidates = channels.filter((c) => !attached.includes(c.id));
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2 text-xs">
+      <span className="font-semibold uppercase tracking-wider text-zinc-500">Notify</span>
+      {attached.map((id) => (
+        <span key={id} className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+          {channels.find((c) => c.id === id)?.name ?? `#${id}`}
+          <button
+            className="text-zinc-500 hover:text-red-400"
+            onClick={() =>
+              fetch(`/api/tasks/${taskId}/channels/${id}`, { method: 'DELETE' }).then(load)
+            }
+          >
+            ✕
+          </button>
+        </span>
+      ))}
+      {attached.length === 0 && <span className="text-zinc-600">channel defaults</span>}
+      {candidates.length > 0 && (
+        <select
+          className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300"
+          value=""
+          onChange={(e) => {
+            const channelId = Number(e.target.value);
+            if (channelId)
+              fetch(`/api/tasks/${taskId}/channels`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ channelId }),
+              }).then(load);
+          }}
+        >
+          <option value="">+ route to…</option>
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -164,6 +226,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
         </header>
 
         <Dependencies task={task} />
+        <NotifyOverrides taskId={task.id} />
 
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2">
           {runs.length === 0 && <span className="text-xs text-zinc-500">No runs yet.</span>}

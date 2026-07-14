@@ -85,6 +85,36 @@ export const runEvents = sqliteTable('run_events', {
   payload: text('payload').notNull(),
 });
 
+export const CHANNEL_TYPES = ['discord', 'slack', 'webhook', 'email'] as const;
+export type ChannelType = (typeof CHANNEL_TYPES)[number];
+
+export const channels = sqliteTable('channels', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  type: text('type').$type<ChannelType>().notNull(),
+  /** JSON: type-specific delivery config (url/secret/smtp/from/to). */
+  config: text('config').notNull(),
+  /** JSON: subscribed notification event types. */
+  events: text('events').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+/** Per-task override: this task announces its events to this channel. */
+export const taskChannels = sqliteTable(
+  'task_channels',
+  {
+    taskId: integer('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    channelId: integer('channel_id')
+      .notNull()
+      .references(() => channels.id),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.channelId] })],
+);
+
+export type ChannelRow = typeof channels.$inferSelect;
+
 export const apiKeys = sqliteTable('api_keys', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),

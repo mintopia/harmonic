@@ -23,6 +23,9 @@ import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
+import { channelRoutes } from './routes/channels.js';
+import { ChannelService } from '../notifications/channels.js';
+import { Notifier } from '../notifications/notifier.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -43,6 +46,8 @@ export interface AppContext {
   review: ReviewService;
   autoRunner: AutoRunner;
   auth: AuthService;
+  channels: ChannelService;
+  notifier: Notifier;
   bus: EventBus;
 }
 
@@ -52,11 +57,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const db = openDb(opts.dataDir);
   const bus = new EventBus();
   const configStore = new ConfigStore(db, opts.configOverrides);
-  const tasks = new TaskService(db, () => configStore.get(), (task) => bus.emit('task_changed', task));
+  const channels = new ChannelService(db);
+  const notifier = new Notifier(channels, (msg) => console.error(msg));
+  const tasks = new TaskService(
+    db,
+    () => configStore.get(),
+    (task) => bus.emit('task_changed', task),
+    (event, task) => notifier.notify(event, task),
+  );
   const runs = new RunStore(db);
   // Crash recovery before anything can execute: orphaned runs are failed
-  // as "interrupted", never silently re-run.
-  runs.markInterrupted();
+  // as "interrupted", never silently re-run — and their tasks fail loudly.
+  for (const orphan of runs.markInterrupted()) {
+    tasks.setState(orphan.taskId, 'failed');
+  }
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
@@ -74,12 +88,22 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.state === 'ready') autoRunner.poke();
   });
   bus.on('run_changed', () => autoRunner.poke());
+  // queue.idle: the last active run drained and nothing is waiting.
+  bus.on('run_changed', (run) => {
+    if (
+      run.state !== 'running' &&
+      runs.countRunning() === 0 &&
+      tasks.list({ state: 'ready' }).length === 0
+    ) {
+      notifier.notify('queue.idle');
+    }
+  });
   autoRunner.poke();
 
   const auth = new AuthService(db);
   if (opts.password) auth.setPassword(opts.password);
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, bus };
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -121,6 +145,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(configRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
+  await app.register(channelRoutes, { prefix: '/api' });
   await app.register(wsRoutes, { prefix: '/api' });
 
   // Serve the embedded SPA when a build exists (dist/web next to dist/server code).
