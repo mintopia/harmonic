@@ -1,0 +1,5 @@
+[mcp-echo] listening on 8977
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"codex-mcp-client","title":"Codex","vers
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","method":"notifications/initialized"}
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"progressToken":0}}}
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":{"x-codex-turn-metadata":{"session_id":"019f6183-cdd9-7c50-bca4-6f73005634e1","thread_id":"019f6183-cdd9-7c50-bca4-6f73005634e1","turn_i

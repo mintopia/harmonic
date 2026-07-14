@@ -3,7 +3,9 @@
 Status: done
 Date: 2026-07-14
 Probe: `.scratch/agentdeck-v1/spike/codex-probe.mjs` + `spike/mcp-echo-server.mjs`
-(raw captures in `spike/capture-codex-*.jsonl`)
+(raw captures in `spike/capture-codex-*.jsonl`; MCP-side request log in
+`spike/capture-codex-5-mcp-server.log`; rollout-log correlation evidence in
+`spike/capture-codex-rollout-excerpts.txt`)
 
 ## Headline
 
@@ -198,7 +200,11 @@ env-var fallback needed.
 - Codex Usage Collector: read totals from the prompt result `usage` and the
   per-model split from `_meta.quota.model_usage` — an ACP-result collector,
   no `sessionLogDir` needed. Keep the rollout-log location documented as
-  audit fallback.
+  audit fallback. Note this doesn't fit the `UsageCollector` interface
+  issue 23 just extracted (it is session-log-shaped: `sessionLogFile` +
+  `modelsFromSessionLog`); issue 24 must generalize it — e.g. an optional
+  `modelsFromPromptResult(usage, _meta)` hook — which is additive and
+  touches only the interface and the Codex adapter.
 - Replace the stale `models` list with verified ids (gpt-5.6-sol/terra/luna,
   gpt-5.5, gpt-5.4, gpt-5.4-mini × effort); consider surfacing
   `session/new`'s `availableModels` to keep it honest per Q7.

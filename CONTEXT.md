@@ -88,10 +88,17 @@ _Avoid_: daemon, worker pool
 Token counts and tool-call tallies for a Run, collected from ACP extension
 metadata or the Harness's native session log; aggregated for statistics.
 
+**Harness Adapter**:
+The per-Harness code module behind which all harness-specific knowledge
+lives: spawn tweaks (model pinning, quirk workarounds) and the Usage
+Collector. Keyed by Harness; operator config holds only what is genuinely
+operator-tunable.
+_Avoid_: plugin, driver
+
 **Usage Collector**:
 The per-Harness mechanism that produces Usage for a Run: ACP-reported
-totals plus, where the Harness's session log allows, a per-model
-breakdown. Each Harness has exactly one.
+totals plus, where the Harness exposes one (native session log or ACP
+result metadata), a per-model breakdown. Each Harness has exactly one.
 _Avoid_: log parser (it is more than the log)
 
 **Cost**:

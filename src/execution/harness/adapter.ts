@@ -1,3 +1,4 @@
+import type { HarnessId } from '../../config.js';
 import { claudeAdapter } from './claude.js';
 import { codexAdapter } from './codex.js';
 import { copilotAdapter } from './copilot.js';
@@ -51,12 +52,13 @@ const unknownAdapter: HarnessAdapter = {
   usage: null,
 };
 
-const adapters: Record<string, HarnessAdapter> = {
+const adapters: Record<HarnessId, HarnessAdapter> = {
   claude: claudeAdapter,
   codex: codexAdapter,
   copilot: copilotAdapter,
 };
 
+/** Lookup takes the untyped harness id off a TaskRow; unknown ids get a no-op adapter. */
 export function adapterFor(harnessId: string): HarnessAdapter {
-  return adapters[harnessId] ?? unknownAdapter;
+  return (adapters as Record<string, HarnessAdapter>)[harnessId] ?? unknownAdapter;
 }
