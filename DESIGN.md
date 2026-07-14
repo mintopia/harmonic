@@ -209,7 +209,8 @@ Flat by doctrine. Depth is conveyed by tonal layering (Console Black → Surface
 
 ### Navigation (the Rail)
 - **Style:** slim fixed left rail (~200px, collapsible to icon width) on Console Black with a Hairline right edge, replacing the top-bar-only shell. Wordmark top; views (Board / Table / Stats) as the primary group; Channels / Keys / Log out pinned bottom.
-- **Items:** Body type, Phosphor Muted default → Phosphor Ink hover → active gets Console Raised fill plus Signal Cyan text. Active is the only cyan in the rail.
+- **Items:** Body type, Phosphor Muted default → Phosphor Ink hover → active gets Console Raised fill plus Signal Cyan text. Active is the only cyan in the rail. Each item pairs an icon with its label; icons come from a minimal inline-SVG line set (16px frame, single 1.5 stroke weight, `currentColor`, no fills — `web/src/components/Icon.tsx`). No emoji, no icon-font dependency.
+- **Collapse (settled by issue 21, 2026-07-14):** a chevron toggle in its own hairline-topped group above the pinned account group collapses the rail to icon width — 36px, the same rail vocabulary as the board's terminal columns. Collapsed items are icon-only and keep full a11y: `aria-label`, native `title` tooltip, unchanged focus ring and keyboard order. The wordmark contracts to an "AD" monogram. The choice persists in `localStorage` (default expanded); width animates 150ms ease-out with a `prefers-reduced-motion` instant alternative. Below the rail breakpoint the mobile drawer wins and the collapse never applies.
 - **Top strip:** what remains above the working view is status, not navigation: Auto-Runner toggle, running count, period cost.
 - **Mobile:** rail collapses to a top drawer; working views keep full width.
 

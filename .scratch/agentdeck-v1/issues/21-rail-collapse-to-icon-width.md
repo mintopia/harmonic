@@ -1,6 +1,6 @@
 # Rail collapses to icon width on desktop
 
-Status: ready
+Status: done
 
 ## Parent
 
@@ -34,12 +34,25 @@ collapsing to icons is scope beyond that issue's acceptance criteria.
 
 ## Acceptance criteria
 
-- [ ] Rail toggles between ~200px and icon width (~36px) on desktop; choice persists across reloads
-- [ ] Collapsed items expose labels via `aria-label` + tooltip; keyboard paths and focus-visible unchanged (WCAG 2.1 AA, no regression from issue 19)
-- [ ] Active-item treatment holds in both widths and both themes (Dark + Daylight)
-- [ ] One Phosphor / Flat Field / Hairline rules hold; icons are `currentColor` line icons, no decorative color
-- [ ] Mobile top-drawer behavior from issue 19 is unaffected
+- [x] Rail toggles between ~200px and icon width (~36px) on desktop; choice persists across reloads
+- [x] Collapsed items expose labels via `aria-label` + tooltip; keyboard paths and focus-visible unchanged (WCAG 2.1 AA, no regression from issue 19)
+- [x] Active-item treatment holds in both widths and both themes (Dark + Daylight)
+- [x] One Phosphor / Flat Field / Hairline rules hold; icons are `currentColor` line icons, no decorative color
+- [x] Mobile top-drawer behavior from issue 19 is unaffected
 
 ## Blocked by
 
 Nothing.
+
+## Comments
+
+Shipped 2026-07-14. Icon vocabulary lives in `web/src/components/Icon.tsx`
+(16px frame, 1.5 stroke, `currentColor`); persistence is the injected-storage
+`web/src/rail-model.ts` seam with node-side tests. The collapse toggle sits in
+its own hairline group above the account group; collapsed rail is 36px (`w-9`,
+the board's terminal-rail width) and the wordmark contracts to an "AD"
+monogram. Collapsed-only `aria-label`/`title` are gated on a 900px matchMedia
+so the issue-19 drawer is untouched. DESIGN.md § Navigation amended with the
+settled icon + collapse vocabulary. Verified end-to-end headless: both widths,
+persistence across reload, keyboard focus, Dark + Daylight, reduced-motion,
+and the sub-900px drawer.

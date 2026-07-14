@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task } from './types';
@@ -11,16 +11,34 @@ import { ApiKeys } from './components/ApiKeys';
 import { StatsPage } from './components/StatsPage';
 import { TableView } from './components/TableView';
 import { Channels } from './components/Channels';
+import { Icon } from './components/Icon';
+import { loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import { btnPrimary, labelType } from './ui';
 
 const VIEWS = ['board', 'table', 'stats'] as const;
 type View = (typeof VIEWS)[number];
 const VIEW_LABELS: Record<View, string> = { board: 'Board', table: 'Table', stats: 'Stats' };
 
-const railItem = (active: boolean) =>
-  `w-full rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
-    active ? 'bg-raised text-accent-text' : 'text-muted hover:text-ink'
-  }`;
+// Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
+// must not leak into the mobile drawer, so JS needs the same threshold.
+const RAIL_QUERY = '(min-width: 900px)';
+function useRailBreakpoint() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = matchMedia(RAIL_QUERY);
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    },
+    () => matchMedia(RAIL_QUERY).matches,
+  );
+}
+
+// Collapse only applies at the rail breakpoint; the mobile drawer always
+// shows icon + label, so collapsed styles are rail:-prefixed throughout.
+const railItem = (active: boolean, collapsed: boolean) =>
+  `flex w-full items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
+    collapsed ? 'rail:justify-center rail:px-0' : ''
+  } ${active ? 'bg-raised text-accent-text' : 'text-muted hover:text-ink'}`;
 
 /** Cost over the trailing 24h — the status strip's period cost. */
 function usePeriodCost(authed: boolean, tasks: Task[] | null) {
@@ -59,6 +77,8 @@ export function App() {
   const [showChannels, setShowChannels] = useState(false);
   const [view, setView] = useState<View>('board');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed(localStorage));
+  const railDesktop = useRailBreakpoint();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -113,27 +133,67 @@ export function App() {
     setMenuOpen(false);
   };
 
+  const toggleRail = () => {
+    const next = !railCollapsed;
+    setRailCollapsed(next);
+    storeRailCollapsed(localStorage, next);
+  };
+
+  // Collapsed items keep their accessible name and gain a native tooltip;
+  // when the label is visible neither is needed — below the breakpoint the
+  // drawer shows labels, so the attributes must not apply there.
+  const railItemName = (label: string) =>
+    railCollapsed && railDesktop ? { 'aria-label': label, title: label } : {};
+
+  // Hidden, not unmounted, when collapsed: keyboard order and focus
+  // behavior stay identical in both widths.
+  const railLabel = railCollapsed ? 'rail:hidden' : '';
+
   const navItems = (
     <>
       <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
         {VIEWS.map((v) => (
-          <button key={v} aria-current={view === v ? 'page' : undefined} className={railItem(view === v)} onClick={() => pickView(v)}>
-            {VIEW_LABELS[v]}
+          <button
+            key={v}
+            aria-current={view === v ? 'page' : undefined}
+            {...railItemName(VIEW_LABELS[v])}
+            className={railItem(view === v, railCollapsed)}
+            onClick={() => pickView(v)}
+          >
+            <Icon name={v} />
+            <span className={railLabel}>{VIEW_LABELS[v]}</span>
           </button>
         ))}
       </nav>
-      <div className="mt-2 flex flex-col gap-0.5 border-t border-hairline pt-2 rail:mt-0">
-        <button className={railItem(false)} onClick={() => { setShowChannels(true); setMenuOpen(false); }}>
-          Channels
+      {/* Desktop only: below the rail breakpoint the top drawer wins. */}
+      <div className="mt-2 hidden border-t border-hairline pt-2 rail:flex rail:flex-col">
+        <button
+          aria-expanded={!railCollapsed}
+          aria-label={railCollapsed ? 'Expand rail' : 'Collapse rail'}
+          title={railCollapsed ? 'Expand rail' : 'Collapse rail'}
+          className={railItem(false, railCollapsed)}
+          onClick={toggleRail}
+        >
+          <Icon className={railCollapsed ? '-scale-x-100' : ''} name="chevrons-left" />
+          <span className={railLabel}>Collapse</span>
         </button>
-        <button className={railItem(false)} onClick={() => { setShowKeys(true); setMenuOpen(false); }}>
-          Keys
+      </div>
+      <div className="mt-2 flex flex-col gap-0.5 border-t border-hairline pt-2 rail:mt-0">
+        <button {...railItemName('Channels')} className={railItem(false, railCollapsed)} onClick={() => { setShowChannels(true); setMenuOpen(false); }}>
+          <Icon name="channels" />
+          <span className={railLabel}>Channels</span>
+        </button>
+        <button {...railItemName('Keys')} className={railItem(false, railCollapsed)} onClick={() => { setShowKeys(true); setMenuOpen(false); }}>
+          <Icon name="keys" />
+          <span className={railLabel}>Keys</span>
         </button>
         <button
-          className={railItem(false)}
+          {...railItemName('Log out')}
+          className={railItem(false, railCollapsed)}
           onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
         >
-          Log out
+          <Icon name="logout" />
+          <span className={railLabel}>Log out</span>
         </button>
       </div>
     </>
@@ -142,9 +202,19 @@ export function App() {
   return (
     <div className="flex min-h-screen flex-col rail:flex-row">
       {/* The rail: navigation lives here; above the working view is status only. */}
-      <aside className="border-b border-hairline rail:flex rail:w-[200px] rail:shrink-0 rail:flex-col rail:border-b-0 rail:border-r">
-        <div className="flex items-center px-3 py-2.5 rail:px-2 rail:pb-4">
-          <span className="px-1 text-title font-semibold">AgentDeck</span>
+      <aside
+        className={`border-b border-hairline rail:flex rail:shrink-0 rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
+          railCollapsed ? 'rail:w-9' : 'rail:w-[200px]'
+        }`}
+      >
+        <div className={`flex items-center px-3 py-2.5 rail:px-2 rail:pb-4 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}>
+          <span className={`whitespace-nowrap px-1 text-title font-semibold ${railCollapsed ? 'rail:hidden' : ''}`}>AgentDeck</span>
+          {railCollapsed && (
+            <span className="hidden text-title font-semibold rail:inline" title="AgentDeck">
+              <span aria-hidden="true">AD</span>
+              <span className="sr-only">AgentDeck</span>
+            </span>
+          )}
           <button
             aria-expanded={menuOpen}
             aria-label="Menu"
@@ -154,7 +224,11 @@ export function App() {
             Menu
           </button>
         </div>
-        <div className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0`}>
+        <div
+          className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0 ${
+            railCollapsed ? 'rail:px-1' : ''
+          }`}
+        >
           {navItems}
         </div>
       </aside>

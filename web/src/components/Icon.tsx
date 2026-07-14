@@ -1,0 +1,78 @@
+import type { JSX } from 'react';
+
+/**
+ * Minimal stroke icon vocabulary for the rail (issue 21): one weight,
+ * currentColor line work only — instrumentation, not chat-app art
+ * (PRODUCT.md anti-references). Add glyphs here, never emoji or an
+ * icon-font dependency.
+ */
+export type IconName =
+  | 'board'
+  | 'table'
+  | 'stats'
+  | 'channels'
+  | 'keys'
+  | 'logout'
+  | 'chevrons-left';
+
+const PATHS: Record<IconName, JSX.Element> = {
+  // Kanban columns, top-aligned at differing heights.
+  board: (
+    <>
+      <rect height="7" rx="1" width="3.5" x="1.75" y="2.75" />
+      <rect height="10.5" rx="1" width="3.5" x="6.25" y="2.75" />
+      <rect height="5" rx="1" width="3.5" x="10.75" y="2.75" />
+    </>
+  ),
+  // Row grid.
+  table: (
+    <>
+      <rect height="9.5" rx="1" width="12.5" x="1.75" y="3.25" />
+      <path d="M1.75 6.5h12.5M1.75 9.75h12.5" />
+    </>
+  ),
+  // Bar chart, bottom-aligned.
+  stats: <path d="M4.5 13.5V9M8 13.5V3.5M11.5 13.5V7" />,
+  // Broadcast: source dot between two waves.
+  channels: (
+    <>
+      <circle cx="8" cy="8" fill="currentColor" r="1.4" stroke="none" />
+      <path d="M4.6 11.4a4.8 4.8 0 0 1 0-6.8M11.4 4.6a4.8 4.8 0 0 1 0 6.8" />
+    </>
+  ),
+  // Key: bow, diagonal shaft, one tooth.
+  keys: (
+    <>
+      <circle cx="5.5" cy="10.5" r="2.75" />
+      <path d="M7.5 8.5l6-6M11 5l2 2" />
+    </>
+  ),
+  // Door frame with an outbound arrow.
+  logout: (
+    <>
+      <path d="M6.5 13.5h-3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3" />
+      <path d="M10.5 5.5 13 8l-2.5 2.5M13 8H6" />
+    </>
+  ),
+  // Rail collapse chevrons; mirror with -scale-x-100 to point right.
+  'chevrons-left': <path d="M8 4.5 4.5 8 8 11.5M12 4.5 8.5 8l3.5 3.5" />,
+};
+
+export function Icon({ name, className }: { name: IconName; className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className ? `shrink-0 ${className}` : 'shrink-0'}
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 16 16"
+      width="16"
+    >
+      {PATHS[name]}
+    </svg>
+  );
+}
