@@ -1,12 +1,15 @@
 {
   "name": "harmonic",
   "version": "0.1.0",
+  "private": true,
   "description": "Queue, run, and review autonomous coding-agent tasks over ACP",
+  "repository": "github:mintopia/harmonic",
   "main": "index.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
+    "prepare": "npm run build",
     "test": "vitest run",
     "dev": "tsx src/cli.ts serve",
     "build": "tsc -p tsconfig.json && vite build --config web/vite.config.ts",
