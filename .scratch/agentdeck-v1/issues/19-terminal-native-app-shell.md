@@ -1,6 +1,6 @@
 # Terminal-native app shell and visual system migration
 
-Status: ready
+Status: done
 
 ## Parent
 
@@ -44,13 +44,13 @@ to plan the shell structurally, then implement.
 
 ## Acceptance criteria
 
-- [ ] Left rail shell with mobile collapse; status strip carries Auto-Runner, running count, and cost
-- [ ] Table and Stats render full-width
-- [ ] All surfaces/type/state colors match DESIGN.md; no `box-shadow` except the focus ring; mono only on data surfaces (Mono Is Data Rule)
-- [ ] Board implements the hybrid rail treatment per DESIGN.md § The Board
-- [ ] Dark + Daylight themes ship and both pass the documented AA pairs
-- [ ] WCAG 2.1 AA holds (contrast, keyboard paths, focus-visible, reduced motion) — no regression from issue 18
-- [ ] No functionality regression (board, table, task detail, stats, keys, channels)
+- [x] Left rail shell with mobile collapse; status strip carries Auto-Runner, running count, and cost
+- [x] Table and Stats render full-width
+- [x] All surfaces/type/state colors match DESIGN.md; no `box-shadow` except the focus ring; mono only on data surfaces (Mono Is Data Rule)
+- [x] Board implements the hybrid rail treatment per DESIGN.md § The Board
+- [x] Dark + Daylight themes ship and both pass the documented AA pairs
+- [x] WCAG 2.1 AA holds (contrast, keyboard paths, focus-visible, reduced motion) — no regression from issue 18
+- [x] No functionality regression (board, table, task detail, stats, keys, channels)
 
 ## Blocked by
 
