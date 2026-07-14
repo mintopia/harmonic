@@ -92,12 +92,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const auth = new AuthService(db);
   if (opts.password) auth.setPassword(opts.password, opts.username);
   // Crash recovery before anything can execute: orphaned runs are failed
-  // as "interrupted" (never silently re-run), their tasks fail loudly,
-  // and their scoped keys die with them.
+  // as "interrupted" (never silently re-run), and their tasks fail loudly.
   for (const orphan of runs.markInterrupted()) {
     tasks.setState(orphan.taskId, 'failed');
-    auth.revokeKeysForRun(orphan.id);
   }
+  // Run Keys of every non-running run die here — catches keys orphaned by
+  // a crash or restart.
+  auth.sweepOrphanedRunKeys();
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
@@ -106,7 +107,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     worktreesDir: join(opts.dataDir, 'worktrees'),
     keys: {
       mint: (runId) => auth.createKey(`run-${runId}`, { scope: 'run', runId }).token,
-      revoke: (runId) => auth.revokeKeysForRun(runId),
+      revoke: (runId) => auth.deleteKeysForRun(runId),
     },
   });
   // Accepting a worktree-mode task merges the run's branch (ADR-0002).

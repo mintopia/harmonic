@@ -80,7 +80,7 @@ describe('mcp server & scoped keys', () => {
     await expect(mcpClient(server, key.body.token)).rejects.toThrow();
   });
 
-  it('injects a per-run scoped key and the MCP endpoint into the harness env, revoking the key after the run', async () => {
+  it('injects a Run Key and the MCP endpoint into the harness env, deleting the key after the run', async () => {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ echoEnv: ['AGENTDECK_API_KEY', 'AGENTDECK_MCP_URL'] }),
     });
@@ -93,15 +93,13 @@ describe('mcp server & scoped keys', () => {
     expect(env.AGENTDECK_API_KEY).toMatch(/^adk_/);
     expect(env.AGENTDECK_MCP_URL).toContain('/mcp');
 
-    // Scoped to the run, and dead once the run finished.
+    // Run Keys are never listed, and the row is deleted once the run finished (issue 16).
     const keys = await server.api('GET', '/api/keys');
-    const scoped = keys.body.keys.find((k: any) => k.runId === started.body.id);
-    expect(scoped.scope).toBe('run');
-    expect(scoped.revokedAt).toBeGreaterThan(0);
-    const viaRevoked = await fetch(`${server.baseUrl}/api/tasks`, {
+    expect(keys.body.keys.find((k: any) => k.runId === started.body.id)).toBeUndefined();
+    const viaDeleted = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: `Bearer ${env.AGENTDECK_API_KEY}` },
     });
-    expect(viaRevoked.status).toBe(401);
+    expect(viaDeleted.status).toBe(401);
   });
 
   it('hides accept/reject behind the agent-review flag (default off)', async () => {

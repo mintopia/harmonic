@@ -1,6 +1,6 @@
 # Run Keys: hard-delete at run end, startup sweep, hidden from listing
 
-Status: ready
+Status: done
 
 ## Parent
 
@@ -31,12 +31,12 @@ adds nothing, so no retention window or purge job is needed.
 
 ## Acceptance criteria
 
-- [ ] A finished Run (completed, failed, or cancelled) has no Run Key row remaining
-- [ ] Startup deletes `scope='run'` keys whose Run is not `running`
-- [ ] `GET /keys` never returns `scope='run'` keys, even while a Run is active
-- [ ] A deleted Run Key no longer authenticates REST or MCP requests
-- [ ] Operator API Keys are unaffected by run-end deletion and the sweep
-- [ ] Tests cover run-end deletion, the orphan sweep, and listing exclusion
+- [x] A finished Run (completed, failed, or cancelled) has no Run Key row remaining
+- [x] Startup deletes `scope='run'` keys whose Run is not `running`
+- [x] `GET /keys` never returns `scope='run'` keys, even while a Run is active
+- [x] A deleted Run Key no longer authenticates REST or MCP requests
+- [x] Operator API Keys are unaffected by run-end deletion and the sweep
+- [x] Tests cover run-end deletion, the orphan sweep, and listing exclusion
 
 ## Blocked by
 

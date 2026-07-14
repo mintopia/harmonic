@@ -174,6 +174,12 @@ export class Runner {
       }
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
     } catch (err) {
+      // The Run Key may already be minted; it must not outlive the run.
+      try {
+        this.keys?.revoke(run.id);
+      } catch {
+        // Best-effort; the startup sweep is the backstop.
+      }
       this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
       return;
     }

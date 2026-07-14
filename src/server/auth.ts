@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, notInArray, or } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { apiKeys, settings, type ApiKeyRow } from '../db/schema.js';
+import { apiKeys, runs, settings, type ApiKeyRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 
 const AUTH_KEY = 'auth';
@@ -103,10 +103,12 @@ export class AuthService {
     return row;
   }
 
+  /** Operator API Keys only — Run Keys are machine credentials, never listed. */
   listKeys(): Omit<ApiKeyRow, 'tokenHash'>[] {
     return this.db
       .select()
       .from(apiKeys)
+      .where(eq(apiKeys.scope, 'full'))
       .orderBy(desc(apiKeys.createdAt))
       .all()
       .map(({ tokenHash: _hash, ...rest }) => rest);
@@ -120,8 +122,26 @@ export class AuthService {
     }
   }
 
-  revokeKeysForRun(runId: number): void {
-    this.db.update(apiKeys).set({ revokedAt: Date.now() }).where(eq(apiKeys.runId, runId)).run();
+  /** Run Keys die with their Run — hard delete; the Run itself is the audit record. */
+  deleteKeysForRun(runId: number): void {
+    this.db
+      .delete(apiKeys)
+      .where(and(eq(apiKeys.scope, 'run'), eq(apiKeys.runId, runId)))
+      .run();
+  }
+
+  /** Boot-time sweep: delete every Run Key whose Run is no longer running. */
+  sweepOrphanedRunKeys(): void {
+    const runningRuns = this.db.select({ id: runs.id }).from(runs).where(eq(runs.state, 'running'));
+    this.db
+      .delete(apiKeys)
+      .where(
+        and(
+          eq(apiKeys.scope, 'run'),
+          or(isNull(apiKeys.runId), notInArray(apiKeys.runId, runningRuns)),
+        ),
+      )
+      .run();
   }
 
   // ---- Config-repo portability ----
