@@ -8,6 +8,8 @@ import { openDb, type Db } from '../db/index.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
+import { RunStore } from '../domain/runs.js';
+import { Runner } from '../execution/runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { configRoutes } from './routes/config.js';
@@ -21,6 +23,8 @@ export interface AppContext {
   db: Db;
   configStore: ConfigStore;
   tasks: TaskService;
+  runs: RunStore;
+  runner: Runner;
 }
 
 export type App = FastifyInstance & { ctx: AppContext };
@@ -29,10 +33,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const db = openDb(opts.dataDir);
   const configStore = new ConfigStore(db, opts.configOverrides);
   const tasks = new TaskService(db, () => configStore.get());
-  const ctx: AppContext = { db, configStore, tasks };
+  const runs = new RunStore(db);
+  // Crash recovery before anything can execute: orphaned runs are failed
+  // as "interrupted", never silently re-run.
+  runs.markInterrupted();
+  const runner = new Runner(runs, tasks, () => configStore.get());
+  const ctx: AppContext = { db, configStore, tasks, runs, runner };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
+  app.addHook('onClose', async () => runner.shutdown());
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof DomainError) {

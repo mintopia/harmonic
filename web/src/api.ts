@@ -1,4 +1,4 @@
-import type { AppConfig, Task } from './types';
+import type { AppConfig, Run, RunEvent, Task } from './types';
 
 class ApiError extends Error {
   constructor(
@@ -30,4 +30,10 @@ export const api = {
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/cancel`),
+  requeueTask: (id: number, feedback?: string) =>
+    request<Task>('POST', `/api/tasks/${id}/requeue`, feedback ? { feedback } : {}),
+  runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
+  taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
+  run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
+  runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
 };

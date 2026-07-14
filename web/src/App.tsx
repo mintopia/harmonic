@@ -3,11 +3,13 @@ import { api } from './api';
 import type { AppConfig, Task } from './types';
 import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
+import { TaskDetail } from './components/TaskDetail';
 
 export function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
+  const [openTask, setOpenTask] = useState<Task | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -49,8 +51,10 @@ export function App() {
       )}
 
       <main className="p-4">
-        <Board tasks={tasks} onEdit={setEditing} onChanged={refresh} />
+        <Board tasks={tasks} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
       </main>
+
+      {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}
 
       {editing !== null && config && (
         <TaskForm

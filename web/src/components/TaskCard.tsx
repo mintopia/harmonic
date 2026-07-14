@@ -10,10 +10,12 @@ const PRIORITY_STYLES: Record<Task['priority'], string> = {
 export function TaskCard({
   task,
   onEdit,
+  onOpen,
   onChanged,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
+  onOpen: (task: Task) => void;
   onChanged: () => void;
 }) {
   const editable = task.state === 'draft' || task.state === 'ready';
@@ -23,7 +25,12 @@ export function TaskCard({
 
   return (
     <article className="rounded-md border border-zinc-800 bg-zinc-900 p-3 text-sm shadow">
-      <p className="mb-2 line-clamp-3 whitespace-pre-wrap text-zinc-200">{task.prompt}</p>
+      <p
+        className="mb-2 line-clamp-3 cursor-pointer whitespace-pre-wrap text-zinc-200 hover:text-white"
+        onClick={() => onOpen(task)}
+      >
+        {task.prompt}
+      </p>
       <div className="mb-2 flex flex-wrap gap-1 text-[11px]">
         <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
           {task.harness} · {task.model}
@@ -45,6 +52,22 @@ export function TaskCard({
             onClick={act(() => api.promoteTask(task.id))}
           >
             Ready
+          </button>
+        )}
+        {task.state === 'ready' && (
+          <button
+            className="text-emerald-400 hover:text-emerald-300"
+            onClick={act(() => api.runTask(task.id))}
+          >
+            Run now
+          </button>
+        )}
+        {task.state === 'failed' && (
+          <button
+            className="text-amber-400 hover:text-amber-300"
+            onClick={act(() => api.requeueTask(task.id))}
+          >
+            Re-queue
           </button>
         )}
         {cancellable && (

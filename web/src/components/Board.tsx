@@ -16,10 +16,12 @@ const COLUMN_LABELS: Record<TaskState, string> = {
 export function Board({
   tasks,
   onEdit,
+  onOpen,
   onChanged,
 }: {
   tasks: Task[];
   onEdit: (task: Task) => void;
+  onOpen: (task: Task) => void;
   onChanged: () => void;
 }) {
   return (
@@ -36,7 +38,7 @@ export function Board({
             </h2>
             <div className="flex flex-col gap-2">
               {column.map((task) => (
-                <TaskCard key={task.id} task={task} onEdit={onEdit} onChanged={onChanged} />
+                <TaskCard key={task.id} task={task} onEdit={onEdit} onOpen={onOpen} onChanged={onChanged} />
               ))}
             </div>
           </section>

@@ -99,6 +99,23 @@ export class TaskService {
     return this.setState(id, 'ready');
   }
 
+  /**
+   * Send a failed task back to ready for another attempt. Optional
+   * feedback is appended to the prompt so the retry learns from what
+   * went wrong.
+   */
+  requeue(id: number, feedback?: string): TaskRow {
+    const task = this.get(id);
+    if (task.state !== 'failed') {
+      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only failed tasks can be re-queued`);
+    }
+    const patch: Partial<TaskRow> = { state: 'ready', updatedAt: Date.now() };
+    if (feedback && feedback.trim().length > 0) {
+      patch.prompt = `${task.prompt}\n\n## Feedback from previous attempt\n\n${feedback.trim()}`;
+    }
+    return this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
+  }
+
   cancel(id: number): TaskRow {
     const task = this.get(id);
     if (!CANCELLABLE_STATES.includes(task.state)) {

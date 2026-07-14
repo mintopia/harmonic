@@ -23,6 +23,30 @@ export interface Task {
   updatedAt: number;
 }
 
+export interface Run {
+  id: number;
+  taskId: number;
+  attempt: number;
+  state: 'running' | 'completed' | 'failed' | 'cancelled';
+  reason: string | null;
+  stopReason: string | null;
+  sessionId: string | null;
+  branch: string | null;
+  baseBranch: string | null;
+  usage: Record<string, number> | null;
+  startedAt: number;
+  finishedAt: number | null;
+}
+
+export interface RunEvent {
+  id: number;
+  runId: number;
+  seq: number;
+  ts: number;
+  type: 'session_update' | 'permission_request' | 'lifecycle';
+  payload: any;
+}
+
 export interface HarnessConfig {
   command: string;
   args: string[];

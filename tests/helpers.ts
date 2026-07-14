@@ -6,6 +6,35 @@ import { buildApp, type App } from '../src/server/app.js';
 import type { DeepPartial } from '../src/config.js';
 import type { AppConfig } from '../src/config.js';
 
+const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
+
+/** Config overrides registering the stub ACP agent as the `claude` harness. */
+export function stubHarness(): DeepPartial<AppConfig> {
+  return {
+    harnesses: {
+      claude: {
+        command: process.execPath,
+        args: [STUB_HARNESS],
+        models: ['stub-model'],
+        defaultModel: 'stub-model',
+      },
+    },
+  } as DeepPartial<AppConfig>;
+}
+
+export async function waitFor<T>(
+  fn: () => Promise<T | undefined | false>,
+  { timeoutMs = 10_000, intervalMs = 25 } = {},
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await fn();
+    if (result !== undefined && result !== false) return result;
+    if (Date.now() > deadline) throw new Error('waitFor: condition not met in time');
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
 export interface TestServer {
   baseUrl: string;
   dataDir: string;
@@ -15,8 +44,11 @@ export interface TestServer {
   close: () => Promise<void>;
 }
 
-export async function startServer(configOverrides?: DeepPartial<AppConfig>): Promise<TestServer> {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agentdeck-test-'));
+export async function startServer(
+  configOverrides?: DeepPartial<AppConfig>,
+  opts: { dataDir?: string } = {},
+): Promise<TestServer> {
+  const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'agentdeck-test-'));
   const app = await buildApp({ dataDir, configOverrides });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
