@@ -8,6 +8,21 @@ export interface ModelUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /**
+   * Harness-native spend units for this model's calls (Copilot AI Units,
+   * CONTEXT.md) — actual spend shown alongside Cost, never folded into it
+   * (decision Q4). Absent when the harness has none; never a fake zero.
+   */
+  aiUnits?: number;
+}
+
+/** The per-run inputs a harness may need to build its spawn environment. */
+export interface SpawnInput {
+  model: string;
+  /** The directory the run executes in (worktree path in worktree mode). */
+  cwd: string;
+  /** Operator override for the harness's session-log root (config). */
+  sessionLogDir?: string | undefined;
 }
 
 /**
@@ -29,8 +44,13 @@ export interface UsageCollector {
    * supplies the harness's default root.
    */
   sessionLogFile(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string | null }): string | null;
-  /** Per-model token usage parsed from the session log at `file`. */
-  modelsFromSessionLog(file: string): Record<string, ModelUsage>;
+  /**
+   * Per-model token usage parsed from the session log at `file`.
+   * `sessionId` disambiguates logs shared between runs (copilot's OTel
+   * file is keyed by cwd, so direct-mode runs of one directory share it);
+   * harnesses with per-session files ignore it.
+   */
+  modelsFromSessionLog(file: string, sessionId?: string | null): Record<string, ModelUsage>;
   /**
    * Harness-preferred tool name for a tool_call update payload; null
    * defers to the generic `title`/`kind` fields.
@@ -49,7 +69,13 @@ export interface HarnessAdapter {
    * workarounds. Keys with `undefined` values override anything inherited
    * from AgentDeck's own environment.
    */
-  spawnEnv(model: string): Record<string, string | undefined>;
+  spawnEnv(input: SpawnInput): Record<string, string | undefined>;
+  /**
+   * ACP modelId to pin via `session/set_model` immediately after
+   * `session/new`, for harnesses with no reliable spawn-time pin
+   * (copilot). Absent when spawnEnv carries the pin instead.
+   */
+  sessionModelId?(model: string): string;
   /**
    * ACP `session/new` mcpServers entries granting the agent AgentDeck's
    * MCP server under its Run Key; [] when the harness only gets the

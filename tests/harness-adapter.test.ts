@@ -1,37 +1,178 @@
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/adapter.js';
+
+/** Every adapter call in these tests runs "in" this directory. */
+const spawnInput = (model: string, extra: { cwd?: string; sessionLogDir?: string } = {}) => ({
+  model,
+  cwd: extra.cwd ?? '/w',
+  sessionLogDir: extra.sessionLogDir,
+});
 
 describe('harness adapters', () => {
   it('claude spawn tweaks pin the model and strip the nested-session guard vars', () => {
-    const env = adapterFor('claude').spawnEnv('claude-opus-4-8');
+    const env = adapterFor('claude').spawnEnv(spawnInput('claude-opus-4-8'));
     expect(env.ANTHROPIC_MODEL).toBe('claude-opus-4-8');
     // Present-but-undefined so they override anything inherited from process.env.
     expect(env).toHaveProperty('CLAUDECODE', undefined);
     expect(env).toHaveProperty('CLAUDE_CODE_ENTRYPOINT', undefined);
   });
 
-  it('copilot is a stub: no spawn tweaks beyond the generic AGENTDECK_MODEL', () => {
-    expect(adapterFor('copilot').spawnEnv('claude-sonnet-5')).toEqual({});
-  });
-
-  it('copilot and unknown harnesses have no Usage Collector', () => {
-    expect(adapterFor('copilot').usage).toBeNull();
+  it('unknown harnesses have no Usage Collector', () => {
     expect(adapterFor('mystery').usage).toBeNull();
   });
 
   it('codex spawn tweaks pin the model via CODEX_CONFIG, splitting the model[effort] grammar', () => {
     // Spike (issue 22): CODEX_CONFIG is a JSON object merged into the
     // session config; modelId grammar is `<model>[<effort>]`.
-    expect(JSON.parse(adapterFor('codex').spawnEnv('gpt-5.4-mini[low]').CODEX_CONFIG!)).toEqual({
+    expect(JSON.parse(adapterFor('codex').spawnEnv(spawnInput('gpt-5.4-mini[low]')).CODEX_CONFIG!)).toEqual({
       model: 'gpt-5.4-mini',
       model_reasoning_effort: 'low',
     });
-    expect(JSON.parse(adapterFor('codex').spawnEnv('gpt-5.6-sol').CODEX_CONFIG!)).toEqual({
+    expect(JSON.parse(adapterFor('codex').spawnEnv(spawnInput('gpt-5.6-sol')).CODEX_CONFIG!)).toEqual({
       model: 'gpt-5.6-sol',
     });
+  });
+
+  it('only copilot pins via ACP session/set_model — sent for every run, auto included', () => {
+    // Spike (issue 25): an unpinned Copilot session inherits the
+    // operator's persisted settings.json model, so the pin must be sent
+    // even when the Task's model is 'auto'. Claude and Codex pin at
+    // spawn time instead.
+    expect(adapterFor('copilot').sessionModelId?.('claude-haiku-4.5')).toBe('claude-haiku-4.5');
+    expect(adapterFor('copilot').sessionModelId?.('auto')).toBe('auto');
+    expect(adapterFor('claude').sessionModelId).toBeUndefined();
+    expect(adapterFor('codex').sessionModelId).toBeUndefined();
+  });
+
+  it('copilot spawn tweaks disable auto-update and point the OTel exporter at the usage log — never a --model-style pin', () => {
+    const root = mkdtempSync(join(tmpdir(), 'copilot-otel-'));
+    const env = adapterFor('copilot').spawnEnv({
+      model: 'claude-haiku-4.5',
+      cwd: '/tmp/my.work_dir',
+      sessionLogDir: join(root, 'otel'),
+    });
+    // The CLI updated itself mid-spike; runs must be reproducible.
+    expect(env.COPILOT_AUTO_UPDATE).toBe('false');
+    // The exporter path is the Usage Collector's session log — the two
+    // must derive the same file from the same run inputs.
+    expect(env.COPILOT_OTEL_FILE_EXPORTER_PATH).toBe(
+      adapterFor('copilot').usage!.sessionLogFile({
+        sessionLogDir: join(root, 'otel'),
+        cwd: '/tmp/my.work_dir',
+        sessionId: 'any',
+      }),
+    );
+    // The exporter silently drops spans if the directory is missing, and
+    // creates the file lazily — spawnEnv pre-creates it so the usage
+    // flush-race retry has a file to re-read on a directory's first run.
+    expect(existsSync(env.COPILOT_OTEL_FILE_EXPORTER_PATH!)).toBe(true);
+    // Spike capture 13: --model/COPILOT_MODEL falsify the session's
+    // reported model without changing it. The pin goes via set_model only.
+    expect(env.COPILOT_MODEL).toBeUndefined();
+  });
+
+  it('copilot registers the MCP server over ACP with the Run Key bearer header', () => {
+    // Verified end-to-end in the spike (capture 5): every MCP request
+    // arrived with the Authorization header.
+    expect(adapterFor('copilot').mcpServers({ url: 'http://127.0.0.1:1/mcp', token: 'rk' })).toEqual([
+      {
+        name: 'agentdeck',
+        type: 'http',
+        url: 'http://127.0.0.1:1/mcp',
+        headers: [{ name: 'Authorization', value: 'Bearer rk' }],
+      },
+    ]);
+  });
+
+  it("copilot's Usage Collector keys the OTel log by cwd slug and needs a sessionId to attribute spans", () => {
+    const usage = adapterFor('copilot').usage!;
+    expect(usage.sessionLogFile({ sessionLogDir: '/otel', cwd: '/tmp/my.work_dir', sessionId: 's1' })).toBe(
+      '/otel/-tmp-my-work-dir.jsonl',
+    );
+    // No sessionId (spawn died before session/new): spans cannot be
+    // attributed to this run, so there is no log to read.
+    expect(usage.sessionLogFile({ sessionLogDir: '/otel', cwd: '/w', sessionId: null })).toBeNull();
+  });
+
+  it("copilot's Usage Collector aggregates OTel chat spans by serving model, with the cache split and AI Units", () => {
+    // Span shapes verbatim from the spike's OTel excerpts (captures 3/4),
+    // trimmed to the attributes the collector reads.
+    const S = '574df71c-25b3-4829-b01a-4dc8d50f47e8';
+    const span = (attributes: Record<string, unknown>) => JSON.stringify({ type: 'span', attributes });
+    const lines = [
+      // First call of a session: no cache attributes at all (omit-when-zero).
+      span({
+        'gen_ai.operation.name': 'chat',
+        'gen_ai.conversation.id': S,
+        'gen_ai.request.model': 'auto',
+        'gen_ai.response.model': 'gpt-5-mini',
+        'gen_ai.usage.input_tokens': 35068,
+        'gen_ai.usage.output_tokens': 4539,
+        'gen_ai.usage.reasoning.output_tokens': 4480,
+        'github.copilot.nano_aiu': 1784500000.0,
+      }),
+      // Later call: cache_read present; input_tokens is TOTAL input.
+      span({
+        'gen_ai.operation.name': 'chat',
+        'gen_ai.conversation.id': S,
+        'gen_ai.request.model': 'auto',
+        'gen_ai.response.model': 'gpt-5-mini',
+        'gen_ai.usage.input_tokens': 39727,
+        'gen_ai.usage.output_tokens': 783,
+        'gen_ai.usage.cache_read.input_tokens': 39552,
+        'github.copilot.nano_aiu': 259855000.0,
+      }),
+      // Served by a different model, with a cache write.
+      span({
+        'gen_ai.operation.name': 'chat',
+        'gen_ai.conversation.id': S,
+        'gen_ai.request.model': 'auto',
+        'gen_ai.response.model': 'claude-haiku-4.5',
+        'gen_ai.usage.input_tokens': 48503,
+        'gen_ai.usage.output_tokens': 145,
+        'gen_ai.usage.cache_creation.input_tokens': 48494,
+        'github.copilot.nano_aiu': 6135150000.0,
+      }),
+      // Another run sharing the file (direct mode): filtered out.
+      span({
+        'gen_ai.operation.name': 'chat',
+        'gen_ai.conversation.id': 'other-session',
+        'gen_ai.response.model': 'gpt-5-mini',
+        'gen_ai.usage.input_tokens': 999999,
+        'gen_ai.usage.output_tokens': 999999,
+        'github.copilot.nano_aiu': 9e9,
+      }),
+      // The exporter interleaves metric lines; and tolerate log noise.
+      JSON.stringify({ type: 'metric', name: 'gen_ai.client.token.usage', dataPoints: [] }),
+      'not json',
+    ];
+    const dir = mkdtempSync(join(tmpdir(), 'copilot-otel-log-'));
+    const file = join(dir, 'log.jsonl');
+    writeFileSync(file, lines.join('\n'));
+
+    // ModelUsage.inputTokens is uncached-only: total minus both cache figures.
+    expect(adapterFor('copilot').usage!.modelsFromSessionLog(file, S)).toEqual({
+      'gpt-5-mini': {
+        inputTokens: 35068 + (39727 - 39552),
+        outputTokens: 4539 + 783,
+        cacheReadTokens: 39552,
+        cacheWriteTokens: 0,
+        aiUnits: (1784500000 + 259855000) / 1e9,
+      },
+      'claude-haiku-4.5': {
+        inputTokens: 48503 - 48494,
+        outputTokens: 145,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 48494,
+        aiUnits: 6135150000 / 1e9,
+      },
+    });
+    expect(adapterFor('copilot').usage!.modelsFromSessionLog(join(dir, 'missing.jsonl'), S)).toEqual({});
+    // No sessionId to filter on: nothing is attributable, never guess.
+    expect(adapterFor('copilot').usage!.modelsFromSessionLog(file, null)).toEqual({});
   });
 
   it("codex's Usage Collector reads the per-model breakdown off the ACP prompt result", () => {

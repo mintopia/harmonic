@@ -33,6 +33,7 @@ const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 
 const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
 let sessionNewParams = null;
+let setModelParams = null;
 
 async function handlePrompt(msg) {
   let scenario;
@@ -68,6 +69,18 @@ async function handlePrompt(msg) {
     notify('session/update', {
       sessionId: msg.params.sessionId,
       update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(sessionNewParams) } },
+    });
+  }
+
+  // Echo what (if anything) arrived over session/set_model before the
+  // prompt, so tests can assert the ACP-level model pin went over the wire.
+  if (scenario.echoSetModel) {
+    notify('session/update', {
+      sessionId: msg.params.sessionId,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: `set-model:${JSON.stringify(setModelParams)}` },
+      },
     });
   }
 
@@ -167,6 +180,10 @@ rl.on('line', (line) => {
         break;
       }
       send({ jsonrpc: '2.0', id: msg.id, result: { sessionId } });
+      break;
+    case 'session/set_model':
+      setModelParams = msg.params;
+      send({ jsonrpc: '2.0', id: msg.id, result: {} });
       break;
     case 'session/prompt':
       handlePrompt(msg);

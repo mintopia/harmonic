@@ -279,6 +279,14 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
                 </span>
               </>
             )}
+            {typeof selectedRun.usage?.totals?.aiUnits === 'number' && (
+              <>
+                {' · '}
+                <span title="Copilot AI Units — actual spend (separate from Cost)">
+                  {selectedRun.usage.totals.aiUnits.toFixed(2)} AIU
+                </span>
+              </>
+            )}
             {selectedRun.branch && (
               <>
                 {' · '}

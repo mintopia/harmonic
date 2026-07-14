@@ -43,7 +43,7 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
       : {};
   if (Object.keys(models).length === 0) {
     const file = sessionLogFile(input);
-    models = collector && file ? collector.modelsFromSessionLog(file) : {};
+    models = collector && file ? collector.modelsFromSessionLog(file, input.sessionId) : {};
   }
   const toolCalls = tallyToolCalls(input.events, (payload) => collector?.toolName(payload) ?? null);
 
@@ -95,12 +95,14 @@ function tallyToolCalls(
 }
 
 function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {
-  const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  const totals: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   for (const usage of Object.values(models)) {
     totals.inputTokens += usage.inputTokens;
     totals.outputTokens += usage.outputTokens;
     totals.cacheReadTokens += usage.cacheReadTokens;
     totals.cacheWriteTokens += usage.cacheWriteTokens;
+    // AI Units total only when some model reported them — never a fake zero.
+    if (usage.aiUnits !== undefined) totals.aiUnits = (totals.aiUnits ?? 0) + usage.aiUnits;
   }
   return { ...totals, totalTokens: null };
 }
@@ -134,9 +136,11 @@ export async function collectUsageWithRetry(
  * session-log ids (`claude-haiku-4-5-20251001`) both count as their base
  * model. A contradiction means NO observed model matches — harnesses
  * legitimately spend side tokens on helper models (Claude subagents), and
- * that is not a broken pin.
+ * that is not a broken pin. A task pinned to `auto` delegated the choice
+ * (Copilot's router): whatever served is the answer, not a contradiction.
  */
 export function observedModelMismatch(expected: string, models: Record<string, ModelUsage>): string[] | null {
+  if (expected === 'auto') return null;
   const base = (id: string) => id.replace(/\[[^\]]+\]$/, '').replace(/-\d{8}$/, '');
   const observed = Object.keys(models);
   if (observed.length === 0) return null;
@@ -147,7 +151,7 @@ export function observedModelMismatch(expected: string, models: Record<string, M
 export function mergeUsage(usages: RunUsage[]): RunUsage | null {
   if (usages.length === 0) return null;
   const merged: RunUsage = { models: {}, totals: null, toolCalls: {}, source: null };
-  let totals: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; totalTokens: number | null } | null = null;
+  let totals: RunUsage['totals'] = null;
   for (const usage of usages) {
     for (const [model, mu] of Object.entries(usage.models)) {
       const bucket = (merged.models[model] ??= {
@@ -160,6 +164,7 @@ export function mergeUsage(usages: RunUsage[]): RunUsage | null {
       bucket.outputTokens += mu.outputTokens;
       bucket.cacheReadTokens += mu.cacheReadTokens;
       bucket.cacheWriteTokens += mu.cacheWriteTokens;
+      if (mu.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + mu.aiUnits;
     }
     if (usage.totals) {
       totals ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 };
@@ -171,6 +176,7 @@ export function mergeUsage(usages: RunUsage[]): RunUsage | null {
         usage.totals.totalTokens === null || totals.totalTokens === null
           ? null
           : totals.totalTokens + usage.totals.totalTokens;
+      if (usage.totals.aiUnits !== undefined) totals.aiUnits = (totals.aiUnits ?? 0) + usage.totals.aiUnits;
     }
     for (const [tool, count] of Object.entries(usage.toolCalls)) {
       merged.toolCalls[tool] = (merged.toolCalls[tool] ?? 0) + count;

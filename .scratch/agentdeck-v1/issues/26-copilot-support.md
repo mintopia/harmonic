@@ -1,6 +1,6 @@
 # Copilot support
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Parent
 
@@ -93,3 +93,45 @@ Scope, all shaped by spike findings:
   already legible (`-32000 "Authentication required"`).
 - Also set `COPILOT_AUTO_UPDATE=false` in `spawnEnv` (the CLI updated
   itself mid-spike) and consider `--disable-builtin-mcps`.
+
+2026-07-14 (agent): Implemented. All acceptance criteria verified, the
+first one against the real CLI (1.0.70, entitled login): a real Copilot
+Task ran ready → running → awaiting-review with streamed updates; the
+`claude-haiku-4.5` pin was honored (observed model matched, no
+`model_mismatch`); Usage carried the per-model breakdown with the cache
+split off the OTel file exporter plus **AI Units 6.73** on the run detail
+alongside Cost $0.07 (complete, no flag); the agent called
+`agentdeck-list_tasks` over MCP with its Run Key and answered correctly.
+
+Implementation notes:
+
+- Seam changes (all additive): `spawnEnv` now takes `{model, cwd,
+  sessionLogDir}`; new optional `sessionModelId` hook → the Runner sends
+  ACP `session/set_model` after `session/new` (every Copilot run, `auto`
+  included); `modelsFromSessionLog` gained a `sessionId` param (Copilot's
+  OTel file is cwd-keyed and shared in direct mode — spans filter on
+  `gen_ai.conversation.id`); `ModelUsage.aiUnits?` rides Usage end to end.
+- `observedModelMismatch` treats a task pinned to `auto` as matching any
+  observed model (the router's choice is information, not a warning).
+- `defaultConfig()`: `copilot --acp --disable-builtin-mcps`,
+  `defaultModel: 'auto'`, models = the capture-12 entitled list **minus
+  `gemini-*`/`mai-*`** — those have no API-equivalent published rate, and
+  a shipped model must have a shipped price ("never incomplete out of the
+  box"). Operators who want them add the id plus a `prices` entry
+  (documented in `docs/copilot.md`, new operator notes: keychain auth,
+  bad-env-token fallback, plugin leak-in, plan-dependent pinning).
+- `DEFAULT_PRICES` gained the dotted Copilot Claude ids, `gpt-5-mini`
+  (observed router candidate), and `gpt-5.3-codex`; the pricing invariant
+  test exempts `auto` (a router — Usage only ever attributes tokens to
+  concrete serving models).
+- Bonus observed on 1.0.70: `agent_thought_chunk`s now stream (the spike
+  saw none on 1.0.69); the event stream already renders them.
+- Follow-up decision left open (spike Q6): whether Runs should see the
+  operator's `~/.copilot` plugins — the verify run confirmed they leak in
+  today. Documented, not changed.
+- Follow-up not taken (the spike's "or better" option): sourcing the Task
+  form's model list live from `session/new`'s `availableModels` (account-
+  accurate, carries the AI-credit multiplier, collapses to `auto` on
+  auto-only plans). Needs a probe session or a post-run feedback loop into
+  config — a slice of its own; the shipped list is the verified static
+  snapshot meanwhile.

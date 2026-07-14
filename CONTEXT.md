@@ -90,9 +90,10 @@ metadata or the Harness's native session log; aggregated for statistics.
 
 **Harness Adapter**:
 The per-Harness code module behind which all harness-specific knowledge
-lives: spawn tweaks (model pinning, quirk workarounds) and the Usage
-Collector. Keyed by Harness; operator config holds only what is genuinely
-operator-tunable.
+lives: spawn tweaks (quirk workarounds), the model pin — spawn-time env
+(Claude, Codex) or ACP `session/set_model` after `session/new` (Copilot) —
+and the Usage Collector. Keyed by Harness; operator config holds only
+what is genuinely operator-tunable.
 _Avoid_: plugin, driver
 
 **Usage Collector**:

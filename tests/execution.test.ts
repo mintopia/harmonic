@@ -183,6 +183,62 @@ describe('run execution over ACP (direct mode)', () => {
     }
   });
 
+  it('copilot pins the model via ACP session/set_model before the prompt — sent even for auto', async () => {
+    // Spike (issue 25): --model/COPILOT_MODEL are dead in --acp mode, and
+    // an unpinned session inherits the operator's persisted settings.json
+    // model — so the pin must go over session/set_model on every run.
+    const copilotServer = await startServer(stubHarness('copilot'));
+    const setModelEcho = async (srv: TestServer, harness: string, model: string) => {
+      const created = await srv.api('POST', '/api/tasks', {
+        harness,
+        model,
+        prompt: scenario({ echoSetModel: true }),
+      });
+      const started = await srv.api('POST', `/api/tasks/${created.body.id}/run`);
+      await waitFor(
+        async () => (await srv.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+      );
+      const events = await srv.api('GET', `/api/runs/${started.body.id}/events`);
+      const echo = events.body.events.find((e: any) =>
+        e.payload?.content?.text?.startsWith?.('set-model:'),
+      );
+      return JSON.parse(echo.payload.content.text.slice('set-model:'.length));
+    };
+    try {
+      expect(await setModelEcho(copilotServer, 'copilot', 'claude-haiku-4.5')).toMatchObject({
+        modelId: 'claude-haiku-4.5',
+      });
+      expect(await setModelEcho(copilotServer, 'copilot', 'auto')).toMatchObject({ modelId: 'auto' });
+      // Claude pins at spawn time; no set_model goes over the wire.
+      expect(await setModelEcho(server, 'claude', 'claude-sonnet-5')).toBeNull();
+    } finally {
+      await copilotServer.close();
+    }
+  });
+
+  it('an unauthenticated copilot spawn fails the run with a legible reason', async () => {
+    // Spike (issue 25, capture 6c): session/new fails with JSON-RPC
+    // {"code":-32000,"message":"Authentication required"} — byte-identical
+    // to codex. The operator must see that message.
+    const overrides = stubHarness('copilot') as any;
+    overrides.harnesses.copilot.env = {
+      STUB_SESSION_NEW_ERROR: JSON.stringify({ code: -32000, message: 'Authentication required' }),
+    };
+    const copilotServer = await startServer(overrides);
+    try {
+      const created = await copilotServer.api('POST', '/api/tasks', { harness: 'copilot', prompt: 'hi' });
+      const started = await copilotServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await waitFor(
+        async () => (await copilotServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed',
+      );
+      const run = (await copilotServer.api('GET', `/api/runs/${started.body.id}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.reason).toContain('Authentication required');
+    } finally {
+      await copilotServer.close();
+    }
+  });
+
   it('run rejects tasks that are not ready', async () => {
     const draft = await server.api('POST', '/api/tasks', { prompt: 'p', state: 'draft' });
     expect((await server.api('POST', `/api/tasks/${draft.body.id}/run`)).status).toBe(409);

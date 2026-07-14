@@ -28,7 +28,7 @@ export const codexAdapter: HarnessAdapter = {
   // CODEX_CONFIG is a JSON object merged into the Codex session config —
   // the verified spawn-time pinning mechanism. The model actually used is
   // observable on the prompt result's `_meta.quota.model_usage`.
-  spawnEnv: (model) => {
+  spawnEnv: ({ model }) => {
     const { base, effort } = splitModelId(model);
     return {
       CODEX_CONFIG: JSON.stringify({ model: base, ...(effort ? { model_reasoning_effort: effort } : {}) }),

@@ -115,7 +115,7 @@ export class Runner {
       ...process.env,
       ...harness.env,
       AGENTDECK_MODEL: task.model,
-      ...adapterFor(task.harness).spawnEnv(task.model),
+      ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir }),
       ...extraEnv,
     };
     return spawn(harness.command, harness.args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -235,6 +235,18 @@ export class Runner {
         exited,
       ])) as { sessionId: string };
       this.runStore.update(run.id, { sessionId: session.sessionId });
+
+      // Harnesses with no reliable spawn-time pin (copilot) pin per
+      // session instead — sent for every run, `auto` included, because an
+      // unpinned session inherits the operator's persisted model choice
+      // (issue 25). A rejected pin fails the run like any other request.
+      const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
+      if (modelId !== undefined) {
+        await Promise.race([
+          connection.request('session/set_model', { sessionId: session.sessionId, modelId }),
+          exited,
+        ]);
+      }
 
       const result = (await Promise.race([
         connection.request('session/prompt', {

@@ -29,9 +29,22 @@ describe('pricing math', () => {
     const { defaultConfig } = await import('../src/config.js');
     for (const harness of Object.values(defaultConfig().harnesses)) {
       for (const model of new Set([harness.defaultModel, ...harness.models])) {
+        // 'auto' is copilot's router, not a model: Usage only ever
+        // attributes tokens to the concrete serving models (priced below).
+        if (model === 'auto') continue;
         const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
         expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
       }
+    }
+  });
+
+  it("prices the serving models copilot's auto router was observed to pick", () => {
+    // Spike (issue 25): the auto-only plan routed to these two. Cost is
+    // API-equivalent per observed serving model (decision Q4); AI Units
+    // live on Usage and never feed this figure.
+    for (const model of ['claude-haiku-4.5', 'gpt-5-mini']) {
+      const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
+      expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
     }
   });
 

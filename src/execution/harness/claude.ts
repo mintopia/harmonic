@@ -6,7 +6,7 @@ import type { HarnessAdapter, ModelUsage } from './adapter.js';
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
 export const claudeAdapter: HarnessAdapter = {
-  spawnEnv: (model) => ({
+  spawnEnv: ({ model }) => ({
     // The adapter refuses to start nested inside a Claude Code session
     // (spike finding); AgentDeck itself may have been launched from one.
     CLAUDECODE: undefined,

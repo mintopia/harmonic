@@ -91,11 +91,36 @@ export function defaultConfig(): AppConfig {
         defaultModel: 'gpt-5.6-sol',
       },
       copilot: {
+        // Per the issue-25 spike: `copilot --acp` speaks ACP on stdio
+        // natively — no adapter package. The built-in github-mcp-server
+        // is a per-session network dependency Runs don't need.
         command: 'copilot',
-        args: ['--acp'],
+        args: ['--acp', '--disable-builtin-mcps'],
         env: {},
-        models: ['claude-sonnet-5', 'gpt-5.2'],
-        defaultModel: 'claude-sonnet-5',
+        // Verified against session/new's live availableModels on an
+        // entitled plan (spike capture 12), minus ids with no published
+        // API-equivalent rate (gemini-*, mai-*) — a shipped model must
+        // have a shipped price. Operators whose plan serves those can add
+        // them here plus a `prices` entry. Auto-only plans ignore any pin
+        // (silently) and report whatever actually served.
+        models: [
+          'auto',
+          'claude-sonnet-5',
+          'claude-sonnet-4.6',
+          'claude-sonnet-4.5',
+          'claude-haiku-4.5',
+          'claude-opus-4.8',
+          'claude-opus-4.7',
+          'claude-opus-4.6',
+          'claude-opus-4.5',
+          'gpt-5.5',
+          'gpt-5.4',
+          'gpt-5.3-codex',
+          'gpt-5.4-mini',
+          'gpt-5.6-luna',
+          'gpt-5.6-terra',
+        ],
+        defaultModel: 'auto',
       },
     },
     prices: {},

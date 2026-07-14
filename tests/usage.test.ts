@@ -47,6 +47,62 @@ describe('usage collection retry (log-flush race)', () => {
   });
 });
 
+describe('model mismatch (Q7)', () => {
+  it("treats a task pinned to 'auto' as matching any observed model", async () => {
+    // Copilot's auto router legitimately serves different models per turn
+    // (spike, issue 25); the observed models are information in Usage,
+    // not a broken pin.
+    const { observedModelMismatch } = await import('../src/execution/usage.js');
+    const mu = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    expect(observedModelMismatch('auto', { 'gpt-5-mini': mu, 'claude-haiku-4.5': mu })).toBeNull();
+    // A real pin that no observed model matches still surfaces.
+    expect(observedModelMismatch('gpt-5.4', { 'claude-haiku-4.5': mu })).toEqual(['claude-haiku-4.5']);
+  });
+});
+
+describe('usage aggregation with AI Units', () => {
+  it('mergeUsage sums per-model AI Units and never invents them where absent', async () => {
+    const { mergeUsage } = await import('../src/execution/usage.js');
+    const mu = (tokens: number, aiUnits?: number) => ({
+      inputTokens: tokens,
+      outputTokens: tokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      ...(aiUnits === undefined ? {} : { aiUnits }),
+    });
+    const usage = (models: object) =>
+      ({ models, totals: null, toolCalls: {}, source: 'session-log' }) as any;
+
+    const merged = mergeUsage([
+      usage({ 'claude-haiku-4.5': mu(10, 1.5), 'claude-sonnet-5': mu(5) }),
+      usage({ 'claude-haiku-4.5': mu(10, 2.25) }),
+    ])!;
+    expect(merged.models['claude-haiku-4.5']).toMatchObject({ inputTokens: 20, aiUnits: 3.75 });
+    // No source ever reported AI Units for sonnet: the field stays absent.
+    expect(merged.models['claude-sonnet-5']).not.toHaveProperty('aiUnits');
+  });
+
+  it('mergeUsage carries AI Units into the merged totals (task rollups, stats)', async () => {
+    const { mergeUsage } = await import('../src/execution/usage.js');
+    const totals = (aiUnits?: number) => ({
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 2,
+      ...(aiUnits === undefined ? {} : { aiUnits }),
+    });
+    const usage = (t: object) => ({ models: {}, totals: t, toolCalls: {}, source: 'combined' }) as any;
+
+    // Observed spend must survive aggregation (PRODUCT.md: honest numbers).
+    expect(mergeUsage([usage(totals(1.5)), usage(totals(2.25))])!.totals).toMatchObject({ aiUnits: 3.75 });
+    // A run without AI Units doesn't erase the others'…
+    expect(mergeUsage([usage(totals(1.5)), usage(totals())])!.totals).toMatchObject({ aiUnits: 1.5 });
+    // …and no run reporting them leaves the field absent, never zero.
+    expect(mergeUsage([usage(totals())])!.totals).not.toHaveProperty('aiUnits');
+  });
+});
+
 describe('usage collection and statistics', () => {
   let server: TestServer;
 
@@ -151,6 +207,85 @@ describe('usage collection and statistics', () => {
       'claude-haiku-4-5': { inputTokens: 3, outputTokens: 20, cacheWriteTokens: 0, cacheReadTokens: 1 },
     });
     expect(run.usage.source).toBe('session-log');
+  });
+
+  it('copilot: derives the per-model breakdown and AI Units from the OTel file-exporter log', async () => {
+    const otelRoot = mkdtempSync(join(tmpdir(), 'agentdeck-otel-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-copilot-work-'));
+    const overrides = stubHarness('copilot') as DeepPartial<AppConfig> & {
+      harnesses: { copilot: Record<string, unknown> };
+    };
+    overrides.harnesses.copilot.sessionLogDir = otelRoot;
+    overrides.harnesses.copilot.env = { STUB_SESSION_ID: 'copilot-e2e-session' };
+
+    // AgentDeck's own exporter-path convention: <sessionLogDir>/<slugified
+    // cwd>.jsonl, spans tagged with the ACP sessionId as conversation id.
+    const span = (model: string, attrs: object) =>
+      JSON.stringify({
+        type: 'span',
+        attributes: {
+          'gen_ai.operation.name': 'chat',
+          'gen_ai.conversation.id': 'copilot-e2e-session',
+          'gen_ai.request.model': 'auto',
+          'gen_ai.response.model': model,
+          ...attrs,
+        },
+      });
+    const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
+    writeFileSync(
+      join(otelRoot, `${slug}.jsonl`),
+      [
+        span('gpt-5-mini', {
+          'gen_ai.usage.input_tokens': 35068,
+          'gen_ai.usage.output_tokens': 4539,
+          'github.copilot.nano_aiu': 1784500000,
+        }),
+        span('claude-haiku-4.5', {
+          'gen_ai.usage.input_tokens': 48503,
+          'gen_ai.usage.output_tokens': 145,
+          'gen_ai.usage.cache_creation.input_tokens': 48494,
+          'github.copilot.nano_aiu': 6135150000,
+        }),
+      ].join('\n'),
+    );
+
+    server = await startServer(overrides);
+    // The real copilot prompt result is bare — no usage, no _meta (spike Q3).
+    const { runId } = await runTask({
+      harness: 'copilot',
+      model: 'auto',
+      workingDir: workDir,
+      prompt: JSON.stringify({}),
+    });
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.usage.models).toEqual({
+      'gpt-5-mini': { inputTokens: 35068, outputTokens: 4539, cacheReadTokens: 0, cacheWriteTokens: 0, aiUnits: 1.7845 },
+      'claude-haiku-4.5': { inputTokens: 9, outputTokens: 145, cacheReadTokens: 0, cacheWriteTokens: 48494, aiUnits: 6.13515 },
+    });
+    expect(run.usage.totals.aiUnits).toBeCloseTo(7.91965, 10);
+    expect(run.usage.source).toBe('session-log');
+    // Both observed serving models are priced out of the box.
+    expect(run.cost.incomplete).toBe(false);
+    expect(run.cost.totalUsd).toBeGreaterThan(0);
+    // 'auto' delegated the choice: observed models are information, not a
+    // contradiction…
+    const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+    expect(events.find((e: any) => e.payload?.event === 'model_mismatch')).toBeUndefined();
+
+    // …but a real pin the plan silently ignored (auto-only plans accept
+    // set_model and route anyway, spike Q2) IS surfaced on the run.
+    const pinned = await runTask({
+      harness: 'copilot',
+      model: 'gpt-5.4',
+      workingDir: workDir,
+      prompt: JSON.stringify({}),
+    });
+    const pinnedEvents = (await server.api('GET', `/api/runs/${pinned.runId}/events`)).body.events;
+    expect(pinnedEvents.find((e: any) => e.payload?.event === 'model_mismatch')?.payload).toMatchObject({
+      expected: 'gpt-5.4',
+      observed: expect.arrayContaining(['gpt-5-mini', 'claude-haiku-4.5']),
+    });
   });
 
   it('reports usage as unavailable — not zero — when neither source exists', async () => {

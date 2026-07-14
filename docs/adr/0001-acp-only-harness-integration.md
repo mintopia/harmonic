@@ -24,3 +24,9 @@ no second-class degraded mode to maintain.
   per-run OpenTelemetry file exporter the adapter switches on at spawn
   (`COPILOT_OTEL_FILE_EXPORTER_PATH`). Same decision, third shape of the
   vendor surface we depend on.)
+- ACP also doesn't standardize model selection, so the Task-model pin is
+  a Harness Adapter concern: spawn-time env for Claude/Codex, and — per
+  issues 25/26 — ACP `session/set_model` right after `session/new` for
+  Copilot (its spawn-time flags are ignored or misleading in `--acp`
+  mode). Either way the observed model is verified from Usage and a
+  contradiction is surfaced on the Run.
