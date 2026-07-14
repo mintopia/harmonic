@@ -1,0 +1,5 @@
+[mcp-echo] listening on 8978
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"github-copilot-developer","version":"1.0.69"}}}
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","method":"notifications/initialized"}
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"progressToken":0}}}
+[mcp-echo] POST /mcp auth=Bearer run-key-test-123 body={"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"_meta":{"progressToken":1},"name":"agentdeck_echo","arguments":{"text":"copilot-mcp-works"}}}

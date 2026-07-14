@@ -1,0 +1,29 @@
+===== capture 2 — spawn args --model claude-haiku-4.5 --effort low, then session/set_model claude-haiku-4.5 — ~/.copilot/session-state/c1a68cfb-7ca8-4e5f-b4c9-8788595f24a7/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "c1a68cfb-7ca8-4e5f-b4c9-8788595f24a7", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.70", "startTime": "2026-07-14T17:46:33.344Z", "reasoningEffort": "low", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "claude-haiku-4.5", "previousReasoningEffort": "low", "reasoningEffort": null, "contextTier": null}}
+{"type": "session.auto_mode_resolved", "data": {"chosenModel": "claude-haiku-4.5", "reasoningBucket": "low", "categoryScores": {"code_gen": 0.2308, "debugging": 0.2082, "tool_use": 0.2144, "reasoning": 0.2341}, "predictedLabel": "no_reasoning", "confidence": 0.77, "candidateModels": ["claude-haiku-4.5", "gpt-5-mini"]}}
+{"type": "assistant.message", "data": {"model": "claude-haiku-4.5", "content": "pong", "turnId": "0"}}
+
+===== capture 3 — --model claude-haiku-4.5 flag only (ignored; session stayed auto -> gpt-5-mini) — ~/.copilot/session-state/574df71c-25b3-4829-b01a-4dc8d50f47e8/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "574df71c-25b3-4829-b01a-4dc8d50f47e8", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.69", "startTime": "2026-07-14T17:47:52.042Z", "reasoningEffort": "high", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "auto", "previousReasoningEffort": "high", "reasoningEffort": "high"}}
+{"type": "assistant.message", "data": {"model": "gpt-5-mini", "content": "Invoking the \"using-superpowers\" skill to check for any applicable skill require", "turnId": "0"}}
+{"type": "assistant.message", "data": {"model": "gpt-5-mini", "content": "Creating hello.txt at the repo's current directory with the exact text 'hello fr", "turnId": "1"}}
+{"type": "assistant.message", "data": {"model": "gpt-5-mini", "content": "", "turnId": "2"}}
+{"type": "assistant.message", "data": {"model": "gpt-5-mini", "content": "File contents: hello from copilot", "turnId": "3"}}
+
+===== capture 4 — COPILOT_MODEL=claude-haiku-4.5 env + session/set_model not-a-real-model (accepted!) — ~/.copilot/session-state/8cf5efb8-bbc2-43b4-8497-cb56965b1965/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "8cf5efb8-bbc2-43b4-8497-cb56965b1965", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.69", "startTime": "2026-07-14T17:50:55.497Z", "reasoningEffort": "high", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "not-a-real-model", "previousReasoningEffort": "high", "reasoningEffort": "high", "contextTier": null}}
+{"type": "assistant.message", "data": {"model": "claude-haiku-4.5", "content": "pong", "turnId": "0"}}
+
+===== capture 7 — COPILOT_MODEL=claude-haiku-4.5 env only (session stayed auto; auto picked haiku) — ~/.copilot/session-state/6677219f-47dd-4e6d-b4c0-d16b7d151a5f/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "6677219f-47dd-4e6d-b4c0-d16b7d151a5f", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.69", "startTime": "2026-07-14T17:55:45.371Z", "reasoningEffort": "high", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "auto", "previousReasoningEffort": "high", "reasoningEffort": "high"}}
+{"type": "assistant.message", "data": {"model": "claude-haiku-4.5", "content": "pong", "turnId": "0"}}
+
+===== capture 8 — COPILOT_MODEL=gpt-5.4 env only (IGNORED: auto picked claude-haiku-4.5) — ~/.copilot/session-state/c537562a-ec83-4055-839b-13e08b5110ec/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "c537562a-ec83-4055-839b-13e08b5110ec", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.69", "startTime": "2026-07-14T17:56:28.999Z", "reasoningEffort": "high", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "auto", "previousReasoningEffort": "high", "reasoningEffort": "high"}}
+{"type": "assistant.message", "data": {"model": "claude-haiku-4.5", "content": "pong", "turnId": "0"}}
+

@@ -18,3 +18,9 @@ no second-class degraded mode to maintain.
 - ACP does not standardize token usage, so Usage is collected from ACP
   extension/_meta fields where emitted, falling back to parsing the
   harness's native session logs on disk (per-harness UsageCollector).
+  (Amended 2026-07-14, issue 25: Copilot emits usage on *neither*
+  surface — its ACP result is bare and its ACP-session event log has no
+  token counts. The UsageCollector's "log on disk" is, for Copilot, a
+  per-run OpenTelemetry file exporter the adapter switches on at spawn
+  (`COPILOT_OTEL_FILE_EXPORTER_PATH`). Same decision, third shape of the
+  vendor surface we depend on.)
