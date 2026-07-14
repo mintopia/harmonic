@@ -50,6 +50,31 @@ export function App() {
           Agent<span className="text-amber-400">Deck</span>
         </h1>
         <div className="flex-1" />
+        {config && (
+          <button
+            onClick={() =>
+              api
+                .updateConfig({ autoRunner: { enabled: !config.autoRunner.enabled } })
+                .then(setConfig, (e) => alert(e.message))
+            }
+            className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${
+              config.autoRunner.enabled
+                ? 'border-emerald-700 bg-emerald-950/60 text-emerald-300'
+                : 'border-zinc-700 text-zinc-400'
+            }`}
+            title={`Max concurrent runs: ${config.autoRunner.maxConcurrentRuns}`}
+          >
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${
+                config.autoRunner.enabled ? 'bg-emerald-400' : 'bg-zinc-600'
+              }`}
+            />
+            Auto-Runner {config.autoRunner.enabled ? 'on' : 'off'}
+            <span className="text-xs text-zinc-500">
+              {tasks.filter((t) => t.state === 'running').length}/{config.autoRunner.maxConcurrentRuns} running
+            </span>
+          </button>
+        )}
         <button
           onClick={() => setEditing('new')}
           className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950 hover:bg-amber-400"

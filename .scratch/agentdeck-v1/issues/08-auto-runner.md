@@ -1,6 +1,6 @@
 # Auto-Runner
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -19,12 +19,25 @@ always knows whether the system is picking up work by itself.
 
 ## Acceptance criteria
 
-- [ ] A global toggle enables/disables the Auto-Runner from the UI and REST, and its state is visible at a glance
-- [ ] With the Auto-Runner on, ready Tasks start automatically in Priority-then-FIFO order
-- [ ] Concurrent Runs never exceed the configured maximum; a slot freeing up pulls the next pick
-- [ ] With the Auto-Runner off, nothing starts automatically and manual "run now" still works
-- [ ] Tests use the stub harness with delays to prove pick order and max-concurrency enforcement
+- [x] A global toggle enables/disables the Auto-Runner from the UI and REST, and its state is visible at a glance
+- [x] With the Auto-Runner on, ready Tasks start automatically in Priority-then-FIFO order
+- [x] Concurrent Runs never exceed the configured maximum; a slot freeing up pulls the next pick
+- [x] With the Auto-Runner off, nothing starts automatically and manual "run now" still works
+- [x] Tests use the stub harness with delays to prove pick order and max-concurrency enforcement
 
 ## Blocked by
 
 - `03-execute-a-run-over-acp-direct-mode.md`
+
+## Comments
+
+**2026-07-14 (agent):** Done. `AutoRunner` (src/execution/auto-runner.ts)
+fills free slots with ready tasks — priority rank then createdAt then id —
+capped by `autoRunner.maxConcurrentRuns` (counted from running run rows so
+the cap can't be overshot by spawn latency). Poked on task-ready and
+run-finished bus events, on config PATCH, and at boot; coalesced via
+setImmediate so it never re-enters. Toggle lives in config
+(`PATCH /api/config`), surfaced as a header switch with live running/max
+count. Tests use delayed stub scenarios to prove pick order, the cap,
+slot-freeing pull, off-mode inertness with manual run-now, and hands-free
+pickup of unblocked dependents.

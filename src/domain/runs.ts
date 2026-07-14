@@ -81,6 +81,16 @@ export class RunStore {
       .map(deserializeEvent);
   }
 
+  countRunning(): number {
+    return (
+      this.db
+        .select({ n: sql<number>`count(*)` })
+        .from(runs)
+        .where(eq(runs.state, 'running'))
+        .get()?.n ?? 0
+    );
+  }
+
   /**
    * Crash recovery, run at boot: any run still marked running was orphaned
    * by a restart. Fail it (reason "interrupted") and fail its task — never

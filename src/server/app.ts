@@ -13,6 +13,7 @@ import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
 import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
+import { AutoRunner } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { configRoutes } from './routes/config.js';
@@ -31,6 +32,7 @@ export interface AppContext {
   runs: RunStore;
   runner: Runner;
   review: ReviewService;
+  autoRunner: AutoRunner;
   bus: EventBus;
 }
 
@@ -57,7 +59,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
     return Git.merge(task.workingDir, run.baseBranch, run.branch);
   });
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, bus };
+  const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get());
+  bus.on('task_changed', (task) => {
+    if (task.state === 'ready') autoRunner.poke();
+  });
+  bus.on('run_changed', () => autoRunner.poke());
+  autoRunner.poke();
+
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
