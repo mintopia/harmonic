@@ -8,6 +8,7 @@
 //   "delayMs":  10,                     // pause between updates
 //   "requestPermission": { "title": "Write file" },  // ask mid-stream
 //   "echoEnv":  ["AGENTDECK_MCP_URL"],  // emit env values as a chunk
+//   "echoSessionNew": true,             // emit the session/new params received
 //   "stopReason": "end_turn",
 //   "usage":    { "inputTokens": 1, "outputTokens": 2 },
 //   "exit":     "clean" | "crash-before-response" | "hang"
@@ -31,6 +32,7 @@ const request = (method, params) => {
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 
 const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
+let sessionNewParams = null;
 
 async function handlePrompt(msg) {
   let scenario;
@@ -60,6 +62,13 @@ async function handlePrompt(msg) {
   for (const update of scenario.updates ?? []) {
     await sleep(delayMs);
     notify('session/update', { sessionId: msg.params.sessionId, update });
+  }
+
+  if (scenario.echoSessionNew) {
+    notify('session/update', {
+      sessionId: msg.params.sessionId,
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(sessionNewParams) } },
+    });
   }
 
   if (scenario.echoEnv) {
@@ -128,7 +137,11 @@ async function handlePrompt(msg) {
   send({
     jsonrpc: '2.0',
     id: msg.id,
-    result: { stopReason: scenario.stopReason ?? 'end_turn', ...(scenario.usage ? { usage: scenario.usage } : {}) },
+    result: {
+      stopReason: scenario.stopReason ?? 'end_turn',
+      ...(scenario.usage ? { usage: scenario.usage } : {}),
+      ...(scenario._meta ? { _meta: scenario._meta } : {}),
+    },
   });
 }
 
@@ -146,6 +159,13 @@ rl.on('line', (line) => {
       send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, agentCapabilities: {} } });
       break;
     case 'session/new':
+      sessionNewParams = msg.params;
+      // Simulate an unauthenticated harness: session/new fails cleanly
+      // (codex-acp shape) while the process stays alive.
+      if (process.env.STUB_SESSION_NEW_ERROR) {
+        send({ jsonrpc: '2.0', id: msg.id, error: JSON.parse(process.env.STUB_SESSION_NEW_ERROR) });
+        break;
+      }
       send({ jsonrpc: '2.0', id: msg.id, result: { sessionId } });
       break;
     case 'session/prompt':

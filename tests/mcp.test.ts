@@ -102,6 +102,40 @@ describe('mcp server & scoped keys', () => {
     expect(viaDeleted.status).toBe(401);
   });
 
+  it('codex: registers the MCP server via session/new mcpServers with the Run Key as bearer (zero setup)', async () => {
+    // Spike (issue 22): codex-acp honors HTTP mcpServers with headers; env
+    // vars alone are not enough since nothing tells Codex to read them.
+    const codexServer = await startServer(stubHarness('codex'));
+    try {
+      const created = await codexServer.api('POST', '/api/tasks', {
+        harness: 'codex',
+        prompt: JSON.stringify({ echoSessionNew: true, echoEnv: ['AGENTDECK_API_KEY'] }),
+      });
+      const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await waitFor(
+        async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+      );
+
+      const events = await codexServer.api('GET', `/api/runs/${started.body.id}/events`);
+      const texts = events.body.events
+        .map((e: any) => e.payload?.content?.text)
+        .filter((t: any) => typeof t === 'string' && t.startsWith('{'));
+      const sessionNew = JSON.parse(texts.find((t: string) => t.includes('mcpServers'))!);
+      const runKey = JSON.parse(texts.find((t: string) => t.includes('AGENTDECK_API_KEY'))!).AGENTDECK_API_KEY;
+
+      expect(sessionNew.mcpServers).toEqual([
+        {
+          name: 'agentdeck',
+          type: 'http',
+          url: expect.stringContaining('/mcp'),
+          headers: [{ name: 'Authorization', value: `Bearer ${runKey}` }],
+        },
+      ]);
+    } finally {
+      await codexServer.close();
+    }
+  });
+
   it('hides accept/reject behind the agent-review flag (default off)', async () => {
     const client = await mcpClient(server, token);
     const tools = (await client.listTools()).tools.map((t) => t.name);

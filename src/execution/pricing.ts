@@ -33,6 +33,14 @@ export const DEFAULT_PRICES: PriceTable = {
   'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
   'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+  // OpenAI rates as published 2026-07 (developers.openai.com/api/docs/pricing).
+  // Only the gpt-5.6 family bills explicit cache writes (1.25× input).
+  'gpt-5.6-sol': { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
+  'gpt-5.6-terra': { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 3.125 },
+  'gpt-5.6-luna': { input: 1, output: 6, cacheRead: 0.1, cacheWrite: 1.25 },
+  'gpt-5.5': { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 },
+  'gpt-5.4': { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
+  'gpt-5.4-mini': { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 },
   'gpt-5.2': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
   'gpt-5.2-codex': { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
   'gpt-5.2-codex-mini': { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },

@@ -22,7 +22,7 @@ export interface CollectUsageInput {
   cwd: string;
   sessionId: string | null;
   /** The ACP session/prompt result, when the run finished cleanly. */
-  promptResult?: { usage?: Record<string, unknown> } | undefined;
+  promptResult?: { usage?: Record<string, unknown>; _meta?: unknown } | undefined;
   events: PersistedRunEvent[];
 }
 
@@ -36,8 +36,15 @@ export interface CollectUsageInput {
 export function collectUsage(input: CollectUsageInput): RunUsage | null {
   const collector = adapterFor(input.harnessId).usage;
   const totals = totalsFromAcp(input.promptResult?.usage);
-  const file = sessionLogFile(input);
-  const models = collector && file ? collector.modelsFromSessionLog(file) : {};
+  // Prompt-result breakdown first (codex); session log as the fallback.
+  let models =
+    input.promptResult && collector?.modelsFromPromptResult
+      ? collector.modelsFromPromptResult(input.promptResult)
+      : {};
+  if (Object.keys(models).length === 0) {
+    const file = sessionLogFile(input);
+    models = collector && file ? collector.modelsFromSessionLog(file) : {};
+  }
   const toolCalls = tallyToolCalls(input.events, (payload) => collector?.toolName(payload) ?? null);
 
   if (!totals && Object.keys(models).length === 0) return null;
@@ -104,7 +111,7 @@ function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {
  * lines can land milliseconds after the prompt result. When the file
  * exists and yields no per-model split yet, re-read briefly before
  * settling for aggregate totals. No file at all means no log is coming
- * (stub harnesses, codex) — return immediately.
+ * (stub harnesses) — return immediately.
  */
 export async function collectUsageWithRetry(
   input: CollectUsageInput,
@@ -118,6 +125,22 @@ export async function collectUsageWithRetry(
     if (!file || !existsSync(file) || Date.now() >= deadline) return usage;
     await new Promise((r) => setTimeout(r, retry.intervalMs));
   }
+}
+
+/**
+ * The observed models contradicting the task's pinned model, or null when
+ * the pin demonstrably held (or nothing was observed). Ids are compared on
+ * their base form: codex effort suffixes (`gpt-5.4-mini[low]`) and dated
+ * session-log ids (`claude-haiku-4-5-20251001`) both count as their base
+ * model. A contradiction means NO observed model matches — harnesses
+ * legitimately spend side tokens on helper models (Claude subagents), and
+ * that is not a broken pin.
+ */
+export function observedModelMismatch(expected: string, models: Record<string, ModelUsage>): string[] | null {
+  const base = (id: string) => id.replace(/\[[^\]]+\]$/, '').replace(/-\d{8}$/, '');
+  const observed = Object.keys(models);
+  if (observed.length === 0) return null;
+  return observed.some((id) => base(id) === base(expected)) ? null : observed;
 }
 
 /** Merge run usages into one aggregate (task rollups, stats ranges). */

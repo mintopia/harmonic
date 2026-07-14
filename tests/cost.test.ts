@@ -25,6 +25,16 @@ const usageOf = (models: Record<string, ModelUsage>): RunUsage => ({
 const PRICES = { m1: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 } };
 
 describe('pricing math', () => {
+  it('ships a price for every model in the default harness configs — Cost is never incomplete out of the box', async () => {
+    const { defaultConfig } = await import('../src/config.js');
+    for (const harness of Object.values(defaultConfig().harnesses)) {
+      for (const model of new Set([harness.defaultModel, ...harness.models])) {
+        const cost = costOfUsages([usageOf({ [model]: mu(1000) })], resolvePrices({}));
+        expect(cost?.incomplete, `no DEFAULT_PRICES entry for ${model}`).toBe(false);
+      }
+    }
+  });
+
   it('prices all four token classes per model', () => {
     const cost = costOfUsages([usageOf({ m1: mu(1_000_000) })], PRICES);
     expect(cost).toEqual({ totalUsd: 10, byModel: { m1: 10 }, incomplete: false });

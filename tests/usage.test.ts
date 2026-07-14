@@ -36,7 +36,7 @@ describe('usage collection retry (log-flush race)', () => {
     expect(usage?.source).toBe('combined');
   });
 
-  it('does not wait when no session log file exists (stub harnesses, codex)', async () => {
+  it('does not wait when no session log file exists (stub harnesses)', async () => {
     const { collectUsageWithRetry } = await import('../src/execution/usage.js');
     const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-race-logs-'));
     const cwd = mkdtempSync(join(tmpdir(), 'agentdeck-race-work-'));
@@ -87,6 +87,34 @@ describe('usage collection and statistics', () => {
     });
     expect(run.usage.toolCalls).toEqual({ Write: 2, Read: 1 });
     expect(run.usage.source).toBe('acp');
+  });
+
+  it('codex: reads the per-model breakdown straight off the ACP prompt result', async () => {
+    server = await startServer(stubHarness('codex'));
+    const { runId } = await runTask({
+      harness: 'codex',
+      model: 'gpt-5.6-sol',
+      prompt: JSON.stringify({
+        usage: { totalTokens: 16178, inputTokens: 6189, cachedReadTokens: 9984, outputTokens: 5 },
+        _meta: {
+          quota: {
+            model_usage: [
+              {
+                model: 'gpt-5.6-sol',
+                token_count: { totalTokens: 16178, inputTokens: 6189, cachedInputTokens: 9984, outputTokens: 5 },
+              },
+            ],
+          },
+        },
+      }),
+    });
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.usage.models).toEqual({
+      'gpt-5.6-sol': { inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 },
+    });
+    expect(run.usage.totals.totalTokens).toBe(16178);
+    expect(run.usage.source).toBe('combined');
   });
 
   it('falls back to parsing the native session log for the per-model breakdown', async () => {

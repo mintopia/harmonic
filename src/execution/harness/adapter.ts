@@ -11,11 +11,18 @@ export interface ModelUsage {
 }
 
 /**
- * The per-Harness Usage source (CONTEXT.md: Usage Collector): where the
- * native session log lives and how to read a per-model breakdown out of
- * it. The generic ACP-result path in usage.ts needs no collector.
+ * The per-Harness Usage source (CONTEXT.md: Usage Collector): how to read
+ * a per-model breakdown, either straight off the ACP prompt result
+ * (codex) or out of the native session log (claude). Aggregate totals
+ * come from the generic ACP `usage` path in usage.ts.
  */
 export interface UsageCollector {
+  /**
+   * Per-model usage read straight off the ACP prompt result, when the
+   * harness reports it there (codex: `_meta.quota.model_usage`). Absent
+   * or empty defers to the session log.
+   */
+  modelsFromPromptResult?(result: { usage?: Record<string, unknown>; _meta?: unknown }): Record<string, ModelUsage>;
   /**
    * Absolute path of a run's native session log, or null when it cannot
    * be derived. `sessionLogDir` is the operator override; the collector
@@ -43,12 +50,19 @@ export interface HarnessAdapter {
    * from AgentDeck's own environment.
    */
   spawnEnv(model: string): Record<string, string | undefined>;
+  /**
+   * ACP `session/new` mcpServers entries granting the agent AgentDeck's
+   * MCP server under its Run Key; [] when the harness only gets the
+   * env-var mechanism (AGENTDECK_MCP_URL / AGENTDECK_API_KEY).
+   */
+  mcpServers(input: { url: string; token: string }): unknown[];
   /** The harness's Usage Collector; null while it has none (ACP totals only). */
   usage: UsageCollector | null;
 }
 
 const unknownAdapter: HarnessAdapter = {
   spawnEnv: () => ({}),
+  mcpServers: () => [],
   usage: null,
 };
 

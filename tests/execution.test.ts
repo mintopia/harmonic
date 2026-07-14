@@ -123,6 +123,66 @@ describe('run execution over ACP (direct mode)', () => {
     expect(echo.payload.content.text).toContain('selected');
   });
 
+  it('an unauthenticated codex spawn fails the run with a legible reason', async () => {
+    // Spike (issue 22): codex-acp starts fine unauthenticated; session/new
+    // then fails with JSON-RPC {"code":-32000,"message":"Authentication
+    // required"}. The operator must see that message, not a bare exit code.
+    const overrides = stubHarness('codex') as any;
+    overrides.harnesses.codex.env = {
+      STUB_SESSION_NEW_ERROR: JSON.stringify({ code: -32000, message: 'Authentication required' }),
+    };
+    const codexServer = await startServer(overrides);
+    try {
+      const created = await codexServer.api('POST', '/api/tasks', { harness: 'codex', prompt: 'hi' });
+      const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed');
+
+      const run = (await codexServer.api('GET', `/api/runs/${started.body.id}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.reason).toContain('Authentication required');
+    } finally {
+      await codexServer.close();
+    }
+  });
+
+  it('surfaces a contradicting observed model on the run (Q7: the pin must be real)', async () => {
+    const codexServer = await startServer(stubHarness('codex'));
+    try {
+      const runWith = async (model: string, observedModel: string) => {
+        const created = await codexServer.api('POST', '/api/tasks', {
+          harness: 'codex',
+          model,
+          prompt: scenario({
+            usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+            _meta: {
+              quota: {
+                model_usage: [
+                  { model: observedModel, token_count: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
+                ],
+              },
+            },
+          }),
+        });
+        const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
+        await waitFor(
+          async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+        );
+        const events = await codexServer.api('GET', `/api/runs/${started.body.id}/events`);
+        return events.body.events.find((e: any) => e.payload?.event === 'model_mismatch');
+      };
+
+      // The harness ran a different model than the task pinned: surfaced.
+      const mismatch = await runWith('gpt-5.4-mini[low]', 'gpt-5.5');
+      expect(mismatch).toBeTruthy();
+      expect(mismatch.payload).toMatchObject({ expected: 'gpt-5.4-mini[low]', observed: ['gpt-5.5'] });
+
+      // Observed model matching the pin's base (effort stripped): no noise.
+      expect(await runWith('gpt-5.4-mini[low]', 'gpt-5.4-mini')).toBeUndefined();
+    } finally {
+      await codexServer.close();
+    }
+  });
+
   it('run rejects tasks that are not ready', async () => {
     const draft = await server.api('POST', '/api/tasks', { prompt: 'p', state: 'draft' });
     expect((await server.api('POST', `/api/tasks/${draft.body.id}/run`)).status).toBe(409);

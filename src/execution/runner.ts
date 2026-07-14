@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
 import { adapterFor } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, type RunUsage } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, type RunUsage } from './usage.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpConnection } from '../acp/connection.js';
@@ -160,13 +160,18 @@ export class Runner {
 
     let child: ChildProcess;
     let workspace: Workspace;
+    let mcpServers: unknown[] = [];
     try {
       workspace = await this.prepareWorkspace(task, run);
-      // Agents reach the MCP server with zero setup: a scoped key (its
-      // lifetime follows the run's) plus the endpoint, in the environment.
+      // Agents reach the MCP server with zero setup: a Run Key (its
+      // lifetime follows the run's) plus the endpoint, in the environment
+      // — and, where the harness supports it (codex), registered directly
+      // via ACP `session/new` mcpServers.
       if (this.keys && this.mcpUrl) {
-        workspace.env.AGENTDECK_API_KEY = this.keys.mint(run.id);
+        const runKey = this.keys.mint(run.id);
+        workspace.env.AGENTDECK_API_KEY = runKey;
         workspace.env.AGENTDECK_MCP_URL = this.mcpUrl;
+        mcpServers = adapterFor(task.harness).mcpServers({ url: this.mcpUrl, token: runKey });
       }
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
     } catch (err) {
@@ -226,7 +231,7 @@ export class Runner {
     try {
       await Promise.race([connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }), exited]);
       const session = (await Promise.race([
-        connection.request('session/new', { cwd: workspace.cwd, mcpServers: [] }),
+        connection.request('session/new', { cwd: workspace.cwd, mcpServers }),
         exited,
       ])) as { sessionId: string };
       this.runStore.update(run.id, { sessionId: session.sessionId });
@@ -241,15 +246,19 @@ export class Runner {
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       await finalize();
+      const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
+      this.noteModelMismatch(task, usage, record);
       this.settle(task, run, 'completed', null, {
         stopReason: result.stopReason ?? null,
-        usage: await this.collectUsageSafe(task, run, harness, workspace, result),
+        usage: usage ? JSON.stringify(usage) : null,
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       await finalize();
+      const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
+      this.noteModelMismatch(task, usage, record);
       this.settle(task, run, 'failed', reason, {
-        usage: await this.collectUsageSafe(task, run, harness, workspace, undefined),
+        usage: usage ? JSON.stringify(usage) : null,
       });
     } finally {
       connection.fail(new Error('run finished'));
@@ -265,10 +274,10 @@ export class Runner {
     run: RunRow,
     harness: HarnessConfig,
     workspace: Workspace,
-    promptResult: { stopReason?: string; usage?: Record<string, unknown> } | undefined,
-  ): Promise<string | null> {
+    promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
+  ): Promise<RunUsage | null> {
     try {
-      const usage = await collectUsageWithRetry({
+      return await collectUsageWithRetry({
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
@@ -276,10 +285,23 @@ export class Runner {
         promptResult,
         events: this.runStore.listEvents(run.id),
       });
-      return usage ? JSON.stringify(usage) : null;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Q7: the model setting we show must be real. When usage attribution
+   * proves the harness ran something other than the task's pin, say so
+   * on the run rather than letting the lie stand.
+   */
+  private noteModelMismatch(
+    task: TaskRow,
+    usage: RunUsage | null,
+    record: (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => void,
+  ): void {
+    const observed = usage ? observedModelMismatch(task.model, usage.models) : null;
+    if (observed) record('lifecycle', { event: 'model_mismatch', expected: task.model, observed });
   }
 
   /**

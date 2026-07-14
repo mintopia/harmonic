@@ -65,6 +65,17 @@ export function EventStream({ events }: { events: RunEvent[] }) {
             </div>
           );
         }
+        if (event.payload.event === 'model_mismatch') {
+          // Q7: the model setting shown must be real — the harness ran
+          // something other than the task's pin. Harness metadata, not a
+          // failure: Tool Indigo, never Fail Red (the run completed).
+          return (
+            <div key={event.id} className="text-tool">
+              model mismatch: ran on {(event.payload.observed ?? []).join(', ')} (task pinned{' '}
+              {event.payload.expected})
+            </div>
+          );
+        }
         return (
           <div key={event.id} className="text-muted">
             {event.payload.event} {event.payload.stopReason ? `(${event.payload.stopReason})` : ''}

@@ -9,8 +9,12 @@ no second-class degraded mode to maintain.
 
 ## Consequences
 
-- We depend on each vendor's ACP implementation staying healthy
-  (Claude via the `claude-code-acp` adapter, Codex and Copilot natively).
+- We depend on each vendor's ACP implementation staying healthy.
+  (Amended 2026-07-14, issues 01/22: neither Claude nor Codex speaks ACP
+  natively after all — both go through canonical adapter packages,
+  `@agentclientprotocol/claude-agent-acp` and
+  `@agentclientprotocol/codex-acp`. The ACP-only decision is unchanged;
+  the adapters are part of the vendor surface we depend on.)
 - ACP does not standardize token usage, so Usage is collected from ACP
   extension/_meta fields where emitted, falling back to parsing the
   harness's native session logs on disk (per-harness UsageCollector).

@@ -8,11 +8,11 @@ import type { AppConfig } from '../src/config.js';
 
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
-/** Config overrides registering the stub ACP agent as the `claude` harness. */
-export function stubHarness(): DeepPartial<AppConfig> {
+/** Config overrides registering the stub ACP agent as the given harness. */
+export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'): DeepPartial<AppConfig> {
   return {
     harnesses: {
-      claude: {
+      [harnessId]: {
         command: process.execPath,
         args: [STUB_HARNESS],
         models: ['stub-model'],

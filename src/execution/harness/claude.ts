@@ -14,6 +14,9 @@ export const claudeAdapter: HarnessAdapter = {
     ANTHROPIC_MODEL: model,
   }),
 
+  // Claude agents reach AgentDeck's MCP server via the env-var mechanism.
+  mcpServers: () => [],
+
   usage: {
     /**
      * Claude Code writes `<sessionLogDir>/<slug(cwd)>/<sessionId>.jsonl`

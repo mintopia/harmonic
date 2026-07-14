@@ -79,11 +79,16 @@ export function defaultConfig(): AppConfig {
         defaultModel: 'claude-sonnet-5',
       },
       codex: {
-        command: 'codex',
-        args: ['acp'],
+        // Per the issue-22 spike: `codex acp` is not a subcommand; the
+        // canonical ACP entry point is the adapter package (same org as
+        // the Claude adapter), which bridges to its own bundled Codex.
+        command: 'npx',
+        args: ['--yes', '@agentclientprotocol/codex-acp'],
         env: {},
-        models: ['gpt-5.2-codex', 'gpt-5.2-codex-mini'],
-        defaultModel: 'gpt-5.2-codex',
+        // Verified against session/new's live availableModels (spike Q2).
+        // Ids may carry a reasoning-effort suffix, e.g. gpt-5.4-mini[low].
+        models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+        defaultModel: 'gpt-5.6-sol',
       },
       copilot: {
         command: 'copilot',
