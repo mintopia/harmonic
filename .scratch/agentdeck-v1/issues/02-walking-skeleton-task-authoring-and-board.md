@@ -1,6 +1,6 @@
 # Walking skeleton: author a Task, see it on the board
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -32,14 +32,23 @@ database in a temp file. The API is the contract; UI tests stay thin.
 
 ## Acceptance criteria
 
-- [ ] `npx agentdeck serve` starts the process and serves both the API and the SPA
-- [ ] A Task can be created via UI and REST with prompt plus Harness, model, Working Directory, Isolation Mode, and Priority
-- [ ] Every execution setting defaults from global configuration; a prompt alone is enough to create a Task
-- [ ] Model accepts either an entry from the configured per-Harness list or a free-text model ID
-- [ ] Tasks can be saved as draft, promoted to ready, edited while draft or ready, and cancelled
-- [ ] The kanban board shows a column per lifecycle state and reflects Task state without manual refresh gymnastics
-- [ ] REST-seam tests cover create/edit/draft/ready/cancel against a real temp-file SQLite database
+- [x] `npx agentdeck serve` starts the process and serves both the API and the SPA
+- [x] A Task can be created via UI and REST with prompt plus Harness, model, Working Directory, Isolation Mode, and Priority
+- [x] Every execution setting defaults from global configuration; a prompt alone is enough to create a Task
+- [x] Model accepts either an entry from the configured per-Harness list or a free-text model ID
+- [x] Tasks can be saved as draft, promoted to ready, edited while draft or ready, and cancelled
+- [x] The kanban board shows a column per lifecycle state and reflects Task state without manual refresh gymnastics
+- [x] REST-seam tests cover create/edit/draft/ready/cancel against a real temp-file SQLite database
 
 ## Blocked by
 
 None - can start immediately
+
+## Comments
+
+**2026-07-14 (agent):** Done. Fastify + Drizzle/better-sqlite3 + embedded
+Vite/React/Tailwind SPA, `agentdeck serve` CLI (bin wired for npx). Task
+authoring via POST/PATCH /api/tasks with config defaults, draft/ready/cancel
+lifecycle, kanban board with all eight columns (2s polling until the
+WebSocket slice). REST-seam tests in `tests/tasks.test.ts` against a real
+temp-file SQLite DB; house test helper in `tests/helpers.ts`.
