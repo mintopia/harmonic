@@ -26,6 +26,8 @@ import { statsRoutes } from './routes/stats.js';
 import { channelRoutes } from './routes/channels.js';
 import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
+import { buildMcpServer } from '../mcp/server.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -77,6 +79,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onRunFinished: (run) => bus.emit('run_changed', run),
     },
     worktreesDir: join(opts.dataDir, 'worktrees'),
+    keys: {
+      mint: (runId) => auth.createKey(`run-${runId}`, { scope: 'run', runId }).token,
+      revoke: (runId) => auth.revokeKeysForRun(runId),
+    },
   });
   // Accepting a worktree-mode task merges the run's branch (ADR-0002).
   const review = new ReviewService(runs, tasks, async (task, run) => {
@@ -113,10 +119,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   // Every API surface is authenticated: cookie sessions for the SPA,
   // bearer API keys for programmatic access (token also accepted as a
-  // query param for WebSocket clients that can't set headers).
+  // query param for WebSocket clients that can't set headers). The MCP
+  // endpoint shares the same authorization model.
   app.addHook('onRequest', async (req, reply) => {
     const path = req.url.split('?')[0] ?? req.url;
-    if (!path.startsWith('/api') || PUBLIC_API_PATHS.has(path)) return;
+    if ((!path.startsWith('/api') && !path.startsWith('/mcp')) || PUBLIC_API_PATHS.has(path)) return;
 
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
     if (bearer && auth.verifyKey(bearer)) return;
@@ -146,6 +153,33 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
+
+  // MCP: stateless streamable HTTP. A fresh server+transport per request
+  // keeps the tool list in sync with config (agent-review flag).
+  app.post('/mcp', async (req, reply) => {
+    const mcp = buildMcpServer(ctx);
+    // `as any`: the SDK's option/transport types don't satisfy
+    // exactOptionalPropertyTypes; sessionIdGenerator: undefined selects
+    // stateless mode per its documentation.
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined } as any);
+    reply.hijack();
+    await mcp.connect(transport as any);
+    await transport.handleRequest(req.raw, reply.raw, req.body);
+    reply.raw.on('close', () => {
+      void transport.close();
+      void mcp.close();
+    });
+  });
+
+  // The runner injects the MCP endpoint into spawned harnesses once the
+  // server knows its address.
+  app.addHook('onListen', async () => {
+    const address = app.server.address();
+    if (address && typeof address === 'object') {
+      const host = address.address === '::' || address.address === '0.0.0.0' ? '127.0.0.1' : address.address;
+      runner.mcpUrl = `http://${host}:${address.port}/mcp`;
+    }
+  });
   await app.register(wsRoutes, { prefix: '/api' });
 
   // Serve the embedded SPA when a build exists (dist/web next to dist/server code).

@@ -1,6 +1,6 @@
 # MCP server & scoped key injection
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -25,14 +25,29 @@ agents landing branches unattended (ADR-0002) — is a deliberate opt-in.
 
 ## Acceptance criteria
 
-- [ ] An MCP client with a valid API Key can create, list, get, update, queue, and cancel Tasks and manage Dependencies
-- [ ] Task status, Runs, and Run Events are readable over MCP
-- [ ] Every spawned Harness receives a per-Run scoped API Key and the MCP endpoint in its environment (asserted via the stub harness)
-- [ ] With the agent-review flag off (default), Accept/Reject tools are absent from the MCP tool list; with it on, they work
-- [ ] Unauthenticated or revoked-key MCP requests are rejected
-- [ ] Tests cover an end-to-end loop: a stub-harness Run uses its injected key to create a dependent follow-up Task
+- [x] An MCP client with a valid API Key can create, list, get, update, queue, and cancel Tasks and manage Dependencies
+- [x] Task status, Runs, and Run Events are readable over MCP
+- [x] Every spawned Harness receives a per-Run scoped API Key and the MCP endpoint in its environment (asserted via the stub harness)
+- [x] With the agent-review flag off (default), Accept/Reject tools are absent from the MCP tool list; with it on, they work
+- [x] Unauthenticated or revoked-key MCP requests are rejected
+- [x] Tests cover an end-to-end loop: a stub-harness Run uses its injected key to create a dependent follow-up Task
 
 ## Blocked by
 
 - `07-dependencies.md`
 - `09-auth-and-api-keys.md`
+
+## Comments
+
+**2026-07-14 (agent):** Done. Stateless streamable-HTTP MCP endpoint at
+`/mcp` (fresh McpServer per request via src/mcp/server.ts, so the tool
+list always reflects config), gated by the same bearer-key hook as REST.
+Tools: create/list/get/update task, queue (promote or requeue with
+feedback), cancel (with dependents), add/remove dependency, get_runs,
+get_run_events; accept_task/reject_task registered only when the
+`agentReview` config flag is on (default off). The runner mints a
+scope='run' key per run and injects AGENTDECK_API_KEY + AGENTDECK_MCP_URL
+into the harness env, revoking it when the run finishes. Tests cover the
+whole surface, including the end-to-end loop: a stub-harness run uses its
+injected key to create a follow-up task depending on itself, which
+unblocks when the parent is accepted.

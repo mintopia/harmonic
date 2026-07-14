@@ -38,6 +38,11 @@ export const appConfigSchema = z.object({
     enabled: z.boolean(),
     maxConcurrentRuns: z.number().int().min(1),
   }),
+  /**
+   * When true, Accept/Reject tools are exposed over MCP — agents can land
+   * branches unattended (ADR-0002). Deliberate opt-in; default off.
+   */
+  agentReview: z.boolean().default(false),
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -84,6 +89,7 @@ export function defaultConfig(): AppConfig {
       enabled: false,
       maxConcurrentRuns: 1,
     },
+    agentReview: false,
   };
 }
 

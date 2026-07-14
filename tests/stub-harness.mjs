@@ -89,6 +89,39 @@ async function handlePrompt(msg) {
     });
   }
 
+  // Simulate an agent scheduling follow-up work over MCP, using the
+  // scoped key + endpoint injected into its environment.
+  if (scenario.mcpCreateTask) {
+    try {
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+      const { StreamableHTTPClientTransport } = await import(
+        '@modelcontextprotocol/sdk/client/streamableHttp.js'
+      );
+      const client = new Client({ name: 'stub-harness', version: '0.0.0' });
+      const transport = new StreamableHTTPClientTransport(new URL(process.env.AGENTDECK_MCP_URL), {
+        requestInit: { headers: { authorization: `Bearer ${process.env.AGENTDECK_API_KEY}` } },
+      });
+      await client.connect(transport);
+      const result = await client.callTool({ name: 'create_task', arguments: scenario.mcpCreateTask });
+      await client.close();
+      notify('session/update', {
+        sessionId: msg.params.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: `mcp-created:${result.content[0].text}` },
+        },
+      });
+    } catch (err) {
+      notify('session/update', {
+        sessionId: msg.params.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: `mcp-error:${err.message}` },
+        },
+      });
+    }
+  }
+
   const exit = scenario.exit ?? 'clean';
   if (exit === 'crash-before-response') process.exit(1);
   if (exit === 'hang') return; // never respond; must be killed

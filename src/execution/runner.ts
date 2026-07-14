@@ -22,6 +22,11 @@ export interface RunnerOptions {
   events?: RunnerEvents;
   /** Where temporary worktrees live; per-run subdirectories. */
   worktreesDir?: string;
+  /** Mints/revokes the per-run scoped API key injected into the harness. */
+  keys?: {
+    mint: (runId: number) => string;
+    revoke: (runId: number) => void;
+  };
 }
 
 interface Workspace {
@@ -47,6 +52,9 @@ export class Runner {
 
   private readonly events: RunnerEvents;
   private readonly worktreesDir: string;
+  private readonly keys: RunnerOptions['keys'];
+  /** The MCP endpoint agents should call back to; set once the server listens. */
+  mcpUrl: string | null = null;
 
   constructor(
     private readonly runStore: RunStore,
@@ -56,6 +64,7 @@ export class Runner {
   ) {
     this.events = options.events ?? {};
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'agentdeck-worktrees');
+    this.keys = options.keys;
   }
 
   get activeCount(): number {
@@ -157,6 +166,12 @@ export class Runner {
     let workspace: Workspace;
     try {
       workspace = await this.prepareWorkspace(task, run);
+      // Agents reach the MCP server with zero setup: a scoped key (its
+      // lifetime follows the run's) plus the endpoint, in the environment.
+      if (this.keys && this.mcpUrl) {
+        workspace.env.AGENTDECK_API_KEY = this.keys.mint(run.id);
+        workspace.env.AGENTDECK_MCP_URL = this.mcpUrl;
+      }
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
     } catch (err) {
       this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
@@ -168,6 +183,11 @@ export class Runner {
       if (finalized) return;
       finalized = true;
       this.kill(active);
+      try {
+        this.keys?.revoke(run.id);
+      } catch {
+        // Revocation is best-effort; keys also die with the database row.
+      }
       await this.finalizeWorkspace(task, run, workspace).catch(() => {});
     };
 
