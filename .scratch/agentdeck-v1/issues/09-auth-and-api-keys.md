@@ -1,6 +1,6 @@
 # Auth & API Keys
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -22,12 +22,26 @@ This slice provides the key infrastructure the MCP slice later builds on
 
 ## Acceptance criteria
 
-- [ ] First-run setup requires setting the operator password via CLI or config; the password is hashed at rest
-- [ ] The SPA requires login and uses cookie sessions; logout works
-- [ ] All REST endpoints reject unauthenticated requests; bearer API Keys authenticate the API
-- [ ] API Keys can be created with a name, listed with last-used timestamps, and revoked; revoked keys stop working immediately
-- [ ] REST-seam tests cover login, session-gated UI API, key auth, revocation, and last-used tracking
+- [x] First-run setup requires setting the operator password via CLI or config; the password is hashed at rest
+- [x] The SPA requires login and uses cookie sessions; logout works
+- [x] All REST endpoints reject unauthenticated requests; bearer API Keys authenticate the API
+- [x] API Keys can be created with a name, listed with last-used timestamps, and revoked; revoked keys stop working immediately
+- [x] REST-seam tests cover login, session-gated UI API, key auth, revocation, and last-used tracking
 
 ## Blocked by
 
 - `02-walking-skeleton-task-authoring-and-board.md`
+
+## Comments
+
+**2026-07-14 (agent):** Done. `AuthService` (src/server/auth.ts): scrypt
+password hash in the settings table, in-memory cookie sessions
+(httpOnly, SameSite=strict), sha256-hashed bearer keys with prefix
+display, last-used tracking, and immediate revocation. A global onRequest
+hook gates every /api path (including WebSocket upgrades; token accepted
+as a query param for WS clients that can't set headers) except
+login/me. CLI: `serve --password` / $AGENTDECK_PASSWORD, refusing first
+run without one. Key schema includes scope+runId for the MCP slice's
+per-run scoped keys. SPA: login screen, logout, and an API Keys modal
+(token shown exactly once). Test helper now logs in like the SPA, so the
+whole suite exercises session auth.

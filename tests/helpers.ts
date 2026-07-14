@@ -35,41 +35,64 @@ export async function waitFor<T>(
   }
 }
 
+export const TEST_PASSWORD = 'test-password';
+
 export interface TestServer {
   baseUrl: string;
   dataDir: string;
   app: App;
-  /** JSON fetch helper: returns { status, body } without throwing. */
+  /** Session token, usable as `?token=` for WebSocket connections. */
+  sessionToken: string;
+  /** Authenticated JSON fetch helper: returns { status, body } without throwing. */
   api: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
+  /** Same, but sends no credentials. */
+  anonApi: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
   close: () => Promise<void>;
 }
 
 export async function startServer(
   configOverrides?: DeepPartial<AppConfig>,
-  opts: { dataDir?: string } = {},
+  opts: { dataDir?: string; password?: string } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'agentdeck-test-'));
-  const app = await buildApp({ dataDir, configOverrides });
+  const app = await buildApp({ dataDir, configOverrides, password: opts.password ?? TEST_PASSWORD });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const api = async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(baseUrl + path, {
-      method,
-      ...(body === undefined
-        ? {}
-        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
-    });
-    const text = await res.text();
-    return { status: res.status, body: text ? JSON.parse(text) : null };
-  };
+  const request =
+    (headers: Record<string, string>) => async (method: string, path: string, body?: unknown) => {
+      const res = await fetch(baseUrl + path, {
+        method,
+        headers: {
+          ...headers,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      const text = await res.text();
+      return { status: res.status, body: text ? JSON.parse(text) : null };
+    };
+
+  // The house test style drives the API as the SPA does: log in, keep the
+  // session cookie.
+  const anonApi = request({});
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password: opts.password ?? TEST_PASSWORD }),
+  });
+  const cookie = login.headers.get('set-cookie') ?? '';
+  const sessionToken = cookie.match(/agentdeck_session=([^;]+)/)?.[1] ?? '';
+  const api = request({ cookie: `agentdeck_session=${sessionToken}` });
 
   return {
     baseUrl,
     dataDir,
     app,
+    sessionToken,
     api,
+    anonApi,
     close: async () => {
       await app.close();
       rmSync(dataDir, { recursive: true, force: true });

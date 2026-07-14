@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 /** Collect WS messages into an inspectable list. */
-async function connectWs(baseUrl: string): Promise<{ messages: any[]; close: () => void }> {
-  const ws = new WebSocket(baseUrl.replace('http', 'ws') + '/api/ws');
+async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
+  const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
   const messages: any[] = [];
   ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
   await new Promise((resolve, reject) => {
@@ -30,7 +30,7 @@ describe('live run event streaming and replay', () => {
       { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'pending' },
       { sessionUpdate: 'plan', entries: [{ content: 'step', status: 'pending', priority: 'medium' }] },
     ];
-    const ws = await connectWs(server.baseUrl);
+    const ws = await connectWs(server);
 
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ updates, delayMs: 40 }),
@@ -68,7 +68,7 @@ describe('live run event streaming and replay', () => {
   });
 
   it('broadcasts task state changes so the board updates without polling', async () => {
-    const ws = await connectWs(server.baseUrl);
+    const ws = await connectWs(server);
     const created = await server.api('POST', '/api/tasks', { prompt: 'plain prompt' });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
 

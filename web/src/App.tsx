@@ -5,13 +5,24 @@ import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetail } from './components/TaskDetail';
 import { subscribe } from './ws';
+import { Login } from './components/Login';
+import { ApiKeys } from './components/ApiKeys';
 
 export function App() {
+  const [authed, setAuthed] = useState<boolean | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
+  const [showKeys, setShowKeys] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((me: { authenticated: boolean }) => setAuthed(me.authenticated))
+      .catch(() => setAuthed(false));
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -24,6 +35,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!authed) return;
     api.config().then(setConfig).catch(() => {});
     refresh();
     // Live updates over WebSocket; slow polling as a reconnect safety net.
@@ -41,7 +53,10 @@ export function App() {
       unsubscribe();
       clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refresh, authed]);
+
+  if (authed === null) return null;
+  if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -81,6 +96,15 @@ export function App() {
         >
           New Task
         </button>
+        <button onClick={() => setShowKeys(true)} className="text-sm text-zinc-400 hover:text-zinc-100">
+          Keys
+        </button>
+        <button
+          onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+          className="text-sm text-zinc-500 hover:text-zinc-100"
+        >
+          Log out
+        </button>
       </header>
 
       {error && (
@@ -94,6 +118,7 @@ export function App() {
       </main>
 
       {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}
+      {showKeys && <ApiKeys onClose={() => setShowKeys(false)} />}
 
       {editing !== null && config && (
         <TaskForm

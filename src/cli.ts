@@ -6,12 +6,14 @@ import { defaultDataDir } from './config.js';
 const HELP = `agentdeck — queue, run, and review autonomous agent tasks
 
 Usage:
-  agentdeck serve [--port <n>] [--host <h>] [--data-dir <dir>]
+  agentdeck serve [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
 
 Options:
   --port      Port to listen on (default 4700)
   --host      Host to bind (default 127.0.0.1)
   --data-dir  State directory (default ~/.agentdeck, or $AGENTDECK_DATA_DIR)
+  --password  Set/update the operator password (or $AGENTDECK_PASSWORD);
+              required on first run
 `;
 
 async function main(): Promise<void> {
@@ -27,11 +29,20 @@ async function main(): Promise<void> {
       port: { type: 'string', default: '4700' },
       host: { type: 'string', default: '127.0.0.1' },
       'data-dir': { type: 'string' },
+      password: { type: 'string' },
     },
   });
 
   const dataDir = values['data-dir'] ?? defaultDataDir();
-  const app = await buildApp({ dataDir });
+  const password = values.password ?? process.env.AGENTDECK_PASSWORD;
+  const app = await buildApp({ dataDir, password });
+  if (!app.ctx.auth.hasPassword()) {
+    console.error(
+      'No operator password is set. First run requires one:\n' +
+        '  agentdeck serve --password <password>   (or AGENTDECK_PASSWORD)',
+    );
+    process.exit(1);
+  }
   const port = Number(values.port);
   const host = values.host!;
   await app.listen({ port, host });

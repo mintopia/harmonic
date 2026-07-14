@@ -85,6 +85,23 @@ export const runEvents = sqliteTable('run_events', {
   payload: text('payload').notNull(),
 });
 
+export const apiKeys = sqliteTable('api_keys', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  /** sha256 hex of the bearer token; the token itself is never stored. */
+  tokenHash: text('token_hash').notNull(),
+  /** First characters of the token, for display. */
+  prefix: text('prefix').notNull(),
+  /** 'full' for operator keys; 'run' for per-run scoped keys. */
+  scope: text('scope').notNull().default('full'),
+  runId: integer('run_id'),
+  createdAt: integer('created_at').notNull(),
+  lastUsedAt: integer('last_used_at'),
+  revokedAt: integer('revoked_at'),
+});
+
+export type ApiKeyRow = typeof apiKeys.$inferSelect;
+
 export type TaskRow = typeof tasks.$inferSelect;
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;

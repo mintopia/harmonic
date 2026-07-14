@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
+import fastifyCookie from '@fastify/cookie';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Git } from '../execution/git.js';
@@ -19,11 +20,18 @@ import { taskRoutes } from './routes/tasks.js';
 import { configRoutes } from './routes/config.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
+import { AuthService } from './auth.js';
+import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 
 export interface AppOptions {
   dataDir: string;
   configOverrides?: DeepPartial<AppConfig> | undefined;
+  /** Set (or update) the operator password at boot — CLI/config first-run setup. */
+  password?: string | undefined;
 }
+
+/** Paths reachable without authentication. */
+const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/me']);
 
 export interface AppContext {
   db: Db;
@@ -33,6 +41,7 @@ export interface AppContext {
   runner: Runner;
   review: ReviewService;
   autoRunner: AutoRunner;
+  auth: AuthService;
   bus: EventBus;
 }
 
@@ -66,12 +75,32 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   bus.on('run_changed', () => autoRunner.poke());
   autoRunner.poke();
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, bus };
+  const auth = new AuthService(db);
+  if (opts.password) auth.setPassword(opts.password);
+
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
   app.addHook('onClose', async () => runner.shutdown());
+  await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
+
+  // Every API surface is authenticated: cookie sessions for the SPA,
+  // bearer API keys for programmatic access (token also accepted as a
+  // query param for WebSocket clients that can't set headers).
+  app.addHook('onRequest', async (req, reply) => {
+    const path = req.url.split('?')[0] ?? req.url;
+    if (!path.startsWith('/api') || PUBLIC_API_PATHS.has(path)) return;
+
+    const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+    if (bearer && auth.verifyKey(bearer)) return;
+    if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
+    const queryToken = (req.query as Record<string, string | undefined>)?.token;
+    if (queryToken && (auth.verifyKey(queryToken) || auth.validateSession(queryToken))) return;
+
+    return reply.status(401).send({ error: { code: 'unauthenticated', message: 'authentication required' } });
+  });
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof DomainError) {
@@ -89,6 +118,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   await app.register(taskRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });
+  await app.register(authRoutes, { prefix: '/api' });
   await app.register(wsRoutes, { prefix: '/api' });
 
   // Serve the embedded SPA when a build exists (dist/web next to dist/server code).
