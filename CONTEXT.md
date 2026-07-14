@@ -88,6 +88,14 @@ _Avoid_: daemon, worker pool
 Token counts and tool-call tallies for a Run, collected from ACP extension
 metadata or the Harness's native session log; aggregated for statistics.
 
+**Cost**:
+The API-equivalent dollar value of Usage: token counts priced per model,
+always derived from Usage on demand, never stored. A Task's Cost sums all
+its Runs, retries included. A model without a configured price yields no
+Cost, and any aggregate containing it is flagged incomplete — never a fake
+zero.
+_Avoid_: spend, billing (it is an estimate, not an invoice)
+
 ### Interfaces
 
 **Notification Channel**:
@@ -95,9 +103,16 @@ A configured destination — Discord webhook, Slack webhook, Generic webhook,
 or Email — subscribed to a set of event types, overridable per Task.
 
 **API Key**:
-A named, revocable bearer token for the REST API and MCP server. AgentDeck
-mints a scoped key per Run and injects it into the spawned Harness so
-agents reach MCP without setup.
+A named, revocable bearer token for the REST API and MCP server, created
+and managed by the operator. Listing keys shows only these.
+_Avoid_: token (ambiguous with Run Key)
+
+**Run Key**:
+An ephemeral bearer token AgentDeck mints per Run and injects into the
+spawned Harness so agents reach MCP without setup. Deleted outright when
+the Run finishes (a startup sweep removes orphans); never listed or shown
+in the UI.
+_Avoid_: scoped key, per-run API key
 
 **Config Repo**:
 A git repository (dotfiles-style) holding AgentDeck configuration —
