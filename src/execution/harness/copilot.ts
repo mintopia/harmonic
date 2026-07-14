@@ -8,7 +8,7 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 /**
  * The OTel file exporter is Copilot's Usage source (spike, issue 25): the
  * ACP prompt result is bare and the native session log carries no token
- * counts. AgentDeck picks the path, keyed by cwd slug — direct-mode runs
+ * counts. Harmonic picks the path, keyed by cwd slug — direct-mode runs
  * of one directory share the file, so spans are attributed to a run by
  * `gen_ai.conversation.id`, which equals the ACP sessionId verbatim.
  */
@@ -52,7 +52,7 @@ export const copilotAdapter: HarnessAdapter = {
   // arrived with the bearer header, so the Run Key needs zero setup.
   mcpServers: ({ url, token }) => [
     {
-      name: 'agentdeck',
+      name: 'harmonic',
       type: 'http',
       url,
       headers: [{ name: 'Authorization', value: `Bearer ${token}` }],

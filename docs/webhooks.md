@@ -30,8 +30,8 @@ event of a Task that overrides to the Channel).
 
 ## Headers
 
-- `X-AgentDeck-Event`: the event type, duplicated for cheap routing.
-- `X-AgentDeck-Signature`: present when the Channel has a `secret`
+- `X-Harmonic-Event`: the event type, duplicated for cheap routing.
+- `X-Harmonic-Signature`: present when the Channel has a `secret`
   configured. Value is `sha256=<hex>` where `<hex>` is
   `HMAC-SHA256(rawRequestBody, secret)`. Verify by recomputing over the
   raw bytes you received and comparing with a constant-time comparison.

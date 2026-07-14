@@ -10,22 +10,22 @@ import { startServer, TEST_PASSWORD, type TestServer } from './helpers.js';
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
-/** A throwaway Config Repo containing agentdeck.json. */
+/** A throwaway Config Repo containing harmonic.json. */
 function makeConfigRepo(file: object): string {
-  const dir = mkdtempSync(join(tmpdir(), 'agentdeck-cfgrepo-'));
+  const dir = mkdtempSync(join(tmpdir(), 'harmonic-cfgrepo-'));
   execFileSync('git', ['init', '-b', 'main', dir]);
   git(dir, 'config', 'user.name', 'Test');
   git(dir, 'config', 'user.email', 'test@example.com');
   git(dir, 'config', 'receive.denyCurrentBranch', 'ignore');
-  writeFileSync(join(dir, 'agentdeck.json'), JSON.stringify(file, null, 2));
+  writeFileSync(join(dir, 'harmonic.json'), JSON.stringify(file, null, 2));
   git(dir, 'add', '-A');
   git(dir, 'commit', '-m', 'seed config');
   return dir;
 }
 
-/** Init a fresh data dir from a repo (what `agentdeck init --repo` does). */
+/** Init a fresh data dir from a repo (what `harmonic init --repo` does). */
 async function initDataDir(repo: string): Promise<string> {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agentdeck-init-'));
+  const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-init-'));
   const app = await buildApp({ dataDir, password: TEST_PASSWORD });
   await app.ctx.configRepo.init(repo);
   await app.close();
@@ -89,7 +89,7 @@ describe('config repo import / pull / export', () => {
     // The repo moves on.
     const updated = seedFile(token);
     updated.config.autoRunner.maxConcurrentRuns = 5;
-    writeFileSync(join(repo, 'agentdeck.json'), JSON.stringify(updated, null, 2));
+    writeFileSync(join(repo, 'harmonic.json'), JSON.stringify(updated, null, 2));
     git(repo, 'add', '-A');
     git(repo, 'commit', '-m', 'bump concurrency');
 
@@ -113,7 +113,7 @@ describe('config repo import / pull / export', () => {
 
     // The repo now declares only a default priority — nothing else.
     writeFileSync(
-      join(repo, 'agentdeck.json'),
+      join(repo, 'harmonic.json'),
       JSON.stringify({ config: { defaults: { priority: 'low' } } }, null, 2),
     );
     git(repo, 'add', '-A');

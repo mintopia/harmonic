@@ -22,8 +22,8 @@ describe('usage collection retry (log-flush race)', () => {
 
   it('re-reads an existing session log until the per-model lines land', async () => {
     const { collectUsageWithRetry } = await import('../src/execution/usage.js');
-    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-race-logs-'));
-    const cwd = mkdtempSync(join(tmpdir(), 'agentdeck-race-work-'));
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-race-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'harmonic-race-work-'));
     const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
     const file = join(logRoot, slug, 'race-session.jsonl');
     mkdirSync(join(logRoot, slug), { recursive: true });
@@ -38,8 +38,8 @@ describe('usage collection retry (log-flush race)', () => {
 
   it('does not wait when no session log file exists (stub harnesses)', async () => {
     const { collectUsageWithRetry } = await import('../src/execution/usage.js');
-    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-race-logs-'));
-    const cwd = mkdtempSync(join(tmpdir(), 'agentdeck-race-work-'));
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-race-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'harmonic-race-work-'));
     const before = Date.now();
     const usage = await collectUsageWithRetry(input(logRoot, cwd), { timeoutMs: 2000, intervalMs: 50 });
     expect(Date.now() - before).toBeLessThan(1000);
@@ -174,8 +174,8 @@ describe('usage collection and statistics', () => {
   });
 
   it('falls back to parsing the native session log for the per-model breakdown', async () => {
-    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-logs-'));
-    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-work-'));
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-logs-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-work-'));
     const overrides = stubHarness() as DeepPartial<AppConfig> & {
       harnesses: { claude: Record<string, unknown> };
     };
@@ -210,15 +210,15 @@ describe('usage collection and statistics', () => {
   });
 
   it('copilot: derives the per-model breakdown and AI Units from the OTel file-exporter log', async () => {
-    const otelRoot = mkdtempSync(join(tmpdir(), 'agentdeck-otel-'));
-    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-copilot-work-'));
+    const otelRoot = mkdtempSync(join(tmpdir(), 'harmonic-otel-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-copilot-work-'));
     const overrides = stubHarness('copilot') as DeepPartial<AppConfig> & {
       harnesses: { copilot: Record<string, unknown> };
     };
     overrides.harnesses.copilot.sessionLogDir = otelRoot;
     overrides.harnesses.copilot.env = { STUB_SESSION_ID: 'copilot-e2e-session' };
 
-    // AgentDeck's own exporter-path convention: <sessionLogDir>/<slugified
+    // Harmonic's own exporter-path convention: <sessionLogDir>/<slugified
     // cwd>.jsonl, spans tagged with the ACP sessionId as conversation id.
     const span = (model: string, attrs: object) =>
       JSON.stringify({

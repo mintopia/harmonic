@@ -208,11 +208,11 @@ export function App() {
         }`}
       >
         <div className={`flex items-center px-3 py-2.5 rail:px-2 rail:pb-4 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}>
-          <span className={`whitespace-nowrap px-1 text-title font-semibold ${railCollapsed ? 'rail:hidden' : ''}`}>AgentDeck</span>
+          <span className={`whitespace-nowrap px-1 text-title font-semibold ${railCollapsed ? 'rail:hidden' : ''}`}>Harmonic</span>
           {railCollapsed && (
-            <span className="hidden text-title font-semibold rail:inline" title="AgentDeck">
+            <span className="hidden text-title font-semibold rail:inline" title="Harmonic">
               <span aria-hidden="true">AD</span>
-              <span className="sr-only">AgentDeck</span>
+              <span className="sr-only">Harmonic</span>
             </span>
           )}
           <button

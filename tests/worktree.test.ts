@@ -10,7 +10,7 @@ const git = (dir: string, ...args: string[]) =>
 
 /** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'agentdeck-repo-'));
+  const dir = mkdtempSync(join(tmpdir(), 'harmonic-repo-'));
   execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
   git(dir, 'config', 'user.name', 'Test');
   git(dir, 'config', 'user.email', 'test@example.com');
@@ -48,7 +48,7 @@ describe('worktree isolation mode', () => {
     const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.branch).toBe(`agentdeck/task-${taskId}-run-1`);
+    expect(run.branch).toBe(`harmonic/task-${taskId}-run-1`);
     expect(run.baseBranch).toBe('main');
 
     // The branch exists and carries the file; the checkout was never touched.
@@ -110,12 +110,12 @@ describe('worktree isolation mode', () => {
 
     const diff = await server.api('GET', `/api/runs/${runId}/diff`);
     expect(diff.status).toBe(200);
-    expect(diff.body.branch).toBe(`agentdeck/task-${(await server.api('GET', `/api/runs/${runId}`)).body.taskId}-run-1`);
+    expect(diff.body.branch).toBe(`harmonic/task-${(await server.api('GET', `/api/runs/${runId}`)).body.taskId}-run-1`);
     expect(diff.body.stat).toContain('feature.txt');
   });
 
   it('fails the run cleanly when the working directory is not a git repo', async () => {
-    const notARepo = mkdtempSync(join(tmpdir(), 'agentdeck-plain-'));
+    const notARepo = mkdtempSync(join(tmpdir(), 'harmonic-plain-'));
     const created = await server.api('POST', '/api/tasks', {
       prompt: 'anything',
       workingDir: notARepo,

@@ -6,7 +6,7 @@
      reserved for data, per operator feedback. -->
 
 ---
-name: AgentDeck
+name: Harmonic
 description: Terminal-native operator console for running and reviewing autonomous coding agents
 colors:
   signal-cyan: "#37d2f2"
@@ -103,13 +103,13 @@ components:
     padding: "6px 10px"
 ---
 
-# Design System: AgentDeck
+# Design System: Harmonic
 
 ## 1. Overview
 
 **Creative North Star: "The Signal Console"**
 
-AgentDeck renders as a terminal-native operator console: a near-black, cool-tinted field where a fleet's state reads like well-kept instrumentation. The interface speaks in a quiet system sans; machine data — ids, counts, costs, models — answers in monospace. Hierarchy comes from weight, size, and tonal steps, never from ornament. One electric cyan is the only voice the interface itself speaks — every other color belongs to the *work* (running, accepted, failed, tooling). The register is product (from PRODUCT.md: "fast, dense, operator-grade… the tool disappears into the task"), and the layout serves a side-monitor glance: a slim left rail for navigation, full-width working views, and a board readable in two seconds.
+Harmonic renders as a terminal-native operator console: a near-black, cool-tinted field where a fleet's state reads like well-kept instrumentation. The interface speaks in a quiet system sans; machine data — ids, counts, costs, models — answers in monospace. Hierarchy comes from weight, size, and tonal steps, never from ornament. One electric cyan is the only voice the interface itself speaks — every other color belongs to the *work* (running, accepted, failed, tooling). The register is product (from PRODUCT.md: "fast, dense, operator-grade… the tool disappears into the task"), and the layout serves a side-monitor glance: a slim left rail for navigation, full-width working views, and a board readable in two seconds.
 
 This system explicitly rejects PRODUCT.md's anti-references: **CI/CD console gloom** (dense is the goal, murky is not — hairlines and generous line-height keep the density legible), **chat-app cuteness** (no avatars, no emoji status, agents are processes, not pets), and **kanban-tool sprawl** (the board is a queue with a review gate, not a project-management suite).
 

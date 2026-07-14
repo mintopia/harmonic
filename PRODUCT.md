@@ -10,11 +10,11 @@ web
 
 ## Users
 
-A developer-operator running their own fleet of autonomous coding agents from a Coder workspace — today that's the project author, but AgentDeck is intended to be usable by other developers eventually. The typical context is a side monitor glanced at while coding: the board is scanned in seconds between other work, with occasional deep dives into a run's event stream. The primary job: keep a queue of agent tasks moving, and review what comes out before it lands.
+A developer-operator running their own fleet of autonomous coding agents from a Coder workspace — today that's the project author, but Harmonic is intended to be usable by other developers eventually. The typical context is a side monitor glanced at while coding: the board is scanned in seconds between other work, with occasional deep dives into a run's event stream. The primary job: keep a queue of agent tasks moving, and review what comes out before it lands.
 
 ## Product Purpose
 
-AgentDeck queues, executes, and reviews autonomous coding-agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP. Success is **trustworthy autonomy**: agents run unattended, nothing merges without passing the review gate, and the operator rarely has to babysit — set tasks up, get notified, review, accept.
+Harmonic queues, executes, and reviews autonomous coding-agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP. Success is **trustworthy autonomy**: agents run unattended, nothing merges without passing the review gate, and the operator rarely has to babysit — set tasks up, get notified, review, accept.
 
 ## Positioning
 

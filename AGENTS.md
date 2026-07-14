@@ -1,4 +1,4 @@
-# AgentDeck
+# Harmonic
 
 A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP.

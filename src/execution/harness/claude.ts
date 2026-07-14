@@ -8,13 +8,13 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 export const claudeAdapter: HarnessAdapter = {
   spawnEnv: ({ model }) => ({
     // The adapter refuses to start nested inside a Claude Code session
-    // (spike finding); AgentDeck itself may have been launched from one.
+    // (spike finding); Harmonic itself may have been launched from one.
     CLAUDECODE: undefined,
     CLAUDE_CODE_ENTRYPOINT: undefined,
     ANTHROPIC_MODEL: model,
   }),
 
-  // Claude agents reach AgentDeck's MCP server via the env-var mechanism.
+  // Claude agents reach Harmonic's MCP server via the env-var mechanism.
   mcpServers: () => [],
 
   usage: {

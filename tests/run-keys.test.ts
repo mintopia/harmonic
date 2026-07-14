@@ -10,7 +10,7 @@ const runKeyRows = (server: TestServer) =>
 /** Start a run that echoes its injected Run Key, return the key + run info. */
 async function startEchoRun(server: TestServer, exit: 'clean' | 'hang') {
   const created = await server.api('POST', '/api/tasks', {
-    prompt: JSON.stringify({ echoEnv: ['AGENTDECK_API_KEY'], exit }),
+    prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit }),
   });
   const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
   const echo = await waitFor(async () => {
@@ -20,7 +20,7 @@ async function startEchoRun(server: TestServer, exit: 'clean' | 'hang') {
   return {
     taskId: created.body.id as number,
     runId: started.body.id as number,
-    token: JSON.parse(echo.payload.content.text).AGENTDECK_API_KEY as string,
+    token: JSON.parse(echo.payload.content.text).HARMONIC_API_KEY as string,
   };
 }
 

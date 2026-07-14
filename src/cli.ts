@@ -3,19 +3,19 @@ import { parseArgs } from 'node:util';
 import { buildApp } from './server/app.js';
 import { defaultDataDir } from './config.js';
 
-const HELP = `agentdeck — queue, run, and review autonomous agent tasks
+const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
 Usage:
-  agentdeck serve [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
-  agentdeck init --repo <url|path> [--data-dir <dir>] [--password <pw>]
+  harmonic serve [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
+  harmonic init --repo <url|path> [--data-dir <dir>] [--password <pw>]
 
 Options:
   --port      Port to listen on (default 4700)
   --host      Host to bind (default 127.0.0.1)
-  --data-dir  State directory (default ~/.agentdeck, or $AGENTDECK_DATA_DIR)
-  --password  Set/update the operator password (or $AGENTDECK_PASSWORD);
+  --data-dir  State directory (default ~/.harmonic, or $HARMONIC_DATA_DIR)
+  --password  Set/update the operator password (or $HARMONIC_PASSWORD);
               required on first run
-  --username  Operator username (or $AGENTDECK_USERNAME; default "operator")
+  --username  Operator username (or $HARMONIC_USERNAME; default "operator")
 `;
 
 async function main(): Promise<void> {
@@ -35,13 +35,13 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     const dataDir = values['data-dir'] ?? defaultDataDir();
-    const password = values.password ?? process.env.AGENTDECK_PASSWORD;
+    const password = values.password ?? process.env.HARMONIC_PASSWORD;
     const app = await buildApp({ dataDir, password });
     const file = await app.ctx.configRepo.init(values.repo);
     await app.close();
     console.log(
       `Imported ${Object.keys(file).join(', ')} from ${values.repo} into ${dataDir}. ` +
-        `Run \`agentdeck serve\` to start.`,
+        `Run \`harmonic serve\` to start.`,
     );
     return;
   }
@@ -63,20 +63,20 @@ async function main(): Promise<void> {
   });
 
   const dataDir = values['data-dir'] ?? defaultDataDir();
-  const password = values.password ?? process.env.AGENTDECK_PASSWORD;
-  const username = values.username ?? process.env.AGENTDECK_USERNAME;
+  const password = values.password ?? process.env.HARMONIC_PASSWORD;
+  const username = values.username ?? process.env.HARMONIC_USERNAME;
   const app = await buildApp({ dataDir, password, username });
   if (!app.ctx.auth.hasPassword()) {
     console.error(
       'No operator password is set. First run requires one:\n' +
-        '  agentdeck serve --password <password>   (or AGENTDECK_PASSWORD)',
+        '  harmonic serve --password <password>   (or HARMONIC_PASSWORD)',
     );
     process.exit(1);
   }
   const port = Number(values.port);
   const host = values.host!;
   await app.listen({ port, host });
-  console.log(`AgentDeck listening on http://${host}:${port} (data: ${dataDir})`);
+  console.log(`Harmonic listening on http://${host}:${port} (data: ${dataDir})`);
 
   const shutdown = async () => {
     await app.close();

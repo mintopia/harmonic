@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Build, launch, and drive AgentDeck to verify changes end-to-end at the web UI or API surface.
+description: Build, launch, and drive Harmonic to verify changes end-to-end at the web UI or API surface.
 ---
 
-# Verifying AgentDeck changes
+# Verifying Harmonic changes
 
 ## Build + launch
 

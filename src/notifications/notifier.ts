@@ -14,7 +14,7 @@ import type { Channel, ChannelService, NotificationEvent } from './channels.js';
  *   }
  * }
  * With a `secret` configured, the raw body is signed:
- *   X-AgentDeck-Signature: sha256=<hex hmac-sha256(body, secret)>
+ *   X-Harmonic-Signature: sha256=<hex hmac-sha256(body, secret)>
  */
 export interface NotificationPayload {
   event: NotificationEvent;
@@ -26,7 +26,7 @@ export interface NotificationPayload {
 }
 
 const summarize = (event: NotificationEvent, task?: TaskRow): string => {
-  if (!task) return `AgentDeck: ${event === 'queue.idle' ? 'queue is idle — nothing left to run' : event}`;
+  if (!task) return `Harmonic: ${event === 'queue.idle' ? 'queue is idle — nothing left to run' : event}`;
   const excerpt = task.prompt.length > 80 ? `${task.prompt.slice(0, 80)}…` : task.prompt;
   const label: Record<NotificationEvent, string> = {
     'task.created': 'created',
@@ -36,7 +36,7 @@ const summarize = (event: NotificationEvent, task?: TaskRow): string => {
     'task.failed': 'FAILED',
     'queue.idle': 'queue idle',
   };
-  return `AgentDeck: task #${task.id} ${label[event]} — "${excerpt}"`;
+  return `Harmonic: task #${task.id} ${label[event]} — "${excerpt}"`;
 };
 
 export class Notifier {
@@ -93,11 +93,11 @@ export class Notifier {
         const body = JSON.stringify(payload);
         const headers: Record<string, string> = {
           'content-type': 'application/json',
-          'x-agentdeck-event': payload.event,
+          'x-harmonic-event': payload.event,
         };
         const secret = channel.config.secret as string | undefined;
         if (secret) {
-          headers['x-agentdeck-signature'] =
+          headers['x-harmonic-signature'] =
             'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
         }
         const res = await fetch(channel.config.url as string, { method: 'POST', headers, body });

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { App } from '../app.js';
 
-export const SESSION_COOKIE = 'agentdeck_session';
+export const SESSION_COOKIE = 'harmonic_session';
 
 export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;

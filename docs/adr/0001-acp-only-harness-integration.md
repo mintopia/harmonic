@@ -1,6 +1,6 @@
 # ACP is the only harness integration protocol
 
-AgentDeck drives all harnesses (Claude, Codex, Copilot) exclusively over
+Harmonic drives all harnesses (Claude, Codex, Copilot) exclusively over
 ACP (Agent Client Protocol) — stdio JSON-RPC with structured streaming.
 We deliberately do not support the harnesses' one-shot CLI modes
 (`claude -p`, `codex exec`, `copilot -p`), even as a fallback: one code

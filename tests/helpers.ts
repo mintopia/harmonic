@@ -54,7 +54,7 @@ export async function startServer(
   configOverrides?: DeepPartial<AppConfig>,
   opts: { dataDir?: string; password?: string; username?: string } = {},
 ): Promise<TestServer> {
-  const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'agentdeck-test-'));
+  const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
   const app = await buildApp({
     dataDir,
     configOverrides,
@@ -88,8 +88,8 @@ export async function startServer(
     body: JSON.stringify({ password: opts.password ?? TEST_PASSWORD }),
   });
   const cookie = login.headers.get('set-cookie') ?? '';
-  const sessionToken = cookie.match(/agentdeck_session=([^;]+)/)?.[1] ?? '';
-  const api = request({ cookie: `agentdeck_session=${sessionToken}` });
+  const sessionToken = cookie.match(/harmonic_session=([^;]+)/)?.[1] ?? '';
+  const api = request({ cookie: `harmonic_session=${sessionToken}` });
 
   return {
     baseUrl,

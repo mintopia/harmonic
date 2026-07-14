@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-07-14T00:00:00Z",
-  "title": "Design System: AgentDeck",
+  "title": "Design System: Harmonic",
   "extensions": {
     "colorMeta": {
       "signal-cyan": { "role": "primary", "displayName": "Signal Cyan", "canonical": "oklch(0.80 0.13 215)", "tonalRamp": ["#00102c", "#00304b", "#00506c", "#00718f", "#0094b2", "#00b9d8", "#48defe", "#76ffff"] },
@@ -90,7 +90,7 @@
   ],
   "narrative": {
     "northStar": "The Signal Console",
-    "overview": "AgentDeck renders as a terminal-native operator console: a near-black, cool-tinted field where a fleet's state reads like well-kept instrumentation. The interface speaks in a quiet system sans; machine data — ids, costs, models — answers in monospace. Hierarchy comes from weight, size, and tonal steps, never from ornament. One electric cyan is the only voice the interface itself speaks — every other color belongs to the work (running, accepted, failed, tooling). The layout serves a side-monitor glance: a slim left rail for navigation, full-width working views, and a board readable in two seconds.",
+    "overview": "Harmonic renders as a terminal-native operator console: a near-black, cool-tinted field where a fleet's state reads like well-kept instrumentation. The interface speaks in a quiet system sans; machine data — ids, costs, models — answers in monospace. Hierarchy comes from weight, size, and tonal steps, never from ornament. One electric cyan is the only voice the interface itself speaks — every other color belongs to the work (running, accepted, failed, tooling). The layout serves a side-monitor glance: a slim left rail for navigation, full-width working views, and a board readable in two seconds.",
     "keyCharacteristics": [
       "Sans-forward UI with mono reserved for data; six roles, fixed rem scale",
       "Tonal depth: hairlines and surface steps, zero decorative shadows",

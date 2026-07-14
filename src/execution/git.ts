@@ -24,9 +24,9 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
   }
 }
 
-// Commits made by AgentDeck itself (snapshotting a run's work) carry a
+// Commits made by Harmonic itself (snapshotting a run's work) carry a
 // fixed identity so they work without operator git config.
-const IDENTITY = ['-c', 'user.name=AgentDeck', '-c', 'user.email=agentdeck@localhost'];
+const IDENTITY = ['-c', 'user.name=Harmonic', '-c', 'user.email=harmonic@localhost'];
 
 export const Git = {
   currentBranch: (dir: string) => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD'),

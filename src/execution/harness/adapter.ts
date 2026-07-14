@@ -67,7 +67,7 @@ export interface HarnessAdapter {
   /**
    * Env overlay for the spawned harness process: model pinning and quirk
    * workarounds. Keys with `undefined` values override anything inherited
-   * from AgentDeck's own environment.
+   * from Harmonic's own environment.
    */
   spawnEnv(input: SpawnInput): Record<string, string | undefined>;
   /**
@@ -77,9 +77,9 @@ export interface HarnessAdapter {
    */
   sessionModelId?(model: string): string;
   /**
-   * ACP `session/new` mcpServers entries granting the agent AgentDeck's
+   * ACP `session/new` mcpServers entries granting the agent Harmonic's
    * MCP server under its Run Key; [] when the harness only gets the
-   * env-var mechanism (AGENTDECK_MCP_URL / AGENTDECK_API_KEY).
+   * env-var mechanism (HARMONIC_MCP_URL / HARMONIC_API_KEY).
    */
   mcpServers(input: { url: string; token: string }): unknown[];
   /** The harness's Usage Collector; null while it has none (ACP totals only). */

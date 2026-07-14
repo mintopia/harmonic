@@ -64,7 +64,7 @@ export class Runner {
     options: RunnerOptions = {},
   ) {
     this.events = options.events ?? {};
-    this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'agentdeck-worktrees');
+    this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
   }
 
@@ -114,7 +114,7 @@ export class Runner {
     const env: Record<string, string | undefined> = {
       ...process.env,
       ...harness.env,
-      AGENTDECK_MODEL: task.model,
+      HARMONIC_MODEL: task.model,
       ...adapterFor(task.harness).spawnEnv({ model: task.model, cwd, sessionLogDir: harness.sessionLogDir }),
       ...extraEnv,
     };
@@ -123,14 +123,14 @@ export class Runner {
 
   /**
    * Direct mode runs in place, unlocked. Worktree mode gets a temporary
-   * git worktree on branch `agentdeck/task-<id>-run-<n>` cut from the
+   * git worktree on branch `harmonic/task-<id>-run-<n>` cut from the
    * working directory's current branch.
    */
   private async prepareWorkspace(task: TaskRow, run: RunRow): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') return { cwd: task.workingDir, env: {} };
 
     const baseBranch = await Git.currentBranch(task.workingDir);
-    const branch = `agentdeck/task-${task.id}-run-${run.attempt}`;
+    const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
     const path = join(this.worktreesDir, `run-${run.id}`);
     mkdirSync(this.worktreesDir, { recursive: true });
     await Git.addWorktree(task.workingDir, path, branch);
@@ -146,7 +146,7 @@ export class Runner {
   private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
     if (!workspace.worktree) return;
     try {
-      await Git.commitAll(workspace.worktree.path, `agentdeck: task ${task.id} run ${run.attempt}`);
+      await Git.commitAll(workspace.worktree.path, `harmonic: task ${task.id} run ${run.attempt}`);
     } finally {
       await Git.removeWorktree(workspace.worktree.repoDir, workspace.worktree.path).catch(() => {});
     }
@@ -169,8 +169,8 @@ export class Runner {
       // via ACP `session/new` mcpServers.
       if (this.keys && this.mcpUrl) {
         const runKey = this.keys.mint(run.id);
-        workspace.env.AGENTDECK_API_KEY = runKey;
-        workspace.env.AGENTDECK_MCP_URL = this.mcpUrl;
+        workspace.env.HARMONIC_API_KEY = runKey;
+        workspace.env.HARMONIC_MCP_URL = this.mcpUrl;
         mcpServers = adapterFor(task.harness).mcpServers({ url: this.mcpUrl, token: runKey });
       }
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);

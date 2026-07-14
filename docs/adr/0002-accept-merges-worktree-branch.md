@@ -1,7 +1,7 @@
 # Accepting a review merges the run's branch (worktree mode)
 
 In worktree Isolation Mode each Run works on its own branch
-(`agentdeck/task-<id>-run-<n>`). Accepting the task's review does not just
+(`harmonic/task-<id>-run-<n>`). Accepting the task's review does not just
 mark it completed — it merges that branch into the base branch the worktree
 was created from. A merge conflict aborts the merge and returns the task to
 awaiting-review with the conflict surfaced.

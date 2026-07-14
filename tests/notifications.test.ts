@@ -117,8 +117,8 @@ describe('notification channels', () => {
     expect(typeof payload.timestamp).toBe('number');
 
     const expected = 'sha256=' + createHmac('sha256', 'shh').update(delivery.body).digest('hex');
-    expect(delivery.headers['x-agentdeck-signature']).toBe(expected);
-    expect(delivery.headers['x-agentdeck-event']).toBe('task.awaiting-review');
+    expect(delivery.headers['x-harmonic-signature']).toBe(expected);
+    expect(delivery.headers['x-harmonic-event']).toBe('task.awaiting-review');
 
     // task.created is not subscribed: creating another task sends nothing new
     // for it (the accept below proves deliveries still flow afterwards).
@@ -196,7 +196,7 @@ describe('notification channels', () => {
       type: 'email',
       config: {
         smtp: { host: '127.0.0.1', port: sink.port, secure: false },
-        from: 'agentdeck@example.com',
+        from: 'harmonic@example.com',
         to: 'operator@example.com',
       },
       events: ['task.failed'],
@@ -206,7 +206,7 @@ describe('notification channels', () => {
 
     await waitFor(async () => sink.mails.length > 0, { timeoutMs: 15_000 });
     const mail = sink.mails[0]!;
-    expect(mail.from).toBe('agentdeck@example.com');
+    expect(mail.from).toBe('harmonic@example.com');
     expect(mail.to).toEqual(['operator@example.com']);
     // The body carries the documented JSON payload.
     expect(mail.data).toContain('"event": "task.failed"');

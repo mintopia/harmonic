@@ -10,7 +10,7 @@ export type Db = BetterSQLite3Database<typeof schema>;
 
 export function openDb(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });
-  const sqlite = new Database(join(dataDir, 'agentdeck.db'));
+  const sqlite = new Database(join(dataDir, 'harmonic.db'));
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
   const db = drizzle(sqlite, { schema });

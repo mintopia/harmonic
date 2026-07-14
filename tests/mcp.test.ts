@@ -82,7 +82,7 @@ describe('mcp server & scoped keys', () => {
 
   it('injects a Run Key and the MCP endpoint into the harness env, deleting the key after the run', async () => {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['AGENTDECK_API_KEY', 'AGENTDECK_MCP_URL'] }),
+      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY', 'HARMONIC_MCP_URL'] }),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
@@ -90,14 +90,14 @@ describe('mcp server & scoped keys', () => {
     const events = await server.api('GET', `/api/runs/${started.body.id}/events`);
     const echo = events.body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
     const env = JSON.parse(echo.payload.content.text);
-    expect(env.AGENTDECK_API_KEY).toMatch(/^adk_/);
-    expect(env.AGENTDECK_MCP_URL).toContain('/mcp');
+    expect(env.HARMONIC_API_KEY).toMatch(/^adk_/);
+    expect(env.HARMONIC_MCP_URL).toContain('/mcp');
 
     // Run Keys are never listed, and the row is deleted once the run finished (issue 16).
     const keys = await server.api('GET', '/api/keys');
     expect(keys.body.keys.find((k: any) => k.runId === started.body.id)).toBeUndefined();
     const viaDeleted = await fetch(`${server.baseUrl}/api/tasks`, {
-      headers: { authorization: `Bearer ${env.AGENTDECK_API_KEY}` },
+      headers: { authorization: `Bearer ${env.HARMONIC_API_KEY}` },
     });
     expect(viaDeleted.status).toBe(401);
   });
@@ -109,7 +109,7 @@ describe('mcp server & scoped keys', () => {
     try {
       const created = await codexServer.api('POST', '/api/tasks', {
         harness: 'codex',
-        prompt: JSON.stringify({ echoSessionNew: true, echoEnv: ['AGENTDECK_API_KEY'] }),
+        prompt: JSON.stringify({ echoSessionNew: true, echoEnv: ['HARMONIC_API_KEY'] }),
       });
       const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(
@@ -121,11 +121,11 @@ describe('mcp server & scoped keys', () => {
         .map((e: any) => e.payload?.content?.text)
         .filter((t: any) => typeof t === 'string' && t.startsWith('{'));
       const sessionNew = JSON.parse(texts.find((t: string) => t.includes('mcpServers'))!);
-      const runKey = JSON.parse(texts.find((t: string) => t.includes('AGENTDECK_API_KEY'))!).AGENTDECK_API_KEY;
+      const runKey = JSON.parse(texts.find((t: string) => t.includes('HARMONIC_API_KEY'))!).HARMONIC_API_KEY;
 
       expect(sessionNew.mcpServers).toEqual([
         {
-          name: 'agentdeck',
+          name: 'harmonic',
           type: 'http',
           url: expect.stringContaining('/mcp'),
           headers: [{ name: 'Authorization', value: `Bearer ${runKey}` }],

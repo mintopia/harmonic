@@ -6,7 +6,7 @@
  */
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
-export const RAIL_COLLAPSED_KEY = 'agentdeck.rail-collapsed';
+export const RAIL_COLLAPSED_KEY = 'harmonic.rail-collapsed';
 
 export function loadRailCollapsed(storage: StorageLike): boolean {
   try {

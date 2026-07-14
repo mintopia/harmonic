@@ -39,7 +39,7 @@ describe('auth and api keys', () => {
     });
     expect(login.status).toBe(200);
     const cookie = login.headers.get('set-cookie')!;
-    expect(cookie).toContain('agentdeck_session=');
+    expect(cookie).toContain('harmonic_session=');
     expect(cookie).toContain('HttpOnly');
 
     const sessionCookie = cookie.split(';')[0]!;

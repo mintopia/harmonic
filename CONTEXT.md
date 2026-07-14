@@ -1,4 +1,4 @@
-# AgentDeck
+# Harmonic
 
 A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses over ACP.
@@ -63,7 +63,7 @@ _Avoid_: approve, merge (as the verb for the decision)
 ### Execution
 
 **Harness**:
-An agent CLI that AgentDeck drives to execute Runs — Claude (Claude Code),
+An agent CLI that Harmonic drives to execute Runs — Claude (Claude Code),
 Codex, or Copilot — exclusively over ACP.
 _Avoid_: agent (ambiguous), backend, provider
 
@@ -75,7 +75,7 @@ _Avoid_: cwd, project dir
 **Isolation Mode**:
 How a Run touches its Working Directory — **direct** (in place, unlocked;
 concurrent collisions are the operator's problem) or **worktree** (a
-temporary git worktree on branch `agentdeck/task-<id>-run-<n>` off the base
+temporary git worktree on branch `harmonic/task-<id>-run-<n>` off the base
 branch; the branch remains as the artifact). Global default, per-Task
 override.
 
@@ -128,13 +128,13 @@ and managed by the operator. Listing keys shows only these.
 _Avoid_: token (ambiguous with Run Key)
 
 **Run Key**:
-An ephemeral bearer token AgentDeck mints per Run and injects into the
+An ephemeral bearer token Harmonic mints per Run and injects into the
 spawned Harness so agents reach MCP without setup. Deleted outright when
 the Run finishes (a startup sweep removes orphans); never listed or shown
 in the UI.
 _Avoid_: scoped key, per-run API key
 
 **Config Repo**:
-A git repository (dotfiles-style) holding AgentDeck configuration —
+A git repository (dotfiles-style) holding Harmonic configuration —
 harnesses, models, price overrides, channels, credentials, API keys. A seed: imported on
 init and on explicit pull; exportable; the database remains runtime truth.

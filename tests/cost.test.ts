@@ -116,7 +116,7 @@ describe('cost surfaces (API)', () => {
     workDirModels: Record<string, Record<string, number>>, // workDir -> model -> input_tokens
     prices: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>,
   ) => {
-    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-cost-logs-'));
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-cost-logs-'));
     const overrides = stubHarness() as DeepPartial<AppConfig> & {
       harnesses: { claude: Record<string, unknown> };
       prices?: unknown;
@@ -153,7 +153,7 @@ describe('cost surfaces (API)', () => {
   const flatPrice = (input: number) => ({ input, output: 0, cacheRead: 0, cacheWrite: 0 });
 
   it('run detail carries cost with the per-model split; config price changes apply retroactively', async () => {
-    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-cost-work-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
     server = await serverWithLoggedUsage(
       { [workDir]: { modelA: 1_000_000 } },
       { modelA: flatPrice(2) },
@@ -170,7 +170,7 @@ describe('cost surfaces (API)', () => {
   });
 
   it('task usage endpoint sums cost over ALL runs, failed attempts included', async () => {
-    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-cost-work-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
     server = await serverWithLoggedUsage(
       { [workDir]: { modelA: 1_000_000 } },
       { modelA: flatPrice(2) },
@@ -187,9 +187,9 @@ describe('cost surfaces (API)', () => {
   });
 
   it('task list carries cost and sorts by it server-side', async () => {
-    const dirCheap = mkdtempSync(join(tmpdir(), 'agentdeck-cost-cheap-'));
-    const dirDear = mkdtempSync(join(tmpdir(), 'agentdeck-cost-dear-'));
-    const dirNone = mkdtempSync(join(tmpdir(), 'agentdeck-cost-none-'));
+    const dirCheap = mkdtempSync(join(tmpdir(), 'harmonic-cost-cheap-'));
+    const dirDear = mkdtempSync(join(tmpdir(), 'harmonic-cost-dear-'));
+    const dirNone = mkdtempSync(join(tmpdir(), 'harmonic-cost-none-'));
     server = await serverWithLoggedUsage(
       { [dirCheap]: { modelA: 1_000_000 }, [dirDear]: { modelB: 1_000_000 } },
       { modelA: flatPrice(1), modelB: flatPrice(3) },
@@ -209,8 +209,8 @@ describe('cost surfaces (API)', () => {
   });
 
   it('backfills a missing per-model split at boot, preserving ACP totals (log-flush race healing)', async () => {
-    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-cost-work-'));
-    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-cost-logs-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-cost-logs-'));
     const overrides = stubHarness() as DeepPartial<AppConfig> & {
       harnesses: { claude: Record<string, unknown> };
       prices?: unknown;
@@ -254,7 +254,7 @@ describe('cost surfaces (API)', () => {
   });
 
   it('stats carry period cost, per-model cost, and the incomplete flag for unpriced models', async () => {
-    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-cost-work-'));
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
     server = await serverWithLoggedUsage(
       { [workDir]: { modelA: 1_000_000, mystery: 5 } },
       { modelA: flatPrice(2) },

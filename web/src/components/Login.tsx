@@ -26,7 +26,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center">
       <form onSubmit={submit} className="w-80 rounded-md border border-hairline bg-surface p-6">
-        <h1 className="mb-4 text-center text-title font-semibold">AgentDeck</h1>
+        <h1 className="mb-4 text-center text-title font-semibold">Harmonic</h1>
         <input
           type="text"
           aria-label="Username"

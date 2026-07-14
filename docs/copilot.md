@@ -1,6 +1,6 @@
 # Copilot Harness: operator notes
 
-AgentDeck drives the GitHub Copilot CLI over ACP (`copilot --acp`). These
+Harmonic drives the GitHub Copilot CLI over ACP (`copilot --acp`). These
 are the operational facts an operator needs, established by the issue-25
 spike and encoded by issue 26.
 
@@ -18,15 +18,15 @@ spike and encoded by issue 26.
 
 ## Model pinning is plan-dependent
 
-- AgentDeck pins the Task's model via ACP `session/set_model` on every
+- Harmonic pins the Task's model via ACP `session/set_model` on every
   run — including `auto`, because an unpinned session inherits the model
   persisted in the operator's `~/.copilot/settings.json`.
 - On plans **with model selection** the pin is honored. On **auto-only
   plans** the service accepts the pin and silently routes to its own
-  choice — AgentDeck surfaces this as a `model_mismatch` event on the run
+  choice — Harmonic surfaces this as a `model_mismatch` event on the run
   (a Task pinned to `auto` accepts any serving model).
 - The shipped model list is a snapshot of an entitled plan's
-  `availableModels`, minus ids AgentDeck has no API-equivalent price for
+  `availableModels`, minus ids Harmonic has no API-equivalent price for
   (`gemini-*`, `mai-*`). If your plan serves those, add them to
   `harnesses.copilot.models` and give them a `prices` entry — an unpriced
   observed model flags Cost incomplete (a floor, never a fake zero).
@@ -34,7 +34,7 @@ spike and encoded by issue 26.
 ## Usage, Cost, and AI Units
 
 - Per-model Usage comes from the CLI's OpenTelemetry file exporter;
-  AgentDeck points `COPILOT_OTEL_FILE_EXPORTER_PATH` at
+  Harmonic points `COPILOT_OTEL_FILE_EXPORTER_PATH` at
   `<dataDir>/copilot-otel/<cwd-slug>.jsonl` (override the root with
   `harnesses.copilot.sessionLogDir`). Usage is attributed to the model
   that actually served each call.

@@ -18,7 +18,7 @@ const taskId = { taskId: z.number().int().positive().describe('Task id') };
  * tool list always reflects the current config.
  */
 export function buildMcpServer(ctx: AppContext): McpServer {
-  const server = new McpServer({ name: 'agentdeck', version: '0.1.0' });
+  const server = new McpServer({ name: 'harmonic', version: '0.1.0' });
 
   const json = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],

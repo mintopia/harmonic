@@ -10,14 +10,14 @@ describe('run-scoped key restrictions', () => {
     // Capture a scoped key by having a hanging run echo its env, then keep
     // the run alive so the key stays valid while we probe with it.
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['AGENTDECK_API_KEY'], exit: 'hang' }),
+      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     const echo = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
       return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
     });
-    scopedToken = JSON.parse(echo.payload.content.text).AGENTDECK_API_KEY;
+    scopedToken = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
   });
   afterAll(async () => {
     await server.close();
@@ -69,14 +69,14 @@ describe('scoped key crash recovery', () => {
   it('revokes scoped keys of interrupted runs at boot', async () => {
     const own = await startServer(stubHarness());
     const created = await own.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['AGENTDECK_API_KEY'], exit: 'hang' }),
+      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
     });
     const started = await own.api('POST', `/api/tasks/${created.body.id}/run`);
     const echo = await waitFor(async () => {
       const { body } = await own.api('GET', `/api/runs/${started.body.id}/events`);
       return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
     });
-    const token = JSON.parse(echo.payload.content.text).AGENTDECK_API_KEY;
+    const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
 
     await own.app.close();
     const reopened = await startServer(stubHarness(), { dataDir: own.dataDir });

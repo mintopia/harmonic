@@ -7,7 +7,7 @@
 //   "updates":  [ <session/update `update` objects, sent in order> ],
 //   "delayMs":  10,                     // pause between updates
 //   "requestPermission": { "title": "Write file" },  // ask mid-stream
-//   "echoEnv":  ["AGENTDECK_MCP_URL"],  // emit env values as a chunk
+//   "echoEnv":  ["HARMONIC_MCP_URL"],  // emit env values as a chunk
 //   "echoSessionNew": true,             // emit the session/new params received
 //   "stopReason": "end_turn",
 //   "usage":    { "inputTokens": 1, "outputTokens": 2 },
@@ -120,8 +120,8 @@ async function handlePrompt(msg) {
         '@modelcontextprotocol/sdk/client/streamableHttp.js'
       );
       const client = new Client({ name: 'stub-harness', version: '0.0.0' });
-      const transport = new StreamableHTTPClientTransport(new URL(process.env.AGENTDECK_MCP_URL), {
-        requestInit: { headers: { authorization: `Bearer ${process.env.AGENTDECK_API_KEY}` } },
+      const transport = new StreamableHTTPClientTransport(new URL(process.env.HARMONIC_MCP_URL), {
+        requestInit: { headers: { authorization: `Bearer ${process.env.HARMONIC_API_KEY}` } },
       });
       await client.connect(transport);
       const result = await client.callTool({ name: 'create_task', arguments: scenario.mcpCreateTask });

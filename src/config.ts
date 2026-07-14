@@ -151,5 +151,5 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
 }
 
 export function defaultDataDir(): string {
-  return process.env.AGENTDECK_DATA_DIR ?? join(homedir(), '.agentdeck');
+  return process.env.HARMONIC_DATA_DIR ?? join(homedir(), '.harmonic');
 }

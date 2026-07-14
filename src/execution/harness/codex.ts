@@ -39,7 +39,7 @@ export const codexAdapter: HarnessAdapter = {
   // bearer header, so the Run Key mechanism needs zero operator setup.
   mcpServers: ({ url, token }) => [
     {
-      name: 'agentdeck',
+      name: 'harmonic',
       type: 'http',
       url,
       headers: [{ name: 'Authorization', value: `Bearer ${token}` }],

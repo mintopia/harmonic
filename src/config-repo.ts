@@ -11,7 +11,7 @@ import { ChannelService, createChannelSchema } from './notifications/channels.js
 import { Git } from './execution/git.js';
 import { DomainError } from './domain/errors.js';
 
-export const CONFIG_FILE = 'agentdeck.json';
+export const CONFIG_FILE = 'harmonic.json';
 const REPO_SETTING = 'configRepo';
 
 /**
@@ -36,7 +36,7 @@ export interface ConfigRepoDeps {
 
 /**
  * Dotfiles-style portability (the PRD's Config Repo): a git repo holding
- * `agentdeck.json` is imported on init and on explicit pull; export
+ * `harmonic.json` is imported on init and on explicit pull; export
  * writes live config back to the clone as a committable file. The
  * database stays runtime truth — there is no background sync.
  */
@@ -73,7 +73,7 @@ export class ConfigRepoService {
   /** Explicit re-import: git pull, then apply the file. Nothing else syncs. */
   async pull(): Promise<ConfigFile> {
     if (!existsSync(join(this.cloneDir, '.git'))) {
-      throw new DomainError('conflict', 'no config repo configured; run `agentdeck init --repo <url>` first');
+      throw new DomainError('conflict', 'no config repo configured; run `harmonic init --repo <url>` first');
     }
     await Git.pull(this.cloneDir);
     return this.importFromClone();

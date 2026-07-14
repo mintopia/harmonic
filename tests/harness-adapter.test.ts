@@ -79,7 +79,7 @@ describe('harness adapters', () => {
     // arrived with the Authorization header.
     expect(adapterFor('copilot').mcpServers({ url: 'http://127.0.0.1:1/mcp', token: 'rk' })).toEqual([
       {
-        name: 'agentdeck',
+        name: 'harmonic',
         type: 'http',
         url: 'http://127.0.0.1:1/mcp',
         headers: [{ name: 'Authorization', value: 'Bearer rk' }],

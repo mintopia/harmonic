@@ -1,5 +1,5 @@
 {
-  "name": "agentdeck",
+  "name": "harmonic",
   "version": "0.1.0",
   "description": "Queue, run, and review autonomous coding-agent tasks over ACP",
   "main": "index.js",
@@ -17,7 +17,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "agentdeck": "dist/cli.js"
+    "harmonic": "dist/cli.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.1",
