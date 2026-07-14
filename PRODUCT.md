@@ -40,4 +40,4 @@ Fast, dense, operator-grade. Quiet control-room energy: the interface carries a 
 
 ## Accessibility & Inclusion
 
-WCAG 2.1 AA: 4.5:1 contrast floor for informational text, full keyboard paths for all interactive elements, visible focus indication, `prefers-reduced-motion` alternatives for all animation. Dark-only (`color-scheme: dark`) is a deliberate identity choice for the operator context.
+WCAG 2.1 AA: 4.5:1 contrast floor for informational text, full keyboard paths for all interactive elements, visible focus indication, `prefers-reduced-motion` alternatives for all animation. Dark is the canonical operator identity; a Daylight (light) variant ships for bright rooms, following `prefers-color-scheme` (amended 2026-07-14 with the DESIGN.md theme strategy, issue 19).

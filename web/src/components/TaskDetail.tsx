@@ -5,13 +5,11 @@ import type { Cost, Run, RunEvent, Task } from '../types';
 import { EventStream } from './EventStream';
 import { Modal } from './Modal';
 import { subscribe } from '../ws';
+import { btnQuiet, chip, labelType, stateChip } from '../ui';
 
-const RUN_STATE_STYLES: Record<Run['state'], string> = {
-  running: 'bg-amber-900/70 text-amber-300',
-  completed: 'bg-emerald-900/70 text-emerald-300',
-  failed: 'bg-red-900/70 text-red-300',
-  cancelled: 'bg-zinc-800 text-zinc-400',
-};
+const metaChip = `${chip} bg-raised text-muted`;
+const inlineSelect =
+  'rounded-md border border-hairline bg-canvas px-1 py-0.5 text-ink focus:border-accent focus:outline-none';
 
 function Dependencies({ task }: { task: Task }) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -30,17 +28,17 @@ function Dependencies({ task }: { task: Task }) {
   const act = (fn: () => Promise<Task>) => fn().then(setCurrent, (e) => alert(e.message));
 
   return (
-    <div className="border-b border-zinc-800 px-4 py-2 text-xs">
+    <div className="border-b border-hairline px-4 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold uppercase tracking-wider text-zinc-400">Depends on</span>
-        {current.dependsOn.length === 0 && <span className="text-zinc-400">nothing</span>}
+        <span className={`${labelType} text-muted`}>Depends on</span>
+        {current.dependsOn.length === 0 && <span className="text-muted">nothing</span>}
         {current.dependsOn.map((depId) => (
-          <span key={depId} className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+          <span key={depId} className={`flex items-center gap-1 ${metaChip} font-data`}>
             #{depId}
             {editable && (
               <button
                 aria-label={`Remove dependency #${depId}`}
-                className="text-zinc-400 hover:text-red-400"
+                className="text-muted hover:text-fail"
                 onClick={() => act(() => api.removeDependency(task.id, depId))}
               >
                 ✕
@@ -51,7 +49,7 @@ function Dependencies({ task }: { task: Task }) {
         {editable && candidates.length > 0 && (
           <select
             aria-label="Add dependency"
-            className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300"
+            className={inlineSelect}
             value={pick}
             onChange={(e) => {
               const id = Number(e.target.value);
@@ -68,16 +66,16 @@ function Dependencies({ task }: { task: Task }) {
           </select>
         )}
         <div className="flex-1" />
-        <span className="font-semibold uppercase tracking-wider text-zinc-400">Blocks</span>
-        {current.dependents.length === 0 && <span className="text-zinc-400">nothing</span>}
+        <span className={`${labelType} text-muted`}>Blocks</span>
+        {current.dependents.length === 0 && <span className="text-muted">nothing</span>}
         {current.dependents.map((id) => (
-          <span key={id} className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+          <span key={id} className={`${metaChip} font-data`}>
             #{id}
           </span>
         ))}
         {current.dependents.length > 0 && current.state !== 'completed' && (
           <button
-            className="text-zinc-400 hover:text-red-400"
+            className="text-muted hover:text-fail"
             onClick={() =>
               confirm('Cancel this task and everything that depends on it?') &&
               act(() => api.cancelTask(task.id, true))
@@ -111,14 +109,14 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
   const candidates = channels.filter((c) => !attached.includes(c.id));
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2 text-xs">
-      <span className="font-semibold uppercase tracking-wider text-zinc-400">Notify</span>
+    <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2">
+      <span className={`${labelType} text-muted`}>Notify</span>
       {attached.map((id) => (
-        <span key={id} className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+        <span key={id} className={`flex items-center gap-1 ${metaChip}`}>
           {channels.find((c) => c.id === id)?.name ?? `#${id}`}
           <button
             aria-label={`Stop routing to ${channels.find((c) => c.id === id)?.name ?? `channel #${id}`}`}
-            className="text-zinc-400 hover:text-red-400"
+            className="text-muted hover:text-fail"
             onClick={() =>
               fetch(`/api/tasks/${taskId}/channels/${id}`, { method: 'DELETE' }).then(load)
             }
@@ -127,11 +125,11 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
           </button>
         </span>
       ))}
-      {attached.length === 0 && <span className="text-zinc-400">channel defaults</span>}
+      {attached.length === 0 && <span className="text-muted">channel defaults</span>}
       {candidates.length > 0 && (
         <select
           aria-label="Route notifications to channel"
-          className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300"
+          className={inlineSelect}
           value=""
           onChange={(e) => {
             const channelId = Number(e.target.value);
@@ -217,66 +215,63 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   return (
     <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
       <div className="flex max-h-[85vh] flex-col">
-        <header className="border-b border-zinc-800 p-4">
-          <div className="mb-1 flex items-center gap-2 text-xs text-zinc-400">
-            <span>Task #{task.id}</span>
-            <span className="rounded bg-zinc-800 px-1.5 py-0.5">{task.state}</span>
-            <span>
+        <header className="border-b border-hairline p-4">
+          <div className="mb-1 flex items-center gap-2 text-muted">
+            <span className="font-data">Task #{task.id}</span>
+            <span className={stateChip(task.state)}>{task.state}</span>
+            <span className="font-data">
               {task.harness} · {task.model} · {task.isolationMode}
             </span>
             {formatCost(taskCost) && (
-              <span title="Total cost across all runs, retries included">
+              <span className="font-data" title="Total cost across all runs, retries included">
                 Cost {formatCost(taskCost)}
               </span>
             )}
             <div className="flex-1" />
-            <button aria-label="Close" onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
+            <button aria-label="Close" onClick={onClose} className={btnQuiet}>
               ✕
             </button>
           </div>
-          <p className="line-clamp-4 whitespace-pre-wrap text-sm text-zinc-200">{task.prompt}</p>
+          <p className="line-clamp-4 whitespace-pre-wrap text-ink">{task.prompt}</p>
         </header>
 
         <Dependencies task={task} />
         <NotifyOverrides taskId={task.id} />
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2">
-          {runs.length === 0 && <span className="text-xs text-zinc-400">No runs yet.</span>}
+        <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2">
+          {runs.length === 0 && <span className="text-muted">No runs yet.</span>}
           {runs.map((run) => (
             <button
               key={run.id}
+              aria-pressed={run.id === selectedRunId}
               onClick={() => setSelectedRunId(run.id)}
-              className={`rounded-md border px-2 py-1 text-xs ${
-                run.id === selectedRunId ? 'border-amber-500 text-amber-300' : 'border-zinc-700 text-zinc-400'
+              className={`rounded-md border px-2 py-1 transition-colors duration-150 ${
+                run.id === selectedRunId ? 'border-accent text-ink' : 'border-hairline text-muted hover:text-ink'
               }`}
             >
               Run {run.attempt}
-              <span className={`ml-2 rounded px-1 py-0.5 text-[10px] ${RUN_STATE_STYLES[run.state]}`}>
-                {run.state}
-              </span>
+              <span className={`ml-2 ${stateChip(run.state)}`}>{run.state}</span>
             </button>
           ))}
         </div>
 
         {selectedRun && (
-          <div className="px-4 py-2 text-xs tabular-nums text-zinc-400">
-            {selectedRun.reason && <span className="text-red-400">reason: {selectedRun.reason} · </span>}
+          <div className="px-4 py-2 font-data text-data text-muted">
+            {selectedRun.reason && <span className="text-fail">reason: {selectedRun.reason} · </span>}
             {selectedRun.stopReason && <span>stop: {selectedRun.stopReason} · </span>}
             started {new Date(selectedRun.startedAt).toLocaleTimeString()}
             {selectedRun.finishedAt && <> · finished {new Date(selectedRun.finishedAt).toLocaleTimeString()}</>}
             {selectedRun.usage?.totals && (
               <>
                 {' · '}
-                <span className="text-emerald-400/80">
-                  {(selectedRun.usage.totals as any).inputTokens?.toLocaleString()} in /{' '}
-                  {(selectedRun.usage.totals as any).outputTokens?.toLocaleString()} out tokens
-                </span>
+                {(selectedRun.usage.totals as any).inputTokens?.toLocaleString()} in /{' '}
+                {(selectedRun.usage.totals as any).outputTokens?.toLocaleString()} out tokens
               </>
             )}
             {selectedRun.cost && formatCost(selectedRun.cost) && (
               <>
                 {' · '}
-                <span className="text-amber-300/80" title={formatCostByModel(selectedRun.cost)}>
+                <span title={formatCostByModel(selectedRun.cost)}>
                   {formatCost(selectedRun.cost)}
                   {Object.keys(selectedRun.cost.byModel).length > 1 && (
                     <> ({formatCostByModel(selectedRun.cost)})</>
@@ -287,7 +282,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             {selectedRun.branch && (
               <>
                 {' · '}
-                <span className="text-indigo-300">
+                <span className="text-tool">
                   {selectedRun.branch} ← {selectedRun.baseBranch}
                 </span>
               </>
@@ -295,13 +290,13 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
           </div>
         )}
         {selectedRun?.reviewFeedback && (
-          <div className="mx-4 mb-2 rounded border border-amber-900 bg-amber-950/40 px-3 py-1.5 text-xs text-amber-200">
-            {selectedRun.review === 'rejected' ? 'Rejection feedback: ' : ''}
+          <div className="mx-4 mb-2 rounded-md border border-hairline bg-raised px-3 py-1.5 text-ink">
+            {selectedRun.review === 'rejected' && <span className="text-fail">Rejection feedback: </span>}
             {selectedRun.reviewFeedback}
           </div>
         )}
         {diffStat && (
-          <pre className="mx-4 mb-2 overflow-x-auto rounded bg-zinc-950 p-2 text-[11px] text-zinc-400">{diffStat}</pre>
+          <pre className="mx-4 mb-2 overflow-x-auto rounded-md bg-canvas p-2 font-data text-data text-muted">{diffStat}</pre>
         )}
 
         <div className="flex-1 overflow-y-auto p-4">

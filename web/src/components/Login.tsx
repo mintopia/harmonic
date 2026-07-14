@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { btnPrimary, field } from '../ui';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [username, setUsername] = useState('operator');
@@ -23,11 +24,9 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-      <form onSubmit={submit} className="w-80 rounded-lg border border-zinc-800 bg-zinc-900 p-6 shadow-xl">
-        <h1 className="mb-4 text-center text-lg font-semibold text-zinc-100">
-          Agent<span className="text-amber-400">Deck</span>
-        </h1>
+    <div className="flex min-h-screen items-center justify-center">
+      <form onSubmit={submit} className="w-80 rounded-md border border-hairline bg-surface p-6">
+        <h1 className="mb-4 text-center text-title font-semibold">AgentDeck</h1>
         <input
           type="text"
           aria-label="Username"
@@ -35,7 +34,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none"
+          className={`${field} mb-3`}
         />
         <input
           type="password"
@@ -45,14 +44,10 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
           placeholder="Operator password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none"
+          className={`${field} mb-3`}
         />
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy || !password}
-          className="w-full rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
-        >
+        {error && <p className="mb-3 text-fail">{error}</p>}
+        <button type="submit" disabled={busy || !password} className={`${btnPrimary} w-full`}>
           Log in
         </button>
       </form>

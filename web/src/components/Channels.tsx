@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
+import { btnPrimary, btnQuiet, chip, field } from '../ui';
 
 const EVENTS = [
   'task.created',
@@ -30,9 +31,6 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) throw new Error(parsed?.error?.message ?? `${res.status}`);
   return parsed as T;
 }
-
-const field =
-  'w-full rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none';
 
 export function Channels({ onClose }: { onClose: () => void }) {
   const [channelList, setChannelList] = useState<Channel[]>([]);
@@ -79,14 +77,14 @@ export function Channels({ onClose }: { onClose: () => void }) {
     <Modal label="Notification Channels" onClose={onClose} className="max-w-2xl">
       <div className="max-h-[85vh] overflow-y-auto p-5">
         <div className="mb-4 flex items-center">
-          <h2 className="text-base font-semibold">Notification Channels</h2>
+          <h2 className="text-headline font-semibold">Notification Channels</h2>
           <div className="flex-1" />
-          <button aria-label="Close" onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
+          <button aria-label="Close" onClick={onClose} className={btnQuiet}>
             ✕
           </button>
         </div>
 
-        <div className="mb-5 rounded-md border border-zinc-800 p-3">
+        <div className="mb-5 rounded-md border border-hairline p-3">
           <div className="mb-2 grid grid-cols-2 gap-2">
             <input aria-label="Channel name" className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
             <select aria-label="Channel type" className={field} value={type} onChange={(e) => setType(e.target.value as Channel['type'])}>
@@ -98,11 +96,11 @@ export function Channels({ onClose }: { onClose: () => void }) {
           </div>
           {type !== 'email' ? (
             <div className="mb-2 grid gap-2">
-              <input aria-label="Webhook URL" className={field} placeholder="Webhook URL" value={url} onChange={(e) => setUrl(e.target.value)} />
+              <input aria-label="Webhook URL" className={`${field} font-data`} placeholder="Webhook URL" value={url} onChange={(e) => setUrl(e.target.value)} />
               {type === 'webhook' && (
                 <input
                   aria-label="HMAC secret"
-                  className={field}
+                  className={`${field} font-data`}
                   placeholder="HMAC secret (optional)"
                   value={secret}
                   onChange={(e) => setSecret(e.target.value)}
@@ -111,33 +109,29 @@ export function Channels({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <div className="mb-2 grid grid-cols-2 gap-2">
-              <input aria-label="SMTP host" className={field} placeholder="SMTP host" value={smtp.host} onChange={(e) => setSmtp({ ...smtp, host: e.target.value })} />
-              <input aria-label="SMTP port" className={field} placeholder="SMTP port" value={smtp.port} onChange={(e) => setSmtp({ ...smtp, port: e.target.value })} />
-              <input aria-label="From address" className={field} placeholder="From address" value={smtp.from} onChange={(e) => setSmtp({ ...smtp, from: e.target.value })} />
-              <input aria-label="To address" className={field} placeholder="To address" value={smtp.to} onChange={(e) => setSmtp({ ...smtp, to: e.target.value })} />
+              <input aria-label="SMTP host" className={`${field} font-data`} placeholder="SMTP host" value={smtp.host} onChange={(e) => setSmtp({ ...smtp, host: e.target.value })} />
+              <input aria-label="SMTP port" className={`${field} font-data`} placeholder="SMTP port" value={smtp.port} onChange={(e) => setSmtp({ ...smtp, port: e.target.value })} />
+              <input aria-label="From address" className={`${field} font-data`} placeholder="From address" value={smtp.from} onChange={(e) => setSmtp({ ...smtp, from: e.target.value })} />
+              <input aria-label="To address" className={`${field} font-data`} placeholder="To address" value={smtp.to} onChange={(e) => setSmtp({ ...smtp, to: e.target.value })} />
             </div>
           )}
-          {error && <p className="mb-2 text-sm text-red-400">{error}</p>}
-          <button
-            disabled={!name}
-            onClick={create}
-            className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
-          >
+          {error && <p className="mb-2 text-fail">{error}</p>}
+          <button disabled={!name} onClick={create} className={btnPrimary}>
             Add Channel
           </button>
         </div>
 
         {channelList.map((channel) => (
-          <div key={channel.id} className="mb-3 rounded-md border border-zinc-800 p-3">
-            <div className="mb-2 flex items-center gap-2 text-sm">
-              <span className="font-medium">{channel.name}</span>
-              <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-400">{channel.type}</span>
-              <span className="truncate text-xs text-zinc-400">
+          <div key={channel.id} className="mb-3 rounded-md border border-hairline p-3">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="font-semibold">{channel.name}</span>
+              <span className={`${chip} bg-raised text-muted`}>{channel.type}</span>
+              <span className="truncate font-data text-data text-muted">
                 {channel.type === 'email' ? channel.config.to : channel.config.url}
               </span>
               <div className="flex-1" />
               <button
-                className="text-xs text-zinc-400 hover:text-red-400"
+                className="text-muted hover:text-fail"
                 onClick={() => json('DELETE', `/api/channels/${channel.id}`).then(load)}
               >
                 Delete
@@ -145,7 +139,7 @@ export function Channels({ onClose }: { onClose: () => void }) {
             </div>
             <div className="flex flex-wrap gap-2">
               {EVENTS.map((event) => (
-                <label key={event} className="flex items-center gap-1 text-xs text-zinc-400">
+                <label key={event} className="flex items-center gap-1 font-data text-data text-muted">
                   <input
                     type="checkbox"
                     checked={channel.events.includes(event)}
@@ -157,7 +151,7 @@ export function Channels({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         ))}
-        {channelList.length === 0 && <p className="text-center text-sm text-zinc-400">No channels configured.</p>}
+        {channelList.length === 0 && <p className="text-center text-muted">No channels configured.</p>}
       </div>
     </Modal>
   );

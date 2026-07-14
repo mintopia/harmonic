@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatCost, usd } from '../cost';
 import type { Cost } from '../types';
+import { chip, labelType } from '../ui';
 
 interface Stats {
   from: number;
@@ -27,12 +28,15 @@ const RANGES: Record<string, number | null> = {
 };
 
 const fmt = (n: number) => n.toLocaleString();
+const panel = 'rounded-md border border-hairline bg-surface p-4';
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <div className="text-xs uppercase tracking-wider text-zinc-400">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">{value}</div>
+    <div className={panel}>
+      {/* Counts stay in their surrounding role (DESIGN.md § Typography):
+          the tile speaks Headline, tabular-nums comes from the base layer. */}
+      <div className={`${labelType} text-muted`}>{label}</div>
+      <div className="mt-1 text-headline font-semibold text-ink">{value}</div>
     </div>
   );
 }
@@ -50,16 +54,17 @@ export function StatsPage() {
   }, [range]);
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-4 flex items-center gap-2">
-        <h2 className="text-base font-semibold">Usage & statistics</h2>
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h2 className="text-display font-semibold tracking-tight">Usage & statistics</h2>
         <div className="flex-1" />
         {Object.keys(RANGES).map((r) => (
           <button
             key={r}
+            aria-pressed={r === range}
             onClick={() => setRange(r)}
-            className={`rounded-md border px-2 py-1 text-xs ${
-              r === range ? 'border-amber-500 text-amber-300' : 'border-zinc-700 text-zinc-400'
+            className={`rounded-md border px-2 py-1 text-label transition-colors duration-150 ${
+              r === range ? 'border-accent text-ink' : 'border-hairline text-muted hover:text-ink'
             }`}
           >
             {r}
@@ -69,7 +74,7 @@ export function StatsPage() {
 
       {stats && (
         <>
-          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
             <Tile label="Runs" value={fmt(stats.runCount)} />
             <Tile label="Cost" value={formatCost(stats.cost) ?? '—'} />
             <Tile label="Input tokens" value={stats.totals ? fmt(stats.totals.inputTokens) : '—'} />
@@ -78,24 +83,24 @@ export function StatsPage() {
             <Tile label="Cache write" value={stats.totals ? fmt(stats.totals.cacheWriteTokens) : '—'} />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Tokens & cost per model</h3>
+          <div className="grid gap-2 md:grid-cols-2">
+            <div className={panel}>
+              <h3 className={`mb-2 ${labelType} text-muted`}>Tokens & cost per model</h3>
               {Object.keys(stats.models).length === 0 && (
-                <p className="text-sm text-zinc-400">No per-model data in range.</p>
+                <p className="text-muted">No per-model data in range.</p>
               )}
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left">
                 <tbody>
                   {Object.entries(stats.models).map(([model, u]) => {
                     const modelCost = stats.cost?.byModel[model];
                     return (
-                      <tr key={model} className="border-t border-zinc-800 first:border-t-0">
-                        <td className="py-1.5 font-mono text-xs">{model}</td>
-                        <td className="text-right text-xs tabular-nums text-zinc-400">
+                      <tr key={model} className="border-t border-hairline first:border-t-0">
+                        <td className="py-1.5 font-data text-data">{model}</td>
+                        <td className="text-right font-data text-data text-muted">
                           {fmt(u.inputTokens)} in · {fmt(u.outputTokens)} out
                         </td>
                         <td
-                          className="pl-3 text-right text-xs tabular-nums text-amber-300/80"
+                          className="pl-3 text-right font-data text-data text-muted"
                           title={modelCost == null ? 'No price configured for this model' : undefined}
                         >
                           {modelCost == null ? '—' : usd(modelCost)}
@@ -107,19 +112,19 @@ export function StatsPage() {
               </table>
             </div>
 
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Tool calls</h3>
+            <div className={panel}>
+              <h3 className={`mb-2 ${labelType} text-muted`}>Tool calls</h3>
               {Object.keys(stats.toolCalls).length === 0 && (
-                <p className="text-sm text-zinc-400">No tool calls in range.</p>
+                <p className="text-muted">No tool calls in range.</p>
               )}
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left">
                 <tbody>
                   {Object.entries(stats.toolCalls)
                     .sort(([, a], [, b]) => b - a)
                     .map(([tool, count]) => (
-                      <tr key={tool} className="border-t border-zinc-800 first:border-t-0">
-                        <td className="py-1.5">{tool}</td>
-                        <td className="text-right tabular-nums text-zinc-400">{fmt(count)}</td>
+                      <tr key={tool} className="border-t border-hairline first:border-t-0">
+                        <td className="py-1.5 font-data text-data">{tool}</td>
+                        <td className="text-right text-muted">{fmt(count)}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -127,9 +132,9 @@ export function StatsPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-xs tabular-nums text-zinc-400">
+          <div className="mt-4 flex flex-wrap gap-2">
             {Object.entries(stats.runsByState).map(([state, count]) => (
-              <span key={state} className="rounded bg-zinc-900 px-2 py-1">
+              <span key={state} className={`${chip} bg-raised text-muted`}>
                 {state}: {count}
               </span>
             ))}

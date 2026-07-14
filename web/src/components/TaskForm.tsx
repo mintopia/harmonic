@@ -2,10 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task } from '../types';
 import { Modal } from './Modal';
+import { btnGhost, btnPrimary, btnQuiet, field, labelType } from '../ui';
 
-const field =
-  'w-full rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 focus:border-amber-500 focus:outline-none';
-const label = 'mb-1 block text-xs font-medium text-zinc-400';
+const label = `mb-1 block ${labelType} text-muted`;
 
 export function TaskForm({
   config,
@@ -57,7 +56,7 @@ export function TaskForm({
   return (
     <Modal label={task ? `Edit Task #${task.id}` : 'New Task'} onClose={onClose} className="max-w-lg">
       <form onSubmit={submit} className="p-5">
-        <h2 className="mb-4 text-base font-semibold">{task ? `Edit Task #${task.id}` : 'New Task'}</h2>
+        <h2 className="mb-4 text-headline font-semibold">{task ? `Edit Task #${task.id}` : 'New Task'}</h2>
 
         <div className="mb-3">
           <label className={label} htmlFor="task-prompt">Prompt</label>
@@ -84,7 +83,13 @@ export function TaskForm({
           </div>
           <div>
             <label className={label} htmlFor="task-model">Model (pick or type any ID)</label>
-            <input id="task-model" className={field} value={model} onChange={(e) => setModel(e.target.value)} list="models" />
+            <input
+              id="task-model"
+              className={`${field} font-data`}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              list="models"
+            />
             <datalist id="models">
               {models.map((m) => (
                 <option key={m} value={m} />
@@ -120,30 +125,21 @@ export function TaskForm({
 
         <div className="mb-4">
           <label className={label} htmlFor="task-workdir">Working Directory</label>
-          <input id="task-workdir" className={field} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
+          <input id="task-workdir" className={`${field} font-data`} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
         </div>
 
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-fail">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-md px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100">
+          <button type="button" onClick={onClose} className={`${btnQuiet} px-3 py-1.5`}>
             Close
           </button>
           {!task && (
-            <button
-              type="button"
-              disabled={busy || !prompt}
-              onClick={() => save('draft')}
-              className="rounded-md border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
-            >
+            <button type="button" disabled={busy || !prompt} onClick={() => save('draft')} className={btnGhost}>
               Save Draft
             </button>
           )}
-          <button
-            type="submit"
-            disabled={busy || !prompt}
-            className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
-          >
+          <button type="submit" disabled={busy || !prompt} className={btnPrimary}>
             {task ? 'Save' : 'Create Ready'}
           </button>
         </div>

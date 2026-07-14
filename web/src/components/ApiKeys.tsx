@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
+import { btnPrimary, btnQuiet, field, labelType } from '../ui';
 
 interface ApiKey {
   id: number;
@@ -43,9 +44,9 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
     <Modal label="API Keys" onClose={onClose} className="max-w-2xl">
       <div className="p-5">
         <div className="mb-4 flex items-center">
-          <h2 className="text-base font-semibold">API Keys</h2>
+          <h2 className="text-headline font-semibold">API Keys</h2>
           <div className="flex-1" />
-          <button aria-label="Close" onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
+          <button aria-label="Close" onClick={onClose} className={btnQuiet}>
             ✕
           </button>
         </div>
@@ -53,30 +54,26 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
         <div className="mb-4 flex gap-2">
           <input
             aria-label="Key name"
-            className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none"
+            className={`${field} flex-1`}
             placeholder="Key name (e.g. ci-bot)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <button
-            disabled={!name}
-            onClick={create}
-            className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
-          >
+          <button disabled={!name} onClick={create} className={btnPrimary}>
             Create
           </button>
         </div>
 
         {freshToken && (
-          <div className="mb-4 rounded-md border border-emerald-800 bg-emerald-950/50 p-3 text-sm">
-            <p className="mb-1 text-emerald-300">Copy this token now — it will not be shown again:</p>
-            <code className="block select-all break-all font-mono text-xs text-emerald-100">{freshToken}</code>
+          <div className="mb-4 rounded-md border border-accept bg-accept/15 p-3">
+            <p className="mb-1 text-accept">Copy this token now — it will not be shown again:</p>
+            <code className="block select-all break-all font-data text-data text-ink">{freshToken}</code>
           </div>
         )}
 
         <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-wider text-zinc-400">
+        <table className="w-full text-left">
+          <thead className={`${labelType} text-muted`}>
             <tr>
               <th className="py-1">Name</th>
               <th>Prefix</th>
@@ -87,11 +84,11 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
           </thead>
           <tbody>
             {keys.map((key) => (
-              <tr key={key.id} className="border-t border-zinc-800">
+              <tr key={key.id} className="border-t border-hairline">
                 <td className="py-1.5">{key.name}</td>
-                <td className="font-mono text-xs text-zinc-400">{key.prefix}…</td>
-                <td className="text-xs text-zinc-400">{key.scope}</td>
-                <td className="text-xs text-zinc-400">
+                <td className="font-data text-data text-muted">{key.prefix}…</td>
+                <td className="text-muted">{key.scope}</td>
+                <td className="font-data text-data text-muted">
                   {key.revokedAt
                     ? 'revoked'
                     : key.lastUsedAt
@@ -101,7 +98,7 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
                 <td className="text-right">
                   {!key.revokedAt && (
                     <button
-                      className="text-xs text-zinc-400 hover:text-red-400"
+                      className="text-muted hover:text-fail"
                       onClick={() => json('DELETE', `/api/keys/${key.id}`).then(load)}
                     >
                       Revoke
@@ -112,7 +109,7 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
             ))}
             {keys.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-3 text-center text-zinc-400">
+                <td colSpan={5} className="py-3 text-center text-muted">
                   No keys yet.
                 </td>
               </tr>

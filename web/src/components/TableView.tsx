@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
+import { labelType, stateChip } from '../ui';
 
 const select =
-  'rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-200 focus:border-amber-500 focus:outline-none';
+  'rounded-md border border-hairline bg-canvas px-2 py-1 text-label text-ink focus:border-accent focus:outline-none';
 
 type SortKey = 'createdAt' | 'priority' | 'cost';
 
@@ -33,14 +34,14 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
       });
   }, [state, harness, priority, sortBy, order]);
 
-  const sortHeader = (key: SortKey, label: string, align?: 'right') => (
+  const sortHeader = (key: SortKey, label: string, align?: 'right', extra = '') => (
     <th
       aria-sort={sortBy === key ? (order === 'asc' ? 'ascending' : 'descending') : undefined}
-      className={`py-2 ${align === 'right' ? 'text-right' : ''}`}
+      className={`py-2 ${align === 'right' ? 'text-right' : ''} ${extra}`}
     >
       <button
         type="button"
-        className="cursor-pointer select-none hover:text-zinc-200"
+        className="cursor-pointer select-none hover:text-ink"
         onClick={() => {
           if (sortBy === key) setOrder(order === 'asc' ? 'desc' : 'asc');
           else {
@@ -55,7 +56,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
   );
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <div className="mb-3 flex flex-wrap gap-2">
         <select aria-label="Filter by state" className={select} value={state} onChange={(e) => setState(e.target.value)}>
           <option value="">All states</option>
@@ -81,14 +82,14 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
             </option>
           ))}
         </select>
-        <span className="ml-auto self-center text-xs tabular-nums text-zinc-400">
+        <span className="ml-auto self-center text-muted">
           {loading ? 'Loading…' : `${tasks.length} tasks`}
         </span>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-wider text-zinc-400">
+        <table className="w-full text-left">
+          <thead className={`${labelType} text-muted`}>
             <tr>
               <th className="py-2">#</th>
               <th>Prompt</th>
@@ -97,7 +98,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
               <th>Model</th>
               {sortHeader('priority', 'Priority')}
               {sortHeader('cost', 'Cost', 'right')}
-              {sortHeader('createdAt', 'Created')}
+              {sortHeader('createdAt', 'Created', undefined, 'pl-4')}
             </tr>
           </thead>
           {/* Stale rows stay visible while a refetch is in flight, dimmed so the
@@ -106,14 +107,14 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
             {tasks.map((task) => (
               <tr
                 key={task.id}
-                className="cursor-pointer border-t border-zinc-800 hover:bg-zinc-900"
+                className="cursor-pointer border-t border-hairline hover:bg-surface"
                 onClick={() => onOpen(task)}
               >
-                <td className="py-2 tabular-nums text-zinc-400">{task.id}</td>
+                <td className="py-2 font-data text-data text-muted">{task.id}</td>
                 <td className="max-w-md pr-4">
                   <button
                     type="button"
-                    className="block w-full cursor-pointer truncate text-left text-zinc-200"
+                    className="block w-full cursor-pointer truncate text-left text-ink"
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpen(task);
@@ -123,18 +124,18 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
                   </button>
                 </td>
                 <td>
-                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-xs">{task.state}</span>
+                  <span className={stateChip(task.state)}>{task.state}</span>
                 </td>
-                <td className="text-zinc-400">{task.harness}</td>
-                <td className="font-mono text-xs text-zinc-400">{task.model}</td>
-                <td className="text-zinc-400">{task.priority}</td>
-                <td className="text-right text-xs tabular-nums text-zinc-400">{formatCost(task.cost) ?? '—'}</td>
-                <td className="text-xs tabular-nums text-zinc-400">{new Date(task.createdAt).toLocaleString()}</td>
+                <td className="text-muted">{task.harness}</td>
+                <td className="font-data text-data text-muted">{task.model}</td>
+                <td className={task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}>{task.priority}</td>
+                <td className="text-right font-data text-data text-muted">{formatCost(task.cost) ?? '—'}</td>
+                <td className="pl-4 font-data text-data text-muted">{new Date(task.createdAt).toLocaleString()}</td>
               </tr>
             ))}
             {!loading && tasks.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-6 text-center text-zinc-400">
+                <td colSpan={8} className="py-6 text-center text-muted">
                   No tasks match.
                 </td>
               </tr>

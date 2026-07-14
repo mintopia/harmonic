@@ -1,11 +1,6 @@
 import { api } from '../api';
 import type { Task } from '../types';
-
-const PRIORITY_STYLES: Record<Task['priority'], string> = {
-  high: 'bg-red-900/60 text-red-300',
-  normal: 'bg-zinc-800 text-zinc-400',
-  low: 'bg-sky-900/60 text-sky-300',
-};
+import { btnQuiet as quiet, chip } from '../ui';
 
 export function TaskCard({
   task,
@@ -24,54 +19,51 @@ export function TaskCard({
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, (e) => alert(e.message));
 
   return (
-    <article className="rounded-md border border-zinc-800 bg-zinc-900 p-3 text-sm shadow">
+    <article className="rounded-md border border-hairline bg-surface p-3 transition-colors duration-150 hover:bg-raised">
       <button
         type="button"
-        className="mb-2 line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-zinc-200 hover:text-white"
+        className="mb-2 line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-ink"
         onClick={() => onOpen(task)}
       >
         {task.prompt}
       </button>
-      <div className="mb-2 flex flex-wrap gap-1 text-[11px]">
-        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+      <div className="mb-2 flex flex-wrap items-center gap-1">
+        <span className={`${chip} bg-raised font-data tracking-normal text-muted`}>
           {task.harness} · {task.model}
         </span>
-        <span className={`rounded px-1.5 py-0.5 ${PRIORITY_STYLES[task.priority]}`}>{task.priority}</span>
-        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{task.isolationMode}</span>
+        {/* Priority is typographic, not chromatic (DESIGN.md § Colors). */}
+        <span className={`text-label uppercase tracking-wider ${task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}`}>
+          {task.priority}
+        </span>
+        <span className={`${chip} bg-raised text-muted`}>{task.isolationMode}</span>
         {task.dependsOn.length > 0 && (
-          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">⇠ {task.dependsOn.length} dep{task.dependsOn.length > 1 ? 's' : ''}</span>
+          <span className={`${chip} bg-raised text-muted`}>⇠ {task.dependsOn.length} dep{task.dependsOn.length > 1 ? 's' : ''}</span>
         )}
         {task.blockedOnFailed && (
-          <span className="rounded bg-red-900/60 px-1.5 py-0.5 font-medium text-red-300">blocked on failed</span>
+          <span className={`${chip} bg-fail/15 font-medium uppercase text-fail`}>blocked on failed</span>
         )}
       </div>
-      <div className="flex gap-2 text-xs">
-        <span className="tabular-nums text-zinc-400">#{task.id}</span>
+      <div className="flex gap-2">
+        <span className="font-data text-muted">#{task.id}</span>
         <div className="flex-1" />
         {editable && (
-          <button className="text-zinc-400 hover:text-zinc-100" onClick={() => onEdit(task)}>
+          <button className={quiet} onClick={() => onEdit(task)}>
             Edit
           </button>
         )}
         {task.state === 'draft' && (
-          <button
-            className="text-amber-400 hover:text-amber-300"
-            onClick={act(() => api.promoteTask(task.id))}
-          >
+          <button className={quiet} onClick={act(() => api.promoteTask(task.id))}>
             Ready
           </button>
         )}
         {task.state === 'ready' && (
-          <button
-            className="text-emerald-400 hover:text-emerald-300"
-            onClick={act(() => api.runTask(task.id))}
-          >
+          <button className={quiet} onClick={act(() => api.runTask(task.id))}>
             Run now
           </button>
         )}
         {task.state === 'failed' && (
           <button
-            className="text-amber-400 hover:text-amber-300"
+            className={quiet}
             onClick={act(() => api.requeueTask(task.id, window.prompt('Feedback for the retry (optional):') ?? undefined))}
           >
             Re-queue
@@ -80,13 +72,13 @@ export function TaskCard({
         {task.state === 'awaiting-review' && (
           <>
             <button
-              className="text-emerald-400 hover:text-emerald-300"
+              className="font-semibold text-accept hover:text-ink"
               onClick={act(() => api.acceptTask(task.id))}
             >
               Accept
             </button>
             <button
-              className="text-red-400 hover:text-red-300"
+              className="font-semibold text-fail hover:text-ink"
               onClick={act(() => api.rejectTask(task.id, window.prompt('Rejection feedback:') ?? undefined))}
             >
               Reject
@@ -94,10 +86,7 @@ export function TaskCard({
           </>
         )}
         {cancellable && (
-          <button
-            className="text-zinc-400 hover:text-red-400"
-            onClick={act(() => api.cancelTask(task.id))}
-          >
+          <button className="text-muted hover:text-fail" onClick={act(() => api.cancelTask(task.id))}>
             Cancel
           </button>
         )}

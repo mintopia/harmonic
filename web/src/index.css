@@ -1,14 +1,118 @@
 @import 'tailwindcss';
+@import '@fontsource/jetbrains-mono/400.css';
 
+/* ── The Signal Console (DESIGN.md) ─────────────────────────────────
+   Semantic tokens: dark is canonical, Daylight swaps in via
+   prefers-color-scheme. Components only ever reference the semantic
+   layer (canvas/surface/raised/hairline/ink/muted/faint/accent/state)
+   so both themes hold their documented AA pairs. */
 :root {
   color-scheme: dark;
+
+  --sc-canvas: #070b0d; /* Console Black */
+  --sc-surface: #101518; /* Console Surface */
+  --sc-raised: #191f23; /* Console Raised */
+  --sc-hairline: #2d3438;
+  --sc-ink: #e5e8eb; /* Phosphor Ink */
+  --sc-muted: #a2adb3; /* Phosphor Muted — the informational floor */
+  --sc-faint: #7e888e; /* icon-only affordances and disabled text */
+  --sc-accent: #37d2f2; /* Signal Cyan: fills, focus, selection edges */
+  --sc-accent-hot: #76ffff; /* primary button hover */
+  --sc-accent-text: #37d2f2; /* cyan as text (active nav, selected) */
+  --sc-on-accent: #070b0d; /* text on an accent fill */
+  --sc-running: #f2af48; /* Running Amber — running state only */
+  --sc-accept: #5ed99e; /* Accept Emerald */
+  --sc-fail: #fd736d; /* Fail Red */
+  --sc-tool: #a1a7ec; /* Tool Indigo */
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --sc-canvas: #f3f6f7; /* Daylight Paper */
+    --sc-surface: #e6eaed; /* Daylight Surface */
+    --sc-raised: #dbe1e4;
+    --sc-hairline: #c9cfd2;
+    --sc-ink: #1b2023; /* Daylight Ink */
+    --sc-muted: #4e575d; /* Daylight Muted, 6.8:1 on Paper */
+    --sc-faint: #667077;
+    --sc-accent: #0096af; /* Signal Cyan Deep carries the accent */
+    --sc-accent-hot: #007c92; /* light theme presses darker, not hotter */
+    --sc-accent-text: #006c85; /* AA (≥4.5:1) on Paper, Surface and Raised */
+    --sc-on-accent: #070b0d;
+    /* State colors step down their tonal ramps (.impeccable/design.json)
+       to hold 4.5:1 as text on Daylight surfaces. */
+    --sc-running: #8e5100;
+    --sc-accept: #007844;
+    --sc-fail: #ad272b;
+    --sc-tool: #575a99;
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--sc-canvas);
+  --color-surface: var(--sc-surface);
+  --color-raised: var(--sc-raised);
+  --color-hairline: var(--sc-hairline);
+  --color-ink: var(--sc-ink);
+  --color-muted: var(--sc-muted);
+  --color-faint: var(--sc-faint);
+  --color-accent: var(--sc-accent);
+  --color-accent-hot: var(--sc-accent-hot);
+  --color-accent-text: var(--sc-accent-text);
+  --color-on-accent: var(--sc-on-accent);
+  --color-running: var(--sc-running);
+  --color-accept: var(--sc-accept);
+  --color-fail: var(--sc-fail);
+  --color-tool: var(--sc-tool);
+}
+
+@theme {
+  /* Radii clamp to the 2/4/6px scale; nothing rounder exists. */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* Data face: JetBrains Mono, data only (the Mono Is Data Rule). */
+  --font-data: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type roles (fixed rem scale; weights stay 400/600 per the Two
+     Weights Rule, applied with font-semibold where a role needs it). */
+  --text-display: 1.375rem;
+  --text-display--line-height: 1.25;
+  --text-display--letter-spacing: -0.01em;
+  --text-headline: 1.125rem;
+  --text-headline--line-height: 1.3;
+  --text-title: 0.9375rem;
+  --text-title--line-height: 1.4;
+  --text-body: 0.8125rem;
+  --text-body--line-height: 1.55;
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1.2;
+  --text-data: 0.8125rem;
+  --text-data--line-height: 1.55;
+
+  /* The rail collapses to a top drawer below this width. */
+  --breakpoint-rail: 900px;
+
+  --ease-console: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @layer base {
-  /* Keyboard focus ring; form fields opt out with focus:outline-none and
-     carry their own border-color indicator instead. */
+  body {
+    background-color: var(--sc-canvas);
+    color: var(--sc-ink);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    /* Live-updating digits must not jitter, whatever their role. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Keyboard focus ring — the single permitted glow. Form fields opt
+     out with focus:outline-none and carry a cyan border instead. */
   :focus-visible {
-    outline: 2px solid var(--color-amber-400);
+    outline: 2px solid var(--sc-accent);
     outline-offset: 1px;
   }
 
@@ -17,7 +121,7 @@
   }
 
   dialog[open] {
-    animation: dialog-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    animation: dialog-in 150ms var(--ease-console);
   }
 
   @keyframes dialog-in {
