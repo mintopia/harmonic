@@ -25,8 +25,9 @@
       "display": { "displayName": "Display", "purpose": "Page-level headings and empty states only; rare." },
       "headline": { "displayName": "Headline", "purpose": "Dialog titles and section heads." },
       "title": { "displayName": "Title", "purpose": "Card group labels and table emphasis." },
-      "body": { "displayName": "Body", "purpose": "Prompts, prose, data cells; prose caps at 75ch." },
-      "label": { "displayName": "Label", "purpose": "Uppercase micro-labels: column headers, chips, state badges. The only uppercase in the system." }
+      "body": { "displayName": "Body", "purpose": "Prompts, prose, UI copy; prose caps at 75ch." },
+      "label": { "displayName": "Label", "purpose": "Uppercase micro-labels: column headers, chips, state badges. The only uppercase in the system." },
+      "data": { "displayName": "Data", "purpose": "JetBrains Mono, data only: task ids, costs, harness/model names, branches, timestamps, log/event streams." }
     },
     "shadows": [],
     "motion": [
@@ -44,7 +45,7 @@
       "refersTo": "button-primary",
       "description": "The single cyan voice on a view; primary actions like New Task.",
       "html": "<button class=\"ds-btn-primary\">New Task</button>",
-      "css": ".ds-btn-primary { background: #37d2f2; color: #070b0d; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.8125rem; font-weight: 600; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; transition: background 150ms cubic-bezier(0.16,1,0.3,1); } .ds-btn-primary:hover { background: #76ffff; } .ds-btn-primary:focus-visible { outline: 2px solid #37d2f2; outline-offset: 1px; } .ds-btn-primary:disabled { opacity: 0.5; }"
+      "css": ".ds-btn-primary { background: #37d2f2; color: #070b0d; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.8125rem; font-weight: 600; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; transition: background 150ms cubic-bezier(0.16,1,0.3,1); } .ds-btn-primary:hover { background: #76ffff; } .ds-btn-primary:focus-visible { outline: 2px solid #37d2f2; outline-offset: 1px; } .ds-btn-primary:disabled { opacity: 0.5; }"
     },
     {
       "name": "Ghost Button",
@@ -52,7 +53,7 @@
       "refersTo": "button-ghost",
       "description": "Secondary actions; hairline border, raises on hover.",
       "html": "<button class=\"ds-btn-ghost\">Save Draft</button>",
-      "css": ".ds-btn-ghost { background: transparent; color: #e5e8eb; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.8125rem; font-weight: 400; padding: 6px 12px; border: 1px solid #2d3438; border-radius: 4px; cursor: pointer; transition: background 150ms cubic-bezier(0.16,1,0.3,1); } .ds-btn-ghost:hover { background: #191f23; } .ds-btn-ghost:focus-visible { outline: 2px solid #37d2f2; outline-offset: 1px; }"
+      "css": ".ds-btn-ghost { background: transparent; color: #e5e8eb; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.8125rem; font-weight: 400; padding: 6px 12px; border: 1px solid #2d3438; border-radius: 4px; cursor: pointer; transition: background 150ms cubic-bezier(0.16,1,0.3,1); } .ds-btn-ghost:hover { background: #191f23; } .ds-btn-ghost:focus-visible { outline: 2px solid #37d2f2; outline-offset: 1px; }"
     },
     {
       "name": "Field",
@@ -60,7 +61,7 @@
       "refersTo": "field",
       "description": "Text input: black inset on surface panels, cyan focus border.",
       "html": "<input class=\"ds-field\" placeholder=\"Key name (e.g. ci-bot)\" />",
-      "css": ".ds-field { background: #070b0d; color: #e5e8eb; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.8125rem; padding: 6px 10px; border: 1px solid #2d3438; border-radius: 4px; width: 100%; } .ds-field::placeholder { color: #a2adb3; } .ds-field:focus { border-color: #37d2f2; outline: none; }"
+      "css": ".ds-field { background: #070b0d; color: #e5e8eb; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.8125rem; padding: 6px 10px; border: 1px solid #2d3438; border-radius: 4px; width: 100%; } .ds-field::placeholder { color: #a2adb3; } .ds-field:focus { border-color: #37d2f2; outline: none; }"
     },
     {
       "name": "State Chip",
@@ -68,7 +69,7 @@
       "refersTo": "chip-state",
       "description": "Semantic state badge; tinted background of its own state color.",
       "html": "<span class=\"ds-chip-running\">RUNNING</span> <span class=\"ds-chip-done\">COMPLETED</span> <span class=\"ds-chip-fail\">FAILED</span>",
-      "css": ".ds-chip-running, .ds-chip-done, .ds-chip-fail { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 2px; margin-right: 4px; } .ds-chip-running { background: rgba(242,175,72,0.15); color: #f2af48; } .ds-chip-done { background: rgba(94,217,158,0.15); color: #5ed99e; } .ds-chip-fail { background: rgba(253,115,109,0.15); color: #fd736d; }"
+      "css": ".ds-chip-running, .ds-chip-done, .ds-chip-fail { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 2px; margin-right: 4px; } .ds-chip-running { background: rgba(242,175,72,0.15); color: #f2af48; } .ds-chip-done { background: rgba(94,217,158,0.15); color: #5ed99e; } .ds-chip-fail { background: rgba(253,115,109,0.15); color: #fd736d; }"
     },
     {
       "name": "Rail Item",
@@ -76,22 +77,22 @@
       "refersTo": "nav-item",
       "description": "Left-rail navigation entry; active gets raised fill + cyan text (the rail's only cyan).",
       "html": "<nav class=\"ds-rail\"><a class=\"ds-rail-item ds-rail-item--active\" href=\"#\">Board</a><a class=\"ds-rail-item\" href=\"#\">Table</a><a class=\"ds-rail-item\" href=\"#\">Stats</a></nav>",
-      "css": ".ds-rail { display: flex; flex-direction: column; gap: 2px; background: #070b0d; padding: 8px; width: 180px; border-right: 1px solid #2d3438; } .ds-rail-item { color: #a2adb3; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.8125rem; text-decoration: none; padding: 6px 10px; border-radius: 4px; transition: color 150ms cubic-bezier(0.16,1,0.3,1); } .ds-rail-item:hover { color: #e5e8eb; } .ds-rail-item--active { background: #191f23; color: #37d2f2; } .ds-rail-item:focus-visible { outline: 2px solid #37d2f2; outline-offset: 1px; }"
+      "css": ".ds-rail { display: flex; flex-direction: column; gap: 2px; background: #070b0d; padding: 8px; width: 180px; border-right: 1px solid #2d3438; } .ds-rail-item { color: #a2adb3; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.8125rem; text-decoration: none; padding: 6px 10px; border-radius: 4px; transition: color 150ms cubic-bezier(0.16,1,0.3,1); } .ds-rail-item:hover { color: #e5e8eb; } .ds-rail-item--active { background: #191f23; color: #37d2f2; } .ds-rail-item:focus-visible { outline: 2px solid #37d2f2; outline-offset: 1px; }"
     },
     {
       "name": "Task Card",
       "kind": "card",
       "refersTo": "chip-state",
       "description": "Board card: surface well, hairline edge, prompt-first, metadata chips below.",
-      "html": "<article class=\"ds-card\"><p class=\"ds-card-prompt\">Fix the retry race in the session-log flush</p><div class=\"ds-card-meta\"><span class=\"ds-card-chip\">claude · fable-5</span><span class=\"ds-card-chip\">worktree</span></div></article>",
-      "css": ".ds-card { background: #101518; border: 1px solid #2d3438; border-radius: 4px; padding: 12px; max-width: 240px; transition: background 150ms cubic-bezier(0.16,1,0.3,1); } .ds-card:hover { background: #191f23; } .ds-card-prompt { color: #e5e8eb; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.8125rem; line-height: 1.55; margin: 0 0 8px; } .ds-card-meta { display: flex; gap: 4px; flex-wrap: wrap; } .ds-card-chip { background: #191f23; color: #a2adb3; font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 0.6875rem; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 2px; }"
+      "html": "<article class=\"ds-card\"><p class=\"ds-card-prompt\">Fix the retry race in the session-log flush</p><div class=\"ds-card-meta\"><span class=\"ds-card-chip ds-card-chip--data\">claude · fable-5</span><span class=\"ds-card-chip\">worktree</span></div></article>",
+      "css": ".ds-card { background: #101518; border: 1px solid #2d3438; border-radius: 4px; padding: 12px; max-width: 240px; transition: background 150ms cubic-bezier(0.16,1,0.3,1); } .ds-card:hover { background: #191f23; } .ds-card-prompt { color: #e5e8eb; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.8125rem; line-height: 1.55; margin: 0 0 8px; } .ds-card-meta { display: flex; gap: 4px; flex-wrap: wrap; } .ds-card-chip { background: #191f23; color: #a2adb3; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.6875rem; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 2px; } .ds-card-chip--data { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }"
     }
   ],
   "narrative": {
     "northStar": "The Signal Console",
-    "overview": "AgentDeck renders as a terminal-native operator console: a near-black, cool-tinted field where a fleet's state reads like well-kept instrumentation. Everything is set in one monospaced family; hierarchy comes from weight, size, and tonal steps, never from ornament. One electric cyan is the only voice the interface itself speaks — every other color belongs to the work (running, accepted, failed, tooling). The layout serves a side-monitor glance: a slim left rail for navigation, full-width working views, and a board readable in two seconds.",
+    "overview": "AgentDeck renders as a terminal-native operator console: a near-black, cool-tinted field where a fleet's state reads like well-kept instrumentation. The interface speaks in a quiet system sans; machine data — ids, costs, models — answers in monospace. Hierarchy comes from weight, size, and tonal steps, never from ornament. One electric cyan is the only voice the interface itself speaks — every other color belongs to the work (running, accepted, failed, tooling). The layout serves a side-monitor glance: a slim left rail for navigation, full-width working views, and a board readable in two seconds.",
     "keyCharacteristics": [
-      "Mono-forward: one typeface, five roles, fixed rem scale",
+      "Sans-forward UI with mono reserved for data; six roles, fixed rem scale",
       "Tonal depth: hairlines and surface steps, zero decorative shadows",
       "One accent (Signal Cyan ≤10% of any screen); state colors mean states",
       "Dark canonical, daylight variant for bright rooms",
@@ -101,7 +102,7 @@
       { "name": "The One Phosphor Rule", "body": "Signal Cyan appears on at most 10% of any screen: primary action, current selection, focus. If cyan is decorating something, it is wrong.", "section": "colors" },
       { "name": "The State Speaks Rule", "body": "Amber, emerald, red, and indigo are forbidden outside their semantic meanings. A color the operator can't parse as a state is noise.", "section": "colors" },
       { "name": "The Two Weights Rule", "body": "400 and 600 only. If hierarchy needs more, fix the size or the color layer, not the weight.", "section": "typography" },
-      { "name": "The One Family Rule", "body": "No second typeface, ever. A sans sneaking into a dialog is a regression.", "section": "typography" },
+      { "name": "The Mono Is Data Rule", "body": "Monospace appears only where the operator reads machine data — ids, costs, models, branches, streams. UI chrome and prose never set in mono; a mono heading is a regression. (Replaced the One Family Rule 2026-07-14 per operator feedback.)", "section": "typography" },
       { "name": "The Hairline Rule", "body": "If an edge needs marking, it gets a 1px Hairline — not a shadow, not a thicker border, not a side-stripe.", "section": "elevation" },
       { "name": "The Flat Field Rule", "body": "Shadows are prohibited. An element that 'needs' a shadow needs a tonal step instead. Audit test: if any box-shadow other than the focus ring ships, it's a defect.", "section": "elevation" }
     ],
@@ -117,7 +118,7 @@
       "Don't ship chat-app cuteness: no agent avatars, no emoji status, no anthropomorphizing copy.",
       "Don't ship kanban-tool sprawl: no swimlanes, label taxonomies, or settings creep on the board.",
       "Don't use box-shadows, gradient text, glassmorphism, side-stripe borders, or terminal cosplay (scanlines, phosphor glow, CRT curvature).",
-      "Don't use state colors decoratively, introduce a second typeface, or exceed weights 400/600.",
+      "Don't use state colors decoratively, set UI chrome or prose in monospace (Mono Is Data Rule), or exceed weights 400/600.",
       "Don't let cyan and a generic blue 'info' state coexist — indigo covers tooling; there is no info blue."
     ]
   }

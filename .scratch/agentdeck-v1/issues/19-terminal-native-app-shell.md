@@ -22,27 +22,36 @@ to plan the shell structurally, then implement.
 3. **Visual system**: apply the DESIGN.md tokens — Signal Cyan accent
    under the One Phosphor Rule, Console Black/Surface/Raised tonal
    layering, 1px Hairline borders, no shadows (Flat Field Rule),
-   JetBrains Mono throughout (Two Weights / One Family Rules), 2/4/6px
-   radii, state colors per the State Speaks Rule (amber = running only;
-   sky-blue low-priority chip retired, priority becomes typographic).
+   system sans UI with JetBrains Mono for data only (Two Weights /
+   Mono Is Data Rules — amended 2026-07-14 by operator feedback on the
+   issue-20 prototype), 2/4/6px radii, state colors per the State
+   Speaks Rule (amber = running only; sky-blue low-priority chip
+   retired, priority becomes typographic).
 4. **Theme strategy**: dark canonical plus the Daylight (light) variant,
    respecting `prefers-color-scheme`; all documented AA contrast pairs
    hold in both themes.
 
-Board *column behavior* (dense grid vs collapsed rails) is explicitly out
-of scope — it lands via issue 20's prototype decision. The board still
-migrates visually (tokens, type, chips) under whichever column layout is
-current.
+5. **Board column treatment (decided by issue 20, 2026-07-14)**: implement
+   the hybrid rail treatment in the real Board — active pipeline columns
+   (Draft, Blocked, Ready, Running, Awaiting Review) always expanded
+   (min ~200px, 8px gaps); terminal columns (Completed, Failed,
+   Cancelled) always collapsed to ~36px vertical rails with rotated
+   Label + count (Failed count in Fail Red when > 0), expanding in
+   place on click. Reference: DESIGN.md § The Board and the issue-20
+   prototype at `.scratch/agentdeck-v1/prototypes/20-board-columns.html`
+   (variant C). The prototype is a visual reference only — its code
+   does not merge.
 
 ## Acceptance criteria
 
 - [ ] Left rail shell with mobile collapse; status strip carries Auto-Runner, running count, and cost
 - [ ] Table and Stats render full-width
-- [ ] All surfaces/type/state colors match DESIGN.md; no `box-shadow` except the focus ring; no second typeface
+- [ ] All surfaces/type/state colors match DESIGN.md; no `box-shadow` except the focus ring; mono only on data surfaces (Mono Is Data Rule)
+- [ ] Board implements the hybrid rail treatment per DESIGN.md § The Board
 - [ ] Dark + Daylight themes ship and both pass the documented AA pairs
 - [ ] WCAG 2.1 AA holds (contrast, keyboard paths, focus-visible, reduced motion) — no regression from issue 18
 - [ ] No functionality regression (board, table, task detail, stats, keys, channels)
 
 ## Blocked by
 
-Nothing (issue 20 informs the board's column layout but does not block the shell or restyle).
+Nothing (issue 20's decision landed 2026-07-14 and is folded in above).
