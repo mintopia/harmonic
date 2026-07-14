@@ -83,7 +83,13 @@ export interface AppContext {
   bus: EventBus;
 }
 
-export type App = FastifyInstance & { ctx: AppContext };
+/** One Fastify route registration, as captured by the `onRoute` hook below. */
+export interface RegisteredRoute {
+  method: string;
+  url: string;
+}
+
+export type App = FastifyInstance & { ctx: AppContext; registeredRoutes: RegisteredRoute[] };
 
 export async function buildApp(opts: AppOptions): Promise<App> {
   const db = openDb(opts.dataDir);
@@ -150,6 +156,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
+  // Every route registration, method(s) + url, captured as routes are added
+  // below — lets tests assert full OpenAPI coverage against the routes
+  // Fastify actually serves, instead of a hand-maintained list (ADR-0005).
+  const registeredRoutes: RegisteredRoute[] = [];
+  app.decorate('registeredRoutes', registeredRoutes);
+  app.addHook('onRoute', (opts) => {
+    for (const method of Array.isArray(opts.method) ? opts.method : [opts.method]) {
+      registeredRoutes.push({ method, url: opts.url });
+    }
+  });
   app.addHook('onClose', async () => runner.shutdown());
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
@@ -161,10 +177,35 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   const pkg = readPackageManifest();
+  // MCP and the WebSocket are not modeled as OpenAPI paths (neither is a
+  // request/response REST endpoint) — they're described here in prose
+  // instead (ADR-0005).
+  const specDescription = `${pkg.description}
+
+## MCP
+
+\`POST /mcp\` is a stateless streamable-HTTP MCP server (not a REST
+endpoint, so it has no entry in this spec's paths). It authenticates the
+same way as the REST API — a bearer token, either an operator API key or
+the Run Key Harmonic injects into a spawned harness — and exposes the
+agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
+runs and events; Accept/Reject tools appear only when the \`agentReview\`
+config flag is on). A run-scoped Run Key may call \`/mcp\` regardless of
+the REST restrictions noted per endpoint below.
+
+## WebSocket
+
+\`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
+paths): every run event, run state change, and task state change is
+broadcast to every connected client as JSON messages of the form
+\`{ type: 'run_event' | 'run_changed' | 'task_changed', ... }\`, using the
+same Task/Run shapes served over REST. Authenticate by passing the
+session token or an API key as \`?token=\` (WebSocket clients cannot set
+an Authorization header).`;
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
-      info: { title: pkg.name, version: pkg.version, description: pkg.description },
+      info: { title: pkg.name, version: pkg.version, description: specDescription },
       components: {
         securitySchemes: {
           bearerAuth: {
@@ -258,8 +299,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(openapiRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
-  // keeps the tool list in sync with config (agent-review flag).
-  app.post('/mcp', async (req, reply) => {
+  // keeps the tool list in sync with config (agent-review flag). Described
+  // in the spec's info.description prose, not as a path (ADR-0005) — hidden
+  // here the same way the openapi.json/yaml endpoints hide themselves.
+  app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
     const mcp = buildMcpServer(ctx);
     // `as any`: the SDK's option/transport types don't satisfy
     // exactOptionalPropertyTypes; sessionIdGenerator: undefined selects
