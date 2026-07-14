@@ -1,4 +1,4 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
@@ -89,6 +89,24 @@ export class RunStore {
         .where(eq(runs.state, 'running'))
         .get()?.n ?? 0
     );
+  }
+
+  /**
+   * Finished runs that never got a per-model usage split — their run-end
+   * collection raced the harness's session-log flush. Candidates for the
+   * boot-time backfill.
+   */
+  listUsageBackfillCandidates(): RunRow[] {
+    return this.db
+      .select()
+      .from(runs)
+      .where(and(ne(runs.state, 'running'), isNotNull(runs.sessionId)))
+      .all()
+      .filter((run) => {
+        if (!run.usage) return true;
+        const models = (JSON.parse(run.usage) as { models?: Record<string, unknown> }).models;
+        return !models || Object.keys(models).length === 0;
+      });
   }
 
   /**

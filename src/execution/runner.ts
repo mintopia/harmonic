@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
-import { collectUsage } from './usage.js';
+import { collectUsage, collectUsageWithRetry, type RunUsage } from './usage.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpConnection } from '../acp/connection.js';
@@ -247,13 +247,13 @@ export class Runner {
       await finalize();
       this.settle(task, run, 'completed', null, {
         stopReason: result.stopReason ?? null,
-        usage: this.collectUsageSafe(task, run, harness, workspace, result),
+        usage: await this.collectUsageSafe(task, run, harness, workspace, result),
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       await finalize();
       this.settle(task, run, 'failed', reason, {
-        usage: this.collectUsageSafe(task, run, harness, workspace, undefined),
+        usage: await this.collectUsageSafe(task, run, harness, workspace, undefined),
       });
     } finally {
       connection.fail(new Error('run finished'));
@@ -264,15 +264,15 @@ export class Runner {
   }
 
   /** Usage is decoration on a finished run — never let it fail the run. */
-  private collectUsageSafe(
+  private async collectUsageSafe(
     task: TaskRow,
     run: RunRow,
     harness: AppConfig['harnesses']['claude'],
     workspace: Workspace,
     promptResult: { stopReason?: string; usage?: Record<string, unknown> } | undefined,
-  ): string | null {
+  ): Promise<string | null> {
     try {
-      const usage = collectUsage({
+      const usage = await collectUsageWithRetry({
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
@@ -283,6 +283,40 @@ export class Runner {
       return usage ? JSON.stringify(usage) : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Boot-time healing for the same race: finished runs whose stored
+   * usage has no per-model split get one more read of the (now settled)
+   * session log. Stored ACP totals win over re-derived ones.
+   */
+  backfillUsage(): void {
+    const config = this.getConfig();
+    for (const run of this.runStore.listUsageBackfillCandidates()) {
+      try {
+        const task = this.taskService.get(run.taskId);
+        const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
+        if (!harness) continue;
+        // Worktree runs executed (and logged) under the worktree path;
+        // the directory is gone but the log slug derives from the string.
+        const cwd = run.branch ? join(this.worktreesDir, `run-${run.id}`) : task.workingDir;
+        const fresh = collectUsage({
+          harnessId: task.harness,
+          harness,
+          cwd,
+          sessionId: run.sessionId,
+          events: this.runStore.listEvents(run.id),
+        });
+        if (!fresh || Object.keys(fresh.models).length === 0) continue;
+        const stored = run.usage ? (JSON.parse(run.usage) as RunUsage) : null;
+        const healed: RunUsage = stored?.totals
+          ? { ...fresh, totals: stored.totals, source: 'combined' }
+          : fresh;
+        this.runStore.update(run.id, { usage: JSON.stringify(healed) });
+      } catch {
+        // Healing is best-effort; the run keeps its stored usage.
+      }
     }
   }
 

@@ -110,6 +110,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (runId) => auth.deleteKeysForRun(runId),
     },
   });
+  // Heal runs whose usage collection raced the harness's log flush —
+  // their session logs are settled on disk by now.
+  runner.backfillUsage();
   // Accepting a worktree-mode task merges the run's branch (ADR-0002).
   const review = new ReviewService(runs, tasks, async (task, run) => {
     if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };

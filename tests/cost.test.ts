@@ -185,6 +185,51 @@ describe('cost surfaces (API)', () => {
     expect(asc.map((t: any) => t.id)).toEqual([none.body.id, cheap.taskId, dear.taskId]);
   });
 
+  it('backfills a missing per-model split at boot, preserving ACP totals (log-flush race healing)', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-cost-work-'));
+    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-cost-logs-'));
+    const overrides = stubHarness() as DeepPartial<AppConfig> & {
+      harnesses: { claude: Record<string, unknown> };
+      prices?: unknown;
+    };
+    overrides.harnesses.claude.sessionLogDir = logRoot;
+    overrides.harnesses.claude.env = { STUB_SESSION_ID: 'fixed-session' };
+    overrides.prices = { modelA: flatPrice(2) };
+
+    // No log file yet: the run stores ACP totals with an empty model split.
+    server = await startServer(overrides);
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } }),
+      workingDir: workDir,
+    });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    const before = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    expect(before.usage.models).toEqual({});
+    expect(before.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });
+
+    // The harness's log turns up late — after the run finished.
+    const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
+    mkdirSync(join(logRoot, slug), { recursive: true });
+    writeFileSync(
+      join(logRoot, slug, 'fixed-session.jsonl'),
+      JSON.stringify({
+        type: 'assistant',
+        message: { id: 'm1', model: 'modelA', usage: { input_tokens: 1_000_000, output_tokens: 0 } },
+      }),
+    );
+
+    const dataDir = server.dataDir;
+    await server.app.close();
+    server = await startServer(overrides, { dataDir });
+
+    const healed = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    expect(healed.usage.models.modelA.inputTokens).toBe(1_000_000);
+    expect(healed.usage.totals.totalTokens).toBe(3); // ACP totals preserved
+    expect(healed.usage.source).toBe('combined');
+    expect(healed.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
+  });
+
   it('stats carry period cost, per-model cost, and the incomplete flag for unpriced models', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'agentdeck-cost-work-'));
     server = await serverWithLoggedUsage(

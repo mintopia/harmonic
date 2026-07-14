@@ -72,12 +72,16 @@ function totalsFromAcp(usage: Record<string, unknown> | undefined): RunUsage['to
  * message line carries `message.model` + `message.usage`; chunked
  * messages repeat the same message id, so dedupe on it.
  */
-function modelsFromSessionLog(input: CollectUsageInput): Record<string, ModelUsage> {
+function sessionLogFile(input: CollectUsageInput): string | null {
   const logDir = input.harness.sessionLogDir ?? defaultSessionLogDir(input.harnessId);
-  if (!logDir || !input.sessionId) return {};
+  if (!logDir || !input.sessionId) return null;
   const slug = input.cwd.replace(/[^a-zA-Z0-9]/g, '-');
-  const file = join(logDir, slug, `${input.sessionId}.jsonl`);
-  if (!existsSync(file)) return {};
+  return join(logDir, slug, `${input.sessionId}.jsonl`);
+}
+
+function modelsFromSessionLog(input: CollectUsageInput): Record<string, ModelUsage> {
+  const file = sessionLogFile(input);
+  if (!file || !existsSync(file)) return {};
 
   const models: Record<string, ModelUsage> = {};
   const seen = new Set<string>();
@@ -133,6 +137,28 @@ function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {
     totals.cacheWriteTokens += usage.cacheWriteTokens;
   }
   return { ...totals, totalTokens: null };
+}
+
+/**
+ * Run-end collection races the harness's final session-log flush: the
+ * log file exists from session start, but the last assistant usage
+ * lines can land milliseconds after the prompt result. When the file
+ * exists and yields no per-model split yet, re-read briefly before
+ * settling for aggregate totals. No file at all means no log is coming
+ * (stub harnesses, codex) — return immediately.
+ */
+export async function collectUsageWithRetry(
+  input: CollectUsageInput,
+  retry: { timeoutMs: number; intervalMs: number } = { timeoutMs: 2000, intervalMs: 100 },
+): Promise<RunUsage | null> {
+  const deadline = Date.now() + retry.timeoutMs;
+  for (;;) {
+    const usage = collectUsage(input);
+    if (usage && Object.keys(usage.models).length > 0) return usage;
+    const file = sessionLogFile(input);
+    if (!file || !existsSync(file) || Date.now() >= deadline) return usage;
+    await new Promise((r) => setTimeout(r, retry.intervalMs));
+  }
 }
 
 /** Merge run usages into one aggregate (task rollups, stats ranges). */

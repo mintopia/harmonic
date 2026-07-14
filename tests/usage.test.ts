@@ -5,6 +5,48 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
+describe('usage collection retry (log-flush race)', () => {
+  const input = (logRoot: string, cwd: string) => ({
+    harnessId: 'claude',
+    harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+    cwd,
+    sessionId: 'race-session',
+    promptResult: { usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
+    events: [],
+  });
+
+  const assistantLine = JSON.stringify({
+    type: 'assistant',
+    message: { id: 'm1', model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: 20 } },
+  });
+
+  it('re-reads an existing session log until the per-model lines land', async () => {
+    const { collectUsageWithRetry } = await import('../src/execution/usage.js');
+    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-race-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'agentdeck-race-work-'));
+    const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+    const file = join(logRoot, slug, 'race-session.jsonl');
+    mkdirSync(join(logRoot, slug), { recursive: true });
+    // The file exists (session started) but the usage lines land late.
+    writeFileSync(file, JSON.stringify({ type: 'user', text: 'hi' }));
+    setTimeout(() => writeFileSync(file, assistantLine), 50);
+
+    const usage = await collectUsageWithRetry(input(logRoot, cwd), { timeoutMs: 2000, intervalMs: 10 });
+    expect(usage?.models['claude-sonnet-5']?.outputTokens).toBe(20);
+    expect(usage?.source).toBe('combined');
+  });
+
+  it('does not wait when no session log file exists (stub harnesses, codex)', async () => {
+    const { collectUsageWithRetry } = await import('../src/execution/usage.js');
+    const logRoot = mkdtempSync(join(tmpdir(), 'agentdeck-race-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'agentdeck-race-work-'));
+    const before = Date.now();
+    const usage = await collectUsageWithRetry(input(logRoot, cwd), { timeoutMs: 2000, intervalMs: 50 });
+    expect(Date.now() - before).toBeLessThan(1000);
+    expect(usage?.source).toBe('acp');
+  });
+});
+
 describe('usage collection and statistics', () => {
   let server: TestServer;
 
