@@ -1,7 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
-import { tasks, type TaskRow, type TaskState } from '../db/schema.js';
+import { tasks, taskDependencies, type TaskRow, type TaskState } from '../db/schema.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 
@@ -13,11 +13,20 @@ export const createTaskInputSchema = z.object({
   isolationMode: z.enum(ISOLATION_MODES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   state: z.enum(['draft', 'ready']).optional(),
+  dependsOn: z.array(z.number().int().positive()).optional(),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
-export const updateTaskInputSchema = createTaskInputSchema.omit({ state: true }).partial();
+export const updateTaskInputSchema = createTaskInputSchema.omit({ state: true, dependsOn: true }).partial();
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
+
+/** A task plus its dependency context, as the API serves it. */
+export interface TaskWithDeps extends TaskRow {
+  dependsOn: number[];
+  dependents: number[];
+  /** blocked, and at least one dependency is failed or cancelled. */
+  blockedOnFailed: boolean;
+}
 
 /** States an operator may edit a task in. */
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
@@ -43,6 +52,10 @@ export class TaskService {
     const harness = input.harness ?? config.defaults.harness;
     const harnessConfig = config.harnesses[harness];
     if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
+    const dependsOn = [...new Set(input.dependsOn ?? [])];
+    for (const depId of dependsOn) this.get(depId);
+    const state: TaskState =
+      input.state === 'draft' ? 'draft' : this.hasUnmet(dependsOn) ? 'blocked' : 'ready';
     const now = Date.now();
     const row = this.db
       .insert(tasks)
@@ -53,12 +66,15 @@ export class TaskService {
         workingDir: input.workingDir ?? config.defaults.workingDir,
         isolationMode: input.isolationMode ?? config.defaults.isolationMode,
         priority: input.priority ?? config.defaults.priority,
-        state: input.state ?? 'ready',
+        state,
         createdAt: now,
         updatedAt: now,
       })
       .returning()
       .get();
+    if (dependsOn.length > 0) {
+      this.db.insert(taskDependencies).values(dependsOn.map((dependsOnId) => ({ taskId: row.id, dependsOnId }))).run();
+    }
     this.onChanged(row);
     return row;
   }
@@ -94,13 +110,13 @@ export class TaskService {
     return row;
   }
 
-  /** Promote a draft to ready. */
+  /** Promote a draft to ready (or blocked, when dependencies are unmet). */
   promote(id: number): TaskRow {
     const task = this.get(id);
     if (task.state !== 'draft') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
     }
-    return this.setState(id, 'ready');
+    return this.setState(id, this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready');
   }
 
   /**
@@ -113,7 +129,10 @@ export class TaskService {
     if (task.state !== 'failed') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only failed tasks can be re-queued`);
     }
-    const patch: Partial<TaskRow> = { state: 'ready', updatedAt: Date.now() };
+    const patch: Partial<TaskRow> = {
+      state: this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready',
+      updatedAt: Date.now(),
+    };
     if (feedback && feedback.trim().length > 0) {
       patch.prompt = `${task.prompt}\n\n## Feedback from previous attempt\n\n${feedback.trim()}`;
     }
@@ -138,6 +157,135 @@ export class TaskService {
       .returning()
       .get()!;
     this.onChanged(row);
+    // Completion is what satisfies dependents (accepted, not merely
+    // finished) — unblock any whose last unmet dependency this was.
+    if (state === 'completed') {
+      for (const dependentId of this.dependents(id)) {
+        const dependent = this.get(dependentId);
+        if (dependent.state === 'blocked' && !this.hasUnmet(this.dependsOn(dependentId))) {
+          this.setState(dependentId, 'ready');
+        }
+      }
+    }
     return row;
   }
+
+  // ---- Dependencies ----
+
+  dependsOn(taskId: number): number[] {
+    return this.db
+      .select({ id: taskDependencies.dependsOnId })
+      .from(taskDependencies)
+      .where(eq(taskDependencies.taskId, taskId))
+      .all()
+      .map((r) => r.id);
+  }
+
+  dependents(taskId: number): number[] {
+    return this.db
+      .select({ id: taskDependencies.taskId })
+      .from(taskDependencies)
+      .where(eq(taskDependencies.dependsOnId, taskId))
+      .all()
+      .map((r) => r.id);
+  }
+
+  private hasUnmet(depIds: number[]): boolean {
+    if (depIds.length === 0) return false;
+    const states = this.db
+      .select({ state: tasks.state })
+      .from(tasks)
+      .where(inArray(tasks.id, depIds))
+      .all();
+    return states.length < depIds.length || states.some((r) => r.state !== 'completed');
+  }
+
+  addDependency(taskId: number, dependsOnId: number): TaskWithDeps {
+    const task = this.get(taskId);
+    this.get(dependsOnId);
+    if (!EDITABLE_STATES.includes(task.state) && task.state !== 'blocked') {
+      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft, ready, or blocked tasks`);
+    }
+    if (taskId === dependsOnId || this.reaches(dependsOnId, taskId)) {
+      throw new DomainError('conflict', `dependency ${taskId} → ${dependsOnId} would create a cycle`);
+    }
+    this.db.insert(taskDependencies).values({ taskId, dependsOnId }).onConflictDoNothing().run();
+    this.rederiveBlocked(taskId);
+    return this.withDeps(this.get(taskId));
+  }
+
+  removeDependency(taskId: number, dependsOnId: number): TaskWithDeps {
+    this.get(taskId);
+    this.db
+      .delete(taskDependencies)
+      .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, dependsOnId)))
+      .run();
+    this.rederiveBlocked(taskId);
+    return this.withDeps(this.get(taskId));
+  }
+
+  /** Cancel a task and everything that transitively depends on it. */
+  cancelWithDependents(id: number): number[] {
+    const toCancel = [id];
+    const seen = new Set(toCancel);
+    for (let i = 0; i < toCancel.length; i++) {
+      for (const dep of this.dependents(toCancel[i]!)) {
+        if (!seen.has(dep)) {
+          seen.add(dep);
+          toCancel.push(dep);
+        }
+      }
+    }
+    const cancelled: number[] = [];
+    for (const taskId of toCancel) {
+      const task = this.get(taskId);
+      if (taskId === id || CANCELLABLE_STATES.includes(task.state)) {
+        this.cancel(taskId);
+        cancelled.push(taskId);
+      }
+    }
+    return cancelled;
+  }
+
+  withDeps(task: TaskRow): TaskWithDeps {
+    const dependsOn = this.dependsOn(task.id);
+    const depStates = dependsOn.map((depId) => this.get(depId).state);
+    return {
+      ...task,
+      dependsOn,
+      dependents: this.dependents(task.id),
+      blockedOnFailed:
+        task.state === 'blocked' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
+    };
+  }
+
+  listWithDeps(): TaskWithDeps[] {
+    return this.list().map((task) => this.withDeps(task));
+  }
+
+  /** Is `to` reachable from `from` following depends-on edges? */
+  private reaches(from: number, to: number): boolean {
+    const queue = [from];
+    const seen = new Set(queue);
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current === to) return true;
+      for (const next of this.dependsOn(current)) {
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    return false;
+  }
+
+  /** blocked ⇄ ready, re-derived after a dependency edit. */
+  private rederiveBlocked(taskId: number): void {
+    const task = this.get(taskId);
+    const unmet = this.hasUnmet(this.dependsOn(taskId));
+    if (task.state === 'ready' && unmet) this.setState(taskId, 'blocked');
+    else if (task.state === 'blocked' && !unmet) this.setState(taskId, 'ready');
+  }
+
 }

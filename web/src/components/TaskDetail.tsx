@@ -11,6 +11,82 @@ const RUN_STATE_STYLES: Record<Run['state'], string> = {
   cancelled: 'bg-zinc-800 text-zinc-400',
 };
 
+function Dependencies({ task }: { task: Task }) {
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [current, setCurrent] = useState<Task>(task);
+  const [pick, setPick] = useState('');
+  const editable = ['draft', 'ready', 'blocked'].includes(current.state);
+
+  useEffect(() => {
+    api.tasks().then(({ tasks }) => setAllTasks(tasks));
+  }, [task.id]);
+
+  const candidates = allTasks.filter(
+    (t) => t.id !== task.id && !current.dependsOn.includes(t.id) && !['cancelled'].includes(t.state),
+  );
+
+  const act = (fn: () => Promise<Task>) => fn().then(setCurrent, (e) => alert(e.message));
+
+  return (
+    <div className="border-b border-zinc-800 px-4 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold uppercase tracking-wider text-zinc-500">Depends on</span>
+        {current.dependsOn.length === 0 && <span className="text-zinc-600">nothing</span>}
+        {current.dependsOn.map((depId) => (
+          <span key={depId} className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+            #{depId}
+            {editable && (
+              <button
+                className="text-zinc-500 hover:text-red-400"
+                onClick={() => act(() => api.removeDependency(task.id, depId))}
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        ))}
+        {editable && candidates.length > 0 && (
+          <select
+            className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300"
+            value={pick}
+            onChange={(e) => {
+              const id = Number(e.target.value);
+              setPick('');
+              if (id) act(() => api.addDependency(task.id, id));
+            }}
+          >
+            <option value="">+ add…</option>
+            {candidates.map((t) => (
+              <option key={t.id} value={t.id}>
+                #{t.id} {t.prompt.slice(0, 40)}
+              </option>
+            ))}
+          </select>
+        )}
+        <div className="flex-1" />
+        <span className="font-semibold uppercase tracking-wider text-zinc-500">Blocks</span>
+        {current.dependents.length === 0 && <span className="text-zinc-600">nothing</span>}
+        {current.dependents.map((id) => (
+          <span key={id} className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
+            #{id}
+          </span>
+        ))}
+        {current.dependents.length > 0 && current.state !== 'completed' && (
+          <button
+            className="text-zinc-500 hover:text-red-400"
+            onClick={() =>
+              confirm('Cancel this task and everything that depends on it?') &&
+              act(() => api.cancelTask(task.id, true))
+            }
+          >
+            Cancel with dependents
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -86,6 +162,8 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
           </div>
           <p className="line-clamp-4 whitespace-pre-wrap text-sm text-zinc-200">{task.prompt}</p>
         </header>
+
+        <Dependencies task={task} />
 
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2">
           {runs.length === 0 && <span className="text-xs text-zinc-500">No runs yet.</span>}

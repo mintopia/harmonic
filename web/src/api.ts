@@ -29,7 +29,12 @@ export const api = {
     request<Task>('POST', '/api/tasks', input),
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
-  cancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/cancel`),
+  cancelTask: (id: number, withDependents = false) =>
+    request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
+  addDependency: (id: number, dependsOnId: number) =>
+    request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
+  removeDependency: (id: number, depId: number) =>
+    request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
   requeueTask: (id: number, feedback?: string) =>
     request<Task>('POST', `/api/tasks/${id}/requeue`, feedback ? { feedback } : {}),
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),

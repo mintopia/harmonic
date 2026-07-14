@@ -1,4 +1,4 @@
-import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
 
 export const TASK_STATES = [
   'draft',
@@ -29,6 +29,20 @@ export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
+
+/** Directed edge: `taskId` depends on `dependsOnId`. */
+export const taskDependencies = sqliteTable(
+  'task_dependencies',
+  {
+    taskId: integer('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    dependsOnId: integer('depends_on_id')
+      .notNull()
+      .references(() => tasks.id),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.dependsOnId] })],
+);
 
 export const RUN_STATES = ['running', 'completed', 'failed', 'cancelled'] as const;
 export type RunState = (typeof RUN_STATES)[number];

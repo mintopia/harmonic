@@ -21,6 +21,9 @@ export interface Task {
   state: TaskState;
   createdAt: number;
   updatedAt: number;
+  dependsOn: number[];
+  dependents: number[];
+  blockedOnFailed: boolean;
 }
 
 export interface Run {

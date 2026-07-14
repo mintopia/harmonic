@@ -37,6 +37,12 @@ export function TaskCard({
         </span>
         <span className={`rounded px-1.5 py-0.5 ${PRIORITY_STYLES[task.priority]}`}>{task.priority}</span>
         <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">{task.isolationMode}</span>
+        {task.dependsOn.length > 0 && (
+          <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400">⇠ {task.dependsOn.length} dep{task.dependsOn.length > 1 ? 's' : ''}</span>
+        )}
+        {task.blockedOnFailed && (
+          <span className="rounded bg-red-900/60 px-1.5 py-0.5 font-medium text-red-300">blocked on failed</span>
+        )}
       </div>
       <div className="flex gap-2 text-xs">
         <span className="text-zinc-600">#{task.id}</span>
