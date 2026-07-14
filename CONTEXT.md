@@ -88,13 +88,25 @@ _Avoid_: daemon, worker pool
 Token counts and tool-call tallies for a Run, collected from ACP extension
 metadata or the Harness's native session log; aggregated for statistics.
 
+**Usage Collector**:
+The per-Harness mechanism that produces Usage for a Run: ACP-reported
+totals plus, where the Harness's session log allows, a per-model
+breakdown. Each Harness has exactly one.
+_Avoid_: log parser (it is more than the log)
+
 **Cost**:
 The API-equivalent dollar value of Usage: token counts priced per model,
 always derived from Usage on demand, never stored. A Task's Cost sums all
 its Runs, retries included. A model without a configured price yields no
 Cost, and any aggregate containing it is flagged incomplete — never a fake
-zero.
+zero. Harness-native spend units (e.g. Copilot AI Units) are never folded
+into Cost.
 _Avoid_: spend, billing (it is an estimate, not an invoice)
+
+**AI Unit**:
+Copilot's native consumption unit (~$1 each). When observable per Run it
+is recorded on Usage and shown as actual spend alongside Cost — a
+separate figure, not a Cost input.
 
 ### Interfaces
 
