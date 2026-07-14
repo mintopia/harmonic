@@ -7,6 +7,7 @@ const HELP = `agentdeck — queue, run, and review autonomous agent tasks
 
 Usage:
   agentdeck serve [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
+  agentdeck init --repo <url|path> [--data-dir <dir>] [--password <pw>]
 
 Options:
   --port      Port to listen on (default 4700)
@@ -18,6 +19,32 @@ Options:
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+
+  if (command === 'init') {
+    const { values } = parseArgs({
+      args: rest,
+      options: {
+        repo: { type: 'string' },
+        'data-dir': { type: 'string' },
+        password: { type: 'string' },
+      },
+    });
+    if (!values.repo) {
+      console.error('init requires --repo <url|path>');
+      process.exit(1);
+    }
+    const dataDir = values['data-dir'] ?? defaultDataDir();
+    const password = values.password ?? process.env.AGENTDECK_PASSWORD;
+    const app = await buildApp({ dataDir, password });
+    const file = await app.ctx.configRepo.init(values.repo);
+    await app.close();
+    console.log(
+      `Imported ${Object.keys(file).join(', ')} from ${values.repo} into ${dataDir}. ` +
+        `Run \`agentdeck serve\` to start.`,
+    );
+    return;
+  }
+
   if (command !== 'serve') {
     process.stdout.write(HELP);
     process.exit(command === undefined || command === 'help' || command === '--help' ? 0 : 1);

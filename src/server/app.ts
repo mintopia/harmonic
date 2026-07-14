@@ -27,6 +27,8 @@ import { channelRoutes } from './routes/channels.js';
 import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
 import { buildMcpServer } from '../mcp/server.js';
+import { ConfigRepoService } from '../config-repo.js';
+import { configRepoRoutes } from './routes/config-repo.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 export interface AppOptions {
@@ -50,6 +52,7 @@ export interface AppContext {
   auth: AuthService;
   channels: ChannelService;
   notifier: Notifier;
+  configRepo: ConfigRepoService;
   bus: EventBus;
 }
 
@@ -108,8 +111,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   const auth = new AuthService(db);
   if (opts.password) auth.setPassword(opts.password);
+  const configRepo = new ConfigRepoService({ db, dataDir: opts.dataDir, configStore, auth, channels });
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, configRepo, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -153,6 +157,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
+  await app.register(configRepoRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
   // keeps the tool list in sync with config (agent-review flag).

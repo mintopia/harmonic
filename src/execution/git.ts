@@ -31,6 +31,12 @@ const IDENTITY = ['-c', 'user.name=AgentDeck', '-c', 'user.email=agentdeck@local
 export const Git = {
   currentBranch: (dir: string) => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD'),
 
+  clone: async (repo: string, dest: string): Promise<void> => {
+    await execFileAsync('git', ['clone', repo, dest], { maxBuffer: 10 * 1024 * 1024 });
+  },
+
+  pull: (dir: string) => git(dir, 'pull', '--ff-only'),
+
   addWorktree: (dir: string, worktreePath: string, newBranch: string) =>
     git(dir, 'worktree', 'add', '-b', newBranch, worktreePath),
 
