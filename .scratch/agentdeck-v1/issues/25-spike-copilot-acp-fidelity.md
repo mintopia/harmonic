@@ -107,3 +107,25 @@ probe under `spike/`. Classifications:
 additive (`spawnEnv` needs the run workdir so it can point
 `COPILOT_OTEL_FILE_EXPORTER_PATH` at a per-run file; the Usage Collector
 derives the same path from its existing `cwd` input).
+
+2026-07-14 (agent), later: **Model-pinning classification upgraded** after
+the operator re-logged-in with a plan that has model selection (captures
+12–13, findings doc updated in place):
+
+- On the entitled plan, `session/new` returns the **live model list**
+  (`models.availableModels`, 17 ids + `auto`, each with the AI-credit
+  multiplier in `_meta.copilotUsage`) — absent entirely on the auto-only
+  plan. Source the Task form's dropdown from it (Q7: cannot lie).
+- **`session/set_model` pins for real** there — verified on the session
+  log, the OTel spans (request == response == `gpt-5.4`), and the 1x cost
+  multiplier. On auto-only plans the same call is still accepted and
+  silently ignored, so actual-model verification stays mandatory.
+- Two traps: the `--model` spawn flag *falsifies* `session/new`'s
+  `currentModelId` without changing the session (capture 13), and an
+  unpinned ACP session inherits the operator's persisted
+  `~/.copilot/settings.json` model (capture 13 ran on 3x-priced
+  `claude-opus-4.6` uninvited). Issue 26 must always send
+  `session/set_model` — even for `auto` — and never pass `--model`.
+- Net for issue 26: not an auto-model-only harness after all — it gets a
+  real, live-sourced model list plus the set_model hook (additive seam
+  change alongside the spawnEnv-workdir one).

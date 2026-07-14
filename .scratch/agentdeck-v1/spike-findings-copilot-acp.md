@@ -9,18 +9,23 @@ Probe: `.scratch/agentdeck-v1/spike/copilot-probe.mjs` + `spike/mcp-echo-server.
 actual-model evidence in `spike/capture-copilot-sessionlog-excerpts.txt`)
 
 Probed against GitHub Copilot CLI 1.0.69 (auto-updated itself to 1.0.70
-mid-spike — see Quirks) on a real operator login.
+mid-spike — see Quirks) on two real operator logins: first an auto-only
+plan (captures 1–10), then re-checked on a plan with model selection
+(captures 12–13).
 
 ## Headline
 
-**Recommendation: go for issue 26 — but as an auto-model harness.** The
-entry point in `defaultConfig()` is already right (`copilot --acp`),
-streaming and MCP fidelity are high, and per-model usage *plus per-Run AI
-Units* are observable via the CLI's OpenTelemetry file exporter. The bad
-news is model pinning: on the probed account **no model can be pinned at
-all** — every mechanism is either ignored in ACP mode or silently
-overridden server-side — so per decision Q7 the Copilot `models` list must
-collapse to `auto` (no dropdown that lies).
+**Recommendation: go for issue 26.** The entry point in `defaultConfig()`
+is already right (`copilot --acp`), streaming and MCP fidelity are high,
+and per-model usage *plus per-Run AI Units* are observable via the CLI's
+OpenTelemetry file exporter. Model pinning is **plan-dependent and
+ACP-level**: on an entitled plan, `session/set_model` pins for real
+(verified end to end) and `session/new` returns the live account-accurate
+model list — but on an auto-only plan the same call is accepted and
+*silently overridden* server-side, and the spawn-time `--model` flag is
+misleading on both. The Task-model pin must go through `session/set_model`
+with actual-model verification; the `models` dropdown should come from
+`session/new`'s `availableModels`, which cannot lie (Q7).
 
 ## Q1: Entry point and protocol revision
 
@@ -40,18 +45,42 @@ adapter package needed (unlike Codex).
   stdin ends it cleanly (exit 0).
 - `session/new` returns `modes` (agent / plan / autopilot) and
   `configOptions` (mode, allow_all, plus an `agent` select listing the
-  operator's installed custom agents). **No `models` key** — see Q2.
+  operator's installed custom agents). On a plan with model selection it
+  also returns **`models`** (`availableModels` + `currentModelId`) — on
+  the auto-only plan the key is absent entirely. See Q2.
 
 ## Q2: Model pinning
 
-**Classification: not pinnable on the probed account — collapse the
-`models` list to `auto` per Q7.** Three mechanisms probed, none pins:
+**Classification: pinnable via ACP `session/set_model`, plan-dependent,
+actual-model verification mandatory.**
+
+On a plan **with model selection** (capture 12):
+
+- `session/new` returns the **live model list**: 17 models + `auto` at
+  re-check time, each with `_meta {copilotUsage: "1x"/"0.33x"/"15x"…,
+  copilotPriceCategory, copilotEnablement}` — the AI-credit multiplier is
+  right there — plus `currentModelId`. This list is account-accurate
+  (it differs from the static 21-id list in `copilot help config`) and is
+  the right source for the Task form's model dropdown.
+- **`session/set_model {modelId: "gpt-5.4"}` pins for real**: verified on
+  all three surfaces — session log `session.model_change` + every
+  `assistant.message.model` = `gpt-5.4`, OTel span
+  `gen_ai.request.model` *and* `gen_ai.response.model` = `gpt-5.4`, and
+  `github.copilot.cost: 1.0` matching gpt-5.4's advertised 1x multiplier.
+
+On the **auto-only plan** (captures 1–10), three mechanisms probed, none
+pins:
 
 1. **`--model` CLI flag: ignored in `--acp` mode** (capture 3): spawned
    with `--model claude-haiku-4.5`, session stayed `auto` and was served by
    `gpt-5-mini`. (In non-ACP `-p` mode the same flag is *validated* — see
    below.) Oddly, `--effort low` at spawn IS honored
-   (`session.start.reasoningEffort: "low"`, capture 2).
+   (`session.start.reasoningEffort: "low"`, capture 2). Worse on the
+   entitled plan (capture 13): `--model gpt-5.4` makes `session/new`
+   *report* `currentModelId: "gpt-5.4"` while the session actually runs on
+   the operator's **persisted `settings.json` model** (`claude-opus-4.6`,
+   confirmed by the session log's `model_change` and the OTel spans, cost
+   3.0) — the flag skews the report, not the session. Never use it.
 2. **`COPILOT_MODEL` env: ignored in `--acp` mode** (capture 8): spawned
    with `COPILOT_MODEL=gpt-5.4`, session stayed `auto`, served by
    `claude-haiku-4.5`.
@@ -64,16 +93,22 @@ adapter package needed (unlike Codex).
    `set_model claude-sonnet-4.5` → served by `claude-haiku-4.5`
    (capture 10). No error is ever surfaced.
 
-The root cause appears to be plan gating, and the fallback is silent. The
-non-ACP path validates: `copilot -p … --model claude-haiku-4.5` (or any
-other id, including models that demonstrably serve responses) fails with
-*"Model … from --model flag is not available"* on this account — i.e. the
-account's selectable-model list is empty and only `auto` is allowed. The
-router's actual candidate set is visible in the session log's
-`session.auto_mode_resolved` event: `candidateModels:
-["claude-haiku-4.5", "gpt-5-mini"]` with per-category scores. Whether
-`session/set_model` pins correctly on a plan *with* model selection could
-not be verified from this account.
+The root cause is plan gating, and the fallback is silent. The non-ACP
+path validates: `copilot -p … --model claude-haiku-4.5` (or any other id,
+including models that demonstrably serve responses) fails with *"Model …
+from --model flag is not available"* on the auto-only account — its
+selectable-model list is empty. The router's actual candidate set is
+visible in the session log's `session.auto_mode_resolved` event:
+`candidateModels: ["claude-haiku-4.5", "gpt-5-mini"]` with per-category
+scores. (The re-check on the entitled account — same CLI, same probe —
+confirmed `set_model` pins there, so the silent override is purely an
+entitlement behavior.)
+
+One more trap on the entitled plan: with no `set_model` at all, an ACP
+session inherits the **operator's persisted model choice** from
+`~/.copilot/settings.json` (capture 13 ran on `claude-opus-4.6` at 3x
+without asking) — not `auto`. AgentDeck must always send
+`session/set_model` explicitly, even for Tasks whose model is `auto`.
 
 Actual-model verification (the part that works, on two surfaces):
 
@@ -257,11 +292,22 @@ Usage field — actual spend alongside Cost — never a Cost input.
 
 - `defaultConfig()` copilot entry: `command: copilot, args: ['--acp']` is
   already correct. Replace the stale `models: ['claude-sonnet-5', 'gpt-5.2']`
-  with **`['auto']`** and `defaultModel: 'auto'` (Q2: nothing else is
-  honored on the probed account; `gpt-5.2` doesn't exist at all). The Task
-  form should show Copilot's model as fixed `auto` — no dropdown that lies.
-  Revisit if an entitled plan verifies `session/set_model` pinning; the
-  documented id list lives in `copilot help config` (21 ids at probe time).
+  (`gpt-5.2` doesn't exist at all) with the verified-current selectable
+  ids — `auto` plus the capture-12 list — or better, refresh the list
+  live from `session/new`'s `availableModels` (it's account-accurate and
+  carries the AI-credit multiplier per model in `_meta.copilotUsage`;
+  on auto-only plans the key is absent, which naturally collapses the
+  form to `auto` per Q7). Keep `defaultModel: 'auto'`.
+- **Pin via ACP, always, and verify.** The pin mechanism is
+  `session/set_model` after `session/new` — a new post-session step the
+  `HarnessAdapter` seam doesn't have yet (additive hook, in the spirit of
+  issue 24's `modelsFromPromptResult`). Send it even when the Task model
+  is `auto` (`auto` is a legit modelId): otherwise the session runs on
+  whatever the operator's `settings.json` persists (capture 13 silently
+  ran on 3x-priced opus). Never pass `--model` (capture 13: it falsifies
+  `session/new`'s reported `currentModelId` without changing the session).
+  Because auto-only plans *accept and ignore* `set_model`, the issue-24
+  `model_mismatch` check is load-bearing here, not just a safety net.
 - Copilot adapter `spawnEnv()`: `COPILOT_AUTO_UPDATE: 'false'` plus
   `COPILOT_OTEL_FILE_EXPORTER_PATH` pointed at a per-run file — which means
   **`spawnEnv` needs the run's workdir (or a run-scoped path) as input**,
@@ -273,10 +319,10 @@ Usage field — actual spend alongside Cost — never a Cost input.
   `gen_ai.response.model`, cache fields from the omit-when-zero
   `cache_read`/`cache_creation` attributes, uncached input = total minus
   both), and per-Run AI Units fall out of the same parse (`nano_aiu`).
-- Because the pin isn't honored, the Task's `auto` model will *always*
-  differ from the serving model — the issue-24 `model_mismatch` machinery
-  should treat `auto` as matching anything, and the run should surface
-  the observed model(s) as information, not as a mismatch warning.
+- For Tasks pinned to `auto` (or running on an auto-only plan) the
+  serving model will legitimately differ per turn — the `model_mismatch`
+  machinery should treat `auto` as matching anything and surface the
+  observed model(s) as information, not a warning.
 - Auth needs zero adapter work (`session/new` errors legibly), but
   document for operators: on macOS the login lives in the keychain (a
   service account needs `copilot login` once, or a fine-grained PAT via
@@ -289,6 +335,6 @@ Usage field — actual spend alongside Cost — never a Cost input.
 - Cost: `auto` has no single per-model price, but Usage's per-model
   breakdown (from OTel spans) prices each serving model normally, so Cost
   stays API-equivalent per decision Q4 — `DEFAULT_PRICES` needs entries
-  for the observed router candidates (`claude-haiku-4.5`, `gpt-5-mini`)
-  and whatever else the router picks over time; an unpriced observed
-  model correctly flags Cost incomplete.
+  for the shipped `models` list plus the observed auto-router candidates
+  (`claude-haiku-4.5`, `gpt-5-mini`); an unpriced observed model
+  correctly flags Cost incomplete.

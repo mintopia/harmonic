@@ -62,12 +62,23 @@ Scope, all shaped by spike findings:
 2026-07-14 (agent): Issue 25's spike is done — **go, with adjustments**
 (full detail in `.scratch/agentdeck-v1/spike-findings-copilot-acp.md`):
 
-- Model is **not pinnable** on the probed account (flag/env ignored in
-  `--acp` mode; `session/set_model` accepted-but-overridden server-side,
-  silently). Take the Q7 branch: collapse `models` to `['auto']`, fix the
-  Task form display, and treat `auto` as matching any observed model in
-  the issue-24 `model_mismatch` check — surface observed models as
-  information.
+- Model is **pinnable via ACP `session/set_model` on plans with model
+  selection** (re-checked 2026-07-14 on an entitled login, captures
+  12–13; the first probe account was auto-only, where the same call is
+  accepted and silently overridden — actual-model verification stays
+  load-bearing). Requirements that fall out:
+  - a post-`session/new` **set_model hook** on the adapter seam
+    (additive), sent for *every* Copilot run — an unpinned session
+    inherits the operator's persisted `settings.json` model, not `auto`;
+  - never pass `--model` (it falsifies `session/new`'s reported
+    `currentModelId` without changing the session);
+  - source the Task form's model list from `session/new`'s
+    `models.availableModels` (live, account-accurate, carries the
+    AI-credit multiplier per model; absent on auto-only plans → form
+    collapses to `auto`);
+  - treat `auto` as matching any observed model in the `model_mismatch`
+    check; a pinned model that *doesn't* match observed means the plan
+    ignored the pin — surface that mismatch.
 - Usage Collector source is the **OTel file exporter**, not the
   ACP-session event log (which has no token counts) and not the prompt
   result (bare). Spawn with `COPILOT_OTEL_FILE_EXPORTER_PATH` at a

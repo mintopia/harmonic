@@ -27,3 +27,13 @@
 {"type": "session.model_change", "data": {"newModel": "auto", "previousReasoningEffort": "high", "reasoningEffort": "high"}}
 {"type": "assistant.message", "data": {"model": "claude-haiku-4.5", "content": "pong", "turnId": "0"}}
 
+===== capture 12 — entitled plan, session/set_model gpt-5.4 (PINNED) — ~/.copilot/session-state/70edde43-5961-43b2-b42e-ee5f5350a190/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "70edde43-5961-43b2-b42e-ee5f5350a190", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.69", "startTime": "2026-07-14T18:18:59.486Z", "reasoningEffort": "high", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "gpt-5.4", "previousReasoningEffort": "high", "reasoningEffort": "high", "contextTier": null}}
+{"type": "assistant.message", "data": {"model": "gpt-5.4", "content": "pong", "turnId": "0"}}
+
+===== capture 13 — entitled plan, --model gpt-5.4 flag (session ran persisted claude-opus-4.6) — ~/.copilot/session-state/3003807f-dfc6-4414-8403-8334db43d5f6/events.jsonl =====
+{"type": "session.start", "data": {"sessionId": "3003807f-dfc6-4414-8403-8334db43d5f6", "version": 1, "producer": "copilot-agent", "copilotVersion": "1.0.69", "startTime": "2026-07-14T18:19:44.135Z", "reasoningEffort": "high", "contextTier": null, "alreadyInUse": false}}
+{"type": "session.model_change", "data": {"newModel": "claude-opus-4.6", "previousReasoningEffort": "high", "reasoningEffort": "high"}}
+{"type": "assistant.message", "data": {"model": "claude-opus-4.6", "content": "pong", "turnId": "0"}}
+
