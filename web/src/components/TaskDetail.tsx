@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import type { Run, RunEvent, Task } from '../types';
+import { formatCost, formatCostByModel } from '../cost';
+import type { Cost, Run, RunEvent, Task } from '../types';
 import { EventStream } from './EventStream';
 import { subscribe } from '../ws';
 
@@ -154,14 +155,17 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [diffStat, setDiffStat] = useState<string | null>(null);
+  const [taskCost, setTaskCost] = useState<Cost | null>(null);
 
   useEffect(() => {
     let live = true;
+    const loadCost = () => api.taskUsage(task.id).then((usage) => live && setTaskCost(usage.cost));
     api.taskRuns(task.id).then(({ runs }) => {
       if (!live) return;
       setRuns(runs);
       setSelectedRunId((current) => current ?? runs[runs.length - 1]?.id ?? null);
     });
+    loadCost();
     // New runs and state changes arrive over the socket.
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'run_changed' && msg.run.taskId === task.id) {
@@ -169,6 +173,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
           const rest = current.filter((r) => r.id !== msg.run.id);
           return [...rest, msg.run].sort((a, b) => a.attempt - b.attempt);
         });
+        loadCost();
       }
     });
     return () => {
@@ -217,6 +222,11 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             <span>
               {task.harness} · {task.model} · {task.isolationMode}
             </span>
+            {formatCost(taskCost) && (
+              <span title="Total cost across all runs, retries included">
+                Cost {formatCost(taskCost)}
+              </span>
+            )}
             <div className="flex-1" />
             <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
               ✕
@@ -258,6 +268,17 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
                 <span className="text-emerald-400/80">
                   {(selectedRun.usage.totals as any).inputTokens?.toLocaleString()} in /{' '}
                   {(selectedRun.usage.totals as any).outputTokens?.toLocaleString()} out tokens
+                </span>
+              </>
+            )}
+            {selectedRun.cost && formatCost(selectedRun.cost) && (
+              <>
+                {' · '}
+                <span className="text-amber-300/80" title={formatCostByModel(selectedRun.cost)}>
+                  {formatCost(selectedRun.cost)}
+                  {Object.keys(selectedRun.cost.byModel).length > 1 && (
+                    <> ({formatCostByModel(selectedRun.cost)})</>
+                  )}
                 </span>
               </>
             )}

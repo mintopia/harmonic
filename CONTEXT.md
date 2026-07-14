@@ -116,5 +116,5 @@ _Avoid_: scoped key, per-run API key
 
 **Config Repo**:
 A git repository (dotfiles-style) holding AgentDeck configuration —
-harnesses, models, channels, credentials, API keys. A seed: imported on
+harnesses, models, price overrides, channels, credentials, API keys. A seed: imported on
 init and on explicit pull; exportable; the database remains runtime truth.

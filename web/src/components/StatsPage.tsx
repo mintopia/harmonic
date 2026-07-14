@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { formatCost, usd } from '../cost';
+import type { Cost } from '../types';
 
 interface Stats {
   from: number;
@@ -14,6 +16,7 @@ interface Stats {
   } | null;
   models: Record<string, { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>;
   toolCalls: Record<string, number>;
+  cost: Cost | null;
 }
 
 const RANGES: Record<string, number | null> = {
@@ -66,8 +69,9 @@ export function StatsPage() {
 
       {stats && (
         <>
-          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-6">
             <Tile label="Runs" value={fmt(stats.runCount)} />
+            <Tile label="Cost" value={formatCost(stats.cost) ?? '—'} />
             <Tile label="Input tokens" value={stats.totals ? fmt(stats.totals.inputTokens) : '—'} />
             <Tile label="Output tokens" value={stats.totals ? fmt(stats.totals.outputTokens) : '—'} />
             <Tile label="Cache read" value={stats.totals ? fmt(stats.totals.cacheReadTokens) : '—'} />
@@ -76,20 +80,29 @@ export function StatsPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Tokens per model</h3>
+              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Tokens & cost per model</h3>
               {Object.keys(stats.models).length === 0 && (
                 <p className="text-sm text-zinc-600">No per-model data in range.</p>
               )}
               <table className="w-full text-left text-sm">
                 <tbody>
-                  {Object.entries(stats.models).map(([model, u]) => (
-                    <tr key={model} className="border-t border-zinc-800 first:border-t-0">
-                      <td className="py-1.5 font-mono text-xs">{model}</td>
-                      <td className="text-right text-xs text-zinc-400">
-                        {fmt(u.inputTokens)} in · {fmt(u.outputTokens)} out
-                      </td>
-                    </tr>
-                  ))}
+                  {Object.entries(stats.models).map(([model, u]) => {
+                    const modelCost = stats.cost?.byModel[model];
+                    return (
+                      <tr key={model} className="border-t border-zinc-800 first:border-t-0">
+                        <td className="py-1.5 font-mono text-xs">{model}</td>
+                        <td className="text-right text-xs text-zinc-400">
+                          {fmt(u.inputTokens)} in · {fmt(u.outputTokens)} out
+                        </td>
+                        <td
+                          className="pl-3 text-right text-xs text-amber-300/80"
+                          title={modelCost == null ? 'No price configured for this model' : undefined}
+                        >
+                          {modelCost == null ? '—' : usd(modelCost)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

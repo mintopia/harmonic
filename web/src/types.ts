@@ -10,6 +10,16 @@ export const TASK_STATES = [
 ] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+/** Dollar value of Usage, computed server-side on read — never stored. */
+export interface Cost {
+  /** Sum over priced models; null when nothing could be priced. */
+  totalUsd: number | null;
+  /** $ per model; null for models without a price entry. */
+  byModel: Record<string, number | null>;
+  /** True when some tokens could not be priced — the total is a floor. */
+  incomplete: boolean;
+}
+
 export interface Task {
   id: number;
   prompt: string;
@@ -24,6 +34,8 @@ export interface Task {
   dependsOn: number[];
   dependents: number[];
   blockedOnFailed: boolean;
+  /** Summed over ALL runs, retries and failed attempts included. */
+  cost: Cost | null;
 }
 
 export interface Run {
@@ -42,6 +54,7 @@ export interface Run {
     toolCalls: Record<string, number>;
     source: string | null;
   } | null;
+  cost: Cost | null;
   review: 'accepted' | 'rejected' | null;
   reviewFeedback: string | null;
   reviewedAt: number | null;

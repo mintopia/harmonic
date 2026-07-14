@@ -4,6 +4,7 @@ import { and, gte, lte } from 'drizzle-orm';
 import type { App } from '../app.js';
 import { runs } from '../../db/schema.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
+import { costOfRuns } from '../serialize.js';
 
 const querySchema = z.object({
   from: z.coerce.number().int().nonnegative().default(0),
@@ -37,6 +38,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       totals: merged?.totals ?? null,
       models: merged?.models ?? {},
       toolCalls: merged?.toolCalls ?? {},
+      cost: costOfRuns(ctx, rows),
     };
   });
 }

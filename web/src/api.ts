@@ -1,4 +1,4 @@
-import type { AppConfig, Run, RunEvent, Task } from './types';
+import type { AppConfig, Cost, Run, RunEvent, Task } from './types';
 
 class ApiError extends Error {
   constructor(
@@ -43,6 +43,8 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/reject`, feedback ? { feedback } : {}),
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
+  taskUsage: (id: number) =>
+    request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
   runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
   runDiff: (id: number) =>

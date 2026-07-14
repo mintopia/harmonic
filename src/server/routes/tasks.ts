@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
-import { serializeRun } from '../../domain/runs.js';
 import { Git } from '../../execution/git.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
+import { costOfRuns, runToApi, taskToApi } from '../serialize.js';
 
 const requeueInputSchema = z.object({ feedback: z.string().optional() }).nullish();
 const rejectInputSchema = z.object({ feedback: z.string().optional() }).nullish();
@@ -18,18 +18,29 @@ const idOf = (params: unknown): number => {
 export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
 
-  const withDeps = (task: { id: number }) => ctx.tasks.withDeps(ctx.tasks.get(task.id));
+  const withDeps = (task: { id: number }) =>
+    taskToApi(ctx, ctx.tasks.withDeps(ctx.tasks.get(task.id)));
 
   fastify.post('/tasks', async (req, reply) => {
     const task = ctx.tasks.create(createTaskInputSchema.parse(req.body));
     return reply.status(201).send(withDeps(task));
   });
 
-  fastify.get('/tasks', async (req) => ({
-    tasks: ctx.tasks.listWithDeps(taskListQuerySchema.parse(req.query ?? {})),
-  }));
+  fastify.get('/tasks', async (req) => {
+    const { sortBy, ...query } = taskListQuerySchema.parse(req.query ?? {});
+    // Cost is not a task column — it is derived from runs — so the cost
+    // sort happens here, after serialization; unknown cost sorts lowest.
+    const tasks = ctx.tasks
+      .listWithDeps(sortBy === 'cost' ? query : { ...query, ...(sortBy ? { sortBy } : {}) })
+      .map((task) => taskToApi(ctx, task));
+    if (sortBy === 'cost') {
+      const dir = query.order === 'desc' ? -1 : 1;
+      tasks.sort((a, b) => ((a.cost?.totalUsd ?? -1) - (b.cost?.totalUsd ?? -1)) * dir);
+    }
+    return { tasks };
+  });
 
-  fastify.get('/tasks/:id', async (req) => ctx.tasks.withDeps(ctx.tasks.get(idOf(req.params))));
+  fastify.get('/tasks/:id', async (req) => withDeps({ id: idOf(req.params) }));
 
   fastify.patch('/tasks/:id', async (req) =>
     withDeps(ctx.tasks.update(idOf(req.params), updateTaskInputSchema.parse(req.body))),
@@ -74,26 +85,30 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
 
   fastify.post('/tasks/:id/run', async (req, reply) => {
     const run = ctx.runner.start(idOf(req.params));
-    return reply.status(201).send(serializeRun(run));
+    return reply.status(201).send(runToApi(ctx, run));
   });
 
   fastify.get('/tasks/:id/runs', async (req) => {
     ctx.tasks.get(idOf(req.params));
-    return { runs: ctx.runs.listForTask(idOf(req.params)).map(serializeRun) };
+    return { runs: ctx.runs.listForTask(idOf(req.params)).map((run) => runToApi(ctx, run)) };
   });
 
-  fastify.get('/runs/:id', async (req) => serializeRun(ctx.runs.get(idOf(req.params))));
+  fastify.get('/runs/:id', async (req) => runToApi(ctx, ctx.runs.get(idOf(req.params))));
 
   fastify.get('/runs/:id/events', async (req) => ({ events: ctx.runs.listEvents(idOf(req.params)) }));
 
-  // Usage rolled up across all of a task's runs, retries included.
+  // Usage and Cost rolled up across all of a task's runs, retries included.
   fastify.get('/tasks/:id/usage', async (req) => {
     ctx.tasks.get(idOf(req.params));
-    const usages = ctx.runs
-      .listForTask(idOf(req.params))
+    const runs = ctx.runs.listForTask(idOf(req.params));
+    const usages = runs
       .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
       .filter((u): u is RunUsage => u !== null);
-    return { ...(mergeUsage(usages) ?? { models: {}, totals: null, toolCalls: {}, source: null }), runCount: usages.length };
+    return {
+      ...(mergeUsage(usages) ?? { models: {}, totals: null, toolCalls: {}, source: null }),
+      cost: costOfRuns(ctx, runs),
+      runCount: usages.length,
+    };
   });
 
   // Branch + diffstat for the review inbox (worktree runs only).

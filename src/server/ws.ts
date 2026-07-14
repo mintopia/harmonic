@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { serializeRun } from '../domain/runs.js';
+import { runToApi, taskToApi } from './serialize.js';
 
 /**
  * One firehose socket at /api/ws. Every run event, run state change, and
@@ -16,10 +16,11 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     };
     const unsubscribes = [
       ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
-      ctx.bus.on('run_changed', (run) => send({ type: 'run_changed', run: serializeRun(run) })),
+      ctx.bus.on('run_changed', (run) => send({ type: 'run_changed', run: runToApi(ctx, run) })),
       // Enrich to the API task shape, same as the REST routes — the SPA
       // merges these payloads straight into its task list (issue 15).
-      ctx.bus.on('task_changed', (task) => send({ type: 'task_changed', task: ctx.tasks.withDeps(task) })),
+      ctx.bus.on('task_changed', (task) =>
+        send({ type: 'task_changed', task: taskToApi(ctx, ctx.tasks.withDeps(task)) })),
     ];
     socket.on('close', () => unsubscribes.forEach((u) => u()));
   });

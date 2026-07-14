@@ -26,8 +26,22 @@ export const harnessConfigSchema = z.object({
   sessionLogDir: z.string().optional(),
 });
 
+/** Per-model API rates in $/Mtok; must match `ModelPrice` in execution/pricing.ts. */
+export const modelPriceSchema = z.object({
+  input: z.number().nonnegative(),
+  output: z.number().nonnegative(),
+  cacheRead: z.number().nonnegative(),
+  cacheWrite: z.number().nonnegative(),
+});
+
 export const appConfigSchema = z.object({
   harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema),
+  /**
+   * Price-table overrides for Cost: entries here override or extend the
+   * shipped `DEFAULT_PRICES` (execution/pricing.ts). Riding the config
+   * means they ride config-repo export/import too.
+   */
+  prices: z.record(z.string(), modelPriceSchema).default({}),
   defaults: z.object({
     harness: z.enum(HARNESS_IDS),
     workingDir: z.string(),
@@ -79,6 +93,7 @@ export function defaultConfig(): AppConfig {
         defaultModel: 'claude-sonnet-5',
       },
     },
+    prices: {},
     defaults: {
       harness: 'claude',
       workingDir: process.cwd(),

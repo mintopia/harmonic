@@ -1,6 +1,6 @@
 # Cost: dollar values on Runs, Tasks, and statistics
 
-Status: ready
+Status: done
 
 ## Parent
 
@@ -44,14 +44,14 @@ Surfaces:
 
 ## Acceptance criteria
 
-- [ ] Default price table ships with rates for the common Claude and GPT/Codex models; config can override and extend it
-- [ ] Run detail shows Cost with per-model breakdown
-- [ ] Task detail shows total Cost summed over all Runs including failed/rejected attempts
-- [ ] Table view has a Cost column, sortable via the API
-- [ ] Stats page shows period total Cost and per-model Cost
-- [ ] Runs on unpriced models show no Cost; aggregates containing them are flagged incomplete, not zero
-- [ ] Changing a configured price changes displayed Cost for historical Runs (nothing persisted)
-- [ ] Tests cover pricing math (all four token classes), the unpriced-model path, and task-level summation
+- [x] Default price table ships with rates for the common Claude and GPT/Codex models; config can override and extend it
+- [x] Run detail shows Cost with per-model breakdown
+- [x] Task detail shows total Cost summed over all Runs including failed/rejected attempts
+- [x] Table view has a Cost column, sortable via the API
+- [x] Stats page shows period total Cost and per-model Cost
+- [x] Runs on unpriced models show no Cost; aggregates containing them are flagged incomplete, not zero
+- [x] Changing a configured price changes displayed Cost for historical Runs (nothing persisted)
+- [x] Tests cover pricing math (all four token classes), the unpriced-model path, and task-level summation
 
 ## Blocked by
 

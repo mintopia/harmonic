@@ -24,7 +24,8 @@ export const taskListQuerySchema = z.object({
   state: z.enum(TASK_STATES).optional(),
   harness: z.enum(HARNESS_IDS).optional(),
   priority: z.enum(PRIORITIES).optional(),
-  sortBy: z.enum(['createdAt', 'priority']).optional(),
+  /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
+  sortBy: z.enum(['createdAt', 'priority', 'cost']).optional(),
   order: z.enum(['asc', 'desc']).optional(),
 });
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
