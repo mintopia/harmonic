@@ -26,7 +26,7 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
           </button>
         </div>
       ))}
-      {items.length === 0 && <p className="text-label text-muted">None set.</p>}
+      {items.length === 0 && <p className="text-body text-muted">None set.</p>}
       <button type="button" onClick={add} className={btnGhost}>
         + Add
       </button>
@@ -94,7 +94,7 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
           </button>
         </div>
       ))}
-      {entries.length === 0 && <p className="text-label text-muted">No environment variables set.</p>}
+      {entries.length === 0 && <p className="text-body text-muted">No environment variables set.</p>}
       <button type="button" onClick={add} className={btnGhost}>
         + Add variable
       </button>
@@ -118,7 +118,7 @@ function HarnessCard({
 
   return (
     <div className={`${panel} mb-4`}>
-      <h4 className="mb-3 font-data text-headline font-semibold">{id}</h4>
+      <h4 className="mb-3 text-headline font-semibold">{id}</h4>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label className={label} htmlFor={`harness-${id}-command`}>Command</label>
@@ -248,7 +248,7 @@ export function PriceOverridesSection({
   return (
     <div className={`${panel} mb-4`}>
       <h3 className="mb-3 text-headline font-semibold">Price Overrides</h3>
-      <p className="mb-3 text-label text-muted">$ per Mtok. Overrides or extends the shipped price table used for Cost.</p>
+      <p className="mb-3 text-body text-muted">$ per Mtok. Overrides or extends the shipped price table used for Cost.</p>
 
       {entries.length > 0 && (
         <div className="mb-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-2">
@@ -299,7 +299,7 @@ export function PriceOverridesSection({
           </div>
         ))}
       </div>
-      {entries.length === 0 && <p className="text-label text-muted">No price overrides configured.</p>}
+      {entries.length === 0 && <p className="text-body text-muted">No price overrides configured.</p>}
       <button type="button" onClick={add} className={`${btnGhost} mt-3`}>
         + Add price override
       </button>

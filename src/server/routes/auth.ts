@@ -8,8 +8,6 @@ export const SESSION_COOKIE = 'harmonic_session';
 
 const loginBodySchema = z.object({
   password: z.string(),
-  // Legacy operator configs may still send a username; password-only auth ignores it.
-  username: z.string().optional(),
 });
 
 const meResponseSchema = z.object({
@@ -19,7 +17,8 @@ const meResponseSchema = z.object({
 
 const changePasswordBodySchema = z.object({
   currentPassword: z.string(),
-  newPassword: z.string(),
+  // Mirrors AuthService.setPassword's rule so the spec documents it.
+  newPassword: z.string().min(4),
 });
 
 const createKeyBodySchema = z.object({ name: z.string().min(1) });
