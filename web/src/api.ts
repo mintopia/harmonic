@@ -25,6 +25,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   config: () => request<AppConfig>('GET', '/api/config'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
+  replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
   tasks: () => request<{ tasks: Task[] }>('GET', '/api/tasks'),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),

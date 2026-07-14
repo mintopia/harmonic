@@ -100,4 +100,23 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       return updated;
     },
   );
+
+  app.put(
+    '/config',
+    {
+      schema: {
+        tags: ['Config'],
+        description:
+          "Full-replace the stored configuration. Unlike PATCH's deep-merge, a record key omitted here (a harness env var, a price override) is deleted, not left alone — the settings UI loads the whole config, edits locally, and saves the complete object so it can delete as well as add. Validated atomically against the config schema: an invalid body is rejected with no partial write. Operator only; not reachable with a run-scoped Run Key.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        body: appConfigSchema,
+        response: { 200: appConfigSchema },
+      },
+    },
+    async (req) => {
+      const updated = ctx.configStore.replace(req.body as AppConfig);
+      ctx.autoRunner.poke();
+      return updated;
+    },
+  );
 }

@@ -45,6 +45,7 @@ describe('run-scoped key restrictions', () => {
     expect(await asAgent('GET', '/api/keys')).toBe(403);
     expect(await asAgent('POST', '/api/keys', { name: 'escalate' })).toBe(403);
     expect(await asAgent('PATCH', '/api/config', { agentReview: true })).toBe(403);
+    expect(await asAgent('PUT', '/api/config', {})).toBe(403);
     expect(await asAgent('GET', '/api/channels')).toBe(403);
   });
 

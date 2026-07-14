@@ -9,6 +9,7 @@ import { subscribe } from './ws';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
+import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
 import { Channels } from './components/Channels';
 import { Icon } from './components/Icon';
@@ -270,6 +271,7 @@ export function App() {
           {view === 'table' && <TableView onOpen={setOpenTask} />}
           {view === 'stats' && <StatsPage />}
           {view === 'api' && <ApiPage />}
+          {view === 'settings' && <SettingsPage onSaved={setConfig} />}
         </main>
       </div>
 

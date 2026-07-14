@@ -12,6 +12,7 @@ export type IconName =
   | 'stats'
   | 'channels'
   | 'api'
+  | 'settings'
   | 'logout'
   | 'chevrons-left';
 
@@ -42,6 +43,13 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   // Code brackets: the API surface, not the key — this is a view now, not a modal.
   api: <path d="M6 4.5 2.5 8l3.5 3.5M10 4.5 13.5 8l-3.5 3.5" />,
+  // Gear: the config editor.
+  settings: (
+    <>
+      <circle cx="8" cy="8" r="1.8" />
+      <path d="M8 2.5v1.6M8 11.9v1.6M13.5 8h-1.6M4.1 8H2.5M11.7 4.3l-1.1 1.1M5.4 10.6l-1.1 1.1M11.7 11.7l-1.1-1.1M5.4 5.4 4.3 4.3" />
+    </>
+  ),
   // Door frame with an outbound arrow.
   logout: (
     <>

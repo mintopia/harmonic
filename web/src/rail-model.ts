@@ -28,12 +28,14 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
  * Primary nav views (issue 5): API joins Board/Table/Stats as a full working
  * view — the former Keys modal is promoted here, not left as a pinned-bottom
  * action, since it now behaves like Stats rather than like Channels/Log out.
+ * Settings (issue 6) joins the same way, as the operator config editor.
  */
-export const VIEWS = ['board', 'table', 'stats', 'api'] as const;
+export const VIEWS = ['board', 'table', 'stats', 'api', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   table: 'Table',
   stats: 'Stats',
   api: 'API',
+  settings: 'Settings',
 };

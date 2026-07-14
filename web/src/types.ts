@@ -74,12 +74,22 @@ export interface RunEvent {
 export interface HarnessConfig {
   command: string;
   args: string[];
+  env: Record<string, string>;
   models: string[];
   defaultModel: string;
+  sessionLogDir?: string;
+}
+
+export interface ModelPrice {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
 }
 
 export interface AppConfig {
   harnesses: Record<string, HarnessConfig>;
+  prices: Record<string, ModelPrice>;
   defaults: {
     harness: string;
     workingDir: string;
@@ -87,4 +97,5 @@ export interface AppConfig {
     priority: 'high' | 'normal' | 'low';
   };
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
+  agentReview: boolean;
 }
