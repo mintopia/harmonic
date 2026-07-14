@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RAIL_COLLAPSED_KEY, loadRailCollapsed, storeRailCollapsed } from '../web/src/rail-model.js';
+import { RAIL_COLLAPSED_KEY, VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from '../web/src/rail-model.js';
 
 /** Minimal Storage stand-in — node tests have no localStorage. */
 const memoryStorage = (initial: Record<string, string> = {}) => {
@@ -39,5 +39,16 @@ describe('rail collapse persistence', () => {
     };
     expect(loadRailCollapsed(throwing)).toBe(false);
     expect(() => storeRailCollapsed(throwing, true)).not.toThrow();
+  });
+});
+
+describe('rail primary views', () => {
+  it('promotes API to a primary nav view alongside Board/Table/Stats (issue 5)', () => {
+    expect(VIEWS).toEqual(['board', 'table', 'stats', 'api']);
+  });
+
+  it('labels every view', () => {
+    for (const v of VIEWS) expect(VIEW_LABELS[v]).toBeTruthy();
+    expect(VIEW_LABELS.api).toBe('API');
   });
 });

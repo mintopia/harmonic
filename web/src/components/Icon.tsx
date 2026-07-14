@@ -11,7 +11,7 @@ export type IconName =
   | 'table'
   | 'stats'
   | 'channels'
-  | 'keys'
+  | 'api'
   | 'logout'
   | 'chevrons-left';
 
@@ -40,13 +40,8 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M4.6 11.4a4.8 4.8 0 0 1 0-6.8M11.4 4.6a4.8 4.8 0 0 1 0 6.8" />
     </>
   ),
-  // Key: bow, diagonal shaft, one tooth.
-  keys: (
-    <>
-      <circle cx="5.5" cy="10.5" r="2.75" />
-      <path d="M7.5 8.5l6-6M11 5l2 2" />
-    </>
-  ),
+  // Code brackets: the API surface, not the key — this is a view now, not a modal.
+  api: <path d="M6 4.5 2.5 8l3.5 3.5M10 4.5 13.5 8l-3.5 3.5" />,
   // Door frame with an outbound arrow.
   logout: (
     <>

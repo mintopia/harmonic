@@ -7,17 +7,14 @@ import { TaskForm } from './components/TaskForm';
 import { TaskDetail } from './components/TaskDetail';
 import { subscribe } from './ws';
 import { Login } from './components/Login';
-import { ApiKeys } from './components/ApiKeys';
+import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { TableView } from './components/TableView';
 import { Channels } from './components/Channels';
 import { Icon } from './components/Icon';
-import { loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import type { View } from './rail-model';
 import { btnPrimary, labelType } from './ui';
-
-const VIEWS = ['board', 'table', 'stats'] as const;
-type View = (typeof VIEWS)[number];
-const VIEW_LABELS: Record<View, string> = { board: 'Board', table: 'Table', stats: 'Stats' };
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
 // must not leak into the mobile drawer, so JS needs the same threshold.
@@ -73,7 +70,6 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
-  const [showKeys, setShowKeys] = useState(false);
   const [showChannels, setShowChannels] = useState(false);
   const [view, setView] = useState<View>('board');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -183,10 +179,6 @@ export function App() {
           <Icon name="channels" />
           <span className={railLabel}>Channels</span>
         </button>
-        <button {...railItemName('Keys')} className={railItem(false, railCollapsed)} onClick={() => { setShowKeys(true); setMenuOpen(false); }}>
-          <Icon name="keys" />
-          <span className={railLabel}>Keys</span>
-        </button>
         <button
           {...railItemName('Log out')}
           className={railItem(false, railCollapsed)}
@@ -277,11 +269,11 @@ export function App() {
           )}
           {view === 'table' && <TableView onOpen={setOpenTask} />}
           {view === 'stats' && <StatsPage />}
+          {view === 'api' && <ApiPage />}
         </main>
       </div>
 
       {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}
-      {showKeys && <ApiKeys onClose={() => setShowKeys(false)} />}
       {showChannels && <Channels onClose={() => setShowChannels(false)} />}
 
       {editing !== null && config && (
