@@ -89,15 +89,19 @@ describe('auth and api keys', () => {
     expect(revoked.status).toBe(401);
   });
 
-  it('checks the username when one is configured', async () => {
-    const named = await startServer(undefined, { username: 'jess' });
+  it('password-only login works even when a legacy auth record carries a username', async () => {
+    const legacy = await startServer();
+    const row = legacy.app.ctx.db.select().from(settings).where(eq(settings.key, 'auth')).get()!;
+    const value = JSON.stringify({ ...JSON.parse(row.value), username: 'jess' });
+    legacy.app.ctx.db.update(settings).set({ value }).where(eq(settings.key, 'auth')).run();
+    expect((await legacy.anonApi('POST', '/api/auth/login', { password: TEST_PASSWORD })).status).toBe(200);
+    await legacy.close();
+  });
+
+  it('a stray username in the login body is ignored', async () => {
     expect(
-      (await named.anonApi('POST', '/api/auth/login', { username: 'operator', password: TEST_PASSWORD })).status,
-    ).toBe(401);
-    expect(
-      (await named.anonApi('POST', '/api/auth/login', { username: 'jess', password: TEST_PASSWORD })).status,
+      (await server.anonApi('POST', '/api/auth/login', { username: 'whoever', password: TEST_PASSWORD })).status,
     ).toBe(200);
-    await named.close();
   });
 
   it('garbage bearer tokens are rejected', async () => {

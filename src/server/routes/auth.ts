@@ -8,11 +8,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
 
   fastify.post('/auth/login', async (req, reply) => {
-    const { username, password } = z
-      .object({ username: z.string().default('operator'), password: z.string() })
-      .parse(req.body);
-    if (!ctx.auth.verifyLogin(username, password)) {
-      return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong username or password' } });
+    const { password } = z.object({ password: z.string() }).parse(req.body);
+    if (!ctx.auth.verifyLogin(password)) {
+      return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong password' } });
     }
     const token = ctx.auth.createSession();
     reply.setCookie(SESSION_COOKIE, token, {

@@ -14,7 +14,7 @@ node dist/cli.js serve --data-dir <tmp-dir> --port 47421 --password verify-pass
 ```
 
 First run against an empty `--data-dir` needs `--password`; login is
-username `operator` + that password. The server serves the built SPA
+that password alone (no username). The server serves the built SPA
 itself — no vite dev server needed.
 
 ## Driving the UI
@@ -26,9 +26,8 @@ machine. Write a CJS script and run it with the npx cache on NODE_PATH:
 NODE_PATH=$(ls -d ~/.npm/_npx/*/node_modules/playwright | head -1 | xargs dirname) node drive.cjs
 ```
 
-Login flow in a fresh context: fill `input[type="password"]`, optional
-`input[type="text"]` username, click `button[type="submit"]`, then
-`waitForSelector('aside')`.
+Login flow in a fresh context: fill `input[type="password"]`, click
+`button[type="submit"]`, then `waitForSelector('aside')`.
 
 ## Gotchas
 

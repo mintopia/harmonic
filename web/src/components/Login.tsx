@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react';
 import { btnPrimary, field } from '../ui';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
-  const [username, setUsername] = useState('operator');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -14,7 +13,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ password }),
     });
     if (res.ok) onLoggedIn();
     else {
@@ -27,15 +26,6 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     <div className="flex min-h-screen items-center justify-center">
       <form onSubmit={submit} className="w-80 rounded-md border border-hairline bg-surface p-6">
         <h1 className="mb-4 text-center text-title font-semibold">Harmonic</h1>
-        <input
-          type="text"
-          aria-label="Username"
-          autoComplete="username"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className={`${field} mb-3`}
-        />
         <input
           type="password"
           autoFocus

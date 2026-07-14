@@ -23,7 +23,7 @@ npx github:mintopia/harmonic serve --port 4700 --password <pass>
 ```
 
 - `--data-dir <dir>` — where the SQLite database lives (default `~/.harmonic`)
-- `HARMONIC_USERNAME` / `HARMONIC_PASSWORD` — login credentials
+- `HARMONIC_PASSWORD` — the operator password
 - `HARMONIC_DATA_DIR` — same as `--data-dir`
 
 ## Development

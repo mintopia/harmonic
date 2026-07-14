@@ -52,14 +52,13 @@ export interface TestServer {
 
 export async function startServer(
   configOverrides?: DeepPartial<AppConfig>,
-  opts: { dataDir?: string; password?: string; username?: string } = {},
+  opts: { dataDir?: string; password?: string } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
   const app = await buildApp({
     dataDir,
     configOverrides,
     password: opts.password ?? TEST_PASSWORD,
-    username: opts.username,
   });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;

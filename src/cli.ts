@@ -15,7 +15,6 @@ Options:
   --data-dir  State directory (default ~/.harmonic, or $HARMONIC_DATA_DIR)
   --password  Set/update the operator password (or $HARMONIC_PASSWORD);
               required on first run
-  --username  Operator username (or $HARMONIC_USERNAME; default "operator")
 `;
 
 async function main(): Promise<void> {
@@ -58,14 +57,12 @@ async function main(): Promise<void> {
       host: { type: 'string', default: '127.0.0.1' },
       'data-dir': { type: 'string' },
       password: { type: 'string' },
-      username: { type: 'string' },
     },
   });
 
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const password = values.password ?? process.env.HARMONIC_PASSWORD;
-  const username = values.username ?? process.env.HARMONIC_USERNAME;
-  const app = await buildApp({ dataDir, password, username });
+  const app = await buildApp({ dataDir, password });
   if (!app.ctx.auth.hasPassword()) {
     console.error(
       'No operator password is set. First run requires one:\n' +

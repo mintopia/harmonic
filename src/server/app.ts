@@ -36,8 +36,6 @@ export interface AppOptions {
   configOverrides?: DeepPartial<AppConfig> | undefined;
   /** Set (or update) the operator password at boot — CLI/config first-run setup. */
   password?: string | undefined;
-  /** Operator username (default "operator"); applied with `password`. */
-  username?: string | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -90,7 +88,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   );
   const runs = new RunStore(db);
   const auth = new AuthService(db);
-  if (opts.password) auth.setPassword(opts.password, opts.username);
+  if (opts.password) auth.setPassword(opts.password);
   // Crash recovery before anything can execute: orphaned runs are failed
   // as "interrupted" (never silently re-run), and their tasks fail loudly.
   for (const orphan of runs.markInterrupted()) {

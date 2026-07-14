@@ -21,7 +21,7 @@ const REPO_SETTING = 'configRepo';
 const configFileSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   channels: z.array(createChannelSchema).optional(),
-  auth: z.object({ username: z.string().default('operator'), salt: z.string(), hash: z.string() }).optional(),
+  auth: z.object({ salt: z.string(), hash: z.string() }).optional(),
   apiKeys: z.array(z.object({ name: z.string(), tokenHash: z.string(), prefix: z.string() })).optional(),
 });
 export type ConfigFile = z.infer<typeof configFileSchema>;
