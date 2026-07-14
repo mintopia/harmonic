@@ -8,6 +8,7 @@ const AUTH_KEY = 'auth';
 const KEY_PREFIX = 'adk_';
 
 interface StoredAuth {
+  username: string;
   salt: string;
   hash: string;
 }
@@ -33,10 +34,10 @@ export class AuthService {
     return this.readAuth() !== null;
   }
 
-  setPassword(password: string): void {
+  setPassword(password: string, username = 'operator'): void {
     if (password.length < 4) throw new DomainError('validation', 'password too short');
     const salt = randomBytes(16).toString('hex');
-    const value = JSON.stringify({ salt, hash: hashPassword(password, salt) } satisfies StoredAuth);
+    const value = JSON.stringify({ username, salt, hash: hashPassword(password, salt) } satisfies StoredAuth);
     this.db
       .insert(settings)
       .values({ key: AUTH_KEY, value })
@@ -44,9 +45,10 @@ export class AuthService {
       .run();
   }
 
-  verifyPassword(password: string): boolean {
+  verifyLogin(username: string, password: string): boolean {
     const stored = this.readAuth();
     if (!stored) return false;
+    if (username !== (stored.username ?? 'operator')) return false;
     const candidate = Buffer.from(hashPassword(password, stored.salt), 'hex');
     const expected = Buffer.from(stored.hash, 'hex');
     return candidate.length === expected.length && timingSafeEqual(candidate, expected);

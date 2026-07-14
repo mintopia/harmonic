@@ -89,6 +89,17 @@ describe('auth and api keys', () => {
     expect(revoked.status).toBe(401);
   });
 
+  it('checks the username when one is configured', async () => {
+    const named = await startServer(undefined, { username: 'jess' });
+    expect(
+      (await named.anonApi('POST', '/api/auth/login', { username: 'operator', password: TEST_PASSWORD })).status,
+    ).toBe(401);
+    expect(
+      (await named.anonApi('POST', '/api/auth/login', { username: 'jess', password: TEST_PASSWORD })).status,
+    ).toBe(200);
+    await named.close();
+  });
+
   it('garbage bearer tokens are rejected', async () => {
     const res = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: 'Bearer adk_0000000000000000000000000000000000000000000000' },

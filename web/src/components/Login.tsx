@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
+  const [username, setUsername] = useState('operator');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -12,7 +13,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     });
     if (res.ok) onLoggedIn();
     else {
@@ -27,6 +28,13 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
         <h1 className="mb-4 text-center text-lg font-semibold text-zinc-100">
           Agent<span className="text-amber-400">Deck</span>
         </h1>
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-amber-500 focus:outline-none"
+        />
         <input
           type="password"
           autoFocus

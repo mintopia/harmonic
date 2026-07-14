@@ -103,6 +103,31 @@ describe('config repo import / pull / export', () => {
     await server.close();
   });
 
+  it('a pull of a partial file seeds what it declares and leaves the rest of live config alone', async () => {
+    const token = 'adk_' + randomBytes(24).toString('hex');
+    const repo = makeConfigRepo(seedFile(token));
+    const dataDir = await initDataDir(repo);
+    const server = await startServer(undefined, { dataDir });
+
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 7 } });
+
+    // The repo now declares only a default priority — nothing else.
+    writeFileSync(
+      join(repo, 'agentdeck.json'),
+      JSON.stringify({ config: { defaults: { priority: 'low' } } }, null, 2),
+    );
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'partial config');
+
+    await server.api('POST', '/api/config-repo/pull');
+    const config = (await server.api('GET', '/api/config')).body;
+    expect(config.defaults.priority).toBe('low');
+    expect(config.autoRunner.maxConcurrentRuns).toBe(7);
+    expect(config.harnesses.claude.models).toEqual(['seeded-model']);
+
+    await server.close();
+  });
+
   it('export writes a committable file that round-trips through import faithfully', async () => {
     const token = 'adk_' + randomBytes(24).toString('hex');
     const repo = makeConfigRepo(seedFile(token));

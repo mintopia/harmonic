@@ -149,7 +149,7 @@ export function buildMcpServer(ctx: AppContext): McpServer {
 
   server.registerTool(
     'get_runs',
-    { description: "List a Task's Runs (execution attempts) with results and usage.", inputSchema: taskId },
+    { description: "List a Task's Runs with their results and usage; a retry is a new Run.", inputSchema: taskId },
     wrap(({ taskId }) => {
       ctx.tasks.get(taskId);
       return ctx.runs.listForTask(taskId).map(serializeRun);

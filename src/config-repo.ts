@@ -21,7 +21,7 @@ const REPO_SETTING = 'configRepo';
 const configFileSchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
   channels: z.array(createChannelSchema).optional(),
-  auth: z.object({ salt: z.string(), hash: z.string() }).optional(),
+  auth: z.object({ username: z.string().default('operator'), salt: z.string(), hash: z.string() }).optional(),
   apiKeys: z.array(z.object({ name: z.string(), tokenHash: z.string(), prefix: z.string() })).optional(),
 });
 export type ConfigFile = z.infer<typeof configFileSchema>;
@@ -106,8 +106,9 @@ export class ConfigRepoService {
     const file = configFileSchema.parse(JSON.parse(readFileSync(path, 'utf8')));
 
     if (file.config) {
-      // Partial files are fine: unspecified fields fall back to defaults.
-      const merged = mergeConfig(defaultConfig(), file.config as DeepPartial<AppConfig>);
+      // The repo seeds what it declares and leaves the rest alone:
+      // partial files merge over the live config, not built-in defaults.
+      const merged = mergeConfig(this.deps.configStore.get(), file.config as DeepPartial<AppConfig>);
       this.deps.configStore.replace(appConfigSchema.parse(merged));
     }
     if (file.channels) {

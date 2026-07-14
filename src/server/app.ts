@@ -36,10 +36,28 @@ export interface AppOptions {
   configOverrides?: DeepPartial<AppConfig> | undefined;
   /** Set (or update) the operator password at boot — CLI/config first-run setup. */
   password?: string | undefined;
+  /** Operator username (default "operator"); applied with `password`. */
+  username?: string | undefined;
 }
 
 /** Paths reachable without authentication. */
 const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/me']);
+
+/**
+ * What a per-run scoped key may reach: the agent surface from issue 13 —
+ * task CRUD, dependencies, queue/cancel, runs and events, and MCP (which
+ * gates its own tool list). Accept/Reject stay human unless the
+ * agent-review flag is on (ADR-0002). Everything else — key management,
+ * config, channels, config repo — is operator-only.
+ */
+function runScopedKeyAllowed(path: string, agentReview: boolean): boolean {
+  if (path.startsWith('/mcp')) return true;
+  if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return agentReview;
+  if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
+  if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
+  if (path.startsWith('/api/runs')) return true;
+  return false;
+}
 
 export interface AppContext {
   db: Db;
@@ -71,10 +89,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (event, task) => notifier.notify(event, task),
   );
   const runs = new RunStore(db);
+  const auth = new AuthService(db);
+  if (opts.password) auth.setPassword(opts.password, opts.username);
   // Crash recovery before anything can execute: orphaned runs are failed
-  // as "interrupted", never silently re-run — and their tasks fail loudly.
+  // as "interrupted" (never silently re-run), their tasks fail loudly,
+  // and their scoped keys die with them.
   for (const orphan of runs.markInterrupted()) {
     tasks.setState(orphan.taskId, 'failed');
+    auth.revokeKeysForRun(orphan.id);
   }
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
@@ -97,6 +119,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.state === 'ready') autoRunner.poke();
   });
   bus.on('run_changed', () => autoRunner.poke());
+  // The boot-time poke happens in the onListen hook below, after the MCP
+  // endpoint is known — so even the first auto-started run gets its
+  // scoped key + endpoint injected.
   // queue.idle: the last active run drained and nothing is waiting.
   bus.on('run_changed', (run) => {
     if (
@@ -107,10 +132,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       notifier.notify('queue.idle');
     }
   });
-  autoRunner.poke();
 
-  const auth = new AuthService(db);
-  if (opts.password) auth.setPassword(opts.password);
   const configRepo = new ConfigRepoService({ db, dataDir: opts.dataDir, configStore, auth, channels });
 
   const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, configRepo, bus };
@@ -129,11 +151,33 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     const path = req.url.split('?')[0] ?? req.url;
     if ((!path.startsWith('/api') && !path.startsWith('/mcp')) || PUBLIC_API_PATHS.has(path)) return;
 
+    const forbidden = () =>
+      reply
+        .status(403)
+        .send({ error: { code: 'forbidden', message: 'this key is scoped to its run and cannot access this endpoint' } });
+
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-    if (bearer && auth.verifyKey(bearer)) return;
+    if (bearer) {
+      const key = auth.verifyKey(bearer);
+      if (key) {
+        if (key.scope === 'run' && !runScopedKeyAllowed(path, configStore.get().agentReview)) {
+          return forbidden();
+        }
+        return;
+      }
+    }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
     const queryToken = (req.query as Record<string, string | undefined>)?.token;
-    if (queryToken && (auth.verifyKey(queryToken) || auth.validateSession(queryToken))) return;
+    if (queryToken) {
+      if (auth.validateSession(queryToken)) return;
+      const key = auth.verifyKey(queryToken);
+      if (key) {
+        if (key.scope === 'run' && !runScopedKeyAllowed(path, configStore.get().agentReview)) {
+          return forbidden();
+        }
+        return;
+      }
+    }
 
     return reply.status(401).send({ error: { code: 'unauthenticated', message: 'authentication required' } });
   });
@@ -184,6 +228,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       const host = address.address === '::' || address.address === '0.0.0.0' ? '127.0.0.1' : address.address;
       runner.mcpUrl = `http://${host}:${address.port}/mcp`;
     }
+    autoRunner.poke();
   });
   await app.register(wsRoutes, { prefix: '/api' });
 
