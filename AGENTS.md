@@ -17,3 +17,10 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Design context
+
+Strategic design context (register, users, personality, anti-references, design
+principles) lives in `PRODUCT.md`. The visual system spec is `DESIGN.md` — note
+it currently describes the **terminal-native redesign target**, not the shipped
+zinc + amber UI; new UI work follows DESIGN.md. Read both before any frontend work.
