@@ -34,6 +34,9 @@ export interface Run {
   branch: string | null;
   baseBranch: string | null;
   usage: Record<string, number> | null;
+  review: 'accepted' | 'rejected' | null;
+  reviewFeedback: string | null;
+  reviewedAt: number | null;
   startedAt: number;
   finishedAt: number | null;
 }

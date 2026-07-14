@@ -3,6 +3,7 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { Git } from '../execution/git.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openDb, type Db } from '../db/index.js';
@@ -45,10 +46,17 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // as "interrupted", never silently re-run.
   runs.markInterrupted();
   const runner = new Runner(runs, tasks, () => configStore.get(), {
-    onRunEvent: (event) => bus.emit('run_event', event),
-    onRunFinished: (run) => bus.emit('run_changed', run),
+    events: {
+      onRunEvent: (event) => bus.emit('run_event', event),
+      onRunFinished: (run) => bus.emit('run_changed', run),
+    },
+    worktreesDir: join(opts.dataDir, 'worktrees'),
   });
-  const review = new ReviewService(runs, tasks);
+  // Accepting a worktree-mode task merges the run's branch (ADR-0002).
+  const review = new ReviewService(runs, tasks, async (task, run) => {
+    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
+    return Git.merge(task.workingDir, run.baseBranch, run.branch);
+  });
   const ctx: AppContext = { db, configStore, tasks, runs, runner, review, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;

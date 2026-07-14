@@ -15,6 +15,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const [diffStat, setDiffStat] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -58,6 +59,12 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   }, [selectedRunId]);
 
   const selectedRun = runs.find((r) => r.id === selectedRunId);
+
+  useEffect(() => {
+    setDiffStat(null);
+    if (selectedRunId === null || !selectedRun?.branch || selectedRun.state === 'running') return;
+    api.runDiff(selectedRunId).then(({ stat }) => setDiffStat(stat)).catch(() => {});
+  }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
 
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -104,7 +111,24 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             {selectedRun.stopReason && <span>stop: {selectedRun.stopReason} · </span>}
             started {new Date(selectedRun.startedAt).toLocaleTimeString()}
             {selectedRun.finishedAt && <> · finished {new Date(selectedRun.finishedAt).toLocaleTimeString()}</>}
+            {selectedRun.branch && (
+              <>
+                {' · '}
+                <span className="text-indigo-300">
+                  {selectedRun.branch} ← {selectedRun.baseBranch}
+                </span>
+              </>
+            )}
           </div>
+        )}
+        {selectedRun?.reviewFeedback && (
+          <div className="mx-4 mb-2 rounded border border-amber-900 bg-amber-950/40 px-3 py-1.5 text-xs text-amber-200">
+            {selectedRun.review === 'rejected' ? 'Rejection feedback: ' : ''}
+            {selectedRun.reviewFeedback}
+          </div>
+        )}
+        {diffStat && (
+          <pre className="mx-4 mb-2 overflow-x-auto rounded bg-zinc-950 p-2 text-[11px] text-zinc-400">{diffStat}</pre>
         )}
 
         <div className="flex-1 overflow-y-auto p-4">

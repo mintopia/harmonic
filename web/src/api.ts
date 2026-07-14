@@ -39,4 +39,9 @@ export const api = {
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
   runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
+  runDiff: (id: number) =>
+    request<{ branch: string | null; baseBranch: string | null; stat: string | null }>(
+      'GET',
+      `/api/runs/${id}/diff`,
+    ),
 };

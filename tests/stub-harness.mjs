@@ -15,6 +15,8 @@
 //
 // A non-JSON prompt runs a two-chunk "hello" scenario.
 import { createInterface } from 'node:readline';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
@@ -47,6 +49,13 @@ async function handlePrompt(msg) {
     };
   }
   const delayMs = scenario.delayMs ?? 5;
+
+  // Simulate an agent editing files in its working directory.
+  for (const [rel, content] of Object.entries(scenario.writeFiles ?? {})) {
+    const path = resolve(process.cwd(), rel);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
+  }
 
   for (const update of scenario.updates ?? []) {
     await sleep(delayMs);

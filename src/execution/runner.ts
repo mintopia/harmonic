@@ -1,4 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Git } from './git.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpConnection } from '../acp/connection.js';
@@ -11,6 +15,18 @@ export interface RunnerEvents {
   onRunEvent?: (event: PersistedRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onRunFinished?: (run: RunRow) => void;
+}
+
+export interface RunnerOptions {
+  events?: RunnerEvents;
+  /** Where temporary worktrees live; per-run subdirectories. */
+  worktreesDir?: string;
+}
+
+interface Workspace {
+  cwd: string;
+  env: Record<string, string>;
+  worktree?: { repoDir: string; path: string };
 }
 
 interface ActiveRun {
@@ -28,12 +44,18 @@ interface ActiveRun {
 export class Runner {
   private active = new Map<number, ActiveRun>(); // by run id
 
+  private readonly events: RunnerEvents;
+  private readonly worktreesDir: string;
+
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
     private readonly getConfig: () => AppConfig,
-    private readonly events: RunnerEvents = {},
-  ) {}
+    options: RunnerOptions = {},
+  ) {
+    this.events = options.events ?? {};
+    this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'agentdeck-worktrees');
+  }
 
   get activeCount(): number {
     return this.active.size;
@@ -72,7 +94,7 @@ export class Runner {
     this.active.clear();
   }
 
-  protected spawnHarness(
+  private spawnHarness(
     task: TaskRow,
     harness: AppConfig['harnesses'][keyof AppConfig['harnesses']],
     cwd: string,
@@ -93,12 +115,36 @@ export class Runner {
     return spawn(harness.command, harness.args, { cwd, env: env as NodeJS.ProcessEnv, stdio: ['pipe', 'pipe', 'pipe'] });
   }
 
-  /** Hook for subclasses/slices: cwd and env for the run (worktree mode overrides). */
-  protected async prepareWorkspace(task: TaskRow, _run: RunRow): Promise<{ cwd: string; env: Record<string, string> }> {
-    return { cwd: task.workingDir, env: {} };
+  /**
+   * Direct mode runs in place, unlocked. Worktree mode gets a temporary
+   * git worktree on branch `agentdeck/task-<id>-run-<n>` cut from the
+   * working directory's current branch.
+   */
+  private async prepareWorkspace(task: TaskRow, run: RunRow): Promise<Workspace> {
+    if (task.isolationMode !== 'worktree') return { cwd: task.workingDir, env: {} };
+
+    const baseBranch = await Git.currentBranch(task.workingDir);
+    const branch = `agentdeck/task-${task.id}-run-${run.attempt}`;
+    const path = join(this.worktreesDir, `run-${run.id}`);
+    mkdirSync(this.worktreesDir, { recursive: true });
+    await Git.addWorktree(task.workingDir, path, branch);
+    this.runStore.update(run.id, { branch, baseBranch });
+    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path } };
   }
 
-  protected async afterRun(_task: TaskRow, _run: RunRow): Promise<void> {}
+  /**
+   * Snapshot the run's work onto its branch and drop the worktree; the
+   * branch remains as the artifact. Runs before the task settles so an
+   * awaiting-review task always has a reviewable branch.
+   */
+  private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
+    if (!workspace.worktree) return;
+    try {
+      await Git.commitAll(workspace.worktree.path, `agentdeck: task ${task.id} run ${run.attempt}`);
+    } finally {
+      await Git.removeWorktree(workspace.worktree.repoDir, workspace.worktree.path).catch(() => {});
+    }
+  }
 
   private async drive(task: TaskRow, run: RunRow, harness: AppConfig['harnesses']['claude']): Promise<void> {
     const record = (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => {
@@ -107,7 +153,7 @@ export class Runner {
     };
 
     let child: ChildProcess;
-    let workspace: { cwd: string; env: Record<string, string> };
+    let workspace: Workspace;
     try {
       workspace = await this.prepareWorkspace(task, run);
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
@@ -115,6 +161,14 @@ export class Runner {
       this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
       return;
     }
+
+    let finalized = false;
+    const finalize = async () => {
+      if (finalized) return;
+      finalized = true;
+      this.kill(active);
+      await this.finalizeWorkspace(task, run, workspace).catch(() => {});
+    };
 
     const connection = new AcpConnection(child.stdin!, child.stdout!, {
       onSessionUpdate: (params) => record('session_update', params.update),
@@ -163,23 +217,20 @@ export class Runner {
       ])) as { stopReason?: string; usage?: unknown };
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
+      await finalize();
       this.settle(task, run, 'completed', null, {
         stopReason: result.stopReason ?? null,
         usage: result.usage ? JSON.stringify(result.usage) : null,
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
+      await finalize();
       this.settle(task, run, 'failed', reason);
     } finally {
       connection.fail(new Error('run finished'));
       connection.dispose();
       this.active.delete(run.id);
-      this.kill(active);
-      try {
-        await this.afterRun(task, this.runStore.get(run.id));
-      } catch {
-        // Workspace cleanup is best-effort.
-      }
+      await finalize();
     }
   }
 
