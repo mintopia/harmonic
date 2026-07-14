@@ -25,11 +25,13 @@
   "dependencies": {
     "@fastify/cookie": "^11.1.1",
     "@fastify/static": "^10.1.0",
+    "@fastify/swagger": "^9.8.1",
     "@fastify/websocket": "^11.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.10.0",
+    "fastify-type-provider-zod": "^7.0.0",
     "nodemailer": "^9.0.3",
     "zod": "^4.4.3"
   },

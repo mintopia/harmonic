@@ -110,4 +110,26 @@ describe('auth and api keys', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  // Migrating routes to zod-declared schemas (ADR-0005) must not change the
+  // error contract callers already depend on: a malformed body is still a
+  // 400 with `{ error: { code: 'validation', message } }`, whether it's
+  // rejected by a route's declared schema or an ad-hoc `z.object().parse()`.
+  it('a malformed body on a zod-schema route returns the standard validation error shape', async () => {
+    const missingPassword = await server.anonApi('POST', '/api/auth/login', {});
+    expect(missingPassword.status).toBe(400);
+    expect(missingPassword.body.error.code).toBe('validation');
+    expect(typeof missingPassword.body.error.message).toBe('string');
+    expect(missingPassword.body.error.message.length).toBeGreaterThan(0);
+
+    const wrongType = await server.anonApi('POST', '/api/auth/login', { password: 42 });
+    expect(wrongType.status).toBe(400);
+    expect(wrongType.body.error.code).toBe('validation');
+  });
+
+  it('a malformed body creating an api key returns the standard validation error shape', async () => {
+    const res = await server.api('POST', '/api/keys', { name: '' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation');
+  });
 });

@@ -2,6 +2,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyCookie from '@fastify/cookie';
+import fastifySwagger from '@fastify/swagger';
+import {
+  hasZodFastifySchemaValidationErrors,
+  jsonSchemaTransform,
+  serializerCompiler,
+  validatorCompiler,
+} from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Git } from '../execution/git.js';
@@ -24,6 +31,7 @@ import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { channelRoutes } from './routes/channels.js';
+import { openapiRoutes, readPackageManifest } from './routes/openapi.js';
 import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
 import { buildMcpServer } from '../mcp/server.js';
@@ -37,7 +45,13 @@ export interface AppOptions {
 }
 
 /** Paths reachable without authentication. */
-const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/me']);
+const PUBLIC_API_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/me',
+  // The OpenAPI spec documents an already-open-source project (ADR-0005).
+  '/api/openapi.json',
+  '/api/openapi.yaml',
+]);
 
 /**
  * What a per-run scoped key may reach: the agent surface from issue 13 —
@@ -140,6 +154,36 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
 
+  // Every route below declares its request/response shapes as zod schemas
+  // (ADR-0005); these compilers make Fastify validate/serialize against
+  // them, and @fastify/swagger turns the same schemas into the spec served
+  // at /api/openapi.{json,yaml}.
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+  const pkg = readPackageManifest();
+  await app.register(fastifySwagger, {
+    openapi: {
+      openapi: '3.1.0',
+      info: { title: pkg.name, version: pkg.version, description: pkg.description },
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            description: 'A key created via POST /api/keys, sent as `Authorization: Bearer <token>`.',
+          },
+          sessionCookie: {
+            type: 'apiKey',
+            in: 'cookie',
+            name: SESSION_COOKIE,
+            description: 'The session cookie set by POST /api/auth/login.',
+          },
+        },
+      },
+    },
+    transform: jsonSchemaTransform,
+  });
+
   // Every API surface is authenticated: cookie sessions for the SPA,
   // bearer API keys for programmatic access (token also accepted as a
   // query param for WebSocket clients that can't set headers). The MCP
@@ -183,6 +227,19 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (err instanceof DomainError) {
       return reply.status(err.httpStatus).send({ error: { code: err.code, message: err.message } });
     }
+    // Schema-validation failures on zod-declared routes (ADR-0005) — same
+    // error shape as the ad-hoc `.parse()` calls below, so callers see one
+    // validation error contract regardless of which routes have migrated.
+    if (hasZodFastifySchemaValidationErrors(err)) {
+      return reply.status(400).send({
+        error: {
+          code: 'validation',
+          message: err.validation
+            .map((i) => `${i.instancePath.slice(1).replace(/\//g, '.')}: ${i.message}`)
+            .join('; '),
+        },
+      });
+    }
     if (err instanceof ZodError) {
       return reply.status(400).send({
         error: { code: 'validation', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') },
@@ -198,6 +255,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
+  await app.register(openapiRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
   // keeps the tool list in sync with config (agent-review flag).
