@@ -17,6 +17,11 @@ const meResponseSchema = z.object({
   passwordConfigured: z.boolean(),
 });
 
+const changePasswordBodySchema = z.object({
+  currentPassword: z.string(),
+  newPassword: z.string(),
+});
+
 const createKeyBodySchema = z.object({ name: z.string().min(1) });
 
 const keyIdParamsSchema = z.object({ id: z.coerce.number().int() });
@@ -98,6 +103,33 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       authenticated: ctx.auth.validateSession(req.cookies[SESSION_COOKIE]),
       passwordConfigured: ctx.auth.hasPassword(),
     }),
+  );
+
+  app.post(
+    '/auth/change-password',
+    {
+      schema: {
+        tags: ['Auth'],
+        description:
+          "Change the operator password. Verifies currentPassword first (a wrong current password changes nothing) and applies the same minimum-length rule as initial setup to newPassword. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched. Operator only; not reachable with a run-scoped Run Key.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        body: changePasswordBodySchema,
+        response: {
+          200: okResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const { currentPassword, newPassword } = req.body;
+      if (!ctx.auth.verifyLogin(currentPassword)) {
+        return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong current password' } });
+      }
+      ctx.auth.setPassword(newPassword);
+      ctx.auth.destroyOtherSessions(req.cookies[SESSION_COOKIE]);
+      return { ok: true } as const;
+    },
   );
 
   app.post(

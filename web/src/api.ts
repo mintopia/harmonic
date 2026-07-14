@@ -53,4 +53,6 @@ export const api = {
       'GET',
       `/api/runs/${id}/diff`,
     ),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
 };

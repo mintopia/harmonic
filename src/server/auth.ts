@@ -73,6 +73,16 @@ export class AuthService {
     if (token) this.sessions.delete(token);
   }
 
+  /** Password changes invalidate every other session (a stolen cookie
+   * shouldn't survive a credential rotation) while leaving the caller's own
+   * session — `keepToken` — logged in. `undefined` (the caller authenticated
+   * some other way, e.g. an API key) destroys all sessions. */
+  destroyOtherSessions(keepToken: string | undefined): void {
+    for (const token of this.sessions) {
+      if (token !== keepToken) this.sessions.delete(token);
+    }
+  }
+
   // ---- API keys ----
 
   createKey(name: string, opts: { scope?: 'full' | 'run'; runId?: number } = {}): { key: ApiKeyRow; token: string } {

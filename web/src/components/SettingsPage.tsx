@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { SecuritySection } from './SecuritySection';
 import type { AppConfig } from '../types';
 import { btnGhost, btnPrimary, field, labelType } from '../ui';
+import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
 
 const panel = 'rounded-md border border-hairline bg-surface p-4';
 const label = `mb-1 block ${labelType} text-muted`;
@@ -246,12 +248,18 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         onChange={(agentReview) => setLocal({ ...local, agentReview })}
       />
 
-      {/* Issue 8 inserts Harness cards + price overrides here, as its own
-          section component, following the same { config, fieldErrors, onChange } shape. */}
+      <HarnessesSection
+        config={local}
+        fieldErrors={fieldErrors}
+        onChange={(harnesses) => setLocal({ ...local, harnesses })}
+      />
+      <PriceOverridesSection
+        config={local}
+        fieldErrors={fieldErrors}
+        onChange={(prices) => setLocal({ ...local, prices })}
+      />
 
-      {/* Issue 9 inserts a security/password section here (below everything
-          else, since it changes the operator's own credential rather than
-          Harmonic's config). */}
+      <SecuritySection />
     </div>
   );
 }

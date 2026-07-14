@@ -56,6 +56,19 @@ export const appConfigSchema = z.object({
    * branches unattended (ADR-0002). Deliberate opt-in; default off.
    */
   agentReview: z.boolean().default(false),
+}).superRefine((config, ctx) => {
+  // A harness's defaultModel must be one of its models (when any are
+  // listed) — the Settings UI offers a select over `models`, and a stray
+  // default would silently start Runs on an unintended model.
+  for (const [id, harness] of Object.entries(config.harnesses)) {
+    if (harness.models.length > 0 && !harness.models.includes(harness.defaultModel)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['harnesses', id, 'defaultModel'],
+        message: `defaultModel must be one of the harness's models`,
+      });
+    }
+  }
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;

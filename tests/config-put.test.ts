@@ -78,6 +78,25 @@ describe('PUT /api/config', () => {
     expect(after.body.harnesses.claude.env.FOO).toBeUndefined();
   });
 
+  it('rejects a defaultModel that is not one of the harness models', async () => {
+    const current = (await server.api('GET', '/api/config')).body;
+    const next = {
+      ...current,
+      harnesses: {
+        ...current.harnesses,
+        claude: { ...current.harnesses.claude, defaultModel: 'not-a-model' },
+      },
+    };
+
+    const put = await server.api('PUT', '/api/config', next);
+    expect(put.status).toBe(400);
+    expect(put.body).toMatchObject({ error: { code: 'validation' } });
+    expect(put.body.error.message).toContain('defaultModel');
+
+    const after = await server.api('GET', '/api/config');
+    expect(after.body).toEqual(current);
+  });
+
   it('pokes the Auto-Runner on success, same as PATCH', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'ping', state: 'ready' });
 
