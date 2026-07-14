@@ -1,6 +1,6 @@
 # Spike: Codex ACP fidelity
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -46,11 +46,11 @@ support slice (issue 24).
 
 ## Acceptance criteria
 
-- [ ] A findings document exists covering all six questions above with real captured payloads
-- [ ] Model pinning is classified: mechanism found and actual-model verification demonstrated, or not pinnable (which collapses the Codex `models` list to its verified default, per Q7)
-- [ ] Usage availability is classified: ACP result, rollout-log fallback (with sessionId correlation shown), or unavailable
-- [ ] ACP `mcpServers` support is classified: works (config shape recorded) / unsupported (env-var fallback noted)
-- [ ] A clear go/adjust recommendation for issue 24
+- [x] A findings document exists covering all six questions above with real captured payloads
+- [x] Model pinning is classified: mechanism found and actual-model verification demonstrated, or not pinnable (which collapses the Codex `models` list to its verified default, per Q7)
+- [x] Usage availability is classified: ACP result, rollout-log fallback (with sessionId correlation shown), or unavailable
+- [x] ACP `mcpServers` support is classified: works (config shape recorded) / unsupported (env-var fallback noted)
+- [x] A clear go/adjust recommendation for issue 24
 
 ## Blocked by
 
@@ -58,3 +58,11 @@ None — can start immediately. Requires Codex credentials in the workspace
 (operator-provisioned, per the auth decision).
 
 ## Comments
+
+2026-07-14 (agent): Done. Findings in `.scratch/agentdeck-v1/spike-findings-codex-acp.md`
+(probes + raw captures in `spike/`). Headline: `codex acp` is not a real
+subcommand — the entry point is `npx @agentclientprotocol/codex-acp`. Model
+pinning verified via CODEX_CONFIG and session/set_model; per-model usage is on
+the ACP prompt result (`_meta.quota.model_usage`) — no log parsing needed;
+HTTP mcpServers with bearer headers work. Recommendation: go for issue 24 with
+the adjustments listed in the findings doc.

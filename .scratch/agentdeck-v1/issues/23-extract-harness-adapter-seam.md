@@ -1,6 +1,6 @@
 # Refactor: extract the Harness Adapter seam
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -35,12 +35,17 @@ Codex and Copilot get stub adapters (no spawn tweaks beyond
 
 ## Acceptance criteria
 
-- [ ] `runner.ts` and `usage.ts` contain no `claude`-conditional logic; the Claude adapter owns it
-- [ ] Existing tests pass unchanged (or with mechanical import updates only) — no behavior change for Claude runs, including `collectUsageWithRetry` and `backfillUsage` paths
-- [ ] Adding a new harness's spawn tweaks or Usage Collector requires touching only its adapter module and the adapter registry
+- [x] `runner.ts` and `usage.ts` contain no `claude`-conditional logic; the Claude adapter owns it
+- [x] Existing tests pass unchanged (or with mechanical import updates only) — no behavior change for Claude runs, including `collectUsageWithRetry` and `backfillUsage` paths
+- [x] Adding a new harness's spawn tweaks or Usage Collector requires touching only its adapter module and the adapter registry
 
 ## Blocked by
 
 None — needs no spike findings; can run in parallel with issue 22.
 
 ## Comments
+
+2026-07-14 (agent): Done in commit "Issue 23: extract the Harness Adapter seam".
+New `src/execution/harness/` (adapter.ts interface + registry, claude.ts,
+codex.ts, copilot.ts stubs). runner.ts and usage.ts are harness-agnostic;
+full suite green (100 tests) with no behavioral test edits.
