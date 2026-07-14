@@ -41,12 +41,11 @@ describe('run-scoped key restrictions', () => {
     expect(await asAgent('GET', '/api/tasks/1/runs')).toBe(200);
   });
 
-  it('denies the operator surface: keys, config, channels, config-repo', async () => {
+  it('denies the operator surface: keys, config, channels', async () => {
     expect(await asAgent('GET', '/api/keys')).toBe(403);
     expect(await asAgent('POST', '/api/keys', { name: 'escalate' })).toBe(403);
     expect(await asAgent('PATCH', '/api/config', { agentReview: true })).toBe(403);
     expect(await asAgent('GET', '/api/channels')).toBe(403);
-    expect(await asAgent('POST', '/api/config-repo/export')).toBe(403);
   });
 
   it('keeps the review gate human unless agent-review is enabled', async () => {

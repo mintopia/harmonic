@@ -141,42 +141,6 @@ export class AuthService {
       )
       .run();
   }
-
-  // ---- Config-repo portability ----
-
-  exportAuth(): StoredAuth | null {
-    return this.readAuth();
-  }
-
-  importAuth(stored: StoredAuth): void {
-    const value = JSON.stringify(stored);
-    this.db
-      .insert(settings)
-      .values({ key: AUTH_KEY, value })
-      .onConflictDoUpdate({ target: settings.key, set: { value } })
-      .run();
-  }
-
-  /** Active full-scope keys, hashes included — the token itself is never known here. */
-  exportKeys(): { name: string; tokenHash: string; prefix: string }[] {
-    return this.db
-      .select()
-      .from(apiKeys)
-      .all()
-      .filter((k) => k.scope === 'full' && k.revokedAt === null)
-      .map(({ name, tokenHash, prefix }) => ({ name, tokenHash, prefix }));
-  }
-
-  importKeys(keys: { name: string; tokenHash: string; prefix: string }[]): void {
-    for (const key of keys) {
-      const existing = this.db.select().from(apiKeys).where(eq(apiKeys.tokenHash, key.tokenHash)).get();
-      if (existing) continue;
-      this.db
-        .insert(apiKeys)
-        .values({ ...key, scope: 'full', runId: null, createdAt: Date.now() })
-        .run();
-    }
-  }
 }
 
 export type { StoredAuth };

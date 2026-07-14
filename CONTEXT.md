@@ -133,8 +133,3 @@ spawned Harness so agents reach MCP without setup. Deleted outright when
 the Run finishes (a startup sweep removes orphans); never listed or shown
 in the UI.
 _Avoid_: scoped key, per-run API key
-
-**Config Repo**:
-A git repository (dotfiles-style) holding Harmonic configuration —
-harnesses, models, price overrides, channels, credentials, API keys. A seed: imported on
-init and on explicit pull; exportable; the database remains runtime truth.

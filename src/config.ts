@@ -38,8 +38,7 @@ export const appConfigSchema = z.object({
   harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema),
   /**
    * Price-table overrides for Cost: entries here override or extend the
-   * shipped `DEFAULT_PRICES` (execution/pricing.ts). Riding the config
-   * means they ride config-repo export/import too.
+   * shipped `DEFAULT_PRICES` (execution/pricing.ts).
    */
   prices: z.record(z.string(), modelPriceSchema).default({}),
   defaults: z.object({

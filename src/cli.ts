@@ -14,7 +14,6 @@ Usage:
   harmonic start [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
   harmonic status [--data-dir <dir>]
   harmonic stop [--data-dir <dir>]
-  harmonic init --repo <url|path> [--data-dir <dir>] [--password <pw>]
 
 Commands:
   serve       Run the server in the foreground
@@ -36,31 +35,6 @@ const displayUrl = (host: string, port: number) =>
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-
-  if (command === 'init') {
-    const { values } = parseArgs({
-      args: rest,
-      options: {
-        repo: { type: 'string' },
-        'data-dir': { type: 'string' },
-        password: { type: 'string' },
-      },
-    });
-    if (!values.repo) {
-      console.error('init requires --repo <url|path>');
-      process.exit(1);
-    }
-    const dataDir = values['data-dir'] ?? defaultDataDir();
-    const password = values.password ?? process.env.HARMONIC_PASSWORD;
-    const app = await buildApp({ dataDir, password });
-    const file = await app.ctx.configRepo.init(values.repo);
-    await app.close();
-    console.log(
-      `Imported ${Object.keys(file).join(', ')} from ${values.repo} into ${dataDir}. ` +
-        `Run \`harmonic serve\` to start.`,
-    );
-    return;
-  }
 
   if (command === 'status' || command === 'stop') {
     const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });

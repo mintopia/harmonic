@@ -27,8 +27,6 @@ import { channelRoutes } from './routes/channels.js';
 import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
 import { buildMcpServer } from '../mcp/server.js';
-import { ConfigRepoService } from '../config-repo.js';
-import { configRepoRoutes } from './routes/config-repo.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 export interface AppOptions {
@@ -46,7 +44,7 @@ const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/me']);
  * task CRUD, dependencies, queue/cancel, runs and events, and MCP (which
  * gates its own tool list). Accept/Reject stay human unless the
  * agent-review flag is on (ADR-0002). Everything else — key management,
- * config, channels, config repo — is operator-only.
+ * config, channels — is operator-only.
  */
 function runScopedKeyAllowed(path: string, agentReview: boolean): boolean {
   if (path.startsWith('/mcp')) return true;
@@ -68,7 +66,6 @@ export interface AppContext {
   auth: AuthService;
   channels: ChannelService;
   notifier: Notifier;
-  configRepo: ConfigRepoService;
   bus: EventBus;
 }
 
@@ -135,9 +132,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const configRepo = new ConfigRepoService({ db, dataDir: opts.dataDir, configStore, auth, channels });
-
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, configRepo, bus };
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -203,7 +198,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
-  await app.register(configRepoRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
   // keeps the tool list in sync with config (agent-review flag).
