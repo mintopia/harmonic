@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Modal } from './Modal';
 
 interface ApiKey {
   id: number;
@@ -39,22 +40,20 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-lg border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
-      >
+    <Modal label="API Keys" onClose={onClose} className="max-w-2xl">
+      <div className="p-5">
         <div className="mb-4 flex items-center">
           <h2 className="text-base font-semibold">API Keys</h2>
           <div className="flex-1" />
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
+          <button aria-label="Close" onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
             ✕
           </button>
         </div>
 
         <div className="mb-4 flex gap-2">
           <input
-            className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm"
+            aria-label="Key name"
+            className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none"
             placeholder="Key name (e.g. ci-bot)"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -75,8 +74,9 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase tracking-wider text-zinc-500">
+          <thead className="text-xs uppercase tracking-wider text-zinc-400">
             <tr>
               <th className="py-1">Name</th>
               <th>Prefix</th>
@@ -101,7 +101,7 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
                 <td className="text-right">
                   {!key.revokedAt && (
                     <button
-                      className="text-xs text-zinc-500 hover:text-red-400"
+                      className="text-xs text-zinc-400 hover:text-red-400"
                       onClick={() => json('DELETE', `/api/keys/${key.id}`).then(load)}
                     >
                       Revoke
@@ -112,14 +112,15 @@ export function ApiKeys({ onClose }: { onClose: () => void }) {
             ))}
             {keys.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-3 text-center text-zinc-600">
+                <td colSpan={5} className="py-3 text-center text-zinc-400">
                   No keys yet.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

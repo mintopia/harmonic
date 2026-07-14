@@ -8,9 +8,9 @@ function ToolCallLine({ payload }: { payload: any }) {
       </span>
       <span className="text-zinc-200">{payload.title ?? payload.toolCallId}</span>
       {payload._meta?.claudeCode?.parentToolUseId && (
-        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-500">subagent</span>
+        <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">subagent</span>
       )}
-      <span className="text-[11px] text-zinc-500">{payload.status}</span>
+      <span className="text-[11px] text-zinc-400">{payload.status}</span>
     </div>
   );
 }
@@ -20,7 +20,7 @@ function SessionUpdate({ payload }: { payload: any }) {
     case 'agent_message_chunk':
       return <span className="whitespace-pre-wrap text-zinc-200">{payload.content?.text ?? ''}</span>;
     case 'agent_thought_chunk':
-      return <span className="whitespace-pre-wrap italic text-zinc-500">{payload.content?.text ?? ''}</span>;
+      return <span className="whitespace-pre-wrap italic text-zinc-400">{payload.content?.text ?? ''}</span>;
     case 'tool_call':
     case 'tool_call_update':
       return <ToolCallLine payload={payload} />;
@@ -38,7 +38,7 @@ function SessionUpdate({ payload }: { payload: any }) {
     case 'usage_update':
       return null; // context-window fill; not worth a stream line
     default:
-      return <span className="text-[11px] text-zinc-600">{payload.sessionUpdate}</span>;
+      return <span className="text-[11px] text-zinc-400">{payload.sessionUpdate}</span>;
   }
 }
 
@@ -57,17 +57,17 @@ export function EventStream({ events }: { events: RunEvent[] }) {
             <div key={event.id} className="flex items-center gap-2">
               <span className="rounded bg-amber-900/70 px-1.5 py-0.5 text-[11px] text-amber-300">permission</span>
               <span className="text-zinc-300">{event.payload.request?.toolCall?.title ?? 'request'}</span>
-              <span className="text-[11px] text-zinc-500">→ {event.payload.outcome?.outcome ?? '?'}</span>
+              <span className="text-[11px] text-zinc-400">→ {event.payload.outcome?.outcome ?? '?'}</span>
             </div>
           );
         }
         return (
-          <div key={event.id} className="text-[11px] text-zinc-600">
+          <div key={event.id} className="text-[11px] text-zinc-400">
             {event.payload.event} {event.payload.stopReason ? `(${event.payload.stopReason})` : ''}
           </div>
         );
       })}
-      {events.length === 0 && <p className="text-zinc-600">No events.</p>}
+      {events.length === 0 && <p className="text-zinc-400">No events.</p>}
     </div>
   );
 }

@@ -13,7 +13,8 @@ import { Channels } from './components/Channels';
 
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  // null = first load still in flight; lets the board tell "loading" from "no tasks yet".
+  const [tasks, setTasks] = useState<Task[] | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
@@ -47,7 +48,7 @@ export function App() {
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'task_changed') {
         setTasks((current) => {
-          const rest = current.filter((t) => t.id !== msg.task.id);
+          const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
           return [...rest, msg.task];
         });
         setOpenTask((current) => (current && current.id === msg.task.id ? msg.task : current));
@@ -63,9 +64,11 @@ export function App() {
   if (authed === null) return null;
   if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
 
+  const taskList = tasks ?? [];
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="flex items-center gap-4 border-b border-zinc-800 px-6 py-3">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-zinc-800 px-6 py-3">
         <h1 className="text-lg font-semibold tracking-tight">
           Agent<span className="text-amber-400">Deck</span>
         </h1>
@@ -75,7 +78,7 @@ export function App() {
               key={v}
               onClick={() => setView(v)}
               className={`rounded-md px-2 py-1 capitalize ${
-                view === v ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-200'
+                view === v ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
               {v}
@@ -90,6 +93,7 @@ export function App() {
                 .updateConfig({ autoRunner: { enabled: !config.autoRunner.enabled } })
                 .then(setConfig, (e) => alert(e.message))
             }
+            aria-pressed={config.autoRunner.enabled}
             className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${
               config.autoRunner.enabled
                 ? 'border-emerald-700 bg-emerald-950/60 text-emerald-300'
@@ -103,8 +107,8 @@ export function App() {
               }`}
             />
             Auto-Runner {config.autoRunner.enabled ? 'on' : 'off'}
-            <span className="text-xs text-zinc-500">
-              {tasks.filter((t) => t.state === 'running').length}/{config.autoRunner.maxConcurrentRuns} running
+            <span className="text-xs tabular-nums text-zinc-400">
+              {taskList.filter((t) => t.state === 'running').length}/{config.autoRunner.maxConcurrentRuns} running
             </span>
           </button>
         )}
@@ -122,7 +126,7 @@ export function App() {
         </button>
         <button
           onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
-          className="text-sm text-zinc-500 hover:text-zinc-100"
+          className="text-sm text-zinc-400 hover:text-zinc-100"
         >
           Log out
         </button>
@@ -134,9 +138,9 @@ export function App() {
         </div>
       )}
 
-      <main className="p-4">
+      <main className="px-6 py-4">
         {view === 'board' && (
-          <Board tasks={tasks} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
+          <Board tasks={taskList} loading={tasks === null} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
         )}
         {view === 'table' && <TableView onOpen={setOpenTask} />}
         {view === 'stats' && <StatsPage />}

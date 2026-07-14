@@ -31,8 +31,8 @@ const fmt = (n: number) => n.toLocaleString();
 function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <div className="text-xs uppercase tracking-wider text-zinc-500">{label}</div>
-      <div className="mt-1 text-xl font-semibold text-zinc-100">{value}</div>
+      <div className="text-xs uppercase tracking-wider text-zinc-400">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">{value}</div>
     </div>
   );
 }
@@ -80,9 +80,9 @@ export function StatsPage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Tokens & cost per model</h3>
+              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Tokens & cost per model</h3>
               {Object.keys(stats.models).length === 0 && (
-                <p className="text-sm text-zinc-600">No per-model data in range.</p>
+                <p className="text-sm text-zinc-400">No per-model data in range.</p>
               )}
               <table className="w-full text-left text-sm">
                 <tbody>
@@ -91,11 +91,11 @@ export function StatsPage() {
                     return (
                       <tr key={model} className="border-t border-zinc-800 first:border-t-0">
                         <td className="py-1.5 font-mono text-xs">{model}</td>
-                        <td className="text-right text-xs text-zinc-400">
+                        <td className="text-right text-xs tabular-nums text-zinc-400">
                           {fmt(u.inputTokens)} in · {fmt(u.outputTokens)} out
                         </td>
                         <td
-                          className="pl-3 text-right text-xs text-amber-300/80"
+                          className="pl-3 text-right text-xs tabular-nums text-amber-300/80"
                           title={modelCost == null ? 'No price configured for this model' : undefined}
                         >
                           {modelCost == null ? '—' : usd(modelCost)}
@@ -108,9 +108,9 @@ export function StatsPage() {
             </div>
 
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Tool calls</h3>
+              <h3 className="mb-2 text-xs uppercase tracking-wider text-zinc-400">Tool calls</h3>
               {Object.keys(stats.toolCalls).length === 0 && (
-                <p className="text-sm text-zinc-600">No tool calls in range.</p>
+                <p className="text-sm text-zinc-400">No tool calls in range.</p>
               )}
               <table className="w-full text-left text-sm">
                 <tbody>
@@ -119,7 +119,7 @@ export function StatsPage() {
                     .map(([tool, count]) => (
                       <tr key={tool} className="border-t border-zinc-800 first:border-t-0">
                         <td className="py-1.5">{tool}</td>
-                        <td className="text-right text-zinc-400">{fmt(count)}</td>
+                        <td className="text-right tabular-nums text-zinc-400">{fmt(count)}</td>
                       </tr>
                     ))}
                 </tbody>
@@ -127,7 +127,7 @@ export function StatsPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-500">
+          <div className="mt-4 flex flex-wrap gap-2 text-xs tabular-nums text-zinc-400">
             {Object.entries(stats.runsByState).map(([state, count]) => (
               <span key={state} className="rounded bg-zinc-900 px-2 py-1">
                 {state}: {count}

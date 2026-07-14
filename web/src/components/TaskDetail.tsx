@@ -3,6 +3,7 @@ import { api } from '../api';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
 import { EventStream } from './EventStream';
+import { Modal } from './Modal';
 import { subscribe } from '../ws';
 
 const RUN_STATE_STYLES: Record<Run['state'], string> = {
@@ -31,14 +32,15 @@ function Dependencies({ task }: { task: Task }) {
   return (
     <div className="border-b border-zinc-800 px-4 py-2 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold uppercase tracking-wider text-zinc-500">Depends on</span>
-        {current.dependsOn.length === 0 && <span className="text-zinc-600">nothing</span>}
+        <span className="font-semibold uppercase tracking-wider text-zinc-400">Depends on</span>
+        {current.dependsOn.length === 0 && <span className="text-zinc-400">nothing</span>}
         {current.dependsOn.map((depId) => (
           <span key={depId} className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
             #{depId}
             {editable && (
               <button
-                className="text-zinc-500 hover:text-red-400"
+                aria-label={`Remove dependency #${depId}`}
+                className="text-zinc-400 hover:text-red-400"
                 onClick={() => act(() => api.removeDependency(task.id, depId))}
               >
                 ✕
@@ -48,6 +50,7 @@ function Dependencies({ task }: { task: Task }) {
         ))}
         {editable && candidates.length > 0 && (
           <select
+            aria-label="Add dependency"
             className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300"
             value={pick}
             onChange={(e) => {
@@ -65,8 +68,8 @@ function Dependencies({ task }: { task: Task }) {
           </select>
         )}
         <div className="flex-1" />
-        <span className="font-semibold uppercase tracking-wider text-zinc-500">Blocks</span>
-        {current.dependents.length === 0 && <span className="text-zinc-600">nothing</span>}
+        <span className="font-semibold uppercase tracking-wider text-zinc-400">Blocks</span>
+        {current.dependents.length === 0 && <span className="text-zinc-400">nothing</span>}
         {current.dependents.map((id) => (
           <span key={id} className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
             #{id}
@@ -74,7 +77,7 @@ function Dependencies({ task }: { task: Task }) {
         ))}
         {current.dependents.length > 0 && current.state !== 'completed' && (
           <button
-            className="text-zinc-500 hover:text-red-400"
+            className="text-zinc-400 hover:text-red-400"
             onClick={() =>
               confirm('Cancel this task and everything that depends on it?') &&
               act(() => api.cancelTask(task.id, true))
@@ -109,12 +112,13 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2 text-xs">
-      <span className="font-semibold uppercase tracking-wider text-zinc-500">Notify</span>
+      <span className="font-semibold uppercase tracking-wider text-zinc-400">Notify</span>
       {attached.map((id) => (
         <span key={id} className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
           {channels.find((c) => c.id === id)?.name ?? `#${id}`}
           <button
-            className="text-zinc-500 hover:text-red-400"
+            aria-label={`Stop routing to ${channels.find((c) => c.id === id)?.name ?? `channel #${id}`}`}
+            className="text-zinc-400 hover:text-red-400"
             onClick={() =>
               fetch(`/api/tasks/${taskId}/channels/${id}`, { method: 'DELETE' }).then(load)
             }
@@ -123,9 +127,10 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
           </button>
         </span>
       ))}
-      {attached.length === 0 && <span className="text-zinc-600">channel defaults</span>}
+      {attached.length === 0 && <span className="text-zinc-400">channel defaults</span>}
       {candidates.length > 0 && (
         <select
+          aria-label="Route notifications to channel"
           className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300"
           value=""
           onChange={(e) => {
@@ -210,13 +215,10 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
   }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl"
-      >
+    <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
+      <div className="flex max-h-[85vh] flex-col">
         <header className="border-b border-zinc-800 p-4">
-          <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500">
+          <div className="mb-1 flex items-center gap-2 text-xs text-zinc-400">
             <span>Task #{task.id}</span>
             <span className="rounded bg-zinc-800 px-1.5 py-0.5">{task.state}</span>
             <span>
@@ -228,7 +230,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
               </span>
             )}
             <div className="flex-1" />
-            <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
+            <button aria-label="Close" onClick={onClose} className="text-zinc-400 hover:text-zinc-100">
               ✕
             </button>
           </div>
@@ -239,7 +241,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
         <NotifyOverrides taskId={task.id} />
 
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-2">
-          {runs.length === 0 && <span className="text-xs text-zinc-500">No runs yet.</span>}
+          {runs.length === 0 && <span className="text-xs text-zinc-400">No runs yet.</span>}
           {runs.map((run) => (
             <button
               key={run.id}
@@ -257,7 +259,7 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
         </div>
 
         {selectedRun && (
-          <div className="px-4 py-2 text-xs text-zinc-500">
+          <div className="px-4 py-2 text-xs tabular-nums text-zinc-400">
             {selectedRun.reason && <span className="text-red-400">reason: {selectedRun.reason} · </span>}
             {selectedRun.stopReason && <span>stop: {selectedRun.stopReason} · </span>}
             started {new Date(selectedRun.startedAt).toLocaleTimeString()}
@@ -306,6 +308,6 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
           <EventStream events={events} />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

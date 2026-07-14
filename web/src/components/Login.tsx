@@ -30,18 +30,22 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
         </h1>
         <input
           type="text"
+          aria-label="Username"
+          autoComplete="username"
           placeholder="Username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-amber-500 focus:outline-none"
+          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none"
         />
         <input
           type="password"
           autoFocus
+          aria-label="Operator password"
+          autoComplete="current-password"
           placeholder="Operator password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-amber-500 focus:outline-none"
+          className="mb-3 w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-400 focus:border-amber-500 focus:outline-none"
         />
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         <button

@@ -25,12 +25,13 @@ export function TaskCard({
 
   return (
     <article className="rounded-md border border-zinc-800 bg-zinc-900 p-3 text-sm shadow">
-      <p
-        className="mb-2 line-clamp-3 cursor-pointer whitespace-pre-wrap text-zinc-200 hover:text-white"
+      <button
+        type="button"
+        className="mb-2 line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-zinc-200 hover:text-white"
         onClick={() => onOpen(task)}
       >
         {task.prompt}
-      </p>
+      </button>
       <div className="mb-2 flex flex-wrap gap-1 text-[11px]">
         <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">
           {task.harness} · {task.model}
@@ -45,7 +46,7 @@ export function TaskCard({
         )}
       </div>
       <div className="flex gap-2 text-xs">
-        <span className="text-zinc-600">#{task.id}</span>
+        <span className="tabular-nums text-zinc-400">#{task.id}</span>
         <div className="flex-1" />
         {editable && (
           <button className="text-zinc-400 hover:text-zinc-100" onClick={() => onEdit(task)}>
@@ -94,7 +95,7 @@ export function TaskCard({
         )}
         {cancellable && (
           <button
-            className="text-zinc-500 hover:text-red-400"
+            className="text-zinc-400 hover:text-red-400"
             onClick={act(() => api.cancelTask(task.id))}
           >
             Cancel

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task } from '../types';
+import { Modal } from './Modal';
 
 const field =
   'w-full rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 focus:border-amber-500 focus:outline-none';
@@ -54,17 +55,14 @@ export function TaskForm({
   };
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <form
-        onSubmit={submit}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
-      >
+    <Modal label={task ? `Edit Task #${task.id}` : 'New Task'} onClose={onClose} className="max-w-lg">
+      <form onSubmit={submit} className="p-5">
         <h2 className="mb-4 text-base font-semibold">{task ? `Edit Task #${task.id}` : 'New Task'}</h2>
 
         <div className="mb-3">
-          <label className={label}>Prompt</label>
+          <label className={label} htmlFor="task-prompt">Prompt</label>
           <textarea
+            id="task-prompt"
             className={`${field} min-h-28`}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -73,10 +71,10 @@ export function TaskForm({
           />
         </div>
 
-        <div className="mb-3 grid grid-cols-2 gap-3">
+        <div className="mb-3 grid gap-3 sm:grid-cols-2">
           <div>
-            <label className={label}>Harness</label>
-            <select className={field} value={harness} onChange={(e) => pickHarness(e.target.value)}>
+            <label className={label} htmlFor="task-harness">Harness</label>
+            <select id="task-harness" className={field} value={harness} onChange={(e) => pickHarness(e.target.value)}>
               {Object.keys(config.harnesses).map((h) => (
                 <option key={h} value={h}>
                   {h}
@@ -85,8 +83,8 @@ export function TaskForm({
             </select>
           </div>
           <div>
-            <label className={label}>Model (pick or type any ID)</label>
-            <input className={field} value={model} onChange={(e) => setModel(e.target.value)} list="models" />
+            <label className={label} htmlFor="task-model">Model (pick or type any ID)</label>
+            <input id="task-model" className={field} value={model} onChange={(e) => setModel(e.target.value)} list="models" />
             <datalist id="models">
               {models.map((m) => (
                 <option key={m} value={m} />
@@ -94,8 +92,9 @@ export function TaskForm({
             </datalist>
           </div>
           <div>
-            <label className={label}>Isolation Mode</label>
+            <label className={label} htmlFor="task-isolation">Isolation Mode</label>
             <select
+              id="task-isolation"
               className={field}
               value={isolationMode}
               onChange={(e) => setIsolationMode(e.target.value as 'direct' | 'worktree')}
@@ -105,8 +104,9 @@ export function TaskForm({
             </select>
           </div>
           <div>
-            <label className={label}>Priority</label>
+            <label className={label} htmlFor="task-priority">Priority</label>
             <select
+              id="task-priority"
               className={field}
               value={priority}
               onChange={(e) => setPriority(e.target.value as 'high' | 'normal' | 'low')}
@@ -119,8 +119,8 @@ export function TaskForm({
         </div>
 
         <div className="mb-4">
-          <label className={label}>Working Directory</label>
-          <input className={field} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
+          <label className={label} htmlFor="task-workdir">Working Directory</label>
+          <input id="task-workdir" className={field} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
         </div>
 
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
@@ -148,6 +148,6 @@ export function TaskForm({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }
