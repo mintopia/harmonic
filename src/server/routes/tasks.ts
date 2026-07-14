@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { createTaskInputSchema, updateTaskInputSchema } from '../../domain/tasks.js';
+import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
 import { serializeRun } from '../../domain/runs.js';
 import { Git } from '../../execution/git.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
@@ -25,7 +25,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.status(201).send(withDeps(task));
   });
 
-  fastify.get('/tasks', async () => ({ tasks: ctx.tasks.listWithDeps() }));
+  fastify.get('/tasks', async (req) => ({
+    tasks: ctx.tasks.listWithDeps(taskListQuerySchema.parse(req.query ?? {})),
+  }));
 
   fastify.get('/tasks/:id', async (req) => ctx.tasks.withDeps(ctx.tasks.get(idOf(req.params))));
 

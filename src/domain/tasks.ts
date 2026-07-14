@@ -1,7 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
-import { tasks, taskDependencies, type TaskRow, type TaskState } from '../db/schema.js';
+import { tasks, taskDependencies, TASK_STATES, type TaskRow, type TaskState } from '../db/schema.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 
@@ -19,6 +19,15 @@ export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 export const updateTaskInputSchema = createTaskInputSchema.omit({ state: true, dependsOn: true }).partial();
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
+
+export const taskListQuerySchema = z.object({
+  state: z.enum(TASK_STATES).optional(),
+  harness: z.enum(HARNESS_IDS).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  sortBy: z.enum(['createdAt', 'priority']).optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+});
+export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 
 /** A task plus its dependency context, as the API serves it. */
 export interface TaskWithDeps extends TaskRow {
@@ -79,8 +88,29 @@ export class TaskService {
     return row;
   }
 
-  list(): TaskRow[] {
-    return this.db.select().from(tasks).all();
+  list(query: TaskListQuery = {}): TaskRow[] {
+    const filters = [
+      query.state ? eq(tasks.state, query.state) : undefined,
+      query.harness ? eq(tasks.harness, query.harness) : undefined,
+      query.priority ? eq(tasks.priority, query.priority) : undefined,
+    ].filter((f) => f !== undefined);
+    let rows = this.db
+      .select()
+      .from(tasks)
+      .where(filters.length > 0 ? and(...filters) : undefined)
+      .all();
+    if (query.sortBy) {
+      const dir = query.order === 'desc' ? -1 : 1;
+      const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
+      rows = rows.sort((a, b) => {
+        const cmp =
+          query.sortBy === 'priority'
+            ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
+            : a.createdAt - b.createdAt || a.id - b.id;
+        return cmp * dir;
+      });
+    }
+    return rows;
   }
 
   get(id: number): TaskRow {
@@ -259,8 +289,8 @@ export class TaskService {
     };
   }
 
-  listWithDeps(): TaskWithDeps[] {
-    return this.list().map((task) => this.withDeps(task));
+  listWithDeps(query: TaskListQuery = {}): TaskWithDeps[] {
+    return this.list(query).map((task) => this.withDeps(task));
   }
 
   /** Is `to` reachable from `from` following depends-on edges? */
