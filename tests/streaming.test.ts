@@ -79,4 +79,28 @@ describe('live run event streaming and replay', () => {
     );
     ws.close();
   });
+
+  it('task_changed payloads carry the API task shape, identical to REST', async () => {
+    const ws = await connectWs(server);
+    const dep = await server.api('POST', '/api/tasks', { prompt: 'dependency', state: 'draft' });
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: 'dependent',
+      dependsOn: [dep.body.id],
+    });
+
+    await waitFor(async () =>
+      ws.messages.some((m) => m.type === 'task_changed' && m.task.id === created.body.id),
+    );
+    const msg = ws.messages.find((m) => m.type === 'task_changed' && m.task.id === created.body.id);
+
+    // The board renders dependsOn/blockedOnFailed straight off WS payloads;
+    // a bare row here blank-pages the SPA (issue 15).
+    expect(msg.task.dependsOn).toEqual([dep.body.id]);
+    expect(msg.task.dependents).toEqual([]);
+    expect(msg.task.blockedOnFailed).toBe(false);
+
+    const rest = await server.api('GET', `/api/tasks/${created.body.id}`);
+    expect(msg.task).toEqual(rest.body);
+    ws.close();
+  });
 });
