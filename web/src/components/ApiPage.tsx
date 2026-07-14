@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { btnGhost, btnPrimary, btnQuiet, field, labelType } from '../ui';
+import { ApiReference } from './ApiReference';
 
 interface ApiKey {
   id: number;
@@ -181,7 +182,7 @@ export function ApiPage() {
         </div>
       </div>
 
-      {/* Issue 7 inserts a rendered endpoint reference here, below the spec downloads. */}
+      <ApiReference />
     </div>
   );
 }
