@@ -50,6 +50,10 @@ export const runs = sqliteTable('runs', {
   baseBranch: text('base_branch'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
+  /** Review decision on this run: 'accepted' | 'rejected' | null. */
+  review: text('review'),
+  reviewFeedback: text('review_feedback'),
+  reviewedAt: integer('reviewed_at'),
   startedAt: integer('started_at').notNull(),
   finishedAt: integer('finished_at'),
 });

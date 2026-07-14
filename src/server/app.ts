@@ -10,6 +10,7 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
+import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -28,6 +29,7 @@ export interface AppContext {
   tasks: TaskService;
   runs: RunStore;
   runner: Runner;
+  review: ReviewService;
   bus: EventBus;
 }
 
@@ -46,7 +48,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     onRunEvent: (event) => bus.emit('run_event', event),
     onRunFinished: (run) => bus.emit('run_changed', run),
   });
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, bus };
+  const review = new ReviewService(runs, tasks);
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

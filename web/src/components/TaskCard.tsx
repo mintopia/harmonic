@@ -65,10 +65,26 @@ export function TaskCard({
         {task.state === 'failed' && (
           <button
             className="text-amber-400 hover:text-amber-300"
-            onClick={act(() => api.requeueTask(task.id))}
+            onClick={act(() => api.requeueTask(task.id, window.prompt('Feedback for the retry (optional):') ?? undefined))}
           >
             Re-queue
           </button>
+        )}
+        {task.state === 'awaiting-review' && (
+          <>
+            <button
+              className="text-emerald-400 hover:text-emerald-300"
+              onClick={act(() => api.acceptTask(task.id))}
+            >
+              Accept
+            </button>
+            <button
+              className="text-red-400 hover:text-red-300"
+              onClick={act(() => api.rejectTask(task.id, window.prompt('Rejection feedback:') ?? undefined))}
+            >
+              Reject
+            </button>
+          </>
         )}
         {cancellable && (
           <button

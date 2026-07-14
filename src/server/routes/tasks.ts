@@ -5,6 +5,7 @@ import { createTaskInputSchema, updateTaskInputSchema } from '../../domain/tasks
 import { serializeRun } from '../../domain/runs.js';
 
 const requeueInputSchema = z.object({ feedback: z.string().optional() }).nullish();
+const rejectInputSchema = z.object({ feedback: z.string().optional() }).nullish();
 
 const idOf = (params: unknown): number => {
   const id = Number((params as { id: string }).id);
@@ -38,6 +39,13 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post('/tasks/:id/requeue', async (req) => {
     const body = requeueInputSchema.parse(req.body ?? null);
     return ctx.tasks.requeue(idOf(req.params), body?.feedback);
+  });
+
+  fastify.post('/tasks/:id/accept', async (req) => ctx.review.accept(idOf(req.params)));
+
+  fastify.post('/tasks/:id/reject', async (req) => {
+    const body = rejectInputSchema.parse(req.body ?? null);
+    return ctx.review.reject(idOf(req.params), body?.feedback);
   });
 
   fastify.post('/tasks/:id/run', async (req, reply) => {

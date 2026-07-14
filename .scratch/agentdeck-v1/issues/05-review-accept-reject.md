@@ -1,6 +1,6 @@
 # Review: Accept / Reject
 
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -24,13 +24,24 @@ git-mutating Accept for worktree mode is the next slice (ADR-0002).
 
 ## Acceptance criteria
 
-- [ ] Accepting an awaiting-review Task moves it to completed (terminal)
-- [ ] Rejecting an awaiting-review Task moves it to failed with the feedback stored
-- [ ] A failed Task can be re-queued to ready, optionally with feedback appended to its prompt, and the appended prompt is what the next Run executes
-- [ ] Accept/Reject are available only on awaiting-review Tasks
-- [ ] The awaiting-review column links each Task to its latest Run's events and result
-- [ ] REST-seam tests cover accept, reject-with-feedback, and re-queue-with-feedback flows
+- [x] Accepting an awaiting-review Task moves it to completed (terminal)
+- [x] Rejecting an awaiting-review Task moves it to failed with the feedback stored
+- [x] A failed Task can be re-queued to ready, optionally with feedback appended to its prompt, and the appended prompt is what the next Run executes
+- [x] Accept/Reject are available only on awaiting-review Tasks
+- [x] The awaiting-review column links each Task to its latest Run's events and result
+- [x] REST-seam tests cover accept, reject-with-feedback, and re-queue-with-feedback flows
 
 ## Blocked by
 
 - `03-execute-a-run-over-acp-direct-mode.md`
+
+## Comments
+
+**2026-07-14 (agent):** Done. `ReviewService` (src/domain/review.ts):
+accept completes (terminal), reject fails with feedback stored on the
+reviewed run (`review`/`reviewFeedback`/`reviewedAt` columns). Requeue
+(from issue 03) appends optional feedback to the prompt; a test asserts the
+retry's harness receives the appended prompt via the stub's echo. Accept
+takes an async hook so the worktree slice can plug in the ADR-0002 merge.
+UI: Accept/Reject on awaiting-review cards, feedback prompts on
+Reject/Re-queue.

@@ -32,6 +32,9 @@ export const api = {
   cancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/cancel`),
   requeueTask: (id: number, feedback?: string) =>
     request<Task>('POST', `/api/tasks/${id}/requeue`, feedback ? { feedback } : {}),
+  acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
+  rejectTask: (id: number, feedback?: string) =>
+    request<Task>('POST', `/api/tasks/${id}/reject`, feedback ? { feedback } : {}),
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),

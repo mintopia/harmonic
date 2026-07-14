@@ -35,10 +35,14 @@ async function handlePrompt(msg) {
   try {
     scenario = JSON.parse(msg.params.prompt[0].text);
   } catch {
+    // Non-JSON prompt: echo it back, so tests can assert what prompt
+    // actually reached the harness.
     scenario = {
       updates: [
-        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hello ' } },
-        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'world' } },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: `prompt-received:${msg.params.prompt[0].text}` },
+        },
       ],
     };
   }
