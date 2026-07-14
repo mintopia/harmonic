@@ -189,6 +189,15 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             {selectedRun.stopReason && <span>stop: {selectedRun.stopReason} · </span>}
             started {new Date(selectedRun.startedAt).toLocaleTimeString()}
             {selectedRun.finishedAt && <> · finished {new Date(selectedRun.finishedAt).toLocaleTimeString()}</>}
+            {selectedRun.usage?.totals && (
+              <>
+                {' · '}
+                <span className="text-emerald-400/80">
+                  {(selectedRun.usage.totals as any).inputTokens?.toLocaleString()} in /{' '}
+                  {(selectedRun.usage.totals as any).outputTokens?.toLocaleString()} out tokens
+                </span>
+              </>
+            )}
             {selectedRun.branch && (
               <>
                 {' · '}

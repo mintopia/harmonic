@@ -30,7 +30,7 @@ const request = (method, params) => {
 };
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 
-const sessionId = `stub-${process.pid}`;
+const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
 
 async function handlePrompt(msg) {
   let scenario;

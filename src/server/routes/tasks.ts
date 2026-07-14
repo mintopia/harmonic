@@ -4,6 +4,7 @@ import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema } from '../../domain/tasks.js';
 import { serializeRun } from '../../domain/runs.js';
 import { Git } from '../../execution/git.js';
+import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 
 const requeueInputSchema = z.object({ feedback: z.string().optional() }).nullish();
 const rejectInputSchema = z.object({ feedback: z.string().optional() }).nullish();
@@ -82,6 +83,16 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get('/runs/:id', async (req) => serializeRun(ctx.runs.get(idOf(req.params))));
 
   fastify.get('/runs/:id/events', async (req) => ({ events: ctx.runs.listEvents(idOf(req.params)) }));
+
+  // Usage rolled up across all of a task's runs, retries included.
+  fastify.get('/tasks/:id/usage', async (req) => {
+    ctx.tasks.get(idOf(req.params));
+    const usages = ctx.runs
+      .listForTask(idOf(req.params))
+      .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
+      .filter((u): u is RunUsage => u !== null);
+    return { ...(mergeUsage(usages) ?? { models: {}, totals: null, toolCalls: {}, source: null }), runCount: usages.length };
+  });
 
   // Branch + diffstat for the review inbox (worktree runs only).
   fastify.get('/runs/:id/diff', async (req) => {

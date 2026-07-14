@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
+import { collectUsage } from './usage.js';
 import type { AppConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpConnection } from '../acp/connection.js';
@@ -214,23 +215,48 @@ export class Runner {
           prompt: [{ type: 'text', text: task.prompt }],
         }),
         exited,
-      ])) as { stopReason?: string; usage?: unknown };
+      ])) as { stopReason?: string; usage?: Record<string, unknown> };
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       await finalize();
       this.settle(task, run, 'completed', null, {
         stopReason: result.stopReason ?? null,
-        usage: result.usage ? JSON.stringify(result.usage) : null,
+        usage: this.collectUsageSafe(task, run, harness, workspace, result),
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       await finalize();
-      this.settle(task, run, 'failed', reason);
+      this.settle(task, run, 'failed', reason, {
+        usage: this.collectUsageSafe(task, run, harness, workspace, undefined),
+      });
     } finally {
       connection.fail(new Error('run finished'));
       connection.dispose();
       this.active.delete(run.id);
       await finalize();
+    }
+  }
+
+  /** Usage is decoration on a finished run — never let it fail the run. */
+  private collectUsageSafe(
+    task: TaskRow,
+    run: RunRow,
+    harness: AppConfig['harnesses']['claude'],
+    workspace: Workspace,
+    promptResult: { stopReason?: string; usage?: Record<string, unknown> } | undefined,
+  ): string | null {
+    try {
+      const usage = collectUsage({
+        harnessId: task.harness,
+        harness,
+        cwd: workspace.cwd,
+        sessionId: this.runStore.get(run.id).sessionId,
+        promptResult,
+        events: this.runStore.listEvents(run.id),
+      });
+      return usage ? JSON.stringify(usage) : null;
+    } catch {
+      return null;
     }
   }
 

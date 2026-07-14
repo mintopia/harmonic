@@ -7,6 +7,7 @@ import { TaskDetail } from './components/TaskDetail';
 import { subscribe } from './ws';
 import { Login } from './components/Login';
 import { ApiKeys } from './components/ApiKeys';
+import { StatsPage } from './components/StatsPage';
 
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -15,6 +16,7 @@ export function App() {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
   const [showKeys, setShowKeys] = useState(false);
+  const [view, setView] = useState<'board' | 'stats'>('board');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,6 +66,19 @@ export function App() {
         <h1 className="text-lg font-semibold tracking-tight">
           Agent<span className="text-amber-400">Deck</span>
         </h1>
+        <nav className="flex gap-1 text-sm">
+          {(['board', 'stats'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`rounded-md px-2 py-1 capitalize ${
+                view === v ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-200'
+              }`}
+            >
+              {v}
+            </button>
+          ))}
+        </nav>
         <div className="flex-1" />
         {config && (
           <button
@@ -114,7 +129,11 @@ export function App() {
       )}
 
       <main className="p-4">
-        <Board tasks={tasks} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
+        {view === 'board' ? (
+          <Board tasks={tasks} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
+        ) : (
+          <StatsPage />
+        )}
       </main>
 
       {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}

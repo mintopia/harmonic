@@ -36,7 +36,12 @@ export interface Run {
   sessionId: string | null;
   branch: string | null;
   baseBranch: string | null;
-  usage: Record<string, number> | null;
+  usage: {
+    totals: Record<string, number | null> | null;
+    models: Record<string, Record<string, number>>;
+    toolCalls: Record<string, number>;
+    source: string | null;
+  } | null;
   review: 'accepted' | 'rejected' | null;
   reviewFeedback: string | null;
   reviewedAt: number | null;

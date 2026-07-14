@@ -19,6 +19,11 @@ export const harnessConfigSchema = z.object({
   env: z.record(z.string(), z.string()).default({}),
   models: z.array(z.string()).default([]),
   defaultModel: z.string(),
+  /**
+   * Root of the harness's native session logs, for the per-model usage
+   * fallback (Claude Code: ~/.claude/projects). Empty string disables.
+   */
+  sessionLogDir: z.string().optional(),
 });
 
 export const appConfigSchema = z.object({

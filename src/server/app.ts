@@ -22,6 +22,7 @@ import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
+import { statsRoutes } from './routes/stats.js';
 
 export interface AppOptions {
   dataDir: string;
@@ -119,6 +120,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   await app.register(taskRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
+  await app.register(statsRoutes, { prefix: '/api' });
   await app.register(wsRoutes, { prefix: '/api' });
 
   // Serve the embedded SPA when a build exists (dist/web next to dist/server code).
