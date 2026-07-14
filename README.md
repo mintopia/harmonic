@@ -16,14 +16,21 @@ npx github:mintopia/harmonic serve
 The first run clones and builds (a minute or two); after that it starts
 instantly from the npx cache. Then open http://localhost:4700.
 
-Useful flags and environment:
+To run it in the background instead:
 
 ```sh
-npx github:mintopia/harmonic serve --port 4700 --password <pass>
+npx github:mintopia/harmonic start     # logs to ~/.harmonic/harmonic.log
+npx github:mintopia/harmonic status
+npx github:mintopia/harmonic stop
 ```
 
+Useful flags and environment:
+
+- `--port <n>` — port to listen on (default 4700)
+- `--host <h>` — bind address (default `0.0.0.0`: reachable from your
+  network, gated by the operator password; use `127.0.0.1` for local-only)
 - `--data-dir <dir>` — where the SQLite database lives (default `~/.harmonic`)
-- `HARMONIC_PASSWORD` — the operator password
+- `HARMONIC_PASSWORD` — the operator password (or `--password`; required on first run)
 - `HARMONIC_DATA_DIR` — same as `--data-dir`
 
 ## Development
