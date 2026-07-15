@@ -36,7 +36,7 @@ Create `tests/model-filter.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { filterModels } from '../web/src/components/modelFilter';
+import { filterModels } from '../web/src/components/modelFilter.js';
 
 const MODELS = ['claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5'];
 
