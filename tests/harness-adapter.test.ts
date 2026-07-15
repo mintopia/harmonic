@@ -74,18 +74,21 @@ describe('harness adapters', () => {
     expect(env.COPILOT_MODEL).toBeUndefined();
   });
 
-  it('copilot registers the MCP server over ACP with the Run Key bearer header', () => {
-    // Verified end-to-end in the spike (capture 5): every MCP request
-    // arrived with the Authorization header.
-    expect(adapterFor('copilot').mcpServers({ url: 'http://127.0.0.1:1/mcp', token: 'rk' })).toEqual([
-      {
-        name: 'harmonic',
-        type: 'http',
-        url: 'http://127.0.0.1:1/mcp',
-        headers: [{ name: 'Authorization', value: 'Bearer rk' }],
-      },
-    ]);
-  });
+  it.each(['claude', 'codex', 'copilot'])(
+    '%s registers the MCP server over ACP with the Run Key bearer header',
+    (harness) => {
+      // The env vars alone never registered the server; every harness must
+      // return the ACP session/new entry so agents get the `harmonic` tools.
+      expect(adapterFor(harness).mcpServers({ url: 'http://127.0.0.1:1/mcp', token: 'rk' })).toEqual([
+        {
+          name: 'harmonic',
+          type: 'http',
+          url: 'http://127.0.0.1:1/mcp',
+          headers: [{ name: 'Authorization', value: 'Bearer rk' }],
+        },
+      ]);
+    },
+  );
 
   it("copilot's Usage Collector keys the OTel log by cwd slug and needs a sessionId to attribute spans", () => {
     const usage = adapterFor('copilot').usage!;

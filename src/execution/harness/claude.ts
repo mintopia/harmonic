@@ -14,8 +14,18 @@ export const claudeAdapter: HarnessAdapter = {
     ANTHROPIC_MODEL: model,
   }),
 
-  // Claude agents reach Harmonic's MCP server via the env-var mechanism.
-  mcpServers: () => [],
+  // Register Harmonic's MCP server over ACP `session/new`, same as codex
+  // and copilot — the HARMONIC_MCP_URL/HARMONIC_API_KEY env vars alone
+  // don't make Claude Code load an MCP server, so an empty list left the
+  // agent with no `harmonic` tools at all.
+  mcpServers: ({ url, token }) => [
+    {
+      name: 'harmonic',
+      type: 'http',
+      url,
+      headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
+    },
+  ],
 
   usage: {
     /**
