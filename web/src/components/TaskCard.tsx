@@ -56,7 +56,7 @@ export function TaskCard({
           <span className="shrink-0 text-label font-semibold uppercase tracking-wide text-fail">on failed</span>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2.5">
+      <div className="flex flex-wrap items-center justify-end gap-2.5">
         {editable && (
           <button className={quiet} onClick={() => onEdit(task)}>
             Edit
