@@ -186,7 +186,8 @@ export function App() {
           </button>
         ))}
       </nav>
-      {/* Desktop only: below the rail breakpoint the top drawer wins. */}
+      {/* Desktop only: the nav's rail:flex-1 above pins this to the sidebar
+          foot. Below the rail breakpoint the top drawer wins. */}
       <div className="mt-2 hidden border-t border-hairline pt-2 rail:flex rail:flex-col">
         <button
           aria-expanded={!railCollapsed}
@@ -197,20 +198,6 @@ export function App() {
         >
           <Icon className={railCollapsed ? '-scale-x-100' : ''} name="chevrons-left" />
           <span className={railLabel}>Collapse</span>
-        </button>
-      </div>
-      <div className="mt-2 flex flex-col gap-0.5 border-t border-hairline pt-2 rail:mt-0">
-        <button {...railItemName(THEME_LABELS[theme])} className={railItem(false, railCollapsed)} onClick={cycleTheme}>
-          <Icon name={THEME_ICONS[theme]} />
-          <span className={railLabel}>{THEME_LABELS[theme]}</span>
-        </button>
-        <button
-          {...railItemName('Log out')}
-          className={railItem(false, railCollapsed)}
-          onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
-        >
-          <Icon name="logout" />
-          <span className={railLabel}>Log out</span>
         </button>
       </div>
     </>
@@ -288,6 +275,22 @@ export function App() {
             </span>
           )}
           <div className="flex-1" />
+          <button
+            aria-label={THEME_LABELS[theme]}
+            title={THEME_LABELS[theme]}
+            className="inline-flex items-center justify-center rounded-md p-2 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+            onClick={cycleTheme}
+          >
+            <Icon name={THEME_ICONS[theme]} />
+          </button>
+          <button
+            aria-label="Log out"
+            title="Log out"
+            className="inline-flex items-center justify-center rounded-md p-2 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+            onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+          >
+            <Icon name="logout" />
+          </button>
           <button onClick={() => setEditing('new')} className={btnPrimary}>
             New task
           </button>
