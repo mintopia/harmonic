@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../api';
 import { Modal } from './Modal';
 import { btnGhost, btnQuiet, field, labelType } from '../ui';
@@ -6,9 +6,9 @@ import { btnGhost, btnQuiet, field, labelType } from '../ui';
 /**
  * The review gate's Reject path. Feedback is saved on the run either way;
  * the destination is the operator's choice: send it back to Ready to retry
- * (reject, then requeue — the feedback is appended to the prompt so the next
- * attempt learns from it), or mark it Failed and stop. No indigo here — this
- * dialog speaks in work states (ready / failed), not the interface's voice.
+ * (reject, then spawn a linked re-attempt carrying the feedback), or mark it
+ * Failed and stop. No indigo here — this dialog speaks in work states
+ * (ready / failed), not the interface's voice.
  */
 export function RejectDialog({
   taskId,
@@ -22,16 +22,23 @@ export function RejectDialog({
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Reject is one-shot: once it succeeds the task is 'failed' and can no longer
+  // be reviewed, so if the follow-up re-attempt fails, a retry must skip reject.
+  const rejected = useRef(false);
 
   // Both paths reject first (recording the feedback on the run and failing
-  // the task); "retry" then requeues the now-failed task back to ready.
+  // the task); "retry" then spawns a new task linked to this one, carrying
+  // the feedback, instead of re-queuing in place.
   const submit = (retry: boolean) => async () => {
     setBusy(true);
     setError(null);
     const fb = feedback.trim() || undefined;
     try {
-      await api.rejectTask(taskId, fb);
-      if (retry) await api.requeueTask(taskId, fb);
+      if (!rejected.current) {
+        await api.rejectTask(taskId, fb);
+        rejected.current = true;
+      }
+      if (retry) await api.reattempt(taskId, fb);
       onDone();
     } catch (e) {
       setBusy(false);
@@ -44,8 +51,8 @@ export function RejectDialog({
       <div className="p-5">
         <h2 className="mb-1 text-headline font-semibold">Reject task #{taskId}</h2>
         <p className="mb-4 text-muted">
-          Feedback is saved on the run. Send it back to Ready to retry with the notes added to the prompt, or mark it
-          failed to stop here.
+          Feedback is saved on the run. Create a re-attempt to spawn a new task linked to this one, with the notes added
+          to its prompt — or mark it failed to stop here.
         </p>
         <label className={`${labelType} mb-1 block text-muted`} htmlFor="reject-feedback">
           Feedback (optional)
@@ -73,7 +80,7 @@ export function RejectDialog({
             Mark failed
           </button>
           <button type="button" onClick={submit(true)} disabled={busy} className={btnGhost}>
-            Send back to Ready
+            Create re-attempt
           </button>
         </div>
       </div>

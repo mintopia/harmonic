@@ -27,6 +27,7 @@ export const api = {
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
   tasks: () => request<{ tasks: Task[] }>('GET', '/api/tasks'),
+  task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
@@ -37,8 +38,9 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
-  requeueTask: (id: number, feedback?: string) =>
-    request<Task>('POST', `/api/tasks/${id}/requeue`, feedback ? { feedback } : {}),
+  /** Create a new task that re-attempts the original, carrying optional feedback. */
+  reattempt: (id: number, feedback?: string) =>
+    request<Task>('POST', `/api/tasks/${id}/reattempt`, feedback ? { feedback } : {}),
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
   rejectTask: (id: number, feedback?: string) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, feedback ? { feedback } : {}),

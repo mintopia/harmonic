@@ -11,11 +11,14 @@ const task = (id: number, state: TaskState, createdAt: number): Task => ({
   isolationMode: 'direct',
   priority: 'normal',
   state,
+  reattemptOf: null,
+  feedback: null,
   createdAt,
   updatedAt: createdAt,
   dependsOn: [],
   dependents: [],
   blockedOnFailed: false,
+  reattempts: [],
   cost: null,
 });
 

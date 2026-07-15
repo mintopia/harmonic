@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { Task } from '../types';
 import { btnAccept, btnQuiet as quiet, btnReject, card } from '../ui';
 import { RejectDialog } from './RejectDialog';
+import { ReattemptDialog } from './ReattemptDialog';
 
 /** One truncating Data-role line: id, harness · model, then only the
  * facts that deviate from defaults (isolation, deps, cost). Metadata is
@@ -29,6 +30,7 @@ export function TaskCard({
   const editable = task.state === 'draft' || task.state === 'ready';
   const cancellable = !['completed', 'cancelled'].includes(task.state);
   const [rejecting, setRejecting] = useState(false);
+  const [reattempting, setReattempting] = useState(false);
 
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, (e) => alert(e.message));
 
@@ -73,11 +75,8 @@ export function TaskCard({
           </button>
         )}
         {task.state === 'failed' && (
-          <button
-            className={quiet}
-            onClick={act(() => api.requeueTask(task.id, window.prompt('Feedback for the retry (optional):') ?? undefined))}
-          >
-            Re-queue
+          <button className={quiet} onClick={() => setReattempting(true)}>
+            Re-attempt
           </button>
         )}
         {task.state === 'awaiting-review' && (
@@ -102,6 +101,16 @@ export function TaskCard({
           onClose={() => setRejecting(false)}
           onDone={() => {
             setRejecting(false);
+            onChanged();
+          }}
+        />
+      )}
+      {reattempting && (
+        <ReattemptDialog
+          taskId={task.id}
+          onClose={() => setReattempting(false)}
+          onDone={() => {
+            setReattempting(false);
             onChanged();
           }}
         />

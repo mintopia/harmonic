@@ -29,11 +29,17 @@ export interface Task {
   isolationMode: 'direct' | 'worktree';
   priority: 'high' | 'normal' | 'low';
   state: TaskState;
+  /** The original this task re-attempts, or null. */
+  reattemptOf: number | null;
+  /** Reviewer feedback that seeded this re-attempt, in full; null otherwise. */
+  feedback: string | null;
   createdAt: number;
   updatedAt: number;
   dependsOn: number[];
   dependents: number[];
   blockedOnFailed: boolean;
+  /** Task ids that re-attempt this one (reverse of reattemptOf). */
+  reattempts: number[];
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
 }

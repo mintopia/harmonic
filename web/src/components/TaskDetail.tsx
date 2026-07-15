@@ -233,7 +233,23 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
             </button>
           </div>
           <p className="line-clamp-4 whitespace-pre-wrap text-ink">{task.prompt}</p>
+          {(task.reattemptOf !== null || task.reattempts.length > 0) && (
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-data text-muted">
+              {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
+              {task.reattempts.length > 0 && (
+                <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>
+              )}
+            </div>
+          )}
         </header>
+
+        {/* The reviewer feedback that seeded this re-attempt, shown in full. */}
+        {task.feedback && (
+          <div className="border-b border-hairline px-4 py-2">
+            <div className={`${labelType} mb-1 text-muted`}>Feedback carried into this re-attempt</div>
+            <p className="whitespace-pre-wrap text-ink">{task.feedback}</p>
+          </div>
+        )}
 
         <Dependencies task={task} />
         <NotifyOverrides taskId={task.id} />

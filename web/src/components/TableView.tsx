@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
@@ -33,6 +34,14 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
         setLoading(false);
       });
   }, [state, harness, priority, sortBy, order]);
+
+  // The badge links to the original, which the current filter may hide, so
+  // fall back to fetching it by id.
+  const openOriginal = (id: number) => {
+    const found = tasks.find((t) => t.id === id);
+    if (found) return onOpen(found);
+    api.task(id).then(onOpen, (e) => alert(e instanceof Error ? e.message : String(e)));
+  };
 
   const sortHeader = (key: SortKey, label: string, align?: 'right', extra = '') => (
     <th
@@ -118,6 +127,19 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
               >
                 <td className="py-2 pr-3 font-data text-data text-muted">{task.id}</td>
                 <td className="max-w-md pr-4">
+                  {task.reattemptOf !== null && (
+                    <button
+                      type="button"
+                      title={`Open the original, task #${task.reattemptOf}`}
+                      className="mb-1 inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-medium uppercase tracking-wide text-muted transition-colors duration-150 hover:text-ink"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openOriginal(task.reattemptOf!);
+                      }}
+                    >
+                      ↻ re-attempt of <span className="font-data normal-case">#{task.reattemptOf}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="block w-full cursor-pointer truncate text-left text-ink"
