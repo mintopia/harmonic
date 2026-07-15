@@ -14,6 +14,7 @@ import { TableView } from './components/TableView';
 import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
 import { Switch } from './components/Switch';
+import { ConversationLauncher } from './components/ConversationLauncher';
 import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
@@ -337,6 +338,7 @@ export function App() {
         />
       )}
 
+      <ConversationLauncher config={config} />
       <Toaster />
     </div>
   );

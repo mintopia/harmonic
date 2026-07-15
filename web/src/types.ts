@@ -77,6 +77,39 @@ export interface RunEvent {
   payload: any;
 }
 
+/**
+ * A Conversation: an interactive, multi-turn live chat the operator drives
+ * with an agent Harness over ACP — a sibling to Task, not a queued unit of
+ * work. `title` is null until named/derived (issue #15); a fresh skeleton
+ * conversation may carry a null title indefinitely.
+ */
+export interface Conversation {
+  id: number;
+  title: string | null;
+  harness: string;
+  model: string;
+  workingDir: string;
+  state: 'active' | 'ended';
+  sessionId: string | null;
+  createdAt: number;
+  updatedAt: number;
+  endedAt: number | null;
+}
+
+/**
+ * Byte-identical in shape to RunEvent, but keyed by conversationId and
+ * adding a 'user_turn' type for the operator's own message (payload:
+ * `{ text: string }`) — the boundary the transcript segments turns on.
+ */
+export interface ConversationEvent {
+  id: number;
+  conversationId: number;
+  seq: number;
+  ts: number;
+  type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn';
+  payload: any;
+}
+
 export interface Channel {
   id: number;
   name: string;

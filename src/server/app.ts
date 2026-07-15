@@ -19,11 +19,14 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
+import { ConversationStore } from '../domain/conversations.js';
 import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
+import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
+import { conversationRoutes } from './routes/conversations.js';
 import { configRoutes } from './routes/config.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
@@ -75,6 +78,8 @@ export interface AppContext {
   tasks: TaskService;
   runs: RunStore;
   runner: Runner;
+  conversations: ConversationStore;
+  conversationDriver: ConversationDriver;
   review: ReviewService;
   autoRunner: AutoRunner;
   auth: AuthService;
@@ -104,6 +109,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (event, task) => notifier.notify(event, task),
   );
   const runs = new RunStore(db);
+  const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
+  const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
+    events: { onEvent: (event) => bus.emit('conversation_event', event) },
+  });
   const auth = new AuthService(db);
   if (opts.password) auth.setPassword(opts.password);
   // Crash recovery before anything can execute: orphaned runs are failed
@@ -152,7 +161,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, review, autoRunner, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, conversations, conversationDriver, review, autoRunner, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -166,7 +175,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       registeredRoutes.push({ method, url: opts.url });
     }
   });
-  app.addHook('onClose', async () => runner.shutdown());
+  app.addHook('onClose', async () => {
+    runner.shutdown();
+    conversationDriver.shutdown();
+  });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
 
@@ -196,12 +208,13 @@ the REST restrictions noted per endpoint below.
 ## WebSocket
 
 \`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
-paths): every run event, run state change, and task state change is
-broadcast to every connected client as JSON messages of the form
-\`{ type: 'run_event' | 'run_changed' | 'task_changed', ... }\`, using the
-same Task/Run shapes served over REST. Authenticate by passing the
-session token or an API key as \`?token=\` (WebSocket clients cannot set
-an Authorization header).`;
+paths): every run event, run state change, task state change, and
+Conversation event/change is broadcast to every connected client as JSON
+messages of the form \`{ type: 'run_event' | 'run_changed' |
+'task_changed' | 'conversation_event' | 'conversation_changed', ... }\`,
+using the same Task/Run/Conversation shapes served over REST.
+Authenticate by passing the session token or an API key as \`?token=\`
+(WebSocket clients cannot set an Authorization header).`;
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
@@ -292,6 +305,7 @@ an Authorization header).`;
   });
 
   await app.register(taskRoutes, { prefix: '/api' });
+  await app.register(conversationRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });

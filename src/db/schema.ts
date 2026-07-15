@@ -93,6 +93,50 @@ export const runEvents = sqliteTable('run_events', {
   payload: text('payload').notNull(),
 });
 
+export const CONVERSATION_STATES = ['active', 'ended'] as const;
+export type ConversationState = (typeof CONVERSATION_STATES)[number];
+
+/**
+ * A Conversation (ADR-0006): an interactive, multi-turn exchange the
+ * operator drives with a Harness over ACP — a first-class sibling to Task,
+ * not a Task variant. Direct mode only; never queued or reviewed.
+ */
+export const conversations = sqliteTable('conversations', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** Operator-set title; null falls back to a title derived from the first Turn. */
+  title: text('title'),
+  harness: text('harness').notNull(),
+  model: text('model').notNull(),
+  workingDir: text('working_dir').notNull(),
+  state: text('state').$type<ConversationState>().notNull(),
+  /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
+  sessionId: text('session_id'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  endedAt: integer('ended_at'),
+});
+
+/** A Conversation's event stream; payloads are byte-identical to `run_events` so the renderer is shared by shape (ADR-0006). */
+export const conversationEvents = sqliteTable(
+  'conversation_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    conversationId: integer('conversation_id')
+      .notNull()
+      .references(() => conversations.id),
+    seq: integer('seq').notNull(),
+    ts: integer('ts').notNull(),
+    /** 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn' */
+    type: text('type').notNull(),
+    /** JSON payload — for session_update, the ACP `update` object verbatim; for user_turn, `{ text }`. */
+    payload: text('payload').notNull(),
+  },
+  (t) => [index('conversation_events_conversation_id_idx').on(t.conversationId)],
+);
+
+export type ConversationRow = typeof conversations.$inferSelect;
+export type ConversationEventRow = typeof conversationEvents.$inferSelect;
+
 export const CHANNEL_TYPES = ['discord', 'slack', 'webhook', 'email'] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];
 

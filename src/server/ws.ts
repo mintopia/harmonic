@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { runToApi, taskToApi } from './serialize.js';
+import { conversationToApi, runToApi, taskToApi } from './serialize.js';
 
 /**
  * One firehose socket at /api/ws. Every run event, run state change, and
@@ -21,6 +21,11 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       // merges these payloads straight into its task list (issue 15).
       ctx.bus.on('task_changed', (task) =>
         send({ type: 'task_changed', task: taskToApi(ctx, ctx.tasks.withDeps(task)) })),
+      // Conversation events stream in the same run_events shape, so the SPA
+      // renders them with the shared EventStream (ADR-0006).
+      ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
+      ctx.bus.on('conversation_changed', (conversation) =>
+        send({ type: 'conversation_changed', conversation: conversationToApi(ctx, conversation) })),
     ];
     socket.on('close', () => unsubscribes.forEach((u) => u()));
   });

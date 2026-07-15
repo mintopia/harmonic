@@ -45,6 +45,12 @@ export class AcpConnection {
     return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
   }
 
+  /** Fire-and-forget notification (no id, no response) — e.g. session/cancel. */
+  notify(method: string, params: unknown): void {
+    if (this.closed) return;
+    this.write({ jsonrpc: '2.0', method, params });
+  }
+
   /** Reject all in-flight requests; called when the process dies. */
   fail(err: Error): void {
     this.closed = true;

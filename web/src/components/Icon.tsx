@@ -19,7 +19,9 @@ export type IconName =
   | 'moon'
   | 'circle-half'
   | 'check'
-  | 'close';
+  | 'close'
+  | 'chat'
+  | 'send';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
@@ -79,6 +81,11 @@ const PATHS: Record<IconName, JSX.Element> = {
   check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,
   // Dismiss (toasts, chips).
   close: <path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" />,
+  // Conversation launcher: a speech balloon, not a face — a process, not a
+  // persona (PRODUCT.md's chat-app-cuteness anti-reference).
+  chat: <path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />,
+  // Composer submit.
+  send: <path d="M2.5 8 13.5 2.5 9.5 13.5 7.5 9 2.5 8Z" />,
 };
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {

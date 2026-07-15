@@ -32,6 +32,36 @@ _Avoid_: prerequisite, parent
 A per-Task rank (high / normal / low) used only by the Auto-Runner's pick
 order; ties break FIFO by creation time.
 
+### Conversations
+
+**Conversation**:
+An interactive, multi-turn exchange the operator drives with a Harness in a
+Working Directory over ACP — a sibling to Task, not a variant of it. Unlike
+a Task it is never queued, never picked by the Auto-Runner, and never enters
+the review gate; the human is in the loop for every turn. "Chat" is the
+informal UI verb ("open a chat"); the domain noun is Conversation.
+It is **active** while its harness process is warm (spawned on the first
+turn, kept alive across widget/socket close) and **ended** once explicitly
+ended, idle past the timeout, or killed by a server restart — an ended
+Conversation survives as read-only history but cannot resume.
+_Avoid_: chat (as the noun), session (ACP-overloaded), thread
+
+**Turn**:
+One operator message and the Harness's response to it within a Conversation
+— the interactive analogue of a Run's single prompt turn. A Conversation is
+a sequence of Turns against one long-lived ACP session.
+_Avoid_: message (ambiguous — a Turn contains many ACP message chunks)
+
+**Permission Rule**:
+An operator-visible, revocable rule that auto-answers a Harness's
+`session/request_permission` in a Conversation without prompting the human.
+Matches on tool **kind** (read / edit / execute / fetch) + Working
+Directory. Persistent rules are a deliberate opt-in ("Always allow in
+{dir}") — the interactive default is per-turn ("Allow once") or
+per-Conversation (native ACP `allow_always`, which dies with the
+Conversation and writes no rule).
+_Avoid_: allowlist, policy
+
 ### Lifecycle
 
 **draft**: Being authored; never picked up for execution.
@@ -133,3 +163,10 @@ spawned Harness so agents reach MCP without setup. Deleted outright when
 the Run finishes (a startup sweep removes orphans); never listed or shown
 in the UI.
 _Avoid_: scoped key, per-run API key
+
+**Conversation Key**:
+The Conversation analogue of a Run Key — an ephemeral bearer token minted
+per Conversation and injected into its Harness (same `HARMONIC_API_KEY` /
+`HARMONIC_MCP_URL` mechanism) so the chatting agent can reach MCP (e.g.
+create Tasks mid-conversation). Deleted when the Conversation ends; the
+startup sweep removes orphans. Never listed or shown.

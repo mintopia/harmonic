@@ -1,9 +1,11 @@
-import type { Run, RunEvent, Task } from './types';
+import type { Conversation, ConversationEvent, Run, RunEvent, Task } from './types';
 
 export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
   | { type: 'run_changed'; run: Run }
-  | { type: 'task_changed'; task: Task };
+  | { type: 'task_changed'; task: Task }
+  | { type: 'conversation_event'; event: ConversationEvent }
+  | { type: 'conversation_changed'; conversation: Conversation };
 
 /** Auto-reconnecting subscription to the server's event firehose. */
 export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {

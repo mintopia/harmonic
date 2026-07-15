@@ -1,5 +1,4 @@
-import type { RunEvent } from '../types';
-import { coalesceEvents } from '../event-stream-model';
+import { coalesceEvents, type StreamEvent } from '../event-stream-model';
 import { chip } from '../ui';
 
 /* Tool calls and permission traffic are harness/tooling metadata — tool
@@ -44,7 +43,7 @@ function SessionUpdate({ payload }: { payload: any }) {
   }
 }
 
-function EventLine({ event }: { event: RunEvent }) {
+function EventLine({ event }: { event: StreamEvent }) {
   if (event.type === 'session_update') {
     return <SessionUpdate payload={event.payload} />;
   }
@@ -75,7 +74,7 @@ function EventLine({ event }: { event: RunEvent }) {
   );
 }
 
-export function EventStream({ events }: { events: RunEvent[] }) {
+export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) {
   // The stream is machine output — the one prose-adjacent surface that
   // stays in the Data face. Consecutive chunks read as one utterance, so
   // they are coalesced into flowing text before rendering.

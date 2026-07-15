@@ -1,5 +1,5 @@
 import type { AppContext } from './app.js';
-import type { RunRow } from '../db/schema.js';
+import type { ConversationRow, RunRow } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolvePrices, type Cost } from '../execution/pricing.js';
 import type { RunUsage } from '../execution/usage.js';
@@ -33,4 +33,16 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
 /** Cost of an arbitrary set of runs against the live price table. */
 export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
   return costOfUsages(runs.map((run) => parseUsage(run.usage)), pricesOf(ctx));
+}
+
+export type ApiConversation = ConversationRow;
+
+/**
+ * A Conversation as the REST API and firehose both serve it — one format
+ * for the SPA (issue 15's list merges these payloads straight in). A
+ * passthrough today; issue 12 adds running Usage/Cost and issue 15 the
+ * derived title.
+ */
+export function conversationToApi(_ctx: AppContext, conversation: ConversationRow): ApiConversation {
+  return conversation;
 }

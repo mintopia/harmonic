@@ -1,4 +1,4 @@
-import type { AppConfig, Channel, Cost, Run, RunEvent, Task } from './types';
+import type { AppConfig, Channel, Conversation, ConversationEvent, Cost, Run, RunEvent, Task } from './types';
 
 class ApiError extends Error {
   constructor(
@@ -57,6 +57,15 @@ export const api = {
     ),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+  conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/conversations'),
+  conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
+  createConversation: (input: { harness?: string; model?: string; workingDir?: string }) =>
+    request<Conversation>('POST', '/api/conversations', input),
+  conversationEvents: (id: number) =>
+    request<{ events: ConversationEvent[] }>('GET', `/api/conversations/${id}/events`),
+  sendTurn: (id: number, text: string) =>
+    request<{ ok: true }>('POST', `/api/conversations/${id}/turns`, { text }),
+  endConversation: (id: number) => request<Conversation>('POST', `/api/conversations/${id}/end`),
   channels: () => request<{ channels: Channel[] }>('GET', '/api/channels'),
   createChannel: (input: { name: string; type: Channel['type']; config: Record<string, unknown> }) =>
     request<Channel>('POST', '/api/channels', input),

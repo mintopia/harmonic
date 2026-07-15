@@ -8,7 +8,7 @@ import { collectUsage, collectUsageWithRetry, observedModelMismatch, type RunUsa
 import { promptForTask } from './run-prompt.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
-import { AcpConnection } from '../acp/connection.js';
+import { AcpDriver } from '../acp/driver.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent } from '../domain/runs.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -45,7 +45,7 @@ interface ActiveRun {
   runId: number;
   taskId: number;
   child: ChildProcess;
-  connection: AcpConnection;
+  driver: AcpDriver;
 }
 
 /**
@@ -220,8 +220,8 @@ export class Runner {
       await this.finalizeWorkspace(task, run, workspace).catch(() => {});
     };
 
-    const connection = new AcpConnection(child.stdin!, child.stdout!, {
-      onSessionUpdate: (params) => record('session_update', params.update),
+    const driver = new AcpDriver(child, {
+      onSessionUpdate: (update) => record('session_update', update),
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
           const options = (params as any)?.options ?? [];
@@ -240,43 +240,25 @@ export class Runner {
       },
     });
 
-    const active: ActiveRun = { runId: run.id, taskId: task.id, child, connection };
+    const active: ActiveRun = { runId: run.id, taskId: task.id, child, driver };
     this.active.set(run.id, active);
 
-    const exited = new Promise<never>((_, reject) => {
-      child.on('error', (err) => reject(new Error(`harness spawn failed: ${err.message}`)));
-      child.on('exit', (code, signal) =>
-        reject(new Error(`harness exited (code ${code ?? 'null'}, signal ${signal ?? 'none'}) before finishing`)),
-      );
-    });
-
     try {
-      await Promise.race([connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }), exited]);
-      const session = (await Promise.race([
-        connection.request('session/new', { cwd: workspace.cwd, mcpServers }),
-        exited,
-      ])) as { sessionId: string };
-      this.runStore.update(run.id, { sessionId: session.sessionId });
-
       // Harnesses with no reliable spawn-time pin (copilot) pin per
       // session instead — sent for every run, `auto` included, because an
       // unpinned session inherits the operator's persisted model choice
       // (issue 25). A rejected pin fails the run like any other request.
       const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
-      if (modelId !== undefined) {
-        await Promise.race([
-          connection.request('session/set_model', { sessionId: session.sessionId, modelId }),
-          exited,
-        ]);
-      }
+      await driver.handshake({
+        cwd: workspace.cwd,
+        mcpServers,
+        modelId,
+        // Persist the id before the optional model pin, so a failed pin
+        // still leaves a session for usage backfill.
+        onSessionCreated: (sessionId) => this.runStore.update(run.id, { sessionId }),
+      });
 
-      const result = (await Promise.race([
-        connection.request('session/prompt', {
-          sessionId: session.sessionId,
-          prompt: [{ type: 'text', text: promptForTask(task) }],
-        }),
-        exited,
-      ])) as { stopReason?: string; usage?: Record<string, unknown> };
+      const result = await driver.prompt([{ type: 'text', text: promptForTask(task) }]);
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       await finalize();
@@ -300,8 +282,8 @@ export class Runner {
         usage: usage ? JSON.stringify(usage) : null,
       });
     } finally {
-      connection.fail(new Error('run finished'));
-      connection.dispose();
+      driver.fail(new Error('run finished'));
+      driver.dispose();
       this.active.delete(run.id);
       await finalize();
     }
