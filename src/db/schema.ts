@@ -1,4 +1,4 @@
-import { sqliteTable, integer, text, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, integer, text, primaryKey, index, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 export const TASK_STATES = [
   'draft',
@@ -21,9 +21,17 @@ export const tasks = sqliteTable('tasks', {
   isolationMode: text('isolation_mode').notNull(),
   priority: text('priority').notNull(),
   state: text('state').$type<TaskState>().notNull(),
+  /** The original this task re-attempts (a new attempt is a new, linked task). */
+  reattemptOf: integer('reattempt_of').references((): AnySQLiteColumn => tasks.id),
+  /** Reviewer feedback that seeded this re-attempt, stored in full, separate from the prompt. */
+  feedback: text('feedback'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
-});
+}, (t) => [
+  // withDeps looks up reattempts (reverse link) per task on the board/table
+  // hot path; index the FK so that stays cheap as the table grows.
+  index('tasks_reattempt_of_idx').on(t.reattemptOf),
+]);
 
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),

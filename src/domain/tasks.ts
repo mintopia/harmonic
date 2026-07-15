@@ -36,10 +36,15 @@ export interface TaskWithDeps extends TaskRow {
   dependents: number[];
   /** blocked, and at least one dependency is failed or cancelled. */
   blockedOnFailed: boolean;
+  /** Task ids that re-attempt this one (reverse of `reattemptOf`). */
+  reattempts: number[];
 }
 
 /** States an operator may edit a task in. */
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
+/** Finished states — the only ones a task can be re-attempted from (a
+ * non-terminal original could still run, so cloning it would duplicate work). */
+const TERMINAL_STATES: TaskState[] = ['completed', 'failed', 'cancelled'];
 /** States a task can be cancelled from — everything not terminal. */
 const CANCELLABLE_STATES: TaskState[] = [
   'draft',
@@ -179,12 +184,70 @@ export class TaskService {
     const patch: Partial<TaskRow> = {
       state: this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready',
       updatedAt: Date.now(),
+      // Requeue bakes feedback into the prompt in place; clear any re-attempt
+      // feedback column so the runner doesn't append it a second time.
+      feedback: null,
     };
     if (feedback && feedback.trim().length > 0) {
-      patch.prompt = `${task.prompt}\n\n## Feedback from previous attempt\n\n${feedback.trim()}`;
+      patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${feedback.trim()}`;
     }
     const row = this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
     this.onChanged(row);
+    return row;
+  }
+
+  /**
+   * Create a NEW task that re-attempts an existing one: a copy of its
+   * config and dependencies, linked back via `reattemptOf`, carrying the
+   * reviewer's feedback in full. The feedback is composed into the run
+   * prompt at run time (see the runner), so the original prompt stays
+   * pristine. The original task is left untouched.
+   */
+  reattempt(originalId: number, feedback?: string): TaskRow {
+    const original = this.get(originalId);
+    if (!TERMINAL_STATES.includes(original.state)) {
+      throw new DomainError(
+        'invalid_state',
+        `task ${originalId} is ${original.state}; only a finished task (completed, failed, or cancelled) can be re-attempted`,
+      );
+    }
+    const dependsOn = this.dependsOn(originalId);
+    const now = Date.now();
+    const row = this.db
+      .insert(tasks)
+      .values({
+        prompt: original.prompt,
+        harness: original.harness,
+        model: original.model,
+        workingDir: original.workingDir,
+        isolationMode: original.isolationMode,
+        priority: original.priority,
+        state: this.hasUnmet(dependsOn) ? 'blocked' : 'ready',
+        reattemptOf: originalId,
+        feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+    if (dependsOn.length > 0) {
+      this.db.insert(taskDependencies).values(dependsOn.map((dependsOnId) => ({ taskId: row.id, dependsOnId }))).run();
+    }
+    // Rewire the original's dependents onto this re-attempt so a pipeline
+    // waiting on the original advances once the re-attempt completes (the
+    // original stays failed as history, but nothing depends on it anymore).
+    for (const dependentId of this.dependents(originalId)) {
+      this.db
+        .delete(taskDependencies)
+        .where(and(eq(taskDependencies.taskId, dependentId), eq(taskDependencies.dependsOnId, originalId)))
+        .run();
+      this.db.insert(taskDependencies).values({ taskId: dependentId, dependsOnId: row.id }).onConflictDoNothing().run();
+      this.rederiveBlocked(dependentId);
+      // Emit even when the state didn't flip: blockedOnFailed changed.
+      this.onChanged(this.get(dependentId));
+    }
+    this.onChanged(row);
+    this.onNotify('task.created', row);
     return row;
   }
 
@@ -235,6 +298,16 @@ export class TaskService {
       .select({ id: taskDependencies.taskId })
       .from(taskDependencies)
       .where(eq(taskDependencies.dependsOnId, taskId))
+      .all()
+      .map((r) => r.id);
+  }
+
+  /** Task ids that re-attempt this one (reverse of the `reattemptOf` link). */
+  reattempts(taskId: number): number[] {
+    return this.db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(eq(tasks.reattemptOf, taskId))
       .all()
       .map((r) => r.id);
   }
@@ -305,6 +378,7 @@ export class TaskService {
       dependents: this.dependents(task.id),
       blockedOnFailed:
         task.state === 'blocked' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
+      reattempts: this.reattempts(task.id),
     };
   }
 

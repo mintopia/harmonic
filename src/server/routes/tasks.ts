@@ -10,6 +10,7 @@ import { costOfRuns, runToApi, taskToApi } from '../serialize.js';
 import { errorResponseSchema, idParamsSchema, costSchema, runUsageSchema } from '../schemas.js';
 
 const requeueInputSchema = z.object({ feedback: z.string().optional() }).nullish();
+const reattemptInputSchema = z.object({ feedback: z.string().optional() }).nullish();
 const rejectInputSchema = z.object({ feedback: z.string().optional() }).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional() }).nullish();
 const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive() });
@@ -29,12 +30,17 @@ const taskWithDepsSchema = z
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string(),
     state: z.enum(TASK_STATES),
+    /** The original this task re-attempts, or null; feedback carries the reviewer's notes in full. */
+    reattemptOf: z.number().nullable(),
+    feedback: z.string().nullable(),
     createdAt: z.number(),
     updatedAt: z.number(),
     dependsOn: z.array(z.number()),
     dependents: z.array(z.number()),
     /** blocked, and at least one dependency is failed or cancelled. */
     blockedOnFailed: z.boolean(),
+    /** Task ids that re-attempt this one (reverse of reattemptOf). */
+    reattempts: z.array(z.number()),
   })
   .meta({ id: 'TaskWithDeps' });
 
@@ -223,6 +229,22 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => withDeps(ctx.tasks.requeue(req.params.id, req.body?.feedback)),
+  );
+
+  app.post(
+    '/tasks/:id/reattempt',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Create a new task that re-attempts an existing one: a copy of its config and dependencies, linked back via reattemptOf, carrying optional reviewer feedback (composed into the run prompt at run time, so the original prompt stays pristine). The original is left unchanged. Reachable with a run-scoped Run Key.',
+        params: idParamsSchema,
+        body: reattemptInputSchema,
+        response: { 201: taskSchema, 404: errorResponseSchema, 409: errorResponseSchema },
+      },
+    },
+    async (req, reply) =>
+      reply.status(201).send(withDeps(ctx.tasks.reattempt(req.params.id, req.body?.feedback))),
   );
 
   app.post(

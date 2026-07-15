@@ -1,0 +1,1 @@
+CREATE INDEX `tasks_reattempt_of_idx` ON `tasks` (`reattempt_of`);
