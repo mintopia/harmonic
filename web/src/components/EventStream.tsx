@@ -1,4 +1,5 @@
 import type { RunEvent } from '../types';
+import { coalesceEvents } from '../event-stream-model';
 import { chip } from '../ui';
 
 /* Tool calls and permission traffic are harness/tooling metadata — tool
@@ -20,10 +21,8 @@ function ToolCallLine({ payload }: { payload: any }) {
 
 function SessionUpdate({ payload }: { payload: any }) {
   switch (payload.sessionUpdate) {
-    case 'agent_message_chunk':
-      return <span className="whitespace-pre-wrap text-ink">{payload.content?.text ?? ''}</span>;
-    case 'agent_thought_chunk':
-      return <span className="whitespace-pre-wrap italic text-muted">{payload.content?.text ?? ''}</span>;
+    // agent_message_chunk / agent_thought_chunk are coalesced into flowing
+    // text blocks upstream (event-stream-model) and never reach here.
     case 'tool_call':
     case 'tool_call_update':
       return <ToolCallLine payload={payload} />;
@@ -45,43 +44,63 @@ function SessionUpdate({ payload }: { payload: any }) {
   }
 }
 
+function EventLine({ event }: { event: RunEvent }) {
+  if (event.type === 'session_update') {
+    return <SessionUpdate payload={event.payload} />;
+  }
+  if (event.type === 'permission_request') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className={toolChip}>permission</span>
+        <span className="text-ink">{event.payload.request?.toolCall?.title ?? 'request'}</span>
+        <span className="text-muted">→ {event.payload.outcome?.outcome ?? '?'}</span>
+      </div>
+    );
+  }
+  if (event.payload.event === 'model_mismatch') {
+    // Q7: the model setting shown must be real — the harness ran
+    // something other than the task's pin. Harness metadata, not a
+    // failure: Tool Indigo, never Fail Red (the run completed).
+    return (
+      <div className="text-tool">
+        model mismatch: ran on {(event.payload.observed ?? []).join(', ')} (task pinned{' '}
+        {event.payload.expected})
+      </div>
+    );
+  }
+  return (
+    <div className="text-muted">
+      {event.payload.event} {event.payload.stopReason ? `(${event.payload.stopReason})` : ''}
+    </div>
+  );
+}
+
 export function EventStream({ events }: { events: RunEvent[] }) {
   // The stream is machine output — the one prose-adjacent surface that
-  // stays in the Data face. Consecutive chunks read as one utterance.
+  // stays in the Data face. Consecutive chunks read as one utterance, so
+  // they are coalesced into flowing text before rendering.
+  const items = coalesceEvents(events);
   return (
     <div className="space-y-1 font-data text-data">
-      {events.map((event) => {
-        if (event.type === 'session_update') {
-          const rendered = <SessionUpdate payload={event.payload} />;
-          if (rendered === null) return null;
-          return <div key={event.id}>{rendered}</div>;
-        }
-        if (event.type === 'permission_request') {
-          return (
-            <div key={event.id} className="flex items-center gap-2">
-              <span className={toolChip}>permission</span>
-              <span className="text-ink">{event.payload.request?.toolCall?.title ?? 'request'}</span>
-              <span className="text-muted">→ {event.payload.outcome?.outcome ?? '?'}</span>
-            </div>
-          );
-        }
-        if (event.payload.event === 'model_mismatch') {
-          // Q7: the model setting shown must be real — the harness ran
-          // something other than the task's pin. Harness metadata, not a
-          // failure: Tool Indigo, never Fail Red (the run completed).
-          return (
-            <div key={event.id} className="text-tool">
-              model mismatch: ran on {(event.payload.observed ?? []).join(', ')} (task pinned{' '}
-              {event.payload.expected})
-            </div>
-          );
-        }
-        return (
-          <div key={event.id} className="text-muted">
-            {event.payload.event} {event.payload.stopReason ? `(${event.payload.stopReason})` : ''}
+      {items.map((item) =>
+        item.kind === 'text' ? (
+          <div key={item.key}>
+            <span
+              className={
+                item.variant === 'thought'
+                  ? 'whitespace-pre-wrap italic text-muted'
+                  : 'whitespace-pre-wrap text-ink'
+              }
+            >
+              {item.text}
+            </span>
           </div>
-        );
-      })}
+        ) : (
+          <div key={item.key}>
+            <EventLine event={item.event} />
+          </div>
+        ),
+      )}
       {events.length === 0 && <p className="text-muted">No events.</p>}
     </div>
   );
