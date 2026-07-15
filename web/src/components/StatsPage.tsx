@@ -50,13 +50,31 @@ function SummaryCell({ label, value, hero = false }: { label: string; value: str
 export function StatsPage() {
   const [range, setRange] = useState('7 days');
   const [stats, setStats] = useState<Stats | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const span = RANGES[range] ?? null;
     const from = span === null ? 0 : Date.now() - span;
+    let cancelled = false;
+    setError(null);
+    // A non-200 body ({error:{…}}) has none of the fields the render path
+    // reads — storing it would throw and blank the page. Check ok, like api.ts.
     fetch(`/api/stats?from=${from}&to=${Date.now()}`)
-      .then((r) => r.json())
-      .then((s) => setStats(s as Stats));
+      .then(async (r) => {
+        const text = await r.text();
+        const json = text ? JSON.parse(text) : null;
+        if (!r.ok) throw new Error(json?.error?.message ?? r.statusText);
+        return json as Stats;
+      })
+      .then((s) => !cancelled && setStats(s))
+      .catch((e) => {
+        if (cancelled) return;
+        setStats(null);
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [range]);
 
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
@@ -81,6 +99,10 @@ export function StatsPage() {
           ))}
         </div>
       </div>
+
+      {error && (
+        <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
+      )}
 
       {stats && (
         <>
