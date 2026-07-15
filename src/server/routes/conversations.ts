@@ -17,7 +17,11 @@ const createConversationInputSchema = z.object({
 const turnInputSchema = z.object({ text: z.string().min(1) });
 
 const permissionParamsSchema = z.object({ id: z.coerce.number().int(), reqId: z.string().min(1) });
-const answerPermissionInputSchema = z.object({ optionId: z.string().min(1) });
+const answerPermissionInputSchema = z.object({
+  optionId: z.string().min(1),
+  /** "Always allow in {dir}" — persist a Permission Rule for this tool kind + Working Directory (ADR-0007). */
+  remember: z.boolean().optional(),
+});
 
 /** A Conversation as the API serves it (serialize.ts `ApiConversation`). */
 const conversationSchema = z
@@ -150,7 +154,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Operator only; not reachable with a run-scoped key.",
+          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Set `remember` to also persist a Permission Rule ('Always allow in {dir}') keyed on the tool kind + Working Directory. Operator only; not reachable with a run-scoped key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: permissionParamsSchema,
         body: answerPermissionInputSchema,
@@ -158,7 +162,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      ctx.conversationDriver.answerPermission(req.params.id, req.params.reqId, req.body.optionId);
+      ctx.conversationDriver.answerPermission(req.params.id, req.params.reqId, req.body.optionId, req.body.remember);
       return { ok: true } as const;
     },
   );

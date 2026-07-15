@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
+import { PermissionRules } from './PermissionRules';
 import type { AppConfig } from '../types';
 import { btnGhost, btnPrimary, displayTitle, field } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
@@ -237,6 +238,13 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
           description="Channels that receive task and queue events. Changes apply immediately."
         >
           <ChannelsSection />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Permission rules"
+          description="Persistent 'Always allow' choices from Conversation permission prompts — each auto-approves a tool kind in a working directory across Conversations. Revoking one makes matching requests prompt again."
+        >
+          <PermissionRules />
         </SettingsSection>
 
         <SettingsSection title="Security" description="The operator password for this console.">

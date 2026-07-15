@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPendingPermission,
+  chooseAlwaysAllowOptionId,
   permissionOptionLabel,
   removePendingPermission,
   resolvePendingPermissionFromEvent,
@@ -88,5 +89,24 @@ describe('permissionOptionLabel', () => {
     expect(permissionOptionLabel('allow_always')).toBe('Allow for this conversation');
     expect(permissionOptionLabel('reject_once')).toBe('Reject');
     expect(permissionOptionLabel('reject_always')).toBe('Reject');
+  });
+});
+
+describe('chooseAlwaysAllowOptionId', () => {
+  it('prefers the allow_once option when present', () => {
+    expect(chooseAlwaysAllowOptionId(request.options)).toBe('opt-allow-once');
+  });
+
+  it('falls back to any other allow_* option when there is no allow_once', () => {
+    const options = [
+      { optionId: 'opt-allow-always', name: 'Allow always', kind: 'allow_always' as const },
+      { optionId: 'opt-reject', name: 'Reject', kind: 'reject_once' as const },
+    ];
+    expect(chooseAlwaysAllowOptionId(options)).toBe('opt-allow-always');
+  });
+
+  it('returns null when the request offers no way to allow at all', () => {
+    const options = [{ optionId: 'opt-reject', name: 'Reject', kind: 'reject_once' as const }];
+    expect(chooseAlwaysAllowOptionId(options)).toBeNull();
   });
 });

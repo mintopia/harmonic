@@ -103,7 +103,11 @@ async function handlePrompt(msg) {
   if (scenario.requestPermission) {
     const outcome = await request('session/request_permission', {
       sessionId: msg.params.sessionId,
-      toolCall: { toolCallId: 'stub-tool-1', title: scenario.requestPermission.title ?? 'Do something' },
+      toolCall: {
+        toolCallId: 'stub-tool-1',
+        title: scenario.requestPermission.title ?? 'Do something',
+        kind: scenario.requestPermission.kind ?? 'edit',
+      },
       options: [
         { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
         { optionId: 'always', name: 'Always allow', kind: 'allow_always' },

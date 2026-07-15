@@ -20,6 +20,7 @@ import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
 import { ConversationStore } from '../domain/conversations.js';
+import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
@@ -27,6 +28,7 @@ import { AutoRunner } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { conversationRoutes } from './routes/conversations.js';
+import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
@@ -80,6 +82,7 @@ export interface AppContext {
   runner: Runner;
   conversations: ConversationStore;
   conversationDriver: ConversationDriver;
+  permissionRules: PermissionRuleStore;
   review: ReviewService;
   autoRunner: AutoRunner;
   auth: AuthService;
@@ -110,11 +113,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   );
   const runs = new RunStore(db);
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
+  const permissionRules = new PermissionRuleStore(db);
   const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
       onPermissionRequest: (pending) => bus.emit('permission_request', pending),
     },
+    rules: permissionRules,
   });
   const auth = new AuthService(db);
   if (opts.password) auth.setPassword(opts.password);
@@ -164,7 +169,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, conversations, conversationDriver, review, autoRunner, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -312,6 +317,7 @@ Authorization header).`;
 
   await app.register(taskRoutes, { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
+  await app.register(permissionRuleRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });

@@ -75,3 +75,21 @@ const PERMISSION_OPTION_LABELS: Record<PermissionAcpRequest['options'][number]['
 export function permissionOptionLabel(kind: PermissionAcpRequest['options'][number]['kind']): string {
   return PERMISSION_OPTION_LABELS[kind] ?? kind;
 }
+
+/**
+ * Picks the optionId an "Always allow {kind} in {dir}" click resolves the
+ * request with (issue #13): remembering a Permission Rule is orthogonal to
+ * *this* answer, so the click still needs a real optionId from the request
+ * itself. Prefers `allow_once` (the least-surprising one-time grant to pair
+ * with a new persistent rule); falls back to any other `allow_*` option;
+ * returns null for a request offering no way to allow at all, so callers
+ * know not to render the button rather than reaching for a reject option.
+ */
+export function chooseAlwaysAllowOptionId(
+  options: PermissionAcpRequest['options'],
+): string | null {
+  const once = options.find((o) => o.kind === 'allow_once');
+  if (once) return once.optionId;
+  const anyAllow = options.find((o) => o.kind.startsWith('allow_'));
+  return anyAllow ? anyAllow.optionId : null;
+}

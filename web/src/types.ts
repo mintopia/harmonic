@@ -132,6 +132,19 @@ export interface PermissionAcpRequest {
   options: PermissionAcpRequestOption[];
 }
 
+/**
+ * A persistent auto-approval escalation (issue #13 / ADR-0007): matching
+ * future permission requests — same tool `kind` + Working Directory, any
+ * Conversation — resolve server-side with no prompt. Operator-visible and
+ * revocable in Settings; deleting one makes matching requests prompt again.
+ */
+export interface PermissionRule {
+  id: number;
+  kind: string;
+  workingDir: string;
+  createdAt: number;
+}
+
 export interface Channel {
   id: number;
   name: string;

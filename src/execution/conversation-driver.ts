@@ -5,7 +5,24 @@ import { adapterFor } from './harness/adapter.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
+import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
+
+/** The ACP tool kind of a permission request (read / edit / execute / fetch), or null. */
+function permissionKind(request: unknown): string | null {
+  const kind = (request as any)?.toolCall?.kind;
+  return typeof kind === 'string' && kind ? kind : null;
+}
+
+/** The option id to allow a request with — allow_once preferred, then allow_always, then anything. */
+function allowOptionId(request: unknown): string | null {
+  const options = (request as any)?.options ?? [];
+  const pick =
+    options.find((o: any) => o.kind === 'allow_once') ??
+    options.find((o: any) => o.kind === 'allow_always') ??
+    options[0];
+  return pick?.optionId ?? null;
+}
 
 export interface PendingPermissionBroadcast {
   conversationId: number;
@@ -29,6 +46,8 @@ type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 
 
 interface PendingPermission {
   conversationId: number;
+  /** The Conversation's Working Directory — the key half of an "Always allow in {dir}" rule. */
+  workingDir: string;
   request: unknown;
   /** Resolves the held ACP request_permission — the Harness's Turn unblocks. */
   resolve: (outcome: PermissionOutcome) => void;
@@ -36,6 +55,8 @@ interface PendingPermission {
 
 export interface ConversationDriverOptions {
   events?: ConversationDriverEvents;
+  /** Persistent Permission Rules (ADR-0007); when set, a matching rule auto-approves without prompting. */
+  rules?: PermissionRuleStore;
 }
 
 interface ActiveConversation {
@@ -64,6 +85,7 @@ export class ConversationDriver {
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private nextPermissionId = 0;
   private readonly events: ConversationDriverEvents;
+  private readonly rules: PermissionRuleStore | undefined;
 
   constructor(
     private readonly store: ConversationStore,
@@ -71,6 +93,7 @@ export class ConversationDriver {
     options: ConversationDriverOptions = {},
   ) {
     this.events = options.events ?? {};
+    this.rules = options.rules;
   }
 
   get activeCount(): number {
@@ -113,17 +136,28 @@ export class ConversationDriver {
    * reject_*) is the Harness's to interpret; "Allow for this conversation"
    * is just the native allow_always option, remembered for the session.
    */
-  answerPermission(conversationId: number, reqId: string, optionId: string): void {
+  answerPermission(conversationId: number, reqId: string, optionId: string, remember = false): void {
     const pending = this.pendingPermissions.get(reqId);
     if (!pending || pending.conversationId !== conversationId) {
       throw new DomainError('not_found', `no pending permission '${reqId}' for conversation ${conversationId}`);
     }
     this.pendingPermissions.delete(reqId);
+    // "Always allow in {dir}" (ADR-0007): persist a Rule for this tool kind
+    // + Working Directory so future matching requests auto-approve. A no-op
+    // when the request carries no kind to key on.
+    let rule: { kind: string; workingDir: string } | undefined;
+    if (remember && this.rules) {
+      const kind = permissionKind(pending.request);
+      if (kind) {
+        const created = this.rules.create({ kind, workingDir: pending.workingDir });
+        rule = { kind: created.kind, workingDir: created.workingDir };
+      }
+    }
     const outcome = { outcome: 'selected' as const, optionId };
     pending.resolve(outcome);
     // Record the resolution for the transcript/replay; reqId lets the panel
     // clear the matching prompt.
-    this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId });
+    this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, ...(rule ? { rule } : {}) });
   }
 
   /** Explicit End: stop the harness and mark the Conversation ended. */
@@ -166,10 +200,11 @@ export class ConversationDriver {
     const driver = new AcpDriver(child, {
       onSessionUpdate: (update) => this.record(convo.id, 'session_update', update),
       onRequest: async (method, params) => {
-        // Human-in-the-loop (ADR-0007): hold the request open and prompt
-        // the operator; the Turn genuinely blocks until they answer. The
-        // deliberate inverse of the Runner, which auto-approves.
-        if (method === 'session/request_permission') return this.holdPermission(convo.id, params);
+        // Human-in-the-loop (ADR-0007): a persistent Permission Rule for
+        // this tool kind + Working Directory auto-approves; otherwise hold
+        // the request open and prompt the operator — the Turn genuinely
+        // blocks until they answer. The deliberate inverse of the Runner.
+        if (method === 'session/request_permission') return this.decidePermission(convo.id, convo.workingDir, params);
         return null;
       },
     });
@@ -213,11 +248,29 @@ export class ConversationDriver {
     }
   }
 
-  /** Register a held permission request and prompt the operator; the returned promise resolves on their answer. */
-  private holdPermission(conversationId: number, request: unknown): Promise<PermissionOutcome> {
+  /**
+   * Decide a permission request: a persistent Rule matching its tool kind +
+   * Working Directory auto-approves silently (no prompt, no broadcast);
+   * otherwise the request is held open and the operator is prompted.
+   */
+  private decidePermission(conversationId: number, workingDir: string, request: unknown): Promise<PermissionOutcome> {
+    const kind = permissionKind(request);
+    const rule = kind ? this.rules?.findMatch(kind, workingDir) : null;
+    if (rule) {
+      const optionId = allowOptionId(request);
+      const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
+      // Recorded for the transcript/audit, flagged as rule-driven — never a
+      // silent grant. No prompt broadcast: nothing to answer.
+      this.record(conversationId, 'permission_request', {
+        request,
+        outcome,
+        rule: { kind: rule.kind, workingDir: rule.workingDir },
+      });
+      return Promise.resolve(outcome);
+    }
     const reqId = `perm-${++this.nextPermissionId}`;
     return new Promise<PermissionOutcome>((resolve) => {
-      this.pendingPermissions.set(reqId, { conversationId, request, resolve });
+      this.pendingPermissions.set(reqId, { conversationId, workingDir, request, resolve });
       this.events.onPermissionRequest?.({ conversationId, reqId, request });
     });
   }

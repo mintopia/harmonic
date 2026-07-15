@@ -134,8 +134,27 @@ export const conversationEvents = sqliteTable(
   (t) => [index('conversation_events_conversation_id_idx').on(t.conversationId)],
 );
 
+/**
+ * An opt-in persistent Permission Rule (ADR-0007): auto-answers a Harness's
+ * permission request in any Conversation when the tool kind and Working
+ * Directory match. A deliberate auto-approval escalation — operator-visible
+ * and revocable, never the default click.
+ */
+export const permissionRules = sqliteTable(
+  'permission_rules',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** ACP tool kind (read / edit / execute / fetch). */
+    kind: text('kind').notNull(),
+    workingDir: text('working_dir').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('permission_rules_kind_dir_idx').on(t.kind, t.workingDir)],
+);
+
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ConversationEventRow = typeof conversationEvents.$inferSelect;
+export type PermissionRuleRow = typeof permissionRules.$inferSelect;
 
 export const CHANNEL_TYPES = ['discord', 'slack', 'webhook', 'email'] as const;
 export type ChannelType = (typeof CHANNEL_TYPES)[number];

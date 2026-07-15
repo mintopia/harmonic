@@ -5,6 +5,7 @@ import type { AppConfig, Conversation, ConversationEvent } from '../types';
 import { segmentTranscript } from '../conversation-transcript-model';
 import {
   addPendingPermission,
+  chooseAlwaysAllowOptionId,
   permissionOptionLabel,
   removePendingPermission,
   resolvePendingPermissionFromEvent,
@@ -61,26 +62,34 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
  * — its own banded section between the transcript and composer, always in
  * view (not scrolled away with the turn that raised it) — with an explicit
  * "waiting for your decision" line so the paused Turn is unmistakable.
- * Buttons render exactly the options the ACP request offers (never a
- * synthesized "always allow in {dir}" — that's issue #13).
+ * Buttons render exactly the options the ACP request offers, plus one
+ * synthesized "Always allow {kind} in {dir}" choice (issue #13 / ADR-0007):
+ * that's a persistent auto-approval escalation, not a native ACP option, so
+ * it renders last, in the quiet button treatment (never the tinted
+ * allow-once pill or the tool-teal ghost allow-always uses) — it must never
+ * read as the default click.
  */
 function PermissionPrompt({
   pending,
+  workingDir,
   onAnswer,
 }: {
   pending: PendingPermission;
-  onAnswer: (pending: PendingPermission, optionId: string) => Promise<void>;
+  workingDir: string;
+  onAnswer: (pending: PendingPermission, optionId: string, remember?: boolean) => Promise<void>;
 }) {
-  const [busyOption, setBusyOption] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const title = pending.request.toolCall?.title ?? pending.request.toolCall?.kind ?? 'Tool call';
+  const kind = pending.request.toolCall?.kind;
+  const alwaysAllowOptionId = chooseAlwaysAllowOptionId(pending.request.options);
 
-  const choose = async (optionId: string) => {
-    if (busyOption) return;
-    setBusyOption(optionId);
+  const choose = async (key: string, optionId: string, remember?: boolean) => {
+    if (busyKey) return;
+    setBusyKey(key);
     try {
-      await onAnswer(pending, optionId);
+      await onAnswer(pending, optionId, remember);
     } finally {
-      setBusyOption(null);
+      setBusyKey(null);
     }
   };
 
@@ -91,18 +100,29 @@ function PermissionPrompt({
         <span className="font-medium text-ink">{title}</span>
       </div>
       <p className="mb-2.5 text-muted">Waiting for your decision — this turn is paused until you respond.</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {pending.request.options.map((option) => (
           <button
             key={option.optionId}
             type="button"
-            disabled={busyOption !== null}
+            disabled={busyKey !== null}
             className={permissionOptionButtonClass(option.kind)}
-            onClick={() => choose(option.optionId)}
+            onClick={() => choose(option.optionId, option.optionId)}
           >
             {permissionOptionLabel(option.kind)}
           </button>
         ))}
+        {kind && workingDir && alwaysAllowOptionId && (
+          <button
+            type="button"
+            disabled={busyKey !== null}
+            className={`${btnQuiet} disabled:opacity-50`}
+            onClick={() => choose('always-allow', alwaysAllowOptionId, true)}
+          >
+            Always allow {kind} in{' '}
+            <span className="inline-block max-w-[10rem] truncate align-bottom font-data text-data">{workingDir}</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -306,9 +326,9 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
   // there is no reason to wait for it once the answer POST itself
   // succeeded — remove the prompt immediately, and re-add it (implicitly,
   // by leaving state untouched) on failure so the operator can retry.
-  const answerPermission = async (p: PendingPermission, optionId: string) => {
+  const answerPermission = async (p: PendingPermission, optionId: string, remember?: boolean) => {
     try {
-      await api.answerPermission(p.conversationId, p.reqId, optionId);
+      await api.answerPermission(p.conversationId, p.reqId, optionId, remember);
       setPending((current) => removePendingPermission(current, p.reqId));
     } catch (e) {
       toastError(e);
@@ -367,7 +387,12 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
           Turn stays visible without hunting for it — the panel is
           non-modal, so this never traps focus. */}
       {Object.values(pending).map((p) => (
-        <PermissionPrompt key={p.reqId} pending={p} onAnswer={answerPermission} />
+        <PermissionPrompt
+          key={p.reqId}
+          pending={p}
+          workingDir={conversation?.workingDir ?? ''}
+          onAnswer={answerPermission}
+        />
       ))}
 
       {config && composerReady && <Composer config={config} conversation={conversation} onSend={send} />}

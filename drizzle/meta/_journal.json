@@ -64,6 +64,13 @@
       "when": 1784151392215,
       "tag": "0008_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784152483764,
+      "tag": "0009_permission_rules",
+      "breakpoints": true
     }
   ]
 }

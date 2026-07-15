@@ -1,4 +1,14 @@
-import type { AppConfig, Channel, Conversation, ConversationEvent, Cost, Run, RunEvent, Task } from './types';
+import type {
+  AppConfig,
+  Channel,
+  Conversation,
+  ConversationEvent,
+  Cost,
+  PermissionRule,
+  Run,
+  RunEvent,
+  Task,
+} from './types';
 
 class ApiError extends Error {
   constructor(
@@ -66,8 +76,17 @@ export const api = {
   sendTurn: (id: number, text: string) =>
     request<{ ok: true }>('POST', `/api/conversations/${id}/turns`, { text }),
   endConversation: (id: number) => request<Conversation>('POST', `/api/conversations/${id}/end`),
-  answerPermission: (conversationId: number, reqId: string, optionId: string) =>
-    request<{ ok: true }>('POST', `/api/conversations/${conversationId}/permissions/${reqId}`, { optionId }),
+  // remember (issue #13 / ADR-0007) is omitted from the body entirely unless
+  // true — the escalation is opt-in, so the common one-off answer stays a
+  // plain { optionId } post exactly as before.
+  answerPermission: (conversationId: number, reqId: string, optionId: string, remember?: boolean) =>
+    request<{ ok: true }>(
+      'POST',
+      `/api/conversations/${conversationId}/permissions/${reqId}`,
+      remember ? { optionId, remember } : { optionId },
+    ),
+  permissionRules: () => request<{ rules: PermissionRule[] }>('GET', '/api/permission-rules'),
+  deletePermissionRule: (id: number) => request<unknown>('DELETE', `/api/permission-rules/${id}`),
   channels: () => request<{ channels: Channel[] }>('GET', '/api/channels'),
   createChannel: (input: { name: string; type: Channel['type']; config: Record<string, unknown> }) =>
     request<Channel>('POST', '/api/channels', input),
