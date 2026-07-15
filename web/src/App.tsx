@@ -107,6 +107,10 @@ export function App() {
     try {
       const { tasks } = await api.tasks();
       setTasks(tasks);
+      // Keep an open detail modal fresh from the poll too, not only the
+      // socket — otherwise its state-aware footer can go stale (and keep
+      // offering Accept on an already-completed task) if the ws drops.
+      setOpenTask((current) => (current ? tasks.find((t) => t.id === current.id) ?? current : current));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -309,7 +313,9 @@ export function App() {
         </main>
       </div>
 
-      {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}
+      {openTask && (
+        <TaskDetail task={openTask} onEdit={setEditing} onClose={() => setOpenTask(null)} />
+      )}
 
       {editing !== null && config && (
         <TaskForm
