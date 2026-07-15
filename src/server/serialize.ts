@@ -48,11 +48,21 @@ export type ApiConversation = Omit<ConversationRow, 'usage'> & {
   cacheTtlSeconds: number | null;
 };
 
+/** The display title: the operator's title, else derived from the first Turn's first non-empty line (issue 15). */
+const DERIVED_TITLE_MAX = 80;
+function deriveConversationTitle(firstTurnText: string | null): string | null {
+  if (!firstTurnText) return null;
+  const line = firstTurnText.split('\n').find((l) => l.trim().length > 0)?.trim();
+  if (!line) return null;
+  return line.length > DERIVED_TITLE_MAX ? `${line.slice(0, DERIVED_TITLE_MAX - 1).trimEnd()}…` : line;
+}
+
 /**
  * A Conversation as the REST API and firehose both serve it — one format for
- * the SPA. Running Usage/Cost are derived on read (issue 12), and the
- * context-window / cache-TTL facts come from optional per-model config;
- * honest degradation when unconfigured (null, never a fake percentage).
+ * the SPA. Running Usage/Cost are derived on read (issue 12), the title falls
+ * back to one derived from the first Turn (issue 15), and the context-window
+ * / cache-TTL facts come from optional per-model config; honest degradation
+ * when unconfigured (null, never a fake percentage).
  */
 export function conversationToApi(ctx: AppContext, conversation: ConversationRow): ApiConversation {
   const { usage: rawUsage, ...rest } = conversation;
@@ -61,6 +71,7 @@ export function conversationToApi(ctx: AppContext, conversation: ConversationRow
   const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];
   return {
     ...rest,
+    title: conversation.title ?? deriveConversationTitle(ctx.conversations.firstTurnText(conversation.id)),
     usage,
     cost: costOfUsages([usage], pricesOf(ctx)),
     contextTokens: conversation.contextTokens,

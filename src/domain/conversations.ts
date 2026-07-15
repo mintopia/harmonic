@@ -97,6 +97,27 @@ export class ConversationStore {
     return this.update(id, { state: 'ended', endedAt: now });
   }
 
+  /** Delete a Conversation and cascade its events (issue 15). */
+  delete(id: number): void {
+    this.get(id); // 404 on unknown
+    this.db.delete(conversationEvents).where(eq(conversationEvents.conversationId, id)).run();
+    this.db.delete(conversations).where(eq(conversations.id, id)).run();
+  }
+
+  /**
+   * Boot recovery (issue 15): any Conversation still 'active' was orphaned by
+   * a restart — its warm harness is gone, so it cannot resume. Mark it ended;
+   * the transcript survives read-only.
+   */
+  markActiveEnded(): void {
+    const now = Date.now();
+    this.db
+      .update(conversations)
+      .set({ state: 'ended', endedAt: now, updatedAt: now })
+      .where(eq(conversations.state, 'active'))
+      .run();
+  }
+
   appendEvent(conversationId: number, event: ConversationEventInput): PersistedConversationEvent {
     const seq =
       (this.db

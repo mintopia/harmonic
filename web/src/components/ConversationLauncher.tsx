@@ -13,14 +13,24 @@ import {
   type PendingPermission,
   type PendingPermissions,
 } from '../conversation-permissions-model';
-import { loadConversationId, storeConversationId } from '../conversation-storage';
+import { clearConversationId, loadConversationId, storeConversationId } from '../conversation-storage';
 import {
   computeContextUsage,
   formatColdCacheMessage,
   formatContextUsage,
   formatTokens,
 } from '../conversation-telemetry-model';
+import {
+  applyAttentionMessage,
+  clearAllAttention,
+  clearAttention,
+  hasAttention,
+  NO_ATTENTION,
+  type AttentionState,
+} from '../conversation-attention-model';
+import { conversationDisplayTitle, removeConversationById, upsertConversation } from '../conversation-list-model';
 import { formatCost } from '../cost';
+import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
 import { Icon } from './Icon';
@@ -29,6 +39,7 @@ import {
   btnPrimary,
   btnQuiet,
   btnQuietDestructive,
+  conversationStateChip,
   field,
   headline,
   labelType,
@@ -73,6 +84,8 @@ function TelemetryCell({
  * with no new Turn, unlike every other field here which only changes on a
  * `conversation_changed` message), so this re-evaluates its own predicate
  * on a 20s interval rather than only when `conversation` itself changes.
+ * Shown for ended Conversations too (issue #15: read-only still means the
+ * telemetry is visible, just frozen at its last value).
  */
 function TelemetryStrip({ conversation }: { conversation: Conversation }) {
   const [now, setNow] = useState(() => Date.now());
@@ -321,11 +334,7 @@ function Composer({
 
   return (
     <div className="border-t border-hairline p-3">
-      {locked ? (
-        <p className="mb-2 font-data text-data text-muted">
-          {conversation.harness} · {conversation.model} · {conversation.workingDir}
-        </p>
-      ) : (
+      {!locked && (
         <div className="mb-2 grid gap-2 sm:grid-cols-3">
           <div>
             <label className={fieldLabel} htmlFor="conv-harness">
@@ -407,40 +416,268 @@ function Composer({
 }
 
 /**
- * The Conversations launcher (issue #10 walking skeleton): a bottom-right
- * docked panel, sibling to the Toaster — mounted view-independently at the
- * end of App's return. Docked higher than the Toaster's `bottom-4 right-4
- * z-50` (and one z-layer under it) so a failure toast never collides with
- * an open panel. The active conversation id persists in localStorage so
- * closing/reopening the panel replays it instead of ending it; only the
- * explicit End control (`POST .../end`) does that.
+ * The detail header (issue #15): back-to-list, the Conversation's title
+ * (inline-editable — the rename affordance is available for any real
+ * Conversation, ended ones included, since renaming is metadata, not a
+ * Turn), the expand/collapse toggle, End (active only), Delete (quiet
+ * destructive, per DESIGN.md — no confirm gate, matching Channels.tsx's own
+ * delete), and Close. A second, Data-role line carries the id/state/
+ * harness/model/Working Directory that used to sit in the composer's locked
+ * banner — now shown here so it survives even when the composer itself
+ * doesn't render (an ended Conversation has none at all).
+ */
+function ConversationHeader({
+  conversation,
+  composing,
+  expanded,
+  onBack,
+  onToggleExpand,
+  onRename,
+  onEnd,
+  onDelete,
+  onClose,
+}: {
+  conversation: Conversation | null;
+  composing: boolean;
+  expanded: boolean;
+  onBack: () => void;
+  onToggleExpand: () => void;
+  onRename: (title: string | null) => Promise<void>;
+  onEnd: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setDraft(conversation?.title ?? '');
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    const trimmed = draft.trim();
+    try {
+      await onRename(trimmed.length > 0 ? trimmed : null);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const title = composing ? 'New conversation' : conversationDisplayTitle(conversation?.title ?? null);
+
+  return (
+    <div className="border-b border-hairline px-4 py-3">
+      <div className="flex items-center gap-1.5">
+        <button aria-label="Back to conversations" className={btnQuiet} onClick={onBack}>
+          <Icon name="arrow-left" />
+        </button>
+        {editing ? (
+          <>
+            <input
+              aria-label="Conversation title"
+              autoFocus
+              className={`${field} min-w-0 flex-1 py-1`}
+              value={draft}
+              placeholder="Untitled conversation"
+              disabled={saving}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  save();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setEditing(false);
+                }
+              }}
+            />
+            <button aria-label="Save title" className={btnQuiet} disabled={saving} onClick={save}>
+              <Icon name="check" />
+            </button>
+            <button aria-label="Cancel rename" className={btnQuiet} disabled={saving} onClick={() => setEditing(false)}>
+              <Icon name="close" />
+            </button>
+          </>
+        ) : (
+          <>
+            <span className={`${headline} min-w-0 flex-1 truncate`}>{title}</span>
+            {conversation && (
+              <button aria-label="Rename conversation" className={btnQuiet} onClick={startEdit}>
+                <Icon name="edit" />
+              </button>
+            )}
+          </>
+        )}
+        <button
+          aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
+          className={btnQuiet}
+          onClick={onToggleExpand}
+        >
+          <Icon name={expanded ? 'collapse' : 'expand'} />
+        </button>
+        {conversation?.state === 'active' && (
+          <button className={btnQuiet} onClick={onEnd}>
+            End
+          </button>
+        )}
+        {conversation && (
+          <button className={btnQuietDestructive} onClick={onDelete}>
+            Delete
+          </button>
+        )}
+        <button aria-label="Close conversation panel" className={btnQuiet} onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </div>
+      {conversation && (
+        <div className="mt-1 flex items-center gap-2 overflow-hidden font-data text-data text-muted">
+          <span className="shrink-0">#{conversation.id}</span>
+          <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
+          <span className="truncate">
+            {conversation.harness} · {conversation.model} · {conversation.workingDir}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Which pane the open panel shows: the history list, or one Conversation's
+ * detail — `conversationId: null` inside `detail` is the not-yet-created
+ * "compose a new one" state the old walking skeleton always started in. */
+type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number | null };
+
+/**
+ * The Conversations launcher (issue #10 walking skeleton; issue #15 grows it
+ * into history browsing): a bottom-right docked panel, sibling to the
+ * Toaster — mounted view-independently at the end of App's return, so its
+ * always-on firehose subscription (attention tracking + a live list) keeps
+ * running whether the panel is open or not. Docked higher than the
+ * Toaster's `bottom-4 right-4 z-50` (and one z-layer under it) so a failure
+ * toast never collides with an open panel.
+ *
+ * The last-viewed Conversation persists in localStorage (`conversation-
+ * storage.ts`) so reopening the panel returns to it instead of the list —
+ * explicitly leaving the list (the back arrow) forgets it, so *that* choice
+ * also survives a close/reopen. A persisted Conversation that comes back
+ * `ended` (e.g. after a server restart orphaned it) still opens straight to
+ * its detail — just read-only, never a fake resume.
  */
 export function ConversationLauncher({ config }: { config: AppConfig | null }) {
   const [open, setOpen] = useState(false);
-  const [conversationId, setConversationId] = useState<number | null>(() => loadConversationId(localStorage));
+  const [expanded, setExpanded] = useState(false);
+  // A one-shot flag that adds the entrance-flourish class for ~150ms after
+  // toggling expand/collapse, then removes it — re-adding the same class
+  // later still restarts the CSS animation (it only replays on a genuine
+  // "gained the class" transition), so this never needs a remount, which
+  // would otherwise blow away in-progress Composer text on every toggle.
+  const [flourish, setFlourish] = useState(false);
+  const flourishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (flourishTimer.current) clearTimeout(flourishTimer.current);
+    },
+    [],
+  );
+  const toggleExpanded = () => {
+    setExpanded((e) => !e);
+    setFlourish(true);
+    if (flourishTimer.current) clearTimeout(flourishTimer.current);
+    flourishTimer.current = setTimeout(() => setFlourish(false), 150);
+  };
+
+  const [view, setView] = useState<LauncherView>(() => {
+    const persisted = loadConversationId(localStorage);
+    return persisted === null ? { kind: 'list' } : { kind: 'detail', conversationId: persisted };
+  });
+  const focusedId = view.kind === 'detail' ? view.conversationId : null;
+
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
   // Prompts the Harness is genuinely blocked on (issue #11), scoped to
-  // whichever conversation is open — see the effect below for how entries
-  // are added (a `permission_request` WS message) and cleared (its
-  // resolving `conversation_event`, or the conversation ending).
+  // whichever conversation is open.
   const [pending, setPending] = useState<PendingPermissions>({});
 
+  // Needs-attention tracking (issue #15): which Conversations, keyed by id,
+  // saw a permission request or a finished Turn land while the operator
+  // wasn't looking at them. `focusedRef` mirrors `open`/`view` into a ref so
+  // the always-on subscription below never needs to reconnect just because
+  // the operator switched panes.
+  const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
+  const focusedRef = useRef<number | null>(null);
   useEffect(() => {
-    if (conversationId === null) return;
-    let live = true;
-    // A freshly opened/switched conversation starts with no known-pending
-    // prompts — the only source of a pending prompt is the live WS message
-    // below, there is no REST endpoint to recover one still outstanding
-    // server-side across a reload (it lands as a resolved conversation_event
-    // once answered either way).
-    setPending({});
-    api.conversation(conversationId).then((c) => live && setConversation(c), toastError);
-    // Replay the persisted stream, then append live events as they arrive —
-    // one representation for both (TaskDetail.tsx's pattern), deduped by id.
-    api.conversationEvents(conversationId).then(({ events }) => live && setEvents(events), toastError);
+    focusedRef.current = open && view.kind === 'detail' ? view.conversationId : null;
+  }, [open, view]);
+
+  // Clears the whole badge on the collapsed → open transition (the LOCKED
+  // contract's first clearing trigger).
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) setAttention((current) => clearAllAttention(current));
+    wasOpenRef.current = open;
+  }, [open]);
+
+  // Clears one Conversation's entry the moment the operator views it (the
+  // LOCKED contract's other trigger) — covers switching between
+  // Conversations without closing the panel in between.
+  useEffect(() => {
+    if (open && view.kind === 'detail' && view.conversationId !== null) {
+      setAttention((current) => clearAttention(current, view.conversationId as number));
+    }
+  }, [open, view]);
+
+  // The always-on firehose subscription (issue #15): mounted for the
+  // launcher's whole lifetime, independent of `open`/`view`, so a
+  // permission request or finished Turn on a background Conversation is
+  // caught even while the panel is collapsed. Doubles as the list's live
+  // feed, so a title/usage/state change is reflected in the history list
+  // whether or not it's currently on screen.
+  useEffect(() => {
+    api.conversations().then(({ conversations }) => setConversations(conversations), toastError);
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'conversation_event' && msg.event.conversationId === conversationId) {
+      setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
+      if (msg.type === 'conversation_changed') {
+        setConversations((current) => upsertConversation(current, msg.conversation));
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // The focused Conversation's own detail stream (issues #10–#14, largely
+  // unchanged): replay the persisted events, then append live ones as they
+  // arrive, deduped by id. Runs whenever `focusedId` changes — including to
+  // null, which just clears the detail state (the list, or a fresh compose,
+  // show nothing here).
+  useEffect(() => {
+    if (focusedId === null) {
+      setConversation(null);
+      setEvents([]);
+      setPending({});
+      return;
+    }
+    const id = focusedId;
+    let live = true;
+    // Clear the previous Conversation's state before replaying this one
+    // (TaskDetail.tsx's run-switch pattern), so switching in the list never
+    // flashes stale transcript/telemetry under the new id.
+    setConversation(null);
+    setEvents([]);
+    setPending({});
+    api.conversation(id).then((c) => {
+      if (!live) return;
+      setConversation(c);
+      setConversations((current) => upsertConversation(current, c));
+    }, toastError);
+    api.conversationEvents(id).then(({ events }) => live && setEvents(events), toastError);
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'conversation_event' && msg.event.conversationId === id) {
         setEvents((current) =>
           current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
         );
@@ -449,11 +686,12 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
         // clears it, whether it was answered here or elsewhere/crashed.
         setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
       }
-      if (msg.type === 'permission_request' && msg.conversationId === conversationId) {
+      if (msg.type === 'permission_request' && msg.conversationId === id) {
         setPending((current) => addPendingPermission(current, msg));
       }
-      if (msg.type === 'conversation_changed' && msg.conversation.id === conversationId) {
+      if (msg.type === 'conversation_changed' && msg.conversation.id === id) {
         setConversation(msg.conversation);
+        setConversations((current) => upsertConversation(current, msg.conversation));
         // Belt-and-braces: the server auto-clears pending permissions on
         // end/crash via the resolution signal above, but a prompt should
         // never outlive the conversation's own 'ended' state in the UI.
@@ -464,29 +702,68 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
       live = false;
       unsubscribe();
     };
-  }, [conversationId]);
+  }, [focusedId]);
+
+  const openList = () => {
+    setView({ kind: 'list' });
+    clearConversationId(localStorage);
+  };
+  const openConversation = (id: number) => {
+    setView({ kind: 'detail', conversationId: id });
+    storeConversationId(localStorage, id);
+  };
+  const openCompose = () => {
+    setView({ kind: 'detail', conversationId: null });
+    clearConversationId(localStorage);
+  };
 
   const send = async (fields: { harness: string; model: string; workingDir: string }, text: string) => {
-    let id = conversationId;
+    let id = view.kind === 'detail' ? view.conversationId : null;
     if (id === null) {
       // First turn: spawns the harness server-side once this and the
       // turn below land — harness/model/workingDir lock from here on.
       const created = await api.createConversation(fields);
       id = created.id;
-      storeConversationId(localStorage, id);
+      setConversations((current) => upsertConversation(current, created));
       setConversation(created);
-      setConversationId(id);
+      setView({ kind: 'detail', conversationId: id });
+      storeConversationId(localStorage, id);
     }
     const { queued } = await api.sendTurn(id, text);
     return { queued };
   };
 
   const end = () => {
-    if (conversationId === null) return;
-    api.endConversation(conversationId).then((c) => {
+    const id = view.kind === 'detail' ? view.conversationId : null;
+    if (id === null) return;
+    api.endConversation(id).then((c) => {
       setConversation(c);
+      setConversations((current) => upsertConversation(current, c));
       setPending({});
     }, toastError);
+  };
+
+  const rename = async (title: string | null) => {
+    const id = view.kind === 'detail' ? view.conversationId : null;
+    if (id === null) return;
+    try {
+      const updated = await api.renameConversation(id, title);
+      setConversation(updated);
+      setConversations((current) => upsertConversation(current, updated));
+    } catch (e) {
+      toastError(e);
+    }
+  };
+
+  const deleteConversation = async (id: number) => {
+    try {
+      await api.deleteConversation(id);
+      setConversations((current) => removeConversationById(current, id));
+      setAttention((current) => clearAttention(current, id));
+      if (view.kind === 'detail' && view.conversationId === id) openList();
+    } catch (e) {
+      toastError(e);
+    }
   };
 
   // Optimistic relative to the *resolving event*, not the HTTP response:
@@ -504,69 +781,103 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
   };
 
   if (!open) {
+    const needsAttention = hasAttention(attention);
     return (
       <button
-        aria-label="Open conversation"
+        aria-label={needsAttention ? 'Open conversation — needs attention' : 'Open conversation'}
         title="Conversation"
         onClick={() => setOpen(true)}
         className="fixed bottom-24 right-4 z-40 flex items-center gap-2 rounded-lg bg-surface px-3.5 py-2.5 font-medium text-ink shadow-bar transition-colors duration-150 hover:bg-raised"
       >
-        <Icon name="chat" className="text-accent" />
+        <span className="relative inline-flex">
+          <Icon name="chat" className="text-accent" />
+          {/* The needs-attention dot: TaskDetail's tab-flag treatment
+              (a small accent dot, aria-hidden — the aria-label above carries
+              the same information to assistive tech), not a state color;
+              see conversation-attention-model.ts's header comment. */}
+          {needsAttention && (
+            <span
+              aria-hidden="true"
+              className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent ring-2 ring-surface"
+            />
+          )}
+        </span>
         Conversation
       </button>
     );
   }
 
-  // While a persisted conversation id is loading, hold off on the composer
-  // rather than flash the unlocked (harness/model/workingDir editable) form
-  // before the locked, server-confirmed one replaces it.
-  const composerReady = conversationId === null || conversation !== null;
+  // While the focused conversation is still loading, hold off on the
+  // composer rather than flash the unlocked (harness/model/workingDir
+  // editable) form before the locked, server-confirmed one replaces it.
+  const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
+  const ended = conversation?.state === 'ended';
 
   return (
     <div
       role="dialog"
       aria-label="Conversation"
       onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-      className="fixed bottom-24 right-4 z-40 flex h-[32rem] w-[26rem] max-w-[calc(100vw-2rem)] flex-col rounded-lg bg-surface shadow-bar"
+      className={`fixed z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
+        flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-ledger)]' : ''
+      } ${expanded ? 'inset-6' : 'bottom-24 right-4 h-[32rem] w-[26rem] max-w-[calc(100vw-2rem)]'}`}
     >
-      <div className="flex items-center gap-2 border-b border-hairline px-4 py-3">
-        <span className={headline}>Conversation</span>
-        {conversation && (
-          <span className="font-data text-data text-muted">
-            #{conversation.id} · {conversation.state}
-          </span>
-        )}
-        <div className="flex-1" />
-        {conversation?.state === 'active' && (
-          <button className={btnQuiet} onClick={end}>
-            End
-          </button>
-        )}
-        <button aria-label="Close conversation panel" className={btnQuiet} onClick={() => setOpen(false)}>
-          <Icon name="close" />
-        </button>
-      </div>
-
-      {conversation && <TelemetryStrip conversation={conversation} />}
-
-      <div className="flex-1 overflow-y-auto p-4">
-        <Transcript events={events} />
-      </div>
-
-      {/* Pending prompts sit outside the scrollable transcript so a paused
-          Turn stays visible without hunting for it — the panel is
-          non-modal, so this never traps focus. */}
-      {Object.values(pending).map((p) => (
-        <PermissionPrompt
-          key={p.reqId}
-          pending={p}
-          workingDir={conversation?.workingDir ?? ''}
-          onAnswer={answerPermission}
+      {view.kind === 'list' ? (
+        <ConversationList
+          conversations={conversations}
+          attention={attention}
+          expanded={expanded}
+          onSelect={openConversation}
+          onNew={openCompose}
+          onDelete={deleteConversation}
+          onToggleExpand={toggleExpanded}
+          onClose={() => setOpen(false)}
         />
-      ))}
+      ) : (
+        <>
+          <ConversationHeader
+            conversation={conversation}
+            composing={view.conversationId === null}
+            expanded={expanded}
+            onBack={openList}
+            onToggleExpand={toggleExpanded}
+            onRename={rename}
+            onEnd={end}
+            onDelete={() => conversation && deleteConversation(conversation.id)}
+            onClose={() => setOpen(false)}
+          />
 
-      {config && composerReady && (
-        <Composer config={config} conversation={conversation} events={events} onSend={send} />
+          {conversation && <TelemetryStrip conversation={conversation} />}
+
+          <div className="flex-1 overflow-y-auto p-4">
+            <Transcript events={events} />
+          </div>
+
+          {/* Pending prompts sit outside the scrollable transcript so a
+              paused Turn stays visible without hunting for it — the panel
+              is non-modal, so this never traps focus. Ended Conversations
+              never carry one (issue #15: read-only means no permission
+              prompts at all, belt-and-braces alongside `pending` already
+              being empty for them). */}
+          {!ended &&
+            Object.values(pending).map((p) => (
+              <PermissionPrompt
+                key={p.reqId}
+                pending={p}
+                workingDir={conversation?.workingDir ?? ''}
+                onAnswer={answerPermission}
+              />
+            ))}
+
+          {ended ? (
+            <p role="status" className="border-t border-hairline bg-raised px-4 py-2.5 text-muted">
+              This conversation has ended — read-only.
+            </p>
+          ) : (
+            config &&
+            composerReady && <Composer config={config} conversation={conversation} events={events} onSend={send} />
+          )}
+        </>
       )}
     </div>
   );

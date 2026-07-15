@@ -14,6 +14,9 @@ const createConversationInputSchema = z.object({
   workingDir: z.string().min(1).optional(),
 });
 
+/** Rename a Conversation; null clears the custom title, falling back to the derived one (issue 15). */
+const updateConversationInputSchema = z.object({ title: z.string().nullable() });
+
 const turnInputSchema = z.object({ text: z.string().min(1) });
 const turnResponseSchema = z.object({
   ok: z.literal(true),
@@ -128,6 +131,48 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => conversationToApi(ctx, ctx.conversations.get(req.params.id)),
+  );
+
+  app.patch(
+    '/conversations/:id',
+    {
+      schema: {
+        tags: ['Conversations'],
+        description:
+          'Rename a Conversation; pass title null to clear it and fall back to the title derived from the first Turn. Operator only; not reachable with a run-scoped key.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: idParamsSchema,
+        body: updateConversationInputSchema,
+        response: { 200: conversationSchema, 400: errorResponseSchema, 404: errorResponseSchema },
+      },
+    },
+    async (req) => {
+      ctx.conversations.get(req.params.id); // 404
+      return conversationToApi(ctx, ctx.conversations.update(req.params.id, { title: req.body.title }));
+    },
+  );
+
+  app.delete(
+    '/conversations/:id',
+    {
+      schema: {
+        tags: ['Conversations'],
+        description:
+          'Delete a Conversation: stops the harness if warm, revokes its key, and cascades its events. Operator only; not reachable with a run-scoped key.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: idParamsSchema,
+        response: { 200: okResponseSchema, 404: errorResponseSchema },
+      },
+    },
+    async (req) => {
+      ctx.conversations.get(req.params.id); // 404
+      // Stop the harness if warm (revokes its key); then revoke any orphaned
+      // key and cascade the events.
+      ctx.conversationDriver.end(req.params.id);
+      ctx.auth.deleteKeysForConversation(req.params.id);
+      ctx.conversations.delete(req.params.id);
+      return { ok: true } as const;
+    },
   );
 
   app.get(

@@ -140,6 +140,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // warm process is gone), so every one present at boot is orphaned (issue 16).
   auth.sweepOrphanedRunKeys();
   auth.sweepOrphanedConversationKeys();
+  // A Conversation cannot survive a restart — its warm harness is gone — so
+  // any still marked active is ended; its transcript survives read-only (issue 15).
+  conversations.markActiveEnded();
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),

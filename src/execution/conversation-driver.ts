@@ -73,6 +73,8 @@ interface ActiveConversation {
   turning: boolean;
   /** Follow-up Turns queued while one is in flight, sent FIFO on completion (issue 14). */
   queue: string[];
+  /** Fires when the Conversation has been idle past the timeout, ending it (issue 15). */
+  idleTimer?: ReturnType<typeof setTimeout> | undefined;
 }
 
 /**
@@ -166,6 +168,7 @@ export class ConversationDriver {
 
   /** Record the operator's message and drive the Turn, streaming the reply over the firehose. */
   private beginTurn(entry: ActiveConversation, text: string): void {
+    this.clearIdle(entry); // activity — the idle clock only runs between Turns
     entry.turning = true;
     this.record(entry.conversationId, 'user_turn', { text });
     void this.runTurn(entry, text);
@@ -176,6 +179,26 @@ export class ConversationDriver {
     if (!this.active.has(entry.conversationId)) return; // ended or crashed
     const next = entry.queue.shift();
     if (next !== undefined) this.beginTurn(entry, next);
+  }
+
+  /** Arm the idle timeout (issue 15): a Conversation with no Turn for N minutes ends. */
+  private armIdle(entry: ActiveConversation): void {
+    this.clearIdle(entry);
+    const minutes = this.getConfig().conversationIdleTimeoutMinutes;
+    if (!minutes || minutes <= 0) return; // disabled
+    entry.idleTimer = setTimeout(() => {
+      if (!this.active.has(entry.conversationId)) return;
+      this.record(entry.conversationId, 'lifecycle', { event: 'idle_timeout' });
+      this.end(entry.conversationId);
+    }, minutes * 60_000);
+    entry.idleTimer.unref?.();
+  }
+
+  private clearIdle(entry: ActiveConversation): void {
+    if (entry.idleTimer) {
+      clearTimeout(entry.idleTimer);
+      entry.idleTimer = undefined;
+    }
   }
 
   /**
@@ -215,9 +238,12 @@ export class ConversationDriver {
     return this.store.end(conversationId);
   }
 
-  /** Process shutdown: kill every warm harness (the DB rows stay for issue 15's restart sweep). */
+  /** Process shutdown: kill every warm harness (the DB rows stay for the restart sweep). */
   shutdown(): void {
-    for (const entry of this.active.values()) this.kill(entry);
+    for (const entry of this.active.values()) {
+      this.clearIdle(entry);
+      this.kill(entry);
+    }
     this.active.clear();
   }
 
@@ -308,8 +334,10 @@ export class ConversationDriver {
       this.store.end(entry.conversationId);
     } finally {
       entry.turning = false;
-      // Send the next queued follow-up, if the Conversation is still warm.
+      // Send the next queued follow-up, if the Conversation is still warm;
+      // otherwise start the idle clock until the next Turn.
       this.drainQueue(entry);
+      if (this.active.has(entry.conversationId) && !entry.turning) this.armIdle(entry);
     }
   }
 
@@ -403,6 +431,7 @@ export class ConversationDriver {
   }
 
   private teardown(entry: ActiveConversation): void {
+    this.clearIdle(entry);
     this.cancelPendingPermissions(entry.conversationId);
     this.active.delete(entry.conversationId);
     this.kill(entry);

@@ -21,7 +21,11 @@ export type IconName =
   | 'check'
   | 'close'
   | 'chat'
-  | 'send';
+  | 'send'
+  | 'arrow-left'
+  | 'edit'
+  | 'expand'
+  | 'collapse';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
@@ -86,6 +90,33 @@ const PATHS: Record<IconName, JSX.Element> = {
   chat: <path d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5v-2.5H2.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" />,
   // Composer submit.
   send: <path d="M2.5 8 13.5 2.5 9.5 13.5 7.5 9 2.5 8Z" />,
+  // Detail → list (issue #15's history browsing).
+  'arrow-left': <path d="M12.5 8h-9M7 3.5 2.5 8 7 12.5" />,
+  // Rename affordance: a plain pencil, no flourish.
+  edit: (
+    <>
+      <path d="M10 3 13 6l-7.5 7.5H2.5V10Z" />
+      <path d="M8.5 4.5 11.5 7.5" />
+    </>
+  ),
+  // Docked panel → full overlay: outward corner arrows (issue #15).
+  expand: (
+    <>
+      <path d="M9.5 2.5h4v4" />
+      <path d="M13.5 2.5 9 7" />
+      <path d="M6.5 13.5h-4v-4" />
+      <path d="M2.5 13.5 7 9" />
+    </>
+  ),
+  // Overlay → docked panel: the same arrows, pointing inward.
+  collapse: (
+    <>
+      <path d="M6.5 6.5h-4v-4" />
+      <path d="M2.5 2.5 7 7" />
+      <path d="M9.5 9.5h4v4" />
+      <path d="M13.5 13.5 9 9" />
+    </>
+  ),
 };
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {

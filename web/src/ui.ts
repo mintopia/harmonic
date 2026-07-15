@@ -1,4 +1,4 @@
-import type { PermissionAcpRequest, TaskState } from './types';
+import type { Conversation, PermissionAcpRequest, TaskState } from './types';
 
 /** One component vocabulary (DESIGN.md § Components); screens share these
  * class strings so a button or field never drifts between surfaces. */
@@ -90,6 +90,23 @@ export const STATE_CHIP_STYLES: Record<TaskState, string> = {
 
 export function stateChip(state: TaskState): string {
   return `${chip} ${STATE_CHIP_STYLES[state]}`;
+}
+
+/** Conversation lifecycle chips (issue #15): active/ended are operator-facing
+ * lifecycle, not the Running/Accept/Fail/Tool vocabulary the State Speaks
+ * Rule reserves for the work itself — an active Conversation isn't
+ * necessarily mid-Turn ("work in flight" is Running Amber's locked meaning,
+ * and a Conversation can sit active-but-idle between Turns), so coloring it
+ * amber would misstate the state. Both render in the neutral Raised
+ * register, distinguished only by ink vs muted text — the same
+ * non-chromatic treatment Task's own 'ready'/'awaiting-review' states use. */
+const CONVERSATION_STATE_CHIP_STYLES: Record<Conversation['state'], string> = {
+  active: 'bg-raised text-ink',
+  ended: 'bg-raised text-muted',
+};
+
+export function conversationStateChip(state: Conversation['state']): string {
+  return `${chip} ${CONVERSATION_STATE_CHIP_STYLES[state]}`;
 }
 
 /** Count/figure color per state (the State Speaks Rule): color appears

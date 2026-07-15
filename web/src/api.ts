@@ -71,6 +71,13 @@ export const api = {
   conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
   createConversation: (input: { harness?: string; model?: string; workingDir?: string }) =>
     request<Conversation>('POST', '/api/conversations', input),
+  // title: null clears an operator-set title, falling back to the one
+  // derived from the first Turn (issue #15's LOCKED contract).
+  renameConversation: (id: number, title: string | null) =>
+    request<Conversation>('PATCH', `/api/conversations/${id}`, { title }),
+  // Cascades events and revokes the conversation's key server-side; the
+  // panel removes it from the list locally on success (no WS broadcast).
+  deleteConversation: (id: number) => request<{ ok: true }>('DELETE', `/api/conversations/${id}`),
   conversationEvents: (id: number) =>
     request<{ events: ConversationEvent[] }>('GET', `/api/conversations/${id}/events`),
   // `queued: true` (issue #14's LOCKED contract) means a Turn was already

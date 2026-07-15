@@ -71,6 +71,12 @@ export const appConfigSchema = z.object({
    * branches unattended (ADR-0002). Deliberate opt-in; default off.
    */
   agentReview: z.boolean().default(false),
+  /**
+   * End a Conversation with no Turn for this many minutes (issue 15); its
+   * transcript survives read-only. 0 disables the idle timeout. Fractional
+   * values are allowed.
+   */
+  conversationIdleTimeoutMinutes: z.number().nonnegative().default(30),
 }).superRefine((config, ctx) => {
   // A harness's defaultModel must be one of its models (when any are
   // listed) — the Settings UI offers a select over `models`, and a stray
@@ -163,6 +169,7 @@ export function defaultConfig(): AppConfig {
       maxConcurrentRuns: 1,
     },
     agentReview: false,
+    conversationIdleTimeoutMinutes: 30,
   };
 }
 

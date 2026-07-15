@@ -28,3 +28,15 @@ export function storeConversationId(storage: StorageLike, id: number): void {
     // best-effort: losing persistence must not break sending a turn
   }
 }
+
+/** Forgets the last-open conversation (issue #15): called when the operator
+ * explicitly navigates back to the list, so reopening the launcher shows the
+ * list rather than snapping back into a conversation they deliberately left —
+ * "returns to where the operator was" covers the list itself as a place. */
+export function clearConversationId(storage: StorageLike): void {
+  try {
+    storage.removeItem(CONVERSATION_ID_KEY);
+  } catch {
+    // best-effort, same as storeConversationId
+  }
+}
