@@ -1,6 +1,17 @@
 import { api } from '../api';
 import type { Task } from '../types';
-import { btnQuiet as quiet, chip } from '../ui';
+import { btnAccept, btnQuiet as quiet, btnReject, card } from '../ui';
+
+/** One truncating Data-role line: id, harness · model, then only the
+ * facts that deviate from defaults (isolation, deps, cost). Metadata is
+ * plain mono text, never chip slabs. */
+function metaLine(task: Task): string {
+  const bits = [`#${task.id}`, `${task.harness} · ${task.model}`];
+  if (task.isolationMode !== 'direct') bits.push(task.isolationMode);
+  if (task.dependsOn.length > 0) bits.push(`⇠ ${task.dependsOn.length} dep${task.dependsOn.length > 1 ? 's' : ''}`);
+  if (task.cost?.totalUsd != null) bits.push(`${task.cost.incomplete ? '≥' : ''}$${task.cost.totalUsd.toFixed(2)}`);
+  return bits.join('  ');
+}
 
 export function TaskCard({
   task,
@@ -19,7 +30,7 @@ export function TaskCard({
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, (e) => alert(e.message));
 
   return (
-    <article className="rounded-md border border-hairline bg-surface p-3 transition-colors duration-150 hover:bg-raised">
+    <article className={`${card} p-3.5 transition-shadow duration-150 hover:ring-1 hover:ring-edge`}>
       <button
         type="button"
         className="mb-2 line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-ink"
@@ -27,25 +38,22 @@ export function TaskCard({
       >
         {task.prompt}
       </button>
-      <div className="mb-2 flex flex-wrap items-center gap-1">
-        <span className={`${chip} bg-raised font-data tracking-normal text-muted`}>
-          {task.harness} · {task.model}
-        </span>
-        {/* Priority is typographic, not chromatic (DESIGN.md § Colors). */}
-        <span className={`text-label uppercase tracking-wider ${task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}`}>
-          {task.priority}
-        </span>
-        <span className={`${chip} bg-raised text-muted`}>{task.isolationMode}</span>
-        {task.dependsOn.length > 0 && (
-          <span className={`${chip} bg-raised text-muted`}>⇠ {task.dependsOn.length} dep{task.dependsOn.length > 1 ? 's' : ''}</span>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="min-w-0 truncate font-data text-data text-muted">{metaLine(task)}</span>
+        {/* Priority is typographic, not chromatic (DESIGN.md § Colors);
+            normal is the default and says nothing. */}
+        {task.priority !== 'normal' && (
+          <span
+            className={`shrink-0 text-label uppercase tracking-wide ${task.priority === 'high' ? 'font-semibold text-ink' : 'font-medium text-muted'}`}
+          >
+            {task.priority}
+          </span>
         )}
         {task.blockedOnFailed && (
-          <span className={`${chip} bg-fail/15 font-medium uppercase text-fail`}>blocked on failed</span>
+          <span className="shrink-0 text-label font-semibold uppercase tracking-wide text-fail">on failed</span>
         )}
       </div>
-      <div className="flex gap-2">
-        <span className="font-data text-muted">#{task.id}</span>
-        <div className="flex-1" />
+      <div className="flex items-center justify-end gap-2.5">
         {editable && (
           <button className={quiet} onClick={() => onEdit(task)}>
             Edit
@@ -71,14 +79,11 @@ export function TaskCard({
         )}
         {task.state === 'awaiting-review' && (
           <>
-            <button
-              className="font-semibold text-accept hover:text-ink"
-              onClick={act(() => api.acceptTask(task.id))}
-            >
+            <button className={btnAccept} onClick={act(() => api.acceptTask(task.id))}>
               Accept
             </button>
             <button
-              className="font-semibold text-fail hover:text-ink"
+              className={btnReject}
               onClick={act(() => api.rejectTask(task.id, window.prompt('Rejection feedback:') ?? undefined))}
             >
               Reject
@@ -86,7 +91,7 @@ export function TaskCard({
           </>
         )}
         {cancellable && (
-          <button className="text-muted hover:text-fail" onClick={act(() => api.cancelTask(task.id))}>
+          <button className="font-medium text-muted transition-colors duration-150 hover:text-fail" onClick={act(() => api.cancelTask(task.id))}>
             Cancel
           </button>
         )}
