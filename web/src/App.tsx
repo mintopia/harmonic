@@ -314,7 +314,12 @@ export function App() {
       </div>
 
       {openTask && (
-        <TaskDetail task={openTask} onEdit={setEditing} onClose={() => setOpenTask(null)} />
+        <TaskDetail
+          task={openTask}
+          onEdit={setEditing}
+          onChanged={refresh}
+          onClose={() => setOpenTask(null)}
+        />
       )}
 
       {editing !== null && config && (

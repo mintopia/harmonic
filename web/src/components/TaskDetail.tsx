@@ -2,13 +2,11 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
-import { taskActions } from '../task-actions-model';
 import { EventStream } from './EventStream';
 import { Modal } from './Modal';
-import { RejectDialog } from './RejectDialog';
-import { ReattemptDialog } from './ReattemptDialog';
+import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
-import { btnAccept, btnGhost, btnQuiet, btnReject, chip, labelType, stateChip } from '../ui';
+import { btnQuiet, chip, labelType, stateChip } from '../ui';
 
 const metaChip = `${chip} bg-raised text-muted`;
 const inlineSelect =
@@ -265,94 +263,15 @@ function DetailsTab({ task, run }: { task: Task; run: Run | undefined }) {
   );
 }
 
-/** State-aware action bar — the same actions the card offers, driven by
- * the shared taskActions() map so the two surfaces never drift. Hidden
- * entirely for terminal states (no actions). */
-function ActionBar({
-  task,
-  onEdit,
-  onClose,
-  onReject,
-  onReattempt,
-}: {
-  task: Task;
-  onEdit: (task: Task) => void;
-  onClose: () => void;
-  onReject: () => void;
-  onReattempt: () => void;
-}) {
-  const actions = taskActions(task.state);
-  if (actions.length === 0) return null;
-
-  const run = (fn: () => Promise<unknown>) => () => fn().catch((e) => alert(e instanceof Error ? e.message : String(e)));
-  const cancelBtn = 'font-medium text-muted transition-colors duration-150 hover:text-fail';
-
-  return (
-    <footer className="flex flex-wrap items-center justify-end gap-2.5 border-t border-hairline px-4 py-3">
-      {actions.map((action) => {
-        switch (action) {
-          case 'accept':
-            return (
-              <button key={action} className={btnAccept} onClick={run(() => api.acceptTask(task.id))}>
-                Accept
-              </button>
-            );
-          case 'reject':
-            return (
-              <button key={action} className={btnReject} onClick={onReject}>
-                Reject
-              </button>
-            );
-          case 'reattempt':
-            return (
-              <button key={action} className={btnGhost} onClick={onReattempt}>
-                Re-attempt
-              </button>
-            );
-          case 'run':
-            return (
-              <button key={action} className={btnGhost} onClick={run(() => api.runTask(task.id))}>
-                Run now
-              </button>
-            );
-          case 'ready':
-            return (
-              <button key={action} className={btnGhost} onClick={run(() => api.promoteTask(task.id))}>
-                Ready
-              </button>
-            );
-          case 'edit':
-            return (
-              <button
-                key={action}
-                className={btnQuiet}
-                onClick={() => {
-                  onEdit(task);
-                  onClose();
-                }}
-              >
-                Edit
-              </button>
-            );
-          case 'cancel':
-            return (
-              <button key={action} className={cancelBtn} onClick={run(() => api.cancelTask(task.id))}>
-                Cancel
-              </button>
-            );
-        }
-      })}
-    </footer>
-  );
-}
-
 export function TaskDetail({
   task,
   onEdit,
+  onChanged,
   onClose,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
+  onChanged: () => void;
   onClose: () => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
@@ -361,8 +280,6 @@ export function TaskDetail({
   const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
   const [tab, setTab] = useState<Tab>('output');
   const [taskCost, setTaskCost] = useState<Cost | null>(null);
-  const [rejecting, setRejecting] = useState(false);
-  const [reattempting, setReattempting] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -524,25 +441,18 @@ export function TaskDetail({
           </div>
         </div>
 
-        <ActionBar
+        {/* Editing opens the task form; close the detail modal first so the
+            two don't stack. */}
+        <TaskActions
           task={task}
-          onEdit={onEdit}
-          onClose={onClose}
-          onReject={() => setRejecting(true)}
-          onReattempt={() => setReattempting(true)}
+          variant="footer"
+          onEdit={(t) => {
+            onClose();
+            onEdit(t);
+          }}
+          onChanged={onChanged}
         />
       </div>
-
-      {rejecting && (
-        <RejectDialog taskId={task.id} onClose={() => setRejecting(false)} onDone={() => setRejecting(false)} />
-      )}
-      {reattempting && (
-        <ReattemptDialog
-          taskId={task.id}
-          onClose={() => setReattempting(false)}
-          onDone={() => setReattempting(false)}
-        />
-      )}
     </Modal>
   );
 }
