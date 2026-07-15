@@ -25,6 +25,42 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+/** HTTP method → house-palette tint (DESIGN.md § 2, the API-docs carve-out
+ * on the State Speaks Rule): color encodes what the verb does to state —
+ * read is neutral, create green, mutate amber, destroy red — reusing the
+ * state vocabulary on this developer-facing surface only. The verb text is
+ * always present, so color is a redundant second cue, never the only one. */
+const METHOD_STYLES: Record<string, string> = {
+  GET: 'bg-raised text-muted',
+  POST: 'bg-accept-tint text-accept',
+  PUT: 'bg-running-tint text-running',
+  PATCH: 'bg-running-tint text-running',
+  DELETE: 'bg-fail-tint text-fail',
+};
+
+/** Fixed-width so the paths line up into a scannable column regardless of
+ * verb length; mono because a method is machine data (Mono Is Data Rule). */
+function MethodPill({ method }: { method: string }) {
+  return (
+    <span
+      className={`inline-flex w-16 shrink-0 items-center justify-center rounded-md py-0.5 font-data text-label font-semibold ${
+        METHOD_STYLES[method] ?? 'bg-raised text-ink'
+      }`}
+    >
+      {method}
+    </span>
+  );
+}
+
+/** Response status → state color by real meaning (on-spec State Speaks):
+ * 2xx accepted (green), 4xx/5xx failed (red), everything else neutral. */
+function statusStyle(status: string): string {
+  const lead = status[0];
+  if (lead === '2') return 'bg-accept-tint text-accept';
+  if (lead === '4' || lead === '5') return 'bg-fail-tint text-fail';
+  return 'bg-raised text-ink';
+}
+
 /** Renders a schema's structure where the view-model resolved it; falls
  * back to pretty-printed raw JSON for whatever construct it didn't (Mono
  * Is Data Rule — property names and every type/schema literal are mono,
@@ -114,17 +150,19 @@ function EndpointRow({
     <div className="border-t border-hairline first:border-t-0">
       <button
         aria-expanded={open}
-        className="flex w-full items-center gap-2 py-2 text-left"
+        className="flex w-full items-center gap-2.5 py-2 text-left"
         onClick={onToggle}
         type="button"
       >
         <Chevron open={open} />
-        <span className="w-14 shrink-0 font-data text-data font-semibold text-ink">{endpoint.method}</span>
+        <MethodPill method={endpoint.method} />
         <span className="shrink-0 truncate font-data text-data text-ink">{endpoint.path}</span>
-        {endpoint.summary && <span className="hidden truncate text-muted md:block">{endpoint.summary}</span>}
+        {endpoint.summary && (
+          <span className="ml-auto hidden truncate pl-3 text-right text-muted md:block">{endpoint.summary}</span>
+        )}
       </button>
       {open && (
-        <div className="mb-3 ml-6 flex flex-col gap-3">
+        <div className="mb-3 ml-[1.625rem] flex flex-col gap-3 border-l border-hairline pl-4">
           {endpoint.description && <p className="whitespace-pre-wrap text-muted">{endpoint.description}</p>}
           <ParamsTable parameters={endpoint.parameters} />
           {endpoint.requestBody && (
@@ -140,7 +178,7 @@ function EndpointRow({
                 {endpoint.responses.map((r) => (
                   <div key={r.status} className="border-l border-hairline pl-2">
                     <div className="flex items-center gap-2">
-                      <span className={`${chip} bg-raised font-data tracking-normal text-ink`}>{r.status}</span>
+                      <span className={`${chip} font-data tracking-normal ${statusStyle(r.status)}`}>{r.status}</span>
                       {r.description && <span className="text-muted">{r.description}</span>}
                     </div>
                     {r.schema && (
@@ -196,8 +234,11 @@ export function ApiReference() {
       {!error && !groups && <p className="text-muted">Loading reference…</p>}
       {groups && groups.length === 0 && <p className="text-muted">No endpoints documented.</p>}
       {groups?.map((group) => (
-        <div className="mb-4 last:mb-0" key={group.name}>
-          <h4 className="mb-1 text-title font-semibold">{group.name}</h4>
+        <div className="mb-6 last:mb-0" key={group.name}>
+          <h4 className="mb-1 flex items-baseline gap-2 border-b border-hairline pb-1.5 text-title font-semibold">
+            {group.name}
+            <span className="font-data text-data font-normal text-muted">{group.endpoints.length}</span>
+          </h4>
           <div>
             {group.endpoints.map((endpoint) => {
               const key = `${endpoint.method} ${endpoint.path}`;

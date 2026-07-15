@@ -161,7 +161,7 @@ Each state is a text color + a tint fill, per theme, rendered as pill chips, cou
 
 ### Named Rules
 **The One Indigo Rule.** The accent appears on at most 10% of any screen: primary action, active nav, selection, focus, the chart. If indigo is decorating something, it is wrong.
-**The State Speaks Rule.** Amber, green, red, and teal are forbidden outside their semantic meanings. A color the operator can't parse as a state is noise.
+**The State Speaks Rule.** Amber, green, red, and teal are forbidden outside their semantic meanings. A color the operator can't parse as a state is noise. *API-docs carve-out (2026-07-15):* on the developer-facing API reference only, HTTP-method pills reuse these tints to encode verb semantics (GET neutral · POST green = create · PUT/PATCH amber = mutate · DELETE red = destroy) and response codes color by class (2xx green · 4xx/5xx red). The verb/code text is always shown, so color is a redundant second cue; this surface carries no task-state chips to collide with.
 **The Zinc Rule.** Neutrals carry no hue in either theme. If a gray looks blue, it's a regression; warmth or coolness may only come from the accent and the state vocabulary.
 
 ## 3. Typography
