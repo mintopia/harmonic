@@ -10,11 +10,14 @@ export type IconName =
   | 'board'
   | 'table'
   | 'stats'
-  | 'channels'
   | 'api'
   | 'settings'
   | 'logout'
-  | 'chevrons-left';
+  | 'chevrons-left'
+  | 'chevron-down'
+  | 'sun'
+  | 'moon'
+  | 'circle-half';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
@@ -34,13 +37,6 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   // Bar chart, bottom-aligned.
   stats: <path d="M4.5 13.5V9M8 13.5V3.5M11.5 13.5V7" />,
-  // Broadcast: source dot between two waves.
-  channels: (
-    <>
-      <circle cx="8" cy="8" fill="currentColor" r="1.4" stroke="none" />
-      <path d="M4.6 11.4a4.8 4.8 0 0 1 0-6.8M11.4 4.6a4.8 4.8 0 0 1 0 6.8" />
-    </>
-  ),
   // Code brackets: the API surface, not the key — this is a view now, not a modal.
   api: <path d="M6 4.5 2.5 8l3.5 3.5M10 4.5 13.5 8l-3.5 3.5" />,
   // Gear: the config editor.
@@ -59,6 +55,24 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   // Rail collapse chevrons; mirror with -scale-x-100 to point right.
   'chevrons-left': <path d="M8 4.5 4.5 8 8 11.5M12 4.5 8.5 8l3.5 3.5" />,
+  // Disclosure caret; rotate -90 for the closed state.
+  'chevron-down': <path d="M4.5 6.25 8 9.75l3.5-3.5" />,
+  // Theme cycle: light.
+  sun: (
+    <>
+      <circle cx="8" cy="8" r="2.75" />
+      <path d="M8 1.75v1.5M8 12.75v1.5M14.25 8h-1.5M3.25 8h-1.5M12.4 3.6l-1 1M4.6 11.4l-1 1M12.4 12.4l-1-1M4.6 4.6l-1-1" />
+    </>
+  ),
+  // Theme cycle: dark.
+  moon: <path d="M13 9.6A5.4 5.4 0 0 1 6.4 3a5.4 5.4 0 1 0 6.6 6.6Z" />,
+  // Theme cycle: follow the system (half-and-half).
+  'circle-half': (
+    <>
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M8 2.25v11.5" />
+    </>
+  ),
 };
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {

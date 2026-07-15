@@ -11,11 +11,13 @@ import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
-import { Channels } from './components/Channels';
-import { Icon } from './components/Icon';
+import { BrandMark } from './components/BrandMark';
+import { Icon, type IconName } from './components/Icon';
+import { Switch } from './components/Switch';
 import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
-import { btnPrimary, labelType } from './ui';
+import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
+import { btnPrimary } from './ui';
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
 // must not leak into the mobile drawer, so JS needs the same threshold.
@@ -33,10 +35,22 @@ function useRailBreakpoint() {
 
 // Collapse only applies at the rail breakpoint; the mobile drawer always
 // shows icon + label, so collapsed styles are rail:-prefixed throughout.
+// Active is the sidebar's only accent: an indigo tint under indigo text.
 const railItem = (active: boolean, collapsed: boolean) =>
-  `flex w-full items-center gap-2 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
+  `flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
-  } ${active ? 'bg-raised text-accent-text' : 'text-muted hover:text-ink'}`;
+  } ${active ? 'bg-accent-tint font-semibold text-accent' : 'font-medium text-muted hover:bg-raised hover:text-ink'}`;
+
+const THEME_ICONS: Record<ThemePref, IconName> = {
+  system: 'circle-half',
+  light: 'sun',
+  dark: 'moon',
+};
+const THEME_LABELS: Record<ThemePref, string> = {
+  system: 'Theme: System',
+  light: 'Theme: Light',
+  dark: 'Theme: Dark',
+};
 
 /** Cost over the trailing 24h — the status strip's period cost. */
 function usePeriodCost(authed: boolean, tasks: Task[] | null) {
@@ -71,12 +85,16 @@ export function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
-  const [showChannels, setShowChannels] = useState(false);
   const [view, setView] = useState<View>('board');
   const [menuOpen, setMenuOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed(localStorage));
+  const [theme, setTheme] = useState<ThemePref>(() => loadTheme(localStorage));
   const railDesktop = useRailBreakpoint();
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    applyTheme(document.documentElement, theme);
+  }, [theme]);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -136,6 +154,12 @@ export function App() {
     storeRailCollapsed(localStorage, next);
   };
 
+  const cycleTheme = () => {
+    const next = nextTheme(theme);
+    setTheme(next);
+    storeTheme(localStorage, next);
+  };
+
   // Collapsed items keep their accessible name and gain a native tooltip;
   // when the label is visible neither is needed — below the breakpoint the
   // drawer shows labels, so the attributes must not apply there.
@@ -166,8 +190,8 @@ export function App() {
       <div className="mt-2 hidden border-t border-hairline pt-2 rail:flex rail:flex-col">
         <button
           aria-expanded={!railCollapsed}
-          aria-label={railCollapsed ? 'Expand rail' : 'Collapse rail'}
-          title={railCollapsed ? 'Expand rail' : 'Collapse rail'}
+          aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className={railItem(false, railCollapsed)}
           onClick={toggleRail}
         >
@@ -176,9 +200,9 @@ export function App() {
         </button>
       </div>
       <div className="mt-2 flex flex-col gap-0.5 border-t border-hairline pt-2 rail:mt-0">
-        <button {...railItemName('Channels')} className={railItem(false, railCollapsed)} onClick={() => { setShowChannels(true); setMenuOpen(false); }}>
-          <Icon name="channels" />
-          <span className={railLabel}>Channels</span>
+        <button {...railItemName(THEME_LABELS[theme])} className={railItem(false, railCollapsed)} onClick={cycleTheme}>
+          <Icon name={THEME_ICONS[theme]} />
+          <span className={railLabel}>{THEME_LABELS[theme]}</span>
         </button>
         <button
           {...railItemName('Log out')}
@@ -194,24 +218,24 @@ export function App() {
 
   return (
     <div className="flex min-h-screen flex-col rail:flex-row">
-      {/* The rail: navigation lives here; above the working view is status only. */}
+      {/* The sidebar: navigation lives here; above the working view is status only. */}
       <aside
-        className={`border-b border-hairline rail:flex rail:shrink-0 rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
-          railCollapsed ? 'rail:w-9' : 'rail:w-[200px]'
+        className={`border-b border-hairline bg-shell rail:flex rail:shrink-0 rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
+          railCollapsed ? 'rail:w-12' : 'rail:w-[200px]'
         }`}
       >
-        <div className={`flex items-center px-3 py-2.5 rail:px-2 rail:pb-4 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}>
-          <span className={`whitespace-nowrap px-1 text-title font-semibold ${railCollapsed ? 'rail:hidden' : ''}`}>Harmonic</span>
-          {railCollapsed && (
-            <span className="hidden text-title font-semibold rail:inline" title="Harmonic">
-              <span aria-hidden="true">AD</span>
-              <span className="sr-only">Harmonic</span>
-            </span>
-          )}
+        <div
+          className={`flex items-center gap-2.5 px-4 py-3 rail:px-3 rail:pb-5 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}
+        >
+          <BrandMark />
+          <span className={`whitespace-nowrap text-title font-bold tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}>
+            Harmonic
+          </span>
+          {railCollapsed && <span className="sr-only">Harmonic</span>}
           <button
             aria-expanded={menuOpen}
             aria-label="Menu"
-            className="ml-auto rounded-md px-2.5 py-1.5 text-muted hover:text-ink rail:hidden"
+            className="ml-auto rounded-md px-2.5 py-1.5 font-medium text-muted hover:text-ink rail:hidden"
             onClick={() => setMenuOpen((open) => !open)}
           >
             Menu
@@ -219,7 +243,7 @@ export function App() {
         </div>
         <div
           className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0 ${
-            railCollapsed ? 'rail:px-1' : ''
+            railCollapsed ? 'rail:px-1.5' : ''
           }`}
         >
           {navItems}
@@ -227,44 +251,51 @@ export function App() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-hairline px-4 py-2.5">
+        <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-hairline bg-shell px-6 py-3">
           {config && (
-            <button
-              onClick={() =>
-                api
-                  .updateConfig({ autoRunner: { enabled: !config.autoRunner.enabled } })
-                  .then(setConfig, (e) => alert(e.message))
+            <Switch
+              checked={config.autoRunner.enabled}
+              label="Auto-runner"
+              onChange={(enabled) =>
+                api.updateConfig({ autoRunner: { enabled } }).then(setConfig, (e) => alert(e.message))
               }
-              aria-pressed={config.autoRunner.enabled}
-              className={`rounded-md ${labelType} text-muted hover:text-ink`}
-              title={`Max concurrent runs: ${config.autoRunner.maxConcurrentRuns}`}
             >
-              Auto-Runner <span className={config.autoRunner.enabled ? 'text-accent-text' : ''}>{config.autoRunner.enabled ? 'on' : 'off'}</span>
-            </button>
+              <span
+                className="font-medium text-muted"
+                title={`Max concurrent runs: ${config.autoRunner.maxConcurrentRuns}`}
+              >
+                Auto-runner
+              </span>
+            </Switch>
           )}
           {config && (
-            <span className={`${labelType} ${runningCount > 0 ? 'text-running' : 'text-muted'}`}>
-              {runningCount}/{config.autoRunner.maxConcurrentRuns} running
+            <span className="flex items-center gap-2 text-muted">
+              <span
+                aria-hidden="true"
+                className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running' : 'bg-faint'}`}
+              />
+              <span>
+                <span className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>
+                  {runningCount}/{config.autoRunner.maxConcurrentRuns}
+                </span>{' '}
+                running
+              </span>
             </span>
           )}
           {cost24h && (
-            <span className={`${labelType} text-muted`} title="Cost over the last 24 hours">
-              24h <span className="font-data normal-case tracking-normal">{cost24h}</span>
+            <span className="text-muted" title="Cost over the last 24 hours">
+              <span className="font-data text-data font-semibold text-ink">{cost24h}</span> today
             </span>
           )}
           <div className="flex-1" />
           <button onClick={() => setEditing('new')} className={btnPrimary}>
-            New Task
+            New task
           </button>
         </header>
 
-        {error && (
-          <div className="mx-4 mt-3 rounded-md border border-fail px-4 py-2 text-fail">
-            {error}
-          </div>
-        )}
+        {error && <div className="mx-6 mt-4 rounded-lg bg-fail-tint px-4 py-2 text-fail">{error}</div>}
 
-        <main className="min-w-0 flex-1 px-4 py-3">
+        <main className="min-w-0 flex-1 px-6 py-5">
           {view === 'board' && (
             <Board tasks={taskList} loading={tasks === null} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
           )}
@@ -276,7 +307,6 @@ export function App() {
       </div>
 
       {openTask && <TaskDetail task={openTask} onClose={() => setOpenTask(null)} />}
-      {showChannels && <Channels onClose={() => setShowChannels(false)} />}
 
       {editing !== null && config && (
         <TaskForm
