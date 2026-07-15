@@ -54,7 +54,7 @@ describe('conversation walking skeleton (issue 10)', () => {
       text: JSON.stringify({ updates, delayMs: 10 }),
     });
     expect(turn.status).toBe(200);
-    expect(turn.body).toEqual({ ok: true });
+    expect(turn.body).toEqual({ ok: true, queued: false });
 
     // The harness spawned and the ACP session was created.
     await waitFor(async () => (await server.api('GET', `/api/conversations/${convo.id}`)).body.sessionId !== null);

@@ -42,6 +42,9 @@ const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
 let sessionNewParams = null;
 let setModelParams = null;
+// Set by a session/cancel notification; the in-flight prompt loop checks it
+// and completes the turn with stopReason 'cancelled' (issue 14).
+let cancelRequested = false;
 
 async function handlePrompt(msg) {
   let scenario;
@@ -60,6 +63,7 @@ async function handlePrompt(msg) {
     };
   }
   const delayMs = scenario.delayMs ?? 5;
+  cancelRequested = false;
 
   // Simulate an agent editing files in its working directory.
   for (const [rel, content] of Object.entries(scenario.writeFiles ?? {})) {
@@ -70,7 +74,15 @@ async function handlePrompt(msg) {
 
   for (const update of scenario.updates ?? []) {
     await sleep(delayMs);
+    if (cancelRequested) break;
     notify('session/update', { sessionId: msg.params.sessionId, update });
+  }
+
+  // Interrupted mid-turn (issue 14): complete the prompt with a cancelled
+  // stop reason and run none of the trailing scenario steps.
+  if (cancelRequested) {
+    send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'cancelled' } });
+    return;
   }
 
   if (scenario.echoSessionNew) {
@@ -199,6 +211,9 @@ rl.on('line', (line) => {
       break;
     case 'session/prompt':
       handlePrompt(msg);
+      break;
+    case 'session/cancel':
+      cancelRequested = true;
       break;
     default:
       if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: null });

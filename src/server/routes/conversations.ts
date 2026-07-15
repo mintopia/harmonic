@@ -15,6 +15,12 @@ const createConversationInputSchema = z.object({
 });
 
 const turnInputSchema = z.object({ text: z.string().min(1) });
+const turnResponseSchema = z.object({
+  ok: z.literal(true),
+  /** True when a Turn was already running and this message was queued as the next Turn (issue 14). */
+  queued: z.boolean(),
+});
+const interruptInputSchema = z.object({ text: z.string().optional() }).nullish();
 
 const permissionParamsSchema = z.object({ id: z.coerce.number().int(), reqId: z.string().min(1) });
 const answerPermissionInputSchema = z.object({
@@ -145,15 +151,34 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. Operator only; not reachable with a run-scoped key.',
+          'Send an operator Turn. Spawns the harness on the first Turn and keeps it warm across Turns; the reply streams over the WebSocket. If a Turn is already running, the message is queued and sent as the next Turn (issue 14). Operator only; not reachable with a run-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: turnInputSchema,
+        response: { 200: turnResponseSchema, 400: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema },
+      },
+    },
+    async (req) => {
+      const { queued } = await ctx.conversationDriver.submitTurn(req.params.id, req.body.text);
+      return { ok: true as const, queued };
+    },
+  );
+
+  app.post(
+    '/conversations/:id/interrupt',
+    {
+      schema: {
+        tags: ['Conversations'],
+        description:
+          'Steer a running Turn (issue 14): cancel the in-flight Turn via ACP session/cancel and re-prompt with `text` as the next Turn, or just stop it when `text` is empty. The cancelled Turn records a cancelled stop reason. Operator only; not reachable with a run-scoped key.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: idParamsSchema,
+        body: interruptInputSchema,
         response: { 200: okResponseSchema, 400: errorResponseSchema, 404: errorResponseSchema, 409: errorResponseSchema },
       },
     },
     async (req) => {
-      await ctx.conversationDriver.submitTurn(req.params.id, req.body.text);
+      await ctx.conversationDriver.interrupt(req.params.id, req.body?.text);
       return { ok: true } as const;
     },
   );

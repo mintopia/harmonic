@@ -52,6 +52,12 @@ function EventLine({ event }: { event: StreamEvent }) {
       </div>
     );
   }
+  if (event.type === 'lifecycle' && event.payload.event === 'finished' && event.payload.stopReason === 'cancelled') {
+    // Honest, not "finished (cancelled)" (issue #14): the operator
+    // interrupted this Turn, it didn't wrap up on its own — the steering
+    // message that follows opens a new Turn, not a continuation.
+    return <div className="text-muted">cancelled</div>;
+  }
   if (event.payload.event === 'model_mismatch') {
     // Q7: the model setting shown must be real — the harness ran
     // something other than the task's pin. Harness metadata, not a

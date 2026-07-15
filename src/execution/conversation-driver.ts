@@ -69,8 +69,10 @@ interface ActiveConversation {
   conversationId: number;
   child: ChildProcess;
   driver: AcpDriver;
-  /** A Turn is being prompted right now — one at a time per Conversation (issue 14 queues). */
+  /** A Turn is being prompted right now — one at a time per Conversation. */
   turning: boolean;
+  /** Follow-up Turns queued while one is in flight, sent FIFO on completion (issue 14). */
+  queue: string[];
 }
 
 /**
@@ -119,25 +121,61 @@ export class ConversationDriver {
    * Send one operator Turn. Spawns the harness on the first Turn (awaited,
    * so spawn/handshake errors reach the caller); the reply then streams
    * over the firehose while this returns. A second Turn reuses the warm
-   * session.
+   * session. If a Turn is already in flight, the message is queued and sent
+   * as the next Turn on completion (issue 14) — `queued` reports which.
    */
-  async submitTurn(conversationId: number, text: string): Promise<void> {
+  async submitTurn(conversationId: number, text: string): Promise<{ queued: boolean }> {
     const convo = this.store.get(conversationId);
     if (convo.state !== 'active') {
       throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
     }
     let entry = this.active.get(conversationId);
     if (entry?.turning) {
-      // Issue 14 replaces this with queue-or-interrupt steering.
-      throw new DomainError('invalid_state', 'a turn is already in progress');
+      entry.queue.push(text);
+      return { queued: true };
     }
     if (!entry) entry = await this.spawn(convo);
+    this.beginTurn(entry, text);
+    return { queued: false };
+  }
 
+  /**
+   * Steer a running Turn (issue 14): cancel the in-flight Turn via ACP
+   * session/cancel and re-prompt with `text` as the next Turn — or just stop
+   * it, when `text` is empty. The transcript stays honest: the cancelled
+   * Turn records a `cancelled` stop reason and the steering message opens a
+   * new Turn, no illusion of seamless mid-thought redirection.
+   */
+  async interrupt(conversationId: number, text?: string): Promise<void> {
+    const convo = this.store.get(conversationId);
+    if (convo.state !== 'active') {
+      throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
+    }
+    const steer = text && text.trim().length > 0 ? text : undefined;
+    const entry = this.active.get(conversationId);
+    if (entry?.turning) {
+      // The redirect supersedes any queued follow-ups; the cancelled Turn
+      // resolves and drainQueue then runs the steering message (or nothing).
+      entry.queue = steer ? [steer] : [];
+      entry.driver.cancel();
+      return;
+    }
+    // Nothing in flight: a steering message just starts a Turn; empty is a no-op.
+    if (steer !== undefined) await this.submitTurn(conversationId, steer);
+  }
+
+  /** Record the operator's message and drive the Turn, streaming the reply over the firehose. */
+  private beginTurn(entry: ActiveConversation, text: string): void {
     entry.turning = true;
-    this.record(conversationId, 'user_turn', { text });
-    // Stream the reply asynchronously — the operator watches it over the WS,
-    // the HTTP call returns as soon as the Turn is under way.
+    this.record(entry.conversationId, 'user_turn', { text });
     void this.runTurn(entry, text);
+  }
+
+  /** After a Turn settles, send the next queued follow-up, if any (issue 14). */
+  private drainQueue(entry: ActiveConversation): void {
+    if (!this.active.has(entry.conversationId)) return; // ended or crashed
+    const next = entry.queue.shift();
+    if (next !== undefined) this.beginTurn(entry, next);
   }
 
   /**
@@ -231,7 +269,7 @@ export class ConversationDriver {
       },
     });
 
-    const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false };
+    const entry: ActiveConversation = { conversationId: convo.id, child, driver, turning: false, queue: [] };
     this.active.set(convo.id, entry);
     try {
       const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
@@ -270,6 +308,8 @@ export class ConversationDriver {
       this.store.end(entry.conversationId);
     } finally {
       entry.turning = false;
+      // Send the next queued follow-up, if the Conversation is still warm.
+      this.drainQueue(entry);
     }
   }
 

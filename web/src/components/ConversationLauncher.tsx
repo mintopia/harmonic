@@ -3,6 +3,7 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import type { AppConfig, Conversation, ConversationEvent } from '../types';
 import { segmentTranscript } from '../conversation-transcript-model';
+import { isTurnRunning } from '../conversation-steering-model';
 import {
   addPendingPermission,
   chooseAlwaysAllowOptionId,
@@ -24,7 +25,16 @@ import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
 import { Icon } from './Icon';
 import { toastError } from '../toast';
-import { btnPrimary, btnQuiet, field, headline, labelType, permissionOptionButtonClass, toolChip } from '../ui';
+import {
+  btnPrimary,
+  btnQuiet,
+  btnQuietDestructive,
+  field,
+  headline,
+  labelType,
+  permissionOptionButtonClass,
+  toolChip,
+} from '../ui';
 
 /** One cell of the telemetry strip: muted label over a Data-role value —
  * the same "label over figure" shape StatsPage's summary card uses, just at
@@ -220,11 +230,16 @@ function PermissionPrompt({
 function Composer({
   config,
   conversation,
+  events,
   onSend,
 }: {
   config: AppConfig;
   conversation: Conversation | null;
-  onSend: (fields: { harness: string; model: string; workingDir: string }, text: string) => Promise<void>;
+  events: ConversationEvent[];
+  onSend: (
+    fields: { harness: string; model: string; workingDir: string },
+    text: string,
+  ) => Promise<{ queued: boolean }>;
 }) {
   // Defaulted from config exactly like TaskForm — only meaningful before a
   // conversation exists; once spawned the process's harness/model/workingDir
@@ -234,9 +249,22 @@ function Composer({
   const [workingDir, setWorkingDir] = useState(config.defaults.workingDir);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [interrupting, setInterrupting] = useState(false);
+  // A transient, honest "this landed in the queue, not on the wire yet"
+  // notice (issue #14) — cleared on a timer, like Toaster's own auto-dismiss,
+  // rather than left to linger once the queued Turn has long since started.
+  const [queued, setQueued] = useState(false);
+  const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (queuedTimer.current) clearTimeout(queuedTimer.current);
+  }, []);
 
   const locked = conversation !== null;
   const ended = conversation?.state === 'ended';
+  // Whether the panel offers Interrupt at all (issue #14): only meaningful
+  // once a Turn can be running, i.e. an active, already-spawned conversation.
+  const running = conversation?.state === 'active' && isTurnRunning(events);
   const models = config.harnesses[harness]?.models ?? [];
 
   const pickHarness = (h: string) => {
@@ -250,12 +278,37 @@ function Composer({
     if (!trimmed || busy || ended) return;
     setBusy(true);
     try {
-      await onSend({ harness, model, workingDir }, trimmed);
+      const result = await onSend({ harness, model, workingDir }, trimmed);
       setText('');
+      if (result.queued) {
+        setQueued(true);
+        if (queuedTimer.current) clearTimeout(queuedTimer.current);
+        queuedTimer.current = setTimeout(() => setQueued(false), 4000);
+      }
     } catch (e) {
       toastError(e);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Cancels the in-flight Turn (ACP session/cancel): whatever is still
+  // typed re-prompts as the next Turn, or — composer empty — this just
+  // stops it. Either way the transcript, not this control, is what tells
+  // the honest story afterwards (a `cancelled` stop reason, then a fresh
+  // Turn if there was text to send).
+  const interrupt = async () => {
+    if (!conversation || interrupting) return;
+    setInterrupting(true);
+    try {
+      const trimmed = text.trim();
+      await api.interrupt(conversation.id, trimmed || undefined);
+      setText('');
+      setQueued(false);
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setInterrupting(false);
     }
   };
 
@@ -310,16 +363,41 @@ function Composer({
           </div>
         </div>
       )}
+      {/* Transient and honest (issue #14): this message really did land in
+          the queue rather than start immediately — it clears itself once
+          that's stopped being new information, same register as the
+          cold-cache status line above (motion-safe-gated like Toaster's). */}
+      {queued && (
+        <p role="status" className="mb-1.5 text-label text-muted motion-safe:animate-[toast-in_150ms_var(--ease-ledger)]">
+          Queued — will send once the current turn finishes.
+        </p>
+      )}
       <div className="flex items-end gap-2">
         <textarea
           aria-label="Message"
           className={`${field} min-h-16 flex-1 resize-none`}
           value={text}
           disabled={ended}
-          placeholder={ended ? 'Conversation ended.' : 'Message the agent… (Enter to send, Shift+Enter for a newline)'}
+          placeholder={
+            ended
+              ? 'Conversation ended.'
+              : running
+                ? 'Message the agent… (Enter queues it for after this turn)'
+                : 'Message the agent… (Enter to send, Shift+Enter for a newline)'
+          }
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
         />
+        {running && (
+          <button
+            type="button"
+            className={`${btnQuietDestructive} px-1 pb-2.5`}
+            disabled={interrupting}
+            onClick={interrupt}
+          >
+            {text.trim() ? 'Interrupt' : 'Stop'}
+          </button>
+        )}
         <button aria-label="Send" className={btnPrimary} disabled={busy || ended || !text.trim()} onClick={send}>
           <Icon name="send" />
         </button>
@@ -399,7 +477,8 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
       setConversation(created);
       setConversationId(id);
     }
-    await api.sendTurn(id, text);
+    const { queued } = await api.sendTurn(id, text);
+    return { queued };
   };
 
   const end = () => {
@@ -486,7 +565,9 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
         />
       ))}
 
-      {config && composerReady && <Composer config={config} conversation={conversation} onSend={send} />}
+      {config && composerReady && (
+        <Composer config={config} conversation={conversation} events={events} onSend={send} />
+      )}
     </div>
   );
 }

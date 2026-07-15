@@ -73,9 +73,18 @@ export const api = {
     request<Conversation>('POST', '/api/conversations', input),
   conversationEvents: (id: number) =>
     request<{ events: ConversationEvent[] }>('GET', `/api/conversations/${id}/events`),
+  // `queued: true` (issue #14's LOCKED contract) means a Turn was already
+  // running server-side and this message was enqueued as the next Turn
+  // rather than started immediately.
   sendTurn: (id: number, text: string) =>
-    request<{ ok: true }>('POST', `/api/conversations/${id}/turns`, { text }),
+    request<{ ok: true; queued: boolean }>('POST', `/api/conversations/${id}/turns`, { text }),
   endConversation: (id: number) => request<Conversation>('POST', `/api/conversations/${id}/end`),
+  // Cancels the in-flight Turn (ACP session/cancel); a non-empty `text`
+  // becomes the next Turn, an empty/omitted one just stops it (issue #14).
+  // `text` is included in the body only when non-empty, mirroring
+  // answerPermission's optional `remember` below.
+  interrupt: (id: number, text?: string) =>
+    request<{ ok: true }>('POST', `/api/conversations/${id}/interrupt`, text ? { text } : {}),
   // remember (issue #13 / ADR-0007) is omitted from the body entirely unless
   // true — the escalation is opt-in, so the common one-off answer stays a
   // plain { optionId } post exactly as before.
