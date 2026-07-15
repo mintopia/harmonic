@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { api } from '../api';
 import type { Task } from '../types';
 import { btnAccept, btnQuiet as quiet, btnReject, card } from '../ui';
+import { RejectDialog } from './RejectDialog';
 
 /** One truncating Data-role line: id, harness · model, then only the
  * facts that deviate from defaults (isolation, deps, cost). Metadata is
@@ -26,6 +28,7 @@ export function TaskCard({
 }) {
   const editable = task.state === 'draft' || task.state === 'ready';
   const cancellable = !['completed', 'cancelled'].includes(task.state);
+  const [rejecting, setRejecting] = useState(false);
 
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, (e) => alert(e.message));
 
@@ -82,10 +85,7 @@ export function TaskCard({
             <button className={btnAccept} onClick={act(() => api.acceptTask(task.id))}>
               Accept
             </button>
-            <button
-              className={btnReject}
-              onClick={act(() => api.rejectTask(task.id, window.prompt('Rejection feedback:') ?? undefined))}
-            >
+            <button className={btnReject} onClick={() => setRejecting(true)}>
               Reject
             </button>
           </>
@@ -96,6 +96,16 @@ export function TaskCard({
           </button>
         )}
       </div>
+      {rejecting && (
+        <RejectDialog
+          taskId={task.id}
+          onClose={() => setRejecting(false)}
+          onDone={() => {
+            setRejecting(false);
+            onChanged();
+          }}
+        />
+      )}
     </article>
   );
 }
