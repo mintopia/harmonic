@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Git } from './git.js';
 import { adapterFor } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, type RunUsage } from './usage.js';
+import { promptForTask } from './run-prompt.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpConnection } from '../acp/connection.js';
@@ -251,7 +252,7 @@ export class Runner {
       const result = (await Promise.race([
         connection.request('session/prompt', {
           sessionId: session.sessionId,
-          prompt: [{ type: 'text', text: task.prompt }],
+          prompt: [{ type: 'text', text: promptForTask(task) }],
         }),
         exited,
       ])) as { stopReason?: string; usage?: Record<string, unknown> };
