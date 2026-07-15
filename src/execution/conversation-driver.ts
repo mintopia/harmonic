@@ -7,9 +7,31 @@ import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
 import type { ConversationRow } from '../db/schema.js';
 
+export interface PendingPermissionBroadcast {
+  conversationId: number;
+  reqId: string;
+  /** The ACP session/request_permission params (toolCall + options). */
+  request: unknown;
+}
+
 export interface ConversationDriverEvents {
   /** Fired after every conversation event is persisted (live streaming hook). */
   onEvent?: (event: PersistedConversationEvent) => void;
+  /**
+   * A Harness is asking permission and the Turn is now blocked on the
+   * operator (ADR-0007). Broadcast so the panel can prompt; the request is
+   * answered out-of-band via `answerPermission`.
+   */
+  onPermissionRequest?: (pending: PendingPermissionBroadcast) => void;
+}
+
+type PermissionOutcome = { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' };
+
+interface PendingPermission {
+  conversationId: number;
+  request: unknown;
+  /** Resolves the held ACP request_permission — the Harness's Turn unblocks. */
+  resolve: (outcome: PermissionOutcome) => void;
 }
 
 export interface ConversationDriverOptions {
@@ -32,10 +54,15 @@ interface ActiveConversation {
  * one prompt; a Conversation prompts many times on one session.
  *
  * Direct mode only — no Isolation Mode (ADR-0006). Permissions are
- * auto-approved in this slice; issue 11 makes them human-in-the-loop.
+ * human-in-the-loop: the driver holds each session/request_permission open
+ * and prompts the operator (ADR-0007), the inverse of the auto-approving
+ * Runner.
  */
 export class ConversationDriver {
   private readonly active = new Map<number, ActiveConversation>();
+  /** Held ACP permission requests awaiting an operator decision, by request id. */
+  private readonly pendingPermissions = new Map<string, PendingPermission>();
+  private nextPermissionId = 0;
   private readonly events: ConversationDriverEvents;
 
   constructor(
@@ -80,6 +107,25 @@ export class ConversationDriver {
     void this.runTurn(entry, text);
   }
 
+  /**
+   * Answer a held permission request (ADR-0007). `optionId` is the ACP
+   * option the operator chose — its kind (allow_once / allow_always /
+   * reject_*) is the Harness's to interpret; "Allow for this conversation"
+   * is just the native allow_always option, remembered for the session.
+   */
+  answerPermission(conversationId: number, reqId: string, optionId: string): void {
+    const pending = this.pendingPermissions.get(reqId);
+    if (!pending || pending.conversationId !== conversationId) {
+      throw new DomainError('not_found', `no pending permission '${reqId}' for conversation ${conversationId}`);
+    }
+    this.pendingPermissions.delete(reqId);
+    const outcome = { outcome: 'selected' as const, optionId };
+    pending.resolve(outcome);
+    // Record the resolution for the transcript/replay; reqId lets the panel
+    // clear the matching prompt.
+    this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId });
+  }
+
   /** Explicit End: stop the harness and mark the Conversation ended. */
   end(conversationId: number): ConversationRow {
     const entry = this.active.get(conversationId);
@@ -120,19 +166,10 @@ export class ConversationDriver {
     const driver = new AcpDriver(child, {
       onSessionUpdate: (update) => this.record(convo.id, 'session_update', update),
       onRequest: async (method, params) => {
-        if (method === 'session/request_permission') {
-          // TEMPORARY (issue 11): auto-approve so the skeleton streams
-          // without blocking. Interactive human-in-the-loop permissions
-          // replace this — the driver will hold the request open instead.
-          const options = (params as any)?.options ?? [];
-          const pick =
-            options.find((o: any) => o.kind === 'allow_always') ??
-            options.find((o: any) => o.kind === 'allow_once') ??
-            options[0];
-          const outcome = pick ? { outcome: 'selected', optionId: pick.optionId } : { outcome: 'cancelled' };
-          this.record(convo.id, 'permission_request', { request: params, outcome });
-          return { outcome };
-        }
+        // Human-in-the-loop (ADR-0007): hold the request open and prompt
+        // the operator; the Turn genuinely blocks until they answer. The
+        // deliberate inverse of the Runner, which auto-approves.
+        if (method === 'session/request_permission') return this.holdPermission(convo.id, params);
         return null;
       },
     });
@@ -176,6 +213,30 @@ export class ConversationDriver {
     }
   }
 
+  /** Register a held permission request and prompt the operator; the returned promise resolves on their answer. */
+  private holdPermission(conversationId: number, request: unknown): Promise<PermissionOutcome> {
+    const reqId = `perm-${++this.nextPermissionId}`;
+    return new Promise<PermissionOutcome>((resolve) => {
+      this.pendingPermissions.set(reqId, { conversationId, request, resolve });
+      this.events.onPermissionRequest?.({ conversationId, reqId, request });
+    });
+  }
+
+  /**
+   * A pending request that outlives its process (End/crash) must not leak:
+   * cancel it, so the held ACP promise settles and the panel clears the
+   * prompt.
+   */
+  private cancelPendingPermissions(conversationId: number): void {
+    for (const [reqId, pending] of this.pendingPermissions) {
+      if (pending.conversationId !== conversationId) continue;
+      this.pendingPermissions.delete(reqId);
+      const outcome = { outcome: 'cancelled' as const };
+      pending.resolve(outcome);
+      this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId });
+    }
+  }
+
   private record(
     conversationId: number,
     type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn',
@@ -186,6 +247,7 @@ export class ConversationDriver {
   }
 
   private teardown(entry: ActiveConversation): void {
+    this.cancelPendingPermissions(entry.conversationId);
     this.active.delete(entry.conversationId);
     this.kill(entry);
     entry.driver.fail(new Error('conversation ended'));

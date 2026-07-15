@@ -26,6 +26,9 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
       ctx.bus.on('conversation_changed', (conversation) =>
         send({ type: 'conversation_changed', conversation: conversationToApi(ctx, conversation) })),
+      // A Harness is blocked on the operator's permission decision (ADR-0007);
+      // answered via POST /conversations/:id/permissions/:reqId.
+      ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
     ];
     socket.on('close', () => unsubscribes.forEach((u) => u()));
   });

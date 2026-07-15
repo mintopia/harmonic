@@ -1,4 +1,4 @@
-import type { TaskState } from './types';
+import type { PermissionAcpRequest, TaskState } from './types';
 
 /** One component vocabulary (DESIGN.md § Components); screens share these
  * class strings so a button or field never drifts between surfaces. */
@@ -10,6 +10,12 @@ export const btnGhost =
   'rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-ink transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
 
 export const btnQuiet = 'font-medium text-muted transition-colors duration-150 hover:text-ink';
+
+/** Quiet, but destructive (§5 Buttons: "destructive quiet actions hover to
+ * fail red") — the Reject option on a permission prompt, cancel/remove
+ * links elsewhere. */
+export const btnQuietDestructive =
+  'font-medium text-muted transition-colors duration-150 hover:text-fail disabled:opacity-50 disabled:hover:text-muted';
 
 /** Review-gate actions: tinted pills, the loudest thing on a card. */
 export const btnAccept =
@@ -38,6 +44,36 @@ export const card = 'rounded-lg bg-surface shadow-card';
 
 /** Uppercase micro-pill; pass the tint classes for semantic states. */
 export const chip = 'rounded-full px-2 py-0.5 text-label font-medium uppercase tracking-wide';
+
+/** Tool call / permission chip — harness metadata, Tool Teal (the State
+ * Speaks Rule). Shared by EventStream's tool-call lines and the permission
+ * prompt (issue #11). */
+export const toolChip = `${chip} bg-tool-tint text-tool`;
+
+/** Permission-prompt buttons (issue #11): the ACP request's `allow_once` /
+ * `allow_always` options as a review-gate-style tinted pill (affirmative,
+ * loudest) and a secondary ghost variant — both in Tool Teal, since this is
+ * harness chrome, not a task-state action, so it must not read as the
+ * accept/reject task vocabulary or spend the One Indigo Rule's budget. */
+export const btnPermAllow =
+  'rounded-md bg-tool-tint px-3.5 py-2 font-semibold text-tool transition-opacity duration-150 hover:opacity-80 disabled:opacity-50 disabled:hover:opacity-100';
+export const btnPermAllowSecondary =
+  'rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-tool transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
+
+const PERMISSION_OPTION_STYLES: Record<PermissionAcpRequest['options'][number]['kind'], string> = {
+  allow_once: btnPermAllow,
+  allow_always: btnPermAllowSecondary,
+  reject_once: btnQuietDestructive,
+  reject_always: btnQuietDestructive,
+};
+
+/** Maps an ACP option's `kind` to its button treatment (issue #11): allow
+ * once is the affirmative pill, allow-always a secondary ghost, both
+ * reject kinds the quiet-destructive link — never the task-review
+ * accept/reject vocabulary (that means something else: Task state). */
+export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'][number]['kind']): string {
+  return PERMISSION_OPTION_STYLES[kind] ?? btnQuiet;
+}
 
 /** State chips: tinted fill behind the state's text color (the State
  * Speaks Rule — only true states get a color). */

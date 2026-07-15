@@ -1,11 +1,16 @@
-import type { Conversation, ConversationEvent, Run, RunEvent, Task } from './types';
+import type { Conversation, ConversationEvent, PermissionAcpRequest, Run, RunEvent, Task } from './types';
 
 export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
   | { type: 'run_changed'; run: Run }
   | { type: 'task_changed'; task: Task }
   | { type: 'conversation_event'; event: ConversationEvent }
-  | { type: 'conversation_changed'; conversation: Conversation };
+  | { type: 'conversation_changed'; conversation: Conversation }
+  // Issue #11: the Harness is blocked on this ACP permission request until
+  // the operator answers (POST .../permissions/:reqId) or the conversation
+  // ends/crashes — the panel clears it on a matching resolved
+  // `conversation_event` (payload.reqId) or on conversation end.
+  | { type: 'permission_request'; conversationId: number; reqId: string; request: PermissionAcpRequest };
 
 /** Auto-reconnecting subscription to the server's event firehose. */
 export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { ConversationRow, RunRow, TaskRow } from '../db/schema.js';
 import type { PersistedRunEvent } from '../domain/runs.js';
 import type { PersistedConversationEvent } from '../domain/conversations.js';
+import type { PendingPermissionBroadcast } from '../execution/conversation-driver.js';
 
 export interface BusEvents {
   run_event: (event: PersistedRunEvent) => void;
@@ -9,6 +10,7 @@ export interface BusEvents {
   task_changed: (task: TaskRow) => void;
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
+  permission_request: (pending: PendingPermissionBroadcast) => void;
 }
 
 /** In-process pub/sub feeding the WebSocket stream (and later, notifications). */

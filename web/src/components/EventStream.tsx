@@ -1,9 +1,5 @@
 import { coalesceEvents, type StreamEvent } from '../event-stream-model';
-import { chip } from '../ui';
-
-/* Tool calls and permission traffic are harness/tooling metadata — tool
- * teal territory (the State Speaks Rule). */
-const toolChip = `${chip} bg-tool-tint text-tool`;
+import { chip, toolChip } from '../ui';
 
 function ToolCallLine({ payload }: { payload: any }) {
   return (

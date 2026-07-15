@@ -110,6 +110,28 @@ export interface ConversationEvent {
   payload: any;
 }
 
+/**
+ * One selectable resolution to a pending ACP permission request (issue #11's
+ * LOCKED contract). `allow_always`/`reject_always` persist beyond this one
+ * tool call within the harness session; the "always allow in {dir}" variant
+ * is issue #13 and deliberately out of scope here — only the options the
+ * ACP request actually offers are ever rendered.
+ */
+export interface PermissionAcpRequestOption {
+  optionId: string;
+  name: string;
+  kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+}
+
+/** The ACP permission request the Harness is blocked on, carried verbatim
+ * on the `permission_request` WS message and, once answered, on the
+ * resolving `conversation_event`'s payload (`{ request, outcome, reqId }`). */
+export interface PermissionAcpRequest {
+  sessionId: string;
+  toolCall?: { toolCallId?: string; title?: string; kind?: string };
+  options: PermissionAcpRequestOption[];
+}
+
 export interface Channel {
   id: number;
   name: string;

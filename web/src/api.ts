@@ -66,6 +66,8 @@ export const api = {
   sendTurn: (id: number, text: string) =>
     request<{ ok: true }>('POST', `/api/conversations/${id}/turns`, { text }),
   endConversation: (id: number) => request<Conversation>('POST', `/api/conversations/${id}/end`),
+  answerPermission: (conversationId: number, reqId: string, optionId: string) =>
+    request<{ ok: true }>('POST', `/api/conversations/${conversationId}/permissions/${reqId}`, { optionId }),
   channels: () => request<{ channels: Channel[] }>('GET', '/api/channels'),
   createChannel: (input: { name: string; type: Channel['type']; config: Record<string, unknown> }) =>
     request<Channel>('POST', '/api/channels', input),

@@ -16,6 +16,9 @@ const createConversationInputSchema = z.object({
 
 const turnInputSchema = z.object({ text: z.string().min(1) });
 
+const permissionParamsSchema = z.object({ id: z.coerce.number().int(), reqId: z.string().min(1) });
+const answerPermissionInputSchema = z.object({ optionId: z.string().min(1) });
+
 /** A Conversation as the API serves it (serialize.ts `ApiConversation`). */
 const conversationSchema = z
   .object({
@@ -137,6 +140,25 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     },
     async (req) => {
       await ctx.conversationDriver.submitTurn(req.params.id, req.body.text);
+      return { ok: true } as const;
+    },
+  );
+
+  app.post(
+    '/conversations/:id/permissions/:reqId',
+    {
+      schema: {
+        tags: ['Conversations'],
+        description:
+          "Answer a Harness's held permission request in a Conversation (ADR-0007). `optionId` is the ACP option the operator chose — allow_once, the native allow_always ('Allow for this conversation'), or a reject option. Operator only; not reachable with a run-scoped key.",
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: permissionParamsSchema,
+        body: answerPermissionInputSchema,
+        response: { 200: okResponseSchema, 404: errorResponseSchema },
+      },
+    },
+    async (req) => {
+      ctx.conversationDriver.answerPermission(req.params.id, req.params.reqId, req.body.optionId);
       return { ok: true } as const;
     },
   );

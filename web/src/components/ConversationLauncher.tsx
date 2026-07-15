@@ -3,12 +3,20 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import type { AppConfig, Conversation, ConversationEvent } from '../types';
 import { segmentTranscript } from '../conversation-transcript-model';
+import {
+  addPendingPermission,
+  permissionOptionLabel,
+  removePendingPermission,
+  resolvePendingPermissionFromEvent,
+  type PendingPermission,
+  type PendingPermissions,
+} from '../conversation-permissions-model';
 import { loadConversationId, storeConversationId } from '../conversation-storage';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
 import { Icon } from './Icon';
 import { toastError } from '../toast';
-import { btnPrimary, btnQuiet, field, headline, labelType } from '../ui';
+import { btnPrimary, btnQuiet, field, headline, labelType, permissionOptionButtonClass, toolChip } from '../ui';
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
 
@@ -43,6 +51,59 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
         </div>
       ))}
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/**
+ * One outstanding ACP permission request (issue #11): the Harness is
+ * genuinely blocked on the operator's decision, so this renders prominently
+ * — its own banded section between the transcript and composer, always in
+ * view (not scrolled away with the turn that raised it) — with an explicit
+ * "waiting for your decision" line so the paused Turn is unmistakable.
+ * Buttons render exactly the options the ACP request offers (never a
+ * synthesized "always allow in {dir}" — that's issue #13).
+ */
+function PermissionPrompt({
+  pending,
+  onAnswer,
+}: {
+  pending: PendingPermission;
+  onAnswer: (pending: PendingPermission, optionId: string) => Promise<void>;
+}) {
+  const [busyOption, setBusyOption] = useState<string | null>(null);
+  const title = pending.request.toolCall?.title ?? pending.request.toolCall?.kind ?? 'Tool call';
+
+  const choose = async (optionId: string) => {
+    if (busyOption) return;
+    setBusyOption(optionId);
+    try {
+      await onAnswer(pending, optionId);
+    } finally {
+      setBusyOption(null);
+    }
+  };
+
+  return (
+    <div role="group" aria-label={`Permission request: ${title}`} className="border-t border-hairline bg-raised px-4 py-3">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className={toolChip}>permission</span>
+        <span className="font-medium text-ink">{title}</span>
+      </div>
+      <p className="mb-2.5 text-muted">Waiting for your decision — this turn is paused until you respond.</p>
+      <div className="flex flex-wrap gap-2">
+        {pending.request.options.map((option) => (
+          <button
+            key={option.optionId}
+            type="button"
+            disabled={busyOption !== null}
+            className={permissionOptionButtonClass(option.kind)}
+            onClick={() => choose(option.optionId)}
+          >
+            {permissionOptionLabel(option.kind)}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -172,10 +233,21 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
   const [conversationId, setConversationId] = useState<number | null>(() => loadConversationId(localStorage));
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
+  // Prompts the Harness is genuinely blocked on (issue #11), scoped to
+  // whichever conversation is open — see the effect below for how entries
+  // are added (a `permission_request` WS message) and cleared (its
+  // resolving `conversation_event`, or the conversation ending).
+  const [pending, setPending] = useState<PendingPermissions>({});
 
   useEffect(() => {
     if (conversationId === null) return;
     let live = true;
+    // A freshly opened/switched conversation starts with no known-pending
+    // prompts — the only source of a pending prompt is the live WS message
+    // below, there is no REST endpoint to recover one still outstanding
+    // server-side across a reload (it lands as a resolved conversation_event
+    // once answered either way).
+    setPending({});
     api.conversation(conversationId).then((c) => live && setConversation(c), toastError);
     // Replay the persisted stream, then append live events as they arrive —
     // one representation for both (TaskDetail.tsx's pattern), deduped by id.
@@ -185,9 +257,20 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
         setEvents((current) =>
           current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
         );
+        // The resolution signal (LOCKED contract): a permission_request
+        // conversation_event whose payload.reqId matches a pending prompt
+        // clears it, whether it was answered here or elsewhere/crashed.
+        setPending((current) => resolvePendingPermissionFromEvent(current, msg.event));
+      }
+      if (msg.type === 'permission_request' && msg.conversationId === conversationId) {
+        setPending((current) => addPendingPermission(current, msg));
       }
       if (msg.type === 'conversation_changed' && msg.conversation.id === conversationId) {
         setConversation(msg.conversation);
+        // Belt-and-braces: the server auto-clears pending permissions on
+        // end/crash via the resolution signal above, but a prompt should
+        // never outlive the conversation's own 'ended' state in the UI.
+        if (msg.conversation.state === 'ended') setPending({});
       }
     });
     return () => {
@@ -212,7 +295,24 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
 
   const end = () => {
     if (conversationId === null) return;
-    api.endConversation(conversationId).then(setConversation, toastError);
+    api.endConversation(conversationId).then((c) => {
+      setConversation(c);
+      setPending({});
+    }, toastError);
+  };
+
+  // Optimistic relative to the *resolving event*, not the HTTP response:
+  // the server confirms via a conversation_event carrying this reqId, but
+  // there is no reason to wait for it once the answer POST itself
+  // succeeded — remove the prompt immediately, and re-add it (implicitly,
+  // by leaving state untouched) on failure so the operator can retry.
+  const answerPermission = async (p: PendingPermission, optionId: string) => {
+    try {
+      await api.answerPermission(p.conversationId, p.reqId, optionId);
+      setPending((current) => removePendingPermission(current, p.reqId));
+    } catch (e) {
+      toastError(e);
+    }
   };
 
   if (!open) {
@@ -262,6 +362,13 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
       <div className="flex-1 overflow-y-auto p-4">
         <Transcript events={events} />
       </div>
+
+      {/* Pending prompts sit outside the scrollable transcript so a paused
+          Turn stays visible without hunting for it — the panel is
+          non-modal, so this never traps focus. */}
+      {Object.values(pending).map((p) => (
+        <PermissionPrompt key={p.reqId} pending={p} onAnswer={answerPermission} />
+      ))}
 
       {config && composerReady && <Composer config={config} conversation={conversation} onSend={send} />}
     </div>

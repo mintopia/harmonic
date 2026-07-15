@@ -117,17 +117,6 @@ describe('conversation walking skeleton (issue 10)', () => {
     expect(server.app.ctx.conversationDriver.activeCount).toBe(activeCountAfterFirst);
   });
 
-  it('auto-approves permission requests in this slice (temporary), recording the outcome', async () => {
-    const { body: convo } = await server.api('POST', '/api/conversations', {});
-    await server.api('POST', `/api/conversations/${convo.id}/turns`, {
-      text: JSON.stringify({ requestPermission: { title: 'Write file' }, updates: [] }),
-    });
-    const permission = await waitForEvent(server, convo.id, (e) => e.type === 'permission_request');
-    expect(permission.payload.outcome.outcome).toBe('selected');
-    // The stub offers allow_always as optionId 'always'; the auto-approver prefers it.
-    expect(permission.payload.outcome.optionId).toBe('always');
-  });
-
   it('ends a Conversation: stops the harness and marks it ended; further Turns are rejected', async () => {
     const { body: convo } = await server.api('POST', '/api/conversations', {});
     await server.api('POST', `/api/conversations/${convo.id}/turns`, {

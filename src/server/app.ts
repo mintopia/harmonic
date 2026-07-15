@@ -111,7 +111,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const runs = new RunStore(db);
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
   const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
-    events: { onEvent: (event) => bus.emit('conversation_event', event) },
+    events: {
+      onEvent: (event) => bus.emit('conversation_event', event),
+      onPermissionRequest: (pending) => bus.emit('permission_request', pending),
+    },
   });
   const auth = new AuthService(db);
   if (opts.password) auth.setPassword(opts.password);
@@ -211,10 +214,13 @@ the REST restrictions noted per endpoint below.
 paths): every run event, run state change, task state change, and
 Conversation event/change is broadcast to every connected client as JSON
 messages of the form \`{ type: 'run_event' | 'run_changed' |
-'task_changed' | 'conversation_event' | 'conversation_changed', ... }\`,
-using the same Task/Run/Conversation shapes served over REST.
-Authenticate by passing the session token or an API key as \`?token=\`
-(WebSocket clients cannot set an Authorization header).`;
+'task_changed' | 'conversation_event' | 'conversation_changed' |
+'permission_request', ... }\`, using the same Task/Run/Conversation shapes
+served over REST. \`permission_request\` announces a Harness blocked on an
+operator permission decision in a Conversation (ADR-0007), answered via
+\`POST /conversations/:id/permissions/:reqId\`. Authenticate by passing the
+session token or an API key as \`?token=\` (WebSocket clients cannot set an
+Authorization header).`;
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
