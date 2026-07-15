@@ -1,6 +1,6 @@
 // Explicit .js extension: shared with the node-side test project (see
 // conversation-transcript-model.ts's note on NodeNext resolution).
-import type { Conversation } from './types.js';
+import type { Conversation, ConversationEvent } from './types.js';
 
 /** Compact figure formatting (18.2k / 1.3M) — the same treatment StatsPage's
  * summary card uses, so a token count reads identically wherever it shows
@@ -67,9 +67,27 @@ export function formatContextUsage(usage: ContextUsage): { value: string; note: 
   }
 }
 
+/**
+ * The timestamp of the most recent Turn activity — a `user_turn` or a
+ * turn-ending lifecycle event — for the cold-cache clock. Keyed off Turns,
+ * not the Conversation's `updatedAt`, so a title rename (which bumps
+ * `updatedAt` but sends no Turn, refreshing no cache) never resets it. Null
+ * before any Turn.
+ */
+export function lastConversationTurnAt(events: ConversationEvent[]): number | null {
+  let ts: number | null = null;
+  for (const event of events) {
+    const isTurnBoundary =
+      event.type === 'user_turn' ||
+      (event.type === 'lifecycle' && ['finished', 'error', 'idle_timeout'].includes(event.payload?.event));
+    if (isTurnBoundary && (ts === null || event.ts > ts)) ts = event.ts;
+  }
+  return ts;
+}
+
 export interface ColdCacheInput {
-  /** The Conversation's `updatedAt` — the last Turn activity. */
-  updatedAt: number;
+  /** The timestamp of the last Turn (see `lastConversationTurnAt`) — the point the cache was last touched. */
+  lastTurnAt: number;
   cacheTtlSeconds: number | null;
   now: number;
 }
@@ -81,9 +99,9 @@ export interface ColdCacheInput {
  * than a bare claim. `cacheTtlSeconds === null` (no configured TTL) never
  * warns — an unconfigured TTL is not evidence of a cold cache.
  */
-export function isColdCache({ updatedAt, cacheTtlSeconds, now }: ColdCacheInput): boolean {
+export function isColdCache({ lastTurnAt, cacheTtlSeconds, now }: ColdCacheInput): boolean {
   if (cacheTtlSeconds === null) return false;
-  return now - updatedAt > cacheTtlSeconds * 1000;
+  return now - lastTurnAt > cacheTtlSeconds * 1000;
 }
 
 const minutes = (ms: number) => Math.floor(ms / 60_000);
@@ -93,7 +111,7 @@ const minutes = (ms: number) => Math.floor(ms / 60_000);
  * in minutes so the estimate reads at a glance. */
 export function formatColdCacheMessage(input: ColdCacheInput): string | null {
   if (!isColdCache(input)) return null;
-  const idleMinutes = minutes(input.now - input.updatedAt);
+  const idleMinutes = minutes(input.now - input.lastTurnAt);
   const ttlMinutes = Math.round((input.cacheTtlSeconds as number) / 60);
   return `Cache likely cold — idle ${idleMinutes}m, TTL ${ttlMinutes}m (estimate)`;
 }

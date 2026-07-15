@@ -5,10 +5,11 @@ import {
   formatContextUsage,
   formatTokens,
   isColdCache,
+  lastConversationTurnAt,
   totalTokens,
   type ContextUsage,
 } from '../web/src/conversation-telemetry-model.js';
-import type { Conversation } from '../web/src/types.js';
+import type { Conversation, ConversationEvent } from '../web/src/types.js';
 
 describe('totalTokens', () => {
   it('is null when usage itself is null (no Turn has completed yet)', () => {
@@ -114,28 +115,49 @@ describe('formatContextUsage', () => {
   });
 });
 
+describe('lastConversationTurnAt', () => {
+  const ev = (partial: Partial<ConversationEvent>): ConversationEvent =>
+    ({ id: 1, conversationId: 1, seq: 1, ts: 0, type: 'session_update', payload: {}, ...partial });
+
+  it('is null before any Turn', () => {
+    expect(lastConversationTurnAt([])).toBeNull();
+    expect(lastConversationTurnAt([ev({ type: 'session_update', ts: 50 })])).toBeNull();
+  });
+
+  it('tracks the latest Turn boundary and ignores non-Turn events', () => {
+    const events = [
+      ev({ type: 'user_turn', ts: 100 }),
+      ev({ type: 'session_update', ts: 150 }),
+      ev({ type: 'lifecycle', ts: 200, payload: { event: 'finished' } }),
+      // A later permission event is NOT a Turn boundary and must not advance the clock.
+      ev({ type: 'permission_request', ts: 300 }),
+    ];
+    expect(lastConversationTurnAt(events)).toBe(200);
+  });
+});
+
 describe('isColdCache / formatColdCacheMessage', () => {
-  const base = { updatedAt: 1_000_000, cacheTtlSeconds: 300 };
+  const base = { lastTurnAt: 1_000_000, cacheTtlSeconds: 300 };
 
   it('never warns when the TTL is unconfigured, however idle', () => {
-    expect(isColdCache({ updatedAt: 0, cacheTtlSeconds: null, now: Date.now() })).toBe(false);
-    expect(formatColdCacheMessage({ updatedAt: 0, cacheTtlSeconds: null, now: Date.now() })).toBeNull();
+    expect(isColdCache({ lastTurnAt: 0, cacheTtlSeconds: null, now: Date.now() })).toBe(false);
+    expect(formatColdCacheMessage({ lastTurnAt: 0, cacheTtlSeconds: null, now: Date.now() })).toBeNull();
   });
 
   it('is false while idle time is within the TTL', () => {
-    const now = base.updatedAt + 100_000; // 100s idle, 300s TTL
+    const now = base.lastTurnAt + 100_000; // 100s idle, 300s TTL
     expect(isColdCache({ ...base, now })).toBe(false);
     expect(formatColdCacheMessage({ ...base, now })).toBeNull();
   });
 
   it('is true once idle time exceeds the TTL, worded as an estimate', () => {
-    const now = base.updatedAt + 400_000; // 400s idle, 300s (5m) TTL
+    const now = base.lastTurnAt + 400_000; // 400s idle, 300s (5m) TTL
     expect(isColdCache({ ...base, now })).toBe(true);
     expect(formatColdCacheMessage({ ...base, now })).toBe('Cache likely cold — idle 6m, TTL 5m (estimate)');
   });
 
   it('is exactly false at the TTL boundary (idle must exceed, not just reach, the TTL)', () => {
-    const now = base.updatedAt + base.cacheTtlSeconds * 1000;
+    const now = base.lastTurnAt + base.cacheTtlSeconds * 1000;
     expect(isColdCache({ ...base, now })).toBe(false);
   });
 });

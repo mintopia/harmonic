@@ -19,6 +19,7 @@ import {
   formatColdCacheMessage,
   formatContextUsage,
   formatTokens,
+  lastConversationTurnAt,
 } from '../conversation-telemetry-model';
 import {
   applyAttentionMessage,
@@ -87,7 +88,7 @@ function TelemetryCell({
  * Shown for ended Conversations too (issue #15: read-only still means the
  * telemetry is visible, just frozen at its last value).
  */
-function TelemetryStrip({ conversation }: { conversation: Conversation }) {
+function TelemetryStrip({ conversation, events }: { conversation: Conversation; events: ConversationEvent[] }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -98,8 +99,10 @@ function TelemetryStrip({ conversation }: { conversation: Conversation }) {
   const tokens = formatTokens(conversation.usage);
   const cost = formatCost(conversation.cost);
   const context = formatContextUsage(computeContextUsage(conversation));
+  // The cold-cache clock runs from the last Turn, not the Conversation's
+  // updatedAt (which a rename bumps without refreshing any cache).
   const coldCache = formatColdCacheMessage({
-    updatedAt: conversation.updatedAt,
+    lastTurnAt: lastConversationTurnAt(events) ?? conversation.updatedAt,
     cacheTtlSeconds: conversation.cacheTtlSeconds,
     now,
   });
@@ -847,7 +850,7 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
             onClose={() => setOpen(false)}
           />
 
-          {conversation && <TelemetryStrip conversation={conversation} />}
+          {conversation && <TelemetryStrip conversation={conversation} events={events} />}
 
           <div className="flex-1 overflow-y-auto p-4">
             <Transcript events={events} />

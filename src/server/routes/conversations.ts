@@ -86,7 +86,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       schema: {
         tags: ['Conversations'],
         description:
-          'Create a Conversation (an interactive multi-turn chat with a Harness). Execution settings default from global config. Operator only; not reachable with a run-scoped key. The harness spawns on the first Turn, not here.',
+          'Create a Conversation (an interactive, multi-turn exchange the operator drives with a Harness over ACP). Execution settings default from global config. Operator only; not reachable with a run-scoped key. The harness spawns on the first Turn, not here.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createConversationInputSchema,
         response: { 201: conversationSchema, 400: errorResponseSchema },

@@ -36,6 +36,10 @@ export class AcpConnection {
   ) {
     this.rl = createInterface({ input: stdout });
     this.rl.on('line', (line) => this.onLine(line));
+    // A write can race the harness's death (e.g. answering a permission as
+    // the process is killed) and emit EPIPE asynchronously; in-flight
+    // requests already fail via `fail()`, so swallow the pipe error.
+    this.stdin.on('error', () => {});
   }
 
   request(method: string, params: unknown): Promise<any> {
@@ -64,6 +68,7 @@ export class AcpConnection {
   }
 
   private write(msg: unknown): void {
+    if (this.closed || !this.stdin.writable) return;
     try {
       this.stdin.write(JSON.stringify(msg) + '\n');
     } catch {
