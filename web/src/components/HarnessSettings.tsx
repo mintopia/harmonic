@@ -1,14 +1,8 @@
 import { useState } from 'react';
 import type { AppConfig, HarnessConfig, ModelPrice } from '../types';
-import { btnGhost, btnQuiet, field, labelType } from '../ui';
-
-const panel = 'rounded-md border border-hairline bg-surface p-4';
-const label = `mb-1 block ${labelType} text-muted`;
-
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <p className="mt-1 text-label text-fail">{message}</p>;
-}
+import { btnGhost, btnQuiet, field } from '../ui';
+import { FieldError, fieldLabel } from './SettingsSection';
+import { Icon } from './Icon';
 
 /** Add/remove/edit rows of a plain string list (harness args, models). */
 function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange: (items: string[]) => void; ariaLabel: string }) {
@@ -102,6 +96,10 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
   );
 }
 
+/** One harness as a collapsed disclosure row: the summary carries the id
+ * and launch command (machine data → Data face); the deep config only
+ * unfolds on demand. A failed save with errors inside forces it open so
+ * the messages are never hidden. */
 function HarnessCard({
   id,
   harness,
@@ -115,72 +113,85 @@ function HarnessCard({
 }) {
   const set = <K extends keyof HarnessConfig>(key: K, value: HarnessConfig[K]) => onChange({ ...harness, [key]: value });
   const prefix = `harnesses.${id}`;
+  const hasErrors = Object.keys(fieldErrors).some((k) => k.startsWith(`${prefix}.`));
 
   return (
-    <div className={`${panel} mb-4`}>
-      <h4 className="mb-3 text-headline font-semibold">{id}</h4>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className={label} htmlFor={`harness-${id}-command`}>Command</label>
-          <input
-            id={`harness-${id}-command`}
-            className={`${field} font-data`}
-            value={harness.command}
-            onChange={(e) => set('command', e.target.value)}
-          />
-          <FieldError message={fieldErrors[`${prefix}.command`]} />
-        </div>
-        <div>
-          <label className={label} htmlFor={`harness-${id}-session-log-dir`}>Session Log Directory</label>
-          <input
-            id={`harness-${id}-session-log-dir`}
-            className={`${field} font-data`}
-            value={harness.sessionLogDir ?? ''}
-            onChange={(e) => set('sessionLogDir', e.target.value)}
-          />
-          <FieldError message={fieldErrors[`${prefix}.sessionLogDir`]} />
-        </div>
-      </div>
+    <details className="group" open={hasErrors || undefined}>
+      <summary className="flex cursor-pointer select-none items-center gap-2 rounded-md px-1.5 py-2.5 transition-colors duration-150 hover:bg-raised [list-style:none] [&::-webkit-details-marker]:hidden">
+        <Icon
+          className="-rotate-90 text-faint transition-transform duration-150 group-open:rotate-0 motion-reduce:transition-none"
+          name="chevron-down"
+        />
+        <span className="font-semibold">{id}</span>
+        <span className="min-w-0 truncate font-data text-data text-muted">
+          {[harness.command, ...harness.args].join(' ')}
+        </span>
+      </summary>
 
-      <div className="mt-3">
-        <label className={label}>Args</label>
-        <ListEditor items={harness.args} onChange={(args) => set('args', args)} ariaLabel="Argument" />
-        <FieldError message={fieldErrors[`${prefix}.args`]} />
-      </div>
-
-      <div className="mt-3">
-        <label className={label}>Environment</label>
-        <EnvEditor env={harness.env} onChange={(env) => set('env', env)} />
-        <FieldError message={fieldErrors[`${prefix}.env`]} />
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className={label}>Models</label>
-          <ListEditor items={harness.models} onChange={(models) => set('models', models)} ariaLabel="Model" />
-          <FieldError message={fieldErrors[`${prefix}.models`]} />
+      <div className="px-1.5 pb-3 pt-1">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={fieldLabel} htmlFor={`harness-${id}-command`}>Command</label>
+            <input
+              id={`harness-${id}-command`}
+              className={`${field} font-data`}
+              value={harness.command}
+              onChange={(e) => set('command', e.target.value)}
+            />
+            <FieldError message={fieldErrors[`${prefix}.command`]} />
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor={`harness-${id}-session-log-dir`}>Session Log Directory</label>
+            <input
+              id={`harness-${id}-session-log-dir`}
+              className={`${field} font-data`}
+              value={harness.sessionLogDir ?? ''}
+              onChange={(e) => set('sessionLogDir', e.target.value)}
+            />
+            <FieldError message={fieldErrors[`${prefix}.sessionLogDir`]} />
+          </div>
         </div>
-        <div>
-          <label className={label} htmlFor={`harness-${id}-default-model`}>Default Model</label>
-          <select
-            id={`harness-${id}-default-model`}
-            className={`${field} font-data`}
-            value={harness.defaultModel}
-            onChange={(e) => set('defaultModel', e.target.value)}
-          >
-            {harness.models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-            {harness.defaultModel && !harness.models.includes(harness.defaultModel) && (
-              <option value={harness.defaultModel}>{harness.defaultModel} (not in models list)</option>
-            )}
-          </select>
-          <FieldError message={fieldErrors[`${prefix}.defaultModel`]} />
+
+        <div className="mt-3">
+          <label className={fieldLabel}>Args</label>
+          <ListEditor items={harness.args} onChange={(args) => set('args', args)} ariaLabel="Argument" />
+          <FieldError message={fieldErrors[`${prefix}.args`]} />
+        </div>
+
+        <div className="mt-3">
+          <label className={fieldLabel}>Environment</label>
+          <EnvEditor env={harness.env} onChange={(env) => set('env', env)} />
+          <FieldError message={fieldErrors[`${prefix}.env`]} />
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={fieldLabel}>Models</label>
+            <ListEditor items={harness.models} onChange={(models) => set('models', models)} ariaLabel="Model" />
+            <FieldError message={fieldErrors[`${prefix}.models`]} />
+          </div>
+          <div>
+            <label className={fieldLabel} htmlFor={`harness-${id}-default-model`}>Default Model</label>
+            <select
+              id={`harness-${id}-default-model`}
+              className={`${field} font-data`}
+              value={harness.defaultModel}
+              onChange={(e) => set('defaultModel', e.target.value)}
+            >
+              {harness.models.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+              {harness.defaultModel && !harness.models.includes(harness.defaultModel) && (
+                <option value={harness.defaultModel}>{harness.defaultModel} (not in models list)</option>
+              )}
+            </select>
+            <FieldError message={fieldErrors[`${prefix}.defaultModel`]} />
+          </div>
         </div>
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -194,8 +205,7 @@ export function HarnessesSection({
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
   return (
-    <div className="mb-4">
-      <h3 className="mb-3 text-headline font-semibold">Harnesses</h3>
+    <div className="divide-y divide-hairline">
       {Object.entries(config.harnesses).map(([id, harness]) => (
         <HarnessCard
           key={id}
@@ -246,15 +256,12 @@ export function PriceOverridesSection({
   };
 
   return (
-    <div className={`${panel} mb-4`}>
-      <h3 className="mb-3 text-headline font-semibold">Price Overrides</h3>
-      <p className="mb-3 text-body text-muted">$ per Mtok. Overrides or extends the shipped price table used for Cost.</p>
-
+    <div>
       {entries.length > 0 && (
         <div className="mb-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-2">
-          <span className={label}>Model</span>
+          <span className={fieldLabel}>Model</span>
           {PRICE_FIELDS.map((k) => (
-            <span key={k} className={label}>
+            <span key={k} className={fieldLabel}>
               {PRICE_LABELS[k]}
             </span>
           ))}

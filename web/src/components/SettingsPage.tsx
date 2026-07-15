@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { SecuritySection } from './SecuritySection';
+import { ChannelsSection } from './Channels';
 import type { AppConfig } from '../types';
-import { btnGhost, btnPrimary, field, labelType } from '../ui';
+import { btnGhost, btnPrimary, displayTitle, field } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
-
-const panel = 'rounded-md border border-hairline bg-surface p-4';
-const label = `mb-1 block ${labelType} text-muted`;
+import { FieldError, SettingsSection, fieldLabel } from './SettingsSection';
+import { Switch } from './Switch';
 
 /** Server validation errors arrive as one `path: message; path: message`
  * string (src/server/app.ts's error handler) — split it back into a
@@ -21,29 +21,7 @@ function parseFieldErrors(message: string): Record<string, string> {
   return out;
 }
 
-function FieldError({ message }: { message?: string }) {
-  if (!message) return null;
-  return <p className="mt-1 text-label text-fail">{message}</p>;
-}
-
-/** On/off switch matching the header's Auto-Runner toggle (App.tsx). */
-function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 ${labelType} transition-colors duration-150 ${
-        checked ? 'border-accent text-accent-text' : 'border-hairline text-muted hover:text-ink'
-      }`}
-    >
-      {children} <span>{checked ? 'on' : 'off'}</span>
-    </button>
-  );
-}
-
-function TaskDefaultsSection({
+function TaskDefaultsFields({
   config,
   fieldErrors,
   onChange,
@@ -57,63 +35,60 @@ function TaskDefaultsSection({
     onChange({ ...d, [key]: value });
 
   return (
-    <div className={`${panel} mb-4`}>
-      <h3 className="mb-3 text-headline font-semibold">Task defaults</h3>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className={label} htmlFor="settings-harness">Harness</label>
-          <select id="settings-harness" className={field} value={d.harness} onChange={(e) => set('harness', e.target.value)}>
-            {Object.keys(config.harnesses).map((h) => (
-              <option key={h} value={h}>
-                {h}
-              </option>
-            ))}
-          </select>
-          <FieldError message={fieldErrors['defaults.harness']} />
-        </div>
-        <div>
-          <label className={label} htmlFor="settings-workdir">Working Directory</label>
-          <input
-            id="settings-workdir"
-            className={`${field} font-data`}
-            value={d.workingDir}
-            onChange={(e) => set('workingDir', e.target.value)}
-          />
-          <FieldError message={fieldErrors['defaults.workingDir']} />
-        </div>
-        <div>
-          <label className={label} htmlFor="settings-isolation">Isolation Mode</label>
-          <select
-            id="settings-isolation"
-            className={field}
-            value={d.isolationMode}
-            onChange={(e) => set('isolationMode', e.target.value as 'direct' | 'worktree')}
-          >
-            <option value="direct">direct</option>
-            <option value="worktree">worktree</option>
-          </select>
-          <FieldError message={fieldErrors['defaults.isolationMode']} />
-        </div>
-        <div>
-          <label className={label} htmlFor="settings-priority">Priority</label>
-          <select
-            id="settings-priority"
-            className={field}
-            value={d.priority}
-            onChange={(e) => set('priority', e.target.value as 'high' | 'normal' | 'low')}
-          >
-            <option value="high">high</option>
-            <option value="normal">normal</option>
-            <option value="low">low</option>
-          </select>
-          <FieldError message={fieldErrors['defaults.priority']} />
-        </div>
+    <div className="grid gap-3.5 sm:grid-cols-2">
+      <div>
+        <label className={fieldLabel} htmlFor="settings-harness">Harness</label>
+        <select id="settings-harness" className={field} value={d.harness} onChange={(e) => set('harness', e.target.value)}>
+          {Object.keys(config.harnesses).map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <FieldError message={fieldErrors['defaults.harness']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-workdir">Working directory</label>
+        <input
+          id="settings-workdir"
+          className={`${field} font-data`}
+          value={d.workingDir}
+          onChange={(e) => set('workingDir', e.target.value)}
+        />
+        <FieldError message={fieldErrors['defaults.workingDir']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-isolation">Isolation mode</label>
+        <select
+          id="settings-isolation"
+          className={field}
+          value={d.isolationMode}
+          onChange={(e) => set('isolationMode', e.target.value as 'direct' | 'worktree')}
+        >
+          <option value="direct">direct</option>
+          <option value="worktree">worktree</option>
+        </select>
+        <FieldError message={fieldErrors['defaults.isolationMode']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-priority">Priority</label>
+        <select
+          id="settings-priority"
+          className={field}
+          value={d.priority}
+          onChange={(e) => set('priority', e.target.value as 'high' | 'normal' | 'low')}
+        >
+          <option value="high">high</option>
+          <option value="normal">normal</option>
+          <option value="low">low</option>
+        </select>
+        <FieldError message={fieldErrors['defaults.priority']} />
       </div>
     </div>
   );
 }
 
-function AutoRunnerSection({
+function AutoRunnerFields({
   config,
   fieldErrors,
   onChange,
@@ -124,48 +99,28 @@ function AutoRunnerSection({
 }) {
   const a = config.autoRunner;
   return (
-    <div className={`${panel} mb-4`}>
-      <h3 className="mb-3 text-headline font-semibold">Auto-Runner</h3>
-      <div className="flex flex-wrap items-start gap-4">
-        <div>
-          <Toggle checked={a.enabled} onChange={(enabled) => onChange({ ...a, enabled })}>
-            Enabled
-          </Toggle>
-          <FieldError message={fieldErrors['autoRunner.enabled']} />
+    <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+      <div>
+        <span className={fieldLabel}>Enabled</span>
+        <div className="pt-1">
+          <Switch checked={a.enabled} onChange={(enabled) => onChange({ ...a, enabled })}>
+            Run ready tasks unattended
+          </Switch>
         </div>
-        <div>
-          <label className={label} htmlFor="settings-max-runs">Max concurrent Runs</label>
-          <input
-            id="settings-max-runs"
-            type="number"
-            min={1}
-            className={`${field} w-32 font-data`}
-            value={a.maxConcurrentRuns}
-            onChange={(e) => onChange({ ...a, maxConcurrentRuns: Number(e.target.value) })}
-          />
-          <FieldError message={fieldErrors['autoRunner.maxConcurrentRuns']} />
-        </div>
+        <FieldError message={fieldErrors['autoRunner.enabled']} />
       </div>
-    </div>
-  );
-}
-
-function AgentReviewSection({
-  config,
-  fieldErrors,
-  onChange,
-}: {
-  config: AppConfig;
-  fieldErrors: Record<string, string>;
-  onChange: (agentReview: boolean) => void;
-}) {
-  return (
-    <div className={`${panel} mb-4`}>
-      <h3 className="mb-3 text-headline font-semibold">Agent review</h3>
-      <Toggle checked={config.agentReview} onChange={onChange}>
-        Agents may Accept/Reject their own runs
-      </Toggle>
-      <FieldError message={fieldErrors['agentReview']} />
+      <div>
+        <label className={fieldLabel} htmlFor="settings-max-runs">Max concurrent runs</label>
+        <input
+          id="settings-max-runs"
+          type="number"
+          min={1}
+          className={`${field} w-28 font-data`}
+          value={a.maxConcurrentRuns}
+          onChange={(e) => onChange({ ...a, maxConcurrentRuns: Number(e.target.value) })}
+        />
+        <FieldError message={fieldErrors['autoRunner.maxConcurrentRuns']} />
+      </div>
     </div>
   );
 }
@@ -214,52 +169,104 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h2 className="text-display font-semibold tracking-tight">Settings</h2>
-        {dirty && (
-          <div className="ml-auto flex items-center gap-2">
-            <button disabled={saving} onClick={discard} className={btnGhost}>
-              Discard
-            </button>
-            <button disabled={saving} onClick={save} className={btnPrimary}>
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        )}
+      <div className="max-w-3xl">
+        <h2 className={displayTitle}>Settings</h2>
+        <p className="mt-1 text-muted">
+          Defaults, harnesses, and how the runner behaves. Config sections save together; notifications and
+          security apply immediately.
+        </p>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-md border border-fail px-4 py-2 text-fail">{error}</div>
+      <div className="mt-5 flex flex-col gap-4">
+        <SettingsSection
+          title="Task defaults"
+          description="Pre-filled into every new task; each task can override them."
+        >
+          <TaskDefaultsFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(defaults) => setLocal({ ...local, defaults })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Auto-runner"
+          description="Starts ready tasks unattended, up to the concurrency cap."
+        >
+          <AutoRunnerFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(autoRunner) => setLocal({ ...local, autoRunner })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Agent review"
+          description="Whether agents may pass their own work through the review gate."
+        >
+          <Switch checked={local.agentReview} onChange={(agentReview) => setLocal({ ...local, agentReview })}>
+            Agents may accept or reject their own runs
+          </Switch>
+          <FieldError message={fieldErrors['agentReview']} />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Harnesses"
+          description="The agent CLIs Harmonic drives over ACP — command, environment, and models."
+        >
+          <HarnessesSection
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(harnesses) => setLocal({ ...local, harnesses })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Price overrides"
+          description="$ per Mtok. Overrides or extends the shipped price table used for cost."
+        >
+          <PriceOverridesSection
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(prices) => setLocal({ ...local, prices })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Notifications"
+          description="Channels that receive task and queue events. Changes apply immediately."
+        >
+          <ChannelsSection />
+        </SettingsSection>
+
+        <SettingsSection title="Security" description="The operator password for this console.">
+          <SecuritySection />
+        </SettingsSection>
+      </div>
+
+      {/* Floating save bar: deep-config edits happen far from the page
+          header, so the dirty-state actions float above the viewport
+          bottom on the bar shadow — the page's one primary action. */}
+      {dirty && (
+        <div className="sticky bottom-4 z-10 mt-6 max-w-3xl">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-surface px-4 py-2.5 shadow-bar">
+            <p className="font-medium text-muted">Unsaved changes</p>
+            {error && (
+              <p className="min-w-0 flex-1 truncate text-fail" title={error}>
+                {error}
+              </p>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <button disabled={saving} onClick={discard} className={btnGhost}>
+                Discard
+              </button>
+              <button disabled={saving} onClick={save} className={btnPrimary}>
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-
-      <TaskDefaultsSection
-        config={local}
-        fieldErrors={fieldErrors}
-        onChange={(defaults) => setLocal({ ...local, defaults })}
-      />
-      <AutoRunnerSection
-        config={local}
-        fieldErrors={fieldErrors}
-        onChange={(autoRunner) => setLocal({ ...local, autoRunner })}
-      />
-      <AgentReviewSection
-        config={local}
-        fieldErrors={fieldErrors}
-        onChange={(agentReview) => setLocal({ ...local, agentReview })}
-      />
-
-      <HarnessesSection
-        config={local}
-        fieldErrors={fieldErrors}
-        onChange={(harnesses) => setLocal({ ...local, harnesses })}
-      />
-      <PriceOverridesSection
-        config={local}
-        fieldErrors={fieldErrors}
-        onChange={(prices) => setLocal({ ...local, prices })}
-      />
-
-      <SecuritySection />
     </div>
   );
 }
