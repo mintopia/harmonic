@@ -59,13 +59,13 @@ const PUBLIC_API_PATHS = new Set([
 ]);
 
 /**
- * What a per-run scoped key may reach: the agent surface from issue 13 —
- * task CRUD, dependencies, queue/cancel, runs and events, and MCP (which
- * gates its own tool list). Accept/Reject stay human unless the
- * agent-review flag is on (ADR-0002). Everything else — key management,
- * config, channels — is operator-only.
+ * What an ephemeral scoped key (a Run Key or a Conversation Key) may reach:
+ * the agent surface from issue 13 — task CRUD, dependencies, queue/cancel,
+ * runs and events, and MCP (which gates its own tool list). Accept/Reject
+ * stay human unless the agent-review flag is on (ADR-0002). Everything else
+ * — key management, config, channels, Conversations — is operator-only.
  */
-function runScopedKeyAllowed(path: string, agentReview: boolean): boolean {
+function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
   if (path.startsWith('/mcp')) return true;
   if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return agentReview;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
@@ -114,23 +114,32 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const runs = new RunStore(db);
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
+  const auth = new AuthService(db);
+  if (opts.password) auth.setPassword(opts.password);
   const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
       onPermissionRequest: (pending) => bus.emit('permission_request', pending),
     },
     rules: permissionRules,
+    // A Conversation Key (its lifetime follows the Conversation's) plus the
+    // MCP endpoint let the chatting agent drive the fleet (issue 16).
+    keys: {
+      mint: (conversationId) =>
+        auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId }).token,
+      revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
+    },
   });
-  const auth = new AuthService(db);
-  if (opts.password) auth.setPassword(opts.password);
   // Crash recovery before anything can execute: orphaned runs are failed
   // as "interrupted" (never silently re-run), and their tasks fail loudly.
   for (const orphan of runs.markInterrupted()) {
     tasks.setState(orphan.taskId, 'failed');
   }
   // Run Keys of every non-running run die here — catches keys orphaned by
-  // a crash or restart.
+  // a crash or restart. Conversation Keys can never survive a restart (their
+  // warm process is gone), so every one present at boot is orphaned (issue 16).
   auth.sweepOrphanedRunKeys();
+  auth.sweepOrphanedConversationKeys();
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
@@ -266,7 +275,7 @@ Authorization header).`;
     if (bearer) {
       const key = auth.verifyKey(bearer);
       if (key) {
-        if (key.scope === 'run' && !runScopedKeyAllowed(path, configStore.get().agentReview)) {
+        if (key.scope !== 'full' && !scopedKeyAllowed(path, configStore.get().agentReview)) {
           return forbidden();
         }
         return;
@@ -278,7 +287,7 @@ Authorization header).`;
       if (auth.validateSession(queryToken)) return;
       const key = auth.verifyKey(queryToken);
       if (key) {
-        if (key.scope === 'run' && !runScopedKeyAllowed(path, configStore.get().agentReview)) {
+        if (key.scope !== 'full' && !scopedKeyAllowed(path, configStore.get().agentReview)) {
           return forbidden();
         }
         return;
@@ -349,7 +358,9 @@ Authorization header).`;
     const address = app.server.address();
     if (address && typeof address === 'object') {
       const host = address.address === '::' || address.address === '0.0.0.0' ? '127.0.0.1' : address.address;
-      runner.mcpUrl = `http://${host}:${address.port}/mcp`;
+      const mcpUrl = `http://${host}:${address.port}/mcp`;
+      runner.mcpUrl = mcpUrl;
+      conversationDriver.mcpUrl = mcpUrl;
     }
     autoRunner.poke();
   });

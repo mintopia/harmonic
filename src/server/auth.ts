@@ -85,7 +85,10 @@ export class AuthService {
 
   // ---- API keys ----
 
-  createKey(name: string, opts: { scope?: 'full' | 'run'; runId?: number } = {}): { key: ApiKeyRow; token: string } {
+  createKey(
+    name: string,
+    opts: { scope?: 'full' | 'run' | 'conversation'; runId?: number; conversationId?: number } = {},
+  ): { key: ApiKeyRow; token: string } {
     const token = KEY_PREFIX + randomBytes(24).toString('hex');
     const key = this.db
       .insert(apiKeys)
@@ -95,6 +98,7 @@ export class AuthService {
         prefix: token.slice(0, KEY_PREFIX.length + 8),
         scope: opts.scope ?? 'full',
         runId: opts.runId ?? null,
+        conversationId: opts.conversationId ?? null,
         createdAt: Date.now(),
       })
       .returning()
@@ -138,6 +142,14 @@ export class AuthService {
       .run();
   }
 
+  /** Conversation Keys die with their Conversation — hard delete (issue 16). */
+  deleteKeysForConversation(conversationId: number): void {
+    this.db
+      .delete(apiKeys)
+      .where(and(eq(apiKeys.scope, 'conversation'), eq(apiKeys.conversationId, conversationId)))
+      .run();
+  }
+
   /** Boot-time sweep: delete every Run Key whose Run is no longer running. */
   sweepOrphanedRunKeys(): void {
     const runningRuns = this.db.select({ id: runs.id }).from(runs).where(eq(runs.state, 'running'));
@@ -150,6 +162,16 @@ export class AuthService {
         ),
       )
       .run();
+  }
+
+  /**
+   * Boot-time sweep: delete every Conversation Key (issue 16). A warm
+   * Conversation cannot survive a server restart — its harness process is
+   * gone — so every conversation-scoped key present at boot is orphaned by
+   * definition.
+   */
+  sweepOrphanedConversationKeys(): void {
+    this.db.delete(apiKeys).where(eq(apiKeys.scope, 'conversation')).run();
   }
 }
 

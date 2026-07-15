@@ -58,6 +58,11 @@ export interface ConversationDriverOptions {
   events?: ConversationDriverEvents;
   /** Persistent Permission Rules (ADR-0007); when set, a matching rule auto-approves without prompting. */
   rules?: PermissionRuleStore;
+  /** Mints/revokes the per-Conversation scoped MCP key injected into the harness (issue 16). */
+  keys?: {
+    mint: (conversationId: number) => string;
+    revoke: (conversationId: number) => void;
+  };
 }
 
 interface ActiveConversation {
@@ -87,6 +92,9 @@ export class ConversationDriver {
   private nextPermissionId = 0;
   private readonly events: ConversationDriverEvents;
   private readonly rules: PermissionRuleStore | undefined;
+  private readonly keys: ConversationDriverOptions['keys'];
+  /** The MCP endpoint agents call back to; set once the server listens (issue 16). */
+  mcpUrl: string | null = null;
 
   constructor(
     private readonly store: ConversationStore,
@@ -95,6 +103,7 @@ export class ConversationDriver {
   ) {
     this.events = options.events ?? {};
     this.rules = options.rules;
+    this.keys = options.keys;
   }
 
   get activeCount(): number {
@@ -192,6 +201,18 @@ export class ConversationDriver {
         sessionLogDir: harness.sessionLogDir,
       }),
     };
+    // The chatting agent reaches Harmonic's MCP server with zero setup, the
+    // same as a Run (issue 16): an ephemeral Conversation Key plus the
+    // endpoint in the environment — and, where the harness supports it,
+    // registered directly via session/new mcpServers. The key's lifetime
+    // follows the Conversation's.
+    let mcpServers: unknown[] = [];
+    if (this.keys && this.mcpUrl) {
+      const token = this.keys.mint(convo.id);
+      env.HARMONIC_API_KEY = token;
+      env.HARMONIC_MCP_URL = this.mcpUrl;
+      mcpServers = adapterFor(convo.harness).mcpServers({ url: this.mcpUrl, token });
+    }
     const child = spawn(harness.command, harness.args, {
       cwd: convo.workingDir,
       env: env as NodeJS.ProcessEnv,
@@ -216,14 +237,17 @@ export class ConversationDriver {
       const modelId = adapterFor(convo.harness).sessionModelId?.(convo.model);
       await driver.handshake({
         cwd: convo.workingDir,
+        mcpServers,
         modelId,
         onSessionCreated: (sessionId) => this.store.update(convo.id, { sessionId }),
       });
     } catch (err) {
       // Spawn/handshake failed: the Conversation never became warm. Clean
-      // up but leave it active — the operator can try again.
+      // up (the key must not outlive the dead process) but leave it active —
+      // the operator can try again.
       this.active.delete(convo.id);
       this.kill(entry);
+      this.revokeKey(convo.id);
       driver.fail(err instanceof Error ? err : new Error(String(err)));
       driver.dispose();
       throw err;
@@ -342,8 +366,18 @@ export class ConversationDriver {
     this.cancelPendingPermissions(entry.conversationId);
     this.active.delete(entry.conversationId);
     this.kill(entry);
+    this.revokeKey(entry.conversationId);
     entry.driver.fail(new Error('conversation ended'));
     entry.driver.dispose();
+  }
+
+  /** Best-effort Conversation Key revocation; the boot-time sweep is the backstop. */
+  private revokeKey(conversationId: number): void {
+    try {
+      this.keys?.revoke(conversationId);
+    } catch {
+      // Keys also die with the database row and the startup sweep.
+    }
   }
 
   private kill(entry: ActiveConversation): void {

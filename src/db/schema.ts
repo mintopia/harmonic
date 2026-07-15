@@ -197,9 +197,11 @@ export const apiKeys = sqliteTable('api_keys', {
   tokenHash: text('token_hash').notNull(),
   /** First characters of the token, for display. */
   prefix: text('prefix').notNull(),
-  /** 'full' for operator keys; 'run' for per-run scoped keys. */
+  /** 'full' for operator keys; 'run' / 'conversation' for ephemeral scoped keys. */
   scope: text('scope').notNull().default('full'),
   runId: integer('run_id'),
+  /** The Conversation a 'conversation'-scoped key belongs to; its lifetime follows the Conversation's (issue 16). */
+  conversationId: integer('conversation_id'),
   createdAt: integer('created_at').notNull(),
   lastUsedAt: integer('last_used_at'),
   revokedAt: integer('revoked_at'),
