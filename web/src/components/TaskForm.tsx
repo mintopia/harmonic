@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task } from '../types';
 import { Modal } from './Modal';
+import { ModelCombobox } from './ModelCombobox';
 import { btnGhost, btnPrimary, btnQuiet, field, labelType } from '../ui';
 
 const label = `mb-1 block ${labelType} text-muted`;
@@ -83,18 +84,7 @@ export function TaskForm({
           </div>
           <div>
             <label className={label} htmlFor="task-model">Model (pick or type any ID)</label>
-            <input
-              id="task-model"
-              className={`${field} font-data`}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              list="models"
-            />
-            <datalist id="models">
-              {models.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
+            <ModelCombobox id="task-model" value={model} onChange={setModel} options={models} />
           </div>
           <div>
             <label className={label} htmlFor="task-isolation">Isolation Mode</label>
