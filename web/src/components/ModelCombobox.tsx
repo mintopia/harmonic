@@ -28,6 +28,7 @@ export function ModelCombobox({
 
   const shown = filterModels(options, value);
   const custom = value.trim() !== '' && shown.length === 0;
+  const panelOpen = open && (shown.length > 0 || custom);
 
   // Close on any pointer press outside the widget. The panel lives inside the
   // task-form <dialog>, so a click elsewhere in the form should dismiss it.
@@ -84,8 +85,8 @@ export function ModelCombobox({
       <input
         id={id}
         role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
+        aria-expanded={panelOpen}
+        aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
         className={`${field} font-data pr-8`}
         value={value}
@@ -96,6 +97,9 @@ export function ModelCombobox({
         }}
         onFocus={openList}
         onKeyDown={onKeyDown}
+        onBlur={(e) => {
+          if (!wrap.current?.contains(e.relatedTarget as Node)) setOpen(false);
+        }}
       />
       <button
         type="button"
@@ -110,7 +114,7 @@ export function ModelCombobox({
         />
       </button>
 
-      {open && (shown.length > 0 || custom) && (
+      {panelOpen && (
         <ul
           id={listId}
           role="listbox"
