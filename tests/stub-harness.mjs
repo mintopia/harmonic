@@ -19,6 +19,14 @@ import { createInterface } from 'node:readline';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+// Startup-crash mode: emulate a harness (codex-acp, issue 22) that dies
+// mid-handshake with a non-zero exit, writing its real reason only to
+// stderr. Harmonic must surface that reason, not a bare exit code.
+if (process.env.STUB_STARTUP_STDERR) {
+  process.stderr.write(process.env.STUB_STARTUP_STDERR);
+  process.exit(1);
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
 

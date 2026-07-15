@@ -13,6 +13,10 @@ import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent } from '../domain/runs.js';
 import type { TaskService } from '../domain/tasks.js';
 
+/** How much harness stderr to keep for a failure reason — the tail, since
+ * the fatal message is last. Bounds an otherwise unbounded buffer. */
+const STDERR_TAIL_CAP = 8000;
+
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
   onRunEvent?: (event: PersistedRunEvent) => void;
@@ -162,6 +166,12 @@ export class Runner {
     let child: ChildProcess;
     let workspace: Workspace;
     let mcpServers: unknown[] = [];
+    // A harness that dies without a clean ACP error (codex-acp exiting
+    // non-zero mid-handshake) explains itself only on stderr. Retain its
+    // tail so the failure reason carries the cause, not a bare exit code;
+    // draining the pipe also prevents backpressure on a chatty process.
+    let stderrTail = '';
+    let stderrFlushed: Promise<void> = Promise.resolve();
     try {
       workspace = await this.prepareWorkspace(task, run);
       // Agents reach the MCP server with zero setup: a Run Key (its
@@ -175,6 +185,17 @@ export class Runner {
         mcpServers = adapterFor(task.harness).mcpServers({ url: this.mcpUrl, token: runKey });
       }
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
+      const stderr = child.stderr;
+      if (stderr) {
+        stderr.setEncoding('utf8');
+        stderr.on('data', (chunk: string) => {
+          stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CAP);
+        });
+        stderrFlushed = new Promise<void>((resolve) => {
+          stderr.on('end', resolve);
+          stderr.on('error', () => resolve());
+        });
+      }
     } catch (err) {
       // The Run Key may already be minted; it must not outlive the run.
       try {
@@ -266,7 +287,12 @@ export class Runner {
         usage: usage ? JSON.stringify(usage) : null,
       });
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
+      const base = err instanceof Error ? err.message : String(err);
+      // Let stderr finish flushing (the process has exited, so 'end' is
+      // imminent) before reading its tail, capped so a hang can't wait.
+      await Promise.race([stderrFlushed, new Promise((r) => setTimeout(r, 500))]);
+      const tail = stderrTail.trim();
+      const reason = tail ? `${base}\n\nharness stderr:\n${tail}` : base;
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
       this.noteModelMismatch(task, usage, record);

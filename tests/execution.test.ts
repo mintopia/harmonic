@@ -145,6 +145,29 @@ describe('run execution over ACP (direct mode)', () => {
     }
   });
 
+  it('surfaces the harness stderr when it exits non-zero without a clean ACP error', async () => {
+    // The user-reported failure mode: the harness process exits code 1 during
+    // the handshake and prints its real reason only to stderr (no JSON-RPC
+    // error). Harmonic must carry that reason onto the run — a bare "exited
+    // (code 1)" is undebuggable.
+    const detail = 'stream error: unknown model "gpt-5.2-codex-mini"';
+    const overrides = stubHarness('codex') as any;
+    overrides.harnesses.codex.env = { STUB_STARTUP_STDERR: detail };
+    const codexServer = await startServer(overrides);
+    try {
+      const created = await codexServer.api('POST', '/api/tasks', { harness: 'codex', prompt: 'hi' });
+      const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
+      await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed');
+
+      const run = (await codexServer.api('GET', `/api/runs/${started.body.id}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.reason).toContain('exited (code 1'); // still says what happened…
+      expect(run.reason).toContain(detail); // …and now why
+    } finally {
+      await codexServer.close();
+    }
+  });
+
   it('surfaces a contradicting observed model on the run (Q7: the pin must be real)', async () => {
     const codexServer = await startServer(stubHarness('codex'));
     try {
