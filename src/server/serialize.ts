@@ -35,14 +35,36 @@ export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
   return costOfUsages(runs.map((run) => parseUsage(run.usage)), pricesOf(ctx));
 }
 
-export type ApiConversation = ConversationRow;
+export type ApiConversation = Omit<ConversationRow, 'usage'> & {
+  /** Running Usage accumulated across Turns (issue 12); null before any usage. */
+  usage: RunUsage | null;
+  /** Cost of the running Usage against the live price table; honest-incomplete. */
+  cost: Cost | null;
+  /** The latest Turn's input-side token footprint (context fill); null when unknown. */
+  contextTokens: number | null;
+  /** The model's configured context window; null when unconfigured (percentage suppressed). */
+  contextWindow: number | null;
+  /** The model's configured cache TTL in seconds; null when unconfigured (cold-cache banner suppressed). */
+  cacheTtlSeconds: number | null;
+};
 
 /**
- * A Conversation as the REST API and firehose both serve it — one format
- * for the SPA (issue 15's list merges these payloads straight in). A
- * passthrough today; issue 12 adds running Usage/Cost and issue 15 the
- * derived title.
+ * A Conversation as the REST API and firehose both serve it — one format for
+ * the SPA. Running Usage/Cost are derived on read (issue 12), and the
+ * context-window / cache-TTL facts come from optional per-model config;
+ * honest degradation when unconfigured (null, never a fake percentage).
  */
-export function conversationToApi(_ctx: AppContext, conversation: ConversationRow): ApiConversation {
-  return conversation;
+export function conversationToApi(ctx: AppContext, conversation: ConversationRow): ApiConversation {
+  const { usage: rawUsage, ...rest } = conversation;
+  const usage = parseUsage(rawUsage);
+  const config = ctx.configStore.get();
+  const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];
+  return {
+    ...rest,
+    usage,
+    cost: costOfUsages([usage], pricesOf(ctx)),
+    contextTokens: conversation.contextTokens,
+    contextWindow: modelInfo?.contextWindow ?? null,
+    cacheTtlSeconds: modelInfo?.cacheTtlSeconds ?? null,
+  };
 }

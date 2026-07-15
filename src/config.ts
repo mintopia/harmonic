@@ -34,6 +34,19 @@ export const modelPriceSchema = z.object({
   cacheWrite: z.number().nonnegative(),
 });
 
+/**
+ * Optional per-model facts for Conversation telemetry (issue 12). Both
+ * optional: with no window, context usage degrades to raw token counts; with
+ * no TTL, the cold-cache warning is suppressed — never a fake percentage or a
+ * guessed staleness.
+ */
+export const modelInfoSchema = z.object({
+  /** Total context window in tokens, for the context-usage percentage. */
+  contextWindow: z.number().int().positive().optional(),
+  /** Prompt-cache TTL in seconds, for the idle cold-cache warning. */
+  cacheTtlSeconds: z.number().int().positive().optional(),
+});
+
 export const appConfigSchema = z.object({
   harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema),
   /**
@@ -41,6 +54,8 @@ export const appConfigSchema = z.object({
    * shipped `DEFAULT_PRICES` (execution/pricing.ts).
    */
   prices: z.record(z.string(), modelPriceSchema).default({}),
+  /** Optional per-model context-window / cache-TTL facts for Conversation telemetry (issue 12). */
+  modelInfo: z.record(z.string(), modelInfoSchema).default({}),
   defaults: z.object({
     harness: z.enum(HARNESS_IDS),
     workingDir: z.string(),
@@ -136,6 +151,7 @@ export function defaultConfig(): AppConfig {
       },
     },
     prices: {},
+    modelInfo: {},
     defaults: {
       harness: 'claude',
       workingDir: process.cwd(),

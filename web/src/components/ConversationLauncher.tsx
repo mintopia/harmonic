@@ -13,11 +13,100 @@ import {
   type PendingPermissions,
 } from '../conversation-permissions-model';
 import { loadConversationId, storeConversationId } from '../conversation-storage';
+import {
+  computeContextUsage,
+  formatColdCacheMessage,
+  formatContextUsage,
+  formatTokens,
+} from '../conversation-telemetry-model';
+import { formatCost } from '../cost';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
 import { Icon } from './Icon';
 import { toastError } from '../toast';
 import { btnPrimary, btnQuiet, field, headline, labelType, permissionOptionButtonClass, toolChip } from '../ui';
+
+/** One cell of the telemetry strip: muted label over a Data-role value —
+ * the same "label over figure" shape StatsPage's summary card uses, just at
+ * strip density rather than hero size (this is a live status readout, not
+ * the Stats view's headline number). */
+function TelemetryCell({
+  label,
+  value,
+  note,
+  muted,
+}: {
+  label: string;
+  value: string;
+  note?: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex-1 px-3 py-2">
+      <div className={`${labelType} text-muted`}>{label}</div>
+      <div className={`font-data text-data font-semibold ${muted ? 'text-faint' : 'text-ink'}`}>{value}</div>
+      {note && <div className="text-label text-faint">{note}</div>}
+    </div>
+  );
+}
+
+/**
+ * Live operator telemetry (issue #12): running tokens, estimated cost
+ * (`formatCost` reused verbatim, so the ≥/unpriced honesty already built for
+ * Stats/Task carries over unchanged), and context-window fill, plus an idle
+ * cold-cache estimate. Every cell degrades honestly on missing data — no
+ * fake zero token count, no fake context percentage — rather than hiding
+ * the whole strip; only the cold-cache line disappears entirely, since an
+ * unconfigured TTL isn't evidence of anything.
+ *
+ * The cold-cache read is genuinely time-dependent (idle time keeps growing
+ * with no new Turn, unlike every other field here which only changes on a
+ * `conversation_changed` message), so this re-evaluates its own predicate
+ * on a 20s interval rather than only when `conversation` itself changes.
+ */
+function TelemetryStrip({ conversation }: { conversation: Conversation }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 20_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const tokens = formatTokens(conversation.usage);
+  const cost = formatCost(conversation.cost);
+  const context = formatContextUsage(computeContextUsage(conversation));
+  const coldCache = formatColdCacheMessage({
+    updatedAt: conversation.updatedAt,
+    cacheTtlSeconds: conversation.cacheTtlSeconds,
+    now,
+  });
+
+  return (
+    <div className="border-b border-hairline">
+      <div className="flex divide-x divide-hairline">
+        <TelemetryCell label="Tokens" value={tokens} muted={tokens === 'no usage yet'} />
+        <TelemetryCell label="Cost" value={cost ?? '—'} muted={cost === null} />
+        <TelemetryCell
+          label="Context"
+          value={context.value}
+          note={context.note ?? undefined}
+          muted={context.value === '—'}
+        />
+      </div>
+      {/* Quiet and neutral, not a state chip: Running Amber's meaning is
+          locked to "work in flight" (DESIGN.md), and a cold cache is the
+          opposite — idle time with no Turn — so this stays in the
+          Raised/Muted informational register (the same one toasts' inline
+          counterpart and the permission-prompt copy use) rather than
+          borrowing a color that would misstate what's happening. */}
+      {coldCache && (
+        <p role="status" className="bg-raised px-4 py-1.5 text-muted">
+          {coldCache}
+        </p>
+      )}
+    </div>
+  );
+}
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
 
@@ -378,6 +467,8 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
           <Icon name="close" />
         </button>
       </div>
+
+      {conversation && <TelemetryStrip conversation={conversation} />}
 
       <div className="flex-1 overflow-y-auto p-4">
         <Transcript events={events} />

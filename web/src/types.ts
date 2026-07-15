@@ -94,6 +94,34 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   endedAt: number | null;
+  /** Running usage accumulated across this Conversation's Turns (issue #12);
+   * null before any usage has landed. */
+  usage: {
+    totals: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+      totalTokens: number | null;
+    } | null;
+    models: Record<string, Record<string, number>>;
+    toolCalls: Record<string, number>;
+    source: string | null;
+  } | null;
+  /** Derived from `usage` + configured prices; honest-incomplete like Task's
+   * `cost` (issue #12). */
+  cost: Cost | null;
+  /** The latest Turn's input-side token footprint (context fill); null when
+   * unknown (issue #12). */
+  contextTokens: number | null;
+  /** The model's configured context window; null when unconfigured — the
+   * telemetry strip shows raw tokens instead of a fabricated percentage
+   * (issue #12). */
+  contextWindow: number | null;
+  /** The model's configured cache TTL, in seconds; null when unconfigured —
+   * the telemetry strip never shows the cold-cache estimate in that case
+   * (issue #12). */
+  cacheTtlSeconds: number | null;
 }
 
 /**

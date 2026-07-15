@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from './harness/adapter.js';
+import { accumulateUsage, collectUsageWithRetry, contextInputTokens, type RunUsage } from './usage.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
@@ -234,7 +235,7 @@ export class ConversationDriver {
     try {
       const result = await entry.driver.prompt([{ type: 'text', text }]);
       this.record(entry.conversationId, 'lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
-      this.store.touch(entry.conversationId);
+      await this.accumulateTurnUsage(entry.conversationId, result);
     } catch (err) {
       // The harness died mid-Turn: the warm session is gone, so the
       // Conversation ends honestly (it cannot resume) rather than silently
@@ -288,6 +289,44 @@ export class ConversationDriver {
       pending.resolve(outcome);
       this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId });
     }
+  }
+
+  /**
+   * Fold the completed Turn's Usage into the Conversation's running total
+   * and record the latest context fill (issue 12). Usage is decoration on a
+   * finished Turn — never let it fail the Turn; a bump-only update (the
+   * `touch`) still broadcasts the change either way.
+   */
+  private async accumulateTurnUsage(
+    conversationId: number,
+    result: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown },
+  ): Promise<void> {
+    let turnUsage: RunUsage | null = null;
+    try {
+      const convo = this.store.get(conversationId);
+      const harness = this.getConfig().harnesses[convo.harness as keyof AppConfig['harnesses']];
+      if (harness) {
+        turnUsage = await collectUsageWithRetry({
+          harnessId: convo.harness,
+          harness,
+          cwd: convo.workingDir,
+          sessionId: convo.sessionId,
+          promptResult: result,
+          // Conversation events share the run-event shape the collector reads.
+          events: this.store.listEvents(conversationId) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
+        });
+      }
+    } catch {
+      // Usage is best-effort; fall through to a plain touch.
+    }
+    const convo = this.store.get(conversationId);
+    const stored = convo.usage ? (JSON.parse(convo.usage) as RunUsage) : null;
+    const accumulated = accumulateUsage(stored, turnUsage);
+    const contextTokens = contextInputTokens(result.usage);
+    this.store.update(conversationId, {
+      ...(accumulated ? { usage: JSON.stringify(accumulated) } : {}),
+      ...(contextTokens !== null ? { contextTokens } : {}),
+    });
   }
 
   private record(

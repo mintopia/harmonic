@@ -6,7 +6,7 @@ import { HARNESS_IDS } from '../../config.js';
 import { CONVERSATION_STATES } from '../../db/schema.js';
 import { DomainError } from '../../domain/errors.js';
 import { conversationToApi } from '../serialize.js';
-import { errorResponseSchema, idParamsSchema, okResponseSchema } from '../schemas.js';
+import { costSchema, errorResponseSchema, idParamsSchema, okResponseSchema, runUsageSchema } from '../schemas.js';
 
 const createConversationInputSchema = z.object({
   harness: z.enum(HARNESS_IDS).optional(),
@@ -36,6 +36,16 @@ const conversationSchema = z
     state: z.enum(CONVERSATION_STATES),
     /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
     sessionId: z.string().nullable(),
+    /** Running Usage accumulated across Turns (issue 12); null before any usage. */
+    usage: runUsageSchema.nullable(),
+    /** Cost of the running Usage; honest-incomplete for unpriced models. */
+    cost: costSchema.nullable(),
+    /** The latest Turn's input-side token footprint (context fill); null when unknown. */
+    contextTokens: z.number().nullable(),
+    /** The model's configured context window; null when unconfigured (percentage suppressed). */
+    contextWindow: z.number().nullable(),
+    /** The model's configured cache TTL in seconds; null when unconfigured (cold-cache banner suppressed). */
+    cacheTtlSeconds: z.number().nullable(),
     createdAt: z.number(),
     updatedAt: z.number(),
     endedAt: z.number().nullable(),

@@ -111,6 +111,10 @@ export const conversations = sqliteTable('conversations', {
   state: text('state').$type<ConversationState>().notNull(),
   /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
   sessionId: text('session_id'),
+  /** JSON: running Usage accumulated across Turns (issue 12); null before any usage. */
+  usage: text('usage'),
+  /** The latest Turn's input-side token footprint, for context-window fill (issue 12). */
+  contextTokens: integer('context_tokens'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
   endedAt: integer('ended_at'),

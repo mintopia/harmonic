@@ -147,6 +147,53 @@ export function observedModelMismatch(expected: string, models: Record<string, M
   return observed.some((id) => base(id) === base(expected)) ? null : observed;
 }
 
+/**
+ * The latest Turn's input-side token footprint — inputs plus cache reads and
+ * writes — from an ACP prompt result, for a Conversation's context-window
+ * fill (issue 12). null when the result reported no usage.
+ */
+export function contextInputTokens(usage: Record<string, unknown> | undefined): number | null {
+  const totals = totalsFromAcp(usage);
+  if (!totals) return null;
+  return totals.inputTokens + totals.cacheReadTokens + totals.cacheWriteTokens;
+}
+
+/**
+ * Fold a Turn's freshly-collected Usage into a Conversation's running total
+ * (issue 12). A per-model source (the harness session log) is *cumulative*
+ * for the warm session, so it replaces; an ACP-aggregate-only Turn is
+ * *per-Turn*, so its totals accumulate. Tool-call tallies are always taken
+ * from the full event stream, so they replace.
+ */
+export function accumulateUsage(stored: RunUsage | null, turn: RunUsage | null): RunUsage | null {
+  if (!turn) return stored;
+  // Cumulative per-model source (session log): everything is session-to-date.
+  if (Object.keys(turn.models).length > 0) return turn;
+  if (!stored) return turn;
+  return {
+    models: {},
+    totals: addTotals(stored.totals, turn.totals),
+    toolCalls: turn.toolCalls,
+    source: 'acp',
+  };
+}
+
+function addTotals(a: RunUsage['totals'], b: RunUsage['totals']): RunUsage['totals'] {
+  if (!a) return b;
+  if (!b) return a;
+  const sum = {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+    totalTokens: a.totalTokens !== null && b.totalTokens !== null ? a.totalTokens + b.totalTokens : null,
+  } as RunUsage['totals'] & { totalTokens: number | null };
+  if (a.aiUnits !== undefined || b.aiUnits !== undefined) {
+    sum.aiUnits = (a.aiUnits ?? 0) + (b.aiUnits ?? 0);
+  }
+  return sum;
+}
+
 /** Merge run usages into one aggregate (task rollups, stats ranges). */
 export function mergeUsage(usages: RunUsage[]): RunUsage | null {
   if (usages.length === 0) return null;
