@@ -41,6 +41,14 @@ export function ModelCombobox({
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
 
+  // Keep the highlighted option visible as arrow keys move past the edge of
+  // the scrollable listbox.
+  useEffect(() => {
+    if (highlight >= 0) {
+      document.getElementById(`${listId}-opt-${highlight}`)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlight, listId]);
+
   const openList = () => {
     setOpen(true);
     setHighlight(-1);
@@ -65,14 +73,14 @@ export function ModelCombobox({
       setHighlight((h) => Math.max(h - 1, 0));
     } else if (e.key === 'Enter') {
       // While the list is open, Enter picks/closes and never submits the form.
-      if (open) {
+      if (panelOpen) {
         e.preventDefault();
         if (highlight >= 0 && highlight < shown.length) commit(shown[highlight]!);
         else setOpen(false);
       }
     } else if (e.key === 'Escape') {
       // Swallow Escape so the surrounding <dialog> stays open.
-      if (open) {
+      if (panelOpen) {
         e.preventDefault();
         e.stopPropagation();
         setOpen(false);
@@ -88,6 +96,7 @@ export function ModelCombobox({
         aria-expanded={panelOpen}
         aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
+        aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
         className={`${field} font-data pr-8`}
         value={value}
         onChange={(e) => {
@@ -123,6 +132,7 @@ export function ModelCombobox({
           {shown.map((m, i) => (
             <li
               key={m}
+              id={`${listId}-opt-${i}`}
               role="option"
               aria-selected={m === value}
               className={`flex cursor-pointer items-center justify-between px-2.5 py-1.5 font-data text-data ${
@@ -139,7 +149,7 @@ export function ModelCombobox({
             </li>
           ))}
           {custom && (
-            <li className="px-2.5 py-1.5 text-data text-muted">
+            <li role="presentation" className="px-2.5 py-1.5 text-data text-muted">
               Use custom ID: <span className="font-data text-ink">{value}</span>
             </li>
           )}
