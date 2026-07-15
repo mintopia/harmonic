@@ -328,9 +328,15 @@ describe('usage collection and statistics', () => {
     expect(all.body.totals.inputTokens).toBe(5);
     expect(all.body.toolCalls).toEqual({ Bash: 1 });
     expect(all.body.runCount).toBe(1);
+    // Per-day chart series: one bucket at today's local midnight.
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    expect(all.body.series).toHaveLength(1);
+    expect(all.body.series[0].day).toBe(midnight.getTime());
 
     const empty = await server.api('GET', `/api/stats?from=${Date.now() + 60_000}&to=${Date.now() + 120_000}`);
     expect(empty.body.runCount).toBe(0);
     expect(empty.body.totals).toBeNull();
+    expect(empty.body.series).toEqual([]);
   });
 });

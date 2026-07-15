@@ -13,6 +13,15 @@ const querySchema = z.object({
   to: z.coerce.number().int().nonnegative().default(() => Date.now()),
 });
 
+const daySeriesEntrySchema = z.object({
+  /** Epoch ms at local midnight (server timezone) of the bucket's day. */
+  day: z.number(),
+  /** Cost of runs started that day; null when nothing could be priced. */
+  totalUsd: z.number().nullable(),
+  /** True when any of the day's tokens could not be priced (honest numbers: the value is a floor). */
+  incomplete: z.boolean(),
+});
+
 const statsResponseSchema = z.object({
   from: z.number(),
   to: z.number(),
@@ -23,6 +32,8 @@ const statsResponseSchema = z.object({
   models: z.record(z.string(), modelUsageSchema),
   toolCalls: z.record(z.string(), z.number()),
   cost: costSchema.nullable(),
+  /** Per-day cost buckets (only days with runs), ordered by day. */
+  series: z.array(daySeriesEntrySchema),
 });
 
 export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
@@ -57,6 +68,23 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const runsByState: Record<string, number> = {};
       for (const run of rows) runsByState[run.state] = (runsByState[run.state] ?? 0) + 1;
 
+      // Cost per local day (by run start time) for the Stats chart.
+      const byDay = new Map<number, typeof rows>();
+      for (const run of rows) {
+        const d = new Date(run.startedAt);
+        d.setHours(0, 0, 0, 0);
+        const day = d.getTime();
+        const bucket = byDay.get(day);
+        if (bucket) bucket.push(run);
+        else byDay.set(day, [run]);
+      }
+      const series = [...byDay.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([day, dayRows]) => {
+          const dayCost = costOfRuns(ctx, dayRows);
+          return { day, totalUsd: dayCost?.totalUsd ?? null, incomplete: dayCost?.incomplete ?? false };
+        });
+
       return {
         from,
         to,
@@ -66,6 +94,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         models: merged?.models ?? {},
         toolCalls: merged?.toolCalls ?? {},
         cost: costOfRuns(ctx, rows),
+        series,
       };
     },
   );
