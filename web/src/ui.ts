@@ -22,8 +22,12 @@ export const field =
 
 export const labelType = 'text-label font-semibold uppercase tracking-wide';
 
-/** Page-level heading (Display role) — one per view. */
-export const displayTitle = 'text-display font-semibold tracking-tight';
+/** Page-level heading (Display role) — one per view. Space Grotesk display face. */
+export const displayTitle = 'font-display text-display font-semibold tracking-tight';
+
+/** Dialog headline (Headline role): the display face at 600. Pair with the
+ * dialog's own bottom margin, e.g. `${headline} mb-4`. */
+export const headline = 'font-display text-headline font-semibold';
 
 /** Table header row: Label-role muted text on every table in the app. */
 export const tableHead = `${labelType} text-muted`;

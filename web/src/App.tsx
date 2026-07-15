@@ -18,6 +18,7 @@ import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rai
 import type { View } from './rail-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
 import { btnPrimary } from './ui';
+import { Toaster, toastError } from './toast';
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
 // must not leak into the mobile drawer, so JS needs the same threshold.
@@ -219,7 +220,9 @@ export function App() {
           className={`flex items-center gap-2.5 px-4 py-3 rail:px-3 rail:pb-5 ${railCollapsed ? 'rail:justify-center rail:px-0' : ''}`}
         >
           <BrandMark />
-          <span className={`whitespace-nowrap text-title font-bold tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}>
+          <span
+            className={`whitespace-nowrap font-display text-title font-bold tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
+          >
             Harmonic
           </span>
           {railCollapsed && <span className="sr-only">Harmonic</span>}
@@ -248,7 +251,7 @@ export function App() {
               checked={config.autoRunner.enabled}
               label="Auto-runner"
               onChange={(enabled) =>
-                api.updateConfig({ autoRunner: { enabled } }).then(setConfig, (e) => alert(e.message))
+                api.updateConfig({ autoRunner: { enabled } }).then(setConfig, toastError)
               }
             >
               <span
@@ -333,6 +336,8 @@ export function App() {
           }}
         />
       )}
+
+      <Toaster />
     </div>
   );
 }

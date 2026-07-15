@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { Task } from '../types';
 import { taskActions, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnReject } from '../ui';
+import { toastError } from '../toast';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
 
@@ -33,8 +34,7 @@ export function TaskActions({
   if (variant === 'footer' && actions.length === 0) return null;
 
   const secondary = variant === 'card' ? btnQuiet : btnGhost;
-  const act = (fn: () => Promise<unknown>) => () =>
-    fn().then(onChanged, (e) => alert(e instanceof Error ? e.message : String(e)));
+  const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, toastError);
 
   const button = (action: TaskAction) => {
     switch (action) {

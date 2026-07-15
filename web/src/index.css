@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import '@fontsource/jetbrains-mono/400.css';
 @import '@fontsource/jetbrains-mono/600.css'; /* weighted data figures (summary card, chart labels) */
+@import '@fontsource/space-grotesk/600.css'; /* display face: page titles + dialog headlines */
+@import '@fontsource/space-grotesk/700.css'; /* the wordmark alone */
 
 /* ── Ledger (DESIGN.md) ─────────────────────────────────────────────
    Dual-theme zinc + indigo. Light is defined on :root; dark overrides
@@ -145,6 +147,11 @@
   /* Data face: JetBrains Mono, data only (the Mono Is Data Rule). */
   --font-data: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* Display face: Space Grotesk carries the wordmark, page titles, and dialog
+     headlines only — the rare, large type. Body/UI/labels stay system sans;
+     data stays mono. Swap this one token to retune the interface's voice. */
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+
   /* Type roles (fixed rem scale). Weights: 400 body / 500 UI emphasis /
      600 headings; 700 exists for the wordmark alone. */
   --text-display: 1.375rem;
@@ -194,6 +201,14 @@
     from {
       opacity: 0;
       transform: translateY(4px) scale(0.98);
+    }
+  }
+
+  /* Toasts rise a few px into place; motion-safe: gates it in the markup. */
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
     }
   }
 

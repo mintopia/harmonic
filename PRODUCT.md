@@ -22,7 +22,7 @@ Run a fleet of coding agents unattended â€” nothing merges without your review â
 
 ## Brand Personality
 
-Fast, dense, operator-grade. Quiet control-room energy: the interface carries a lot of state in little space, uses its one amber accent and a small semantic state palette (emerald / red / amber / sky / indigo) to mean things, and never performs excitement. The tool disappears into the task.
+Fast, dense, operator-grade. Quiet control-room energy: the interface carries a lot of state in little space, speaks in one indigo accent (its only voice) over a small semantic state palette (amber running / green accepted / red failed / teal tooling) to mean things, and never performs excitement. The tool disappears into the task. (Accent updated 2026-07-15: the "Ledger" redesign made indigo the accent and amber a state color; see DESIGN.md.)
 
 ## Anti-references
 

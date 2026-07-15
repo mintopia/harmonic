@@ -38,13 +38,13 @@ colors:
   tool-teal-dark: "#5cc6d6"
 typography:
   display:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Space Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.375rem"
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: "-0.015em"
   headline:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "Space Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 600
     lineHeight: 1.3
@@ -166,17 +166,18 @@ Each state is a text color + a tint fill, per theme, rendered as pill chips, cou
 
 ## 3. Typography
 
-**Display/Body Font:** system sans (ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto)
-**Data Font:** JetBrains Mono (400 + 600) — data only
+**Display Font:** Space Grotesk (600 + 700) — the wordmark, page titles (Display), and dialog headlines (Headline) only; the rare, large type. Loaded via `@fontsource/space-grotesk`, bound to the `--font-display` token (`web/src/index.css`) so the voice retunes from one line.
+**Body/UI Font:** system sans (ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto) — everything else the interface says.
+**Data Font:** JetBrains Mono (400 + 600) — data only.
 
-**Character:** A quiet system sans carries the interface; an engineered monospace answers wherever the operator reads machine output. Hierarchy is built from fixed rem roles and three working weights (400 body / 500 UI emphasis / 600 headings; 700 exists for the wordmark alone), with `tabular-nums` inherent everywhere numbers appear.
+**Character:** A quiet system sans carries the interface; Space Grotesk — a geometric grotesk sharing lineage with the mono data face — signs the identity layer (wordmark, page titles, dialog headlines); an engineered monospace answers wherever the operator reads machine output. The display face is deliberately fenced to the large, rare type so it never touches operator density. Hierarchy is built from fixed rem roles and three working weights (400 body / 500 UI emphasis / 600 headings; 700 exists for the wordmark alone), with `tabular-nums` inherent everywhere numbers appear.
 
 ### Hierarchy
-- **Display** (600, 1.375rem/1.25, -0.015em): page-level headings only. Rare.
-- **Headline** (600, 1.125rem/1.3): dialog titles.
-- **Title** (600, 0.9375rem/1.4): card/section headings, summary values.
+- **Display** (Space Grotesk 600, 1.375rem/1.25, -0.015em): page-level headings and the wordmark (700). Rare.
+- **Headline** (Space Grotesk 600, 1.125rem/1.3): dialog titles.
+- **Title** (system sans 600, 0.9375rem/1.4): card/section headings, summary values.
 - **Body** (400, 0.84375rem/1.5): prompts, prose, UI copy. Buttons and nav take 500–600 at body size. Prose blocks cap at 75ch; tables and streams may run full width.
-- **Label** (600, 0.6875rem/1.2, +0.025em, uppercase): field labels, table headers, chips. The only uppercase in the system.
+- **Label** (0.6875rem/1.2, +0.025em, uppercase): field labels and table headers at **600**; chips at **500** (a lighter weight suits the dense small pills). The only uppercase in the system.
 - **Data** (mono, 400/600, 0.8125rem/1.5): task ids, costs, harness · model names, branches, timestamps, log/event streams, chart figures.
 
 ### Named Rules
@@ -186,7 +187,7 @@ Each state is a text color + a tint fill, per theme, rendered as pill chips, cou
 ## 4. Elevation
 
 Depth is real but quiet, and theme-aware (the Soft Depth Rule):
-- **Light:** cards float on the canvas with a soft two-layer shadow (`0 1px 2px rgb(24 24 32 / .05), 0 2px 6px rgb(24 24 32 / .06)`); floating elements (save bar, dialogs, chart tooltip) use the bar shadow (`0 4px 18px rgb(24 24 32 / .14)`). Cards carry **no borders** — never pair a border with a wide shadow (the ghost-card ban).
+- **Light:** cards float on the canvas with a soft two-layer shadow (`0 1px 2px rgb(24 24 32 / .05), 0 2px 6px rgb(24 24 32 / .06)`); floating elements (save bar, dialogs, chart tooltip, toasts) use the bar shadow (`0 4px 18px rgb(24 24 32 / .14)`). Cards carry **no borders** — never pair a border with a wide shadow (the ghost-card ban).
 - **Dark:** shadows vanish on a dark field, so depth comes from lightness steps (#17171a canvas → #1c1c20 shell → #212126 surface → #2a2a31 raised). The bar-shadow token carries a 1px hairline ring in dark so floating elements still separate.
 - Hairlines mark shared edges (the sidebar's edge, table rows, section dividers inside cards). Interactive affordances (fields, ghost buttons) keep 1px Edge borders; that's affordance, not enclosure.
 - The focus ring is a 2px accent outline, offset 1px, everywhere.
@@ -197,7 +198,7 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 - **Primary:** accent fill, white/near-black text, 8px radius, 8px 14px padding, weight 600, small accent shadow in light. One per view.
 - **Ghost:** surface fill with 1px Edge border, ink text; hover darkens the border.
 - **Quiet:** muted text, weight 500, hover to ink; destructive quiet actions hover to fail red.
-- **Review gate:** Accept/Reject are tinted pills (green tint / red tint at weight 600) — the loudest thing on a card, one click from the board.
+- **Review gate:** Accept/Reject are tinted pills (green tint / red tint at weight 600) — the loudest thing on a card, one click from the board. **Accept is deliberately unguarded** (decided 2026-07-15): the operator's read of the run *is* the review (PRODUCT.md: "the review gate is sacred"), so gating the click behind a confirm would only add friction to the product's core loop; a worktree merge conflict is recoverable (it returns the Task to *awaiting-review*). Reject alone opens a dialog — because it takes a reason (feedback for the re-attempt), not because it needs a guard.
 - **Hover / Focus:** 150ms ease-out transitions; 2px accent `:focus-visible` outline. **Disabled:** 50% opacity, no hover response.
 
 ### Chips (state & metadata badges)
@@ -215,16 +216,16 @@ On/off is a pill switch: 32×18px track, Edge fill off / accent fill on, white k
 - **Never nest cards.** Content inside a card groups with hairlines or a Raised inset fill (harness rows, the channel add-form).
 
 ### Navigation (the Sidebar)
-- Slim fixed left sidebar (200px, collapsible to 48px icon width) on Shell with a hairline right edge. Brand = 20px accent-filled rounded mark ("H") + wordmark at 700. Views (Board / Table / Stats / API / Settings) as the primary group; theme cycle + Log out pinned bottom.
+- Slim fixed left sidebar (200px, collapsible to 48px icon width) on Shell with a hairline right edge. Brand = 20px accent-filled rounded mark carrying a four-bar glyph — a waveform (harmonic) that also reads as parallel run lanes (the board) — beside the wordmark at 700 in the display face. The mark is static: no motion to compete with live state. Shared by the sidebar and Login (`web/src/components/BrandMark.tsx`). Views (Board / Table / Stats / API / Settings) as the primary group; theme cycle + Log out pinned bottom.
 - Items: body size at weight 500, muted → hover raises on Raised → **active is accent text on Accent Tint at 600** — the sidebar's only indigo.
 - Icons: minimal inline-SVG line set (16px frame, 1.5 stroke, `currentColor` — `web/src/components/Icon.tsx`). No emoji, no icon fonts.
 - Collapse behavior, `localStorage` persistence, and the sub-900px top drawer carry over unchanged from the Signal Console spec (issue 21); collapsed items keep `aria-label` + `title`.
 - **Top strip** (Shell, hairline bottom): status, not navigation — auto-runner switch, running count with amber dot, today's cost, and the view's one primary action (New task).
 
 ### The Board (signature component)
-- Active pipeline columns (Draft, Blocked, Ready, Running, Awaiting review) always expanded: flexible width (min 200px), 20px gaps, sentence-case 600 headers with **count pills** (Raised neutral; amber/red/green tint when the count means a state; faint at zero).
+- Active pipeline columns (Draft, Blocked, Ready, Running, Awaiting review) always expanded: fixed 240px width, 16px gaps, sentence-case 600 headers with **count pills** (Raised neutral; amber/red/green tint when the count means a state; faint at zero). Columns are fixed-width, not flex-fill (decided 2026-07-15): the board scrolls horizontally when they overflow, so peeking a terminal column open appends a column and extends the scroll rather than shrinking the pipeline.
 - Task cards stack at 12px; the Accept/Reject tinted pills sit on every awaiting-review card.
-- **Terminal states live in one Finished panel**: a Raised inset panel (144px) listing Completed / Failed / Cancelled counts (fail count red when > 0). Clicking a row expands that column in place until collapsed. Full terminal history lives in the Table view. Load-independent geometry is still the point: columns never appear, vanish, or reflow as tasks move.
+- **Terminal states live in one Finished panel**: a Raised inset panel (144px) listing Completed / Failed / Cancelled counts (fail count red when > 0). Clicking a row expands that column in place until collapsed; expanding hands keyboard focus to the new column's Collapse control (which scrolls it into view), collapsing returns focus to its panel row — a full keyboard path with no focus loss when the panel unmounts. Full terminal history lives in the Table view. Load-independent geometry is the point: columns never appear, vanish, or reflow as tasks move, and peeking finished work never resizes the pipeline the operator is glancing at.
 - Loading is a skeleton board (pulsing Raised blocks), never a spinner.
 
 ### Settings (section cards)
@@ -240,6 +241,9 @@ On/off is a pill switch: 32×18px track, Edge fill off / accent fill on, white k
 ### Dialogs
 Native `<dialog>`, Surface fill, 12px radius, bar shadow (hairline ring in dark), backdrop `rgb(0 0 0 / 0.5)`, 150ms fade/scale-in with a reduced-motion instant alternative.
 
+### Toasts (the error surface)
+A rejected operation never surfaces in a native `alert()` — it announces in a bottom-right stack of Fail-tint cards (`bg-fail-tint text-fail`, 10px radius, bar shadow), an `aria-live` region with a Dismiss control, auto-dismissing after ~6s, rising 8px into place under `motion-safe` only (`web/src/toast.tsx`). It is the designed counterpart to the inline Fail-tint error banner; the store is module-level so any handler calls `toastError(e)` without threading context.
+
 ## 6. Do's and Don'ts
 
 ### Do:
@@ -253,5 +257,6 @@ Native `<dialog>`, Surface fill, 12px radius, bar shadow (hairline ring in dark)
 - **Don't** ship CI/CD console gloom, chat-app cuteness, or kanban-tool sprawl (PRODUCT.md anti-references).
 - **Don't** pair a border with a wide shadow (ghost-card), tint the zinc neutrals toward any hue, use gradient text, glassmorphism, or side-stripe borders.
 - **Don't** use state colors decoratively, set UI chrome or prose in monospace (Mono Is Data Rule), or nest cards inside cards.
+- **Don't** fall back to a native `alert()`/`confirm()` for failures — they break the register; failures surface in the designed toast (§ Toasts).
 - **Don't** let indigo mean anything but the interface's voice — tooling metadata is teal, there is no generic info blue, and no second accent exists.
 - **Don't** reintroduce terminal cosplay (scanlines, glow, rotated rail columns) — the Signal Console is retired.

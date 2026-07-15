@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../api';
 import { Modal } from './Modal';
-import { btnGhost, btnQuiet, field, labelType } from '../ui';
+import { btnGhost, btnQuiet, field, headline, labelType } from '../ui';
 
 /**
  * The review gate's Reject path. Feedback is saved on the run either way;
@@ -49,7 +49,7 @@ export function RejectDialog({
   return (
     <Modal label={`Reject task #${taskId}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className="mb-1 text-headline font-semibold">Reject task #{taskId}</h2>
+        <h2 className={`${headline} mb-1`}>Reject task #{taskId}</h2>
         <p className="mb-4 text-muted">
           Feedback is saved on the run. Create a re-attempt to spawn a new task linked to this one, with the notes added
           to its prompt — or mark it failed to stop here.

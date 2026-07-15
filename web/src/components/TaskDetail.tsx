@@ -7,6 +7,7 @@ import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
 import { btnQuiet, chip, labelType, stateChip } from '../ui';
+import { toastError } from '../toast';
 
 const metaChip = `${chip} bg-raised text-muted`;
 const inlineSelect =
@@ -36,7 +37,7 @@ function Dependencies({ task }: { task: Task }) {
     (t) => t.id !== task.id && !current.dependsOn.includes(t.id) && !['cancelled'].includes(t.state),
   );
 
-  const act = (fn: () => Promise<Task>) => fn().then(setCurrent, (e) => alert(e.message));
+  const act = (fn: () => Promise<Task>) => fn().then(setCurrent, toastError);
 
   return (
     <div className="py-3">

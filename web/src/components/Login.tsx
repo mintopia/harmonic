@@ -28,7 +28,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
       <form onSubmit={submit} className={`${card} w-80 p-6`}>
         <div className="flex items-center gap-2.5">
           <BrandMark />
-          <h1 className="text-headline font-bold tracking-tight">Harmonic</h1>
+          <h1 className="font-display text-headline font-bold tracking-tight">Harmonic</h1>
         </div>
         <p className="mb-5 mt-1.5 text-muted">Operator console</p>
         <input

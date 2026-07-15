@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { AppConfig, Task } from '../types';
 import { Modal } from './Modal';
 import { ModelCombobox } from './ModelCombobox';
-import { btnGhost, btnPrimary, btnQuiet, field, labelType } from '../ui';
+import { btnGhost, btnPrimary, btnQuiet, field, headline, labelType } from '../ui';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
@@ -57,7 +57,7 @@ export function TaskForm({
   return (
     <Modal label={task ? `Edit task #${task.id}` : 'New task'} onClose={onClose} className="max-w-lg">
       <form onSubmit={submit} className="p-5">
-        <h2 className="mb-4 text-headline font-semibold">{task ? `Edit task #${task.id}` : 'New task'}</h2>
+        <h2 className={`${headline} mb-4`}>{task ? `Edit task #${task.id}` : 'New task'}</h2>
 
         <div className="mb-3">
           <label className={label} htmlFor="task-prompt">Prompt</label>

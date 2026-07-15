@@ -4,6 +4,7 @@ import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
 import { card, labelType, stateChip, tableHead } from '../ui';
+import { toastError } from '../toast';
 
 const select =
   'rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
@@ -40,7 +41,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
   const openOriginal = (id: number) => {
     const found = tasks.find((t) => t.id === id);
     if (found) return onOpen(found);
-    api.task(id).then(onOpen, (e) => alert(e instanceof Error ? e.message : String(e)));
+    api.task(id).then(onOpen, toastError);
   };
 
   const sortHeader = (key: SortKey, label: string, align?: 'right', extra = '') => (
@@ -70,7 +71,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
       <div className="mb-4 flex flex-wrap items-baseline gap-2">
         {/* The view's anchor figure: how many tasks the filters select. */}
         <span className="flex items-baseline gap-1.5">
-          <span className={`text-display font-semibold tracking-tight ${tasks.length > 0 || loading ? '' : 'text-faint'}`}>
+          <span className={`font-display text-display font-semibold tracking-tight ${tasks.length > 0 || loading ? '' : 'text-faint'}`}>
             {loading ? '…' : tasks.length}
           </span>
           <span className={`${labelType} text-muted`}>tasks</span>

@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
     "@tailwindcss/vite": "^4.3.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",

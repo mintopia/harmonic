@@ -18,7 +18,8 @@ export type IconName =
   | 'sun'
   | 'moon'
   | 'circle-half'
-  | 'check';
+  | 'check'
+  | 'close';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
@@ -76,6 +77,8 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   // Selection tick for list options.
   check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,
+  // Dismiss (toasts, chips).
+  close: <path d="M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5" />,
 };
 
 export function Icon({ name, className }: { name: IconName; className?: string }) {
