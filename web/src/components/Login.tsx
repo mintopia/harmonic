@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { btnPrimary, field } from '../ui';
+import { BrandMark } from './BrandMark';
+import { btnPrimary, card, field } from '../ui';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [password, setPassword] = useState('');
@@ -24,8 +25,12 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={submit} className="w-80 rounded-md border border-hairline bg-surface p-6">
-        <h1 className="mb-4 text-center text-title font-semibold">Harmonic</h1>
+      <form onSubmit={submit} className={`${card} w-80 p-6`}>
+        <div className="flex items-center gap-2.5">
+          <BrandMark />
+          <h1 className="text-headline font-bold tracking-tight">Harmonic</h1>
+        </div>
+        <p className="mb-5 mt-1.5 text-muted">Operator console</p>
         <input
           type="password"
           autoFocus

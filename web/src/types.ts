@@ -71,6 +71,14 @@ export interface RunEvent {
   payload: any;
 }
 
+export interface Channel {
+  id: number;
+  name: string;
+  type: 'discord' | 'slack' | 'webhook' | 'email';
+  config: Record<string, any>;
+  events: string[];
+}
+
 export interface HarnessConfig {
   command: string;
   args: string[];

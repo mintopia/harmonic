@@ -1,4 +1,4 @@
-import type { AppConfig, Cost, Run, RunEvent, Task } from './types';
+import type { AppConfig, Channel, Cost, Run, RunEvent, Task } from './types';
 
 class ApiError extends Error {
   constructor(
@@ -55,4 +55,10 @@ export const api = {
     ),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+  channels: () => request<{ channels: Channel[] }>('GET', '/api/channels'),
+  createChannel: (input: { name: string; type: Channel['type']; config: Record<string, unknown> }) =>
+    request<Channel>('POST', '/api/channels', input),
+  updateChannel: (id: number, patch: { events: string[] }) =>
+    request<Channel>('PATCH', `/api/channels/${id}`, patch),
+  deleteChannel: (id: number) => request<unknown>('DELETE', `/api/channels/${id}`),
 };

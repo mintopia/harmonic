@@ -1,9 +1,9 @@
 import type { RunEvent } from '../types';
 import { chip } from '../ui';
 
-/* Tool calls and permission traffic are harness/tooling metadata — Tool
- * Indigo territory (the State Speaks Rule). */
-const toolChip = `${chip} bg-tool/15 text-tool`;
+/* Tool calls and permission traffic are harness/tooling metadata — tool
+ * teal territory (the State Speaks Rule). */
+const toolChip = `${chip} bg-tool-tint text-tool`;
 
 function ToolCallLine({ payload }: { payload: any }) {
   return (

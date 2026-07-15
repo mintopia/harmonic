@@ -5,8 +5,9 @@ import { useEffect, useRef, type ReactNode } from 'react';
  * and focus restore all come from the platform. Clicking the backdrop closes.
  * Keep the dialog itself padding-free so backdrop-click detection (target ===
  * dialog) never fires from clicks inside the panel; children own their padding.
- * Separation from the page is a hairline plus the backdrop dim — no shadow
- * (the Flat Field Rule).
+ * Separation from the page is the floating-bar shadow plus the backdrop dim
+ * (in dark the shadow token carries a hairline ring, since shadows vanish
+ * on a dark field — the Soft Depth Rule).
  */
 export function Modal({
   label,
@@ -41,7 +42,7 @@ export function Modal({
       onClick={(e) => {
         if (e.target === ref.current) ref.current.close();
       }}
-      className={`m-auto w-[calc(100%-2rem)] rounded-lg border border-hairline bg-surface p-0 text-ink ${className}`}
+      className={`m-auto w-[calc(100%-2rem)] rounded-xl bg-surface p-0 text-ink shadow-bar ${className}`}
     >
       {children}
     </dialog>

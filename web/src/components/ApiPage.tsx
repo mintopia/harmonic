@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { btnGhost, btnPrimary, btnQuiet, field, labelType } from '../ui';
+import { btnPrimary, btnQuiet, card, displayTitle, field, labelType, tableHead } from '../ui';
 import { ApiReference } from './ApiReference';
 
 interface ApiKey {
@@ -22,8 +22,6 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json() as Promise<T>;
 }
-
-const panel = 'rounded-md border border-hairline bg-surface p-4';
 
 /** navigator.clipboard.writeText with a brief "copied" acknowledgement — no
  * existing clipboard pattern in the app to match, so this is the one. */
@@ -82,25 +80,40 @@ export function ApiPage() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h2 className="text-display font-semibold tracking-tight">API</h2>
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <h2 className={displayTitle}>API</h2>
       </div>
 
-      <div className={`${panel} mb-4 flex flex-col gap-2`}>
-        <h3 className={`${labelType} text-muted`}>Connection</h3>
-        <ConnectionRow label="Base URL" value={origin} />
-        <ConnectionRow label="MCP endpoint" value={mcpUrl} />
-        <div className="flex items-center gap-2">
-          <span className={`${labelType} w-28 shrink-0 text-muted`}>Example</span>
-          <code className="flex-1 overflow-x-auto whitespace-pre font-data text-data text-ink">
-            {curlExample}
-          </code>
-          <CopyButton value={curlExample} />
+      {/* Section cards on the canvas — the same grammar as Settings. */}
+      <div className="flex flex-col gap-4">
+      <section className={`${card} p-5`}>
+        <h3 className="mb-3 text-title font-semibold">Connection</h3>
+        <div className="flex flex-col gap-2">
+          <ConnectionRow label="Base URL" value={origin} />
+          <ConnectionRow label="MCP endpoint" value={mcpUrl} />
+          <div className="flex items-center gap-2">
+            <span className={`${labelType} w-28 shrink-0 text-muted`}>Example</span>
+            <code className="flex-1 overflow-x-auto whitespace-pre font-data text-data text-ink">
+              {curlExample}
+            </code>
+            <CopyButton value={curlExample} />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`${labelType} w-28 shrink-0 text-muted`}>OpenAPI spec</span>
+            <span className="flex gap-3">
+              <a href="/api/openapi.json" download className="text-muted underline underline-offset-2 hover:text-ink">
+                JSON
+              </a>
+              <a href="/api/openapi.yaml" download className="text-muted underline underline-offset-2 hover:text-ink">
+                YAML
+              </a>
+            </span>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className={`${panel} mb-4`}>
-        <h3 className="mb-3 text-headline font-semibold">API keys</h3>
+      <section className={`${card} p-5`}>
+        <h3 className="mb-3 text-title font-semibold">API keys</h3>
 
         <div className="mb-4 flex gap-2">
           <input
@@ -116,15 +129,15 @@ export function ApiPage() {
         </div>
 
         {freshToken && (
-          <div className="mb-4 rounded-md border border-accept bg-accept/15 p-3">
-            <p className="mb-1 text-accept">Copy this token now — it will not be shown again:</p>
+          <div className="mb-4 rounded-md bg-accept-tint p-3">
+            <p className="mb-1 font-medium text-accept">Copy this token now — it will not be shown again:</p>
             <code className="block select-all break-all font-data text-data text-ink">{freshToken}</code>
           </div>
         )}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
-            <thead className={`${labelType} text-muted`}>
+            <thead className={tableHead}>
               <tr>
                 <th className="py-1">Name</th>
                 <th>Prefix</th>
@@ -168,21 +181,10 @@ export function ApiPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className={`${panel} mb-4`}>
-        <h3 className={`mb-2 ${labelType} text-muted`}>Spec downloads</h3>
-        <div className="flex gap-2">
-          <a href="/api/openapi.json" download className={btnGhost}>
-            Download JSON
-          </a>
-          <a href="/api/openapi.yaml" download className={btnGhost}>
-            Download YAML
-          </a>
-        </div>
-      </div>
+      </section>
 
       <ApiReference />
+      </div>
     </div>
   );
 }

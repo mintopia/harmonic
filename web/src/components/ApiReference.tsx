@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { buildApiReference, describeType } from '../openapi-reference';
 import type { ApiReferenceEndpoint, ApiReferenceGroup, SchemaNode } from '../openapi-reference';
-import { chip, labelType } from '../ui';
-
-const panel = 'rounded-md border border-hairline bg-surface p-4';
+import { card, chip, labelType, tableHead } from '../ui';
 
 /** Disclosure chevron, private to this file — mirrors Icon.tsx's stroke
  * vocabulary (16 viewBox, 1.5 stroke, currentColor) without adding to the
@@ -12,7 +10,7 @@ function Chevron({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden="true"
-      className={`shrink-0 text-muted transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+      className={`shrink-0 text-muted transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
       fill="none"
       height="12"
       stroke="currentColor"
@@ -80,7 +78,7 @@ function ParamsTable({ parameters }: { parameters: ApiReferenceEndpoint['paramet
     <div>
       <h4 className={`mb-1 ${labelType} text-muted`}>Parameters</h4>
       <table className="w-full text-left">
-        <thead className={`${labelType} text-muted`}>
+        <thead className={tableHead}>
           <tr>
             <th className="py-1 pr-2">Name</th>
             <th className="pr-2">In</th>
@@ -186,9 +184,14 @@ export function ApiReference() {
       return next;
     });
 
+  const endpointCount = groups?.reduce((n, g) => n + g.endpoints.length, 0) ?? 0;
+
   return (
-    <div className={`${panel} mb-4`}>
-      <h3 className={`mb-2 ${labelType} text-muted`}>Endpoint reference</h3>
+    <section className={`${card} p-5`}>
+      <h3 className="mb-2 flex items-baseline gap-2 text-title font-semibold">
+        Endpoint reference
+        {groups && <span className="font-data text-data font-normal text-muted">{endpointCount}</span>}
+      </h3>
       {error && <p className="text-fail">Failed to load the API reference ({error}).</p>}
       {!error && !groups && <p className="text-muted">Loading reference…</p>}
       {groups && groups.length === 0 && <p className="text-muted">No endpoints documented.</p>}
@@ -203,6 +206,6 @@ export function ApiReference() {
           </div>
         </div>
       ))}
-    </div>
+    </section>
   );
 }

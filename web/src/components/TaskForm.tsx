@@ -54,9 +54,9 @@ export function TaskForm({
   };
 
   return (
-    <Modal label={task ? `Edit Task #${task.id}` : 'New Task'} onClose={onClose} className="max-w-lg">
+    <Modal label={task ? `Edit task #${task.id}` : 'New task'} onClose={onClose} className="max-w-lg">
       <form onSubmit={submit} className="p-5">
-        <h2 className="mb-4 text-headline font-semibold">{task ? `Edit Task #${task.id}` : 'New Task'}</h2>
+        <h2 className="mb-4 text-headline font-semibold">{task ? `Edit task #${task.id}` : 'New task'}</h2>
 
         <div className="mb-3">
           <label className={label} htmlFor="task-prompt">Prompt</label>
@@ -136,11 +136,11 @@ export function TaskForm({
           </button>
           {!task && (
             <button type="button" disabled={busy || !prompt} onClick={() => save('draft')} className={btnGhost}>
-              Save Draft
+              Save draft
             </button>
           )}
           <button type="submit" disabled={busy || !prompt} className={btnPrimary}>
-            {task ? 'Save' : 'Create Ready'}
+            {task ? 'Save' : 'Create ready'}
           </button>
         </div>
       </form>

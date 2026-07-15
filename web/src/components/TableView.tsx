@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
-import { labelType, stateChip } from '../ui';
+import { card, labelType, stateChip, tableHead } from '../ui';
 
 const select =
-  'rounded-md border border-hairline bg-canvas px-2 py-1 text-label text-ink focus:border-accent focus:outline-none';
+  'rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
 
 type SortKey = 'createdAt' | 'priority' | 'cost';
 
@@ -39,9 +39,10 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
       aria-sort={sortBy === key ? (order === 'asc' ? 'ascending' : 'descending') : undefined}
       className={`py-2 ${align === 'right' ? 'text-right' : ''} ${extra}`}
     >
+      {/* Buttons don't inherit text-transform, so restate the Label casing. */}
       <button
         type="button"
-        className="cursor-pointer select-none hover:text-ink"
+        className={`${labelType} cursor-pointer select-none hover:text-ink`}
         onClick={() => {
           if (sortBy === key) setOrder(order === 'asc' ? 'desc' : 'asc');
           else {
@@ -57,7 +58,15 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap items-baseline gap-2">
+        {/* The view's anchor figure: how many tasks the filters select. */}
+        <span className="flex items-baseline gap-1.5">
+          <span className={`text-display font-semibold tracking-tight ${tasks.length > 0 || loading ? '' : 'text-faint'}`}>
+            {loading ? '…' : tasks.length}
+          </span>
+          <span className={`${labelType} text-muted`}>tasks</span>
+        </span>
+        <div className="flex-1" />
         <select aria-label="Filter by state" className={select} value={state} onChange={(e) => setState(e.target.value)}>
           <option value="">All states</option>
           {TASK_STATES.map((s) => (
@@ -82,16 +91,13 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
             </option>
           ))}
         </select>
-        <span className="ml-auto self-center text-muted">
-          {loading ? 'Loading…' : `${tasks.length} tasks`}
-        </span>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className={`${card} overflow-x-auto px-4 py-1`}>
         <table className="w-full text-left">
-          <thead className={`${labelType} text-muted`}>
+          <thead className={tableHead}>
             <tr>
-              <th className="py-2">#</th>
+              <th className="py-2.5 pr-3">#</th>
               <th>Prompt</th>
               <th>State</th>
               <th>Harness</th>
@@ -107,10 +113,10 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
             {tasks.map((task) => (
               <tr
                 key={task.id}
-                className="cursor-pointer border-t border-hairline hover:bg-surface"
+                className="cursor-pointer border-t border-hairline transition-colors duration-150 hover:bg-raised"
                 onClick={() => onOpen(task)}
               >
-                <td className="py-2 font-data text-data text-muted">{task.id}</td>
+                <td className="py-2 pr-3 font-data text-data text-muted">{task.id}</td>
                 <td className="max-w-md pr-4">
                   <button
                     type="button"

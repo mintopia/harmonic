@@ -9,7 +9,7 @@ import { btnQuiet, chip, labelType, stateChip } from '../ui';
 
 const metaChip = `${chip} bg-raised text-muted`;
 const inlineSelect =
-  'rounded-md border border-hairline bg-canvas px-1 py-0.5 text-ink focus:border-accent focus:outline-none';
+  'rounded-md border border-edge bg-field px-1 py-0.5 text-ink focus:border-accent focus:outline-none';
 
 function Dependencies({ task }: { task: Task }) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -245,8 +245,10 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
               key={run.id}
               aria-pressed={run.id === selectedRunId}
               onClick={() => setSelectedRunId(run.id)}
-              className={`rounded-md border px-2 py-1 transition-colors duration-150 ${
-                run.id === selectedRunId ? 'border-accent text-ink' : 'border-hairline text-muted hover:text-ink'
+              className={`rounded-md px-2 py-1 transition-colors duration-150 ${
+                run.id === selectedRunId
+                  ? 'bg-accent-tint font-semibold text-accent'
+                  : 'font-medium text-muted hover:bg-raised hover:text-ink'
               }`}
             >
               Run {run.attempt}
@@ -298,13 +300,13 @@ export function TaskDetail({ task, onClose }: { task: Task; onClose: () => void 
           </div>
         )}
         {selectedRun?.reviewFeedback && (
-          <div className="mx-4 mb-2 rounded-md border border-hairline bg-raised px-3 py-1.5 text-ink">
+          <div className="mx-4 mb-2 rounded-md bg-raised px-3 py-1.5 text-ink">
             {selectedRun.review === 'rejected' && <span className="text-fail">Rejection feedback: </span>}
             {selectedRun.reviewFeedback}
           </div>
         )}
         {diffStat && (
-          <pre className="mx-4 mb-2 overflow-x-auto rounded-md bg-canvas p-2 font-data text-data text-muted">{diffStat}</pre>
+          <pre className="mx-4 mb-2 overflow-x-auto rounded-md bg-field p-2 font-data text-data text-muted">{diffStat}</pre>
         )}
 
         <div className="flex-1 overflow-y-auto p-4">
