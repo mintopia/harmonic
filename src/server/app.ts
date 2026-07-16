@@ -6,6 +6,7 @@ import fastifySwagger from '@fastify/swagger';
 import {
   hasZodFastifySchemaValidationErrors,
   jsonSchemaTransform,
+  jsonSchemaTransformObject,
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
@@ -259,6 +260,13 @@ Authorization header).`;
       },
     },
     transform: jsonSchemaTransform,
+    // Without this, every `.meta({ id })` schema in schemas.ts still emits a
+    // `$ref: '#/components/schemas/X'` at each use site, but nothing ever
+    // writes the targets into `components.schemas` — leaving the published
+    // spec full of dangling pointers (invalid for codegen, and rendered as a
+    // literal `{"$ref": …}` by the API page). transformObject walks zod's
+    // global registry and materializes them.
+    transformObject: jsonSchemaTransformObject,
   });
 
   // Every API surface is authenticated: cookie sessions for the SPA,

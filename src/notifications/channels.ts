@@ -38,11 +38,21 @@ const CONFIG_SCHEMAS: Record<ChannelType, z.ZodType> = {
   email: emailConfigSchema,
 };
 
+// Examples ride on the request schema too: the API page renders whatever the
+// spec declares, and a bare field documents itself as `"string"`. `config` is a
+// record, so it needs an example of its own — without one the docs print its
+// JSON Schema, which is exactly the shape a reader can't use. The example is a
+// Discord channel's; each type takes a different config (see CONFIG_SCHEMAS).
 export const createChannelSchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(CHANNEL_TYPES),
-  config: z.record(z.string(), z.unknown()),
-  events: z.array(z.enum(NOTIFICATION_EVENTS)).optional(),
+  name: z.string().min(1).meta({ example: 'ops-alerts' }),
+  type: z.enum(CHANNEL_TYPES).meta({ example: 'discord' }),
+  config: z.record(z.string(), z.unknown()).meta({
+    example: { url: 'https://discord.com/api/webhooks/000000000000000000/EXAMPLE-WEBHOOK-TOKEN' },
+  }),
+  events: z
+    .array(z.enum(NOTIFICATION_EVENTS))
+    .optional()
+    .meta({ example: ['task.awaiting-review', 'task.failed'] }),
 });
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 

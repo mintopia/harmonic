@@ -13,25 +13,28 @@ export type Priority = (typeof PRIORITIES)[number];
 
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
-  command: z.string(),
-  args: z.array(z.string()).default([]),
+  command: z.string().meta({ example: 'npx' }),
+  args: z.array(z.string()).default([]).meta({ example: ['@zed-industries/claude-code-acp'] }),
   /** Extra environment for the spawned process (e.g. API keys). */
-  env: z.record(z.string(), z.string()).default({}),
-  models: z.array(z.string()).default([]),
-  defaultModel: z.string(),
+  env: z
+    .record(z.string(), z.string())
+    .default({})
+    .meta({ example: { ANTHROPIC_API_KEY: '<your-api-key>' } }),
+  models: z.array(z.string()).default([]).meta({ example: ['sonnet-5', 'opus-4.8'] }),
+  defaultModel: z.string().meta({ example: 'sonnet-5' }),
   /**
    * Root of the harness's native session logs, for the per-model usage
    * fallback (Claude Code: ~/.claude/projects). Empty string disables.
    */
-  sessionLogDir: z.string().optional(),
+  sessionLogDir: z.string().optional().meta({ example: '~/.claude/projects' }),
 });
 
 /** Per-model API rates in $/Mtok; must match `ModelPrice` in execution/pricing.ts. */
 export const modelPriceSchema = z.object({
-  input: z.number().nonnegative(),
-  output: z.number().nonnegative(),
-  cacheRead: z.number().nonnegative(),
-  cacheWrite: z.number().nonnegative(),
+  input: z.number().nonnegative().meta({ example: 3 }),
+  output: z.number().nonnegative().meta({ example: 15 }),
+  cacheRead: z.number().nonnegative().meta({ example: 0.3 }),
+  cacheWrite: z.number().nonnegative().meta({ example: 3.75 }),
 });
 
 /**
@@ -42,41 +45,59 @@ export const modelPriceSchema = z.object({
  */
 export const modelInfoSchema = z.object({
   /** Total context window in tokens, for the context-usage percentage. */
-  contextWindow: z.number().int().positive().optional(),
+  contextWindow: z.number().int().positive().optional().meta({ example: 200000 }),
   /** Prompt-cache TTL in seconds, for the idle cold-cache warning. */
-  cacheTtlSeconds: z.number().int().positive().optional(),
+  cacheTtlSeconds: z.number().int().positive().optional().meta({ example: 300 }),
 });
 
 export const appConfigSchema = z.object({
-  harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema),
+  // A record declares no shape, so the API docs fall back to printing its
+  // JSON Schema unless it carries an example of its own.
+  harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema).meta({
+    example: {
+      claude: {
+        command: 'npx',
+        args: ['@zed-industries/claude-code-acp'],
+        env: {},
+        models: ['sonnet-5', 'opus-4.8'],
+        defaultModel: 'sonnet-5',
+      },
+    },
+  }),
   /**
    * Price-table overrides for Cost: entries here override or extend the
    * shipped `DEFAULT_PRICES` (execution/pricing.ts).
    */
-  prices: z.record(z.string(), modelPriceSchema).default({}),
+  prices: z
+    .record(z.string(), modelPriceSchema)
+    .default({})
+    .meta({ example: { 'sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 } } }),
   /** Optional per-model context-window / cache-TTL facts for Conversation telemetry (issue 12). */
-  modelInfo: z.record(z.string(), modelInfoSchema).default({}),
+  modelInfo: z
+    .record(z.string(), modelInfoSchema)
+    .default({})
+    .meta({ example: { 'sonnet-5': { contextWindow: 200000, cacheTtlSeconds: 300 } } }),
   defaults: z.object({
-    harness: z.enum(HARNESS_IDS),
-    workingDir: z.string(),
-    isolationMode: z.enum(ISOLATION_MODES),
-    priority: z.enum(PRIORITIES),
+    harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
+    workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
+    isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
+    priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
   }),
   autoRunner: z.object({
-    enabled: z.boolean(),
-    maxConcurrentRuns: z.number().int().min(1),
+    enabled: z.boolean().meta({ example: true }),
+    maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
   }),
   /**
    * When true, Accept/Reject tools are exposed over MCP — agents can land
    * branches unattended (ADR-0002). Deliberate opt-in; default off.
    */
-  agentReview: z.boolean().default(false),
+  agentReview: z.boolean().default(false).meta({ example: false }),
   /**
    * End a Conversation with no Turn for this many minutes (issue 15); its
    * transcript survives read-only. 0 disables the idle timeout. Fractional
    * values are allowed.
    */
-  conversationIdleTimeoutMinutes: z.number().nonnegative().default(30),
+  conversationIdleTimeoutMinutes: z.number().nonnegative().default(30).meta({ example: 30 }),
 }).superRefine((config, ctx) => {
   // A harness's defaultModel must be one of its models (when any are
   // listed) — the Settings UI offers a select over `models`, and a stray

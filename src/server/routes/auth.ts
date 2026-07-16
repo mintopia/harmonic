@@ -2,42 +2,57 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { errorResponseSchema, okResponseSchema } from '../schemas.js';
+import { errorResponse, okResponseSchema } from '../schemas.js';
 
 export const SESSION_COOKIE = 'harmonic_session';
 
+/**
+ * Examples on this file's schemas follow schemas.ts's convention, with one
+ * exception: no field that carries a credential gets a plausible-looking
+ * value. Passwords and the once-returned key token use angle-bracket
+ * placeholders instead, so nothing in the published spec can be mistaken for
+ * a working secret or copied out of the docs page as one.
+ */
+
 const loginBodySchema = z.object({
-  password: z.string(),
+  password: z.string().meta({ example: '<your-operator-password>' }),
 });
 
 const meResponseSchema = z.object({
-  authenticated: z.boolean(),
-  passwordConfigured: z.boolean(),
+  authenticated: z.boolean().meta({ example: true }),
+  passwordConfigured: z.boolean().meta({ example: true }),
 });
 
 const changePasswordBodySchema = z.object({
-  currentPassword: z.string(),
+  currentPassword: z.string().meta({ example: '<your-current-password>' }),
   // Mirrors AuthService.setPassword's rule so the spec documents it.
-  newPassword: z.string().min(4),
+  newPassword: z.string().min(4).meta({ example: '<your-new-password>' }),
 });
 
-const createKeyBodySchema = z.object({ name: z.string().min(1) });
+const createKeyBodySchema = z.object({ name: z.string().min(1).meta({ example: 'ci-pipeline' }) });
 
-const keyIdParamsSchema = z.object({ id: z.coerce.number().int() });
+const keyIdParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 12 }) });
 
 /** An operator API key as listed/created — the bearer token itself is never included except right after creation. */
 const keySchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  prefix: z.string(),
-  scope: z.string(),
-  runId: z.number().nullable(),
-  createdAt: z.number(),
-  lastUsedAt: z.number().nullable(),
-  revokedAt: z.number().nullable(),
+  id: z.number().meta({ example: 12 }),
+  name: z.string().meta({ example: 'ci-pipeline' }),
+  /** First characters of the token, for display — too short to authenticate with. */
+  prefix: z.string().meta({ example: 'adk_1f3c9e02' }),
+  /** Always 'full' here: 'run'/'conversation' keys are internal and never listed. */
+  scope: z.string().meta({ example: 'full' }),
+  /** Set only on run-scoped keys, so null on every key this API returns. */
+  runId: z.number().nullable().meta({ example: null }),
+  createdAt: z.number().meta({ example: 1784030400000 }),
+  /** Touched on each successful bearer auth; null until first use, as on a key this moment created. */
+  lastUsedAt: z.number().nullable().meta({ example: null }),
+  revokedAt: z.number().nullable().meta({ example: null }),
 });
 
-const keyWithTokenSchema = keySchema.extend({ token: z.string() });
+/** The creation-only shape: `token` is the bearer token, returned here and never again. */
+const keyWithTokenSchema = keySchema.extend({
+  token: z.string().meta({ example: '<the-new-key-token, shown only in this response>' }),
+});
 
 const keysListResponseSchema = z.object({ keys: z.array(keySchema) });
 
@@ -53,8 +68,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Log in with the operator password, starting a session cookie.',
         body: loginBodySchema,
         response: {
-          200: okResponseSchema,
-          401: errorResponseSchema,
+          200: okResponseSchema.describe('The password matched; a session cookie is set on this response.'),
+          401: errorResponse('The password did not match, or no operator password has been set yet.'),
         },
       },
     },
@@ -79,7 +94,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Auth'],
         description: 'End the current session.',
-        response: { 200: okResponseSchema },
+        response: {
+          200: okResponseSchema.describe(
+            'The cookie is cleared and its session destroyed; sent the same way when there was no session to end.',
+          ),
+        },
       },
     },
     async (req, reply) => {
@@ -95,7 +114,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Auth'],
         description: 'Whether the caller has a valid session, and whether an operator password has been set.',
-        response: { 200: meResponseSchema },
+        response: {
+          200: meResponseSchema.describe(
+            "Whether this request's cookie names a live session, and whether an operator password is configured at all.",
+          ),
+        },
       },
     },
     async (req) => ({
@@ -114,9 +137,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: changePasswordBodySchema,
         response: {
-          200: okResponseSchema,
-          400: errorResponseSchema,
-          401: errorResponseSchema,
+          200: okResponseSchema.describe(
+            "The password was changed; every session other than the caller's own is now destroyed, and API Keys are untouched.",
+          ),
+          400: errorResponse(
+            'newPassword is shorter than the four-character minimum, or the payload was otherwise invalid — nothing was changed.',
+          ),
+          401: errorResponse(
+            'The request carried no valid session or key, or currentPassword did not match — nothing was changed.',
+          ),
         },
       },
     },
@@ -139,7 +168,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Create a new operator API key. The bearer token is returned once and never stored.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createKeyBodySchema,
-        response: { 201: keyWithTokenSchema },
+        response: {
+          201: keyWithTokenSchema.describe(
+            'The created key, with the full-scope bearer token in `token` — the only response that ever carries it.',
+          ),
+        },
       },
     },
     async (req, reply) => {
@@ -156,7 +189,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Keys'],
         description: 'List operator API keys (Run Keys are internal and never listed).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        response: { 200: keysListResponseSchema },
+        response: {
+          200: keysListResponseSchema.describe(
+            'Every full-scope operator key, revoked ones included, newest first; no token values.',
+          ),
+        },
       },
     },
     async () => ({ keys: ctx.auth.listKeys() }),
@@ -170,7 +207,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Revoke an operator API key immediately.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: keyIdParamsSchema,
-        response: { 200: okResponseSchema },
+        response: {
+          200: okResponseSchema.describe(
+            'The key can no longer authenticate; re-revoking an already-revoked key keeps its original revokedAt.',
+          ),
+        },
       },
     },
     async (req) => {

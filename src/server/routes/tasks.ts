@@ -7,40 +7,47 @@ import { TASK_STATES, RUN_STATES } from '../../db/schema.js';
 import { Git } from '../../execution/git.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns, runToApi, taskToApi } from '../serialize.js';
-import { errorResponseSchema, idParamsSchema, costSchema, runUsageSchema } from '../schemas.js';
+import { errorResponse, idParamsSchema, costSchema, runUsageSchema } from '../schemas.js';
 
-const requeueInputSchema = z.object({ feedback: z.string().optional() }).nullish();
-const reattemptInputSchema = z.object({ feedback: z.string().optional() }).nullish();
-const rejectInputSchema = z.object({ feedback: z.string().optional() }).nullish();
-const cancelInputSchema = z.object({ withDependents: z.boolean().optional() }).nullish();
-const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive() });
-const depParamsSchema = z.object({ id: z.coerce.number().int(), depId: z.coerce.number().int() });
+/** The reviewer's note, carried onto the re-attempt or back to the queue. */
+const feedbackExample = 'The limiter is per-process; it needs to be shared across workers.';
+const requeueInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
+const reattemptInputSchema = z
+  .object({ feedback: z.string().optional().meta({ example: feedbackExample }) })
+  .nullish();
+const rejectInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
+const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
+const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().meta({ example: 4818 }) });
+const depParamsSchema = z.object({
+  id: z.coerce.number().int().meta({ example: 4821 }),
+  depId: z.coerce.number().int().meta({ example: 4818 }),
+});
 
 /** A task plus its dependency context (`TaskService.withDeps`) — no Cost, since not every caller derives it. */
 const taskWithDepsSchema = z
   .object({
-    id: z.number(),
-    prompt: z.string(),
+    id: z.number().meta({ example: 4821 }),
+    prompt: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
-    harness: z.string(),
-    model: z.string(),
-    workingDir: z.string(),
+    harness: z.string().meta({ example: 'claude' }),
+    model: z.string().meta({ example: 'sonnet-5' }),
+    workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     /** 'direct' | 'worktree' (config.ts ISOLATION_MODES); stored as plain text. */
-    isolationMode: z.string(),
+    isolationMode: z.string().meta({ example: 'worktree' }),
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
-    priority: z.string(),
-    state: z.enum(TASK_STATES),
+    priority: z.string().meta({ example: 'normal' }),
+    state: z.enum(TASK_STATES).meta({ example: 'awaiting-review' }),
     /** The original this task re-attempts, or null; feedback carries the reviewer's notes in full. */
-    reattemptOf: z.number().nullable(),
-    feedback: z.string().nullable(),
-    createdAt: z.number(),
-    updatedAt: z.number(),
-    dependsOn: z.array(z.number()),
-    dependents: z.array(z.number()),
+    reattemptOf: z.number().nullable().meta({ example: null }),
+    feedback: z.string().nullable().meta({ example: null }),
+    createdAt: z.number().meta({ example: 1784030400000 }),
+    updatedAt: z.number().meta({ example: 1784032260000 }),
+    dependsOn: z.array(z.number()).meta({ example: [4818] }),
+    dependents: z.array(z.number()).meta({ example: [4830] }),
     /** blocked, and at least one dependency is failed or cancelled. */
-    blockedOnFailed: z.boolean(),
+    blockedOnFailed: z.boolean().meta({ example: false }),
     /** Task ids that re-attempt this one (reverse of reattemptOf). */
-    reattempts: z.array(z.number()),
+    reattempts: z.array(z.number()).meta({ example: [] }),
   })
   .meta({ id: 'TaskWithDeps' });
 
@@ -52,25 +59,25 @@ const tasksListResponseSchema = z.object({ tasks: z.array(taskSchema) });
 /** A run as the REST API and WebSocket both serve it (serialize.ts `ApiRun`). */
 const runSchema = z
   .object({
-    id: z.number(),
-    taskId: z.number(),
-    attempt: z.number(),
-    state: z.enum(RUN_STATES),
+    id: z.number().meta({ example: 9137 }),
+    taskId: z.number().meta({ example: 4821 }),
+    attempt: z.number().meta({ example: 1 }),
+    state: z.enum(RUN_STATES).meta({ example: 'completed' }),
     /** Failure reason: 'interrupted', an error message, or null. */
-    reason: z.string().nullable(),
+    reason: z.string().nullable().meta({ example: null }),
     /** ACP stopReason from the session/prompt result. */
-    stopReason: z.string().nullable(),
-    sessionId: z.string().nullable(),
+    stopReason: z.string().nullable().meta({ example: 'end_turn' }),
+    sessionId: z.string().nullable().meta({ example: 'a3f2c1d0-8b4e-4c1a-9f7d-2e6b5a0c3d91' }),
     /** Worktree mode: the run's branch and the branch it was cut from. */
-    branch: z.string().nullable(),
-    baseBranch: z.string().nullable(),
+    branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
+    baseBranch: z.string().nullable().meta({ example: 'main' }),
     usage: runUsageSchema.nullable(),
     /** 'accepted' | 'rejected' | null (domain/review.ts); stored as plain text. */
-    review: z.string().nullable(),
-    reviewFeedback: z.string().nullable(),
-    reviewedAt: z.number().nullable(),
-    startedAt: z.number(),
-    finishedAt: z.number().nullable(),
+    review: z.string().nullable().meta({ example: null }),
+    reviewFeedback: z.string().nullable().meta({ example: null }),
+    reviewedAt: z.number().nullable().meta({ example: null }),
+    startedAt: z.number().meta({ example: 1784032020000 }),
+    finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
     cost: costSchema.nullable(),
   })
   .meta({ id: 'Run' });
@@ -78,14 +85,16 @@ const runSchema = z
 const runsListResponseSchema = z.object({ runs: z.array(runSchema) });
 
 const runEventSchema = z.object({
-  id: z.number(),
-  runId: z.number(),
-  seq: z.number(),
-  ts: z.number(),
+  id: z.number().meta({ example: 55210 }),
+  runId: z.number().meta({ example: 9137 }),
+  seq: z.number().meta({ example: 42 }),
+  ts: z.number().meta({ example: 1784032140000 }),
   /** 'session_update' | 'permission_request' | 'lifecycle' */
-  type: z.string(),
+  type: z.string().meta({ example: 'session_update' }),
   /** For session_update, the ACP `update` object verbatim — shape varies by update kind. */
-  payload: z.unknown(),
+  payload: z.unknown().meta({
+    example: { sessionUpdate: 'tool_call', toolCallId: 'call_7', kind: 'edit', title: 'src/server/rate-limit.ts' },
+  }),
 });
 
 const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
@@ -93,14 +102,16 @@ const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
 const usageResponseSchema = runUsageSchema.extend({
   cost: costSchema.nullable(),
   /** How many of the task's runs (including failed retries) reported usage. */
-  runCount: z.number(),
+  runCount: z.number().meta({ example: 2 }),
 });
 
 const diffResponseSchema = z.object({
-  branch: z.string().nullable(),
-  baseBranch: z.string().nullable(),
+  branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
+  baseBranch: z.string().nullable().meta({ example: 'main' }),
   /** `git diff --stat` between baseBranch and branch; null outside worktree mode. */
-  stat: z.string().nullable(),
+  stat: z.string().nullable().meta({
+    example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n src/server/app.ts       |  8 +-\n 2 files changed, 100 insertions(+), 4 deletions(-)',
+  }),
 });
 
 export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
@@ -117,7 +128,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'Create a task. Reachable with a run-scoped Run Key.',
         body: createTaskInputSchema,
-        response: { 201: taskSchema, 400: errorResponseSchema },
+        response: {
+          201: taskSchema.describe('The created task, in draft.'),
+          400: errorResponse('The payload failed validation — see the error message for the offending field.'),
+        },
       },
     },
     async (req, reply) => {
@@ -133,7 +147,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'List tasks, optionally filtered and sorted. Reachable with a run-scoped Run Key.',
         querystring: taskListQuerySchema,
-        response: { 200: tasksListResponseSchema },
+        response: { 200: tasksListResponseSchema.describe('Every task matching the filters, in the requested order.') },
       },
     },
     async (req) => {
@@ -158,7 +172,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'Get one task with its dependency context and Cost. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: taskSchema, 404: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The task, with its dependency context and Cost.'),
+          404: errorResponse('No task has that id.'),
+        },
       },
     },
     async (req) => withDeps({ id: req.params.id }),
@@ -173,7 +190,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
           'Edit a draft or ready task. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: updateTaskInputSchema,
-        response: { 200: taskSchema, 400: errorResponseSchema, 409: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The updated task.'),
+          400: errorResponse('The payload failed validation — see the error message for the offending field.'),
+          409: errorResponse('The task is past draft, so its definition is frozen.'),
+        },
       },
     },
     async (req) => withDeps(ctx.tasks.update(req.params.id, req.body)),
@@ -186,7 +207,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'Promote a draft to ready (or blocked, if dependencies are unmet). Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: taskSchema, 409: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not in a state this action can be applied to.'),
+        },
       },
     },
     async (req) => withDeps(ctx.tasks.promote(req.params.id)),
@@ -200,7 +224,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Cancel a non-terminal task, optionally cascading to its dependents. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: cancelInputSchema,
-        response: { 200: taskSchema, 409: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not in a state this action can be applied to.'),
+        },
       },
     },
     async (req) => {
@@ -225,7 +252,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
           'Send a failed task back to ready for another attempt, optionally appending feedback to its prompt. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: requeueInputSchema,
-        response: { 200: taskSchema, 409: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not in a state this action can be applied to.'),
+        },
       },
     },
     async (req) => withDeps(ctx.tasks.requeue(req.params.id, req.body?.feedback)),
@@ -240,7 +270,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
           'Create a new task that re-attempts an existing one: a copy of its config and dependencies, linked back via reattemptOf, carrying optional reviewer feedback (composed into the run prompt at run time, so the original prompt stays pristine). The original is left unchanged. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: reattemptInputSchema,
-        response: { 201: taskSchema, 404: errorResponseSchema, 409: errorResponseSchema },
+        response: {
+          201: taskSchema.describe('The new task, carrying the feedback and pointing at the original via reattemptOf.'),
+          404: errorResponse('No task has that id.'),
+          409: errorResponse('Only a failed or rejected task can be re-attempted.'),
+        },
       },
     },
     async (req, reply) =>
@@ -255,7 +289,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Add a dependency edge, re-deriving blocked/ready. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: dependsOnBodySchema,
-        response: { 200: taskWithDepsSchema, 409: errorResponseSchema },
+        response: {
+          200: taskWithDepsSchema.describe('The task with the edge added, and blocked/ready re-derived.'),
+          409: errorResponse('The edge is unknown, self-referential, or would close a dependency cycle.'),
+        },
       },
     },
     async (req) => ctx.tasks.addDependency(req.params.id, req.body.dependsOnId),
@@ -268,7 +305,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'Remove a dependency edge, re-deriving blocked/ready. Reachable with a run-scoped Run Key.',
         params: depParamsSchema,
-        response: { 200: taskWithDepsSchema },
+        response: { 200: taskWithDepsSchema.describe('The task with the edge removed, and blocked/ready re-derived.') },
       },
     },
     async (req) => ctx.tasks.removeDependency(req.params.id, req.params.depId),
@@ -282,7 +319,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description:
           'Accept an awaiting-review task, completing it (and merging its branch in worktree mode). Human-only by default; reachable with a run-scoped Run Key only when the agentReview config flag is enabled.',
         params: idParamsSchema,
-        response: { 200: taskSchema, 409: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not in a state this action can be applied to.'),
+        },
       },
     },
     async (req) => withDeps(await ctx.review.accept(req.params.id)),
@@ -297,7 +337,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
           'Reject an awaiting-review task with optional feedback, failing it. Human-only by default; reachable with a run-scoped Run Key only when the agentReview config flag is enabled.',
         params: idParamsSchema,
         body: rejectInputSchema,
-        response: { 200: taskSchema, 409: errorResponseSchema },
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not in a state this action can be applied to.'),
+        },
       },
     },
     async (req) => withDeps(ctx.review.reject(req.params.id, req.body?.feedback)),
@@ -310,7 +353,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: 'Start a run for a ready task. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 201: runSchema },
+        response: { 201: runSchema.describe('The run that just started.') },
       },
     },
     async (req, reply) => {
@@ -326,7 +369,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: "List a task's runs (retries included). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
-        response: { 200: runsListResponseSchema },
+        response: { 200: runsListResponseSchema.describe("Every run for the task, including failed retries, oldest first.") },
       },
     },
     async (req) => {
@@ -342,7 +385,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: 'Get one run with its Usage and Cost. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: runSchema, 404: errorResponseSchema },
+        response: {
+          200: runSchema.describe('The run, with its Usage and Cost.'),
+          404: errorResponse('No run has that id, or it belongs to another task.'),
+        },
       },
     },
     async (req) => runToApi(ctx, ctx.runs.get(req.params.id)),
@@ -355,7 +401,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: 'Replay a run\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: eventsListResponseSchema },
+        response: { 200: eventsListResponseSchema.describe('The run\'s persisted events in sequence order.') },
       },
     },
     async (req) => ({ events: ctx.runs.listEvents(req.params.id) }),
@@ -369,7 +415,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description:
           "Usage and Cost rolled up across all of a task's runs, retries included. Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
-        response: { 200: usageResponseSchema },
+        response: { 200: usageResponseSchema.describe('Usage and Cost rolled up across the task\'s runs.') },
       },
     },
     async (req) => {
@@ -394,7 +440,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description:
           'Branch and diffstat for the review inbox (worktree-mode runs only; other fields are null). Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
-        response: { 200: diffResponseSchema },
+        response: { 200: diffResponseSchema.describe('The run\'s branch and its diffstat against the base; nulls outside worktree mode.') },
       },
     },
     async (req) => {

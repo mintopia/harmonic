@@ -5,15 +5,19 @@ import { tasks, taskDependencies, TASK_STATES, type TaskRow, type TaskState } fr
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 
+// Examples ride on the request schemas too, not just the responses: the API
+// page renders whatever the spec declares, so a bare field documents itself as
+// `"string"`. Optional fields fall back to config defaults when omitted — the
+// examples show what a caller *would* send, not what's required.
 export const createTaskInputSchema = z.object({
-  prompt: z.string().min(1, 'prompt is required'),
-  harness: z.enum(HARNESS_IDS).optional(),
-  model: z.string().min(1).optional(),
-  workingDir: z.string().min(1).optional(),
-  isolationMode: z.enum(ISOLATION_MODES).optional(),
-  priority: z.enum(PRIORITIES).optional(),
-  state: z.enum(['draft', 'ready']).optional(),
-  dependsOn: z.array(z.number().int().positive()).optional(),
+  prompt: z.string().min(1, 'prompt is required').meta({ example: 'Add rate limiting to POST /api/tasks' }),
+  harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
+  model: z.string().min(1).optional().meta({ example: 'sonnet-5' }),
+  workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
+  isolationMode: z.enum(ISOLATION_MODES).optional().meta({ example: 'worktree' }),
+  priority: z.enum(PRIORITIES).optional().meta({ example: 'normal' }),
+  state: z.enum(['draft', 'ready']).optional().meta({ example: 'ready' }),
+  dependsOn: z.array(z.number().int().positive()).optional().meta({ example: [4818] }),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
@@ -21,12 +25,12 @@ export const updateTaskInputSchema = createTaskInputSchema.omit({ state: true, d
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
 export const taskListQuerySchema = z.object({
-  state: z.enum(TASK_STATES).optional(),
-  harness: z.enum(HARNESS_IDS).optional(),
-  priority: z.enum(PRIORITIES).optional(),
+  state: z.enum(TASK_STATES).optional().meta({ example: 'awaiting-review' }),
+  harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
+  priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
   /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
-  sortBy: z.enum(['createdAt', 'priority', 'cost']).optional(),
-  order: z.enum(['asc', 'desc']).optional(),
+  sortBy: z.enum(['createdAt', 'priority', 'cost']).optional().meta({ example: 'createdAt' }),
+  order: z.enum(['asc', 'desc']).optional().meta({ example: 'desc' }),
 });
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 

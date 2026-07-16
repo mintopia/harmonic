@@ -46,7 +46,7 @@ function CopyButton({ value }: { value: string }) {
 }
 
 /** One row of the connection header: a Label name, the Data-role value
- * (Mono Is Data Rule — this is machine data, not prose), and its copy button. */
+ * (a URL/command is code — the Mono Is Code Rule), and its copy button. */
 function ConnectionRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2">
@@ -152,7 +152,7 @@ export function ApiPage() {
                   <td className="py-2">{key.name}</td>
                   <td className="font-data text-data text-muted">{key.prefix}…</td>
                   <td className="text-muted">{key.scope}</td>
-                  <td className="font-data text-data text-muted">
+                  <td className="tabular-nums text-muted">
                     {key.revokedAt
                       ? 'revoked'
                       : key.lastUsedAt

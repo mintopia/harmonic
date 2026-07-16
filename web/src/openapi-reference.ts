@@ -9,13 +9,21 @@
  * understand, it degrades to a `raw` node instead (see toSchemaNode).
  */
 
+/** `example` is whatever the spec declared for this node (zod `.meta({ example })`
+ * in src/server/schemas.ts and the route modules). Absent means the spec author
+ * didn't supply one — renderers should say so rather than invent precision. */
 export type SchemaNode =
-  | { kind: 'object'; properties: { name: string; required: boolean; schema: SchemaNode }[]; description?: string | undefined }
-  | { kind: 'array'; items: SchemaNode; description?: string | undefined }
-  | { kind: 'enum'; values: (string | number | boolean)[]; description?: string | undefined }
-  | { kind: 'primitive'; type: string; nullable: boolean; description?: string | undefined }
-  | { kind: 'union'; options: SchemaNode[]; description?: string | undefined }
-  | { kind: 'raw'; raw: unknown; description?: string | undefined };
+  | {
+      kind: 'object';
+      properties: { name: string; required: boolean; schema: SchemaNode }[];
+      description?: string | undefined;
+      example?: unknown;
+    }
+  | { kind: 'array'; items: SchemaNode; description?: string | undefined; example?: unknown }
+  | { kind: 'enum'; values: (string | number | boolean)[]; description?: string | undefined; example?: unknown }
+  | { kind: 'primitive'; type: string; nullable: boolean; description?: string | undefined; example?: unknown }
+  | { kind: 'union'; options: SchemaNode[]; description?: string | undefined; example?: unknown }
+  | { kind: 'raw'; raw: unknown; description?: string | undefined; example?: unknown };
 
 export interface ApiReferenceParam {
   name: string;
@@ -64,6 +72,15 @@ function resolveRef(doc: unknown, ref: string): unknown {
   return node;
 }
 
+/** The spec's declared example for a node, if it carries one. OpenAPI 3.0
+ * spells it `example`; JSON Schema 2020-12 (what zod emits) uses `examples`
+ * as an array — accept both, first wins. */
+function readExample(schema: Record<string, unknown>): unknown {
+  if (schema.example !== undefined) return schema.example;
+  if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
+  return undefined;
+}
+
 /**
  * Converts one JSON Schema / OpenAPI schema object into a SchemaNode.
  * Understands: $ref (local, cycle-guarded), enum, oneOf/anyOf of simple
@@ -72,8 +89,20 @@ function resolveRef(doc: unknown, ref: string): unknown {
  * spelling. Everything else — exotic unions, discriminators, dictionaries,
  * `not`, etc. — degrades to a `raw` node carrying the schema as-is so the
  * component can render it verbatim instead of hiding the endpoint.
+ *
+ * Any declared example rides along on the node. Where both a `$ref` use site
+ * and the definition it points at declare one, the definition wins and the use
+ * site only fills a gap — the same precedence `description` already uses just
+ * below, so the two annotations don't disagree about which is authoritative.
  */
 export function toSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySet<string> = new Set()): SchemaNode {
+  const node = buildSchemaNode(schema, doc, seenRefs);
+  if (!isPlainObject(schema)) return node;
+  const example = readExample(schema);
+  return example !== undefined && node.example === undefined ? { ...node, example } : node;
+}
+
+function buildSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySet<string>): SchemaNode {
   if (!isPlainObject(schema)) {
     return { kind: 'raw', raw: schema };
   }
@@ -107,8 +136,19 @@ export function toSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySe
   const branches = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : undefined;
   if (branches) {
     const options = branches.map((b) => toSchemaNode(b, doc, seenRefs));
+    // A union of scalars reads well as "number | null", so keep it whole.
     if (options.every((o) => o.kind === 'primitive' || o.kind === 'enum')) {
       return { kind: 'union', options, description };
+    }
+    // Anything else with exactly one non-null branch is zod's `.nullable()` on
+    // a non-scalar — `anyOf: [Cost, { type: 'null' }]`. That's not a union the
+    // reader cares about; it's a Cost that may be null. Unwrap to the branch,
+    // because falling through to `raw` renders the whole field as a slab of
+    // JSON Schema where its example should be.
+    const nonNull = options.filter((o) => !(o.kind === 'primitive' && o.type === 'null'));
+    const inner = nonNull.length === 1 && nonNull.length < options.length ? nonNull[0] : undefined;
+    if (inner) {
+      return description !== undefined && inner.description === undefined ? { ...inner, description } : inner;
     }
     return { kind: 'raw', raw: schema, description };
   }

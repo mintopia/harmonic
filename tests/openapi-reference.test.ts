@@ -167,6 +167,50 @@ describe('buildApiReference: endpoint fields', () => {
   });
 });
 
+describe('toSchemaNode: declared examples', () => {
+  const doc = fixture();
+
+  it('carries an object-level example', () => {
+    const node = toSchemaNode({ type: 'object', properties: {}, example: { ok: true } }, doc);
+    expect(node.example).toEqual({ ok: true });
+  });
+
+  it('carries a field-level example onto the property node', () => {
+    const node = toSchemaNode(
+      { type: 'object', properties: { harness: { type: 'string', example: 'claude' } }, required: ['harness'] },
+      doc,
+    );
+    expect(node.kind).toBe('object');
+    if (node.kind !== 'object') throw new Error('expected object');
+    expect(node.properties[0]?.schema.example).toBe('claude');
+  });
+
+  it('accepts the JSON Schema `examples` array, taking the first', () => {
+    const node = toSchemaNode({ type: 'string', examples: ['sonnet-5', 'opus-4'] }, doc);
+    expect(node.example).toBe('sonnet-5');
+  });
+
+  it('leaves example undefined when the spec declares none — nothing to invent', () => {
+    const node = toSchemaNode({ type: 'string' }, doc);
+    expect(node.example).toBeUndefined();
+  });
+
+  it('resolves an example through a $ref, the definition winning over the use site', () => {
+    const spec = fixture({
+      components: { schemas: { Cost: { type: 'number', example: 0.52 } } },
+    });
+    // Same precedence as `description`: the definition is authoritative, and a
+    // use-site annotation only fills a gap.
+    expect(toSchemaNode({ $ref: '#/components/schemas/Cost' }, spec).example).toBe(0.52);
+    expect(toSchemaNode({ $ref: '#/components/schemas/Cost', example: 1.75 }, spec).example).toBe(0.52);
+  });
+
+  it('takes a use-site example when the definition declares none', () => {
+    const spec = fixture({ components: { schemas: { Bare: { type: 'number' } } } });
+    expect(toSchemaNode({ $ref: '#/components/schemas/Bare', example: 1.75 }, spec).example).toBe(1.75);
+  });
+});
+
 describe('toSchemaNode: common constructs', () => {
   it('renders an object with properties/required', () => {
     const node = toSchemaNode(
@@ -204,6 +248,26 @@ describe('toSchemaNode: common constructs', () => {
   it('renders nullable via the 3.0-style `nullable: true` flag', () => {
     const node = toSchemaNode({ type: 'string', nullable: true }, {});
     expect(node).toEqual({ kind: 'primitive', type: 'string', nullable: true });
+  });
+
+  // Regression: zod's `.nullable()` on an object emits `anyOf: [X, {type:'null'}]`,
+  // which isn't a union of scalars — so it used to fall through to `raw` and the
+  // field rendered as a slab of JSON Schema where its example belonged.
+  it('unwraps a nullable object union to the object itself', () => {
+    const spec = fixture({
+      components: {
+        schemas: { Cost: { type: 'object', properties: { totalUsd: { type: 'number' } }, required: ['totalUsd'] } },
+      },
+    });
+    const node = toSchemaNode({ anyOf: [{ $ref: '#/components/schemas/Cost' }, { type: 'null' }] }, spec);
+    expect(node.kind).toBe('object');
+    if (node.kind !== 'object') throw new Error('expected object');
+    expect(node.properties.map((p) => p.name)).toEqual(['totalUsd']);
+  });
+
+  it('keeps a scalar-plus-null union whole, so it still reads as "number | null"', () => {
+    const node = toSchemaNode({ anyOf: [{ type: 'number' }, { type: 'null' }] }, fixture());
+    expect(describeType(node)).toBe('number | null');
   });
 
   it('renders a simple union of primitives (oneOf)', () => {

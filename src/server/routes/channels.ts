@@ -4,26 +4,35 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { createChannelSchema, updateChannelSchema, NOTIFICATION_EVENTS } from '../../notifications/channels.js';
 import { CHANNEL_TYPES } from '../../db/schema.js';
-import { idParamsSchema, okResponseSchema, errorResponseSchema } from '../schemas.js';
+import { idParamsSchema, okResponseSchema, errorResponse } from '../schemas.js';
 
-const channelIdParamsSchema = z.object({ id: z.coerce.number().int(), channelId: z.coerce.number().int() });
-const channelIdBodySchema = z.object({ channelId: z.number().int().positive() });
+const channelIdParamsSchema = z.object({
+  id: z.coerce.number().int().meta({ example: 4821 }),
+  channelId: z.coerce.number().int().meta({ example: 3702 }),
+});
+const channelIdBodySchema = z.object({ channelId: z.number().int().positive().meta({ example: 3702 }) });
 
 /** A notification channel (notifications/channels.ts `Channel`) as the API serves it. */
 const channelSchema = z
   .object({
-    id: z.number(),
-    name: z.string(),
-    type: z.enum(CHANNEL_TYPES),
-    /** Type-specific delivery config (url/secret/smtp/from/to) — shape depends on `type`. */
-    config: z.record(z.string(), z.unknown()),
-    events: z.array(z.enum(NOTIFICATION_EVENTS)),
-    createdAt: z.number(),
+    id: z.number().meta({ example: 3702 }),
+    name: z.string().meta({ example: 'Review inbox' }),
+    type: z.enum(CHANNEL_TYPES).meta({ example: 'discord' }),
+    /**
+     * Type-specific delivery config (url/secret/smtp/from/to) — shape depends on `type`.
+     * The example is a discord channel's; email carries `smtp`/`from`/`to` instead.
+     */
+    config: z.record(z.string(), z.unknown()).meta({
+      example: { url: 'https://discord.com/api/webhooks/000000000000000000/EXAMPLE-WEBHOOK-TOKEN' },
+    }),
+    /** Subscribed event types; defaults to the review-gate and failure moments (DEFAULT_EVENTS). */
+    events: z.array(z.enum(NOTIFICATION_EVENTS)).meta({ example: ['task.awaiting-review', 'task.failed'] }),
+    createdAt: z.number().meta({ example: 1784030400000 }),
   })
   .meta({ id: 'Channel' });
 
 const channelsListResponseSchema = z.object({ channels: z.array(channelSchema) });
-const channelIdsResponseSchema = z.object({ channelIds: z.array(z.number()) });
+const channelIdsResponseSchema = z.object({ channelIds: z.array(z.number()).meta({ example: [3702] }) });
 
 export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -38,7 +47,12 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
           'Create a notification channel. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createChannelSchema,
-        response: { 201: channelSchema, 400: errorResponseSchema },
+        response: {
+          201: channelSchema.describe('The created channel; events falls back to the default subscriptions when omitted.'),
+          400: errorResponse(
+            "The payload failed validation, or the config does not match the shape the channel's type requires.",
+          ),
+        },
       },
     },
     async (req, reply) => reply.status(201).send(ctx.channels.create(req.body)),
@@ -51,7 +65,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Channels'],
         description: 'List notification channels. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        response: { 200: channelsListResponseSchema },
+        response: { 200: channelsListResponseSchema.describe('Every configured notification channel.') },
       },
     },
     async () => ({ channels: ctx.channels.list() }),
@@ -65,7 +79,10 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Get one notification channel. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
-        response: { 200: channelSchema, 404: errorResponseSchema },
+        response: {
+          200: channelSchema.describe('The channel, with its delivery config and subscriptions.'),
+          404: errorResponse('No channel has that id.'),
+        },
       },
     },
     async (req) => ctx.channels.get(req.params.id),
@@ -80,7 +97,15 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: updateChannelSchema,
-        response: { 200: channelSchema, 400: errorResponseSchema, 404: errorResponseSchema },
+        response: {
+          200: channelSchema.describe('The updated channel.'),
+          // A channel's type is fixed, so a replacement config is validated
+          // against the type it already has.
+          400: errorResponse(
+            "The payload failed validation, or the config does not match the shape the channel's existing type requires.",
+          ),
+          404: errorResponse('No channel has that id.'),
+        },
       },
     },
     async (req) => ctx.channels.update(req.params.id, req.body),
@@ -94,7 +119,10 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Delete a notification channel. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
-        response: { 200: okResponseSchema, 404: errorResponseSchema },
+        response: {
+          200: okResponseSchema.describe('The channel was deleted, along with every per-task override pointing at it.'),
+          404: errorResponse('No channel has that id.'),
+        },
       },
     },
     async (req) => {
@@ -116,7 +144,11 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         body: channelIdBodySchema,
-        response: { 200: channelIdsResponseSchema },
+        response: {
+          200: channelIdsResponseSchema.describe(
+            'Every channel id now overridden for the task; adding an override that is already set changes nothing.',
+          ),
+        },
       },
     },
     async (req) => {
@@ -134,7 +166,11 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         description: 'Remove a per-task channel override. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: channelIdParamsSchema,
-        response: { 200: channelIdsResponseSchema },
+        response: {
+          200: channelIdsResponseSchema.describe(
+            'Every channel id still overridden for the task; removing an override that was not set is a no-op.',
+          ),
+        },
       },
     },
     async (req) => {
@@ -152,7 +188,11 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
           "List a task's per-task channel overrides. Operator only; not reachable with a run-scoped Run Key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
-        response: { 200: channelIdsResponseSchema },
+        response: {
+          200: channelIdsResponseSchema.describe(
+            "The channel ids overridden for the task, empty when it relies solely on the channels' own subscriptions.",
+          ),
+        },
       },
     },
     async (req) => {

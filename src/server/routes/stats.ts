@@ -9,28 +9,40 @@ import { costOfRuns } from '../serialize.js';
 import { costSchema, modelUsageSchema } from '../schemas.js';
 
 const querySchema = z.object({
-  from: z.coerce.number().int().nonnegative().default(0),
-  to: z.coerce.number().int().nonnegative().default(() => Date.now()),
+  /** Epoch ms, inclusive; defaults to 0, i.e. all of recorded history. */
+  from: z.coerce.number().int().nonnegative().default(0).meta({ example: 1783382400000 }),
+  /** Epoch ms, inclusive; defaults to now. */
+  to: z.coerce.number().int().nonnegative().default(() => Date.now()).meta({ example: 1784032260000 }),
 });
 
 const daySeriesEntrySchema = z.object({
   /** Epoch ms at local midnight (server timezone) of the bucket's day. */
-  day: z.number(),
+  day: z.number().meta({ example: 1783987200000 }),
   /** Cost of runs started that day; null when nothing could be priced. */
-  totalUsd: z.number().nullable(),
+  totalUsd: z.number().nullable().meta({ example: 0.52 }),
   /** True when any of the day's tokens could not be priced (honest numbers: the value is a floor). */
-  incomplete: z.boolean(),
+  incomplete: z.boolean().meta({ example: false }),
 });
 
 const statsResponseSchema = z.object({
-  from: z.number(),
-  to: z.number(),
-  runCount: z.number(),
+  /** The range actually applied, echoed back after defaulting. */
+  from: z.number().meta({ example: 1783382400000 }),
+  to: z.number().meta({ example: 1784032260000 }),
+  /** Runs started in the range, whatever their state. */
+  runCount: z.number().meta({ example: 3 }),
   /** Run counts keyed by RunState. */
-  runsByState: z.record(z.string(), z.number()),
-  totals: modelUsageSchema.extend({ totalTokens: z.number().nullable() }).nullable(),
-  models: z.record(z.string(), modelUsageSchema),
-  toolCalls: z.record(z.string(), z.number()),
+  runsByState: z.record(z.string(), z.number()).meta({ example: { completed: 2, failed: 1 } }),
+  /** Aggregate token counts; null when no run in the range reported usage. */
+  totals: modelUsageSchema
+    .extend({ totalTokens: z.number().meta({ example: 49450 }).nullable() })
+    .nullable(),
+  /** Per-model breakdown; only models whose runs reported usage appear. */
+  models: z.record(z.string(), modelUsageSchema).meta({
+    example: {
+      'sonnet-5': { inputTokens: 18240, outputTokens: 3610, cacheReadTokens: 26400, cacheWriteTokens: 1200 },
+    },
+  }),
+  toolCalls: z.record(z.string(), z.number()).meta({ example: { read: 14, edit: 6, bash: 3 } }),
   cost: costSchema.nullable(),
   /** Per-day cost buckets (only days with runs), ordered by day. */
   series: z.array(daySeriesEntrySchema),
@@ -49,7 +61,11 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
           'Usage, Cost, and run-state counts over a time range (by run start time). Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         querystring: querySchema,
-        response: { 200: statsResponseSchema },
+        response: {
+          200: statsResponseSchema.describe(
+            'Usage, Cost, and run-state counts over the runs started in the range; totals and Cost count only what the runs actually reported and could be priced, so they are floors wherever `incomplete` is true.',
+          ),
+        },
       },
     },
     async (req) => {

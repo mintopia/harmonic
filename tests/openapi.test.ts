@@ -31,6 +31,36 @@ describe('openapi spec', () => {
     expect(Object.keys(doc.paths).length).toBeGreaterThan(0);
   });
 
+  // Regression: every `.meta({ id })` schema emits a `$ref` at each use site,
+  // but nothing wrote the targets into components.schemas until app.ts passed
+  // `transformObject`. The spec still served 200 and the UI still rendered —
+  // it just showed a literal {"$ref": …}, and codegen against it would break.
+  it('resolves every $ref it emits — a dangling pointer is an invalid spec', async () => {
+    const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
+    const defined = new Set(Object.keys(doc.components?.schemas ?? {}));
+    expect(defined.size).toBeGreaterThan(0);
+    const used = [...new Set((JSON.stringify(doc).match(/#\/components\/schemas\/[A-Za-z0-9_]+/g) ?? []))].map(
+      (ref) => ref.split('/').pop() as string,
+    );
+    expect(used.length).toBeGreaterThan(0);
+    expect(used.filter((name) => !defined.has(name))).toEqual([]);
+  });
+
+  it('gives every response its own description rather than the "Default Response" filler', async () => {
+    const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
+    const filler: string[] = [];
+    for (const [path, item] of Object.entries<any>(doc.paths)) {
+      for (const [method, op] of Object.entries<any>(item)) {
+        for (const [code, res] of Object.entries<any>(op?.responses ?? {})) {
+          if (!res.description || res.description === 'Default Response') {
+            filler.push(`${method.toUpperCase()} ${path} ${code}`);
+          }
+        }
+      }
+    }
+    expect(filler).toEqual([]);
+  });
+
   it('declares both the bearer API key and session cookie security schemes', async () => {
     const doc = (await server.anonApi('GET', '/api/openapi.json')).body;
     const schemes = doc.components.securitySchemes;
