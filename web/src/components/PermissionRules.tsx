@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { PermissionRule } from '../types';
 import { btnQuietDestructive, toolChip } from '../ui';
+import { PathTail } from './PathTail';
 
 /**
  * Persistent Permission Rules (issue #13 / ADR-0007): each row is an
@@ -32,7 +33,7 @@ export function PermissionRules() {
       {rules.map((rule) => (
         <li key={rule.id} className="flex items-center gap-2">
           <span className={toolChip}>{rule.kind}</span>
-          <span className="min-w-0 flex-1 truncate font-data text-data text-muted">{rule.workingDir}</span>
+          <PathTail path={rule.workingDir} className="flex-1 font-data text-data text-muted" />
           <button
             className={`${btnQuietDestructive} px-2 py-1.5`}
             onClick={() => api.deletePermissionRule(rule.id).then(load)}

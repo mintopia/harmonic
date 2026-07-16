@@ -94,7 +94,7 @@ describe('coalesceEvents', () => {
       _meta: { claudeCode: { parentToolUseId: 'toolu_parent' } },
     });
     const [item] = coalesceEvents([call]);
-    expect(item.kind === 'tool' && item.tool.subagent).toBe(true);
+    expect(item && item.kind === 'tool' && item.tool.subagent).toBe(true);
   });
 
   it('passes non-text events through untouched', () => {

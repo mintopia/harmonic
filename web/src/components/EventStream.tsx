@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { coalesceEvents, type StreamEvent, type ToolCallView } from '../event-stream-model';
 import { chip, toolChip } from '../ui';
 
@@ -60,10 +61,17 @@ function ToolLine({ tool }: { tool: ToolCallView }) {
   );
 }
 
-function EventLine({ event }: { event: StreamEvent }) {
+/**
+ * The transcript shows the *conversation*, not the protocol. Agent prose,
+ * thoughts and tool calls (folded upstream) are the content; a plan and a
+ * genuine model-mismatch warning also earn a line. Everything else the harness
+ * streams — usage ticks, "tools loaded" / mode-change chatter, resolved-
+ * permission echoes, and turn-started/ended bookkeeping — is noise the operator
+ * doesn't read, so it returns null and never renders (the caller drops nulls,
+ * so no empty rows are left behind). Only non-text, non-tool events reach here.
+ */
+function renderEventLine(event: StreamEvent): ReactNode {
   if (event.type === 'session_update') {
-    // Only non-text, non-tool session updates reach here (chunks and tool
-    // calls are folded upstream in coalesceEvents).
     if (event.payload.sessionUpdate === 'plan') {
       return (
         <ul className="space-y-0.5">
@@ -80,34 +88,25 @@ function EventLine({ event }: { event: StreamEvent }) {
         </ul>
       );
     }
-    if (event.payload.sessionUpdate === 'usage_update') return null; // context-window fill; not a stream line
-    return <span className="text-muted">{event.payload.sessionUpdate}</span>;
+    // usage ticks, capability/mode chatter ("tools loaded") — all bookkeeping.
+    return null;
   }
-  if (event.type === 'permission_request') {
-    return (
-      <div className="flex items-center gap-2">
-        <span className={`${toolChip} shrink-0`}>permission</span>
-        <span className="min-w-0 flex-1 truncate text-ink">
-          {event.payload.request?.toolCall?.title ?? 'request'}
-        </span>
-        <span className="shrink-0 text-muted">→ {event.payload.outcome?.outcome ?? '?'}</span>
-      </div>
-    );
-  }
+  // A resolved permission is already implied by the tool row that ran after it
+  // (and was surfaced live as its own prompt) — no echo line in the transcript.
+  if (event.type === 'permission_request') return null;
   if (
     event.type === 'lifecycle' &&
     event.payload.event === 'finished' &&
     event.payload.stopReason === 'cancelled'
   ) {
-    // Honest, not "finished (cancelled)" (issue #14): the operator
-    // interrupted this Turn, it didn't wrap up on its own — the steering
-    // message that follows opens a new Turn, not a continuation.
-    return <div className="text-muted">cancelled</div>;
+    // The one lifecycle line worth keeping: it confirms the operator's own
+    // Stop/Interrupt landed. A normal turn end is silent.
+    return <div className="text-muted">Interrupted</div>;
   }
   if (event.payload.event === 'model_mismatch') {
-    // Q7: the model setting shown must be real — the harness ran something
-    // other than the task's pin. Harness metadata, not a failure: Tool Teal,
-    // never Fail Red (the run completed). Model names are data → mono.
+    // The model setting shown must be real — the harness ran something other
+    // than the task's pin. Harness metadata, not a failure: Tool Teal, never
+    // Fail Red (the run completed). Model names are data → mono.
     return (
       <div className="text-tool">
         model mismatch: ran on{' '}
@@ -116,11 +115,8 @@ function EventLine({ event }: { event: StreamEvent }) {
       </div>
     );
   }
-  return (
-    <div className="text-muted">
-      {event.payload.event} {event.payload.stopReason ? `(${event.payload.stopReason})` : ''}
-    </div>
-  );
+  // Every other lifecycle/protocol event (turn started, finished, …) is noise.
+  return null;
 }
 
 export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) {
@@ -129,28 +125,29 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
   // output — tool targets, model names, ids — answers in the Data face.
   // Keeping them distinct is what stops a turn reading as one flat mono wall.
   const items = coalesceEvents(events);
+  const rendered = items.map((item) => {
+    if (item.kind === 'text') {
+      return (
+        <p
+          key={item.key}
+          className={
+            item.variant === 'thought'
+              ? 'whitespace-pre-wrap italic text-muted'
+              : 'whitespace-pre-wrap text-ink'
+          }
+        >
+          {item.text}
+        </p>
+      );
+    }
+    if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;
+    // Protocol/lifecycle noise renders nothing and leaves no gap behind.
+    const line = renderEventLine(item.event);
+    return line ? <div key={item.key}>{line}</div> : null;
+  });
   return (
     <div className="space-y-2">
-      {items.map((item) =>
-        item.kind === 'text' ? (
-          <p
-            key={item.key}
-            className={
-              item.variant === 'thought'
-                ? 'whitespace-pre-wrap italic text-muted'
-                : 'whitespace-pre-wrap text-ink'
-            }
-          >
-            {item.text}
-          </p>
-        ) : item.kind === 'tool' ? (
-          <ToolLine key={item.key} tool={item.tool} />
-        ) : (
-          <div key={item.key}>
-            <EventLine event={item.event} />
-          </div>
-        ),
-      )}
+      {rendered}
       {events.length === 0 && <p className="text-muted">No events.</p>}
     </div>
   );
