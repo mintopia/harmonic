@@ -3,6 +3,7 @@ import { formatCost, usd } from '../cost';
 import type { Cost, TaskState } from '../types';
 import { card, chip, displayTitle, labelType, STATE_CHIP_STYLES, tableHead } from '../ui';
 import { CostChart, fillSeries, type DayCost } from './CostChart';
+import { EmptyState } from './EmptyState';
 
 interface Stats {
   from: number;
@@ -108,7 +109,14 @@ export function StatsPage() {
         <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
       )}
 
-      {stats && (
+      {stats && stats.runCount === 0 && (
+        <EmptyState title="No runs to chart yet">
+          Cost, tokens, and the per-model breakdown appear here once an agent has run. If you’ve run
+          tasks before, try a wider range.
+        </EmptyState>
+      )}
+
+      {stats && stats.runCount > 0 && (
         <>
           {/* The one loud element of the view: cost — the number the
               operator glances at. Everything else answers alongside. */}

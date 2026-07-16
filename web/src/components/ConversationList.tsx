@@ -4,6 +4,7 @@ import { formatTokens } from '../conversation-telemetry-model';
 import { formatCost } from '../cost';
 import type { Conversation } from '../types';
 import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, headline } from '../ui';
+import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 
 /**
@@ -123,7 +124,11 @@ export function ConversationList({
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {conversations.length === 0 ? (
-          <p className="p-2 text-muted">No conversations yet — start one above.</p>
+          <EmptyState className="mt-10 px-2" title="No conversations yet">
+            Start an interactive session to explore a repo or drive changes turn by turn — the agent
+            works alongside you, live. <span className="font-semibold text-ink">New conversation</span> is
+            just above.
+          </EmptyState>
         ) : (
           <ul className="flex flex-col gap-2">
             {conversations.map((c) => (

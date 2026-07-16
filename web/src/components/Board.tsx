@@ -3,7 +3,7 @@ import type { Task, TaskState } from '../types';
 import { boardColumns } from '../board-model';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
-import { btnQuiet, laneBorder, laneDot, stateCountPill } from '../ui';
+import { btnPrimary, btnQuiet, displayTitle, laneBorder, laneDot, stateCountPill } from '../ui';
 
 const COLUMN_LABELS: Record<TaskState, string> = {
   draft: 'Draft',
@@ -35,18 +35,85 @@ function BoardSkeleton() {
   );
 }
 
+// The active pipeline, in flow order — the same lanes a populated board shows,
+// so the empty board already teaches its own shape (DESIGN.md § The Board).
+const ACTIVE_LANES: TaskState[] = ['draft', 'blocked', 'ready', 'running', 'awaiting-review'];
+
+// The three beats of the first run. Each carries the lane colour of the state
+// the task reaches at that beat (ready green → running amber → awaiting cobalt),
+// so the guide below speaks the same signal language as the empty lanes above —
+// and beat two names the one cold-start cliff (a ready task waits for you while
+// the auto-runner is off) before the operator can trip over it.
+const FIRST_RUN_STEPS: { state: TaskState; title: string; body: string }[] = [
+  { state: 'ready', title: 'Create a task', body: 'Describe the work and point it at a repo on this machine.' },
+  { state: 'running', title: 'Start it', body: 'Press Run now on the card, or turn the auto-runner on to start ready tasks for you.' },
+  {
+    state: 'awaiting-review',
+    title: 'Review the result',
+    body: "The agent's steps stream live; read the diff and accept to merge.",
+  },
+];
+
+/** The first-run board: the real (empty) pipeline lanes so the operator learns
+ * the board's shape, with one quiet guide and a single primary action driving
+ * to the first agent run — no tour, no overlay, the console teaches itself. */
+function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
+  return (
+    <div>
+      <div aria-hidden="true" className="flex gap-4 overflow-x-auto pb-1 opacity-70">
+        {ACTIVE_LANES.map((state) => (
+          <div key={state} className="w-60 shrink-0">
+            <h2 className={`flex items-center gap-2 border-b-2 ${laneBorder(state)} px-0.5 pb-2`}>
+              <span className={`size-2 shrink-0 rounded-full ${laneDot(state)}`} />
+              <span className="font-semibold text-ink">{COLUMN_LABELS[state]}</span>
+              <span className={stateCountPill(state, 0)}>0</span>
+            </h2>
+          </div>
+        ))}
+      </div>
+
+      <div className="mx-auto mt-12 max-w-xl text-center">
+        <h2 className={displayTitle}>Run your first agent</h2>
+        <p className="mx-auto mt-2 max-w-md text-muted">
+          Harmonic queues a task, runs an agent on it unattended, and holds the result at a review
+          gate until you accept the merge.
+        </p>
+        <ol className="mx-auto mt-7 flex max-w-md flex-col gap-3.5 text-left">
+          {FIRST_RUN_STEPS.map((step) => (
+            <li key={step.title} className="flex gap-3">
+              <span
+                aria-hidden="true"
+                className={`mt-2 size-2 shrink-0 rounded-full ${laneDot(step.state)}`}
+              />
+              <span>
+                <span className="font-semibold text-ink">{step.title}</span>{' '}
+                <span className="text-muted">— {step.body}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <button className={`${btnPrimary} mt-8`} onClick={onNewTask}>
+          Create your first task
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Board({
   tasks,
   loading,
   onEdit,
   onOpen,
   onChanged,
+  onNewTask,
 }: {
   tasks: Task[];
   loading: boolean;
   onEdit: (task: Task) => void;
   onOpen: (task: Task) => void;
   onChanged: () => void;
+  onNewTask: () => void;
 }) {
   // Terminal columns the operator has peeked open; everything else keeps
   // to the finished panel so the board's geometry never reflows under load.
@@ -72,17 +139,7 @@ export function Board({
 
   if (loading) return <BoardSkeleton />;
 
-  if (tasks.length === 0) {
-    return (
-      <div className="mx-auto mt-24 max-w-md text-center text-muted">
-        <p className="mb-2 text-title font-semibold text-ink">No tasks yet</p>
-        <p>
-          Create your first task with <span className="font-semibold text-ink">New task</span>. Drafts wait on the
-          board; ready tasks start when you run them or the auto-runner picks them up.
-        </p>
-      </div>
-    );
-  }
+  if (tasks.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
 
   const togglePeek = (state: TaskState) =>
     setPeeked((current) => {
