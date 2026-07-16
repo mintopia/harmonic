@@ -34,13 +34,13 @@ import { formatCost } from '../cost';
 import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
+import { PathTail } from './PathTail';
 import { Icon } from './Icon';
 import { toastError } from '../toast';
 import {
   btnPrimary,
   btnQuiet,
   btnQuietDestructive,
-  conversationStateChip,
   field,
   headline,
   labelType,
@@ -212,7 +212,12 @@ function PermissionPrompt({
             onClick={() => choose('always-allow', alwaysAllowOptionId, true)}
           >
             Always allow {kind} in{' '}
-            <span className="inline-block max-w-[10rem] truncate align-bottom font-data text-data">{workingDir}</span>
+            <span
+              title={workingDir}
+              className="inline-block max-w-[10rem] truncate align-bottom font-data text-data"
+            >
+              {workingDir}
+            </span>
           </button>
         )}
       </div>
@@ -224,11 +229,13 @@ function Composer({
   config,
   conversation,
   events,
+  expanded,
   onSend,
 }: {
   config: AppConfig;
   conversation: Conversation | null;
   events: ConversationEvent[];
+  expanded: boolean;
   onSend: (
     fields: { harness: string; model: string; workingDir: string },
     text: string,
@@ -315,7 +322,10 @@ function Composer({
   return (
     <div className="border-t border-hairline p-3">
       {!locked && (
-        <div className="mb-2 grid gap-2 sm:grid-cols-3">
+        // Three across only when the panel is expanded; in the narrow dock
+        // they stack, so the Working Directory path input isn't crushed to
+        // ~120px (the grid keys off panel state, not viewport width).
+        <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-3' : ''}`}>
           <div>
             <label className={fieldLabel} htmlFor="conv-harness">
               Harness
@@ -516,14 +526,29 @@ function ConversationHeader({
         </button>
       </div>
       {conversation && (
-        <div className="mt-1 flex items-center gap-2 overflow-hidden text-small text-muted">
-          <span className="shrink-0">#{conversation.id}</span>
-          <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
-          {/* Names in sans; only the working directory is a path (mono). */}
-          <span className="truncate">
-            {conversation.harness} · {conversation.model} ·{' '}
-            <span className="font-data">{conversation.workingDir}</span>
+        <div className="mt-1 flex items-center gap-1.5 text-small text-muted">
+          {/* State as a small dot, not a full pill (DESIGN.md § Conversation:
+              "a small 'Active' dot") — active is the quiet norm; an ended
+              conversation is spelled out by the read-only banner and the
+              disabled composer below, so it never needs a loud chip here.
+              Neutral, per the lifecycle-not-work-state reasoning in ui.ts. */}
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              conversation.state === 'active' ? 'bg-muted' : 'bg-faint'
+            }`}
+            title={conversation.state}
+          />
+          <span className="sr-only">{conversation.state}</span>
+          {/* Names read as language → sans (the Mono Is Code Rule). */}
+          <span className="shrink-0">
+            {conversation.harness} · {conversation.model}
           </span>
+          <span aria-hidden="true" className="shrink-0 text-faint">
+            ·
+          </span>
+          {/* Only the path is code (mono); it takes the remaining width and
+              keeps its final segment whole, full path on hover. */}
+          <PathTail path={conversation.workingDir} className="flex-1 font-data" />
         </div>
       )}
     </div>
@@ -857,7 +882,15 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
             </p>
           ) : (
             config &&
-            composerReady && <Composer config={config} conversation={conversation} events={events} onSend={send} />
+            composerReady && (
+              <Composer
+                config={config}
+                conversation={conversation}
+                events={events}
+                expanded={expanded}
+                onSend={send}
+              />
+            )
           )}
         </>
       )}
