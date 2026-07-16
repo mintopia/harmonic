@@ -18,7 +18,15 @@ import { ConversationLauncher } from './components/ConversationLauncher';
 import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
-import { btnPrimary } from './ui';
+import {
+  loadDismissed,
+  shouldShowReviewHint,
+  shouldShowRunHint,
+  storeDismissed,
+  RUN_HINT_DISMISSED_KEY,
+  REVIEW_HINT_DISMISSED_KEY,
+} from './onboarding-model';
+import { btnPrimary, btnQuiet } from './ui';
 import { Toaster, toastError } from './toast';
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
@@ -93,6 +101,12 @@ export function App() {
   const [theme, setTheme] = useState<ThemePref>(() => loadTheme(localStorage));
   const railDesktop = useRailBreakpoint();
   const [error, setError] = useState<string | null>(null);
+  const [runHintDismissed, setRunHintDismissed] = useState(() =>
+    loadDismissed(localStorage, RUN_HINT_DISMISSED_KEY),
+  );
+  const [reviewHintDismissed, setReviewHintDismissed] = useState(() =>
+    loadDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY),
+  );
 
   useEffect(() => {
     applyTheme(document.documentElement, theme);
@@ -148,6 +162,22 @@ export function App() {
   const taskList = tasks ?? [];
   const runningCount = taskList.filter((t) => t.state === 'running').length;
   const cost24h = formatCost(periodCost);
+
+  // The one cold-start bridge: a ready task won't start on its own while the
+  // auto-runner is off, so point at the fix until the first run is seen. Once a
+  // task reaches review the run hint retires and the review hint takes over —
+  // the two never show at once (see onboarding-model).
+  const showRunHint =
+    view === 'board' && !!config && shouldShowRunHint(taskList, config.autoRunner, runHintDismissed);
+  const dismissRunHint = () => {
+    storeDismissed(localStorage, RUN_HINT_DISMISSED_KEY);
+    setRunHintDismissed(true);
+  };
+  const showReviewHint = view === 'board' && shouldShowReviewHint(taskList, reviewHintDismissed);
+  const dismissReviewHint = () => {
+    storeDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY);
+    setReviewHintDismissed(true);
+  };
 
   const pickView = (v: View) => {
     setView(v);
@@ -306,9 +336,48 @@ export function App() {
 
         {error && <div className="mx-6 mt-4 rounded-lg bg-fail-tint px-4 py-2 text-fail">{error}</div>}
 
+        {showRunHint && (
+          <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
+            <span
+              aria-hidden="true"
+              className="mt-1 size-1.5 shrink-0 rounded-full bg-ready-dot"
+            />
+            <p className="flex-1 text-muted">
+              Your first task is ready, but nothing's running it yet. Press{' '}
+              <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
+              <span className="font-semibold text-ink">Auto-runner</span> on above.
+            </p>
+            <button className={`${btnQuiet} shrink-0`} onClick={dismissRunHint}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {showReviewHint && (
+          <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
+            <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-accent" />
+            <p className="flex-1 text-muted">
+              A task is ready for review. Open it to read the changes, then{' '}
+              <span className="font-semibold text-ink">Accept</span> to merge or{' '}
+              <span className="font-semibold text-ink">Reject</span> with a reason — the review gate is
+              the one step agents don't do for you.
+            </p>
+            <button className={`${btnQuiet} shrink-0`} onClick={dismissReviewHint}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
         <main className="min-w-0 flex-1 px-6 py-5">
           {view === 'board' && (
-            <Board tasks={taskList} loading={tasks === null} onEdit={setEditing} onOpen={setOpenTask} onChanged={refresh} />
+            <Board
+              tasks={taskList}
+              loading={tasks === null}
+              onEdit={setEditing}
+              onOpen={setOpenTask}
+              onChanged={refresh}
+              onNewTask={() => setEditing('new')}
+            />
           )}
           {view === 'table' && <TableView onOpen={setOpenTask} />}
           {view === 'stats' && <StatsPage />}

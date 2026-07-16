@@ -3,7 +3,7 @@ import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
-import { card, labelType, stateChip, tableHead } from '../ui';
+import { btnQuiet, card, labelType, stateChip, tableHead } from '../ui';
 import { toastError } from '../toast';
 
 const select =
@@ -164,8 +164,28 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
             ))}
             {!loading && tasks.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-6 text-center text-muted">
-                  No tasks match.
+                <td colSpan={8} className="py-10 text-center">
+                  {state || harness || priority ? (
+                    <>
+                      <p className="text-muted">No tasks match these filters.</p>
+                      <button
+                        className={`${btnQuiet} mt-2`}
+                        onClick={() => {
+                          setState('');
+                          setHarness('');
+                          setPriority('');
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-muted">
+                      No tasks yet. Create one on the{' '}
+                      <span className="font-semibold text-ink">Board</span> — every task shows up here
+                      once it exists.
+                    </p>
+                  )}
                 </td>
               </tr>
             )}
