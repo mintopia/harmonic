@@ -3,7 +3,7 @@ import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
-import { btnQuiet, card, labelType, stateChip, tableHead } from '../ui';
+import { btnQuiet, card, displayTitle, labelType, stateChip, tableHead } from '../ui';
 import { toastError } from '../toast';
 
 const select =
@@ -71,7 +71,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
       <div className="mb-4 flex flex-wrap items-baseline gap-2">
         {/* The view's anchor figure: how many tasks the filters select. */}
         <span className="flex items-baseline gap-1.5">
-          <span className={`font-display text-display font-semibold tracking-tight ${tasks.length > 0 || loading ? '' : 'text-faint'}`}>
+          <span className={`${displayTitle} tabular-nums ${tasks.length > 0 || loading ? '' : 'text-faint'}`}>
             {loading ? '…' : tasks.length}
           </span>
           <span className={`${labelType} text-muted`}>tasks</span>
@@ -132,7 +132,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
                     <button
                       type="button"
                       title={`Open the original, task #${task.reattemptOf}`}
-                      className="mb-1 inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-medium uppercase tracking-wide text-muted transition-colors duration-150 hover:text-ink"
+                      className="mb-1 inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted transition-colors duration-150 hover:text-ink"
                       onClick={(e) => {
                         e.stopPropagation();
                         openOriginal(task.reattemptOf!);

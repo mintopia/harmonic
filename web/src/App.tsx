@@ -45,7 +45,7 @@ function useRailBreakpoint() {
 
 // Collapse only applies at the rail breakpoint; the mobile drawer always
 // shows icon + label, so collapsed styles are rail:-prefixed throughout.
-// Active is the sidebar's only accent: an indigo tint under indigo text.
+// Active is the sidebar's only accent: a cobalt tint under cobalt text.
 const railItem = (active: boolean, collapsed: boolean) =>
   `flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
@@ -309,7 +309,7 @@ export function App() {
           )}
           {cost24h && (
             <span className="text-muted" title="Cost over the last 24 hours">
-              <span className="font-data text-data font-semibold text-ink">{cost24h}</span> today
+              <span className="font-semibold tabular-nums text-ink">{cost24h}</span> today
             </span>
           )}
           <div className="flex-1" />
@@ -333,6 +333,10 @@ export function App() {
             New task
           </button>
         </header>
+
+        {/* Mounted here, not at the end of the return: the toast stack anchors
+            itself to the header's bottom edge (see toast.tsx). */}
+        <Toaster />
 
         {error && <div className="mx-6 mt-4 rounded-lg bg-fail-tint px-4 py-2 text-fail">{error}</div>}
 
@@ -408,7 +412,6 @@ export function App() {
       )}
 
       <ConversationLauncher config={config} />
-      <Toaster />
     </div>
   );
 }

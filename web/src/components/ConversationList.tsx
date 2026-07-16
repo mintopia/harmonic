@@ -3,7 +3,7 @@ import { conversationDisplayTitle } from '../conversation-list-model';
 import { formatTokens } from '../conversation-telemetry-model';
 import { formatCost } from '../cost';
 import type { Conversation } from '../types';
-import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, headline } from '../ui';
+import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle } from '../ui';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 
@@ -105,7 +105,7 @@ export function ConversationList({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b border-hairline px-4 py-3">
-        <span className={headline}>Conversations</span>
+        <span className={panelTitle}>Conversations</span>
         <div className="flex-1" />
         <button className={btnPrimary} onClick={onNew}>
           New conversation

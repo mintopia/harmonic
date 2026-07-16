@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { Modal } from './Modal';
-import { btnGhost, btnQuiet, field, headline, labelType } from '../ui';
+import { btnGhost, btnQuiet, field, panelTitle, labelType } from '../ui';
 
 /**
  * Re-attempt a failed task: create a new task linked to it (copying its
@@ -37,7 +37,7 @@ export function ReattemptDialog({
   return (
     <Modal label={`Re-attempt task #${taskId}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${headline} mb-1`}>Re-attempt task #{taskId}</h2>
+        <h2 className={`${panelTitle} mb-1`}>Re-attempt task #{taskId}</h2>
         <p className="mb-4 text-muted">
           Creates a new task linked to #{taskId}, copying its setup. Feedback is added to the retry’s prompt and kept in
           full; the original is left as-is.

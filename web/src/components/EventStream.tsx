@@ -81,7 +81,7 @@ function renderEventLine(event: StreamEvent): ReactNode {
                 {entry.status === 'completed' ? '☑' : entry.status === 'in_progress' ? '◐' : '☐'}
               </span>
               {/* Plan entries are the agent's own prose — Body sans, not the
-                  Data face (the Mono Is Data Rule). */}
+                  code face (the Mono Is Code Rule). */}
               <span>{entry.content}</span>
             </li>
           ))}
@@ -105,13 +105,13 @@ function renderEventLine(event: StreamEvent): ReactNode {
   }
   if (event.payload.event === 'model_mismatch') {
     // The model setting shown must be real — the harness ran something other
-    // than the task's pin. Harness metadata, not a failure: Tool Teal, never
-    // Fail Red (the run completed). Model names are data → mono.
+    // than the task's pin. Harness metadata, not a failure: Tooling cyan, never
+    // Failed rose (the run completed). A model name reads as language, so it's
+    // sans at UI-emphasis weight — mono is for code (the Mono Is Code Rule).
     return (
       <div className="text-tool">
-        model mismatch: ran on{' '}
-        <span className="font-data text-data">{(event.payload.observed ?? []).join(', ')}</span> (task
-        pinned <span className="font-data text-data">{event.payload.expected}</span>)
+        model mismatch: ran on <span className="font-medium">{(event.payload.observed ?? []).join(', ')}</span> (task
+        pinned <span className="font-medium">{event.payload.expected}</span>)
       </div>
     );
   }

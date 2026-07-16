@@ -43,7 +43,7 @@ export function fillSeries(series: DayCost[], from: number, to: number): DayCost
 }
 
 /**
- * Cost-per-day area chart (DESIGN.md § Charts): one indigo series, faint
+ * Cost-per-day area chart (DESIGN.md § Charts): one cobalt series, faint
  * grid, emphasized endpoint, crosshair on hover — arrow keys walk the
  * days when focused. Honest numbers: incomplete days tooltip as floors.
  */

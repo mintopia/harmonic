@@ -202,8 +202,6 @@
   --text-display: 1.25rem;
   --text-display--line-height: 1.2;
   --text-display--letter-spacing: -0.015em;
-  --text-headline: 1.125rem;
-  --text-headline--line-height: 1.3;
   --text-title: 0.9375rem;
   --text-title--line-height: 1.4;
   --text-body: 0.90625rem; /* 14.5px */
@@ -212,13 +210,14 @@
   --text-small--line-height: 1.45;
   --text-label: 0.6875rem;
   --text-label--line-height: 1.2;
+  --text-label--letter-spacing: 0.05em;
   --text-data: 0.8125rem;
   --text-data--line-height: 1.5;
 
   /* The sidebar collapses to a top drawer below this width. */
   --breakpoint-rail: 900px;
 
-  --ease-ledger: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @layer base {
@@ -242,7 +241,7 @@
   }
 
   dialog[open] {
-    animation: dialog-in 150ms var(--ease-ledger);
+    animation: dialog-in 150ms var(--ease-out-quint);
   }
 
   @keyframes dialog-in {
@@ -253,10 +252,12 @@
   }
 
   /* Toasts rise a few px into place; motion-safe: gates it in the markup. */
+  /* Toasts hang from under the header, so they enter downward — the reverse
+     of the bottom-right stack this replaced. */
   @keyframes toast-in {
     from {
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(-8px);
     }
   }
 

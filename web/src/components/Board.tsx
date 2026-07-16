@@ -201,7 +201,12 @@ export function Board({
           click a row to expand that column in place. The full terminal
           history lives in the Table view. */}
       {collapsedTerminal.length > 0 && (
-        <aside aria-label="Finished tasks" className="w-36 shrink-0 rounded-lg bg-raised p-2.5">
+        /* relative: sr-only below is position:absolute, and an abspos element is
+           only clipped by a *positioned* ancestor. Without a containing block here
+           it escapes the board's overflow-x-auto, anchors to the document, and
+           stretches the page's scroll width — a horizontal scrollbar into empty
+           space whenever the board overflows. */
+        <aside aria-label="Finished tasks" className="relative w-36 shrink-0 rounded-lg bg-raised p-2.5">
           <h2 className="sr-only">Finished</h2>
           <div className="flex flex-col">
             {collapsedTerminal.map(({ state, tasks: column }) => (

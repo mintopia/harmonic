@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
 import { api } from '../api';
 import { Modal } from './Modal';
-import { btnGhost, btnQuiet, field, headline, labelType } from '../ui';
+import { btnGhost, btnQuiet, field, panelTitle, labelType } from '../ui';
 
 /**
  * The review gate's Reject path. Feedback is saved on the run either way;
  * the destination is the operator's choice: send it back to Ready to retry
  * (reject, then spawn a linked re-attempt carrying the feedback), or mark it
- * Failed and stop. No indigo here — this dialog speaks in work states
+ * Failed and stop. No cobalt here — this dialog speaks in work states
  * (ready / failed), not the interface's voice.
  */
 export function RejectDialog({
@@ -49,7 +49,7 @@ export function RejectDialog({
   return (
     <Modal label={`Reject task #${taskId}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${headline} mb-1`}>Reject task #{taskId}</h2>
+        <h2 className={`${panelTitle} mb-1`}>Reject task #{taskId}</h2>
         <p className="mb-4 text-muted">
           Feedback is saved on the run. Create a re-attempt to spawn a new task linked to this one, with the notes added
           to its prompt — or mark it failed to stop here.

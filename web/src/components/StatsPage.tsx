@@ -43,7 +43,7 @@ function SummaryCell({ label, value, hero = false }: { label: string; value: str
       <div className={`${labelType} mb-1.5 text-muted`}>{label}</div>
       <div
         className={`font-semibold tabular-nums ${value === '—' ? 'text-faint' : 'text-ink'} ${
-          hero ? 'text-[2.5rem] font-bold leading-none tracking-tight' : 'text-title'
+          hero ? 'text-hero font-bold' : 'text-title'
         }`}
       >
         {value}
@@ -187,8 +187,8 @@ export function StatsPage() {
                     {Object.entries(stats.toolCalls)
                       .sort(([, a], [, b]) => b - a)
                       .map(([tool, count]) => (
-                        // Teal is the documented voice for tooling metadata
-                        // (the State Speaks Rule) — its one use on this page.
+                        // Cyan is the documented voice for tooling metadata
+                        // (the Signal Rule) — its one use on this page.
                         <tr key={tool} className="border-t border-hairline">
                           <td className="py-2 text-data text-tool">{tool}</td>
                           <td className="text-right text-data tabular-nums text-ink">{fmt(count)}</td>

@@ -2,12 +2,10 @@ import { useState } from 'react';
 import { api } from '../api';
 import type { Task } from '../types';
 import { taskActions, type TaskAction } from '../task-actions-model';
-import { btnAccept, btnGhost, btnQuiet, btnReject } from '../ui';
+import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '../ui';
 import { toastError } from '../toast';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
-
-const cancelBtn = 'font-medium text-muted transition-colors duration-150 hover:text-fail';
 
 /**
  * The task's operator actions, rendered from the shared taskActions() map
@@ -76,7 +74,7 @@ export function TaskActions({
         );
       case 'cancel':
         return (
-          <button key={action} className={cancelBtn} onClick={act(() => api.cancelTask(task.id))}>
+          <button key={action} className={btnQuietDestructive} onClick={act(() => api.cancelTask(task.id))}>
             Cancel
           </button>
         );

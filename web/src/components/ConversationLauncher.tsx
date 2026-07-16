@@ -42,7 +42,7 @@ import {
   btnQuiet,
   btnQuietDestructive,
   field,
-  headline,
+  panelTitle,
   labelType,
   permissionOptionButtonClass,
   toolChip,
@@ -134,7 +134,7 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
         <div key={turn.userTurn?.id ?? `pre-${i}`}>
           {turn.userTurn && (
             <div className="mb-1.5 flex justify-end">
-              {/* Operator prose — Body face, never Data (the Mono Is Data Rule). */}
+              {/* Operator prose — sans, never the code face (the Mono Is Code Rule). */}
               <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-accent-tint px-3 py-2 text-ink">
                 {turn.userTurn.payload.text}
               </p>
@@ -367,7 +367,7 @@ function Composer({
           that's stopped being new information, same register as the
           cold-cache status line above (motion-safe-gated like Toaster's). */}
       {queued && (
-        <p role="status" className="mb-1.5 text-label text-muted motion-safe:animate-[toast-in_150ms_var(--ease-ledger)]">
+        <p role="status" className="mb-1.5 text-label text-muted motion-safe:animate-[toast-in_150ms_var(--ease-out-quint)]">
           Queued — will send once the current turn finishes.
         </p>
       )}
@@ -496,7 +496,7 @@ function ConversationHeader({
           </>
         ) : (
           <>
-            <span className={`${headline} min-w-0 flex-1 truncate`}>{title}</span>
+            <span className={`${panelTitle} min-w-0 flex-1 truncate`}>{title}</span>
             {conversation && (
               <button aria-label="Rename conversation" className={btnQuiet} onClick={startEdit}>
                 <Icon name="edit" />
@@ -562,12 +562,13 @@ type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number 
 
 /**
  * The Conversations launcher (issue #10 walking skeleton; issue #15 grows it
- * into history browsing): a bottom-right docked panel, sibling to the
- * Toaster — mounted view-independently at the end of App's return, so its
- * always-on firehose subscription (attention tracking + a live list) keeps
- * running whether the panel is open or not. Docked higher than the
- * Toaster's `bottom-4 right-4 z-50` (and one z-layer under it) so a failure
- * toast never collides with an open panel.
+ * into history browsing): a bottom-right docked panel, mounted
+ * view-independently at the end of App's return, so its always-on firehose
+ * subscription (attention tracking + a live list) keeps running whether the
+ * panel is open or not. The closed launcher sits flush on the bottom edge as
+ * a drawer tab, reading as the pull for the panel that rises from it; the
+ * toast stack no longer contends for that corner (it hangs off the header —
+ * see toast.tsx), so nothing needs to dodge it here.
  *
  * The last-viewed Conversation persists in localStorage (`conversation-
  * storage.ts`) so reopening the panel returns to it instead of the list —
@@ -794,7 +795,7 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
         aria-label={needsAttention ? 'Open conversation — needs attention' : 'Open conversation'}
         title="Conversation"
         onClick={() => setOpen(true)}
-        className="fixed bottom-24 right-4 z-40 flex items-center gap-2 rounded-lg bg-surface px-3.5 py-2.5 font-medium text-ink shadow-bar transition-colors duration-150 hover:bg-raised"
+        className="fixed bottom-0 right-4 z-40 flex items-center gap-2 rounded-b-none rounded-t-lg bg-surface px-3.5 pb-2 pt-2.5 font-medium text-ink shadow-bar transition-colors duration-150 hover:bg-raised"
       >
         <span className="relative inline-flex">
           <Icon name="chat" className="text-accent" />
@@ -826,7 +827,7 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
       aria-label="Conversation"
       onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
       className={`fixed z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
-        flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-ledger)]' : ''
+        flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-out-quint)]' : ''
       } ${expanded ? 'inset-6' : 'bottom-24 right-4 h-[32rem] w-[26rem] max-w-[calc(100vw-2rem)]'}`}
     >
       {view.kind === 'list' ? (

@@ -46,7 +46,7 @@ function Dependencies({ task }: { task: Task }) {
         <span className={`${labelType} text-muted`}>Depends on</span>
         {current.dependsOn.length === 0 && <span className="text-muted">nothing</span>}
         {current.dependsOn.map((depId) => (
-          <span key={depId} className={`flex items-center gap-1 ${metaChip} font-data`}>
+          <span key={depId} className={`flex items-center gap-1 ${metaChip} tabular-nums`}>
             #{depId}
             {editable && (
               <button
@@ -82,7 +82,7 @@ function Dependencies({ task }: { task: Task }) {
         <span className={`${labelType} text-muted`}>Blocks</span>
         {current.dependents.length === 0 && <span className="text-muted">nothing</span>}
         {current.dependents.map((id) => (
-          <span key={id} className={`${metaChip} font-data`}>
+          <span key={id} className={`${metaChip} tabular-nums`}>
             #{id}
           </span>
         ))}
@@ -381,7 +381,7 @@ export function TaskDetail({
           </div>
           <p className="line-clamp-4 whitespace-pre-wrap text-ink">{task.prompt}</p>
           {(task.reattemptOf !== null || task.reattempts.length > 0) && (
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 font-data text-muted">
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
               {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
               {task.reattempts.length > 0 && (
                 <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>

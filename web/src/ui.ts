@@ -17,23 +17,44 @@ export const btnQuiet = 'font-medium text-muted transition-colors duration-150 h
 export const btnQuietDestructive =
   'font-medium text-muted transition-colors duration-150 hover:text-fail disabled:opacity-50 disabled:hover:text-muted';
 
-/** Review-gate actions: tinted pills, the loudest thing on a card. */
-export const btnAccept =
-  'rounded-md bg-accept-tint px-2.5 py-1 font-semibold text-accept transition-opacity duration-150 hover:opacity-80';
-export const btnReject =
-  'rounded-md bg-fail-tint px-2.5 py-1 font-semibold text-fail transition-opacity duration-150 hover:opacity-80';
+/** Review-gate actions (DESIGN.md § 6 Buttons) — the product's core promise,
+ * so this is the one place a second cobalt primary is sanctioned alongside the
+ * view's own ("One per view (plus the review gate's Accept)"). Accept is that
+ * primary: the loudest thing on the card or the detail footer, and deliberately
+ * unguarded, because the operator's read IS the review. Reject is quiet and
+ * destructive; its dialog exists to take a reason, not to guard the action.
+ * (Replaces the retired Ledger's accept-tint/fail-tint pill pair, which put
+ * equal weight on both halves of the gate and spent state colour — green means
+ * *completed*, and the task isn't — on an action rather than a state.) */
+export const btnAccept = btnPrimary;
+export const btnReject = btnQuietDestructive;
 
 export const field =
   'w-full rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';
 
-export const labelType = 'text-label font-semibold uppercase tracking-wide';
+/** Label role (DESIGN.md § 3): field labels and table headers — the only
+ * uppercase in the system. The tracking comes from the `--text-label` token
+ * (0.05em), so don't add `tracking-*` on top of it, same as `displayTitle`. */
+export const labelType = 'text-label font-semibold uppercase';
 
-/** Page-level heading (Display role) — one per view. Space Grotesk display face. */
-export const displayTitle = 'font-display text-display font-semibold tracking-tight';
+/** Page-level heading (Display role) — one per view. Weight 700; the tracking
+ * comes from the `--text-display` token (-0.015em), so don't add `tracking-*`
+ * on top of it — that's what the retired Ledger did. */
+export const displayTitle = 'font-display text-display font-bold';
 
-/** Dialog headline (Headline role): the display face at 600. Pair with the
- * dialog's own bottom margin, e.g. `${headline} mb-4`. */
-export const headline = 'font-display text-headline font-semibold';
+/** The title of a dialog or a floating panel — its own view, so the Display
+ * role, same as a page title. Pair with the surface's own bottom margin, e.g.
+ * `${panelTitle} mb-4`. (Replaces the retired "Headline" role: DESIGN.md § 3
+ * defines Display / Hero / Title / Body / Small / Label / Code and nothing
+ * between Title and Display, so `--text-headline` had no owner.) */
+export const panelTitle = displayTitle;
+
+/** Section heading inside a card (Title role). Reach for this — not
+ * `labelType` — for anything that names a section: Label is reserved for
+ * field labels and table headers (DESIGN.md § 3), so a Label-role heading
+ * renders identically to `tableHead` below and merges into the table it
+ * introduces. */
+export const sectionTitle = 'text-title font-semibold text-ink';
 
 /** Table header row: Label-role muted text on every table in the app. */
 export const tableHead = `${labelType} text-muted`;
@@ -42,19 +63,20 @@ export const tableHead = `${labelType} text-muted`;
  * never a border (the Soft Depth Rule). */
 export const card = 'rounded-lg bg-surface shadow-card';
 
-/** Uppercase micro-pill; pass the tint classes for semantic states. */
-export const chip = 'rounded-full px-2 py-0.5 text-label font-medium uppercase tracking-wide';
+/** Uppercase micro-pill; pass the tint classes for semantic states. Weight 600
+ * and the token's 0.05em tracking (DESIGN.md § 6: "Small (11px, weight 600)"). */
+export const chip = 'rounded-full px-2 py-0.5 text-label font-semibold uppercase';
 
-/** Tool call / permission chip — harness metadata, Tool Teal (the State
- * Speaks Rule). Shared by EventStream's tool-call lines and the permission
+/** Tool call / permission chip — harness metadata, Tooling cyan (the Signal
+ * Rule). Shared by EventStream's tool-call lines and the permission
  * prompt (issue #11). */
 export const toolChip = `${chip} bg-tool-tint text-tool`;
 
 /** Permission-prompt buttons (issue #11): the ACP request's `allow_once` /
  * `allow_always` options as a review-gate-style tinted pill (affirmative,
- * loudest) and a secondary ghost variant — both in Tool Teal, since this is
+ * loudest) and a secondary ghost variant — both in Tooling cyan, since this is
  * harness chrome, not a task-state action, so it must not read as the
- * accept/reject task vocabulary or spend the One Indigo Rule's budget. */
+ * accept/reject task vocabulary or spend the One Cobalt Rule's budget. */
 export const btnPermAllow =
   'rounded-md bg-tool-tint px-3.5 py-2 font-semibold text-tool transition-opacity duration-150 hover:opacity-80 disabled:opacity-50 disabled:hover:opacity-100';
 export const btnPermAllowSecondary =
@@ -75,8 +97,8 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
   return PERMISSION_OPTION_STYLES[kind] ?? btnQuiet;
 }
 
-/** State chips: tinted fill behind the state's text color (the State
- * Speaks Rule — only true states get a color). */
+/** State chips: tinted fill behind the state's text color (the Signal
+ * Rule — only true states get a color). */
 export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   draft: 'bg-raised text-muted',
   blocked: 'bg-blocked-tint text-blocked',
@@ -93,7 +115,7 @@ export function stateChip(state: TaskState): string {
 }
 
 /** Conversation lifecycle chips (issue #15): active/ended are operator-facing
- * lifecycle, not the Running/Accept/Fail/Tool vocabulary the State Speaks
+ * lifecycle, not the Running/Accept/Fail/Tool vocabulary the Signal
  * Rule reserves for the work itself — an active Conversation isn't
  * necessarily mid-Turn ("work in flight" is Running Amber's locked meaning,
  * and a Conversation can sit active-but-idle between Turns), so coloring it
@@ -109,7 +131,7 @@ export function conversationStateChip(state: Conversation['state']): string {
   return `${chip} ${CONVERSATION_STATE_CHIP_STYLES[state]}`;
 }
 
-/** Count/figure color per state (the State Speaks Rule): color appears
+/** Count/figure color per state (the Signal Rule): color appears
  * only where it means state, and only when the count is non-zero. */
 const STATE_COUNT_COLORS: Record<TaskState, string> = {
   draft: 'text-muted',

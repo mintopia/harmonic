@@ -265,7 +265,8 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 
 ### Dialogs & Toasts
 - Native `<dialog>`, Surface fill, 12–14px radius, float shadow (hairline ring in dark), backdrop `rgb(0 0 0 / 0.5)`, 150ms fade/scale with a reduced-motion instant alternative.
-- A rejected operation never uses a native `alert()`/`confirm()` — it announces in a bottom-right stack of Failed-tint toast cards (`aria-live`, Dismiss, ~6s auto-dismiss, `motion-safe` rise). See `web/src/toast.tsx`.
+- A dialog or floating panel titles itself in the **Display** role — it is its own view (`panelTitle` in `web/src/ui.ts`). There is no role between Title and Display; the Ledger's "Headline" is retired (2026-07-16), and reaching for a size in that gap means the surface is either a section (Title) or a view (Display), not a third thing.
+- A rejected operation never uses a native `alert()`/`confirm()` — it announces in a top-right stack of Failed-tint toast cards hanging off the header's bottom edge (`aria-live`, Dismiss, ~6s auto-dismiss, `motion-safe` descend). See `web/src/toast.tsx`. (Moved from bottom-right 2026-07-16: the closed Conversation launcher now sits flush on the bottom edge as a drawer tab, so the bottom-right corner belongs to it alone — the toast stack no longer has to dodge the launcher, nor the launcher the stack.)
 
 ## 7. Do's and Don'ts
 

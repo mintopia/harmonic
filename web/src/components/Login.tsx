@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { BrandMark } from './BrandMark';
-import { btnPrimary, card, field } from '../ui';
+import { btnPrimary, card, displayTitle, field } from '../ui';
 
 export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [password, setPassword] = useState('');
@@ -28,7 +28,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
       <form onSubmit={submit} className={`${card} w-full max-w-sm p-6`}>
         <div className="flex items-center gap-2.5">
           <BrandMark />
-          <h1 className="font-display text-headline font-bold tracking-tight">Harmonic</h1>
+          <h1 className={displayTitle}>Harmonic</h1>
         </div>
         <p className="mb-5 mt-1.5 text-muted">Operator console</p>
         <input

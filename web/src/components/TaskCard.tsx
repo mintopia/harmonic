@@ -39,13 +39,13 @@ export function TaskCard({
             normal is the default and says nothing. */}
         {task.priority !== 'normal' && (
           <span
-            className={`shrink-0 text-label uppercase tracking-wide ${task.priority === 'high' ? 'font-semibold text-ink' : 'font-medium text-muted'}`}
+            className={`shrink-0 text-label uppercase ${task.priority === 'high' ? 'font-semibold text-ink' : 'font-medium text-muted'}`}
           >
             {task.priority}
           </span>
         )}
         {task.blockedOnFailed && (
-          <span className="shrink-0 text-label font-semibold uppercase tracking-wide text-fail">on failed</span>
+          <span className="shrink-0 text-label font-semibold uppercase text-fail">on failed</span>
         )}
       </div>
       <TaskActions task={task} variant="card" onEdit={onEdit} onChanged={onChanged} />
