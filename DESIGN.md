@@ -246,11 +246,11 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 - Loading is a skeleton board (pulsing Raised blocks), never a spinner.
 
 ### Task detail
-- Title + a small state pill + the id (faint). Quiet actions (Rerun) to the right; the panel's dismiss is the dialog's own X, never a hand-rolled one (Cancel left this row 2026-07-16 — see § 6 Buttons).
+- Title + a small state pill + the id (faint), and nothing else — the dismiss is the dialog's own X (§ Dialogs), never a hand-rolled one. (Amended 2026-07-17: this line used to place "Quiet actions (Rerun / Cancel) to the right" of the title. It described an early mock, not the product: there is no *Rerun* — the Task actions are accept / reject / reattempt / run / ready / edit / cancel — and splitting some of them into a header row would fork the one action vocabulary the board card and this panel share. **Every Task action lives in the footer**, below.)
 - **Run-meta is one quiet sans line**, not a boxed band: `completed · end_turn · started 4m ago · 48.2K · $0.52 · agent/4810-dark-mode · +142 −38` (only the branch is mono).
 - Minimal underline **tabs** (Events / Changes / Details).
 - **The event stream is the content:** agent prose in Body sans (readable, ~72ch, comfortable line-height); tool calls as a calm quiet list — a small cyan KIND tag + target (mono path/command, truncated) + a ✓/pulse; thoughts in muted italic. One row per tool (folded from `tool_call` + `tool_call_update` — see `web/src/event-stream-model.ts`). The stream is never boxed row-by-row.
-- **Review gate footer** is the loudest thing: Reject… (Ghost) then Accept & merge (cobalt, last), with a tiny faint note.
+- **The footer carries the Task's actions**, whatever they are in its state, from the one map the board card also reads (`web/src/task-actions-model.ts`), so the two surfaces can never drift. Terminal states offer none and the footer disappears. On *awaiting-review* that footer **is** the review gate, and it is the loudest thing on the panel: Reject… (Ghost) then Accept & merge (cobalt, last), with a tiny faint note. Elsewhere it is quiet: Run now / Ready / Re-attempt take the Ghost (the state's forward move), Edit stays Quiet below them, and Cancel is quiet-destructive. On the board card the same secondary actions drop to Quiet text — the card is a glance, not a console.
 
 ### Conversation (docked panel)
 - Header: title + tiny rename affordance + id + a small "Active" dot; expand/close icons faint; End/Delete as tiny quiet links; a second faint line for `harness · model · path`.

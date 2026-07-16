@@ -22,7 +22,7 @@ function BoardSkeleton() {
   return (
     <div aria-hidden="true" className="flex animate-pulse gap-4 overflow-hidden pb-4 motion-reduce:animate-none">
       {[3, 2, 1, 2, 1].map((cards, i) => (
-        <div key={i} className="w-60 shrink-0">
+        <div key={i} className="w-[262px] shrink-0">
           <div className="mb-3 h-5 w-24 rounded-full bg-raised" />
           <div className="flex flex-col gap-3">
             {Array.from({ length: cards }, (_, j) => (
@@ -62,7 +62,7 @@ function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
     <div>
       <div aria-hidden="true" className="flex gap-4 overflow-x-auto pb-1 opacity-70">
         {ACTIVE_LANES.map((state) => (
-          <div key={state} className="w-60 shrink-0">
+          <div key={state} className="w-[262px] shrink-0">
             <h2 className={`flex items-center gap-2 border-b-2 ${laneBorder(state)} px-0.5 pb-2`}>
               <span className={`size-2 shrink-0 rounded-full ${laneDot(state)}`} />
               <span className="font-semibold text-ink">{COLUMN_LABELS[state]}</span>
@@ -166,7 +166,7 @@ export function Board({
           // scrolls the row (board container is overflow-x-auto) instead of
           // shrinking the pipeline columns. Load-independent geometry: the
           // operator's glance targets never move (DESIGN.md § The Board).
-          <section key={state} className="w-60 shrink-0">
+          <section key={state} className="w-[262px] shrink-0">
             {/* Lane colour lives on the header (Aurora's signal layer): a
                 state-coloured underline + dot, so the board reads with colour
                 while the task cards below stay calm. */}
