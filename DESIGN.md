@@ -229,7 +229,8 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 - **Primary:** cobalt fill, white/near-black text, 9px radius, weight 600. One per view (plus the review gate's Accept).
 - **Ghost:** surface fill with 1px Edge border, ink text; hover darkens the border.
 - **Quiet:** muted text link, weight 500, hover to ink; destructive quiet hovers to Failed rose.
-- **Review gate:** Accept is the cobalt primary (the loudest thing on the card/detail); Reject is a quiet ghost. Accept is deliberately unguarded (PRODUCT.md: "the review gate is sacred" — the operator's read *is* the review; a worktree conflict returns the Task to *awaiting-review*). Reject opens a dialog because it takes a reason, not because it needs a guard.
+- **Review gate:** the gate is **two verbs, Accept and Reject** — a reviewed Task merges or fails, and nothing else belongs in the row. Accept is the cobalt primary and sits **last**, so the affirmative holds the terminal position; Reject is the **Ghost** (amended 2026-07-16: this line read "a quiet ghost" while § Task detail read "Reject… (quiet)", naming both roles at once — Ghost wins, because the Quiet role is what a *third* action would take, and there is no third action). Accept is deliberately unguarded (PRODUCT.md: "the review gate is sacred" — the operator's read *is* the review; a worktree conflict returns the Task to *awaiting-review*). Reject opens a dialog because it takes a reason, not because it needs a guard.
+- **Cancel is not a gate action** (2026-07-16). Once work exists, *cancelled* and *failed* are two names for one terminal fact, and offering both asks the operator to choose between synonyms — while rendering as a second quiet destructive action beside Reject, identical in treatment and different in meaning. Cancel keeps its meaning only where a Task has produced nothing to judge (Draft / Blocked / Ready) or is still producing it (Running). The domain stays permissive: the API can still cancel an awaiting-review Task; the interface simply doesn't offer it.
 - **Hover/Focus:** 150ms ease-out; 2px cobalt `:focus-visible` outline. **Disabled:** 50% opacity.
 
 ### Chips, dots & pills (the state layer)
@@ -245,11 +246,11 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 - Loading is a skeleton board (pulsing Raised blocks), never a spinner.
 
 ### Task detail
-- Title + a small state pill + the id (faint). Quiet actions (Rerun / Cancel) to the right.
+- Title + a small state pill + the id (faint). Quiet actions (Rerun) to the right; the panel's dismiss is the dialog's own X, never a hand-rolled one (Cancel left this row 2026-07-16 — see § 6 Buttons).
 - **Run-meta is one quiet sans line**, not a boxed band: `completed · end_turn · started 4m ago · 48.2K · $0.52 · agent/4810-dark-mode · +142 −38` (only the branch is mono).
 - Minimal underline **tabs** (Events / Changes / Details).
 - **The event stream is the content:** agent prose in Body sans (readable, ~72ch, comfortable line-height); tool calls as a calm quiet list — a small cyan KIND tag + target (mono path/command, truncated) + a ✓/pulse; thoughts in muted italic. One row per tool (folded from `tool_call` + `tool_call_update` — see `web/src/event-stream-model.ts`). The stream is never boxed row-by-row.
-- **Review gate footer** is the loudest thing: Accept & merge (cobalt) + Reject… (quiet), with a tiny faint note.
+- **Review gate footer** is the loudest thing: Reject… (Ghost) then Accept & merge (cobalt, last), with a tiny faint note.
 
 ### Conversation (docked panel)
 - Header: title + tiny rename affordance + id + a small "Active" dot; expand/close icons faint; End/Delete as tiny quiet links; a second faint line for `harness · model · path`.
@@ -265,6 +266,7 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 
 ### Dialogs & Toasts
 - Native `<dialog>`, Surface fill, 12–14px radius, float shadow (hairline ring in dark), backdrop `rgb(0 0 0 / 0.5)`, 150ms fade/scale with a reduced-motion instant alternative.
+- **The dismiss is one X, top-right, owned by `Modal`** (2026-07-16) — Faint per § 2 (an icon-only affordance), hover to Ink. Escape and backdrop-click are invisible, so a dialog needs exactly one *visible* way out, and it is the same one everywhere. **A dialog footer carries only outcomes**: no "Close", no "Cancel"-meaning-dismiss (that word belongs to abandoning a Task), and no second hand-rolled ✕.
 - A dialog or floating panel titles itself in the **Display** role — it is its own view (`panelTitle` in `web/src/ui.ts`). There is no role between Title and Display; the Ledger's "Headline" is retired (2026-07-16), and reaching for a size in that gap means the surface is either a section (Title) or a view (Display), not a third thing.
 - A rejected operation never uses a native `alert()`/`confirm()` — it announces in a top-right stack of Failed-tint toast cards hanging off the header's bottom edge (`aria-live`, Dismiss, ~6s auto-dismiss, `motion-safe` descend). See `web/src/toast.tsx`. (Moved from bottom-right 2026-07-16: the closed Conversation launcher now sits flush on the bottom edge as a drawer tab, so the bottom-right corner belongs to it alone — the toast stack no longer has to dodge the launcher, nor the launcher the stack.)
 

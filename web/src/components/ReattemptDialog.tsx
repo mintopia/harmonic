@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { Modal } from './Modal';
-import { btnGhost, btnQuiet, field, panelTitle, labelType } from '../ui';
+import { btnGhost, field, panelTitle, labelType } from '../ui';
 
 /**
  * Re-attempt a failed task: create a new task linked to it (copying its
@@ -55,10 +55,10 @@ export function ReattemptDialog({
           onChange={(e) => setFeedback(e.target.value)}
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
+        {/* Dismissal is Modal's X. The button that used to sit here read
+            "Cancel" and meant "dismiss" — the same word the board uses for
+            abandoning a task, a few pixels from an action that creates one. */}
         <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={busy} className={`${btnQuiet} px-3 py-1.5`}>
-            Cancel
-          </button>
           <button type="button" onClick={create} disabled={busy} className={btnGhost}>
             Create re-attempt
           </button>

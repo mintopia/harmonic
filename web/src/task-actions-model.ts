@@ -12,8 +12,13 @@ export type TaskAction = 'accept' | 'reject' | 'reattempt' | 'run' | 'ready' | '
 
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
+    // The gate is the two review verbs, Accept last so the affirmative sits in
+    // the strongest (terminal) position. Cancelling an awaiting-review task is
+    // a disposition inside the Reject dialog, not a peer of the gate: the work
+    // exists and wants a verdict, and a Cancel button here would sit beside
+    // Reject looking identical while meaning something else.
     case 'awaiting-review':
-      return ['accept', 'reject', 'cancel'];
+      return ['reject', 'accept'];
     case 'failed':
       return ['reattempt', 'cancel'];
     case 'ready':

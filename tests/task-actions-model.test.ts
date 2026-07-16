@@ -3,8 +3,11 @@ import { taskActions } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
-  it('offers the review gate for awaiting-review', () => {
-    expect(taskActions('awaiting-review')).toEqual(['accept', 'reject', 'cancel']);
+  // Accept is last so the affirmative holds the terminal position, and cancel
+  // is absent by design: it's a disposition inside the Reject dialog, not a
+  // peer of the gate's two review verbs.
+  it('offers the review gate for awaiting-review, accept last and no cancel', () => {
+    expect(taskActions('awaiting-review')).toEqual(['reject', 'accept']);
   });
 
   it('offers re-attempt for a failed task', () => {

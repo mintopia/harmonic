@@ -6,7 +6,7 @@ import { EventStream } from './EventStream';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
-import { btnQuiet, chip, labelType, stateChip } from '../ui';
+import { chip, labelType, stateChip } from '../ui';
 import { toastError } from '../toast';
 
 const metaChip = `${chip} bg-raised text-muted`;
@@ -374,10 +374,9 @@ export function TaskDetail({
             {formatCost(taskCost) && (
               <span title="Total cost across all runs, retries included">Cost {formatCost(taskCost)}</span>
             )}
+            {/* Modal owns the close X; the right padding keeps this line clear
+                of the corner it sits in. */}
             <div className="flex-1" />
-            <button aria-label="Close" onClick={onClose} className={btnQuiet}>
-              ✕
-            </button>
           </div>
           <p className="line-clamp-4 whitespace-pre-wrap text-ink">{task.prompt}</p>
           {(task.reattemptOf !== null || task.reattempts.length > 0) && (

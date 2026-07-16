@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { AppConfig, Task } from '../types';
 import { Modal } from './Modal';
 import { ModelCombobox } from './ModelCombobox';
-import { btnGhost, btnPrimary, btnQuiet, field, panelTitle, labelType } from '../ui';
+import { btnGhost, btnPrimary, field, panelTitle, labelType } from '../ui';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
@@ -120,10 +120,8 @@ export function TaskForm({
 
         {error && <p className="mb-3 text-fail">{error}</p>}
 
+        {/* Dismissal is Modal's X; the footer carries only outcomes. */}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className={`${btnQuiet} px-3 py-1.5`}>
-            Close
-          </button>
           {!task && (
             <button type="button" disabled={busy || !prompt} onClick={() => save('draft')} className={btnGhost}>
               Save draft

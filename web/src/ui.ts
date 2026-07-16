@@ -27,7 +27,7 @@ export const btnQuietDestructive =
  * equal weight on both halves of the gate and spent state colour — green means
  * *completed*, and the task isn't — on an action rather than a state.) */
 export const btnAccept = btnPrimary;
-export const btnReject = btnQuietDestructive;
+export const btnReject = btnGhost; // PROTOTYPE C
 
 export const field =
   'w-full rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';
