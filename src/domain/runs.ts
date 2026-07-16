@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
+import { runs, runEvents, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 
 export interface RunEventInput {

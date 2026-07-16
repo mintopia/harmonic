@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/adapter.js';
 
 /** Every adapter call in these tests runs "in" this directory. */

@@ -50,7 +50,7 @@ export function fillSeries(series: DayCost[], from: number, to: number): DayCost
 export function CostChart({ series }: { series: DayCost[] }) {
   const [hover, setHover] = useState<number | null>(null);
 
-  const { points, gridValues, xOf, yOf } = useMemo(() => {
+  const { points, gridValues, yOf } = useMemo(() => {
     const max = Math.max(...series.map((s) => s.totalUsd ?? 0), 0.01);
     // A friendly ceiling: 1/2/5 × 10^n at or above the observed max.
     const pow = 10 ** Math.floor(Math.log10(max));
@@ -60,7 +60,9 @@ export function CostChart({ series }: { series: DayCost[] }) {
     const xOf = (i: number) => PAD_L + (series.length === 1 ? innerW / 2 : (i / (series.length - 1)) * innerW);
     const yOf = (v: number) => PAD_T + innerH - (v / ceil) * innerH;
     const points = series.map((s, i) => ({ x: xOf(i), y: yOf(s.totalUsd ?? 0), ...s }));
-    return { points, gridValues: [ceil, ceil / 2], xOf, yOf };
+    // xOf stays local: points already carry their x, so only yOf is needed
+    // outside (the gridlines resolve their own y).
+    return { points, gridValues: [ceil, ceil / 2], yOf };
   }, [series]);
 
   const firstPoint = points[0];
