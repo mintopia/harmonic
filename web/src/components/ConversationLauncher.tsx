@@ -48,30 +48,6 @@ import {
   toolChip,
 } from '../ui';
 
-/** One cell of the telemetry strip: muted label over a Data-role value —
- * the same "label over figure" shape StatsPage's summary card uses, just at
- * strip density rather than hero size (this is a live status readout, not
- * the Stats view's headline number). */
-function TelemetryCell({
-  label,
-  value,
-  note,
-  muted,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex-1 px-3 py-2">
-      <div className={`${labelType} text-muted`}>{label}</div>
-      <div className={`font-data text-data font-semibold ${muted ? 'text-faint' : 'text-ink'}`}>{value}</div>
-      {note && <div className="text-label text-faint">{note}</div>}
-    </div>
-  );
-}
-
 /**
  * Live operator telemetry (issue #12): running tokens, estimated cost
  * (`formatCost` reused verbatim, so the ≥/unpriced honesty already built for
@@ -109,24 +85,25 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
 
   return (
     <div className="border-b border-hairline">
-      <div className="flex divide-x divide-hairline">
-        <TelemetryCell label="Tokens" value={tokens} muted={tokens === 'no usage yet'} />
-        <TelemetryCell label="Cost" value={cost ?? '—'} muted={cost === null} />
-        <TelemetryCell
-          label="Context"
-          value={context.value}
-          note={context.note ?? undefined}
-          muted={context.value === '—'}
-        />
-      </div>
+      {/* Live telemetry is ONE quiet status line, not a feature (DESIGN.md §
+          Conversation): tokens · cost · context, whispered in Small muted
+          sans. These are figures, so sans with tabular-nums — never the code
+          face. Each part degrades honestly (no fake zero / no fake %). */}
+      <p className="px-4 py-2 text-small text-muted">
+        {tokens === 'no usage yet' ? 'no usage yet' : `${tokens} tokens`}
+        {' · '}
+        {cost ?? '—'}
+        {' · '}
+        {context.value === '—' ? '—' : `${context.value} context`}
+        {context.note ? ` · ${context.note}` : ''}
+      </p>
       {/* Quiet and neutral, not a state chip: Running Amber's meaning is
           locked to "work in flight" (DESIGN.md), and a cold cache is the
           opposite — idle time with no Turn — so this stays in the
-          Raised/Muted informational register (the same one toasts' inline
-          counterpart and the permission-prompt copy use) rather than
-          borrowing a color that would misstate what's happening. */}
+          Raised/Muted informational register rather than borrowing a colour
+          that would misstate what's happening. */}
       {coldCache && (
-        <p role="status" className="bg-raised px-4 py-1.5 text-muted">
+        <p role="status" className="bg-raised px-4 py-1.5 text-small text-muted">
           {coldCache}
         </p>
       )}
@@ -158,7 +135,7 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
           {turn.userTurn && (
             <div className="mb-1.5 flex justify-end">
               {/* Operator prose — Body face, never Data (the Mono Is Data Rule). */}
-              <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-raised px-3 py-2 text-ink">
+              <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-accent-tint px-3 py-2 text-ink">
                 {turn.userTurn.payload.text}
               </p>
             </div>
@@ -539,11 +516,13 @@ function ConversationHeader({
         </button>
       </div>
       {conversation && (
-        <div className="mt-1 flex items-center gap-2 overflow-hidden font-data text-data text-muted">
+        <div className="mt-1 flex items-center gap-2 overflow-hidden text-small text-muted">
           <span className="shrink-0">#{conversation.id}</span>
           <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
+          {/* Names in sans; only the working directory is a path (mono). */}
           <span className="truncate">
-            {conversation.harness} · {conversation.model} · {conversation.workingDir}
+            {conversation.harness} · {conversation.model} ·{' '}
+            <span className="font-data">{conversation.workingDir}</span>
           </span>
         </div>
       )}

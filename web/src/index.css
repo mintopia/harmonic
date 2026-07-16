@@ -1,77 +1,98 @@
 @import 'tailwindcss';
 @import '@fontsource/jetbrains-mono/400.css';
-@import '@fontsource/jetbrains-mono/600.css'; /* weighted data figures (summary card, chart labels) */
-@import '@fontsource/space-grotesk/600.css'; /* display face: page titles + dialog headlines */
-@import '@fontsource/space-grotesk/700.css'; /* the wordmark alone */
+@import '@fontsource/jetbrains-mono/600.css'; /* the code face (Mono Is Code Rule) */
 
-/* ── Ledger (DESIGN.md) ─────────────────────────────────────────────
-   Dual-theme zinc + indigo. Light is defined on :root; dark overrides
-   arrive twice — via prefers-color-scheme for `system`, and via the
-   explicit data-theme attribute set by the theme toggle, which must win
-   in both directions. Components only reference the semantic layer. */
+/* ── Aurora (DESIGN.md) ─────────────────────────────────────────────
+   Content-first, calm-neutral sky + one cobalt accent, with the work's
+   state carried by a signal-colour family. Dual theme: light on :root,
+   dark overrides twice — via prefers-color-scheme for `system`, and via
+   the explicit data-theme attribute set by the theme toggle, which must
+   win in both directions. Components reference only the semantic layer.
+   (Replaces the retired "Ledger" indigo/zinc palette, 2026-07-16.) */
 :root {
   color-scheme: light;
 
-  --hm-canvas: #f5f5f6; /* the page field cards float on */
+  --hm-canvas: #fbfbfd; /* the calm sky cards float on */
   --hm-shell: #ffffff; /* sidebar + top strip */
   --hm-surface: #ffffff; /* cards, dialogs */
   --hm-field: #ffffff; /* form controls */
-  --hm-raised: #ececee; /* inset fills: count pills, hovers, segmented track */
-  --hm-hairline: #e5e5e8; /* structural dividers */
-  --hm-edge: #d8d8dc; /* interactive borders: fields, ghost buttons */
-  --hm-ink: #202024;
-  --hm-muted: #5c5c66; /* secondary text — the informational floor */
-  --hm-faint: #9a9aa2; /* icon-only affordances and disabled text */
-  --hm-accent: #5851e0; /* indigo: primary action, selection, focus */
-  --hm-accent-hot: #4a43cc; /* light presses darker */
-  --hm-accent-tint: #edecfc; /* active nav fill, selected chips */
+  --hm-raised: #f1f2f6; /* inset fills: count pills, hovers, finished panel */
+  --hm-hairline: #ecedf3; /* shared-edge dividers only */
+  --hm-edge: #dddfea; /* interactive borders: fields, ghost buttons */
+  --hm-ink: #16182b;
+  --hm-muted: #5a5e78; /* secondary text — the informational floor */
+  --hm-faint: #9296b0; /* icon-only affordances, disabled, quiet metadata */
+  --hm-accent: #2563eb; /* cobalt: the interface's one voice */
+  --hm-accent-hot: #1d4fd8; /* light presses darker */
+  --hm-accent-tint: #e7eefe; /* active nav, selected pills, operator message */
   --hm-on-accent: #ffffff;
-  --hm-running: #8a5410; /* running state text */
-  --hm-running-tint: #fbf0dd;
-  --hm-accept: #196c47;
-  --hm-accept-tint: #ddf3e7;
-  --hm-fail: #b3382e;
-  --hm-fail-tint: #fbe9e7;
-  --hm-tool: #0f6e7e; /* tooling metadata: teal, distinct from the accent */
-  --hm-tool-tint: #dcf1f5;
+
+  /* State-signal family (the aurora): text · dot · tint, per state. */
+  --hm-running: #b25e06;
+  --hm-running-dot: #e08a0e;
+  --hm-running-tint: #fbefd8;
+  --hm-ready: #15803d;
+  --hm-ready-dot: #1ba35b;
+  --hm-ready-tint: #daf4e4;
+  --hm-accept: #067a55; /* completed / accepted */
+  --hm-accept-dot: #10b981;
+  --hm-accept-tint: #d6f5e7;
+  --hm-fail: #cb3a52; /* failed / rejected / destructive */
+  --hm-fail-dot: #f0576e;
+  --hm-fail-tint: #fde3e8;
+  --hm-blocked: #6a6f86; /* slate — waiting on a dependency */
+  --hm-blocked-tint: #edeef3;
+  --hm-tool: #0e8aa0; /* tooling metadata: cyan */
+  --hm-tool-dot: #16a6be;
+  --hm-tool-tint: #daf3f8;
 
   /* Depth: real shadows in light… */
-  --hm-shadow-card: 0 1px 2px rgb(24 24 32 / 0.05), 0 2px 6px rgb(24 24 32 / 0.06);
-  --hm-shadow-bar: 0 4px 18px rgb(24 24 32 / 0.14), 0 1px 3px rgb(24 24 32 / 0.08);
-  --hm-shadow-btn: 0 1px 2px rgb(88 81 224 / 0.35);
+  --hm-shadow-card: 0 1px 2px rgb(20 22 45 / 0.05), 0 8px 24px rgb(20 22 45 / 0.06);
+  --hm-shadow-bar: 0 12px 32px rgb(20 22 45 / 0.12);
+  --hm-shadow-btn: 0 1px 2px rgb(37 99 235 / 0.32);
 }
 
-/* …and lightness steps in dark (zinc; no blue cast — the indigo accent
-   is the only cool voice). The floating bar keeps a hairline ring since
-   its shadow disappears on a dark field. */
+/* …and lightness steps in dark (cool near-black; no blue cast in the
+   neutrals — cobalt is the only cool voice). Floating elements keep a
+   hairline ring since their shadow disappears on a dark field. */
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --hm-canvas: #17171a;
-  --hm-shell: #1c1c20;
-  --hm-surface: #212126;
-  --hm-field: #1a1a1e;
-  --hm-raised: #2a2a31;
-  --hm-hairline: #2c2c33;
-  --hm-edge: #3a3a43;
-  --hm-ink: #e9e9ec;
-  --hm-muted: #a6a6b0;
-  --hm-faint: #6f6f7a;
-  --hm-accent: #7a74f0;
-  --hm-accent-hot: #8b86f3; /* dark presses lighter */
-  --hm-accent-tint: #2b2947;
-  --hm-on-accent: #101013;
-  --hm-running: #e4b25c;
-  --hm-running-tint: #322b1d;
-  --hm-accept: #5ecc98;
-  --hm-accept-tint: #1d332a;
-  --hm-fail: #f07d74;
-  --hm-fail-tint: #372422;
-  --hm-tool: #5cc6d6;
-  --hm-tool-tint: #1d3238;
+  --hm-canvas: #0e1016;
+  --hm-shell: #14161d;
+  --hm-surface: #171a22;
+  --hm-field: #14161d;
+  --hm-raised: #1f232d;
+  --hm-hairline: #232833;
+  --hm-edge: #2a2f3b;
+  --hm-ink: #ebedf5;
+  --hm-muted: #9ba0b5;
+  --hm-faint: #6b7185;
+  --hm-accent: #6e8bff;
+  --hm-accent-hot: #8aa1ff; /* dark presses lighter */
+  --hm-accent-tint: #1b2340;
+  --hm-on-accent: #0e1016;
+
+  --hm-running: #f0a93a;
+  --hm-running-dot: #f0a93a;
+  --hm-running-tint: #3a2c12;
+  --hm-ready: #34d399;
+  --hm-ready-dot: #34d399;
+  --hm-ready-tint: #123026;
+  --hm-accept: #34d399;
+  --hm-accept-dot: #34d399;
+  --hm-accept-tint: #123026;
+  --hm-fail: #fb7185;
+  --hm-fail-dot: #fb7185;
+  --hm-fail-tint: #3a1720;
+  --hm-blocked: #8a90a6;
+  --hm-blocked-tint: #22262f;
+  --hm-tool: #38bdf8;
+  --hm-tool-dot: #38bdf8;
+  --hm-tool-tint: #10303b;
 
   --hm-shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
-  --hm-shadow-bar: 0 0 0 1px #2c2c33, 0 4px 18px rgb(0 0 0 / 0.5);
+  --hm-shadow-bar: 0 0 0 1px #232833, 0 12px 32px rgb(0 0 0 / 0.5);
   --hm-shadow-btn: none;
 }
 
@@ -79,31 +100,41 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --hm-canvas: #17171a;
-    --hm-shell: #1c1c20;
-    --hm-surface: #212126;
-    --hm-field: #1a1a1e;
-    --hm-raised: #2a2a31;
-    --hm-hairline: #2c2c33;
-    --hm-edge: #3a3a43;
-    --hm-ink: #e9e9ec;
-    --hm-muted: #a6a6b0;
-    --hm-faint: #6f6f7a;
-    --hm-accent: #7a74f0;
-    --hm-accent-hot: #8b86f3;
-    --hm-accent-tint: #2b2947;
-    --hm-on-accent: #101013;
-    --hm-running: #e4b25c;
-    --hm-running-tint: #322b1d;
-    --hm-accept: #5ecc98;
-    --hm-accept-tint: #1d332a;
-    --hm-fail: #f07d74;
-    --hm-fail-tint: #372422;
-    --hm-tool: #5cc6d6;
-    --hm-tool-tint: #1d3238;
+    --hm-canvas: #0e1016;
+    --hm-shell: #14161d;
+    --hm-surface: #171a22;
+    --hm-field: #14161d;
+    --hm-raised: #1f232d;
+    --hm-hairline: #232833;
+    --hm-edge: #2a2f3b;
+    --hm-ink: #ebedf5;
+    --hm-muted: #9ba0b5;
+    --hm-faint: #6b7185;
+    --hm-accent: #6e8bff;
+    --hm-accent-hot: #8aa1ff;
+    --hm-accent-tint: #1b2340;
+    --hm-on-accent: #0e1016;
+
+    --hm-running: #f0a93a;
+    --hm-running-dot: #f0a93a;
+    --hm-running-tint: #3a2c12;
+    --hm-ready: #34d399;
+    --hm-ready-dot: #34d399;
+    --hm-ready-tint: #123026;
+    --hm-accept: #34d399;
+    --hm-accept-dot: #34d399;
+    --hm-accept-tint: #123026;
+    --hm-fail: #fb7185;
+    --hm-fail-dot: #fb7185;
+    --hm-fail-tint: #3a1720;
+    --hm-blocked: #8a90a6;
+    --hm-blocked-tint: #22262f;
+    --hm-tool: #38bdf8;
+    --hm-tool-dot: #38bdf8;
+    --hm-tool-tint: #10303b;
 
     --hm-shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
-    --hm-shadow-bar: 0 0 0 1px #2c2c33, 0 4px 18px rgb(0 0 0 / 0.5);
+    --hm-shadow-bar: 0 0 0 1px #232833, 0 12px 32px rgb(0 0 0 / 0.5);
     --hm-shadow-btn: none;
   }
 }
@@ -124,12 +155,21 @@
   --color-accent-tint: var(--hm-accent-tint);
   --color-on-accent: var(--hm-on-accent);
   --color-running: var(--hm-running);
+  --color-running-dot: var(--hm-running-dot);
   --color-running-tint: var(--hm-running-tint);
+  --color-ready: var(--hm-ready);
+  --color-ready-dot: var(--hm-ready-dot);
+  --color-ready-tint: var(--hm-ready-tint);
   --color-accept: var(--hm-accept);
+  --color-accept-dot: var(--hm-accept-dot);
   --color-accept-tint: var(--hm-accept-tint);
   --color-fail: var(--hm-fail);
+  --color-fail-dot: var(--hm-fail-dot);
   --color-fail-tint: var(--hm-fail-tint);
+  --color-blocked: var(--hm-blocked);
+  --color-blocked-tint: var(--hm-blocked-tint);
   --color-tool: var(--hm-tool);
+  --color-tool-dot: var(--hm-tool-dot);
   --color-tool-tint: var(--hm-tool-tint);
 
   --shadow-card: var(--hm-shadow-card);
@@ -138,31 +178,38 @@
 }
 
 @theme {
-  /* Ledger radii: soft but never blobby. Chips and switches are pills. */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
+  /* Aurora radii: soft but never blobby. Chips and switches are pills. */
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
 
-  /* Data face: JetBrains Mono, data only (the Mono Is Data Rule). */
+  /* Code face: JetBrains Mono, code only (the Mono Is Code Rule). */
   --font-data: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Display face: Space Grotesk carries the wordmark, page titles, and dialog
-     headlines only — the rare, large type. Body/UI/labels stay system sans;
-     data stays mono. Swap this one token to retune the interface's voice. */
-  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  /* Display / UI / body all ride the system sans; character comes from the
+     scale, weight, and spacing. (Space Grotesk is retired with the Ledger —
+     `--font-display` stays as a token so `font-display` usages keep working,
+     now resolving to the same system sans as the rest of the UI.) */
+  --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   /* Type roles (fixed rem scale). Weights: 400 body / 500 UI emphasis /
-     600 headings; 700 exists for the wordmark alone. */
-  --text-display: 1.375rem;
-  --text-display--line-height: 1.25;
+     600 headings; 700 for display titles. tabular-nums lets figures line up
+     in sans, so numbers never need the code face. */
+  --text-hero: 3.25rem;
+  --text-hero--line-height: 1;
+  --text-hero--letter-spacing: -0.03em;
+  --text-display: 1.25rem;
+  --text-display--line-height: 1.2;
   --text-display--letter-spacing: -0.015em;
   --text-headline: 1.125rem;
   --text-headline--line-height: 1.3;
   --text-title: 0.9375rem;
   --text-title--line-height: 1.4;
-  --text-body: 0.84375rem; /* 13.5px */
+  --text-body: 0.90625rem; /* 14.5px */
   --text-body--line-height: 1.5;
+  --text-small: 0.75rem; /* 12px — metadata, notes, telemetry */
+  --text-small--line-height: 1.45;
   --text-label: 0.6875rem;
   --text-label--line-height: 1.2;
   --text-data: 0.8125rem;
@@ -178,6 +225,7 @@
   body {
     background-color: var(--hm-canvas);
     color: var(--hm-ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
     /* Live-updating digits must not jitter, whatever their role. */
@@ -186,7 +234,7 @@
 
   :focus-visible {
     outline: 2px solid var(--hm-accent);
-    outline-offset: 1px;
+    outline-offset: 2px;
   }
 
   dialog::backdrop {

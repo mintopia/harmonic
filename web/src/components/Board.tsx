@@ -3,7 +3,7 @@ import type { Task, TaskState } from '../types';
 import { boardColumns } from '../board-model';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
-import { btnQuiet, stateCountPill } from '../ui';
+import { btnQuiet, laneBorder, laneDot, stateCountPill } from '../ui';
 
 const COLUMN_LABELS: Record<TaskState, string> = {
   draft: 'Draft',
@@ -110,7 +110,11 @@ export function Board({
           // shrinking the pipeline columns. Load-independent geometry: the
           // operator's glance targets never move (DESIGN.md § The Board).
           <section key={state} className="w-60 shrink-0">
-            <h2 className="mb-3 flex items-baseline gap-2 px-0.5">
+            {/* Lane colour lives on the header (Aurora's signal layer): a
+                state-coloured underline + dot, so the board reads with colour
+                while the task cards below stay calm. */}
+            <h2 className={`mb-3 flex items-center gap-2 border-b-2 ${laneBorder(state)} px-0.5 pb-2`}>
+              <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${laneDot(state)}`} />
               <span className="font-semibold text-ink">{COLUMN_LABELS[state]}</span>
               <span className={stateCountPill(state, column.length)}>{column.length}</span>
               {terminal && (
@@ -154,6 +158,7 @@ export function Board({
                 className="group flex items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink"
                 onClick={() => togglePeek(state)}
               >
+                <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${laneDot(state)}`} />
                 {COLUMN_LABELS[state]}
                 <span
                   className={`ml-auto font-semibold ${

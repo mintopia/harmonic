@@ -8,12 +8,13 @@ import { Icon } from './Icon';
 
 /**
  * One row of the history list (issue #15): title (falling back honestly to
- * "Untitled conversation"), a state chip, the harness/model/Working
- * Directory line, and a token/cost summary — the same figures the detail
- * view's telemetry strip reads, just at list density (one truncating
- * Data-role line per DESIGN.md's card metadata rule, even though these rows
- * aren't cards). The accent dot mirrors TaskDetail's tab-flag treatment: a
- * live "something changed here" cue, not a state color.
+ * "Untitled conversation"), a state chip, and a single muted metadata line —
+ * harness · model · working dir · tokens · cost — the same figures the detail
+ * view's telemetry strip reads, at list density. Per DESIGN.md's Mono Is Code
+ * Rule the line is sans; only the working-dir path stays mono. The clickable
+ * row and the Delete button are siblings (not nested interactive elements),
+ * the row staying keyboard-operable. The accent dot mirrors TaskDetail's
+ * tab-flag treatment: a live "something changed here" cue, not a state color.
  */
 function ConversationRow({
   conversation,
@@ -31,7 +32,7 @@ function ConversationRow({
   const title = conversationDisplayTitle(conversation.title);
 
   return (
-    <li>
+    <li className="group flex items-start gap-2 rounded-md px-2 py-2.5 transition-colors duration-150 hover:bg-raised">
       <div
         role="button"
         tabIndex={0}
@@ -42,36 +43,35 @@ function ConversationRow({
             onSelect();
           }
         }}
-        className="group flex cursor-pointer items-start gap-2 rounded-md px-2 py-2.5 transition-colors duration-150 hover:bg-raised"
+        className="min-w-0 flex-1 cursor-pointer"
       >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {needsAttention && (
-              <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            )}
-            <span className="min-w-0 flex-1 truncate font-medium text-ink">{title}</span>
-            <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
-          </div>
-          <div className="mt-0.5 truncate font-data text-data text-muted">
-            {conversation.harness} · {conversation.model} · {conversation.workingDir}
-          </div>
-          <div className="mt-0.5 font-data text-data text-faint">
-            {tokens}
-            {cost ? ` · ${cost}` : ''}
-          </div>
+        <div className="flex items-center gap-2">
+          {needsAttention && (
+            <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+          )}
+          <span className="min-w-0 flex-1 truncate font-medium text-ink">{title}</span>
+          <span className={conversationStateChip(conversation.state)}>{conversation.state}</span>
         </div>
-        <button
-          type="button"
-          aria-label={`Delete conversation ${title}`}
-          className={`${btnQuietDestructive} shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-        >
-          Delete
-        </button>
+        <div className="mt-0.5 truncate text-small text-muted">
+          {conversation.harness} · {conversation.model}
+          {conversation.workingDir && (
+            <>
+              {' · '}
+              <span className="font-data">{conversation.workingDir}</span>
+            </>
+          )}
+          {` · ${tokens}`}
+          {cost ? ` · ${cost}` : ''}
+        </div>
       </div>
+      <button
+        type="button"
+        aria-label={`Delete conversation ${title}`}
+        className={`${btnQuietDestructive} shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100`}
+        onClick={onDelete}
+      >
+        Delete
+      </button>
     </li>
   );
 }
@@ -125,7 +125,7 @@ export function ConversationList({
         {conversations.length === 0 ? (
           <p className="p-2 text-muted">No conversations yet — start one above.</p>
         ) : (
-          <ul className="divide-y divide-hairline">
+          <ul className="flex flex-col gap-2">
             {conversations.map((c) => (
               <ConversationRow
                 key={c.id}

@@ -33,13 +33,17 @@ const fmt = (n: number) => n.toLocaleString();
 /** Summary figures compact ("18.2M"); tables keep exact numbers. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
-/** One cell of the divided summary card: muted label over a weighted value. */
+/** One cell of the summary grid: muted label over a weighted, tabular value.
+ * The hero (cost) is the one loud figure — big sans, not mono (Mono Is Code
+ * Rule) — and spans its own full-width row so it leads. */
 function SummaryCell({ label, value, hero = false }: { label: string; value: string; hero?: boolean }) {
   return (
-    <div className={`px-5 py-4 ${hero ? 'min-w-36' : 'min-w-28'}`}>
+    <div className={hero ? 'col-span-full' : ''}>
       <div className={`${labelType} mb-1.5 text-muted`}>{label}</div>
       <div
-        className={`font-data font-semibold ${value === '—' ? 'text-faint' : 'text-ink'} ${hero ? 'text-[1.625rem] leading-8 tracking-tight' : 'text-title'}`}
+        className={`font-semibold tabular-nums ${value === '—' ? 'text-faint' : 'text-ink'} ${
+          hero ? 'text-[2.5rem] font-bold leading-none tracking-tight' : 'text-title'
+        }`}
       >
         {value}
       </div>
@@ -90,7 +94,7 @@ export function StatsPage() {
               key={r}
               aria-pressed={r === range}
               onClick={() => setRange(r)}
-              className={`rounded-sm px-2.5 py-1 transition-colors duration-150 ${
+              className={`rounded-sm px-2.5 py-1.5 transition-colors duration-150 ${
                 r === range ? 'bg-surface font-semibold text-ink shadow-card' : 'font-medium text-muted hover:text-ink'
               }`}
             >
@@ -108,7 +112,7 @@ export function StatsPage() {
         <>
           {/* The one loud element of the view: cost — the number the
               operator glances at. Everything else answers alongside. */}
-          <div className={`${card} mb-4 flex divide-x divide-hairline overflow-x-auto`}>
+          <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
             <SummaryCell hero label={`Cost · ${range}`} value={formatCost(stats.cost) ?? '—'} />
             <SummaryCell label="Runs" value={fmt(stats.runCount)} />
             <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
@@ -142,12 +146,12 @@ export function StatsPage() {
                       const modelCost = stats.cost?.byModel[model];
                       return (
                         <tr key={model} className="border-t border-hairline">
-                          <td className="py-2 font-data text-data">{model}</td>
-                          <td className="text-right font-data text-data text-muted">
+                          <td className="py-2 text-data text-ink">{model}</td>
+                          <td className="text-right text-data tabular-nums text-muted">
                             {fmt(u.inputTokens)} in · {fmt(u.outputTokens)} out
                           </td>
                           <td
-                            className="pl-3 text-right font-data text-data text-ink"
+                            className="pl-3 text-right text-data tabular-nums text-ink"
                             title={modelCost == null ? 'No price configured for this model' : undefined}
                           >
                             {modelCost == null ? '—' : usd(modelCost)}
@@ -178,8 +182,8 @@ export function StatsPage() {
                         // Teal is the documented voice for tooling metadata
                         // (the State Speaks Rule) — its one use on this page.
                         <tr key={tool} className="border-t border-hairline">
-                          <td className="py-2 font-data text-data text-tool">{tool}</td>
-                          <td className="text-right font-data text-data text-ink">{fmt(count)}</td>
+                          <td className="py-2 text-data text-tool">{tool}</td>
+                          <td className="text-right text-data tabular-nums text-ink">{fmt(count)}</td>
                         </tr>
                       ))}
                   </tbody>

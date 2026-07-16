@@ -1,53 +1,90 @@
-<!-- CURRENT: the "Ledger" premium-SaaS redesign chosen 2026-07-15, replacing
-     the terminal-native "Signal Console" direction of 2026-07-14 (full restart
-     decided after four visual direction probes; the Stripe-lane probe B won,
-     with the dark theme revised from slate to zinc on operator feedback).
+<!-- CURRENT: the "Aurora" content-first redesign, chosen 2026-07-16, replacing
+     the "Ledger" premium-SaaS direction of 2026-07-15 (itself a restart of the
+     terminal-native "Signal Console" of 2026-07-14). The Ledger executed its
+     own Stripe-lane goal as a literal ledger — ruled rows, mono-heavy, cramped —
+     so content drowned in chrome. Aurora keeps the parts that were sound (dual
+     theme, real elevation, one accent, AA floor) and fixes what wasn't: content
+     leads, structure is carried by air not rules, monospace is reserved for code
+     (not merely "data"), and colour lives on the state layer as signal.
+     Design decisions vs the retired Ledger code, all chosen 2026-07-16:
+       · accent moves indigo (#5851e0) → cobalt (#2563EB / #6E8BFF dark)
+       · display face is now system sans; Space Grotesk is retired
+       · the "Mono Is Data Rule" is tightened to the "Mono Is Code Rule"
+       · a richer state-signal family (adds Ready green, Blocked slate)
      Where running code and this file disagree, this file wins for new work. -->
 
 ---
 name: Harmonic
-description: Premium-SaaS operator console for running and reviewing autonomous coding agents
+description: Premium-SaaS operator console for running and reviewing autonomous coding agents — content-first, calm surfaces, signal-colour state
+designSystem: Aurora
 colors:
-  indigo-accent: "#5851e0"
-  indigo-accent-dark: "#7a74f0"
-  zinc-canvas-light: "#f5f5f6"
-  zinc-canvas-dark: "#17171a"
-  shell-light: "#ffffff"
-  shell-dark: "#1c1c20"
-  surface-light: "#ffffff"
-  surface-dark: "#212126"
-  raised-light: "#ececee"
-  raised-dark: "#2a2a31"
-  hairline-light: "#e5e5e8"
-  hairline-dark: "#2c2c33"
-  edge-light: "#d8d8dc"
-  edge-dark: "#3a3a43"
-  ink-light: "#202024"
-  ink-dark: "#e9e9ec"
-  muted-light: "#5c5c66"
-  muted-dark: "#a6a6b0"
-  faint-light: "#9a9aa2"
-  faint-dark: "#6f6f7a"
-  running-amber-light: "#8a5410"
-  running-amber-dark: "#e4b25c"
-  accept-green-light: "#196c47"
-  accept-green-dark: "#5ecc98"
-  fail-red-light: "#b3382e"
-  fail-red-dark: "#f07d74"
-  tool-teal-light: "#0f6e7e"
-  tool-teal-dark: "#5cc6d6"
+  accent: "#2563EB"
+  accent-dark: "#6E8BFF"
+  accent-hover: "#1D4FD8"
+  accent-hover-dark: "#8AA1FF"
+  accent-tint-light: "#E7EEFE"
+  accent-tint-dark: "#1B2340"
+  on-accent-light: "#FFFFFF"
+  on-accent-dark: "#0E1016"
+  canvas-light: "#FBFBFD"
+  canvas-dark: "#0E1016"
+  shell-light: "#FFFFFF"
+  shell-dark: "#14161D"
+  surface-light: "#FFFFFF"
+  surface-dark: "#171A22"
+  raised-light: "#F1F2F6"
+  raised-dark: "#1F232D"
+  hairline-light: "#ECEDF3"
+  hairline-dark: "#232833"
+  edge-light: "#DDDFEA"
+  edge-dark: "#2A2F3B"
+  ink-light: "#16182B"
+  ink-dark: "#EBEDF5"
+  muted-light: "#5A5E78"
+  muted-dark: "#9BA0B5"
+  faint-light: "#9296B0"
+  faint-dark: "#6B7185"
+  running-text-light: "#B25E06"
+  running-dot-light: "#E08A0E"
+  running-tint-light: "#FBEFD8"
+  running-text-dark: "#F0A93A"
+  running-tint-dark: "#3A2C12"
+  ready-text-light: "#15803D"
+  ready-dot-light: "#1BA35B"
+  ready-tint-light: "#DAF4E4"
+  ready-dot-dark: "#34D399"
+  ready-tint-dark: "#123026"
+  completed-text-light: "#067A55"
+  completed-dot-light: "#10B981"
+  completed-tint-light: "#D6F5E7"
+  completed-text-dark: "#34D399"
+  completed-tint-dark: "#123026"
+  failed-text-light: "#CB3A52"
+  failed-dot-light: "#F0576E"
+  failed-tint-light: "#FDE3E8"
+  failed-text-dark: "#FB7185"
+  failed-tint-dark: "#3A1720"
+  blocked-slate-light: "#6A6F86"
+  blocked-tint-light: "#EDEEF3"
+  blocked-slate-dark: "#8A90A6"
+  blocked-tint-dark: "#22262F"
+  tool-text-light: "#0E8AA0"
+  tool-dot-light: "#16A6BE"
+  tool-tint-light: "#DAF3F8"
+  tool-text-dark: "#38BDF8"
+  tool-tint-dark: "#10303B"
 typography:
   display:
-    fontFamily: "Space Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "1.375rem"
-    fontWeight: 600
-    lineHeight: 1.25
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 700
+    lineHeight: 1.2
     letterSpacing: "-0.015em"
-  headline:
-    fontFamily: "Space Grotesk, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "1.125rem"
-    fontWeight: 600
-    lineHeight: 1.3
+  hero:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "3.25rem"
+    fontWeight: 750
+    letterSpacing: "-0.03em"
   title:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.9375rem"
@@ -55,208 +92,195 @@ typography:
     lineHeight: 1.4
   body:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "0.84375rem"
+    fontSize: "0.90625rem"
     fontWeight: 400
     lineHeight: 1.5
+  small:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 400
   label:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 600
-    lineHeight: 1.2
-    letterSpacing: "0.025em"
-  data:
+    letterSpacing: "0.05em"
+  code:
     fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
     fontSize: "0.8125rem"
     fontWeight: 400
     lineHeight: 1.5
 rounded:
-  sm: "6px"
-  md: "8px"
-  lg: "10px"
-  xl: "12px"
-  chip: "999px"
+  sm: "7px"
+  md: "9px"
+  lg: "12px"
+  xl: "14px"
+  pill: "999px"
 spacing:
   xs: "4px"
   sm: "8px"
   md: "12px"
   lg: "16px"
   xl: "24px"
-components:
-  button-primary:
-    backgroundColor: "{colors.indigo-accent}"
-    textColor: "#ffffff"
-    typography: "{typography.body} at weight 600"
-    rounded: "{rounded.md}"
-    padding: "8px 14px"
-    shadow: "0 1px 2px rgb(88 81 224 / 0.35) (light only)"
-  button-ghost:
-    backgroundColor: "{colors.surface-light} / {colors.surface-dark}"
-    border: "1px solid edge"
-    textColor: "ink"
-    rounded: "{rounded.md}"
-    padding: "8px 14px"
-  field:
-    backgroundColor: "field (white / #1a1a1e)"
-    border: "1px solid edge; accent on focus"
-    rounded: "{rounded.md}"
-    padding: "6px 10px"
-  chip-state:
-    typography: "{typography.label} at weight 500, uppercase"
-    rounded: "{rounded.chip}"
-    padding: "2px 8px"
-    fill: "state tint behind state text color"
-  card:
-    backgroundColor: "surface"
-    rounded: "{rounded.lg}"
-    shadow: "soft real shadow in light; lightness step + subtle shadow in dark"
-  nav-item:
-    textColor: "muted; active = accent text on accent tint"
-    rounded: "{rounded.md}"
-    padding: "6px 10px"
+  "2xl": "32px"
 ---
 
-# Design System: Harmonic
+# Design System: Harmonic — "Aurora"
 
 ## 1. Overview
 
-**Creative North Star: "The Ledger"**
+**Creative North Star: "Aurora"**
 
-Harmonic renders as a premium-SaaS operator console in the Stripe lane: white (or zinc-dark) cards floating on a quiet neutral field, order carried by typographic hierarchy and real depth rather than darkness or ornament. The interface speaks a quiet system sans; machine data — ids, commands, costs, models, streams — answers in monospace. One indigo is the only voice the interface itself speaks; every other color belongs to the *work* (running, accepted, failed, tooling). The register is product (PRODUCT.md: "fast, dense, operator-grade… the tool disappears into the task"), and the layout serves a side-monitor glance: a slim sidebar, a status strip, full-width working views, a board readable in two seconds.
+Harmonic is a premium-SaaS operator console for running and reviewing autonomous coding agents. Aurora is the calm-sky metaphor: **quiet neutral surfaces are the sky; the work's state is the aurora** — bands of signal colour (running amber, ready green, awaiting cobalt, blocked slate, completed emerald, failed rose, tooling cyan) laid over a still ground. Colour means something and lives on the *state layer*; the content underneath stays calm. One cobalt is the only voice the interface itself speaks.
 
-Both themes are first-class (decided 2026-07-15): **light** is cool-neutral zinc with white cards and soft real shadows; **dark** is the same product on zinc surfaces (#17171a → #1c1c20 → #212126) where depth comes from lightness steps. The dark palette is deliberately *zinc, not slate* — no blue cast in the neutrals; the indigo accent is the only cool voice. Theme follows `prefers-color-scheme` with a manual override (System → Light → Dark) persisted in `localStorage` and stamped as `data-theme` on the root.
+The register is product (PRODUCT.md: "fast, dense, operator-grade… the tool disappears into the task"), built for a side-monitor glance. But Aurora corrects the Ledger's mistake: **density is not clutter.** The Ledger carried structure with ruled rows and set nearly everything in monospace, so the actual content — the tasks, the run, the message — drowned. Aurora's prime directive is the opposite.
 
-This system still rejects PRODUCT.md's anti-references: **CI/CD console gloom** (cards and air, not wall-of-widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), and **kanban-tool sprawl** (the board is a queue with a review gate).
+**The Prime Directive — Content Leads.** On every screen the thing the operator came for is the loudest element; metadata, telemetry, ids, and chrome are whispered. Whitespace and elevation carry grouping, not borders and fills. Every element earns its place or is cut. If a screen feels busy, cut more.
 
-**Key Characteristics:**
-- Sans-forward UI with mono reserved for data; six roles, fixed rem scale
-- Cards on a field: tonal canvas, shadowed surfaces, hairlines only for shared edges inside cards
-- One accent (indigo ≤10% of any screen); state colors mean states, as tinted pills
-- True dual theme: light canonical-neutral, zinc dark; every pair holds AA in both
-- Dense but breathable: 13.5px body, 1.5 line-height, 4/8/12/16/24 spacing rhythm
+Both themes are first-class. **Light** is a cool near-white sky (#FBFBFD) with white cards on soft real shadows; **dark** is the same product on cool near-black surfaces (#0E1016 → #171A22) where depth comes from lightness steps. Theme follows `prefers-color-scheme` with a manual override (System → Light → Dark) persisted in `localStorage` and stamped as `data-theme` on the root.
 
-## 2. Colors: The Ledger Palette
+Aurora keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (cards and air, not wall-of-widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), and **kanban-tool sprawl** (the board is a queue with a review gate).
 
-A zinc-neutral field, one indigo accent, and a strict semantic state vocabulary; every value below passes WCAG AA against its documented background in its theme.
+**Key characteristics:**
+- Content-first hierarchy: content loud, metadata/telemetry whispered
+- Calm neutral surfaces; colour is a signal on the state layer, never decoration
+- One cobalt accent (the interface's voice, ≤10% of any screen) + a semantic state-signal family (the work's colours)
+- Monospace is reserved for **code**, not merely "data" — sans (with tabular figures) carries everything the operator reads as language
+- Structure by air + elevation; hairlines mark shared edges, never ruled rows
+- True dual theme, AA contrast floor in both
 
-### Primary
-- **Indigo Accent** (#5851e0 light / #7a74f0 dark): the interface's only voice. Primary actions, active nav, current selection, focus rings, the chart series. Filled buttons pair it with white text in light (#ffffff, 5.4:1) and near-black in dark (#101013, 7:1). Pressed states go darker in light (#4a43cc), lighter in dark (#8b86f3).
-- **Accent Tint** (#edecfc / #2b2947): the fill under active nav items and selected pills — never a decoration.
+## 2. Colours: The Aurora Palette
 
-### Neutral (zinc — near-zero chroma, both themes)
-- **Canvas** (#f5f5f6 / #17171a): the page field.
-- **Shell** (#ffffff / #1c1c20): sidebar and status strip.
-- **Surface** (#ffffff / #212126): cards and dialogs.
-- **Field** (#ffffff / #1a1a1e): form controls.
-- **Raised** (#ececee / #2a2a31): inset fills — count pills, hovers, segmented track, the finished panel.
-- **Hairline** (#e5e5e8 / #2c2c33): structural dividers. **Edge** (#d8d8dc / #3a3a43): interactive borders (fields, ghost buttons).
-- **Ink** (#202024 / #e9e9ec): primary text. **Muted** (#5c5c66 / #a6a6b0): secondary text, ≥6:1 — the informational floor. **Faint** (#9a9aa2 / #6f6f7a): icon-only affordances and disabled text exclusively.
+A cool-neutral sky, one cobalt accent, and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme.
 
-### Semantic states (these belong to the work, not the chrome)
-Each state is a text color + a tint fill, per theme, rendered as pill chips, counts, and dots:
-- **Running Amber** (#8a5410 on #fbf0dd / #e4b25c on #322b1d): work in flight.
-- **Accept Green** (#196c47 on #ddf3e7 / #5ecc98 on #1d332a): completed, accepted.
-- **Fail Red** (#b3382e on #fbe9e7 / #f07d74 on #372422): failed, rejected, destructive.
-- **Tool Teal** (#0f6e7e on #dcf1f5 / #5cc6d6 on #1d3238): tool calls, branches, harness metadata. (Replaces Signal Console's Tool Indigo — indigo is the accent now.)
-- Priority is typographic, not chromatic: high = ink + weight 600, normal/low = muted.
+### Accent (the interface's one voice)
+- **Cobalt Accent** (#2563EB light / #6E8BFF dark): primary actions, active nav, current selection, focus rings, the chart series, and the *awaiting-review* state (the state that needs the operator is deliberately the accent). Filled buttons pair it with white in light / near-black (#0E1016) in dark. Hover: #1D4FD8 light, #8AA1FF dark.
+- **Accent Tint** (#E7EEFE / #1B2340): fill under active nav, selected pills, the operator's own chat message.
 
-### Named Rules
-**The One Indigo Rule.** The accent appears on at most 10% of any screen: primary action, active nav, selection, focus, the chart. If indigo is decorating something, it is wrong.
-**The State Speaks Rule.** Amber, green, red, and teal are forbidden outside their semantic meanings. A color the operator can't parse as a state is noise. *API-docs carve-out (2026-07-15):* on the developer-facing API reference only, HTTP-method pills reuse these tints to encode verb semantics (GET neutral · POST green = create · PUT/PATCH amber = mutate · DELETE red = destroy) and response codes color by class (2xx green · 4xx/5xx red). The verb/code text is always shown, so color is a redundant second cue; this surface carries no task-state chips to collide with.
-**The Zinc Rule.** Neutrals carry no hue in either theme. If a gray looks blue, it's a regression; warmth or coolness may only come from the accent and the state vocabulary.
+### Neutral (cool near-zero-chroma sky)
+- **Canvas** (#FBFBFD / #0E1016): the page field.
+- **Shell** (#FFFFFF / #14161D): sidebar and status strip.
+- **Surface** (#FFFFFF / #171A22): cards and dialogs.
+- **Raised** (#F1F2F6 / #1F232D): inset fills — count pills, hovers, the finished panel, form fields.
+- **Hairline** (#ECEDF3 / #232833): shared-edge dividers only. **Edge** (#DDDFEA / #2A2F3B): interactive borders (fields, ghost buttons).
+- **Ink** (#16182B / #EBEDF5): primary text. **Muted** (#5A5E78 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#9296B0 / #6B7185): icon-only affordances, disabled text, and quiet metadata lines exclusively.
+
+### State-signal family (the aurora — belongs to the work, not the chrome)
+Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, and state pills:
+- **Running amber** (#B25E06 / dot #E08A0E / tint #FBEFD8 · dark #F0A93A / tint #3A2C12): work in flight.
+- **Ready green** (#15803D / dot #1BA35B / tint #DAF4E4 · dark dot #34D399 / tint #123026): queued to run.
+- **Awaiting review = the cobalt accent** (it needs you — it's the accent, not a separate hue).
+- **Blocked slate** (#6A6F86 / tint #EDEEF3 · dark #8A90A6 / tint #22262F): waiting on a dependency.
+- **Completed emerald** (#067A55 / dot #10B981 / tint #D6F5E7 · dark #34D399 / tint #123026): finished, accepted.
+- **Failed rose** (#CB3A52 / dot #F0576E / tint #FDE3E8 · dark #FB7185 / tint #3A1720): failed, rejected, destructive.
+- **Tooling cyan** (#0E8AA0 / dot #16A6BE / tint #DAF3F8 · dark #38BDF8 / tint #10303B): tool calls, branches, harness metadata.
+- **Draft** is neutral (Muted/Faint) — nothing is happening yet. Priority is typographic (ink + weight), never a hue; a HIGH flag borrows the Failed rose text only as a small label.
+
+*Tuning note (open):* Ready is the one "waiting" state given a colour; it may read neutral instead if the board feels too green. Draft stays neutral either way.
+
+### Named rules
+**The One Cobalt Rule.** The accent appears on at most ~10% of any screen: primary action, active nav, selection, focus, the chart, and the awaiting-review state. If cobalt is decorating something, it's wrong.
+**The Signal Rule.** State colours mean states, and live on the **state/signal layer** — a column lane, a dot, a count pill, a state pill — never smeared across content and never decorative. A colour the operator can't parse as a state is noise. (*API-docs carve-out, retained from the Ledger:* on the developer-facing API reference only, HTTP-method and response-code pills reuse these tints as a redundant second cue to the always-shown verb/code text.)
+**The Cool-Neutral Rule.** Neutrals carry no hue in either theme; warmth or coolness comes only from the accent and the state family.
 
 ## 3. Typography
 
-**Display Font:** Space Grotesk (600 + 700) — the wordmark, page titles (Display), and dialog headlines (Headline) only; the rare, large type. Loaded via `@fontsource/space-grotesk`, bound to the `--font-display` token (`web/src/index.css`) so the voice retunes from one line.
-**Body/UI Font:** system sans (ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto) — everything else the interface says.
-**Data Font:** JetBrains Mono (400 + 600) — data only.
+**Display / UI / Body:** system sans (ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto). Character comes from a deliberate scale, weight, and spacing — not an exotic face. (Space Grotesk is retired with the Ledger.)
+**Code:** JetBrains Mono (ui-monospace fallback) — **code only.**
 
-**Character:** A quiet system sans carries the interface; Space Grotesk — a geometric grotesk sharing lineage with the mono data face — signs the identity layer (wordmark, page titles, dialog headlines); an engineered monospace answers wherever the operator reads machine output. The display face is deliberately fenced to the large, rare type so it never touches operator density. Hierarchy is built from fixed rem roles and three working weights (400 body / 500 UI emphasis / 600 headings; 700 exists for the wordmark alone), with `tabular-nums` inherent everywhere numbers appear.
+Three working weights: 400 body / 500 UI emphasis / 600–700 headings. `tabular-nums` is inherent everywhere digits appear, so numbers line up in sans without needing mono.
 
-### Hierarchy
-- **Display** (Space Grotesk 600, 1.375rem/1.25, -0.015em): page-level headings and the wordmark (700). Rare.
-- **Headline** (Space Grotesk 600, 1.125rem/1.3): dialog titles.
-- **Title** (system sans 600, 0.9375rem/1.4): card/section headings, summary values.
-- **Body** (400, 0.84375rem/1.5): prompts, prose, UI copy. Buttons and nav take 500–600 at body size. Prose blocks cap at 75ch; tables and streams may run full width.
-- **Label** (0.6875rem/1.2, +0.025em, uppercase): field labels and table headers at **600**; chips at **500** (a lighter weight suits the dense small pills). The only uppercase in the system.
-- **Data** (mono, 400/600, 0.8125rem/1.5): task ids, costs, harness · model names, branches, timestamps, log/event streams, chart figures.
+### Hierarchy (fixed rem scale)
+- **Display** (700, 1.25rem/1.2, −0.015em): view/page titles.
+- **Hero** (750, ~3.25rem, −0.03em): the single big figure on Stats (cost). Rare.
+- **Title** (600, 0.9375rem): card and section headings.
+- **Body** (400, 0.90625rem/1.5): prose, agent messages, UI copy. Prose caps at ~72ch; tables and streams may run full width.
+- **Small** (0.75rem): metadata lines, notes, telemetry.
+- **Label** (600, 0.6875rem, +0.05em, uppercase): field labels and table headers. The only uppercase in the system.
+- **Code** (mono, 0.8125rem): file paths, shell commands, branch refs, tool targets, inline code tokens.
 
-### Named Rules
-**The Mono Is Data Rule.** Monospace appears only where the operator reads machine data. UI chrome and prose never set in mono; a mono heading is a regression.
-**The Three Weights Rule.** 400/500/600 (700 for the wordmark only). If hierarchy needs more, fix the size or the color layer.
+### Named rules
+**The Mono Is Code Rule (tightened).** Monospace appears *only* where the operator reads genuine code: file paths, shell commands, branch refs, tool-call targets, and inline code tokens. **Everything the operator reads as language or as a figure is sans** — model names, harness names, costs, token counts, ordinary ids, timestamps, statuses, and telemetry all set in sans with `tabular-nums`. Setting a whole metadata line in mono was the Ledger's core regression; a mono model-name or a mono telemetry strip is a regression here. (This supersedes the Ledger's "Mono Is Data Rule," which read too broadly.)
+**The Three Weights Rule.** 400 / 500 / 600 (700 for display titles). If hierarchy needs more, fix the size or the colour layer.
 
 ## 4. Elevation
 
 Depth is real but quiet, and theme-aware (the Soft Depth Rule):
-- **Light:** cards float on the canvas with a soft two-layer shadow (`0 1px 2px rgb(24 24 32 / .05), 0 2px 6px rgb(24 24 32 / .06)`); floating elements (save bar, dialogs, chart tooltip, toasts) use the bar shadow (`0 4px 18px rgb(24 24 32 / .14)`). Cards carry **no borders** — never pair a border with a wide shadow (the ghost-card ban).
-- **Dark:** shadows vanish on a dark field, so depth comes from lightness steps (#17171a canvas → #1c1c20 shell → #212126 surface → #2a2a31 raised). The bar-shadow token carries a 1px hairline ring in dark so floating elements still separate.
-- Hairlines mark shared edges (the sidebar's edge, table rows, section dividers inside cards). Interactive affordances (fields, ghost buttons) keep 1px Edge borders; that's affordance, not enclosure.
-- The focus ring is a 2px accent outline, offset 1px, everywhere.
+- **Light:** cards float on the canvas with a soft two-layer shadow (`0 1px 2px rgb(20 22 45 / .05), 0 8px 24px rgb(20 22 45 / .06)`); floating elements (save bar, dialogs, the conversation dock, toasts) use the float shadow (`0 12px 32px rgb(20 22 45 / .12)`).
+- **Dark:** shadows fade on a dark field, so depth comes from lightness steps (#0E1016 canvas → #14161D shell → #171A22 surface → #1F232D raised); floating elements keep a hairline ring so they still separate.
+- Hairlines mark shared edges only (the sidebar's edge, a section divider, a column-header underline). They are **never** used as ruled list rows — grouping is whitespace + elevation (this was the Ledger's #1 systemic regression).
+- The focus ring is a 2px cobalt outline, offset 2px, everywhere.
 
-## 5. Components
+## 5. Layout & Information Architecture
+
+**App shell.** A slim left **sidebar** (~196px on Shell, hairline right edge): the wordmark, primary nav (Board / Table / Stats / Settings) as minimal line-icon + label rows (active = accent text on Accent Tint), and theme-cycle + Log out pinned bottom. Below ~900px it collapses to a top row of icons. A thin **status strip** across the top of the working area carries *status, not navigation* — the auto-runner switch, running count (amber dot), today's cost, and the view's one primary action — kept low-key. The **working view** fills the rest. The **Conversation** is a docked panel, bottom-right, floating over the board.
+
+**Content-first ranking (per surface):**
+- **Board** — the task *titles* are the content; everything else recedes to one faint line.
+- **Task detail** — the *event stream* (the agent's work) is the content and gets the room; run-meta is one quiet line; the review gate is the one loud element.
+- **Conversation** — the *transcript* is the content; telemetry is one whispered line.
+- **Stats** — here the metrics *are* the content, so the hero figure + chart lead; chrome is stripped around them.
+- **Settings** — the controls are the content; sections grouped by air.
+
+**Structure by air.** Whitespace and elevation group things. Hairlines are for shared edges and the occasional section/column divider — never ruled list rows. Spacing rides a 4 / 8 / 12 / 16 / 24 / 32 rhythm; cards get generous (16–24px) padding.
+
+## 6. Components
 
 ### Buttons
-- **Primary:** accent fill, white/near-black text, 8px radius, 8px 14px padding, weight 600, small accent shadow in light. One per view.
+- **Primary:** cobalt fill, white/near-black text, 9px radius, weight 600. One per view (plus the review gate's Accept).
 - **Ghost:** surface fill with 1px Edge border, ink text; hover darkens the border.
-- **Quiet:** muted text, weight 500, hover to ink; destructive quiet actions hover to fail red.
-- **Review gate:** Accept/Reject are tinted pills (green tint / red tint at weight 600) — the loudest thing on a card, one click from the board. **Accept is deliberately unguarded** (decided 2026-07-15): the operator's read of the run *is* the review (PRODUCT.md: "the review gate is sacred"), so gating the click behind a confirm would only add friction to the product's core loop; a worktree merge conflict is recoverable (it returns the Task to *awaiting-review*). Reject alone opens a dialog — because it takes a reason (feedback for the re-attempt), not because it needs a guard.
-- **Hover / Focus:** 150ms ease-out transitions; 2px accent `:focus-visible` outline. **Disabled:** 50% opacity, no hover response.
+- **Quiet:** muted text link, weight 500, hover to ink; destructive quiet hovers to Failed rose.
+- **Review gate:** Accept is the cobalt primary (the loudest thing on the card/detail); Reject is a quiet ghost. Accept is deliberately unguarded (PRODUCT.md: "the review gate is sacred" — the operator's read *is* the review; a worktree conflict returns the Task to *awaiting-review*). Reject opens a dialog because it takes a reason, not because it needs a guard.
+- **Hover/Focus:** 150ms ease-out; 2px cobalt `:focus-visible` outline. **Disabled:** 50% opacity.
 
-### Chips (state & metadata badges)
-- Full-pill (999px), Label typography at weight 500, 2px 8px padding.
-- **State:** state tint fill behind the state's text color. Neutral metadata: Raised fill, muted text.
-- Chips whose content is machine data set their text in the Data face.
+### Chips, dots & pills (the state layer)
+- **State dot:** a 6–8px dot in the state's colour — the lightest-weight state signal, used before a card title or in a list.
+- **Count pill:** a column's count in its lane colour on a ~15% tint of that colour (Raised/Faint when neutral).
+- **State pill:** state text in its colour on its tint, full-pill — used in tables and the task header. Small (11px, weight 600).
+- Metadata chips are avoided on cards; a card's metadata is **one truncating line**, never a slab of chips.
 
-### Switches
-On/off is a pill switch: 32×18px track, Edge fill off / accent fill on, white knob, 150ms slide (instant under reduced motion). Used by the strip's auto-runner toggle and every boolean setting.
-
-### Cards / Containers
-- 10px radius, Surface fill, card shadow, 14–20px padding; card stacks gap at 12–16px.
-- Task cards hover with a 1px Edge ring (they're clickable); section cards don't.
-- Metadata inside cards is one truncating Data-role line — never chip slabs.
-- **Never nest cards.** Content inside a card groups with hairlines or a Raised inset fill (harness rows, the channel add-form).
-
-### Navigation (the Sidebar)
-- Slim fixed left sidebar (200px, collapsible to 48px icon width) on Shell with a hairline right edge. Brand = 20px accent-filled rounded mark carrying a four-bar glyph — a waveform (harmonic) that also reads as parallel run lanes (the board) — beside the wordmark at 700 in the display face. The mark is static: no motion to compete with live state. Shared by the sidebar and Login (`web/src/components/BrandMark.tsx`). Views (Board / Table / Stats / API / Settings) as the primary group; theme cycle + Log out pinned bottom.
-- Items: body size at weight 500, muted → hover raises on Raised → **active is accent text on Accent Tint at 600** — the sidebar's only indigo.
-- Icons: minimal inline-SVG line set (16px frame, 1.5 stroke, `currentColor` — `web/src/components/Icon.tsx`). No emoji, no icon fonts.
-- Collapse behavior, `localStorage` persistence, and the sub-900px top drawer carry over unchanged from the Signal Console spec (issue 21); collapsed items keep `aria-label` + `title`.
-- **Top strip** (Shell, hairline bottom): status, not navigation — auto-runner switch, running count with amber dot, today's cost, and the view's one primary action (New task).
-
-### The Board (signature component)
-- Active pipeline columns (Draft, Blocked, Ready, Running, Awaiting review) always expanded: fixed 240px width, 16px gaps, sentence-case 600 headers with **count pills** (Raised neutral; amber/red/green tint when the count means a state; faint at zero). Columns are fixed-width, not flex-fill (decided 2026-07-15): the board scrolls horizontally when they overflow, so peeking a terminal column open appends a column and extends the scroll rather than shrinking the pipeline.
-- Task cards stack at 12px; the Accept/Reject tinted pills sit on every awaiting-review card.
-- **Terminal states live in one Finished panel**: a Raised inset panel (144px) listing Completed / Failed / Cancelled counts (fail count red when > 0). Clicking a row expands that column in place until collapsed; expanding hands keyboard focus to the new column's Collapse control (which scrolls it into view), collapsing returns focus to its panel row — a full keyboard path with no focus loss when the panel unmounts. Full terminal history lives in the Table view. Load-independent geometry is the point: columns never appear, vanish, or reflow as tasks move, and peeking finished work never resizes the pipeline the operator is glancing at.
+### The Board (signature view)
+- Active pipeline **columns** (Draft, Blocked, Ready, Running, Awaiting review), fixed ~262px width, in a horizontal `overflow-x` rail so the page never scrolls sideways. Each column header carries its **lane colour** — a coloured bottom-rule + a lane dot + a tinted count pill: Draft neutral · Blocked slate · Ready green · Running amber · Awaiting cobalt. This is where the board gets its colour.
+- **Task cards** are calm: the **title is the hero** (ink, 600); below it, **one faint metadata line** (`claude · sonnet-5 · #4821`) in sans. No state pill on the card — the column already says the state; at most a single state dot before the title. Running cards add one quiet line (amber pulse dot + elapsed · tool count). Awaiting-review cards add the diffstat (`+142 −38`), branch (tiny mono, faint), and the Accept / Reject gate.
+- **Finished** work collapses to one compact Raised panel: Completed / Failed / Cancelled counts with coloured dots (fail red when > 0). Full terminal history lives in the Table view.
 - Loading is a skeleton board (pulsing Raised blocks), never a spinner.
 
-### Settings (section cards)
-- Each section is a Surface card (title, one-line muted description, controls), stacked at 16px, capped at 48rem.
-- Deep per-entity config (harnesses) renders as hairline-divided disclosure rows inside the card; a failed save with field errors inside forces the row open.
-- **Floating save bar:** dirty state pins a rounded Surface bar (12px radius, bar shadow) 16px above the viewport bottom — "Unsaved changes · Discard / Save changes". The Save button is the view's one primary. Immediate-save sections (Notifications, Security) sit last and say so in their descriptions.
+### Task detail
+- Title + a small state pill + the id (faint). Quiet actions (Rerun / Cancel) to the right.
+- **Run-meta is one quiet sans line**, not a boxed band: `completed · end_turn · started 4m ago · 48.2K · $0.52 · agent/4810-dark-mode · +142 −38` (only the branch is mono).
+- Minimal underline **tabs** (Events / Changes / Details).
+- **The event stream is the content:** agent prose in Body sans (readable, ~72ch, comfortable line-height); tool calls as a calm quiet list — a small cyan KIND tag + target (mono path/command, truncated) + a ✓/pulse; thoughts in muted italic. One row per tool (folded from `tool_call` + `tool_call_update` — see `web/src/event-stream-model.ts`). The stream is never boxed row-by-row.
+- **Review gate footer** is the loudest thing: Accept & merge (cobalt) + Reject… (quiet), with a tiny faint note.
 
-### Stats (figures & the chart)
-- A divided summary card leads: cost as the hero figure (26px Data at 600), then runs/tokens/cache cells split by hairlines. Summary figures compact (18.2M); tables keep exact numbers.
-- **Cost per day chart:** single indigo series — 2px line, gradient area fill to transparent, faint hairline grid, emphasized endpoint with its value, crosshair + tooltip on hover, arrow-key inspection when focused. Colors validated against both surfaces. No legend (one series; the title names it). Honest numbers: incomplete days tooltip as ≥ floors; unpriced days say so.
-- Range picker is a segmented control on a Raised track; the active segment is a Surface pill at 600.
+### Conversation (docked panel)
+- Header: title + tiny rename affordance + id + a small "Active" dot; expand/close icons faint; End/Delete as tiny quiet links; a second faint line for `harness · model · path`.
+- **Telemetry is ONE quiet inline line** — `273.7K tokens · $0.38 · 41% context` in Small muted sans. It is a status glance, **never** a grid of feature-sized cells. (This was the specific Ledger failure.)
+- **The transcript is the content:** the operator's message as a small right-aligned Accent-Tint bubble; agent prose in sans; folded tool lines quiet; a **permission prompt** as the one prominent element (soft amber-tint band — the harness is blocked — with Allow once / Allow always / Reject).
+- Composer: a calm textarea + Send.
 
-### Dialogs
-Native `<dialog>`, Surface fill, 12px radius, bar shadow (hairline ring in dark), backdrop `rgb(0 0 0 / 0.5)`, 150ms fade/scale-in with a reduced-motion instant alternative.
+### Stats
+- **Hero cost** figure (Hero role, ink) leads — no card-in-a-card — with a quiet stat row (runs · tokens · cache). The **cost-per-day chart** is a single cobalt series (2px line, soft area fill, faint grid, emphasised labelled endpoint, honest `≥` floor for partial days). A calm table below (state pills, sans figures with tabular-nums, hairline row dividers used sparingly).
 
-### Toasts (the error surface)
-A rejected operation never surfaces in a native `alert()` — it announces in a bottom-right stack of Fail-tint cards (`bg-fail-tint text-fail`, 10px radius, bar shadow), an `aria-live` region with a Dismiss control, auto-dismissing after ~6s, rising 8px into place under `motion-safe` only (`web/src/toast.tsx`). It is the designed counterpart to the inline Fail-tint error banner; the store is module-level so any handler calls `toastError(e)` without threading context.
+### Settings
+- Section cards (Defaults / Harnesses / Notifications), grouped by air, ~22px padding. Harnesses use disclosure rows. A **floating save bar** pins on dirty state (Discard / Save changes; Save is the view's one primary).
 
-## 6. Do's and Don'ts
+### Dialogs & Toasts
+- Native `<dialog>`, Surface fill, 12–14px radius, float shadow (hairline ring in dark), backdrop `rgb(0 0 0 / 0.5)`, 150ms fade/scale with a reduced-motion instant alternative.
+- A rejected operation never uses a native `alert()`/`confirm()` — it announces in a bottom-right stack of Failed-tint toast cards (`aria-live`, Dismiss, ~6s auto-dismiss, `motion-safe` rise). See `web/src/toast.tsx`.
 
-### Do:
-- **Do** hold the One Indigo Rule: accent only for primary action, active nav, selection, focus, the chart series — ≤10% of any screen.
-- **Do** floor informational text at Muted (#5c5c66 / #a6a6b0); 4.5:1 is the contract (WCAG 2.1 AA per PRODUCT.md), and design every change in both themes before shipping it.
-- **Do** build depth theme-appropriately: shadows in light, lightness steps in dark (the Soft Depth Rule).
-- **Do** keep every number in `tabular-nums`, timestamps and ids in the Data role, and cost floors honest (≥, unpriced, —).
-- **Do** give every interactive element default, hover, focus-visible, and disabled states, and every animation a `prefers-reduced-motion` alternative.
+## 7. Do's and Don'ts
 
-### Don't:
-- **Don't** ship CI/CD console gloom, chat-app cuteness, or kanban-tool sprawl (PRODUCT.md anti-references).
-- **Don't** pair a border with a wide shadow (ghost-card), tint the zinc neutrals toward any hue, use gradient text, glassmorphism, or side-stripe borders.
-- **Don't** use state colors decoratively, set UI chrome or prose in monospace (Mono Is Data Rule), or nest cards inside cards.
-- **Don't** fall back to a native `alert()`/`confirm()` for failures — they break the register; failures surface in the designed toast (§ Toasts).
-- **Don't** let indigo mean anything but the interface's voice — tooling metadata is teal, there is no generic info blue, and no second accent exists.
-- **Don't** reintroduce terminal cosplay (scanlines, glow, rotated rail columns) — the Signal Console is retired.
+### Do
+- **Do** lead with content — make the tasks / the run / the message the loudest thing, and whisper metadata, telemetry, ids, and status.
+- **Do** hold the One Cobalt Rule: accent only for primary action, active nav, selection, focus, chart, and the awaiting-review state — ≤10% of any screen.
+- **Do** put colour on the state/signal layer (lanes, dots, count/state pills) where it means something; keep card and detail *bodies* calm.
+- **Do** set everything the operator reads as language or as a figure in sans with `tabular-nums`; reserve mono for genuine code (the Mono Is Code Rule).
+- **Do** carry structure with whitespace + elevation; floor informational text at Muted (4.5:1); design every change in both themes; give every control default/hover/focus-visible/disabled states and every animation a `prefers-reduced-motion` alternative.
+
+### Don't
+- **Don't** let chrome out-shout content — no feature-sized telemetry grids, no stacked metadata chips, no boxed-per-row streams.
+- **Don't** carry structure with ruled hairline rows (`divide-y`/`border-t` stacks) — that was the Ledger's core regression; group with air.
+- **Don't** set prose, labels, model/harness names, costs, ordinary ids, or telemetry in monospace (Mono Is Code Rule). A mono metadata line is a regression.
+- **Don't** use state colours decoratively or smear them across content; don't pair a border with a wide shadow (ghost-card), tint the neutrals toward any hue, use gradient text, glassmorphism, or side-stripe borders; don't nest cards inside cards.
+- **Don't** fall back to a native `alert()`/`confirm()` — failures surface in the designed toast.
+- **Don't** let cobalt mean anything but the interface's voice — tooling metadata is cyan, there is no generic info blue, and no second accent exists.
+- **Don't** reintroduce the Ledger (ruled rows, mono-everything) or the Signal Console (scanlines, glow, rotated rails) — both are retired.

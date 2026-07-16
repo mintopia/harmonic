@@ -11,11 +11,11 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
   const add = () => onChange([...items, '']);
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2.5">
       {items.map((item, i) => (
-        <div key={i} className="flex items-center gap-1.5">
+        <div key={i} className="flex items-center gap-2.5">
           <input aria-label={ariaLabel} className={`${field} font-data`} value={item} onChange={(e) => update(i, e.target.value)} />
-          <button type="button" aria-label={`Remove ${ariaLabel}`} onClick={() => remove(i)} className={btnQuiet}>
+          <button type="button" aria-label={`Remove ${ariaLabel}`} onClick={() => remove(i)} className={`${btnQuiet} px-2 py-1.5`}>
             ✕
           </button>
         </div>
@@ -59,9 +59,9 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
   };
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2.5">
       {entries.map(([key, value]) => (
-        <div key={key} className="flex items-center gap-1.5">
+        <div key={key} className="flex items-center gap-2.5">
           <input
             aria-label="Env var name"
             className={`${field} w-1/3 font-data`}
@@ -79,11 +79,11 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
             type="button"
             aria-label={revealed[key] ? 'Hide value' : 'Reveal value'}
             onClick={() => setRevealed((r) => ({ ...r, [key]: !r[key] }))}
-            className={btnQuiet}
+            className={`${btnQuiet} px-2 py-1.5`}
           >
             {revealed[key] ? 'Hide' : 'Show'}
           </button>
-          <button type="button" aria-label="Remove env var" onClick={() => remove(key)} className={btnQuiet}>
+          <button type="button" aria-label="Remove env var" onClick={() => remove(key)} className={`${btnQuiet} px-2 py-1.5`}>
             ✕
           </button>
         </div>
@@ -205,7 +205,7 @@ export function HarnessesSection({
   onChange: (harnesses: AppConfig['harnesses']) => void;
 }) {
   return (
-    <div className="divide-y divide-hairline">
+    <div className="flex flex-col gap-2">
       {Object.entries(config.harnesses).map(([id, harness]) => (
         <HarnessCard
           key={id}
@@ -258,7 +258,7 @@ export function PriceOverridesSection({
   return (
     <div>
       {entries.length > 0 && (
-        <div className="mb-1 grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-2">
+        <div className="mb-1 hidden gap-2.5 sm:grid sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
           <span className={fieldLabel}>Model</span>
           {PRICE_FIELDS.map((k) => (
             <span key={k} className={fieldLabel}>
@@ -269,10 +269,10 @@ export function PriceOverridesSection({
         </div>
       )}
 
-      <div className="space-y-1.5">
+      <div className="space-y-2.5">
         {entries.map(([model, price]) => (
           <div key={model}>
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] items-center gap-2">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] sm:items-center">
               <input
                 aria-label="Model id"
                 className={`${field} font-data`}
@@ -291,7 +291,7 @@ export function PriceOverridesSection({
                   onChange={(e) => setPrice(model, { ...price, [k]: Number(e.target.value) })}
                 />
               ))}
-              <button type="button" aria-label="Remove price override" onClick={() => remove(model)} className={btnQuiet}>
+              <button type="button" aria-label="Remove price override" onClick={() => remove(model)} className={`${btnQuiet} px-2 py-1.5`}>
                 ✕
               </button>
             </div>

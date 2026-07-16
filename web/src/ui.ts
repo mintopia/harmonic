@@ -79,10 +79,10 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
  * Speaks Rule — only true states get a color). */
 export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   draft: 'bg-raised text-muted',
-  blocked: 'bg-raised text-muted',
-  ready: 'bg-raised text-ink',
+  blocked: 'bg-blocked-tint text-blocked',
+  ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
-  'awaiting-review': 'bg-raised text-ink',
+  'awaiting-review': 'bg-accent-tint text-accent',
   completed: 'bg-accept-tint text-accept',
   failed: 'bg-fail-tint text-fail',
   cancelled: 'bg-raised text-muted',
@@ -113,10 +113,10 @@ export function conversationStateChip(state: Conversation['state']): string {
  * only where it means state, and only when the count is non-zero. */
 const STATE_COUNT_COLORS: Record<TaskState, string> = {
   draft: 'text-muted',
-  blocked: 'text-muted',
-  ready: 'text-ink',
+  blocked: 'text-blocked',
+  ready: 'text-ready',
   running: 'text-running',
-  'awaiting-review': 'text-ink',
+  'awaiting-review': 'text-accent',
   completed: 'text-accept',
   failed: 'text-fail',
   cancelled: 'text-muted',
@@ -129,7 +129,10 @@ export function stateCountColor(state: TaskState, count: number): string {
 /** Board column-header count pill: raised neutral until the count means
  * a state worth coloring (running amber, failed red, completed green). */
 const STATE_COUNT_PILLS: Partial<Record<TaskState, string>> = {
+  blocked: 'bg-blocked-tint text-blocked',
+  ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
+  'awaiting-review': 'bg-accent-tint text-accent',
   completed: 'bg-accept-tint text-accept',
   failed: 'bg-fail-tint text-fail',
 };
@@ -138,4 +141,35 @@ export function stateCountPill(state: TaskState, count: number): string {
   const tone =
     count === 0 ? 'bg-raised text-faint' : (STATE_COUNT_PILLS[state] ?? 'bg-raised text-muted');
   return `rounded-full px-2 py-0.5 text-label font-semibold ${tone}`;
+}
+
+/** Board column lane colour (Aurora's signal layer — DESIGN §Board): the
+ * column-header underline and lane dot take the column's state colour, so the
+ * board reads with colour without loading it onto the calm task cards. */
+const LANE_BORDER: Record<TaskState, string> = {
+  draft: 'border-hairline',
+  blocked: 'border-blocked',
+  ready: 'border-ready-dot',
+  running: 'border-running-dot',
+  'awaiting-review': 'border-accent',
+  completed: 'border-accept-dot',
+  failed: 'border-fail-dot',
+  cancelled: 'border-hairline',
+};
+const LANE_DOT: Record<TaskState, string> = {
+  draft: 'bg-faint',
+  blocked: 'bg-blocked',
+  ready: 'bg-ready-dot',
+  running: 'bg-running-dot',
+  'awaiting-review': 'bg-accent',
+  completed: 'bg-accept-dot',
+  failed: 'bg-fail-dot',
+  cancelled: 'bg-faint',
+};
+
+export function laneBorder(state: TaskState): string {
+  return LANE_BORDER[state];
+}
+export function laneDot(state: TaskState): string {
+  return LANE_DOT[state];
 }

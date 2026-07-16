@@ -127,7 +127,7 @@ export function ModelCombobox({
         <ul
           id={listId}
           role="listbox"
-          className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md border border-edge bg-surface py-1 shadow-card"
+          className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-md bg-surface py-1 shadow-bar"
         >
           {shown.map((m, i) => (
             <li

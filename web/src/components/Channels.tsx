@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Channel } from '../types';
-import { btnGhost, btnQuiet, chip, field } from '../ui';
+import { btnGhost, btnQuiet, btnQuietDestructive, chip, field } from '../ui';
 
 const EVENTS = [
   'task.created',
@@ -63,9 +63,9 @@ export function ChannelsSection() {
   return (
     <div>
       {channelList.length > 0 && (
-        <ul className="divide-y divide-hairline">
+        <ul className="flex flex-col gap-3">
           {channelList.map((channel) => (
-            <li key={channel.id} className="py-3 first:pt-0">
+            <li key={channel.id}>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{channel.name}</span>
                 <span className={`${chip} bg-raised text-muted`}>{channel.type}</span>
@@ -73,15 +73,15 @@ export function ChannelsSection() {
                   {channel.type === 'email' ? channel.config.to : channel.config.url}
                 </span>
                 <button
-                  className="text-muted transition-colors duration-150 hover:text-fail"
+                  className={`${btnQuietDestructive} px-2 py-1.5`}
                   onClick={() => api.deleteChannel(channel.id).then(load)}
                 >
                   Delete
                 </button>
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
                 {EVENTS.map((event) => (
-                  <label key={event} className="flex items-center gap-1.5 font-data text-data text-muted">
+                  <label key={event} className="flex items-center gap-2 text-small text-muted">
                     <input
                       type="checkbox"
                       className="accent-accent"
@@ -105,7 +105,7 @@ export function ChannelsSection() {
       )}
 
       {adding ? (
-        <div className="mt-3 rounded-lg bg-raised p-3">
+        <div className="mt-4 border-t border-hairline pt-4">
           <div className="mb-2 grid grid-cols-2 gap-2">
             <input aria-label="Channel name" className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
             <select aria-label="Channel type" className={field} value={type} onChange={(e) => setType(e.target.value as Channel['type'])}>
@@ -141,7 +141,7 @@ export function ChannelsSection() {
             <button disabled={!name} onClick={create} className={btnGhost}>
               Add channel
             </button>
-            <button onClick={() => { setAdding(false); setError(null); }} className={btnQuiet}>
+            <button onClick={() => { setAdding(false); setError(null); }} className={`${btnQuiet} px-2 py-1.5`}>
               Cancel
             </button>
           </div>

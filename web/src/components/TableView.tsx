@@ -126,7 +126,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
                 className="cursor-pointer border-t border-hairline transition-colors duration-150 hover:bg-raised"
                 onClick={() => onOpen(task)}
               >
-                <td className="py-2 pr-3 font-data text-data text-muted">{task.id}</td>
+                <td className="py-2 pr-3 text-data tabular-nums text-muted">{task.id}</td>
                 <td className="max-w-md pr-4">
                   {task.reattemptOf !== null && (
                     <button
@@ -138,7 +138,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
                         openOriginal(task.reattemptOf!);
                       }}
                     >
-                      ↻ re-attempt of <span className="font-data normal-case">#{task.reattemptOf}</span>
+                      ↻ re-attempt of <span className="tabular-nums normal-case">#{task.reattemptOf}</span>
                     </button>
                   )}
                   <button
@@ -156,10 +156,10 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
                   <span className={stateChip(task.state)}>{task.state}</span>
                 </td>
                 <td className="text-muted">{task.harness}</td>
-                <td className="font-data text-data text-muted">{task.model}</td>
+                <td className="text-muted">{task.model}</td>
                 <td className={task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}>{task.priority}</td>
-                <td className="text-right font-data text-data text-muted">{formatCost(task.cost) ?? '—'}</td>
-                <td className="pl-4 font-data text-data text-muted">{new Date(task.createdAt).toLocaleString()}</td>
+                <td className="text-right tabular-nums text-muted">{formatCost(task.cost) ?? '—'}</td>
+                <td className="pl-4 text-data tabular-nums text-muted">{new Date(task.createdAt).toLocaleString()}</td>
               </tr>
             ))}
             {!loading && tasks.length === 0 && (

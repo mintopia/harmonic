@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { PermissionRule } from '../types';
-import { toolChip } from '../ui';
+import { btnQuietDestructive, toolChip } from '../ui';
 
 /**
  * Persistent Permission Rules (issue #13 / ADR-0007): each row is an
@@ -28,13 +28,13 @@ export function PermissionRules() {
   }
 
   return (
-    <ul className="divide-y divide-hairline">
+    <ul className="flex flex-col gap-2.5">
       {rules.map((rule) => (
-        <li key={rule.id} className="flex items-center gap-2 py-2 first:pt-0">
+        <li key={rule.id} className="flex items-center gap-2">
           <span className={toolChip}>{rule.kind}</span>
           <span className="min-w-0 flex-1 truncate font-data text-data text-muted">{rule.workingDir}</span>
           <button
-            className="text-muted transition-colors duration-150 hover:text-fail"
+            className={`${btnQuietDestructive} px-2 py-1.5`}
             onClick={() => api.deletePermissionRule(rule.id).then(load)}
           >
             Revoke

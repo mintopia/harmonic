@@ -89,7 +89,7 @@ function SchemaView({ node }: { node: SchemaNode }) {
     return (
       <ul className="flex flex-col gap-1.5">
         {node.properties.map((prop) => (
-          <li key={prop.name} className="border-l border-hairline pl-2">
+          <li key={prop.name} className="pl-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <code className="font-data text-data text-ink">{prop.name}</code>
               <code className="font-data text-data text-muted">{describeType(prop.schema)}</code>
@@ -147,7 +147,7 @@ function EndpointRow({
   onToggle: () => void;
 }) {
   return (
-    <div className="border-t border-hairline first:border-t-0">
+    <div>
       <button
         aria-expanded={open}
         className="flex w-full items-center gap-2.5 py-2 text-left"
@@ -162,7 +162,7 @@ function EndpointRow({
         )}
       </button>
       {open && (
-        <div className="mb-3 ml-[1.625rem] flex flex-col gap-3 border-l border-hairline pl-4">
+        <div className="mb-3 ml-[1.625rem] flex flex-col gap-3 pl-4">
           {endpoint.description && <p className="whitespace-pre-wrap text-muted">{endpoint.description}</p>}
           <ParamsTable parameters={endpoint.parameters} />
           {endpoint.requestBody && (
@@ -176,7 +176,7 @@ function EndpointRow({
               <h4 className={`mb-1 ${labelType} text-muted`}>Responses</h4>
               <div className="flex flex-col gap-2">
                 {endpoint.responses.map((r) => (
-                  <div key={r.status} className="border-l border-hairline pl-2">
+                  <div key={r.status} className="pl-2">
                     <div className="flex items-center gap-2">
                       <span className={`${chip} font-data tracking-normal ${statusStyle(r.status)}`}>{r.status}</span>
                       {r.description && <span className="text-muted">{r.description}</span>}
@@ -239,7 +239,7 @@ export function ApiReference() {
             {group.name}
             <span className="font-data text-data font-normal text-muted">{group.endpoints.length}</span>
           </h4>
-          <div>
+          <div className="flex flex-col gap-1">
             {group.endpoints.map((endpoint) => {
               const key = `${endpoint.method} ${endpoint.path}`;
               return <EndpointRow endpoint={endpoint} key={key} onToggle={() => toggle(key)} open={open.has(key)} />;

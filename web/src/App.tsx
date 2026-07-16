@@ -39,7 +39,7 @@ function useRailBreakpoint() {
 // shows icon + label, so collapsed styles are rail:-prefixed throughout.
 // Active is the sidebar's only accent: an indigo tint under indigo text.
 const railItem = (active: boolean, collapsed: boolean) =>
-  `flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
+  `flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
   } ${active ? 'bg-accent-tint font-semibold text-accent' : 'font-medium text-muted hover:bg-raised hover:text-ink'}`;
 
@@ -286,7 +286,7 @@ export function App() {
           <button
             aria-label={THEME_LABELS[theme]}
             title={THEME_LABELS[theme]}
-            className="inline-flex items-center justify-center rounded-md p-2 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+            className="inline-flex items-center justify-center rounded-md p-2.5 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
             onClick={cycleTheme}
           >
             <Icon name={THEME_ICONS[theme]} />
@@ -294,7 +294,7 @@ export function App() {
           <button
             aria-label="Log out"
             title="Log out"
-            className="inline-flex items-center justify-center rounded-md p-2 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+            className="inline-flex items-center justify-center rounded-md p-2.5 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
             onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
           >
             <Icon name="logout" />

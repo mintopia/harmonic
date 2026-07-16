@@ -122,7 +122,7 @@ export function CostChart({ series }: { series: DayCost[] }) {
       {gridValues.map((v) => (
         <g key={v}>
           <line className="stroke-hairline" x1={PAD_L} y1={yOf(v)} x2={W - PAD_R} y2={yOf(v)} />
-          <text className="fill-muted font-data" fontSize="10" textAnchor="end" x={PAD_L - 6} y={yOf(v) + 3}>
+          <text className="fill-muted tabular-nums" fontSize="10" textAnchor="end" x={PAD_L - 6} y={yOf(v) + 3}>
             {usd(v)}
           </text>
         </g>
@@ -133,7 +133,7 @@ export function CostChart({ series }: { series: DayCost[] }) {
       <path d={line} className="stroke-accent" fill="none" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       <circle className="fill-accent" cx={last.x} cy={last.y} r="3.5" />
       {hover === null && (
-        <text className="fill-ink font-data" fontSize="11" fontWeight="600" x={last.x + 8} y={last.y + 4}>
+        <text className="fill-ink tabular-nums" fontSize="11" fontWeight="600" x={last.x + 8} y={last.y + 4}>
           {`${last.incomplete ? '≥' : ''}${usd(last.totalUsd ?? 0)}`}
         </text>
       )}
@@ -154,8 +154,19 @@ export function CostChart({ series }: { series: DayCost[] }) {
             const x = Math.min(Math.max(hovered.x - w / 2, PAD_L), W - PAD_R - w);
             return (
               <g>
-                <rect className="fill-surface" filter="drop-shadow(0 1px 3px rgb(0 0 0 / 0.25))" height="22" rx="6" width={w} x={x} y={PAD_T} />
-                <text className="fill-ink font-data" fontSize="10.5" x={x + 8} y={PAD_T + 14.5}>
+                {/* Separation reads in both themes: a 1px edge stroke (the pure-black
+                    drop-shadow alone vanished on dark) plus a softened shadow. */}
+                <rect
+                  className="fill-surface stroke-edge"
+                  strokeWidth="1"
+                  filter="drop-shadow(0 1px 2px rgb(0 0 0 / 0.12))"
+                  height="22"
+                  rx="6"
+                  width={w}
+                  x={x}
+                  y={PAD_T}
+                />
+                <text className="fill-ink" fontSize="10.5" x={x + 8} y={PAD_T + 14.5}>
                   {label}
                 </text>
               </g>

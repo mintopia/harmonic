@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { btnPrimary, btnQuiet, card, displayTitle, field, labelType, tableHead } from '../ui';
+import { btnPrimary, btnQuiet, btnQuietDestructive, card, displayTitle, field, labelType, tableHead } from '../ui';
 import { ApiReference } from './ApiReference';
 
 interface ApiKey {
@@ -39,7 +39,7 @@ function CopyButton({ value }: { value: string }) {
     return () => clearTimeout(t);
   }, [copied]);
   return (
-    <button onClick={copy} className={`${btnQuiet} shrink-0 ${labelType}`}>
+    <button onClick={copy} className={`${btnQuiet} shrink-0`}>
       {copied ? 'Copied' : 'Copy'}
     </button>
   );
@@ -129,8 +129,8 @@ export function ApiPage() {
         </div>
 
         {freshToken && (
-          <div className="mb-4 rounded-md bg-accept-tint p-3">
-            <p className="mb-1 font-medium text-accept">Copy this token now — it will not be shown again:</p>
+          <div className="mb-4 rounded-md bg-raised p-3">
+            <p className="mb-1 font-medium text-muted">Copy this token now — it will not be shown again:</p>
             <code className="block select-all break-all font-data text-data text-ink">{freshToken}</code>
           </div>
         )}
@@ -139,7 +139,7 @@ export function ApiPage() {
           <table className="w-full text-left">
             <thead className={tableHead}>
               <tr>
-                <th className="py-1">Name</th>
+                <th className="py-1.5">Name</th>
                 <th>Prefix</th>
                 <th>Scope</th>
                 <th>Last used</th>
@@ -149,7 +149,7 @@ export function ApiPage() {
             <tbody>
               {keys.map((key) => (
                 <tr key={key.id} className="border-t border-hairline">
-                  <td className="py-1.5">{key.name}</td>
+                  <td className="py-2">{key.name}</td>
                   <td className="font-data text-data text-muted">{key.prefix}…</td>
                   <td className="text-muted">{key.scope}</td>
                   <td className="font-data text-data text-muted">
@@ -162,7 +162,7 @@ export function ApiPage() {
                   <td className="text-right">
                     {!key.revokedAt && (
                       <button
-                        className="text-muted hover:text-fail"
+                        className={btnQuietDestructive}
                         onClick={() => json('DELETE', `/api/keys/${key.id}`).then(load)}
                       >
                         Revoke

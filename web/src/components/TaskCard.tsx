@@ -2,9 +2,9 @@ import type { Task } from '../types';
 import { card } from '../ui';
 import { TaskActions } from './TaskActions';
 
-/** One truncating Data-role line: id, harness · model, then only the
- * facts that deviate from defaults (isolation, deps, cost). Metadata is
- * plain mono text, never chip slabs. */
+/** One truncating metadata line: id, harness · model, then only the facts
+ * that deviate from defaults (isolation, deps, cost). Sans, not mono — these
+ * are names and figures, not code (the Mono Is Code Rule); never chip slabs. */
 function metaLine(task: Task): string {
   const bits = [`#${task.id}`, `${task.harness} · ${task.model}`];
   if (task.isolationMode !== 'direct') bits.push(task.isolationMode);
@@ -34,7 +34,7 @@ export function TaskCard({
         {task.prompt}
       </button>
       <div className="mb-2 flex items-center gap-2">
-        <span className="min-w-0 truncate font-data text-data text-muted">{metaLine(task)}</span>
+        <span className="min-w-0 truncate text-small text-muted">{metaLine(task)}</span>
         {/* Priority is typographic, not chromatic (DESIGN.md § Colors);
             normal is the default and says nothing. */}
         {task.priority !== 'normal' && (

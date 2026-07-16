@@ -27,6 +27,7 @@ function Dependencies({ task }: { task: Task }) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [current, setCurrent] = useState<Task>(task);
   const [pick, setPick] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const editable = ['draft', 'ready', 'blocked'].includes(current.state);
 
   useEffect(() => {
@@ -86,14 +87,21 @@ function Dependencies({ task }: { task: Task }) {
           </span>
         ))}
         {current.dependents.length > 0 && current.state !== 'completed' && (
+          // Two-step inline confirm — never a native confirm() (DESIGN.md
+          // § Toasts): this cascades a cancel across dependents, so it asks
+          // once, in the interface's own voice, before acting.
           <button
-            className="text-muted hover:text-fail"
-            onClick={() =>
-              confirm('Cancel this task and everything that depends on it?') &&
-              act(() => api.cancelTask(task.id, true))
-            }
+            className={`rounded-md px-1.5 py-0.5 ${confirmCancel ? 'font-semibold text-fail' : 'text-muted hover:text-fail'}`}
+            onClick={() => {
+              if (confirmCancel) {
+                setConfirmCancel(false);
+                act(() => api.cancelTask(task.id, true));
+              } else {
+                setConfirmCancel(true);
+              }
+            }}
           >
-            Cancel with dependents
+            {confirmCancel ? 'Confirm — cancel with dependents' : 'Cancel with dependents'}
           </button>
         )}
       </div>
@@ -195,7 +203,7 @@ function RunMeta({ run }: { run: Run }) {
     ]);
   }
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 font-data text-data">
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-small">
       {rows.map(([label, value], i) => (
         <Fragment key={i}>
           <dt className={`${labelType} text-muted`}>{label}</dt>
@@ -215,8 +223,10 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
   if (!run) return <p className="text-muted">No runs yet.</p>;
   if (!run.branch) return <p className="text-muted">Ran in direct mode — no branch or diff.</p>;
   return (
-    <div className="space-y-2 font-data text-data">
-      <div className="text-tool">
+    <div className="space-y-2">
+      {/* Branch refs and the diff are code (mono); the status sentences are
+          prose (sans) — the Mono Is Code Rule. */}
+      <div className="font-data text-data text-tool">
         {run.branch} ← {run.baseBranch}
       </div>
       {run.state === 'running' ? (
@@ -225,7 +235,7 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
         <p className="text-fail">Couldn’t load the diff for this run.</p>
       ) : diff.status === 'ready' ? (
         diff.stat ? (
-          <pre className="overflow-x-auto rounded-md bg-field p-2 text-muted">{diff.stat}</pre>
+          <pre className="overflow-x-auto rounded-md bg-field p-2 font-data text-data text-muted">{diff.stat}</pre>
         ) : (
           <p className="text-muted">No changes on this branch.</p>
         )
@@ -238,7 +248,7 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
 
 function DetailsTab({ task, run }: { task: Task; run: Run | undefined }) {
   return (
-    <div className="divide-y divide-hairline">
+    <div className="flex flex-col">
       {run && (
         <div className="py-3 first:pt-0">
           <RunMeta run={run} />
@@ -355,16 +365,14 @@ export function TaskDetail({
     <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
       <div className="flex max-h-[85vh] flex-col">
         <header className="border-b border-hairline p-4">
-          <div className="mb-1 flex items-center gap-2 text-muted">
-            <span className="font-data">Task #{task.id}</span>
+          <div className="mb-1 flex items-center gap-2 text-small text-muted">
+            <span>Task #{task.id}</span>
             <span className={stateChip(task.state)}>{task.state}</span>
-            <span className="font-data">
+            <span>
               {task.harness} · {task.model} · {task.isolationMode}
             </span>
             {formatCost(taskCost) && (
-              <span className="font-data" title="Total cost across all runs, retries included">
-                Cost {formatCost(taskCost)}
-              </span>
+              <span title="Total cost across all runs, retries included">Cost {formatCost(taskCost)}</span>
             )}
             <div className="flex-1" />
             <button aria-label="Close" onClick={onClose} className={btnQuiet}>
@@ -411,7 +419,10 @@ export function TaskDetail({
               <button
                 key={t}
                 role="tab"
+                id={`task-tab-${t}`}
                 aria-selected={tab === t}
+                aria-controls={`task-panel-${t}`}
+                tabIndex={tab === t ? 0 : -1}
                 aria-label={flag ? 'details (has review feedback)' : undefined}
                 onClick={() => setTab(t)}
                 className={`-mb-px border-b-2 px-2 py-2 ${labelType} transition-colors duration-150 ${
@@ -431,13 +442,13 @@ export function TaskDetail({
             never discards in-progress state — notably a dependency edit
             held in the Dependencies component. */}
         <div className="flex-1 overflow-y-auto p-4">
-          <div hidden={tab !== 'output'}>
+          <div role="tabpanel" id="task-panel-output" aria-labelledby="task-tab-output" hidden={tab !== 'output'}>
             <OutputTab run={selectedRun} events={events} />
           </div>
-          <div hidden={tab !== 'changes'}>
+          <div role="tabpanel" id="task-panel-changes" aria-labelledby="task-tab-changes" hidden={tab !== 'changes'}>
             <ChangesTab run={selectedRun} diff={diff} />
           </div>
-          <div hidden={tab !== 'details'}>
+          <div role="tabpanel" id="task-panel-details" aria-labelledby="task-tab-details" hidden={tab !== 'details'}>
             <DetailsTab task={task} run={selectedRun} />
           </div>
         </div>
