@@ -562,13 +562,20 @@ type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number 
 
 /**
  * The Conversations launcher (issue #10 walking skeleton; issue #15 grows it
- * into history browsing): a bottom-right docked panel, mounted
- * view-independently at the end of App's return, so its always-on firehose
+ * into history browsing): a right-hand dock running the full height of the
+ * working view. App mounts it inside the below-header region but outside the
+ * view switch, so it is view-independent — its always-on firehose
  * subscription (attention tracking + a live list) keeps running whether the
- * panel is open or not. The closed launcher sits flush on the bottom edge as
- * a drawer tab, reading as the pull for the panel that rises from it; the
- * toast stack no longer contends for that corner (it hangs off the header —
- * see toast.tsx), so nothing needs to dodge it here.
+ * panel is open or not, on every view. That region is also its positioning
+ * context: the dock is `absolute` within it and so clears the header without
+ * hardcoding the header's height (which moves — see App.tsx).
+ *
+ * The closed launcher sits flush on the bottom edge as a drawer tab, reading
+ * as the pull for the panel that rises from it. The open dock does contend
+ * with the toast stack for the top-right corner, and the stack yields: it
+ * dodges left of a docked panel, keyed off the `data-dock` attribute below
+ * (see toast.tsx). This file publishes that attribute and knows nothing else
+ * about toasts.
  *
  * The last-viewed Conversation persists in localStorage (`conversation-
  * storage.ts`) so reopening the panel returns to it instead of the list —
@@ -795,7 +802,7 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
         aria-label={needsAttention ? 'Open conversation — needs attention' : 'Open conversation'}
         title="Conversation"
         onClick={() => setOpen(true)}
-        className="fixed bottom-0 right-4 z-40 flex items-center gap-2 rounded-b-none rounded-t-lg bg-surface px-3.5 pb-2 pt-2.5 font-medium text-ink shadow-bar transition-colors duration-150 hover:bg-raised"
+        className="absolute bottom-0 right-4 z-40 flex items-center gap-2 rounded-b-none rounded-t-lg bg-surface px-3.5 pb-2 pt-2.5 font-medium text-ink shadow-bar transition-colors duration-150 hover:bg-raised"
       >
         <span className="relative inline-flex">
           <Icon name="chat" className="text-accent" />
@@ -825,10 +832,23 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
     <div
       role="dialog"
       aria-label="Conversation"
+      // Layout-only signal, read by the toast stack via `group-has-` so it can
+      // dodge a docked panel without this component publishing its open state
+      // (see toast.tsx). Expanded is deliberately a different value: it is a
+      // viewport overlay with no free corner to dodge into.
+      data-dock={expanded ? 'expanded' : 'docked'}
       onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-      className={`fixed z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
+      className={`z-40 flex flex-col rounded-lg bg-surface shadow-bar ${
         flourish ? 'motion-safe:animate-[dialog-in_150ms_var(--ease-out-quint)]' : ''
-      } ${expanded ? 'inset-6' : 'bottom-24 right-4 h-[32rem] w-[26rem] max-w-[calc(100vw-2rem)]'}`}
+      } ${
+        // Docked: absolute within App's below-header region, so the panel
+        // runs the full height of the working view without ever needing to
+        // know where the header ends. Expanded stays `fixed`: it is a
+        // viewport overlay and covers the header by design.
+        expanded
+          ? 'fixed inset-6'
+          : 'absolute inset-y-4 right-4 w-[26rem] max-w-[calc(100%-2rem)]'
+      }`}
     >
       {view.kind === 'list' ? (
         <ConversationList

@@ -8,11 +8,13 @@ import { Icon } from './components/Icon';
  * ws.ts) so any handler can call toastError() without threading context.
  *
  * App mounts this directly under the <header>, and the stack hangs off a
- * zero-height `sticky top-0` anchor rather than a `fixed` offset: the header
- * wraps (and so changes height) at narrow widths, so any hardcoded top
- * inset would be wrong at some viewport. Zero height keeps the anchor out of
- * the flow — toasts never push the view down — and `sticky` keeps the stack
- * on screen once the (non-sticky) header scrolls away.
+ * zero-height anchor rather than a `fixed` offset: the header wraps (and so
+ * changes height) at narrow widths, so any hardcoded top inset would be
+ * wrong at some viewport. Zero height keeps the anchor out of the flow —
+ * toasts never push the view down — while still pinning them to the header's
+ * bottom edge. The anchor used to be `sticky top-0`, to survive the header
+ * scrolling away; the shell now pins the header and scrolls only the working
+ * view (App.tsx), so there is nothing left to stick to.
  */
 type Toast = { id: number; message: string };
 
@@ -50,8 +52,15 @@ export function Toaster() {
   );
   if (items.length === 0) return null;
   return (
-    <div aria-label="Notifications" aria-live="assertive" className="pointer-events-none sticky top-0 z-50 h-0">
-      <div className="absolute right-4 top-4 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2">
+    <div aria-label="Notifications" aria-live="assertive" className="pointer-events-none relative z-50 h-0">
+      {/* The stack dodges an open Conversation dock rather than land on its
+          title row and its one primary action. `27.5rem` clears the dock
+          (1rem inset + 26rem wide) with a 0.5rem gap. Gated at 1080px because
+          below that there is nowhere to dodge *to*: the stack is 24rem, so it
+          needs 51.5rem of right-hand room, and under ~1080px that would put it
+          under the sidebar — worse than the overlap. There the toast simply
+          wins on z-index for its ~6s, as it always did on short viewports. */}
+      <div className="absolute right-4 top-4 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 transition-[right] duration-150 ease-out motion-reduce:transition-none min-[1080px]:group-has-[[data-dock=docked]]/shell:right-[27.5rem]">
         {items.map((t) => (
           <div
             key={t.id}

@@ -240,10 +240,10 @@ export function App() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col rail:flex-row">
+    <div className="flex h-screen flex-col overflow-hidden rail:flex-row">
       {/* The sidebar: navigation lives here; above the working view is status only. */}
       <aside
-        className={`border-b border-hairline bg-shell rail:flex rail:shrink-0 rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
+        className={`shrink-0 border-b border-hairline bg-shell rail:flex rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
           railCollapsed ? 'rail:w-12' : 'rail:w-[200px]'
         }`}
       >
@@ -267,7 +267,7 @@ export function App() {
           </button>
         </div>
         <div
-          className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0 ${
+          className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 overflow-y-auto border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0 ${
             railCollapsed ? 'rail:px-1.5' : ''
           }`}
         >
@@ -275,8 +275,8 @@ export function App() {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-hairline bg-shell px-6 py-3">
+      <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-hairline bg-shell px-6 py-3">
           {config && (
             <Switch
               checked={config.autoRunner.enabled}
@@ -372,22 +372,34 @@ export function App() {
           </div>
         )}
 
-        <main className="min-w-0 flex-1 px-6 py-5">
-          {view === 'board' && (
-            <Board
-              tasks={taskList}
-              loading={tasks === null}
-              onEdit={setEditing}
-              onOpen={setOpenTask}
-              onChanged={refresh}
-              onNewTask={() => setEditing('new')}
-            />
-          )}
-          {view === 'table' && <TableView onOpen={setOpenTask} />}
-          {view === 'stats' && <StatsPage />}
-          {view === 'api' && <ApiPage />}
-          {view === 'settings' && <SettingsPage onSaved={setConfig} />}
-        </main>
+        {/* The below-header region, and the Conversation's positioning
+            context. The shell pins the header and scrolls only this, so the
+            region's own top edge *is* the header's bottom edge at every
+            viewport — which is what lets the docked panel inset off it
+            without knowing the header's height. That height is not a
+            constant to hardcode: the header sits at the viewport top on the
+            rail, drops below the drawer under 900px, and wraps to two rows
+            under ~520px (63 → 121 → 165px measured). */}
+        <div className="relative min-h-0 flex-1">
+          <main className="h-full min-w-0 overflow-y-auto px-6 py-5">
+            {view === 'board' && (
+              <Board
+                tasks={taskList}
+                loading={tasks === null}
+                onEdit={setEditing}
+                onOpen={setOpenTask}
+                onChanged={refresh}
+                onNewTask={() => setEditing('new')}
+              />
+            )}
+            {view === 'table' && <TableView onOpen={setOpenTask} />}
+            {view === 'stats' && <StatsPage />}
+            {view === 'api' && <ApiPage />}
+            {view === 'settings' && <SettingsPage onSaved={setConfig} />}
+          </main>
+
+          <ConversationLauncher config={config} />
+        </div>
       </div>
 
       {openTask && (
@@ -410,8 +422,6 @@ export function App() {
           }}
         />
       )}
-
-      <ConversationLauncher config={config} />
     </div>
   );
 }
