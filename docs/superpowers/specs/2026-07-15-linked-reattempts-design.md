@@ -56,7 +56,9 @@ New `TaskService.reattempt(originalId, feedback?)`:
 ## Runner
 
 For a task with non-empty `feedback`, the run prompt is assembled at run
-time (`execution/runner.ts` ~L254) as:
+time by `promptForTask` in `src/execution/run-prompt.ts`, called from
+`runner.ts` (as-built; this spec originally placed the logic inline in
+`execution/runner.ts` ~L254, where it no longer is):
 
 ```
 <task.prompt>

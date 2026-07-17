@@ -21,6 +21,14 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/do
 ### Design context
 
 Strategic design context (register, users, personality, anti-references, design
-principles) lives in `PRODUCT.md`. The visual system spec is `DESIGN.md` — note
-it currently describes the **terminal-native redesign target**, not the shipped
-zinc + amber UI; new UI work follows DESIGN.md. Read both before any frontend work.
+principles) lives in `PRODUCT.md`. The visual system spec is `DESIGN.md` — it
+describes **"Aurora"**, the system the UI actually ships (chosen and merged
+2026-07-16), so read it as current and binding, not aspirational. Read both
+before any frontend work.
+
+(This note used to say DESIGN.md described a "terminal-native redesign target,
+not the shipped zinc + amber UI". Both halves went stale two design iterations
+ago — terminal-native "Signal Console" was dropped for Aurora, and zinc + amber
+is long gone. Telling readers to distrust the spec is worse than saying nothing:
+if DESIGN.md and the code ever disagree again, that is a bug in one of them to
+be reconciled and written down, not a standing caveat to route around.)

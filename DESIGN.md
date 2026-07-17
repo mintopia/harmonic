@@ -160,7 +160,8 @@ A cool-neutral sky, one cobalt accent, and a semantic state-signal family. Every
 - **Canvas** (#FBFBFD / #0E1016): the page field.
 - **Shell** (#FFFFFF / #14161D): sidebar and status strip.
 - **Surface** (#FFFFFF / #171A22): cards and dialogs.
-- **Raised** (#F1F2F6 / #1F232D): inset fills — count pills, hovers, the finished panel, form fields.
+- **Raised** (#F1F2F6 / #1F232D): inset fills — count pills, hovers, the finished panel.
+- **Field** (#FFFFFF / #14161D): form controls only. (Corrected 2026-07-17: Raised's line used to claim form fields too, but fields have always had their own token — they read as surfaces you type *into*, so light mode lifts them above the Raised grey rather than sinking them into it, and dark mode sinks them below it. See `--hm-field` in `web/src/index.css` and the shared `field` class in `web/src/ui.ts`.)
 - **Hairline** (#ECEDF3 / #232833): shared-edge dividers only. **Edge** (#DDDFEA / #2A2F3B): interactive borders (fields, ghost buttons).
 - **Ink** (#16182B / #EBEDF5): primary text. **Muted** (#5A5E78 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#9296B0 / #6B7185): icon-only affordances, disabled text, and quiet metadata lines exclusively.
 
@@ -173,7 +174,7 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 - **Completed emerald** (#067A55 / dot #10B981 / tint #D6F5E7 · dark #34D399 / tint #123026): finished, accepted.
 - **Failed rose** (#CB3A52 / dot #F0576E / tint #FDE3E8 · dark #FB7185 / tint #3A1720): failed, rejected, destructive.
 - **Tooling cyan** (#0E8AA0 / dot #16A6BE / tint #DAF3F8 · dark #38BDF8 / tint #10303B): tool calls, branches, harness metadata.
-- **Draft** is neutral (Muted/Faint) — nothing is happening yet. Priority is typographic (ink + weight), never a hue; a HIGH flag borrows the Failed rose text only as a small label.
+- **Draft** is neutral (Muted/Faint) — nothing is happening yet. Priority is typographic (ink + weight), never a hue. (Amended 2026-07-17: this line used to contradict itself, adding "a HIGH flag borrows the Failed rose text only as a small label" straight after "never a hue". The code never did it, and shouldn't: rose means *failed*, and a HIGH task hasn't failed. Spending a state colour on something that isn't a state is the same mistake the retired accept-tint/fail-tint gate made — see § Elevation and `web/src/ui.ts`.)
 
 *Tuning note (open):* Ready is the one "waiting" state given a colour; it may read neutral instead if the board feels too green. Draft stays neutral either way.
 
@@ -243,7 +244,7 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 
 ### The Board (signature view)
 - Active pipeline **columns** (Draft, Blocked, Ready, Running, Awaiting review), fixed ~262px width, in a horizontal `overflow-x` rail so the page never scrolls sideways. Each column header carries its **lane colour** — a coloured bottom-rule + a lane dot + a tinted count pill: Draft neutral · Blocked slate · Ready green · Running amber · Awaiting cobalt. This is where the board gets its colour.
-- **Task cards** are calm: the **title is the hero** (ink, 600); below it, **one faint metadata line** (`claude · sonnet-5 · #4821`) in sans. No state pill on the card — the column already says the state; at most a single state dot before the title. Running cards add one quiet line (amber pulse dot + elapsed · tool count). Awaiting-review cards add the diffstat (`+142 −38`), branch (tiny mono, faint), and the Accept / Reject gate.
+- **Task cards** are calm: the **title is the hero** (ink, 600); below it, **one faint metadata line** (`claude · sonnet-5 · #4821`) in sans. No state pill on the card — the column already says the state; at most a single state dot before the title. Running cards add one quiet line (amber pulse dot + elapsed · tool count). Awaiting-review cards add the Accept / Reject gate. (**Not built, deliberately recorded rather than deleted** (2026-07-17): this line used to promise the diffstat `+142 −38` and the branch on awaiting-review cards. Nothing has ever rendered them — `Task` carries neither; `branch` lives on `Run`, and the diffstat is fetched separately inside Task detail. It is worth building — the size of what you are accepting is the gate's missing fact — but it needs the task-list payload to carry the latest run's branch and diffstat, which is a feature, not a doc fix.)
 - **Finished** work collapses to one compact Raised panel: Completed / Failed / Cancelled counts with coloured dots (fail red when > 0). Full terminal history lives in the Table view.
 - Loading is a skeleton board (pulsing Raised blocks), never a spinner.
 

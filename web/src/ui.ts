@@ -21,13 +21,16 @@ export const btnQuietDestructive =
  * so this is the one place a second cobalt primary is sanctioned alongside the
  * view's own ("One per view (plus the review gate's Accept)"). Accept is that
  * primary: the loudest thing on the card or the detail footer, and deliberately
- * unguarded, because the operator's read IS the review. Reject is quiet and
- * destructive; its dialog exists to take a reason, not to guard the action.
+ * unguarded, because the operator's read IS the review. Reject is the Ghost
+ * beside it — present and readable, never loud; its dialog exists to take a
+ * reason, not to guard the action. (It is deliberately not quiet-destructive:
+ * rejecting is a normal outcome of a review, not a destructive act. Cancel,
+ * which abandons a Task, is the one that gets that treatment.)
  * (Replaces the retired Ledger's accept-tint/fail-tint pill pair, which put
  * equal weight on both halves of the gate and spent state colour — green means
  * *completed*, and the task isn't — on an action rather than a state.) */
 export const btnAccept = btnPrimary;
-export const btnReject = btnGhost; // PROTOTYPE C
+export const btnReject = btnGhost;
 
 export const field =
   'w-full rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';

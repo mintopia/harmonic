@@ -22,7 +22,7 @@ Run a fleet of coding agents unattended — nothing merges without your review �
 
 ## Brand Personality
 
-Fast, dense, operator-grade. Quiet control-room energy: the interface carries a lot of state in little space, speaks in one indigo accent (its only voice) over a small semantic state palette (amber running / green accepted / red failed / teal tooling) to mean things, and never performs excitement. The tool disappears into the task. (Accent updated 2026-07-15: the "Ledger" redesign made indigo the accent and amber a state color; see DESIGN.md.)
+Fast, dense, operator-grade. Quiet control-room energy: the interface carries a lot of state in little space, speaks in one cobalt accent (its only voice) over a small semantic state palette (amber running / green accepted / red failed / slate blocked / teal tooling) to mean things, and never performs excitement. The tool disappears into the task. (Accent updated 2026-07-16: "Ledger" and its indigo were retired for **Aurora** — accent cobalt `#2563EB` light / `#6E8BFF` dark, with Ready-green and Blocked-slate added to the state family. See DESIGN.md § 2.)
 
 ## Anti-references
 
