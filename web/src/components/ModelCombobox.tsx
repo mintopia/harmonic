@@ -97,7 +97,7 @@ export function ModelCombobox({
         aria-controls={panelOpen ? listId : undefined}
         aria-autocomplete="list"
         aria-activedescendant={highlight >= 0 ? `${listId}-opt-${highlight}` : undefined}
-        className={`${field} font-data pr-8`}
+        className={`${field} pr-8`}
         value={value}
         onChange={(e) => {
           onChange(e.target.value);
@@ -135,7 +135,7 @@ export function ModelCombobox({
               id={`${listId}-opt-${i}`}
               role="option"
               aria-selected={m === value}
-              className={`flex cursor-pointer items-center justify-between px-2.5 py-1.5 font-data text-data ${
+              className={`flex cursor-pointer items-center justify-between px-2.5 py-1.5 text-data ${
                 i === highlight ? 'bg-raised' : ''
               }`}
               onPointerDown={(e) => {
@@ -150,7 +150,7 @@ export function ModelCombobox({
           ))}
           {custom && (
             <li role="presentation" className="px-2.5 py-1.5 text-data text-muted">
-              Use custom ID: <span className="font-data text-ink">{value}</span>
+              Use custom ID: <span className="font-medium text-ink">{value}</span>
             </li>
           )}
         </ul>
