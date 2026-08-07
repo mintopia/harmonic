@@ -42,10 +42,10 @@ export interface Ticket {
 
 /**
  * A repo-bound tracker (D1). Reads the whole tracker and normalises to
- * `Ticket`; writes only the two status transitions Harmonic itself must make
- * — pick-time `claim` (the Auto-Runner's race reservation) and accept-time
- * `close`. Everything else tracker-specific (create, wire edges, mid-flight
- * comments) stays with the skills' `gh`.
+ * `Ticket`; writes only the status transitions Harmonic itself must make —
+ * the advisory `claim`/`release` pair (the afk pick's best-effort "hands off",
+ * issue #32) and accept-time `close`. Everything else tracker-specific (create,
+ * wire edges, mid-flight comments) stays with the skills' `gh`.
  */
 export interface TrackerAdapter {
   readonly name: string;
@@ -55,6 +55,10 @@ export interface TrackerAdapter {
   readTicket(ref: TicketRef): Promise<Ticket>;
   /** Assign the ambient identity — the pre-spawn reservation. */
   claim(ticket: Ticket): Promise<void>;
+  /** Un-assign the ambient identity — the hand-back when Harmonic drops drive (escalation / failure). */
+  release(ticket: Ticket): Promise<void>;
+  /** Harmonic's own login on this tracker (the assignee `claim` places), for the foreign-assignee filter. */
+  whoami(): Promise<string>;
   /** The review-gate Accept: comment, then close. */
   close(ticket: Ticket, comment: string): Promise<void>;
 }

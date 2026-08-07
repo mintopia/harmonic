@@ -93,6 +93,7 @@ function normalise(raw: RawIssue): Ticket {
  */
 export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): TrackerAdapter {
   const json = async <T>(args: string[]): Promise<T> => JSON.parse(await run(args, repoRoot));
+  let login: string | undefined; // the ambient `gh` user, resolved once
 
   return {
     name: 'github',
@@ -109,6 +110,14 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Trac
 
     async claim(ticket: Ticket) {
       await run(['issue', 'edit', String(ticket.number), '--add-assignee', '@me'], repoRoot);
+    },
+
+    async release(ticket: Ticket) {
+      await run(['issue', 'edit', String(ticket.number), '--remove-assignee', '@me'], repoRoot);
+    },
+
+    async whoami() {
+      return (login ??= (await run(['api', 'user', '--jq', '.login'], repoRoot)).trim());
     },
 
     async close(ticket: Ticket, comment: string) {

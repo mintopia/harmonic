@@ -27,6 +27,7 @@ import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { TrackerPoller } from '../tracker/poller.js';
+import { MirrorCoordinator } from '../tracker/coordinator.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { mapRoutes } from './routes/maps.js';
@@ -183,10 +184,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
     return Git.merge(task.workingDir, run.baseBranch, run.branch);
   });
-  const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get());
+  // The advisory-assignment coordinator (issue #32): the Auto-Runner reads its
+  // pick filter + claim step, the poller feeds it each scan and reconciles.
+  const mirror = new MirrorCoordinator(tasks);
+  const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get(), mirror);
   // Mirror tracker issues into Tasks on a poll loop (issue #30); each poll
   // pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
-  const trackerPoller = new TrackerPoller(tasks, () => configStore.get(), undefined, () => autoRunner.poke());
+  const trackerPoller = new TrackerPoller(tasks, () => configStore.get(), undefined, () => autoRunner.poke(), undefined, mirror);
   bus.on('task_changed', (task) => {
     if (task.state === 'ready') autoRunner.poke();
   });

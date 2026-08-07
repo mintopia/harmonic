@@ -83,12 +83,30 @@ export class Runner {
     if (task.state !== 'ready') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
+    const run = this.beginRun(task);
+    this.taskService.setState(taskId, 'running');
+    return run;
+  }
+
+  /**
+   * Spawn a run for a task the caller already flipped to running — the afk
+   * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
+   * spawn, so the flip lands before the tracker write, not with it (issue #32).
+   */
+  launchClaimed(taskId: number): RunRow {
+    const task = this.taskService.get(taskId);
+    if (task.state !== 'running') {
+      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to running`);
+    }
+    return this.beginRun(task);
+  }
+
+  /** Validate the harness, create the run row, and drive it. Shared by start / launchClaimed. */
+  private beginRun(task: TaskRow): RunRow {
     const config = this.getConfig();
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
-
-    const run = this.runStore.create(taskId);
-    this.taskService.setState(taskId, 'running');
+    const run = this.runStore.create(task.id);
     void this.drive(task, run, harness).catch(() => {});
     return run;
   }

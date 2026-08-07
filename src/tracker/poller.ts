@@ -4,6 +4,12 @@ import type { Ticket, TrackerAdapter } from './adapter.js';
 import { resolveTrackerAdapter } from './adapter.js';
 import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
 
+/** The mirror coordinator's poll-side surface (issue #32): cache the scan for picks, then reconcile assignments. */
+export interface MirrorSync {
+  observe(adapter: TrackerAdapter, scan: Ticket[]): Promise<void>;
+  reconcile(): Promise<void>;
+}
+
 /**
  * The tracker mirroring poll loop (issue #30). While enabled, scans the
  * `defaults.workingDir` repo's tracker on an interval and upserts each issue
@@ -24,17 +30,25 @@ export class TrackerPoller {
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     private readonly onMirrored: () => void = () => {},
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
+    private readonly mirror?: MirrorSync,
   ) {}
 
-  /** One poll cycle: scan → mirror 1:1 → poke. No-op (and no adapter resolve) when disabled. */
+  /**
+   * One poll cycle: scan → cache for picks → mirror 1:1 → poke → reconcile
+   * assignments (issue #32). No-op (and no adapter resolve) when disabled.
+   * `observe` runs before the poke so a freshly-mirrored Task's pick sees the
+   * current assignees; `reconcile` runs after so it settles against final state.
+   */
   async poll(): Promise<void> {
     if (!this.getConfig().tracker.enabled) return;
     const adapter = await this.resolveAdapter(this.getConfig().defaults.workingDir);
     const tickets = await adapter.scan();
     this.lastScan = tickets;
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
+    await this.mirror?.observe(adapter, tickets);
     mirrorScan(this.tasks, tickets);
     this.onMirrored();
+    await this.mirror?.reconcile();
   }
 
   /**
