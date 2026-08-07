@@ -1,7 +1,16 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
-import { tasks, taskDependencies, TASK_STATES, type TaskRow, type TaskState } from '../db/schema.js';
+import {
+  tasks,
+  taskDependencies,
+  TASK_STATES,
+  type TaskRow,
+  type TaskState,
+  type Workflow,
+  type WayfinderType,
+  type Drive,
+} from '../db/schema.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 
@@ -73,6 +82,21 @@ const STATE_NOTIFICATIONS: Partial<Record<TaskState, TaskNotification>> = {
   failed: 'task.failed',
 };
 
+/** Normalised input for a mirrored-Task upsert (issue #30); role fields already derived from labels. */
+export interface MirrorInput {
+  trackerRef: number;
+  prompt: string;
+  workflow: Workflow;
+  wayfinderType: WayfinderType | null;
+  /** Seed only — applied on insert, preserved (Harmonic-owned) on re-poll. */
+  drive: Drive;
+  mapRef: number | null;
+  /** The tracker open/closed axis; closed → completed. */
+  closed: boolean;
+  /** Resting state for an open ticket: blocked when a tracker blocker is open, else ready. */
+  openState: 'ready' | 'blocked';
+}
+
 export class TaskService {
   constructor(
     private readonly db: Db,
@@ -81,11 +105,22 @@ export class TaskService {
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
   ) {}
 
-  create(input: CreateTaskInput): TaskRow {
+  /** Resolve execution defaults (harness/model/workingDir/isolationMode/priority) from optional overrides + config defaults. */
+  private resolveExecution(over: Partial<Pick<CreateTaskInput, 'harness' | 'model' | 'workingDir' | 'isolationMode' | 'priority'>> = {}) {
     const config = this.getConfig();
-    const harness = input.harness ?? config.defaults.harness;
+    const harness = over.harness ?? config.defaults.harness;
     const harnessConfig = config.harnesses[harness];
     if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
+    return {
+      harness,
+      model: over.model ?? harnessConfig.defaultModel,
+      workingDir: over.workingDir ?? config.defaults.workingDir,
+      isolationMode: over.isolationMode ?? config.defaults.isolationMode,
+      priority: over.priority ?? config.defaults.priority,
+    };
+  }
+
+  create(input: CreateTaskInput): TaskRow {
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     for (const depId of dependsOn) this.get(depId);
     const state: TaskState =
@@ -95,11 +130,7 @@ export class TaskService {
       .insert(tasks)
       .values({
         prompt: input.prompt,
-        harness,
-        model: input.model ?? harnessConfig.defaultModel,
-        workingDir: input.workingDir ?? config.defaults.workingDir,
-        isolationMode: input.isolationMode ?? config.defaults.isolationMode,
-        priority: input.priority ?? config.defaults.priority,
+        ...this.resolveExecution(input),
         state,
         createdAt: now,
         updatedAt: now,
@@ -111,6 +142,66 @@ export class TaskService {
     }
     this.onChanged(row);
     this.onNotify('task.created', row);
+    return row;
+  }
+
+  /**
+   * Upsert a mirrored Task from a tracker issue (issue #30), keyed on
+   * trackerRef so re-polls are idempotent. The tracker owns the issue's shape;
+   * Harmonic owns execution state — so a re-poll refreshes prompt/role/mapRef
+   * but never re-seeds `drive` (that protects a runtime Escalation) and never
+   * moves a Task off `running` (nothing interrupts a live Run). A closed ticket
+   * settles a resting Task to completed; reopen reconciliation is left to the
+   * lifecycle work downstream. Mirrored Tasks never enter draft or awaiting-review.
+   */
+  upsertMirrored(input: MirrorInput): TaskRow {
+    const existing = this.db.select().from(tasks).where(eq(tasks.trackerRef, input.trackerRef)).get();
+    const now = Date.now();
+    if (existing) {
+      const state: TaskState =
+        existing.state === 'running'
+          ? existing.state
+          : input.closed
+            ? 'completed'
+            : existing.state === 'ready' || existing.state === 'blocked'
+              ? input.openState
+              : existing.state;
+      const row = this.db
+        .update(tasks)
+        .set({
+          prompt: input.prompt,
+          state,
+          workflow: input.workflow,
+          wayfinderType: input.wayfinderType,
+          mapRef: input.mapRef,
+          updatedAt: now,
+        })
+        .where(eq(tasks.id, existing.id))
+        .returning()
+        .get()!;
+      this.onChanged(row);
+      return row;
+    }
+    const row = this.db
+      .insert(tasks)
+      .values({
+        prompt: input.prompt,
+        ...this.resolveExecution(),
+        state: input.closed ? 'completed' : input.openState,
+        origin: 'mirrored',
+        trackerRef: input.trackerRef,
+        workflow: input.workflow,
+        wayfinderType: input.wayfinderType,
+        drive: input.drive,
+        mapRef: input.mapRef,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+    // No task.created notify: a mirrored Task is a projection, not an authored
+    // Task, and a first poll would otherwise storm one notification per issue.
+    this.onChanged(row);
     return row;
   }
 

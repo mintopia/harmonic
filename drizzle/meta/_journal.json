@@ -85,6 +85,13 @@
       "when": 1784153294069,
       "tag": "0011_conversation_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1786116799727,
+      "tag": "0012_tracker_mirroring",
+      "breakpoints": true
     }
   ]
 }

@@ -3,7 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
-import { TASK_STATES, RUN_STATES } from '../../db/schema.js';
+import { TASK_STATES, RUN_STATES, TASK_ORIGINS, WORKFLOWS, WAYFINDER_TYPES, DRIVES } from '../../db/schema.js';
 import { Git } from '../../execution/git.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns, runToApi, taskToApi } from '../serialize.js';
@@ -40,6 +40,21 @@ const taskWithDepsSchema = z
     /** The original this task re-attempts, or null; feedback carries the reviewer's notes in full. */
     reattemptOf: z.number().nullable().meta({ example: null }),
     feedback: z.string().nullable().meta({ example: null }),
+    // --- Tracker mirroring (issue #30). native Tasks carry origin + nulls/false. ---
+    /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
+    origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
+    /** The mirrored issue's number; null on native Tasks. */
+    trackerRef: z.number().nullable().meta({ example: null }),
+    /** 'wayfinder' | 'implement'; null on native Tasks. */
+    workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
+    /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
+    wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
+    /** 'afk' | 'hitl'; null on native Tasks. */
+    drive: z.enum(DRIVES).nullable().meta({ example: null }),
+    /** An afk Run escalated to a human. */
+    escalated: z.boolean().meta({ example: false }),
+    /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */
+    mapRef: z.number().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     dependsOn: z.array(z.number()).meta({ example: [4818] }),

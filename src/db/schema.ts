@@ -1,4 +1,14 @@
-import { sqliteTable, integer, text, primaryKey, index, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+
+/** Tracker mirroring (issue #30). A Task is either authored here or a 1:1 projection of a tracker issue. */
+export const TASK_ORIGINS = ['native', 'mirrored'] as const;
+export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+export const WORKFLOWS = ['wayfinder', 'implement'] as const;
+export type Workflow = (typeof WORKFLOWS)[number];
+export const WAYFINDER_TYPES = ['research', 'prototype', 'grilling', 'task'] as const;
+export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
+export const DRIVES = ['afk', 'hitl'] as const;
+export type Drive = (typeof DRIVES)[number];
 
 export const TASK_STATES = [
   'draft',
@@ -25,12 +35,30 @@ export const tasks = sqliteTable('tasks', {
   reattemptOf: integer('reattempt_of').references((): AnySQLiteColumn => tasks.id),
   /** Reviewer feedback that seeded this re-attempt, stored in full, separate from the prompt. */
   feedback: text('feedback'),
+  // --- Tracker mirroring (issue #30). Null/default on native Tasks. ---
+  /** native (authored here) | mirrored (1:1 projection of a tracker issue). */
+  origin: text('origin').$type<TaskOrigin>().notNull().default('native'),
+  /** The mirrored issue's portable number; the upsert key. Null on native Tasks. */
+  trackerRef: integer('tracker_ref'),
+  /** wayfinder (charting) | implement (build tickets). Derived from labels. */
+  workflow: text('workflow').$type<Workflow>(),
+  /** research/prototype/grilling/task; null for implement and native Tasks. */
+  wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
+  /** afk (Harmonic auto-runs) | hitl (human drives). Seeded from labels, then Harmonic-owned. */
+  drive: text('drive').$type<Drive>(),
+  /** Set when an afk Run escalated to a human (drive flipped afk→hitl at runtime). */
+  escalated: integer('escalated', { mode: 'boolean' }).notNull().default(false),
+  /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
+  mapRef: integer('map_ref'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
   // withDeps looks up reattempts (reverse link) per task on the board/table
   // hot path; index the FK so that stays cheap as the table grows.
   index('tasks_reattempt_of_idx').on(t.reattemptOf),
+  // The mirror upsert looks up by trackerRef every poll; unique enforces 1:1
+  // (SQLite treats NULLs as distinct, so native Tasks are unconstrained).
+  uniqueIndex('tasks_tracker_ref_idx').on(t.trackerRef),
 ]);
 
 export const settings = sqliteTable('settings', {
