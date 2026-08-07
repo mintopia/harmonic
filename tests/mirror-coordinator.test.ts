@@ -111,11 +111,13 @@ describe('MirrorCoordinator (issue #32)', () => {
     expect(await coordC.recheckAndClaim(tasks.get(task.id))).toBe('spawn'); // best-effort: spawn anyway
   });
 
-  it('reconcile: re-claims a running Task, releases a handed-back one, leaves foreign + completed alone', async () => {
+  it('reconcile: re-claims a running Task, releases an escalated one, leaves failed/foreign/completed alone', async () => {
     const running = tasks.upsertMirrored(mirrored(10));
     tasks.setState(running.id, 'running'); // claimed, but the scan shows it dropped
-    const failed = tasks.upsertMirrored(mirrored(11));
-    tasks.setState(failed.id, 'failed'); // handed back, still assigned to us
+    const escalated = tasks.upsertMirrored(mirrored(11));
+    tasks.escalate(escalated.id); // handed back to a human (retries exhausted / prompt), still ours
+    const retrying = tasks.upsertMirrored(mirrored(14));
+    tasks.setState(retrying.id, 'failed'); // mid Auto-Retry: bare failed is no longer a hand-back (issue #33)
     tasks.upsertMirrored(mirrored(12)); // a person owns it — hands off
     tasks.upsertMirrored(mirrored(13, { closed: true })); // completed → close path (D5), not us
 
@@ -123,7 +125,8 @@ describe('MirrorCoordinator (issue #32)', () => {
     const coord = new MirrorCoordinator(tasks);
     await coord.observe(adapter, [
       ticket(10, []), // running but unassigned → re-claim
-      ticket(11, ['me']), // failed but still ours → release
+      ticket(11, ['me']), // escalated but still ours → release
+      ticket(14, ['me']), // failed (retrying) but still ours → hold the claim
       ticket(12, ['human']), // foreign → untouched
       ticket(13, ['me']), // completed → untouched
     ]);
@@ -131,6 +134,7 @@ describe('MirrorCoordinator (issue #32)', () => {
 
     expect(calls.claim).toEqual([10]);
     expect(calls.release).toEqual([11]);
+    expect(calls.release).not.toContain(14);
     expect(calls.claim).not.toContain(12);
     expect(calls.release).not.toContain(12);
     expect(calls.release).not.toContain(13);

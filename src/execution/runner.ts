@@ -6,6 +6,7 @@ import { Git } from './git.js';
 import { adapterFor } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, type RunUsage } from './usage.js';
 import { promptForTask } from './run-prompt.js';
+import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { AcpDriver } from '../acp/driver.js';
@@ -33,6 +34,8 @@ export interface RunnerOptions {
     mint: (runId: number) => string;
     revoke: (runId: number) => void;
   };
+  /** Auto-drive collaborator for afk mirrored Tasks (issue #33); absent on a native-only server. */
+  autoDrive?: AutoDrive;
 }
 
 interface Workspace {
@@ -59,6 +62,7 @@ export class Runner {
   private readonly events: RunnerEvents;
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
+  private readonly autoDrive: AutoDrive | undefined;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -71,6 +75,7 @@ export class Runner {
     this.events = options.events ?? {};
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
+    this.autoDrive = options.autoDrive;
   }
 
   get activeCount(): number {
@@ -181,6 +186,11 @@ export class Runner {
       this.events.onRunEvent?.(event);
     };
 
+    // Set when an afk mirrored Run blocks on a human prompt: the Run stops and
+    // the Task Escalates (issue #33) instead of settling completed/failed.
+    let escalating: string | null = null;
+    const autoDriven = this.autoDrive?.handles(task) ?? false;
+
     let child: ChildProcess;
     let workspace: Workspace;
     let mcpServers: unknown[] = [];
@@ -242,6 +252,17 @@ export class Runner {
       onSessionUpdate: (update) => record('session_update', update),
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
+          // An afk mirrored Run needs a human decision → Escalate: decline the
+          // permission, stop the turn, and flag it so the settle path hands the
+          // Task back (issue #33). (A clarifying question has no ACP signal
+          // beyond this — permission requests are the concrete trigger.)
+          if (autoDriven) {
+            escalating = (params as any)?.toolCall?.title ?? 'permission request';
+            const outcome = { outcome: 'cancelled' };
+            record('permission_request', { request: params, outcome });
+            driver.cancel();
+            return { outcome };
+          }
           const options = (params as any)?.options ?? [];
           const pick =
             options.find((o: any) => o.kind === 'allow_always') ??
@@ -276,16 +297,28 @@ export class Runner {
         onSessionCreated: (sessionId) => this.runStore.update(run.id, { sessionId }),
       });
 
-      const result = await driver.prompt([{ type: 'text', text: promptForTask(task) }]);
+      const promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task);
+      const result = await driver.prompt([{ type: 'text', text: promptText }]);
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
       this.noteModelMismatch(task, usage, record);
-      this.settle(task, run, 'completed', null, {
-        stopReason: result.stopReason ?? null,
-        usage: usage ? JSON.stringify(usage) : null,
-      });
+      const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
+      if (escalating) {
+        record('lifecycle', { event: 'escalated', reason: escalating });
+        this.settleEscalated(task, run, escalating, patch);
+      } else if (autoDriven) {
+        const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
+        if (outcome === 'escalate') {
+          record('lifecycle', { event: 'escalated', reason: 'merge conflict' });
+          this.settleEscalated(task, run, 'merge conflict', patch);
+        } else {
+          this.settleAutoCompleted(task, run, patch);
+        }
+      } else {
+        this.settle(task, run, 'completed', null, patch);
+      }
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
       // Let stderr finish flushing (the process has exited, so 'end' is
@@ -296,9 +329,16 @@ export class Runner {
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
       this.noteModelMismatch(task, usage, record);
-      this.settle(task, run, 'failed', reason, {
-        usage: usage ? JSON.stringify(usage) : null,
-      });
+      const patch = { usage: usage ? JSON.stringify(usage) : null };
+      if (escalating) {
+        record('lifecycle', { event: 'escalated', reason: escalating });
+        this.settleEscalated(task, run, escalating, patch);
+      } else if (autoDriven) {
+        // Error failure: Auto-Retry within cap, else Escalate (issue #33).
+        this.settleFailedOrRetry(task, run, reason, patch);
+      } else {
+        this.settle(task, run, 'failed', reason, patch);
+      }
     } finally {
       driver.fail(new Error('run finished'));
       driver.dispose();
@@ -394,6 +434,45 @@ export class Runner {
       } else if (finished.state === 'failed') {
         this.taskService.setState(task.id, 'failed');
       }
+    }
+    this.events.onRunFinished?.(finished);
+  }
+
+  /**
+   * Clean completion of an afk mirrored Run (issue #33): the Merge Fate +
+   * fallback-close already ran in {@link AutoDrive.onCompleted}. Mirrored Tasks
+   * bypass the review gate, so the Task goes straight to completed (the poll's
+   * closed-ticket reconcile confirms it). Only settle a still-running Task — a
+   * racing cancel wins.
+   */
+  private settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
+    const finished = this.runStore.finish(run.id, 'completed', { ...patch, reason: null });
+    if (this.taskService.get(task.id).state === 'running') {
+      this.taskService.setState(task.id, 'completed');
+    }
+    this.events.onRunFinished?.(finished);
+  }
+
+  /**
+   * A failed afk mirrored Run (issue #33): Auto-Retry re-queues the Task to
+   * ready (the Auto-Runner spawns a fresh Run) while within the cap; exhausting
+   * it Escalates to a human — never a silent retry beyond the cap.
+   */
+  private settleFailedOrRetry(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
+    const decision = this.autoDrive!.onFailed(task, this.runStore.get(run.id));
+    const finished = this.runStore.finish(run.id, 'failed', { ...patch, reason });
+    if (this.taskService.get(task.id).state === 'running') {
+      if (decision === 'retry') this.taskService.setState(task.id, 'ready');
+      else this.taskService.escalate(task.id);
+    }
+    this.events.onRunFinished?.(finished);
+  }
+
+  /** Stop an afk Run and hand the Task back to a human (issue #33): Run failed, Task ready + escalated + drive hitl. */
+  private settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
+    const finished = this.runStore.finish(run.id, 'failed', { ...patch, reason: `escalated to human: ${reason}` });
+    if (this.taskService.get(task.id).state === 'running') {
+      this.taskService.escalate(task.id);
     }
     this.events.onRunFinished?.(finished);
   }

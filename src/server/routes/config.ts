@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, appConfigSchema, type DeepPartial, type AppConfig } from '../../config.js';
+import { HARNESS_IDS, ISOLATION_MODES, MERGE_FATES, PRIORITIES, appConfigSchema, type DeepPartial, type AppConfig } from '../../config.js';
 
 /**
  * A deep-partial patch of `AppConfig` (config.ts). Every field is optional
@@ -71,6 +71,14 @@ const configPatchBodySchema = z
       .object({
         enabled: z.boolean().meta({ example: false }),
         pollIntervalSeconds: z.number().int().min(5).meta({ example: 60 }),
+      })
+      .partial()
+      .optional(),
+    drive: z
+      .object({
+        prompt: z.string().meta({ example: '{skill}\n\nResolve #{ref} ({url}) end to end.\n\n## {title}\n\n{body}' }),
+        mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
+        autoRetry: z.number().int().min(0).meta({ example: 1 }),
       })
       .partial()
       .optional(),

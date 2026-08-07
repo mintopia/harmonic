@@ -88,12 +88,11 @@ export class MirrorCoordinator {
 }
 
 /**
- * Harmonic has dropped drive back to the human frontier: a failed/cancelled Run
- * or a runtime escalation. `failed` is terminal today, so releasing it is right.
- * ponytail: once Auto-Retry (#33) re-queues failed→ready, a poll in that window
- * would release a claim meant to be held across retries — gate on retries-exhausted
- * (escalated) then, not bare `failed`.
+ * Harmonic has dropped drive back to the human frontier: a cancelled Run or a
+ * runtime Escalation (issue #33). Auto-Retry now re-queues a failed afk Run
+ * (failed→ready, claim held across retries), so bare `failed` is no longer a
+ * hand-back — only exhausted-retries (escalated) is.
  */
 function handedBack(task: TaskRow): boolean {
-  return task.state === 'failed' || task.state === 'cancelled' || task.escalated;
+  return task.state === 'cancelled' || task.escalated;
 }

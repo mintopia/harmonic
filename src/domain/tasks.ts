@@ -346,6 +346,24 @@ export class TaskService {
     return row;
   }
 
+  /**
+   * Escalate an afk Run to a human (issue #33): the runtime afk→hitl flip.
+   * Lands the Task back in ready flagged "escalated", drive → hitl, so the
+   * Auto-Runner skips it and the poll's reconcile releases the advisory claim.
+   * Used both when a Run blocks on a human prompt and when Auto-Retry is
+   * exhausted.
+   */
+  escalate(id: number): TaskRow {
+    const row = this.db
+      .update(tasks)
+      .set({ state: 'ready', drive: 'hitl', escalated: true, updatedAt: Date.now() })
+      .where(eq(tasks.id, id))
+      .returning()
+      .get()!;
+    this.onChanged(row);
+    return row;
+  }
+
   cancel(id: number): TaskRow {
     const task = this.get(id);
     if (!CANCELLABLE_STATES.includes(task.state)) {

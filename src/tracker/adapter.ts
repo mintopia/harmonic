@@ -61,6 +61,20 @@ export interface TrackerAdapter {
   whoami(): Promise<string>;
   /** The review-gate Accept: comment, then close. */
   close(ticket: Ticket, comment: string): Promise<void>;
+  /**
+   * Open a PR from a Run's worktree branch — the open-PR Merge Fate (issue
+   * #33). Optional: a tracker with no PR concept omits it, and auto-drive
+   * treats an absent one as leave-the-branch (artifact).
+   */
+  openPR?(input: OpenPRInput): Promise<void>;
+}
+
+/** The open-PR Merge Fate's inputs (issue #33). */
+export interface OpenPRInput {
+  branch: string;
+  baseBranch: string;
+  title: string;
+  body: string;
 }
 
 /**

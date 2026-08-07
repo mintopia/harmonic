@@ -11,6 +11,23 @@ export type IsolationMode = (typeof ISOLATION_MODES)[number];
 export const PRIORITIES = ['high', 'normal', 'low'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+export const MERGE_FATES = ['auto-merge', 'open-PR', 'artifact'] as const;
+export type MergeFate = (typeof MERGE_FATES)[number];
+
+/**
+ * The default Drive Prompt template (issue #33). Placeholders `{skill}` (from
+ * the Task's Workflow / Wayfinder Type), `{ref}` `{url}` `{title}` `{body}` are
+ * filled from the mirrored Task; the skill stays the source of truth, Harmonic
+ * only injects the ticket and tells the agent to resolve + close it.
+ */
+export const DEFAULT_DRIVE_PROMPT = `{skill}
+
+You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact \`gh\` mechanics.
+
+## {title}
+
+{body}`;
+
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
   command: z.string().meta({ example: 'npx' }),
@@ -96,6 +113,20 @@ export const appConfigSchema = z.object({
     enabled: z.boolean().meta({ example: false }),
     pollIntervalSeconds: z.number().int().min(5).meta({ example: 60 }),
   }),
+  /**
+   * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
+   * global Drive Prompt template; `mergeFate` is the default fate of a
+   * completed worktree Run's branch (research Tasks are always artifacts);
+   * `autoRetry` is how many times a failed afk Run is silently re-queued
+   * before it Escalates to a human.
+   */
+  drive: z
+    .object({
+      prompt: z.string().default(DEFAULT_DRIVE_PROMPT).meta({ example: DEFAULT_DRIVE_PROMPT }),
+      mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
+      autoRetry: z.number().int().min(0).default(1).meta({ example: 1 }),
+    })
+    .prefault({}),
   /**
    * When true, Accept/Reject tools are exposed over MCP — agents can land
    * branches unattended (ADR-0002). Deliberate opt-in; default off.
@@ -201,6 +232,11 @@ export function defaultConfig(): AppConfig {
     tracker: {
       enabled: false,
       pollIntervalSeconds: 60,
+    },
+    drive: {
+      prompt: DEFAULT_DRIVE_PROMPT,
+      mergeFate: 'auto-merge',
+      autoRetry: 1,
     },
     agentReview: false,
     conversationIdleTimeoutMinutes: 30,

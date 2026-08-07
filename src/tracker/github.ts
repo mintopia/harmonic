@@ -125,5 +125,9 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Trac
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },
+
+    async openPR({ branch, baseBranch, title, body }) {
+      await run(['pr', 'create', '--head', branch, '--base', baseBranch, '--title', title, '--body', body], repoRoot);
+    },
   };
 }

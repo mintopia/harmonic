@@ -26,6 +26,7 @@ import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
+import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPoller } from '../tracker/poller.js';
 import { MirrorCoordinator } from '../tracker/coordinator.js';
 import { DomainError } from '../domain/errors.js';
@@ -165,6 +166,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // A Conversation cannot survive a restart — its warm harness is gone — so
   // any still marked active is ended; its transcript survives read-only (issue 15).
   conversations.markActiveEnded();
+  // Auto-drive afk mirrored Tasks (issue #33): the Drive Prompt + completion /
+  // failure decisions. Its {url} comes from the poller's last scan; the poller
+  // is built below, so bind it late through this holder.
+  let trackerPollerRef: TrackerPoller | undefined;
+  const autoDrive = new AutoDrive(
+    () => configStore.get(),
+    (ref) => trackerPollerRef?.urlFor(ref) ?? null,
+  );
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
@@ -175,6 +184,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       mint: (runId) => auth.createKey(`run-${runId}`, { scope: 'run', runId }).token,
       revoke: (runId) => auth.deleteKeysForRun(runId),
     },
+    autoDrive,
   });
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
@@ -191,6 +201,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Mirror tracker issues into Tasks on a poll loop (issue #30); each poll
   // pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
   const trackerPoller = new TrackerPoller(tasks, () => configStore.get(), undefined, () => autoRunner.poke(), undefined, mirror);
+  trackerPollerRef = trackerPoller; // late-bind for AutoDrive's {url} resolver
   bus.on('task_changed', (task) => {
     if (task.state === 'ready') autoRunner.poke();
   });
