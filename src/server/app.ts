@@ -26,6 +26,7 @@ import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
+import { TrackerPoller } from '../tracker/poller.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { conversationRoutes } from './routes/conversations.js';
@@ -86,6 +87,7 @@ export interface AppContext {
   permissionRules: PermissionRuleStore;
   review: ReviewService;
   autoRunner: AutoRunner;
+  trackerPoller: TrackerPoller;
   auth: AuthService;
   channels: ChannelService;
   notifier: Notifier;
@@ -164,6 +166,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     return Git.merge(task.workingDir, run.baseBranch, run.branch);
   });
   const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get());
+  // Mirror tracker issues into Tasks on a poll loop (issue #30); each poll
+  // pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
+  const trackerPoller = new TrackerPoller(tasks, () => configStore.get(), undefined, () => autoRunner.poke());
   bus.on('task_changed', (task) => {
     if (task.state === 'ready') autoRunner.poke();
   });
@@ -182,7 +187,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerPoller, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -197,6 +202,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
   app.addHook('onClose', async () => {
+    trackerPoller.stop();
     runner.shutdown();
     conversationDriver.shutdown();
   });
@@ -374,6 +380,7 @@ Authorization header).`;
       conversationDriver.mcpUrl = mcpUrl;
     }
     autoRunner.poke();
+    trackerPoller.start();
   });
   await app.register(wsRoutes, { prefix: '/api' });
 

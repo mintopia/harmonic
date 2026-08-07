@@ -67,6 +67,13 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
+    tracker: z
+      .object({
+        enabled: z.boolean().meta({ example: false }),
+        pollIntervalSeconds: z.number().int().min(5).meta({ example: 60 }),
+      })
+      .partial()
+      .optional(),
     agentReview: z.boolean().optional().meta({ example: false }),
   })
   .partial()
@@ -113,6 +120,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       // the actual validation boundary, same as before this migration.
       const updated = ctx.configStore.update(req.body as DeepPartial<AppConfig>);
       ctx.autoRunner.poke();
+      void ctx.trackerPoller.poll().catch(() => {}); // enabling tracker mirrors now, not next interval
       return updated;
     },
   );
@@ -136,6 +144,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const updated = ctx.configStore.replace(req.body as AppConfig);
       ctx.autoRunner.poke();
+      void ctx.trackerPoller.poll().catch(() => {}); // enabling tracker mirrors now, not next interval
       return updated;
     },
   );

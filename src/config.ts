@@ -88,6 +88,15 @@ export const appConfigSchema = z.object({
     maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
   }),
   /**
+   * Tracker mirroring poll loop (issue #30). When enabled, scans the
+   * `defaults.workingDir` repo's tracker every `pollIntervalSeconds` and
+   * upserts each issue into a mirrored Task. Deliberate opt-in; default off.
+   */
+  tracker: z.object({
+    enabled: z.boolean().meta({ example: false }),
+    pollIntervalSeconds: z.number().int().min(5).meta({ example: 60 }),
+  }),
+  /**
    * When true, Accept/Reject tools are exposed over MCP — agents can land
    * branches unattended (ADR-0002). Deliberate opt-in; default off.
    */
@@ -188,6 +197,10 @@ export function defaultConfig(): AppConfig {
     autoRunner: {
       enabled: false,
       maxConcurrentRuns: 1,
+    },
+    tracker: {
+      enabled: false,
+      pollIntervalSeconds: 60,
     },
     agentReview: false,
     conversationIdleTimeoutMinutes: 30,
