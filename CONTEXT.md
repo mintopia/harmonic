@@ -32,6 +32,92 @@ _Avoid_: prerequisite, parent
 A per-Task rank (high / normal / low) used only by the Auto-Runner's pick
 order; ties break FIFO by creation time.
 
+### Tracker mirroring
+
+**Origin**:
+Whether a Task was authored in Harmonic (**native**) or is a 1:1 projection
+of a tracker issue (**mirrored**). One board carries both; only the origin
+differs.
+_Avoid_: source, kind
+
+**Mirrored Task**:
+A Task bound 1:1 to a tracker issue by a tracker ref. The tracker owns its
+shape (prompt, blocking, workflow role) and is the source of truth; Harmonic
+owns its execution state (Runs, Usage) and writes only claim/close back. A
+re-poll upserts it. Never enters *draft* — a tracker issue is already
+authored — and never enters *awaiting-review* (see Drive).
+_Avoid_: imported task, synced issue
+
+**Map**:
+The mirror of a `wayfinder:map` issue: a **derived** grouping of the mirrored
+Tasks that share its `mapRef`. Not a Task (no prompt, Run, or review) and not
+a stored entity (it holds no Harmonic-native state) — a query-time roll-up
+over the polled tracker. Reuses wayfinder's own term.
+_Avoid_: effort, epic, project
+
+**mapRef**:
+On a mirrored Task, the tracker ref of the parent Map issue; absent on native
+Tasks and on mirrored issues that belong to no Map.
+
+**Workflow**:
+Which mattpocock workflow a mirrored issue belongs to — **wayfinder**
+(charting: a Map and its decision tickets) or **implement** (build tickets
+from `/to-tickets`). Distinct skills, distinct roles, never conflated.
+Derived from labels.
+_Avoid_: pipeline, mode
+
+**Wayfinder Type**:
+The kind of a `workflow = wayfinder` decision ticket: *research*, *prototype*,
+*grilling*, or *task*. Null for *implement* Tasks — "implementation" is a
+Workflow, never a Wayfinder Type.
+
+**Drive**:
+Who drives a mirrored Task — **afk** (Harmonic auto-runs it) or **hitl** (a
+human drives it via the mattpocock skills; Harmonic surfaces it but never
+runs it). Stored and mutable. Seeded from labels (ready-for-human / grilling /
+prototype / bare-task → hitl; ready-for-agent / research → afk); an
+**unclear** signal seeds *afk* — attempt optimistically. The Auto-Runner's
+whole predicate: pick-eligible iff `drive ≠ hitl`. Mirrored Tasks bypass the
+review gate entirely — closure is a tracker act (the agent via its skill,
+Harmonic as fallback on clean completion, or a human), never an Accept/Reject.
+_Avoid_: mode, assignee
+
+**Escalation**:
+The runtime `afk → hitl` flip: when an afk Run blocks on a human prompt (a
+permission request or a clarifying question), Harmonic stops the Run, sets
+*drive* to hitl, and lands the Task back in *ready* flagged "escalated to
+human" so the Auto-Runner skips it and a person takes over.
+_Avoid_: downgrade, fallback, handoff
+
+**Drive Prompt**:
+The prompt Harmonic injects to auto-run an afk mirrored Task: a **global**
+settings template (no per-Task override) of a workflow slash-command plus a
+short preamble, filled from the Task — `{skill}` from its Workflow /
+Wayfinder Type (research→`/research`, implement→`/implement`), plus `{ref}`
+`{url}` `{title}` `{body}`. The preamble tells the agent to resolve the ticket
+end-to-end and comment + close it via the tracker doc's `gh` mechanics; the
+skills stay the source of truth. The Run then streams Run Events like any Run
+— no separate visibility path.
+_Avoid_: injected command, auto-prompt
+
+**Merge Fate**:
+What becomes of a worktree Run's branch when an afk mirrored Task completes
+cleanly — **auto-merge** (default: merge into base on clean completion; a
+conflict Escalates rather than awaiting-review, which mirrored Tasks lack),
+**open-PR** (branch → GitHub PR, review off-Harmonic), or **artifact** (leave
+the branch for a human/CI). Global default, per-Task override; worktree-only
+(direct isolation has no branch). Research findings branches are always
+artifacts regardless.
+_Avoid_: merge policy
+
+**Auto-Retry**:
+On an afk Run failure (an error, or the skill's own `/code-review` rejecting
+the work) Harmonic re-queues the Task to *ready* as a fresh Run up to a
+configurable max (default 1), still afk; exhausting the retries Escalates to
+hitl (Run *failed*, drive→hitl, ticket open + un-assigned + flagged), never a
+silent retry beyond the cap.
+_Avoid_: auto-requeue
+
 ### Conversations
 
 **Conversation**:
