@@ -10,10 +10,16 @@ import { conversationToApi, runToApi, taskToApi } from './serialize.js';
 export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as unknown as App;
 
-  fastify.get('/ws', { websocket: true }, (socket) => {
+  fastify.get('/ws', { websocket: true }, (socket, req) => {
     const send = (msg: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
     };
+    // A read-scoped key (issue #35) gets a filtered firehose: the board's
+    // task/run/run-event traffic only, with Conversation and permission
+    // events dropped. Auth already passed in the onRequest hook; this just
+    // re-reads the key's scope from the same `?token=`.
+    const token = (req.query as Record<string, string | undefined>)?.token;
+    const readOnly = (token ? ctx.auth.verifyKey(token) : null)?.scope === 'read';
     const unsubscribes = [
       ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
       ctx.bus.on('run_changed', (run) => send({ type: 'run_changed', run: runToApi(ctx, run) })),
@@ -21,15 +27,19 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       // merges these payloads straight into its task list (issue 15).
       ctx.bus.on('task_changed', (task) =>
         send({ type: 'task_changed', task: taskToApi(ctx, ctx.tasks.withDeps(task)) })),
-      // Conversation events stream in the same run_events shape, so the SPA
-      // renders them with the shared EventStream (ADR-0006).
-      ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
-      ctx.bus.on('conversation_changed', (conversation) =>
-        send({ type: 'conversation_changed', conversation: conversationToApi(ctx, conversation) })),
-      // A Harness is blocked on the operator's permission decision (ADR-0007);
-      // answered via POST /conversations/:id/permissions/:reqId.
-      ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
     ];
+    if (!readOnly) {
+      unsubscribes.push(
+        // Conversation events stream in the same run_events shape, so the SPA
+        // renders them with the shared EventStream (ADR-0006).
+        ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
+        ctx.bus.on('conversation_changed', (conversation) =>
+          send({ type: 'conversation_changed', conversation: conversationToApi(ctx, conversation) })),
+        // A Harness is blocked on the operator's permission decision (ADR-0007);
+        // answered via POST /conversations/:id/permissions/:reqId.
+        ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
+      );
+    }
     socket.on('close', () => unsubscribes.forEach((u) => u()));
   });
 }

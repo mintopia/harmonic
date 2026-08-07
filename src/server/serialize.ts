@@ -22,12 +22,16 @@ export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
   return { ...run, usage, cost: costOfUsages([usage], pricesOf(ctx)) };
 }
 
-export type ApiTask = TaskWithDeps & { cost: Cost | null };
+export type ApiTask = TaskWithDeps & {
+  cost: Cost | null;
+  /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
+  url: string | null;
+};
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
   const usages = ctx.runs.listForTask(task.id).map((run) => parseUsage(run.usage));
-  return { ...task, cost: costOfUsages(usages, pricesOf(ctx)) };
+  return { ...task, cost: costOfUsages(usages, pricesOf(ctx)), url: ctx.trackerPoller.urlFor(task.trackerRef) };
 }
 
 /** Cost of an arbitrary set of runs against the live price table. */

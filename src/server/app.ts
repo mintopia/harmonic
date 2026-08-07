@@ -29,6 +29,7 @@ import { AutoRunner } from '../execution/auto-runner.js';
 import { TrackerPoller } from '../tracker/poller.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
+import { mapRoutes } from './routes/maps.js';
 import { conversationRoutes } from './routes/conversations.js';
 import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
@@ -73,6 +74,23 @@ function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
   if (path.startsWith('/api/runs')) return true;
+  return false;
+}
+
+/**
+ * What a `read`-scoped key reaches (issue #35): read-only board access for a
+ * viz client — GET tasks/runs/maps and the WS handshake. Every mutation is
+ * blocked (GET-only), as is the operator surface (keys, config, channels,
+ * Conversations). The per-Task channel overrides are operator config, so
+ * they're excluded even though they hang off /api/tasks.
+ */
+function readScopeAllowed(path: string, method: string): boolean {
+  if (method !== 'GET') return false;
+  if (path === '/api/ws') return true;
+  if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
+  if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
+  if (path.startsWith('/api/runs')) return true;
+  if (path === '/api/maps' || path.startsWith('/api/maps/')) return true;
   return false;
 }
 
@@ -244,7 +262,18 @@ served over REST. \`permission_request\` announces a Harness blocked on an
 operator permission decision in a Conversation (ADR-0007), answered via
 \`POST /conversations/:id/permissions/:reqId\`. Authenticate by passing the
 session token or an API key as \`?token=\` (WebSocket clients cannot set an
-Authorization header).`;
+Authorization header). A \`read\`-scoped key gets a filtered firehose — only
+\`task_changed\`, \`run_changed\`, and \`run_event\` — with the Conversation
+and permission traffic dropped.
+
+## Read scope
+
+A \`read\`-scoped API key (created via \`POST /api/keys\` with
+\`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` tasks,
+runs, and maps, and open the WebSocket (filtered as above). Every mutation
+and the whole operator surface (keys, config, channels, Conversations) is
+blocked. There is no \`map_changed\` event — a client re-fetches \`/maps\`
+on reconnect or when it sees a \`mapRef\` it has not resolved yet.`;
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
@@ -288,13 +317,17 @@ Authorization header).`;
         .status(403)
         .send({ error: { code: 'forbidden', message: 'this key is scoped to its run and cannot access this endpoint' } });
 
+    const scopeAllows = (scope: string): boolean =>
+      scope === 'full' ||
+      (scope === 'read'
+        ? readScopeAllowed(path, req.method)
+        : scopedKeyAllowed(path, configStore.get().agentReview));
+
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
     if (bearer) {
       const key = auth.verifyKey(bearer);
       if (key) {
-        if (key.scope !== 'full' && !scopedKeyAllowed(path, configStore.get().agentReview)) {
-          return forbidden();
-        }
+        if (!scopeAllows(key.scope)) return forbidden();
         return;
       }
     }
@@ -304,9 +337,7 @@ Authorization header).`;
       if (auth.validateSession(queryToken)) return;
       const key = auth.verifyKey(queryToken);
       if (key) {
-        if (key.scope !== 'full' && !scopedKeyAllowed(path, configStore.get().agentReview)) {
-          return forbidden();
-        }
+        if (!scopeAllows(key.scope)) return forbidden();
         return;
       }
     }
@@ -342,6 +373,7 @@ Authorization header).`;
   });
 
   await app.register(taskRoutes, { prefix: '/api' });
+  await app.register(mapRoutes, { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register(permissionRuleRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });

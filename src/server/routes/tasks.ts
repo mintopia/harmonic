@@ -66,8 +66,14 @@ const taskWithDepsSchema = z
   })
   .meta({ id: 'TaskWithDeps' });
 
-/** The task shape the REST API and WebSocket both serve (serialize.ts `ApiTask`) — `TaskWithDeps` plus Cost. */
-const taskSchema = taskWithDepsSchema.extend({ cost: costSchema.nullable() }).meta({ id: 'Task' });
+/** The task shape the REST API and WebSocket both serve (serialize.ts `ApiTask`) — `TaskWithDeps` plus Cost and the tracker url. */
+const taskSchema = taskWithDepsSchema
+  .extend({
+    cost: costSchema.nullable(),
+    /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
+    url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
+  })
+  .meta({ id: 'Task' });
 
 const tasksListResponseSchema = z.object({ tasks: z.array(taskSchema) });
 

@@ -240,8 +240,18 @@ or Email — subscribed to a set of event types, overridable per Task.
 
 **API Key**:
 A named, revocable bearer token for the REST API and MCP server, created
-and managed by the operator. Listing keys shows only these.
+and managed by the operator. Full scope by default (drives the whole fleet);
+a **read** scope mints a read-only variant. Listing keys shows both — never
+the ephemeral Run/Conversation Keys.
 _Avoid_: token (ambiguous with Run Key)
+
+**Read Key**:
+A read-scoped API Key for a viz client: it may GET tasks, runs, and Maps and
+open the firehose WebSocket (filtered to task/run/run-event — no Conversation
+or permission traffic), but every mutation and the operator surface (keys,
+config, channels, Conversations) is blocked. Operator-created and listed like
+a full API Key, unlike the ephemeral Run/Conversation Keys.
+_Avoid_: viz key, guest key
 
 **Run Key**:
 An ephemeral bearer token Harmonic mints per Run and injects into the

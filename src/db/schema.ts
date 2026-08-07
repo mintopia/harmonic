@@ -225,7 +225,7 @@ export const apiKeys = sqliteTable('api_keys', {
   tokenHash: text('token_hash').notNull(),
   /** First characters of the token, for display. */
   prefix: text('prefix').notNull(),
-  /** 'full' for operator keys; 'run' / 'conversation' for ephemeral scoped keys. */
+  /** 'full' / 'read' for operator keys; 'run' / 'conversation' for ephemeral scoped keys. */
   scope: text('scope').notNull().default('full'),
   runId: integer('run_id'),
   /** The Conversation a 'conversation'-scoped key belongs to; its lifetime follows the Conversation's (issue 16). */

@@ -29,7 +29,11 @@ const changePasswordBodySchema = z.object({
   newPassword: z.string().min(4).meta({ example: '<your-new-password>' }),
 });
 
-const createKeyBodySchema = z.object({ name: z.string().min(1).meta({ example: 'ci-pipeline' }) });
+const createKeyBodySchema = z.object({
+  name: z.string().min(1).meta({ example: 'ci-pipeline' }),
+  /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/runs/maps + WS, no mutations (issue #35). */
+  scope: z.enum(['full', 'read']).optional().meta({ example: 'read' }),
+});
 
 const keyIdParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 12 }) });
 
@@ -39,7 +43,7 @@ const keySchema = z.object({
   name: z.string().meta({ example: 'ci-pipeline' }),
   /** First characters of the token, for display — too short to authenticate with. */
   prefix: z.string().meta({ example: 'adk_1f3c9e02' }),
-  /** Always 'full' here: 'run'/'conversation' keys are internal and never listed. */
+  /** 'full' or 'read' (issue #35); 'run'/'conversation' keys are internal and never listed. */
   scope: z.string().meta({ example: 'full' }),
   /** Set only on run-scoped keys, so null on every key this API returns. */
   runId: z.number().nullable().meta({ example: null }),
@@ -165,18 +169,19 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Keys'],
-        description: 'Create a new operator API key. The bearer token is returned once and never stored.',
+        description:
+          "Create a new operator API key. `scope` defaults to 'full' (drives the whole fleet); 'read' mints a viz-client key that can GET tasks/runs/maps and open the WebSocket but cannot mutate anything. The bearer token is returned once and never stored.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: createKeyBodySchema,
         response: {
           201: keyWithTokenSchema.describe(
-            'The created key, with the full-scope bearer token in `token` — the only response that ever carries it.',
+            'The created key, with its bearer token in `token` — the only response that ever carries it.',
           ),
         },
       },
     },
     async (req, reply) => {
-      const { key, token } = ctx.auth.createKey(req.body.name);
+      const { key, token } = ctx.auth.createKey(req.body.name, req.body.scope ? { scope: req.body.scope } : {});
       const { tokenHash: _hash, ...rest } = key;
       return reply.status(201).send({ ...rest, token });
     },

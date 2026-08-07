@@ -83,6 +83,27 @@ describe('TrackerPoller.poll', () => {
     expect(tasks.list()).toHaveLength(1);
   });
 
+  it('caches the scan: maps() rolls up by mapRef and urlFor() resolves a ref (issue #35)', async () => {
+    const { adapter } = stubAdapter([
+      ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
+      ticket({ number: 30, parent: 19, labels: ['ready-for-agent'], url: 'https://x/30' }),
+      ticket({ number: 31, parent: 19, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+    ]);
+    const poller = new TrackerPoller(tasks, () => configWith({ enabled: true }), async () => adapter);
+
+    expect(poller.maps()).toEqual([]); // empty before the first poll
+    await poller.poll();
+
+    const maps = poller.maps();
+    expect(maps).toHaveLength(1);
+    expect(maps[0]).toMatchObject({ ref: 19, title: 'Wayfinder' });
+    expect(maps[0]!.taskRefs.sort()).toEqual([30, 31]);
+    expect(maps[0]!.counts).toEqual({ ready: 1, completed: 1 });
+    expect(poller.urlFor(30)).toBe('https://x/30');
+    expect(poller.urlFor(999)).toBeNull(); // unknown ref
+    expect(poller.urlFor(null)).toBeNull(); // native Task
+  });
+
   it('no-ops when disabled — never resolves the adapter (safe by default)', async () => {
     let resolved = false;
     const poller = new TrackerPoller(

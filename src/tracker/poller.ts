@@ -1,8 +1,8 @@
 import type { AppConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
-import type { TrackerAdapter } from './adapter.js';
+import type { Ticket, TrackerAdapter } from './adapter.js';
 import { resolveTrackerAdapter } from './adapter.js';
-import { mirrorScan } from './mirror.js';
+import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
 
 /**
  * The tracker mirroring poll loop (issue #30). While enabled, scans the
@@ -14,6 +14,9 @@ import { mirrorScan } from './mirror.js';
  */
 export class TrackerPoller {
   private timer: NodeJS.Timeout | undefined;
+  /** The last poll's scan — the "polled tracker" the Map rollup and Task urls read (D7). Empty before the first poll. */
+  private lastScan: Ticket[] = [];
+  private urlByRef = new Map<number, string>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -27,8 +30,25 @@ export class TrackerPoller {
   async poll(): Promise<void> {
     if (!this.getConfig().tracker.enabled) return;
     const adapter = await this.resolveAdapter(this.getConfig().defaults.workingDir);
-    mirrorScan(this.tasks, await adapter.scan());
+    const tickets = await adapter.scan();
+    this.lastScan = tickets;
+    this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
+    mirrorScan(this.tasks, tickets);
     this.onMirrored();
+  }
+
+  /**
+   * Query-time Map rollup (D7): each Map from the last scan paired with the
+   * mirrored Tasks that point at it. Not stored — recomputed per call from the
+   * last poll's scan and the current mirrored Tasks. Empty before the first poll.
+   */
+  maps(): DerivedMap[] {
+    return deriveMaps(this.lastScan, this.tasks.list().filter((t) => t.origin === 'mirrored'));
+  }
+
+  /** The tracker URL for a mirrored Task's ref, from the last scan; null for native Tasks or before a poll. */
+  urlFor(ref: number | null): string | null {
+    return ref === null ? null : (this.urlByRef.get(ref) ?? null);
   }
 
   /**

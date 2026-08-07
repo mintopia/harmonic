@@ -1,5 +1,5 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, isNull, notInArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { apiKeys, runs, settings, type ApiKeyRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
@@ -87,7 +87,7 @@ export class AuthService {
 
   createKey(
     name: string,
-    opts: { scope?: 'full' | 'run' | 'conversation'; runId?: number; conversationId?: number } = {},
+    opts: { scope?: 'full' | 'run' | 'conversation' | 'read'; runId?: number; conversationId?: number } = {},
   ): { key: ApiKeyRow; token: string } {
     const token = KEY_PREFIX + randomBytes(24).toString('hex');
     const key = this.db
@@ -115,12 +115,12 @@ export class AuthService {
     return row;
   }
 
-  /** Operator API Keys only — Run Keys are machine credentials, never listed. */
+  /** Operator-created API Keys (full + read) — Run/Conversation Keys are machine credentials, never listed. */
   listKeys(): Omit<ApiKeyRow, 'tokenHash'>[] {
     return this.db
       .select()
       .from(apiKeys)
-      .where(eq(apiKeys.scope, 'full'))
+      .where(inArray(apiKeys.scope, ['full', 'read']))
       .orderBy(desc(apiKeys.createdAt))
       .all()
       .map(({ tokenHash: _hash, ...rest }) => rest);
