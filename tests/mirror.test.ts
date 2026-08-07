@@ -95,14 +95,54 @@ describe('mirrorScan upsert', () => {
     expect(second.drive).toBe('hitl'); // Harmonic-owned drive preserved
   });
 
-  it('closed ticket → completed; open blocker → blocked; Maps are not mirrored', () => {
+  it('closed ticket → completed; open blocker → blocked via a real edge; Maps not mirrored', () => {
     const results = mirrorScan(tasks, [
-      ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ number: 1 }), // open blocker
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
       ticket({ number: 3, isMap: true, labels: ['wayfinder:map'] }),
     ]);
-    expect(results.map((t) => t.state)).toEqual(['completed', 'blocked']); // map skipped → only 2
+    expect(results.map((t) => t.state)).toEqual(['ready', 'blocked']); // map skipped → only 2
+    const [blocker, dependent] = results;
+    expect(tasks.dependsOn(dependent!.id)).toEqual([blocker!.id]); // blockedBy → Dependency edge
     expect(tasks.list().some((t) => t.trackerRef === 3)).toBe(false);
+  });
+
+  it('close-blocker → blocker completed → dependent unblocks to ready', () => {
+    // First poll: blocker open → dependent blocked.
+    mirrorScan(tasks, [
+      ticket({ number: 1 }),
+      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
+    ]);
+    // Second poll: blocker's issue closed → blocker completed → dependent ready.
+    const results = mirrorScan(tasks, [
+      ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
+    ]);
+    expect(results.map((t) => t.state)).toEqual(['completed', 'ready']);
+  });
+
+  it('reconcile never interrupts a running Run (nothing cascades)', () => {
+    const [, dependent] = mirrorScan(tasks, [
+      ticket({ number: 1 }),
+      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
+    ]);
+    tasks.setState(dependent!.id, 'running'); // Auto-Runner picked it up
+    // Blocker closes on the next poll — the running dependent must stay running.
+    const results = mirrorScan(tasks, [
+      ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
+      ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
+    ]);
+    expect(results[1]!.state).toBe('running');
+  });
+
+  it('operator cannot add/remove an edge whose dependent is a mirrored Task', () => {
+    const [mirrored] = mirrorScan(tasks, [ticket({ number: 5, labels: ['ready-for-agent'] })]);
+    const native = tasks.create({ prompt: 'native' });
+    expect(() => tasks.addDependency(mirrored!.id, native.id)).toThrow(/mirrored/);
+    expect(() => tasks.removeDependency(mirrored!.id, native.id)).toThrow(/mirrored/);
+    // A native Task MAY still depend on a mirrored one (the dependent is native).
+    const dependent = tasks.addDependency(native.id, mirrored!.id);
+    expect(dependent.dependsOn).toEqual([mirrored!.id]);
   });
 });
 

@@ -27,10 +27,8 @@ export function deriveRole(ticket: Ticket): MirroredRole {
 }
 
 const mirrorPrompt = (t: Ticket): string => (t.body.trim() ? `${t.title}\n\n${t.body.trim()}` : t.title);
-const openState = (t: Ticket): 'ready' | 'blocked' =>
-  t.blockedBy.some((b) => b.state === 'open') ? 'blocked' : 'ready';
 
-/** The upsert input for one ticket — role derived, state axis resolved. */
+/** The upsert input for one ticket — role derived, open/closed axis resolved. */
 export function toMirrorInput(ticket: Ticket): MirrorInput {
   return {
     trackerRef: ticket.number,
@@ -38,17 +36,30 @@ export function toMirrorInput(ticket: Ticket): MirrorInput {
     ...deriveRole(ticket),
     mapRef: ticket.parent,
     closed: ticket.state === 'closed',
-    openState: openState(ticket),
   };
 }
 
 /**
- * Poll step: mirror every non-Map ticket into a Task 1:1, idempotent across
- * re-polls (keyed on trackerRef). Maps are derived, not mirrored — see
- * {@link deriveMaps}.
+ * Poll step: mirror every non-Map ticket into a Task 1:1 (idempotent across
+ * re-polls, keyed on trackerRef), then project each ticket's `blockedBy` onto
+ * real Dependency edges so native + mirrored share one blocking model and one
+ * blocked→ready derivation (issue #31). `blocking` never wires (double-edge),
+ * `parent`→mapRef (never an edge). A blocker referencing a ticket outside this
+ * scan (e.g. a Map) has no mirrored Task and is skipped. Maps are derived, not
+ * mirrored — see {@link deriveMaps}.
  */
 export function mirrorScan(tasks: TaskService, tickets: Ticket[]): TaskRow[] {
-  return tickets.filter((t) => !t.isMap).map((t) => tasks.upsertMirrored(toMirrorInput(t)));
+  const issues = tickets.filter((t) => !t.isMap);
+  const rows = issues.map((t) => tasks.upsertMirrored(toMirrorInput(t)));
+  const idByRef = new Map(rows.map((r) => [r.trackerRef!, r.id]));
+  issues.forEach((t, i) => {
+    const blockerIds = t.blockedBy
+      .map((b) => idByRef.get(b.number))
+      .filter((id): id is number => id !== undefined);
+    tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
+  });
+  // Re-fetch: reconcile may have re-derived blocked⇄ready after the upsert snapshot.
+  return rows.map((r) => tasks.get(r.id));
 }
 
 export interface DerivedMap {

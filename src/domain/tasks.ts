@@ -93,8 +93,6 @@ export interface MirrorInput {
   mapRef: number | null;
   /** The tracker open/closed axis; closed → completed. */
   closed: boolean;
-  /** Resting state for an open ticket: blocked when a tracker blocker is open, else ready. */
-  openState: 'ready' | 'blocked';
 }
 
 export class TaskService {
@@ -152,7 +150,9 @@ export class TaskService {
    * but never re-seeds `drive` (that protects a runtime Escalation) and never
    * moves a Task off `running` (nothing interrupts a live Run). A closed ticket
    * settles a resting Task to completed; reopen reconciliation is left to the
-   * lifecycle work downstream. Mirrored Tasks never enter draft or awaiting-review.
+   * lifecycle work downstream. blocked⇄ready is not set here — it derives from
+   * the projected Dependency edges (see {@link reconcileMirroredDeps}, issue
+   * #31). Mirrored Tasks never enter draft or awaiting-review.
    */
   upsertMirrored(input: MirrorInput): TaskRow {
     const existing = this.db.select().from(tasks).where(eq(tasks.trackerRef, input.trackerRef)).get();
@@ -163,9 +163,7 @@ export class TaskService {
           ? existing.state
           : input.closed
             ? 'completed'
-            : existing.state === 'ready' || existing.state === 'blocked'
-              ? input.openState
-              : existing.state;
+            : existing.state;
       const row = this.db
         .update(tasks)
         .set({
@@ -187,7 +185,9 @@ export class TaskService {
       .values({
         prompt: input.prompt,
         ...this.resolveExecution(),
-        state: input.closed ? 'completed' : input.openState,
+        // Seed open Tasks ready; reconcileMirroredDeps re-derives blocked once
+        // edges are wired in the same poll.
+        state: input.closed ? 'completed' : 'ready',
         origin: 'mirrored',
         trackerRef: input.trackerRef,
         workflow: input.workflow,
@@ -407,6 +407,39 @@ export class TaskService {
       .map((r) => r.id);
   }
 
+  /** A mirrored Task's blocking is the tracker's `blockedBy` projection — read-only
+   * to operators; edges only change where the dependent is a native Task (issue #31). */
+  private assertOperatorEditable(task: TaskRow): void {
+    if (task.origin === 'mirrored') {
+      throw new DomainError('conflict', `task ${task.id} is mirrored; its blocking is tracker-owned and read-only`);
+    }
+  }
+
+  /**
+   * Set a mirrored Task's dependency edges to exactly `dependsOnIds` — the
+   * tracker's `blockedBy` projected onto real edges (issue #31) — then re-derive
+   * blocked⇄ready. Edges change for any Task, but the re-derive only flips a
+   * resting Task: a running Run is never interrupted and nothing cascades.
+   */
+  reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): void {
+    const desired = new Set(dependsOnIds.filter((id) => id !== taskId));
+    const current = new Set(this.dependsOn(taskId));
+    for (const id of desired) {
+      if (!current.has(id)) {
+        this.db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
+      }
+    }
+    for (const id of current) {
+      if (!desired.has(id)) {
+        this.db
+          .delete(taskDependencies)
+          .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
+          .run();
+      }
+    }
+    this.rederiveBlocked(taskId);
+  }
+
   private hasUnmet(depIds: number[]): boolean {
     if (depIds.length === 0) return false;
     const states = this.db
@@ -419,6 +452,7 @@ export class TaskService {
 
   addDependency(taskId: number, dependsOnId: number): TaskWithDeps {
     const task = this.get(taskId);
+    this.assertOperatorEditable(task);
     this.get(dependsOnId);
     if (!EDITABLE_STATES.includes(task.state) && task.state !== 'blocked') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft, ready, or blocked tasks`);
@@ -432,7 +466,7 @@ export class TaskService {
   }
 
   removeDependency(taskId: number, dependsOnId: number): TaskWithDeps {
-    this.get(taskId);
+    this.assertOperatorEditable(this.get(taskId));
     this.db
       .delete(taskDependencies)
       .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, dependsOnId)))
