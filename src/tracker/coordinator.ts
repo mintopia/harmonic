@@ -17,7 +17,11 @@ export class MirrorCoordinator {
   /** Harmonic's own tracker login — the assignee `claim` places; resolved once. Null until then. */
   private me: string | null = null;
 
-  constructor(private readonly tasks: TaskService) {}
+  /** One coordinator per tracker-enabled Workspace (issue #45): its scan cache and reconcile see that Workspace's Tasks only. */
+  constructor(
+    private readonly tasks: TaskService,
+    private readonly workspaceId: number,
+  ) {}
 
   /** Cache the poll's adapter + scan and resolve our identity, before any pick reads {@link foreignAssignee}. */
   async observe(adapter: TrackerAdapter, scan: Ticket[]): Promise<void> {
@@ -74,7 +78,7 @@ export class MirrorCoordinator {
    */
   async reconcile(): Promise<void> {
     if (!this.adapter) return;
-    for (const task of this.tasks.list()) {
+    for (const task of this.tasks.list({ workspaceId: this.workspaceId })) {
       if (task.origin !== 'mirrored' || task.trackerRef == null) continue;
       const ticket = this.byRef.get(task.trackerRef);
       if (!ticket) continue;

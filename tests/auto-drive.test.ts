@@ -105,7 +105,7 @@ describe('Drive Prompt fill (issue #33)', () => {
       drive: { prompt: '{skill} {ref} {url}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1 },
     };
     const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
-    const drive = new AutoDrive(() => config, (ref) => (ref === 9 ? 'https://x/9' : null));
+    const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
     expect(drive.prompt(research)).toBe('/research 9 https://x/9\n\nInvestigate X::why');
   });
 });

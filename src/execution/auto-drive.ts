@@ -33,7 +33,7 @@ export function buildDrivePrompt(
 export class AutoDrive {
   constructor(
     private readonly getConfig: () => AppConfig,
-    private readonly urlFor: (ref: number | null) => string | null,
+    private readonly urlFor: (task: TaskRow) => string | null,
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     private readonly git = Git,
   ) {}
@@ -49,7 +49,7 @@ export class AutoDrive {
     return buildDrivePrompt(this.getConfig().drive.prompt, {
       skill: skillFor(task),
       ref: String(task.trackerRef ?? ''),
-      url: this.urlFor(task.trackerRef) ?? '',
+      url: this.urlFor(task) ?? '',
       title,
       body,
     });

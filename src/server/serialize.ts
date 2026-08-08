@@ -48,8 +48,8 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
     ...task,
     workspaceId: atRestWorkspaceId(task.workspaceId),
     cost: costOfUsages(usages, pricesOf(ctx)),
-    url: ctx.trackerPoller.urlFor(task.trackerRef),
-    mapTitle: ctx.trackerPoller.titleForMap(task.mapRef),
+    url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
+    mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
   };

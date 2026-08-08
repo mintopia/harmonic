@@ -12,6 +12,7 @@ import { errorResponse } from '../schemas.js';
  */
 const mapSchema = z
   .object({
+    workspaceId: z.number().meta({ example: 1 }),
     ref: z.number().meta({ example: 19 }),
     title: z.string().meta({ example: 'Wayfinder' }),
     url: z.string().meta({ example: 'https://github.com/mintopia/harmonic/issues/19' }),
@@ -25,6 +26,9 @@ const mapSchema = z
 const mapsListResponseSchema = z.object({ maps: z.array(mapSchema) });
 
 const refParamsSchema = z.object({ ref: z.coerce.number().int().meta({ example: 19 }) });
+const workspaceQuerySchema = z.object({
+  workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
+});
 
 export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -36,11 +40,12 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Maps'],
         description:
-          'The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts. Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.',
+          "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
+        querystring: workspaceQuerySchema,
         response: { 200: mapsListResponseSchema.describe('Every derived Map, newest tracker scan.') },
       },
     },
-    async () => ({ maps: ctx.trackerPoller.maps() }),
+    async (req) => ({ maps: ctx.trackerManager.maps(req.query.workspaceId) }),
   );
 
   app.get(
@@ -48,8 +53,10 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Maps'],
-        description: 'One derived Map by its tracker ref. Reachable with a read-scoped API Key.',
+        description:
+          'One derived Map by its tracker ref. `?workspaceId=` disambiguates a ref shared across repos (issue #45). Reachable with a read-scoped API Key.',
         params: refParamsSchema,
+        querystring: workspaceQuerySchema,
         response: {
           200: mapSchema.describe('The Map, with its member Tasks and per-state counts.'),
           404: errorResponse('No Map with that ref in the last tracker scan.'),
@@ -57,7 +64,7 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const map = ctx.trackerPoller.maps().find((m) => m.ref === req.params.ref);
+      const map = ctx.trackerManager.maps(req.query.workspaceId).find((m) => m.ref === req.params.ref);
       if (!map) throw new DomainError('not_found', `no map with ref ${req.params.ref}`);
       return map;
     },

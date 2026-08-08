@@ -64,11 +64,13 @@ describe('MirrorCoordinator (issue #32)', () => {
   let dir: string;
   let db: Db;
   let tasks: TaskService;
+  let wsId: number;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-coord-'));
     db = openDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    wsId = allWorkspaces(db)()[0]!.id;
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -79,7 +81,7 @@ describe('MirrorCoordinator (issue #32)', () => {
     const native = tasks.create({ prompt: 'n', state: 'ready' });
 
     const { adapter } = fakeAdapter();
-    const coord = new MirrorCoordinator(tasks);
+    const coord = new MirrorCoordinator(tasks, wsId);
     await coord.observe(adapter, [ticket(1, ['human']), ticket(2, ['me']), ticket(3, [])]);
 
     expect(coord.foreignAssignee(tasks.get(foreign.id))).toBe(true);
@@ -93,21 +95,21 @@ describe('MirrorCoordinator (issue #32)', () => {
 
     const grabbed = fakeAdapter();
     grabbed.setRead(ticket(7, ['human']));
-    const coordA = new MirrorCoordinator(tasks);
+    const coordA = new MirrorCoordinator(tasks, wsId);
     await coordA.observe(grabbed.adapter, [ticket(7, [])]);
     expect(await coordA.recheckAndClaim(tasks.get(task.id))).toBe('yield');
     expect(grabbed.calls.claim).toEqual([]);
 
     const open = fakeAdapter();
     open.setRead(ticket(7, []));
-    const coordB = new MirrorCoordinator(tasks);
+    const coordB = new MirrorCoordinator(tasks, wsId);
     await coordB.observe(open.adapter, [ticket(7, [])]);
     expect(await coordB.recheckAndClaim(tasks.get(task.id))).toBe('spawn');
     expect(open.calls.claim).toEqual([7]);
 
     const failing = fakeAdapter({ claimThrows: true });
     failing.setRead(ticket(7, []));
-    const coordC = new MirrorCoordinator(tasks);
+    const coordC = new MirrorCoordinator(tasks, wsId);
     await coordC.observe(failing.adapter, [ticket(7, [])]);
     expect(await coordC.recheckAndClaim(tasks.get(task.id))).toBe('spawn'); // best-effort: spawn anyway
   });
@@ -123,7 +125,7 @@ describe('MirrorCoordinator (issue #32)', () => {
     tasks.upsertMirrored(mirrored(13, { closed: true })); // completed → close path (D5), not us
 
     const { adapter, calls } = fakeAdapter();
-    const coord = new MirrorCoordinator(tasks);
+    const coord = new MirrorCoordinator(tasks, wsId);
     await coord.observe(adapter, [
       ticket(10, []), // running but unassigned → re-claim
       ticket(11, ['me']), // escalated but still ours → release

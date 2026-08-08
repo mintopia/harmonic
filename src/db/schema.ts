@@ -24,13 +24,19 @@ export type TaskState = (typeof TASK_STATES)[number];
 
 /**
  * A Workspace (ADR-0008): a named Working Directory, unique by absolute
- * path. Owns a board of Tasks/Conversations; execution settings stay global
- * for now (a later slice splits them per-Workspace).
+ * path. Owns a board of Tasks/Conversations. Its tracker mirroring is
+ * per-Workspace (issue #45): each tracker-enabled Workspace polls its own
+ * Working Directory on its own interval into its own board. The remaining
+ * execution settings stay global for now.
  */
 export const workspaces = sqliteTable('workspaces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   workingDir: text('working_dir').notNull(),
+  /** Tracker mirroring for this Workspace (issue #45). Off ⇒ no poll loop. */
+  trackerEnabled: integer('tracker_enabled', { mode: 'boolean' }).notNull().default(false),
+  /** How often this Workspace's poll loop scans its repo, in seconds. */
+  trackerPollIntervalSeconds: integer('tracker_poll_interval_seconds').notNull().default(60),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
@@ -78,9 +84,11 @@ export const tasks = sqliteTable('tasks', {
   // withDeps looks up reattempts (reverse link) per task on the board/table
   // hot path; index the FK so that stays cheap as the table grows.
   index('tasks_reattempt_of_idx').on(t.reattemptOf),
-  // The mirror upsert looks up by trackerRef every poll; unique enforces 1:1
-  // (SQLite treats NULLs as distinct, so native Tasks are unconstrained).
-  uniqueIndex('tasks_tracker_ref_idx').on(t.trackerRef),
+  // The mirror upsert looks up by (workspaceId, trackerRef) every poll; unique
+  // enforces 1:1 *per Workspace* (issue #45) — two repos sharing an issue
+  // number mirror into distinct Tasks. SQLite treats NULLs as distinct, so
+  // native Tasks (null trackerRef) are unconstrained.
+  uniqueIndex('tasks_tracker_ref_idx').on(t.workspaceId, t.trackerRef),
   // The board/table's list scope filters by the active Workspace on every load.
   index('tasks_workspace_id_idx').on(t.workspaceId),
 ]);

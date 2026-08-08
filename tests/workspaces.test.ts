@@ -78,6 +78,32 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect((await server.api('GET', '/api/workspaces/999999')).status).toBe(404);
     expect((await server.api('PATCH', '/api/workspaces/999999', { name: 'x' })).status).toBe(404);
   });
+
+  it('carries per-Workspace tracker settings, defaulting off @ 60s, editable via PATCH (issue #45)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-tracker-'));
+    const created = await server.api('POST', '/api/workspaces', { name: 'Tracked', workingDir: dir });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ trackerEnabled: false, trackerPollIntervalSeconds: 60 });
+
+    const on = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      trackerEnabled: true,
+      trackerPollIntervalSeconds: 120,
+    });
+    expect(on.status).toBe(200);
+    expect(on.body).toMatchObject({ trackerEnabled: true, trackerPollIntervalSeconds: 120 });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('DELETE removes a Workspace and 404s an unknown id (issue #45)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-del-'));
+    const created = await server.api('POST', '/api/workspaces', { name: 'Doomed', workingDir: dir });
+    expect(created.status).toBe(201);
+
+    expect((await server.api('DELETE', `/api/workspaces/${created.body.id}`)).status).toBe(204);
+    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).status).toBe(404);
+    expect((await server.api('DELETE', '/api/workspaces/999999')).status).toBe(404);
+    rmSync(dir, { recursive: true, force: true });
+  });
 });
 
 describe('Task/Conversation binding + scoping (issue #41)', () => {

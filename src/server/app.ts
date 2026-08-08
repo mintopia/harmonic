@@ -28,8 +28,8 @@ import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { AutoDrive } from '../execution/auto-drive.js';
-import { TrackerPoller } from '../tracker/poller.js';
-import { MirrorCoordinator } from '../tracker/coordinator.js';
+import { TrackerPollerManager } from '../tracker/manager.js';
+import type { MirrorClaim } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { mapRoutes } from './routes/maps.js';
@@ -110,7 +110,7 @@ export interface AppContext {
   permissionRules: PermissionRuleStore;
   review: ReviewService;
   autoRunner: AutoRunner;
-  trackerPoller: TrackerPoller;
+  trackerManager: TrackerPollerManager;
   auth: AuthService;
   channels: ChannelService;
   notifier: Notifier;
@@ -176,12 +176,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // any still marked active is ended; its transcript survives read-only (issue 15).
   conversations.markActiveEnded();
   // Auto-drive afk mirrored Tasks (issue #33): the Drive Prompt + completion /
-  // failure decisions. Its {url} comes from the poller's last scan; the poller
-  // is built below, so bind it late through this holder.
-  let trackerPollerRef: TrackerPoller | undefined;
+  // failure decisions. Its {url} comes from the Task's Workspace poll loop's
+  // last scan; the manager is built below, so bind it late through this holder.
+  let trackerManagerRef: TrackerPollerManager | undefined;
   const autoDrive = new AutoDrive(
     () => configStore.get(),
-    (ref) => trackerPollerRef?.urlFor(ref) ?? null,
+    (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
   );
   const runner = new Runner(runs, tasks, () => configStore.get(), {
     events: {
@@ -203,14 +203,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
     return Git.merge(task.workingDir, run.baseBranch, run.branch);
   });
-  // The advisory-assignment coordinator (issue #32): the Auto-Runner reads its
-  // pick filter + claim step, the poller feeds it each scan and reconciles.
-  const mirror = new MirrorCoordinator(tasks);
+  // The advisory-assignment coordinator (issue #32) is per-Workspace (issue
+  // #45); the Auto-Runner routes a mirrored Task's pick filter + claim step to
+  // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
+  // loop ⇒ don't gate: foreign=false, decision=spawn).
+  const mirror: MirrorClaim = {
+    foreignAssignee: (task) => trackerManagerRef?.coordinatorFor(task.workspaceId)?.foreignAssignee(task) ?? false,
+    recheckAndClaim: async (task) =>
+      (await trackerManagerRef?.coordinatorFor(task.workspaceId)?.recheckAndClaim(task)) ?? 'spawn',
+  };
   const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get(), mirror);
-  // Mirror tracker issues into Tasks on a poll loop (issue #30); each poll
-  // pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
-  const trackerPoller = new TrackerPoller(tasks, () => configStore.get(), undefined, () => autoRunner.poke(), undefined, mirror);
-  trackerPollerRef = trackerPoller; // late-bind for AutoDrive's {url} resolver
+  // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
+  // poll pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
+  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), undefined, () => autoRunner.poke());
+  trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   bus.on('task_changed', (task) => {
     if (task.state === 'ready') autoRunner.poke();
   });
@@ -229,7 +235,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerPoller, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -244,7 +250,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
   app.addHook('onClose', async () => {
-    trackerPoller.stop();
+    trackerManager.stopAll();
     runner.shutdown();
     conversationDriver.shutdown();
   });
@@ -441,7 +447,7 @@ on reconnect or when it sees a \`mapRef\` it has not resolved yet.`;
       conversationDriver.mcpUrl = mcpUrl;
     }
     autoRunner.poke();
-    trackerPoller.start();
+    trackerManager.sync();
   });
   await app.register(wsRoutes, { prefix: '/api' });
 

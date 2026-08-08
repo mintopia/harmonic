@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
-import { defaultConfig, type AppConfig } from '../src/config.js';
+import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
@@ -49,38 +49,35 @@ describe('TrackerPoller.poll', () => {
   let dir: string;
   let db: Db;
   let tasks: TaskService;
+  let wsId: number;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-poller-'));
     db = openDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    wsId = allWorkspaces(db)()[0]!.id;
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  const configWith = (over: Partial<AppConfig['tracker']>): AppConfig => ({
-    ...defaultConfig(),
-    tracker: { ...defaultConfig().tracker, ...over },
-  });
-
-  it('scans, mirrors 1:1, and pokes downstream when enabled', async () => {
+  it('scans, mirrors 1:1 into its Workspace, and pokes downstream', async () => {
     const { adapter, scans } = stubAdapter([
       ticket({ number: 42, title: 'Add rate limiting', labels: ['ready-for-agent'] }),
       ticket({ number: 43, isMap: true, labels: ['wayfinder:map'] }), // not mirrored
     ]);
     let pokes = 0;
-    const poller = new TrackerPoller(tasks, () => configWith({ enabled: true }), async () => adapter, () => pokes++);
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter, () => pokes++);
 
     await poller.poll();
 
     expect(scans()).toBe(1);
     expect(tasks.list()).toHaveLength(1); // map skipped
-    expect(tasks.list()[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready' });
+    expect(tasks.list()[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
     expect(pokes).toBe(1);
   });
 
   it('is idempotent across polls: re-poll upserts, never duplicates', async () => {
     const { adapter } = stubAdapter([ticket({ number: 7, labels: ['ready-for-agent'] })]);
-    const poller = new TrackerPoller(tasks, () => configWith({ enabled: true }), async () => adapter);
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
     await poller.poll();
     await poller.poll();
     expect(tasks.list()).toHaveLength(1);
@@ -92,7 +89,7 @@ describe('TrackerPoller.poll', () => {
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'], url: 'https://x/30' }),
       ticket({ number: 31, parent: 19, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
     ]);
-    const poller = new TrackerPoller(tasks, () => configWith({ enabled: true }), async () => adapter);
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
     expect(poller.maps()).toEqual([]); // empty before the first poll
     await poller.poll();
@@ -108,20 +105,5 @@ describe('TrackerPoller.poll', () => {
     expect(poller.titleForMap(19)).toBe('Wayfinder'); // mapRef → Map title (issue #34)
     expect(poller.titleForMap(999)).toBeNull(); // unknown ref
     expect(poller.titleForMap(null)).toBeNull(); // unmapped Task
-  });
-
-  it('no-ops when disabled — never resolves the adapter (safe by default)', async () => {
-    let resolved = false;
-    const poller = new TrackerPoller(
-      tasks,
-      () => configWith({ enabled: false }),
-      async () => {
-        resolved = true;
-        throw new Error('should not resolve when disabled');
-      },
-    );
-    await poller.poll();
-    expect(resolved).toBe(false);
-    expect(tasks.list()).toHaveLength(0);
   });
 });

@@ -105,9 +105,12 @@ export const appConfigSchema = z.object({
     maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
   }),
   /**
-   * Tracker mirroring poll loop (issue #30). When enabled, scans the
-   * `defaults.workingDir` repo's tracker every `pollIntervalSeconds` and
-   * upserts each issue into a mirrored Task. Deliberate opt-in; default off.
+   * Vestigial global tracker settings. Superseded by per-Workspace tracker
+   * mirroring (issue #45): each Workspace now owns its own `trackerEnabled` +
+   * `trackerPollIntervalSeconds` and its own poll loop. Kept in the schema so
+   * existing configs/clients still validate; nothing reads it. The Settings-UI
+   * split that removes it belongs to #42's config-split slice.
+   * ponytail: dead config kept to avoid churning config/openapi/UI; delete with #42's Settings split.
    */
   tracker: z.object({
     enabled: z.boolean().meta({ example: false }),

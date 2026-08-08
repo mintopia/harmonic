@@ -128,7 +128,6 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       // the actual validation boundary, same as before this migration.
       const updated = ctx.configStore.update(req.body as DeepPartial<AppConfig>);
       ctx.autoRunner.poke();
-      void ctx.trackerPoller.poll().catch(() => {}); // enabling tracker mirrors now, not next interval
       return updated;
     },
   );
@@ -152,7 +151,6 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const updated = ctx.configStore.replace(req.body as AppConfig);
       ctx.autoRunner.poke();
-      void ctx.trackerPoller.poll().catch(() => {}); // enabling tracker mirrors now, not next interval
       return updated;
     },
   );

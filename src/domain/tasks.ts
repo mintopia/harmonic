@@ -164,7 +164,8 @@ export class TaskService {
 
   /**
    * Upsert a mirrored Task from a tracker issue (issue #30), keyed on
-   * trackerRef so re-polls are idempotent. The tracker owns the issue's shape;
+   * (workspaceId, trackerRef) so re-polls are idempotent and each Workspace's
+   * poll loop only ever touches its own board (issue #45). The tracker owns the issue's shape;
    * Harmonic owns execution state — so a re-poll refreshes prompt/role/mapRef
    * but never re-seeds `drive` (that protects a runtime Escalation) and never
    * moves a Task off `running` (nothing interrupts a live Run). A closed ticket
@@ -173,8 +174,15 @@ export class TaskService {
    * the projected Dependency edges (see {@link reconcileMirroredDeps}, issue
    * #31). Mirrored Tasks never enter draft or awaiting-review.
    */
-  upsertMirrored(input: MirrorInput): TaskRow {
-    const existing = this.db.select().from(tasks).where(eq(tasks.trackerRef, input.trackerRef)).get();
+  upsertMirrored(input: MirrorInput, workspaceId?: number): TaskRow {
+    // Each Workspace's poll loop passes its own id; the default-Workspace
+    // fallback (ADR-0008) keeps callers that predate per-Workspace tracking working.
+    const workspace = this.resolveWorkspace(workspaceId);
+    const existing = this.db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef)))
+      .get();
     const now = Date.now();
     if (existing) {
       const state: TaskState =
@@ -199,9 +207,9 @@ export class TaskService {
       this.onChanged(row);
       return row;
     }
-    // The poller is not yet Workspace-aware (issue #45); every mirrored Task
-    // lands in the earliest-created Workspace, matching pre-Workspace behaviour.
-    const workspace = this.resolveWorkspace();
+    // Each Workspace's poll loop mirrors into its own board (issue #45): the
+    // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
+    // the upsert so overlapping issue numbers across repos stay distinct.
     const row = this.db
       .insert(tasks)
       .values({

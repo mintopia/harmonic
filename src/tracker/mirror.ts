@@ -48,9 +48,9 @@ export function toMirrorInput(ticket: Ticket): MirrorInput {
  * scan (e.g. a Map) has no mirrored Task and is skipped. Maps are derived, not
  * mirrored — see {@link deriveMaps}.
  */
-export function mirrorScan(tasks: TaskService, tickets: Ticket[]): TaskRow[] {
+export function mirrorScan(tasks: TaskService, tickets: Ticket[], workspaceId: number): TaskRow[] {
   const issues = tickets.filter((t) => !t.isMap);
-  const rows = issues.map((t) => tasks.upsertMirrored(toMirrorInput(t)));
+  const rows = issues.map((t) => tasks.upsertMirrored(toMirrorInput(t), workspaceId));
   const idByRef = new Map(rows.map((r) => [r.trackerRef!, r.id]));
   issues.forEach((t, i) => {
     const blockerIds = t.blockedBy
@@ -63,6 +63,8 @@ export function mirrorScan(tasks: TaskService, tickets: Ticket[]): TaskRow[] {
 }
 
 export interface DerivedMap {
+  /** The owning Workspace (issue #45) — disambiguates Map refs that collide across repos. */
+  workspaceId: number;
   ref: number;
   title: string;
   url: string;
@@ -72,16 +74,17 @@ export interface DerivedMap {
 
 /**
  * Query-time Map rollup (D2): each `wayfinder:map` ticket paired with the
- * mirrored Tasks that point at it via mapRef. Not stored — recomputed from a
- * poll's scan and the current mirrored Tasks.
+ * mirrored Tasks that point at it via mapRef, stamped with the polling
+ * Workspace. Not stored — recomputed from a poll's scan and the current
+ * mirrored Tasks.
  */
-export function deriveMaps(tickets: Ticket[], mirrored: TaskRow[]): DerivedMap[] {
+export function deriveMaps(tickets: Ticket[], mirrored: TaskRow[], workspaceId: number): DerivedMap[] {
   return tickets
     .filter((t) => t.isMap)
     .map((m) => {
       const members = mirrored.filter((task) => task.mapRef === m.number);
       const counts: Record<string, number> = {};
       for (const task of members) counts[task.state] = (counts[task.state] ?? 0) + 1;
-      return { ref: m.number, title: m.title, url: m.url, taskRefs: members.map((t) => t.trackerRef!), counts };
+      return { workspaceId, ref: m.number, title: m.title, url: m.url, taskRefs: members.map((t) => t.trackerRef!), counts };
     });
 }

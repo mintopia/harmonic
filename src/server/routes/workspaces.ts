@@ -11,6 +11,8 @@ const workspaceSchema = z
     id: z.number().meta({ example: 1 }),
     name: z.string().meta({ example: 'Harmonic' }),
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
+    trackerEnabled: z.boolean().meta({ example: false }),
+    trackerPollIntervalSeconds: z.number().meta({ example: 60 }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -51,7 +53,11 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req, reply) => reply.status(201).send(ctx.workspaces.create(req.body)),
+    async (req, reply) => {
+      const workspace = ctx.workspaces.create(req.body);
+      ctx.trackerManager.sync(); // created with tracker on ⇒ start its poll loop now
+      return reply.status(201).send(workspace);
+    },
   );
 
   app.get(
@@ -89,6 +95,33 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => ctx.workspaces.update(req.params.id, req.body),
+    async (req) => {
+      const workspace = ctx.workspaces.update(req.params.id, req.body);
+      ctx.trackerManager.sync(); // toggling tracker / repointing the repo / changing the interval takes effect now
+      return workspace;
+    },
+  );
+
+  app.delete(
+    '/workspaces/:id',
+    {
+      schema: {
+        tags: ['Workspaces'],
+        description:
+          'Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses the last Workspace or one with a running Task. Operator only; not reachable with a run-scoped Run Key.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: idParamsSchema,
+        response: {
+          204: z.null().describe('The Workspace and its board were deleted.'),
+          404: errorResponse('No Workspace has that id.'),
+          409: errorResponse('It is the only Workspace, or it has a running Task.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      ctx.workspaces.delete(req.params.id);
+      ctx.trackerManager.sync(); // the deleted Workspace's poll loop stops here
+      return reply.status(204).send(null);
+    },
   );
 }

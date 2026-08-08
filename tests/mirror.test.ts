@@ -57,16 +57,19 @@ describe('mirrorScan upsert', () => {
   let dir: string;
   let db: Db;
   let tasks: TaskService;
+  let wsId: number;
+  const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mirror-'));
     db = openDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    wsId = allWorkspaces(db)()[0]!.id;
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it('mirrors a fixture ticket into a ready mirrored Task, filling execution defaults', () => {
-    const [task] = mirrorScan(tasks, [
+    const [task] = mscan([
       ticket({ number: 42, title: 'Add rate limiting', body: 'per CONTEXT.md', labels: ['ready-for-agent'] }),
     ]);
     expect(task).toMatchObject({
@@ -84,7 +87,7 @@ describe('mirrorScan upsert', () => {
   });
 
   it('unescalate flips an escalated Task back to afk and clears the flag', () => {
-    const t = mirrorScan(tasks, [ticket({ number: 9, labels: ['ready-for-agent'] })])[0]!;
+    const t = mscan([ticket({ number: 9, labels: ['ready-for-agent'] })])[0]!;
     tasks.escalate(t.id); // afk Run handed to a human
     expect(tasks.get(t.id)).toMatchObject({ drive: 'hitl', escalated: true });
 
@@ -99,11 +102,11 @@ describe('mirrorScan upsert', () => {
 
   it('is idempotent across re-polls: 1:1, updates in place, preserves drive', () => {
     const t = ticket({ number: 7, labels: ['wayfinder:research'] });
-    const first = mirrorScan(tasks, [t])[0]!;
+    const first = mscan([t])[0]!;
     // Human/runtime flips drive to hitl (escalation); a re-poll must not re-seed it.
     tasks.setState(first.id, 'ready');
     db.update(tasksTable).set({ drive: 'hitl' }).where(eq(tasksTable.id, first.id)).run();
-    const second = mirrorScan(tasks, [{ ...t, title: 'Retitled on the tracker' }])[0]!;
+    const second = mscan([{ ...t, title: 'Retitled on the tracker' }])[0]!;
     expect(second.id).toBe(first.id); // same row, not a duplicate
     expect(tasks.list()).toHaveLength(1);
     expect(second.prompt).toContain('Retitled on the tracker'); // shape refreshed
@@ -111,7 +114,7 @@ describe('mirrorScan upsert', () => {
   });
 
   it('closed ticket → completed; open blocker → blocked via a real edge; Maps not mirrored', () => {
-    const results = mirrorScan(tasks, [
+    const results = mscan([
       ticket({ number: 1 }), // open blocker
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
       ticket({ number: 3, isMap: true, labels: ['wayfinder:map'] }),
@@ -124,12 +127,12 @@ describe('mirrorScan upsert', () => {
 
   it('close-blocker → blocker completed → dependent unblocks to ready', () => {
     // First poll: blocker open → dependent blocked.
-    mirrorScan(tasks, [
+    mscan([
       ticket({ number: 1 }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
     ]);
     // Second poll: blocker's issue closed → blocker completed → dependent ready.
-    const results = mirrorScan(tasks, [
+    const results = mscan([
       ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
     ]);
@@ -137,13 +140,13 @@ describe('mirrorScan upsert', () => {
   });
 
   it('reconcile never interrupts a running Run (nothing cascades)', () => {
-    const [, dependent] = mirrorScan(tasks, [
+    const [, dependent] = mscan([
       ticket({ number: 1 }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
     ]);
     tasks.setState(dependent!.id, 'running'); // Auto-Runner picked it up
     // Blocker closes on the next poll — the running dependent must stay running.
-    const results = mirrorScan(tasks, [
+    const results = mscan([
       ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
     ]);
@@ -151,7 +154,7 @@ describe('mirrorScan upsert', () => {
   });
 
   it('operator cannot add/remove an edge whose dependent is a mirrored Task', () => {
-    const [mirrored] = mirrorScan(tasks, [ticket({ number: 5, labels: ['ready-for-agent'] })]);
+    const [mirrored] = mscan([ticket({ number: 5, labels: ['ready-for-agent'] })]);
     const native = tasks.create({ prompt: 'native' });
     expect(() => tasks.addDependency(mirrored!.id, native.id)).toThrow(/mirrored/);
     expect(() => tasks.removeDependency(mirrored!.id, native.id)).toThrow(/mirrored/);
@@ -166,14 +169,15 @@ describe('deriveMaps (query-time rollup)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-maps-'));
     const db = openDb(dir);
     const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const wsId = allWorkspaces(db)()[0]!.id;
     const scan = [
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'] }),
       ticket({ number: 31, parent: 19, state: 'closed' }),
       ticket({ number: 99, parent: null }), // belongs to no map
     ];
-    const mirrored = mirrorScan(tasks, scan);
-    const maps = deriveMaps(scan, mirrored);
+    const mirrored = mirrorScan(tasks, scan, wsId);
+    const maps = deriveMaps(scan, mirrored, wsId);
     expect(maps).toHaveLength(1);
     expect(maps[0]).toMatchObject({ ref: 19, title: 'Wayfinder' });
     expect(maps[0]!.taskRefs.sort()).toEqual([30, 31]);
