@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
@@ -134,6 +134,12 @@ export function App() {
   // Workspace scoping (ADR-0008): board/table/stats and the status strip only
   // ever see the active Workspace's Tasks — undefined while workspaces
   // haven't loaded yet keeps refresh() a no-op rather than fetching unscoped.
+  // The 10s poll runs unattended, so a single blip (a proxy hiccup, a
+  // truncated body — the very failures api.request() now throws on instead of
+  // returning null) must not clobber the board or flash a scary banner. Keep
+  // the last-good tasks and only surface the error once failures persist across
+  // consecutive polls; one recovered poll wipes the streak clean.
+  const failStreak = useRef(0);
   const refresh = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
@@ -143,9 +149,13 @@ export function App() {
       // socket — otherwise its state-aware footer can go stale (and keep
       // offering Accept on an already-completed task) if the ws drops.
       setOpenTask((current) => (current ? tasks.find((t) => t.id === current.id) ?? current : current));
+      failStreak.current = 0;
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // Tolerate one transient failure; surface only a sustained outage so a
+      // lone glitch never overwrites a working board with an error banner.
+      failStreak.current += 1;
+      if (failStreak.current >= 2) setError(e instanceof Error ? e.message : String(e));
     }
   }, [activeWorkspaceId]);
 

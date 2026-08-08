@@ -9,7 +9,7 @@ import type {
   RunEvent,
   Task,
   Workspace,
-} from './types';
+} from './types.js';
 
 class ApiError extends Error {
   constructor(
@@ -30,6 +30,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const text = await res.text();
   const json = text ? JSON.parse(text) : null;
   if (!res.ok) throw new ApiError(res.status, json?.error?.message ?? res.statusText);
+  // A successful response with no JSON body is a truncated/transport failure
+  // (e.g. a reverse-proxy hiccup), not a real value — every endpoint here
+  // returns a body on success (even deletes reply `{ ok: true }`). Returning
+  // the bare `null` would surface far away as a cryptic destructure crash
+  // ("null has no properties" in Firefox) the moment a caller reads a field
+  // off it; fail honestly and locally instead. A genuine 204 No Content is
+  // the one legitimate empty body.
+  if (json === null && res.status !== 204) {
+    throw new ApiError(res.status, `Empty response from ${method} ${path}`);
+  }
   return json as T;
 }
 
