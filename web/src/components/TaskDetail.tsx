@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
@@ -365,6 +365,17 @@ export function TaskDetail({
 
   const selectedRun = runs.find((r) => r.id === selectedRunId);
 
+  // Keep the Output panel pinned to the newest event as it streams — but only
+  // while the operator is already at the bottom, so we never yank them up
+  // mid-read. `stickToBottom` is tracked by the container's onScroll below.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (tab !== 'output' || !el || !stickToBottom.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [events, tab]);
+
   useEffect(() => {
     if (selectedRunId === null || !selectedRun?.branch || selectedRun.state === 'running') {
       setDiff({ status: 'idle' });
@@ -480,7 +491,14 @@ export function TaskDetail({
         {/* Panels stay mounted (toggled with `hidden`) so switching tabs
             never discards in-progress state — notably a dependency edit
             held in the Dependencies component. */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          }}
+          className="flex-1 overflow-y-auto p-4"
+        >
           <div role="tabpanel" id="task-panel-description" aria-labelledby="task-tab-description" hidden={tab !== 'description'}>
             <DescriptionTab task={task} />
           </div>
