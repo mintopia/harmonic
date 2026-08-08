@@ -13,7 +13,8 @@ import {
   rankActivity,
   tierLabel,
   usageTotalTokens,
-  type AttentionTier,
+  ATTENTION_TIERS,
+  HIGH_LOAD_FILL,
 } from '../activity-model';
 import { computeContextUsage, formatContextUsage } from '../conversation-telemetry-model';
 
@@ -41,7 +42,7 @@ function StateDot({ process }: { process: ActivityProcess }) {
   return (
     <span
       aria-hidden="true"
-      className={`size-[7px] shrink-0 rounded-full ${running ? 'animate-pulse bg-running-dot' : 'bg-faint'}`}
+      className={`size-[7px] shrink-0 rounded-full ${running ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
     />
   );
 }
@@ -52,7 +53,12 @@ function ContextCell({ process }: { process: ActivityProcess }) {
   const usage = computeContextUsage(process);
   const { value, note } = formatContextUsage(usage);
   const fill = contextFillFraction(process);
-  const tone = fill === null ? 'text-muted' : fill >= 1 ? 'text-fail' : fill >= 0.75 ? 'text-running' : 'text-muted';
+  // Gauge and its number read off the same load level, so the honest signal
+  // lands at a glance: fail once over the window, amber while hot, muted otherwise.
+  const over = fill !== null && fill >= 1;
+  const hot = fill !== null && fill >= HIGH_LOAD_FILL;
+  const tone = over ? 'text-fail' : hot ? 'text-running' : 'text-muted';
+  const barTone = over ? 'bg-fail' : hot ? 'bg-running' : 'bg-faint';
   return (
     <div>
       <div className={`flex items-baseline gap-1.5 text-small ${tone}`}>
@@ -61,7 +67,7 @@ function ContextCell({ process }: { process: ActivityProcess }) {
       </div>
       {fill !== null && (
         <div className="mt-1 h-1 overflow-hidden rounded-full bg-raised">
-          <div className="h-full rounded-full bg-faint" style={{ width: `${Math.min(100, fill * 100)}%` }} />
+          <div className={`h-full rounded-full ${barTone}`} style={{ width: `${Math.min(100, fill * 100)}%` }} />
         </div>
       )}
     </div>
@@ -79,7 +85,7 @@ function ProcessRow({ process, now }: { process: ActivityProcess; now: number })
         <div className="flex items-center gap-2">
           <StateDot process={process} />
           <span className={`${chip} bg-raised text-muted`}>{process.type === 'run' ? 'Run' : 'Chat'}</span>
-          {process.escalated && <span className={`${chip} bg-running-tint text-running`}>escalated</span>}
+          {process.escalated && <span className={`${chip} bg-accent-tint text-accent`}>escalated</span>}
           <span className="truncate font-medium text-ink" title={process.title}>
             {process.title}
           </span>
@@ -123,8 +129,6 @@ function Stat({ label, value, tone = 'text-ink' }: { label: string; value: strin
     </div>
   );
 }
-
-const TIER_ORDER: AttentionTier[] = ['needs-you', 'high-load', 'steady'];
 
 export function ActivityView({ config }: { config: AppConfig | null }) {
   // null = first load in flight; lets us tell "loading" from "nothing running".
@@ -178,7 +182,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
         <h2 className={`${displayTitle} mb-5`}>Activity</h2>
         <div className={`${card} p-4`}>
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-14 animate-pulse border-t border-hairline first:border-t-0" />
+            <div key={i} className="h-14 animate-pulse border-t border-hairline first:border-t-0 motion-reduce:animate-none" />
           ))}
         </div>
       </div>
@@ -188,7 +192,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   const ceiling = config?.autoRunner.maxConcurrentRuns ?? Math.max(processes.filter((p) => p.type === 'run').length, 1);
   const summary = activitySummary(processes, ceiling, now);
   const ranked = rankActivity(processes);
-  const byTier = TIER_ORDER.map((tier) => ({ tier, rows: ranked.filter((p) => attentionTier(p) === tier) })).filter(
+  const byTier = ATTENTION_TIERS.map((tier) => ({ tier, rows: ranked.filter((p) => attentionTier(p) === tier) })).filter(
     (t) => t.rows.length > 0,
   );
 
