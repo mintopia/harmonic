@@ -170,7 +170,7 @@ export function TaskActions({
       )}
       {reattempting && (
         <ReattemptDialog
-          taskId={task.id}
+          task={task}
           onClose={() => setReattempting(false)}
           onDone={done(() => setReattempting(false))}
         />

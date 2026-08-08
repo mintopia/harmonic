@@ -308,15 +308,25 @@ export class TaskService {
     if (task.state !== 'failed') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only failed tasks can be re-queued`);
     }
+    const trimmed = feedback?.trim();
     const patch: Partial<TaskRow> = {
       state: this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready',
       updatedAt: Date.now(),
-      // Requeue bakes feedback into the prompt in place; clear any re-attempt
-      // feedback column so the runner doesn't append it a second time.
+      // Default: clear any stale re-attempt feedback (set below when supplied).
       feedback: null,
     };
-    if (feedback && feedback.trim().length > 0) {
-      patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${feedback.trim()}`;
+    if (trimmed) {
+      if (task.origin === 'mirrored') {
+        // A mirrored Task's prompt is re-derived from its ticket on every poll,
+        // so baking feedback into the prompt would be wiped on the next scan.
+        // Keep it in the feedback column instead: the prompt stays pristine,
+        // upsertMirrored never touches the column, and the feedback is composed
+        // at run time (promptForTask / the afk Drive Prompt).
+        patch.feedback = trimmed;
+      } else {
+        // Native Tasks own their prompt, so bake it in place.
+        patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
+      }
     }
     const row = this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
     this.onChanged(row);

@@ -295,7 +295,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Send a failed task back to ready for another attempt, optionally appending feedback to its prompt. Reachable with a run-scoped Run Key.',
+          "Send a failed task back to ready for another attempt, with optional feedback for the retry. Native tasks append it to the prompt; mirrored tasks carry it in the feedback field (their prompt is re-derived from the ticket each poll). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
         body: requeueInputSchema,
         response: {
