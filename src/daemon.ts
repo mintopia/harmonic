@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** What `harmonic start` records so status/stop can find the server later. */
@@ -38,6 +38,31 @@ export function daemonStatus(dataDir: string): { running: boolean; info: DaemonI
   const info = readDaemon(dataDir);
   if (!info) return { running: false, info: null };
   return { running: isAlive(info.pid), info };
+}
+
+/**
+ * Claim the data-dir lock for this (serve) process. Returns the live holder's
+ * info if another running process already owns the pidfile — the caller must
+ * refuse to boot rather than run crash recovery and stomp the other instance.
+ * A lock from a dead process, or one we already own (the pid `start` wrote for
+ * us), is reclaimed; on success returns null and the pidfile names us.
+ */
+export function acquireLock(dataDir: string, self: { port: number; host: string }): DaemonInfo | null {
+  // ponytail: non-atomic read-then-write; two `serve`s launched on the same
+  // fresh dir at once could both win. Fine for a local single-user tool (and
+  // `start` is already shielded by its own status check); switch to an O_EXCL
+  // create with stale reclaim if simultaneous boots ever matter.
+  const existing = readDaemon(dataDir);
+  if (existing && existing.pid !== process.pid && isAlive(existing.pid)) return existing;
+  mkdirSync(dataDir, { recursive: true });
+  writeDaemon(dataDir, { pid: process.pid, port: self.port, host: self.host, startedAt: Date.now() });
+  return null;
+}
+
+/** Drop the lock if it's ours (SIGKILL leaves it stale, reclaimed next boot). */
+export function releaseLock(dataDir: string): void {
+  const info = readDaemon(dataDir);
+  if (info?.pid === process.pid && existsSync(pidFilePath(dataDir))) rmSync(pidFilePath(dataDir));
 }
 
 /** SIGTERM the daemon and clear the pidfile. False when nothing was running. */

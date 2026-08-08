@@ -3,7 +3,15 @@ import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { daemonStatus, writeDaemon, stopDaemon, pidFilePath, type DaemonInfo } from '../src/daemon.js';
+import {
+  acquireLock,
+  daemonStatus,
+  releaseLock,
+  writeDaemon,
+  stopDaemon,
+  pidFilePath,
+  type DaemonInfo,
+} from '../src/daemon.js';
 
 const freshDir = () => mkdtempSync(join(tmpdir(), 'harmonic-daemon-'));
 
@@ -60,5 +68,48 @@ describe('daemon pidfile lifecycle', () => {
 
   it('stop on a non-running daemon returns false', async () => {
     expect(await stopDaemon(freshDir())).toBe(false);
+  });
+});
+
+describe('data-dir lock', () => {
+  it('claims a free dir and records this process', () => {
+    const dir = freshDir();
+    expect(acquireLock(dir, { port: 4700, host: '0.0.0.0' })).toBeNull();
+    expect(daemonStatus(dir).info?.pid).toBe(process.pid);
+  });
+
+  it('refuses when a live process holds the lock, naming the holder', async () => {
+    const dir = freshDir();
+    const child = livePid();
+    writeDaemon(dir, info(child.pid));
+    const holder = acquireLock(dir, { port: 4800, host: '0.0.0.0' });
+    expect(holder?.pid).toBe(child.pid);
+    expect(holder?.port).toBe(4700);
+    await stopDaemon(dir);
+    await child.exited;
+  });
+
+  it('reclaims its own lock (the pid `start` wrote for the serve child)', () => {
+    const dir = freshDir();
+    writeDaemon(dir, info(process.pid));
+    expect(acquireLock(dir, { port: 4700, host: '0.0.0.0' })).toBeNull();
+  });
+
+  it('reclaims a stale lock left by a dead process', async () => {
+    const dir = freshDir();
+    writeDaemon(dir, info(await deadPid()));
+    expect(acquireLock(dir, { port: 4700, host: '0.0.0.0' })).toBeNull();
+    expect(daemonStatus(dir).info?.pid).toBe(process.pid);
+  });
+
+  it('release drops the lock only when we own it', () => {
+    const dir = freshDir();
+    acquireLock(dir, { port: 4700, host: '0.0.0.0' });
+    releaseLock(dir);
+    expect(existsSync(pidFilePath(dir))).toBe(false);
+    // A lock owned by someone else survives our release.
+    writeDaemon(dir, info(999999));
+    releaseLock(dir);
+    expect(existsSync(pidFilePath(dir))).toBe(true);
   });
 });

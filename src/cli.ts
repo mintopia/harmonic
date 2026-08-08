@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
 import { defaultDataDir } from './config.js';
-import { daemonStatus, logFilePath, stopDaemon, writeDaemon } from './daemon.js';
+import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeDaemon } from './daemon.js';
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
@@ -77,7 +77,10 @@ async function main(): Promise<void> {
     const host = values.host!;
     const existing = daemonStatus(dataDir);
     if (existing.running && existing.info) {
-      console.error(`Already running (pid ${existing.info.pid}) — \`harmonic stop\` first.`);
+      console.error(
+        `Already running (pid ${existing.info.pid}) — ${displayUrl(existing.info.host, existing.info.port)}. ` +
+          '`harmonic stop` first.',
+      );
       process.exit(1);
     }
     mkdirSync(dataDir, { recursive: true });
@@ -103,10 +106,20 @@ async function main(): Promise<void> {
   }
 
   const dataDir = values['data-dir'] ?? defaultDataDir();
-  const password = values.password ?? process.env.HARMONIC_PASSWORD;
-  const app = await buildApp({ dataDir, password });
   const port = Number(values.port);
   const host = values.host!;
+  // Refuse to boot against a data dir a live instance holds — otherwise crash
+  // recovery would mark the other instance's in-flight runs interrupted (#40).
+  const holder = acquireLock(dataDir, { port, host });
+  if (holder) {
+    console.error(
+      `Another Harmonic instance is using ${dataDir} (pid ${holder.pid}, ${displayUrl(holder.host, holder.port)}).\n` +
+        '  Stop it first (harmonic stop), or use a different --data-dir.',
+    );
+    process.exit(1);
+  }
+  const password = values.password ?? process.env.HARMONIC_PASSWORD;
+  const app = await buildApp({ dataDir, password });
   if (!app.ctx.auth.hasPassword()) {
     const loopback = host === '127.0.0.1' || host === '::1' || host === 'localhost';
     console.warn(
@@ -120,6 +133,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     await app.close();
+    releaseLock(dataDir);
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
