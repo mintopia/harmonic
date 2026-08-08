@@ -103,6 +103,75 @@ describe('usage aggregation with AI Units', () => {
   });
 });
 
+describe('Process Tree roll-up (T1)', () => {
+  const mu = (input: number, output: number, aiUnits?: number) => ({
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    ...(aiUnits === undefined ? {} : { aiUnits }),
+  });
+  const node = (over: object): any => ({
+    id: 'x',
+    name: 'x',
+    contextTokens: null,
+    status: 'active',
+    depth: 0,
+    children: [],
+    ...over,
+  });
+
+  it('rolls a parent + 2 subagents up to the expected per-model total', async () => {
+    const { rollUpUsage } = await import('../src/execution/usage.js');
+    const tree = node({
+      id: 'root',
+      model: 'claude-sonnet-5',
+      usage: mu(100, 200),
+      children: [
+        node({ id: 'a', depth: 1, model: 'claude-haiku-4-5', usage: mu(10, 20) }),
+        node({ id: 'b', depth: 1, model: 'claude-sonnet-5', usage: mu(5, 7) }),
+      ],
+    });
+
+    const rolled = rollUpUsage(tree);
+    // Same model across parent + subagent sums into one bucket.
+    expect(rolled.models['claude-sonnet-5']).toMatchObject({ inputTokens: 105, outputTokens: 207 });
+    expect(rolled.models['claude-haiku-4-5']).toMatchObject({ inputTokens: 10, outputTokens: 20 });
+    expect(rolled.totals).toMatchObject({ inputTokens: 115, outputTokens: 227 });
+  });
+
+  it('prices a rolled-up Usage; an unpriced node in the tree flags incomplete', async () => {
+    const { rollUpUsage } = await import('../src/execution/usage.js');
+    const { costOfUsages, DEFAULT_PRICES } = await import('../src/execution/pricing.js');
+
+    const priced = rollUpUsage(
+      node({
+        id: 'root',
+        model: 'claude-sonnet-5',
+        usage: mu(100, 200),
+        children: [node({ id: 'a', depth: 1, model: 'claude-haiku-4-5', usage: mu(10, 20) })],
+      }),
+    );
+    const cost = costOfUsages([priced], DEFAULT_PRICES)!;
+    expect(cost.incomplete).toBe(false);
+    expect(cost.totalUsd).toBeGreaterThan(0);
+
+    const withUnpriced = rollUpUsage(
+      node({
+        id: 'root',
+        model: 'claude-sonnet-5',
+        usage: mu(100, 200),
+        children: [node({ id: 'a', depth: 1, model: 'no-such-model', usage: mu(10, 20) })],
+      }),
+    );
+    const partial = costOfUsages([withUnpriced], DEFAULT_PRICES)!;
+    expect(partial.incomplete).toBe(true);
+    expect(partial.byModel['no-such-model']).toBeNull();
+    // The priced model still contributes — a floor, never a fake zero.
+    expect(partial.totalUsd).toBeGreaterThan(0);
+  });
+});
+
 describe('usage collection and statistics', () => {
   let server: TestServer;
 

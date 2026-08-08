@@ -15,6 +15,59 @@ export interface RunUsage {
   source: 'acp' | 'session-log' | 'combined' | null;
 }
 
+/** Live status of a Process Tree node — idle age drives active → inactive → hidden. */
+export type ProcessStatus = 'active' | 'inactive' | 'hidden';
+
+/**
+ * One process in a Process Tree (CONTEXT.md): the root Run/Conversation
+ * session or a recursive Subagent. `usage` is the node's *own* tokens;
+ * roll-ups (`rollUpUsage`) sum the whole subtree. Derived per-Harness at
+ * read time, never stored as a structure.
+ */
+export interface ProcessNode {
+  /** Harness session/subagent id (root: the run's sessionId). */
+  id: string;
+  /** Subagent agentType, or a label for the root process. */
+  name: string;
+  /** Model serving this node's calls (the price bucket in a roll-up). */
+  model: string;
+  /** This node's own token usage, excluding its children. */
+  usage: ModelUsage;
+  /** Latest context-window fill for this node, or null when unknown. */
+  contextTokens: number | null;
+  status: ProcessStatus;
+  /** 0 for the root; +1 per Subagent nesting level. */
+  depth: number;
+  children: ProcessNode[];
+}
+
+/** A root process and its recursive Subagents (CONTEXT.md: Process Tree). */
+export type ProcessTree = ProcessNode;
+
+/** A Usage Collector's parse of one session: rolled-up Usage + its Process Tree. */
+export interface ParsedSession {
+  /** Usage rolled up across the whole tree (`rollUpUsage(tree)`). */
+  usage: RunUsage;
+  tree: ProcessTree;
+}
+
+/**
+ * Roll a Process Tree's per-node Usage up into one RunUsage, summing each
+ * node's tokens into its model's bucket so a parent's total includes its
+ * whole tree (CONTEXT.md → Usage). Keeping the per-model split means
+ * `costOfUsages` prices the roll-up and flags `incomplete` for any
+ * unpriced model in the tree — never a fake zero.
+ */
+export function rollUpUsage(tree: ProcessTree): RunUsage {
+  const flatten = (node: ProcessNode): RunUsage[] => [
+    { models: { [node.model]: node.usage }, totals: null, toolCalls: {}, source: null },
+    ...node.children.flatMap(flatten),
+  ];
+  const merged = mergeUsage(flatten(tree))!;
+  // Native logs are the source (ADR 0009); mergeUsage leaves source null.
+  return { ...merged, totals: sumModels(merged.models), source: 'session-log' };
+}
+
 export interface CollectUsageInput {
   harnessId: string;
   harness: HarnessConfig;

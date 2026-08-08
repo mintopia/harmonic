@@ -1,4 +1,5 @@
 import type { HarnessId } from '../../config.js';
+import type { ParsedSession } from '../usage.js';
 import { claudeAdapter } from './claude.js';
 import { codexAdapter } from './codex.js';
 import { copilotAdapter } from './copilot.js';
@@ -32,6 +33,15 @@ export interface SpawnInput {
  * come from the generic ACP `usage` path in usage.ts.
  */
 export interface UsageCollector {
+  /**
+   * Parse a session's native logs into rolled-up Usage plus its Process
+   * Tree (ADR 0009) — the source that replaces the ACP-result/OTel reads
+   * below. Optional here so the existing collectors compile unchanged;
+   * the per-Harness parsers land in #48 (claude) / #49 (codex, copilot),
+   * which then make this the sole path and retire the methods below.
+   * Returns null when no log exists yet.
+   */
+  parse?(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string | null }): ParsedSession | null;
   /**
    * Per-model usage read straight off the ACP prompt result, when the
    * harness reports it there (codex: `_meta.quota.model_usage`). Absent
