@@ -4,7 +4,7 @@ import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
-import { btnQuietDestructive, card, chip, displayTitle, labelType } from '../ui';
+import { btnQuietDestructive, card, chip, displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
 import {
@@ -47,9 +47,10 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumF
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_10rem_5.5rem_7rem_5rem_auto] items-center gap-x-4 px-4';
 
-/** The Workspace / sort dropdowns — the same field treatment the Table view's filters use. */
+/** The Workspace / sort dropdowns — the same field treatment the Table view's filters use.
+ * `min-h-11` gives the native control a ≥44px touch target (issue #56). */
 const select =
-  'rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
+  'min-h-11 rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
 
 /** Human labels for the type segments (issue #54). "Conversations" is the domain
  * noun (CONTEXT.md avoids "chat" as a noun), even though the filter id is `chats`. */
@@ -64,7 +65,7 @@ function TypeSegments({ value, onChange }: { value: ActivityTypeFilter; onChange
           key={t}
           aria-pressed={t === value}
           onClick={() => onChange(t)}
-          className={`rounded-sm px-2.5 py-1 text-small transition-colors duration-150 ${
+          className={`${touchTarget} rounded-sm px-2.5 text-small transition-colors duration-150 ${
             t === value ? 'bg-surface font-semibold text-ink shadow-card' : 'font-medium text-muted hover:text-ink'
           }`}
         >
@@ -72,6 +73,17 @@ function TypeSegments({ value, onChange }: { value: ActivityTypeFilter; onChange
         </button>
       ))}
     </div>
+  );
+}
+
+/** A "no value" cell: a muted em-dash for the eye, "none" for a screen reader —
+ * so the a11y tree reads "Tokens: none", not the ambiguous glyph (issue #56). */
+function Empty() {
+  return (
+    <span className="text-muted">
+      <span className="sr-only">none</span>
+      <span aria-hidden="true">—</span>
+    </span>
   );
 }
 
@@ -110,14 +122,21 @@ function ContextCell({ process }: { process: ActivityProcess }) {
   const tone = over ? 'text-fail' : hot ? 'text-running' : 'text-muted';
   const barTone = over ? 'bg-fail' : hot ? 'bg-running' : 'bg-faint';
   return (
-    <div>
+    <div role="cell">
       <div className={`flex items-baseline gap-1.5 text-small ${tone}`}>
+        <span className="sr-only">Context: </span>
         <span className="tabular-nums">{value}</span>
-        {note && <span className="text-faint">{note}</span>}
+        {note && <span className="text-muted">{note}</span>}
       </div>
       {fill !== null && (
-        <div className="mt-1 h-1 overflow-hidden rounded-full bg-raised">
-          <div className={`h-full rounded-full ${barTone}`} style={{ width: `${Math.min(100, fill * 100)}%` }} />
+        // Decorative echo of the number above (aria-hidden). Perf: the fill rides
+        // a compositor-only `scaleX` off a full-width bar — never an animated
+        // `width`, which would relayout every row on each live tick (issue #56).
+        <div aria-hidden="true" className="mt-1 h-1 overflow-hidden rounded-full bg-raised">
+          <div
+            className={`h-full w-full origin-left rounded-full ${barTone}`}
+            style={{ transform: `scaleX(${Math.min(1, fill)})` }}
+          />
         </div>
       )}
     </div>
@@ -131,16 +150,20 @@ function ContextCell({ process }: { process: ActivityProcess }) {
  * the Grant/Un-escalate it sits beside — the spec's "demote Stop". */
 function StopButton({ onConfirm, demoted }: { onConfirm: () => void; demoted: boolean }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+  // Demoted rests one step quieter, but never below the AA floor: it keeps Muted
+  // (a readable label — issue #56, DESIGN §7 Do) and steps down by *weight*
+  // instead of by colour, so it still yields to the semibold Grant/Un-escalate
+  // beside it without dropping to sub-AA Faint.
   const resting = demoted
-    ? 'font-medium text-faint transition-colors duration-150 hover:text-fail'
+    ? 'font-normal text-muted transition-colors duration-150 hover:text-fail'
     : btnQuietDestructive;
   return (
     <button
       ref={ref}
       onClick={trigger}
-      className={
-        armed ? 'text-small font-semibold text-fail transition-colors duration-150' : `text-small ${resting}`
-      }
+      className={`${touchTarget} text-small ${
+        armed ? 'font-semibold text-fail transition-colors duration-150' : resting
+      }`}
     >
       {armed ? 'Stop?' : 'Stop'}
     </button>
@@ -179,14 +202,14 @@ function RowActions({
     fail(api.answerPermission(p.conversationId, p.reqId, optionId).then(() => onAnswered(p.reqId)));
 
   return (
-    <div className="flex items-center justify-end gap-3">
+    <div role="cell" className="flex items-center justify-end gap-3">
       {ticketUrl && (
         <a
           href={ticketUrl}
           target="_blank"
           rel="noreferrer"
           title="Open the tracker issue"
-          className="text-small font-medium text-muted transition-colors duration-150 hover:text-ink"
+          className={`${touchTargetInline} text-small font-medium text-muted transition-colors duration-150 hover:text-ink`}
         >
           {process.trackerRef != null ? `#${process.trackerRef}` : 'Ticket'} ↗
         </a>
@@ -196,13 +219,16 @@ function RowActions({
           {resolve.grantOptionId && (
             <button
               onClick={() => answer(resolve.pending, resolve.grantOptionId!)}
-              className="text-small font-semibold text-tool transition-opacity duration-150 hover:opacity-80"
+              className={`${touchTarget} text-small font-semibold text-tool transition-opacity duration-150 hover:opacity-80`}
             >
               Grant
             </button>
           )}
           {resolve.denyOptionId && (
-            <button onClick={() => answer(resolve.pending, resolve.denyOptionId!)} className={`text-small ${btnQuietDestructive}`}>
+            <button
+              onClick={() => answer(resolve.pending, resolve.denyOptionId!)}
+              className={`${touchTarget} text-small ${btnQuietDestructive}`}
+            >
               Deny
             </button>
           )}
@@ -212,7 +238,7 @@ function RowActions({
         <button
           onClick={() => fail(api.unescalateTask(resolve.taskId))}
           title="Hand this escalated Task back to autonomous drive"
-          className="text-small font-medium text-muted transition-colors duration-150 hover:text-ink"
+          className={`${touchTargetInline} text-small font-medium text-muted transition-colors duration-150 hover:text-ink`}
         >
           Un-escalate
         </button>
@@ -232,9 +258,13 @@ function ExpandToggle({ expandable, expanded, onToggle }: { expandable: boolean;
       onClick={onToggle}
       aria-expanded={expanded}
       aria-label={expanded ? 'Collapse process tree' : 'Expand process tree'}
-      className="w-4 shrink-0 text-muted transition-colors duration-150 hover:text-ink"
+      className="relative w-4 shrink-0 text-muted transition-colors duration-150 hover:text-ink"
     >
-      <span className={`inline-block transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}>›</span>
+      {/* A ≥44×44 touch target (issue #56) centred on the 16px chevron, without
+          growing the row's grid: the overlay overflows into the row's own inert
+          leading space, so density and column alignment are untouched. */}
+      <span aria-hidden="true" className="absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2" />
+      <span className={`inline-block transition-transform duration-150 motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}>›</span>
     </button>
   );
 }
@@ -260,9 +290,9 @@ function ProcessRow({
   const cost = formatCost(process.cost);
   const aiUnits = process.usage?.totals?.aiUnits ?? 0;
   return (
-    <div className={`${GRID} border-t border-hairline py-3 transition-colors duration-150 hover:bg-raised`}>
+    <div role="row" className={`${GRID} border-t border-hairline py-3 transition-colors duration-150 hover:bg-raised`}>
       {/* Process: the content — badge + title lead; metadata and the live activity line whisper below. */}
-      <div className="min-w-0">
+      <div role="cell" className="min-w-0">
         <div className="flex items-center gap-2">
           <ExpandToggle expandable={expandable} expanded={expanded} onToggle={onToggleExpand} />
           <StateDot process={process} />
@@ -272,7 +302,7 @@ function ProcessRow({
             {process.title}
           </span>
         </div>
-        <div className="mt-1 truncate text-small text-faint">
+        <div className="mt-1 truncate text-small text-muted">
           {process.workspaceName} · {process.harness} · {process.model} · {process.isolation}
         </div>
         {process.activity && (
@@ -286,18 +316,30 @@ function ProcessRow({
       <ContextCell process={process} />
 
       {/* Tokens */}
-      <div className="text-right text-small tabular-nums text-ink">
-        {tokens === null ? <span className="text-faint">—</span> : compact.format(tokens)}
+      <div role="cell" className="text-right text-small tabular-nums text-ink">
+        <span className="sr-only">Tokens: </span>
+        {tokens === null ? <Empty /> : compact.format(tokens)}
       </div>
 
       {/* Honest Cost (≥ / unpriced), with harness-native AI Units alongside when present */}
-      <div className="text-right">
-        <div className="text-small tabular-nums text-ink">{cost ?? <span className="text-faint">—</span>}</div>
-        {aiUnits > 0 && <div className="text-label tabular-nums text-muted">{compact.format(aiUnits)} AIU</div>}
+      <div role="cell" className="text-right">
+        <div className="text-small tabular-nums text-ink">
+          <span className="sr-only">Cost: </span>
+          {cost ?? <Empty />}
+        </div>
+        {aiUnits > 0 && (
+          <div className="text-label tabular-nums text-muted">
+            <span className="sr-only">AI units: </span>
+            {compact.format(aiUnits)} AIU
+          </div>
+        )}
       </div>
 
       {/* Elapsed — ticks live off startedAt */}
-      <div className="text-right text-small tabular-nums text-muted">{fmtElapsed(elapsedMs(process, now))}</div>
+      <div role="cell" className="text-right text-small tabular-nums text-muted">
+        <span className="sr-only">Elapsed: </span>
+        {fmtElapsed(elapsedMs(process, now))}
+      </div>
 
       {/* Operator actions: resolve (Grant/Deny/Retry) leads a blocked/escalated row; Stop is the armed two-step. */}
       <RowActions process={process} pending={pending} onAnswered={onAnswered} />
@@ -414,13 +456,13 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
 
       {/* Summary strip: the one-glance fleet readout. */}
       <div className={`${card} mb-5 flex flex-wrap gap-x-10 gap-y-4 p-5`}>
-        <Stat label="Running" value={String(summary.runningCount)} tone={summary.runningCount > 0 ? 'text-ink' : 'text-faint'} />
+        <Stat label="Running" value={String(summary.runningCount)} tone={summary.runningCount > 0 ? 'text-ink' : 'text-muted'} />
         <Stat
           label="Needs you"
           value={String(summary.needsYouCount)}
-          tone={summary.needsYouCount > 0 ? 'text-accent' : 'text-faint'}
+          tone={summary.needsYouCount > 0 ? 'text-accent' : 'text-muted'}
         />
-        <Stat label="Cost" value={formatCost(summary.cost) ?? '—'} tone={summary.cost ? 'text-ink' : 'text-faint'} />
+        <Stat label="Cost" value={formatCost(summary.cost) ?? '—'} tone={summary.cost ? 'text-ink' : 'text-muted'} />
         <Stat label="Fleet tok/s" value={`${compact.format(Math.round(summary.tokensPerSecond))}`} />
         <Stat
           label="Machine ceiling"
@@ -477,23 +519,34 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
               filters. Widen the type or Workspace to see the rest of the fleet.
             </EmptyState>
           ) : (
-            <div className={`${card} overflow-x-auto`}>
-              {/* Column headers, on the shared grid so they line up with every row. */}
-              <div className={`${GRID} py-2.5 ${labelType} text-muted`}>
-                <span>Process</span>
-                <span>Context</span>
-                <span className="text-right">Tokens</span>
-                <span className="text-right">Cost</span>
-                <span className="text-right">Elapsed</span>
-                <span className="text-right">Actions</span>
+            <div role="table" aria-label="Live processes" className={`${card} overflow-x-auto`}>
+              {/* Column headers, on the shared grid so they line up with every row. Real
+                  table semantics (role=table/rowgroup/row/columnheader/cell) let a screen
+                  reader read the columns and announce each cell's header (issue #56). */}
+              <div role="rowgroup">
+                <div role="row" className={`${GRID} py-2.5 ${labelType} text-muted`}>
+                  <span role="columnheader">Process</span>
+                  <span role="columnheader">Context</span>
+                  <span role="columnheader" className="text-right">Tokens</span>
+                  <span role="columnheader" className="text-right">Cost</span>
+                  <span role="columnheader" className="text-right">Elapsed</span>
+                  <span role="columnheader" className="text-right">Actions</span>
+                </div>
               </div>
               {sections.map((section) => (
-                <div key={section.key}>
+                // Each band is a row-group the SR announces by name ("Needs you, 2
+                // processes"), so the pinned attention band reads as a labelled group.
+                <div
+                  key={section.key}
+                  role="rowgroup"
+                  aria-label={`${section.label}, ${section.rows.length} ${section.rows.length === 1 ? 'process' : 'processes'}`}
+                >
                   {/* Band — grouping by air + one quiet header, never a ruled slab. The pinned
-                      "Needs you" band leads whatever the sort, so escalations never scroll away. */}
-                  <div className="flex items-center gap-2 bg-raised/40 px-4 py-1.5">
+                      "Needs you" band leads whatever the sort, so escalations never scroll away.
+                      aria-hidden: the row-group's aria-label already carries label + count. */}
+                  <div aria-hidden="true" className="flex items-center gap-2 bg-raised/40 px-4 py-1.5">
                     <span className={`${labelType} ${section.pinned ? 'text-accent' : 'text-muted'}`}>{section.label}</span>
-                    <span className="text-label tabular-nums text-faint">{section.rows.length}</span>
+                    <span className="text-label tabular-nums text-muted">{section.rows.length}</span>
                   </div>
                   {section.rows.map((p) => {
                     const key = p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`;
@@ -515,7 +568,15 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                           expanded={expanded}
                           onToggleExpand={() => setExpandedKey((cur) => (cur === key ? null : key))}
                         />
-                        {expanded && <ProcessDrillIn process={p} now={now} />}
+                        {expanded && (
+                          // Keep the row-group's children all rows: the drill-in is a
+                          // full-width row holding a single cell (issue #56).
+                          <div role="row">
+                            <div role="cell">
+                              <ProcessDrillIn process={p} now={now} />
+                            </div>
+                          </div>
+                        )}
                       </Fragment>
                     );
                   })}

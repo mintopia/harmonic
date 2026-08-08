@@ -284,7 +284,8 @@ Depth is real but quiet, and theme-aware (the Soft Depth Rule):
 - **Do** hold the One Cobalt Rule: accent only for primary action, active nav, selection, focus, chart, and the awaiting-review state — ≤10% of any screen.
 - **Do** put colour on the state/signal layer (lanes, dots, count/state pills) where it means something; keep card and detail *bodies* calm.
 - **Do** set everything the operator reads as language or as a figure in sans with `tabular-nums`; reserve mono for genuine code (the Mono Is Code Rule).
-- **Do** carry structure with whitespace + elevation; floor informational text at Muted (4.5:1); design every change in both themes; give every control default/hover/focus-visible/disabled states and every animation a `prefers-reduced-motion` alternative.
+- **Do** carry structure with whitespace + elevation; floor informational text at Muted (4.5:1) — Faint is for icon-only affordances, disabled, and decorative dots, never a text label that must be read; design every change in both themes; give every control default/hover/focus-visible/disabled states and every animation a `prefers-reduced-motion` alternative.
+- **Do** give every interactive control a ≥44×44px touch target (issue #56) — expand the *hit area*, not necessarily the visual: a compact glyph can carry an overflowing transparent overlay so density survives. Under reduced motion, drop the animation but keep the live data updating (numbers tick from JS, never a CSS animation). A tabular readout (e.g. Activity) carries real table semantics — `role="table"`/`rowgroup`/`row`/`columnheader`/`cell` — with an sr-only label on each metric value so a screen reader reads it as a column.
 
 ### Don't
 - **Don't** let chrome out-shout content — no feature-sized telemetry grids, no stacked metadata chips (except the mirrored card's role badge row, § 6 Chips), no boxed-per-row streams.

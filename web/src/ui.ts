@@ -11,6 +11,15 @@ export const btnGhost =
 
 export const btnQuiet = 'font-medium text-muted transition-colors duration-150 hover:text-ink';
 
+/** A ≥44×44px touch target (issue #56): expand the *hit area* to the accessible
+ * minimum while the visual stays as compact as the layout wants. `touchTarget`
+ * centres a bounded control (a segmented pill, a Stop/Grant button);
+ * `touchTargetInline` is the min-height-only variant for a text link that sizes
+ * its own width (a ticket deep-link, Un-escalate). Compose with the control's
+ * own text/colour classes. */
+export const touchTarget = 'inline-flex min-h-11 min-w-11 items-center justify-center';
+export const touchTargetInline = 'inline-flex min-h-11 items-center';
+
 /** Quiet, but destructive (§5 Buttons: "destructive quiet actions hover to
  * fail red") — the Reject option on a permission prompt, cancel/remove
  * links elsewhere. */

@@ -71,7 +71,7 @@ function TreeRow({
     <button
       onClick={() => onSelect(node.id)}
       aria-pressed={selected}
-      className={`flex w-full items-stretch gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
+      className={`flex min-h-11 w-full items-stretch gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
         selected ? 'bg-accent-tint' : 'hover:bg-raised'
       } ${idle ? 'opacity-55' : ''}`}
     >
@@ -87,7 +87,7 @@ function TreeRow({
       </span>
       <span className="flex shrink-0 items-center gap-3 self-center text-small tabular-nums text-muted">
         <span title="This node's own tokens">{compact.format(nodeTokens(node))}</span>
-        <span className="text-faint">{nodeContext(node)}</span>
+        <span className="text-muted">{nodeContext(node)}</span>
       </span>
     </button>
   );
