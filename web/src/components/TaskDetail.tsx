@@ -385,6 +385,15 @@ export function TaskDetail({
 
   const tabs: Tab[] = ['description', 'output', 'changes', 'details'];
 
+  // Surface why a Task failed or Escalated up top — the reason lives on the
+  // latest Run and was otherwise buried in the Details tab's meta line, so an
+  // escalated Task (back in ready) gave the operator nothing to act on.
+  const latestRun = runs[runs.length - 1];
+  const alert =
+    (task.escalated || latestRun?.state === 'failed') && latestRun?.reason
+      ? { escalated: task.escalated, text: latestRun.reason.replace(/^escalated to human:\s*/i, '') }
+      : null;
+
   return (
     <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
       {/* Fixed height (not max-h): the modal stays one size across tabs, so
@@ -407,6 +416,17 @@ export function TaskDetail({
           </div>
           {/* The description moved to its own tab (below) so the Output tab
               keeps the full panel height — a header-mounted prompt starved it. */}
+          {alert && (
+            <div
+              className={`mt-2 rounded-md px-3 py-2 text-small ${alert.escalated ? 'bg-running-tint' : 'bg-fail-tint'}`}
+            >
+              <span className={`font-semibold ${alert.escalated ? 'text-running' : 'text-fail'}`}>
+                {alert.escalated ? 'Escalated to you' : 'Run failed'}
+              </span>
+              {alert.escalated && <span className="text-muted"> — auto-drive stopped and handed this back</span>}
+              <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{alert.text}</div>
+            </div>
+          )}
         </header>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2">
