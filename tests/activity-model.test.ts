@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activitySections,
   activitySummary,
+  activityWorkspaces,
   attentionTier,
   ATTENTION_TIERS,
   contextFillFraction,
   elapsedMs,
+  filterActivity,
   HIGH_LOAD_FILL,
   mergeRunUsage,
   rankActivity,
+  sortActivity,
+  sortLabel,
+  ACTIVITY_SORTS,
   sumCosts,
   tierLabel,
   tokensPerSecond,
@@ -116,6 +122,127 @@ describe('rankActivity', () => {
     const copy = [...input];
     rankActivity(input);
     expect(input).toEqual(copy);
+  });
+});
+
+describe('filterActivity', () => {
+  const run = proc({ type: 'run', runId: 1, workspaceId: 1, workspaceName: 'harmonic' });
+  const chat = proc({ type: 'chat', runId: null, conversationId: 7, workspaceId: 2, workspaceName: 'sidecar' });
+
+  it('keeps everything under the "all" type + no workspace', () => {
+    expect(filterActivity([run, chat], { type: 'all', workspaceId: null })).toEqual([run, chat]);
+  });
+  it('narrows to Runs', () => {
+    expect(filterActivity([run, chat], { type: 'runs', workspaceId: null })).toEqual([run]);
+  });
+  it('narrows to Chats', () => {
+    expect(filterActivity([run, chat], { type: 'chats', workspaceId: null })).toEqual([chat]);
+  });
+  it('narrows to a single Workspace', () => {
+    expect(filterActivity([run, chat], { type: 'all', workspaceId: 2 })).toEqual([chat]);
+  });
+  it('combines type and workspace (an empty intersection is honest)', () => {
+    expect(filterActivity([run, chat], { type: 'runs', workspaceId: 2 })).toEqual([]);
+  });
+});
+
+describe('activityWorkspaces', () => {
+  it('lists the distinct Workspaces present, sorted by name', () => {
+    const procs = [
+      proc({ runId: 1, workspaceId: 2, workspaceName: 'sidecar' }),
+      proc({ runId: 2, workspaceId: 1, workspaceName: 'harmonic' }),
+      proc({ runId: 3, workspaceId: 2, workspaceName: 'sidecar' }),
+    ];
+    expect(activityWorkspaces(procs)).toEqual([
+      { id: 1, name: 'harmonic' },
+      { id: 2, name: 'sidecar' },
+    ]);
+  });
+  it('is empty for an empty fleet', () => {
+    expect(activityWorkspaces([])).toEqual([]);
+  });
+});
+
+describe('sortActivity', () => {
+  it('"attention" defers to rankActivity', () => {
+    const steady = proc({ runId: 1, contextTokens: 10_000, contextWindow: 200_000 });
+    const needs = proc({ runId: 2, escalated: true });
+    expect(sortActivity([steady, needs], 'attention', 0)).toEqual(rankActivity([steady, needs]));
+  });
+
+  it('"cost" orders by priced total desc, with the Needs-you tier pinned above', () => {
+    const cheap = proc({ runId: 1, cost: { totalUsd: 0.1, byModel: {}, incomplete: false } });
+    const dear = proc({ runId: 2, cost: { totalUsd: 9.0, byModel: {}, incomplete: false } });
+    const needsCheap = proc({ runId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
+    // Escalated row stays on top even though it is the cheapest.
+    expect(sortActivity([cheap, dear, needsCheap], 'cost', 0).map((p) => p.runId)).toEqual([3, 2, 1]);
+  });
+
+  it('"tokens" orders by total tokens desc, unknown last', () => {
+    const many = proc({ runId: 1, usage: usage(9000) });
+    const few = proc({ runId: 2, usage: usage(100) });
+    const none = proc({ runId: 3, usage: usage(null) });
+    expect(sortActivity([few, none, many], 'tokens', 0).map((p) => p.runId)).toEqual([1, 2, 3]);
+  });
+
+  it('"context" orders by fill desc, unconfigured window last', () => {
+    const full = proc({ runId: 1, contextTokens: 180_000, contextWindow: 200_000 });
+    const light = proc({ runId: 2, contextTokens: 20_000, contextWindow: 200_000 });
+    const unknown = proc({ runId: 3, contextTokens: null, contextWindow: null });
+    expect(sortActivity([light, unknown, full], 'context', 0).map((p) => p.runId)).toEqual([1, 2, 3]);
+  });
+
+  it('"elapsed" orders by longest-running first', () => {
+    const old = proc({ runId: 1, startedAt: 100 });
+    const mid = proc({ runId: 2, startedAt: 500 });
+    const fresh = proc({ runId: 3, startedAt: 900 });
+    expect(sortActivity([fresh, old, mid], 'elapsed', 1_000).map((p) => p.runId)).toEqual([1, 2, 3]);
+  });
+
+  it('does not mutate its input', () => {
+    const input = [proc({ runId: 1, escalated: true }), proc({ runId: 2 })];
+    const copy = [...input];
+    sortActivity(input, 'cost', 0);
+    expect(input).toEqual(copy);
+  });
+
+  it('every sort has a human label', () => {
+    for (const s of ACTIVITY_SORTS) expect(sortLabel(s)).toMatch(/\w/);
+  });
+});
+
+describe('activitySections', () => {
+  it('under "attention", groups into non-empty tier bands with Needs-you pinned', () => {
+    const steady = proc({ runId: 1, contextTokens: 10_000, contextWindow: 200_000 });
+    const needs = proc({ runId: 2, escalated: true });
+    const sections = activitySections([steady, needs], 'attention', 0);
+    expect(sections.map((s) => s.key)).toEqual(['needs-you', 'steady']); // high-load empty → dropped
+    expect(sections[0]!.pinned).toBe(true);
+    expect(sections[0]!.rows.map((p) => p.runId)).toEqual([2]);
+  });
+
+  it('under a metric sort, pins Needs-you above one sorted section', () => {
+    const dear = proc({ runId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
+    const cheap = proc({ runId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
+    const needs = proc({ runId: 3, escalated: true, cost: { totalUsd: 0.01, byModel: {}, incomplete: false } });
+    const sections = activitySections([cheap, dear, needs], 'cost', 0);
+    expect(sections.map((s) => s.key)).toEqual(['needs-you', 'sorted']);
+    expect(sections[0]!.pinned).toBe(true);
+    expect(sections[0]!.rows.map((p) => p.runId)).toEqual([3]);
+    expect(sections[1]!.rows.map((p) => p.runId)).toEqual([1, 2]); // dear before cheap
+  });
+
+  it('under a metric sort with no escalations, is a single sorted section', () => {
+    const dear = proc({ runId: 1, cost: { totalUsd: 9, byModel: {}, incomplete: false } });
+    const cheap = proc({ runId: 2, cost: { totalUsd: 1, byModel: {}, incomplete: false } });
+    const sections = activitySections([cheap, dear], 'cost', 0);
+    expect(sections.map((s) => s.key)).toEqual(['sorted']);
+    expect(sections[0]!.rows.map((p) => p.runId)).toEqual([1, 2]);
+  });
+
+  it('an empty fleet has no sections', () => {
+    expect(activitySections([], 'attention', 0)).toEqual([]);
+    expect(activitySections([], 'cost', 0)).toEqual([]);
   });
 });
 

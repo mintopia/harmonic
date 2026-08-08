@@ -8,16 +8,22 @@ import { btnQuietDestructive, card, chip, displayTitle, labelType } from '../ui'
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
 import {
+  activitySections,
   activitySummary,
-  attentionTier,
+  activityWorkspaces,
   contextFillFraction,
   elapsedMs,
+  filterActivity,
   mergeRunUsage,
-  rankActivity,
-  tierLabel,
+  sortLabel,
   usageTotalTokens,
-  ATTENTION_TIERS,
+  ACTIVITY_SORTS,
+  ACTIVITY_TYPE_FILTERS,
   HIGH_LOAD_FILL,
+  NO_ACTIVITY_FILTER,
+  type ActivityFilter,
+  type ActivitySort,
+  type ActivityTypeFilter,
 } from '../activity-model';
 import { activityRowActions } from '../activity-actions-model';
 import {
@@ -38,6 +44,34 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumF
  * tiers. The trailing `auto` column holds the row's operator actions (issue #55). */
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_10rem_5.5rem_7rem_5rem_auto] items-center gap-x-4 px-4';
+
+/** The Workspace / sort dropdowns — the same field treatment the Table view's filters use. */
+const select =
+  'rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
+
+/** Human labels for the type segments (issue #54). "Conversations" is the domain
+ * noun (CONTEXT.md avoids "chat" as a noun), even though the filter id is `chats`. */
+const TYPE_FILTER_LABELS: Record<ActivityTypeFilter, string> = { all: 'All', runs: 'Runs', chats: 'Conversations' };
+
+/** The type segment control (All / Runs / Chats) — the same segmented pill Stats uses. */
+function TypeSegments({ value, onChange }: { value: ActivityTypeFilter; onChange: (v: ActivityTypeFilter) => void }) {
+  return (
+    <div className="flex gap-0.5 rounded-md bg-raised p-0.5" role="group" aria-label="Filter by type">
+      {ACTIVITY_TYPE_FILTERS.map((t) => (
+        <button
+          key={t}
+          aria-pressed={t === value}
+          onClick={() => onChange(t)}
+          className={`rounded-sm px-2.5 py-1 text-small transition-colors duration-150 ${
+            t === value ? 'bg-surface font-semibold text-ink shadow-card' : 'font-medium text-muted hover:text-ink'
+          }`}
+        >
+          {TYPE_FILTER_LABELS[t]}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function fmtElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -265,6 +299,10 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   // conversation is live; a row looks its up by conversationId.
   const [pending, setPending] = useState<PendingPermissions>(NO_PENDING_PERMISSIONS);
   const answered = (reqId: string) => setPending((current) => removePendingPermission(current, reqId));
+  // Toolbar state (issue #54): what to show and how to order it. The view still
+  // holds no data — these only shape the pure filter/sort of the live snapshot.
+  const [filter, setFilter] = useState<ActivityFilter>(NO_ACTIVITY_FILTER);
+  const [sort, setSort] = useState<ActivitySort>('attention');
 
   // Initial snapshot + a slow poll to catch processes starting/ending; the
   // run_usage firehose keeps existing rows ticking live in between (ADR 0010).
@@ -328,11 +366,12 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   }
 
   const ceiling = config?.autoRunner.maxConcurrentRuns ?? Math.max(processes.filter((p) => p.type === 'run').length, 1);
+  // Summary strip stays a whole-fleet readout ("all Workspaces"); the toolbar
+  // filters only the table below it.
   const summary = activitySummary(processes, ceiling, now);
-  const ranked = rankActivity(processes);
-  const byTier = ATTENTION_TIERS.map((tier) => ({ tier, rows: ranked.filter((p) => attentionTier(p) === tier) })).filter(
-    (t) => t.rows.length > 0,
-  );
+  const workspaces = activityWorkspaces(processes);
+  const filtered = filterActivity(processes, filter);
+  const sections = activitySections(filtered, sort, now);
 
   return (
     <div>
@@ -364,41 +403,84 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
           <span className="font-semibold text-ink">Board</span> or open a Conversation, and it appears here live.
         </EmptyState>
       ) : (
-        <div className={`${card} overflow-x-auto`}>
-          {/* Column headers, on the shared grid so they line up with every row. */}
-          <div className={`${GRID} py-2.5 ${labelType} text-muted`}>
-            <span>Process</span>
-            <span>Context</span>
-            <span className="text-right">Tokens</span>
-            <span className="text-right">Cost</span>
-            <span className="text-right">Elapsed</span>
-            <span className="text-right">Actions</span>
+        <>
+          {/* Toolbar (issue #54): narrow by type/Workspace, re-order, and read the live count. */}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <TypeSegments value={filter.type} onChange={(type) => setFilter((f) => ({ ...f, type }))} />
+            {workspaces.length > 1 && (
+              <select
+                aria-label="Filter by workspace"
+                className={select}
+                value={filter.workspaceId ?? ''}
+                onChange={(e) =>
+                  setFilter((f) => ({ ...f, workspaceId: e.target.value === '' ? null : Number(e.target.value) }))
+                }
+              >
+                <option value="">All workspaces</option>
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select aria-label="Sort by" className={select} value={sort} onChange={(e) => setSort(e.target.value as ActivitySort)}>
+              {ACTIVITY_SORTS.map((s) => (
+                <option key={s} value={s}>
+                  Sort: {sortLabel(s)}
+                </option>
+              ))}
+            </select>
+            <div className="flex-1" />
+            {/* The anchor figure: how many processes the filters select. */}
+            <span className="flex items-baseline gap-1.5">
+              <span className="text-title font-semibold tabular-nums text-ink">{filtered.length}</span>
+              <span className={`${labelType} text-muted`}>{filtered.length === 1 ? 'process' : 'processes'}</span>
+            </span>
           </div>
-          {byTier.map(({ tier, rows }) => (
-            <div key={tier}>
-              {/* Tier band — grouping by air + one quiet header, never a ruled slab. */}
-              <div className="flex items-center gap-2 bg-raised/40 px-4 py-1.5">
-                <span className={`${labelType} ${tier === 'needs-you' ? 'text-accent' : 'text-muted'}`}>
-                  {tierLabel(tier)}
-                </span>
-                <span className="text-label tabular-nums text-faint">{rows.length}</span>
+
+          {filtered.length === 0 ? (
+            <EmptyState title="Nothing matches">
+              No {filter.type === 'runs' ? 'Runs' : filter.type === 'chats' ? 'Conversations' : 'processes'} match these
+              filters. Widen the type or Workspace to see the rest of the fleet.
+            </EmptyState>
+          ) : (
+            <div className={`${card} overflow-x-auto`}>
+              {/* Column headers, on the shared grid so they line up with every row. */}
+              <div className={`${GRID} py-2.5 ${labelType} text-muted`}>
+                <span>Process</span>
+                <span>Context</span>
+                <span className="text-right">Tokens</span>
+                <span className="text-right">Cost</span>
+                <span className="text-right">Elapsed</span>
+                <span className="text-right">Actions</span>
               </div>
-              {rows.map((p) => (
-                <ProcessRow
-                  key={p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`}
-                  process={p}
-                  now={now}
-                  pending={
-                    p.type === 'chat'
-                      ? Object.values(pending).find((pp) => pp.conversationId === p.conversationId)
-                      : undefined
-                  }
-                  onAnswered={answered}
-                />
+              {sections.map((section) => (
+                <div key={section.key}>
+                  {/* Band — grouping by air + one quiet header, never a ruled slab. The pinned
+                      "Needs you" band leads whatever the sort, so escalations never scroll away. */}
+                  <div className="flex items-center gap-2 bg-raised/40 px-4 py-1.5">
+                    <span className={`${labelType} ${section.pinned ? 'text-accent' : 'text-muted'}`}>{section.label}</span>
+                    <span className="text-label tabular-nums text-faint">{section.rows.length}</span>
+                  </div>
+                  {section.rows.map((p) => (
+                    <ProcessRow
+                      key={p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`}
+                      process={p}
+                      now={now}
+                      pending={
+                        p.type === 'chat'
+                          ? Object.values(pending).find((pp) => pp.conversationId === p.conversationId)
+                          : undefined
+                      }
+                      onAnswered={answered}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

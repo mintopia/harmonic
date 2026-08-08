@@ -77,6 +77,154 @@ export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
   });
 }
 
+/** The Activity toolbar's type segments (issue #54): the fleet, just Runs, or just Chats. */
+export const ACTIVITY_TYPE_FILTERS = ['all', 'runs', 'chats'] as const;
+export type ActivityTypeFilter = (typeof ACTIVITY_TYPE_FILTERS)[number];
+
+/** The toolbar's filter state: a type segment plus an optional single-Workspace narrowing. */
+export interface ActivityFilter {
+  type: ActivityTypeFilter;
+  /** Narrow to one Workspace, or null for every Workspace (the view spans them). */
+  workspaceId: number | null;
+}
+
+/** The default — the whole fleet, every Workspace. */
+export const NO_ACTIVITY_FILTER: ActivityFilter = { type: 'all', workspaceId: null };
+
+/**
+ * The toolbar's filter (issue #54): narrow by process type and/or Workspace.
+ * Order-preserving so a later sort owns ordering outright. An empty result is
+ * honest — the view shows a filtered empty state rather than a stale list.
+ */
+export function filterActivity(processes: ActivityProcess[], filter: ActivityFilter): ActivityProcess[] {
+  return processes.filter((p) => {
+    if (filter.type === 'runs' && p.type !== 'run') return false;
+    if (filter.type === 'chats' && p.type !== 'chat') return false;
+    if (filter.workspaceId !== null && p.workspaceId !== filter.workspaceId) return false;
+    return true;
+  });
+}
+
+/** One entry in the Workspace filter dropdown. */
+export interface WorkspaceOption {
+  id: number;
+  name: string;
+}
+
+/** The distinct Workspaces present in the fleet, sorted by name — the filter's options. */
+export function activityWorkspaces(processes: ActivityProcess[]): WorkspaceOption[] {
+  const byId = new Map<number, string>();
+  for (const p of processes) if (!byId.has(p.workspaceId)) byId.set(p.workspaceId, p.workspaceName);
+  return [...byId].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The Activity toolbar's sort modes (issue #54). 'attention' is the default —
+ * the tiered ranker above; the rest order by a single live metric, largest
+ * first, with the "Needs you" tier always pinned on top (see `sortActivity`).
+ */
+export const ACTIVITY_SORTS = ['attention', 'cost', 'context', 'tokens', 'elapsed'] as const;
+export type ActivitySort = (typeof ACTIVITY_SORTS)[number];
+
+const SORT_LABELS: Record<ActivitySort, string> = {
+  attention: 'Attention',
+  cost: 'Cost',
+  context: 'Context',
+  tokens: 'Tokens',
+  elapsed: 'Elapsed',
+};
+export function sortLabel(sort: ActivitySort): string {
+  return SORT_LABELS[sort];
+}
+
+/**
+ * The sortable metric for a process under a non-attention sort, or null when it
+ * can't be known honestly (unpriced Cost, unconfigured window, no tokens yet) —
+ * a null always sorts last, never a fake zero. Elapsed is always knowable.
+ */
+function sortMetric(process: ActivityProcess, sort: ActivitySort, now: number): number | null {
+  switch (sort) {
+    case 'cost':
+      return process.cost?.totalUsd ?? null;
+    case 'context':
+      return contextFillFraction(process);
+    case 'tokens':
+      return usageTotalTokens(process.usage);
+    case 'elapsed':
+      return elapsedMs(process, now);
+    case 'attention':
+      return null; // unused — attention has its own ranker
+  }
+}
+
+/** Split the fleet into its pinned "Needs you" tier and everything else — the
+ * partition both the metric sorter and the section grouping share (issue #54). */
+function partitionNeedsYou(processes: ActivityProcess[]): [ActivityProcess[], ActivityProcess[]] {
+  const needsYou: ActivityProcess[] = [];
+  const rest: ActivityProcess[] = [];
+  for (const p of processes) (attentionTier(p) === 'needs-you' ? needsYou : rest).push(p);
+  return [needsYou, rest];
+}
+
+/**
+ * Order the fleet for display (issue #54). 'attention' defers to `rankActivity`
+ * (tier, then fill, then age). Every other sort orders by its live metric —
+ * largest first, unknown last, oldest-first on a tie — but keeps the whole
+ * "Needs you" tier pinned above the sorted rest, so an escalation never scrolls
+ * out of view. Pure — returns a new array, never mutates the input.
+ */
+export function sortActivity(processes: ActivityProcess[], sort: ActivitySort, now: number): ActivityProcess[] {
+  if (sort === 'attention') return rankActivity(processes);
+  const byMetric = (a: ActivityProcess, b: ActivityProcess) => {
+    const ma = sortMetric(a, sort, now);
+    const mb = sortMetric(b, sort, now);
+    if (ma !== mb) {
+      if (ma === null) return 1;
+      if (mb === null) return -1;
+      return mb - ma;
+    }
+    return a.startedAt - b.startedAt; // longest-running leads a tie
+  };
+  const [needsYou, rest] = partitionNeedsYou(processes);
+  // Pinned tier keeps its attention order; the rest follow the chosen metric.
+  return [...rankActivity(needsYou), ...rest.sort(byMetric)];
+}
+
+/** One rendered band in the Activity table: a header label plus its rows. */
+export interface ActivitySection {
+  /** Stable key + identity: a tier name under 'attention', else 'needs-you' / 'sorted'. */
+  key: string;
+  label: string;
+  /** True for the pinned "Needs you" band — the view tints its header accent. */
+  pinned: boolean;
+  rows: ActivityProcess[];
+}
+
+/**
+ * Group the (already-filtered) fleet into the table's display bands (issue #54).
+ * Under 'attention', the three attention tiers (empty ones dropped). Under a
+ * metric sort, the pinned "Needs you" band above a single "By {metric}" band —
+ * so escalations stay pinned whatever the sort. Pure.
+ */
+export function activitySections(processes: ActivityProcess[], sort: ActivitySort, now: number): ActivitySection[] {
+  const sorted = sortActivity(processes, sort, now);
+  if (sort === 'attention') {
+    return ATTENTION_TIERS.map((tier) => ({
+      key: tier,
+      label: tierLabel(tier),
+      pinned: tier === 'needs-you',
+      rows: sorted.filter((p) => attentionTier(p) === tier),
+    })).filter((s) => s.rows.length > 0);
+  }
+  const [needsYou, rest] = partitionNeedsYou(sorted);
+  const sections: ActivitySection[] = [];
+  if (needsYou.length > 0)
+    sections.push({ key: 'needs-you', label: tierLabel('needs-you'), pinned: true, rows: needsYou });
+  if (rest.length > 0)
+    sections.push({ key: 'sorted', label: `By ${sortLabel(sort).toLowerCase()}`, pinned: false, rows: rest });
+  return sections;
+}
+
 /**
  * Accumulated tokens for a process: the harness's own `totalTokens` when it
  * reports one, else the sum of the four counters it always reports. Null usage
