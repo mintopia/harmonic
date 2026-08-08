@@ -20,6 +20,17 @@ _Avoid_: project, repo, context
 The global cap on total concurrent Runs across all Workspaces — the machine's
 safety limit that a Workspace's own concurrency cap can never breach.
 
+**Setting Override**:
+An overridable setting — Task defaults (Harness, model, Isolation Mode,
+Priority) and a Workspace's concurrency cap — resolves as `Workspace value ??
+global default`: a Workspace stores *inherit* (tracking the global default as
+it changes) until it sets an explicit value, which a *reset to default*
+clears back to inherit. Global-only settings (Harnesses, prices, Notification
+Channels, Permission Rules, API Keys, the Drive Prompt, the Machine Ceiling)
+have no Workspace form; Workspace-only settings (name, Working Directory,
+Tracker enable/interval, Auto-Runner enable) have no global form.
+_Avoid_: setting, config value
+
 ### Tasks
 
 **Task**:
@@ -220,7 +231,9 @@ override.
 The single scheduler across all Workspaces. When a Workspace has it enabled,
 starts that Workspace's *ready* Tasks — highest Priority first, FIFO within —
 up to the Workspace's own concurrency cap, never exceeding the Machine
-Ceiling in total.
+Ceiling in total. A global **master switch** gates all of them: a Task runs
+only when the master is on *and* its Workspace has the Auto-Runner enabled, so
+the master is the one-click fleet-wide pause.
 _Avoid_: daemon, worker pool
 
 **Usage**:
