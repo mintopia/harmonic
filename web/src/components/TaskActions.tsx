@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import type { Task } from '../types';
 import { taskActions, type TaskAction } from '../task-actions-model';
@@ -6,49 +6,7 @@ import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '.
 import { toastError } from '../toast';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
-
-/** How long an armed Cancel waits before reverting on its own. */
-const ARM_TIMEOUT_MS = 3000;
-
-/**
- * Two-step inline confirm state for a destructive action (DESIGN.md bans
- * native confirm()): the first click arms, the second within ARM_TIMEOUT_MS
- * commits. Clicking anywhere outside the button, or letting the timeout
- * elapse, reverts — so a stray first click never leaves a primed Cancel
- * lying in wait. Mirrors the cancel-with-dependents morph in TaskDetail,
- * but self-reverting.
- */
-function useArmedConfirm(onConfirm: () => void) {
-  const [armed, setArmed] = useState(false);
-  const ref = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!armed) return;
-    const revert = () => setArmed(false);
-    const timer = setTimeout(revert, ARM_TIMEOUT_MS);
-    // mousedown (not click) so a press that starts outside reverts before it
-    // can register as the confirming click elsewhere.
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) revert();
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', onDown);
-    };
-  }, [armed]);
-
-  const trigger = () => {
-    if (armed) {
-      setArmed(false);
-      onConfirm();
-    } else {
-      setArmed(true);
-    }
-  };
-
-  return { armed, trigger, ref };
-}
+import { useArmedConfirm } from './useArmedConfirm';
 
 /** Cancel, armed with a two-step confirm. Its own component so the hook is
  * called unconditionally (rules of hooks), not inside the action switch. */

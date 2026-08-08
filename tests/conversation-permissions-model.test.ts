@@ -3,6 +3,7 @@ import {
   addPendingPermission,
   chooseAlwaysAllowOptionId,
   permissionOptionLabel,
+  removePendingForConversation,
   removePendingPermission,
   resolvePendingPermissionFromEvent,
   type PendingPermissions,
@@ -48,6 +49,21 @@ describe('addPendingPermission / removePendingPermission', () => {
     let pending = addPendingPermission({}, { conversationId: 1, reqId: 'req-1', request });
     pending = addPendingPermission(pending, { conversationId: 1, reqId: 'req-2', request });
     expect(Object.keys(pending)).toEqual(['req-1', 'req-2']);
+  });
+});
+
+describe('removePendingForConversation', () => {
+  it('drops every prompt for the ended Conversation, keeping the rest', () => {
+    let pending = addPendingPermission({}, { conversationId: 1, reqId: 'req-1', request });
+    pending = addPendingPermission(pending, { conversationId: 1, reqId: 'req-2', request });
+    pending = addPendingPermission(pending, { conversationId: 2, reqId: 'req-3', request });
+    const after = removePendingForConversation(pending, 1);
+    expect(Object.keys(after)).toEqual(['req-3']);
+  });
+
+  it('returns the same reference when nothing belonged to that Conversation (no re-render)', () => {
+    const pending = addPendingPermission({}, { conversationId: 2, reqId: 'req-3', request });
+    expect(removePendingForConversation(pending, 1)).toBe(pending);
   });
 });
 

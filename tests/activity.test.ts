@@ -93,6 +93,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(proc.isolation).toBe('direct');
     expect(proc.startedAt).toBeGreaterThan(0);
     expect(proc.trackerRef).toBeNull(); // native task, not a mirrored ticket
+    expect(proc.trackerUrl).toBeNull(); // native task has no ticket deep-link (issue #55)
     expect(proc.escalated).toBe(false); // afk run, not escalated (issue #52)
     expect(proc.contextWindow).toBeNull(); // stub-model has no configured window
     expect(proc.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
@@ -123,6 +124,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(chat.isolation).toBe('direct'); // Conversations are direct-only (ADR-0006)
     expect(chat.tree).toBeNull(); // no live tailer for Conversations
     expect(chat.trackerRef).toBeNull();
+    expect(chat.trackerUrl).toBeNull(); // Conversations have no ticket deep-link (issue #55)
     expect(chat.escalated).toBe(false); // Conversations don't carry the afk-escalation flag (issue #52)
     expect(typeof chat.title).toBe('string');
     expect(typeof chat.workspaceId).toBe('number');

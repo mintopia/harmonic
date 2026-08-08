@@ -302,6 +302,8 @@ export interface ActivityProcess {
   /** Epoch ms the process started; the client derives elapsed from it. */
   startedAt: number;
   trackerRef: number | null;
+  /** The mirrored issue's tracker URL — the row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
+  trackerUrl: string | null;
   /** True when an afk Run escalated to a human (issue #33) — the "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
   usage: RunUsage | null;

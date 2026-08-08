@@ -44,6 +44,7 @@ function proc(over: Partial<ActivityProcess> = {}): ActivityProcess {
     isolation: 'worktree',
     startedAt: 1_000,
     trackerRef: null,
+    trackerUrl: null,
     escalated: false,
     usage: usage(1000),
     contextTokens: null,

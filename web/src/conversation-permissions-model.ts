@@ -41,6 +41,19 @@ export function removePendingPermission(pending: PendingPermissions, reqId: stri
   return next;
 }
 
+/** Drops every prompt belonging to a Conversation that ended or crashed — it
+ * can no longer be answered (issue #55's Activity view watches all Conversations
+ * at once, so it clears by conversation, not just reqId). Returns the same
+ * reference when nothing belonged to it, so callers can skip a re-render. */
+export function removePendingForConversation(
+  pending: PendingPermissions,
+  conversationId: number,
+): PendingPermissions {
+  const entries = Object.entries(pending).filter(([, p]) => p.conversationId !== conversationId);
+  if (entries.length === Object.keys(pending).length) return pending;
+  return Object.fromEntries(entries);
+}
+
 /**
  * Clears a pending prompt when its resolution arrives: the LOCKED contract
  * says the server appends a normal `conversation_event` of
@@ -92,4 +105,22 @@ export function chooseAlwaysAllowOptionId(
   if (once) return once.optionId;
   const anyAllow = options.find((o) => o.kind.startsWith('allow_'));
   return anyAllow ? anyAllow.optionId : null;
+}
+
+/**
+ * The optionId a bare "Deny" click resolves the request with (issue #55's
+ * Activity row Grant/Deny). Mirrors {@link chooseAlwaysAllowOptionId}: the
+ * Activity row collapses the ACP request's full option list into two verbs,
+ * so it needs one canonical reject option. Prefers `reject_once` (the
+ * least-surprising one-off deny); falls back to any other `reject_*`; returns
+ * null for a request that offers no way to reject, so the caller renders no
+ * Deny button rather than reaching for an allow option.
+ */
+export function chooseRejectOptionId(
+  options: PermissionAcpRequest['options'],
+): string | null {
+  const once = options.find((o) => o.kind === 'reject_once');
+  if (once) return once.optionId;
+  const anyReject = options.find((o) => o.kind.startsWith('reject_'));
+  return anyReject ? anyReject.optionId : null;
 }

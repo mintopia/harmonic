@@ -95,6 +95,8 @@ export interface ApiActivityProcess {
   startedAt: number;
   /** The mirrored issue's tracker ref (a Run's Task); null on native Tasks and Conversations. */
   trackerRef: number | null;
+  /** The mirrored issue's tracker URL — the Activity row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
+  trackerUrl: string | null;
   /** True when an afk Run escalated to a human at runtime (issue #33) — the Activity view's "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
   usage: RunUsage | null;
@@ -139,6 +141,7 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       isolation: task.isolationMode,
       startedAt: run.startedAt,
       trackerRef: task.trackerRef,
+      trackerUrl: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
       escalated: task.escalated,
       usage: snapshot?.usage ?? null,
       contextTokens: snapshot?.contextTokens ?? null,
@@ -167,6 +170,7 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       isolation: 'direct',
       startedAt: convo.createdAt,
       trackerRef: null,
+      trackerUrl: null,
       // Conversations are hitl by nature; they don't carry the afk-escalation flag.
       escalated: false,
       usage,
