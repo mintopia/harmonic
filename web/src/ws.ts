@@ -1,9 +1,20 @@
-import type { Conversation, ConversationEvent, PermissionAcpRequest, Run, RunEvent, Task } from './types';
+import type {
+  Conversation,
+  ConversationEvent,
+  PermissionAcpRequest,
+  Run,
+  RunEvent,
+  RunUsageEvent,
+  Task,
+} from './types';
 
 export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
   | { type: 'run_changed'; run: Run }
   | { type: 'task_changed'; task: Task }
+  // Live Run usage (ADR 0010): the Activity view merges these deltas into its
+  // rows so tokens/context/cost tick live. Sent to read keys too.
+  | ({ type: 'run_usage' } & RunUsageEvent)
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // Issue #11: the Harness is blocked on this ACP permission request until

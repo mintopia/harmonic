@@ -80,7 +80,11 @@ export interface ApiActivityProcess {
   conversationId: number | null;
   /** The owning Task's id (type `run`), else null. */
   taskId: number | null;
+  /** The process's display title: a Run's Task prompt first line, a Conversation's title (issue #52). */
+  title: string;
   workspaceId: number;
+  /** The owning Workspace's name — the Activity view spans Workspaces, so each row names its own (issue #52). */
+  workspaceName: string;
   harness: string;
   model: string;
   /** A running Run's RunState, or a warm Conversation's ConversationState. */
@@ -91,8 +95,12 @@ export interface ApiActivityProcess {
   startedAt: number;
   /** The mirrored issue's tracker ref (a Run's Task); null on native Tasks and Conversations. */
   trackerRef: number | null;
+  /** True when an afk Run escalated to a human at runtime (issue #33) — the Activity view's "Needs you" signal; always false for a Conversation. */
+  escalated: boolean;
   usage: RunUsage | null;
   contextTokens: number | null;
+  /** The model's configured context window; null when unconfigured — the context gauge shows raw tokens, never a fabricated percentage (issue #52). */
+  contextWindow: number | null;
   /** One-line current-activity (Runs only); null for a Conversation. */
   activity: string | null;
   /** The process's Process Tree (Runs only); null for a Conversation. */
@@ -122,15 +130,19 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       runId,
       conversationId: null,
       taskId,
+      title: firstLineTitle(task.prompt) ?? `Task #${taskId}`,
       workspaceId: atRestWorkspaceId(task.workspaceId),
+      workspaceName: workspaceNameOf(ctx, task.workspaceId),
       harness: task.harness,
       model: task.model,
       state: run.state,
       isolation: task.isolationMode,
       startedAt: run.startedAt,
       trackerRef: task.trackerRef,
+      escalated: task.escalated,
       usage: snapshot?.usage ?? null,
       contextTokens: snapshot?.contextTokens ?? null,
+      contextWindow: contextWindowOf(ctx, task.model),
       activity: snapshot?.activity ?? null,
       tree: snapshot?.tree ?? null,
       cost: snapshot ? costOfUsages([snapshot.usage], prices) : null,
@@ -145,7 +157,9 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       runId: null,
       conversationId: id,
       taskId: null,
+      title: convo.title ?? firstLineTitle(ctx.conversations.firstTurnText(id)) ?? `Conversation #${id}`,
       workspaceId: atRestWorkspaceId(convo.workspaceId),
+      workspaceName: workspaceNameOf(ctx, convo.workspaceId),
       harness: convo.harness,
       model: convo.model,
       state: convo.state,
@@ -153,14 +167,28 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       isolation: 'direct',
       startedAt: convo.createdAt,
       trackerRef: null,
+      // Conversations are hitl by nature; they don't carry the afk-escalation flag.
+      escalated: false,
       usage,
       contextTokens: convo.contextTokens,
+      contextWindow: contextWindowOf(ctx, convo.model),
       activity: null,
       tree: null,
       cost: costOfUsages([usage], prices),
     };
   });
   return [...runs, ...chats];
+}
+
+/** The Workspace's name for an at-rest workspaceId — every live process names its own Workspace (issue #52). */
+function workspaceNameOf(ctx: AppContext, workspaceId: number | null): string {
+  return ctx.workspaces.get(atRestWorkspaceId(workspaceId)).name;
+}
+
+/** A model's configured context window (exact id, then the undated base id), or null when unconfigured — mirrors `conversationToApi` (issue #52). */
+function contextWindowOf(ctx: AppContext, model: string): number | null {
+  const info = ctx.configStore.get().modelInfo;
+  return (info[model] ?? info[model.replace(/-\d{8}$/, '')])?.contextWindow ?? null;
 }
 
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
@@ -179,11 +207,18 @@ export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
 
 /** The display title: the operator's title, else derived from the first Turn's first non-empty line (issue 15). */
 const DERIVED_TITLE_MAX = 80;
-function deriveConversationTitle(firstTurnText: string | null): string | null {
-  if (!firstTurnText) return null;
-  const line = firstTurnText.split('\n').find((l) => l.trim().length > 0)?.trim();
+
+/** First non-empty line of `text`, clamped to `DERIVED_TITLE_MAX` with an ellipsis; null when blank. Shared by the
+ * Conversation title fallback (issue 15) and the Activity view's per-process title (issue #52). */
+export function firstLineTitle(text: string | null): string | null {
+  if (!text) return null;
+  const line = text.split('\n').find((l) => l.trim().length > 0)?.trim();
   if (!line) return null;
   return line.length > DERIVED_TITLE_MAX ? `${line.slice(0, DERIVED_TITLE_MAX - 1).trimEnd()}…` : line;
+}
+
+function deriveConversationTitle(firstTurnText: string | null): string | null {
+  return firstLineTitle(firstTurnText);
 }
 
 /**

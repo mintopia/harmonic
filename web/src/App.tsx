@@ -11,6 +11,7 @@ import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
+import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
 import { Switch } from './components/Switch';
@@ -447,6 +448,7 @@ export function App() {
                 onNewTask={() => setEditing('new')}
               />
             )}
+            {view === 'activity' && <ActivityView config={config} />}
             {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}
             {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
             {view === 'api' && <ApiPage />}

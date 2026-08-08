@@ -241,6 +241,94 @@ export interface ModelPrice {
   cacheWrite: number;
 }
 
+/** Per-model token counters (server `ModelUsage`) — the four counters Cost prices, plus optional harness-native spend. */
+export interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Harness-native spend units (e.g. Copilot AI Units); absent when the harness has none. */
+  aiUnits?: number;
+}
+
+/** Usage aggregate for a Run or Conversation (server `RunUsage`) — rolled up over the whole Process Tree. */
+export interface RunUsage {
+  /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
+  models: Record<string, ModelUsage>;
+  /** Aggregate token counts; null when no source reported tokens. */
+  totals: (ModelUsage & { totalTokens: number | null }) | null;
+  /** Tool-call tallies from the process's events. */
+  toolCalls: Record<string, number>;
+  source: 'acp' | 'session-log' | 'combined' | null;
+}
+
+export type ProcessStatus = 'active' | 'inactive' | 'hidden';
+
+/** One node of a Process Tree (server `ProcessNode`): the root session or a recursive Subagent, with its *own* tokens. */
+export interface ProcessNode {
+  id: string;
+  name: string;
+  model: string;
+  usage: ModelUsage;
+  contextTokens: number | null;
+  status: ProcessStatus;
+  depth: number;
+  children: ProcessNode[];
+}
+export type ProcessTree = ProcessNode;
+
+/**
+ * One live process in the instance-wide Activity snapshot (issue #52,
+ * `GET /api/activity`): an in-flight Run or a warm Conversation, joined with
+ * its latest Usage, context fill, and derived Cost. `startedAt` is the source
+ * of truth for elapsed — the client ticks it live. A Conversation's
+ * `tree`/`activity` are null (no live tailer) and its `escalated` is always false.
+ */
+export interface ActivityProcess {
+  type: 'run' | 'chat';
+  runId: number | null;
+  conversationId: number | null;
+  taskId: number | null;
+  /** Display title: a Run's Task prompt first line, a Conversation's title. */
+  title: string;
+  workspaceId: number;
+  /** The owning Workspace's name — the view spans Workspaces. */
+  workspaceName: string;
+  harness: string;
+  model: string;
+  /** A running Run's RunState, or a warm Conversation's ConversationState. */
+  state: string;
+  isolation: string;
+  /** Epoch ms the process started; the client derives elapsed from it. */
+  startedAt: number;
+  trackerRef: number | null;
+  /** True when an afk Run escalated to a human (issue #33) — the "Needs you" signal; always false for a Conversation. */
+  escalated: boolean;
+  usage: RunUsage | null;
+  contextTokens: number | null;
+  /** The model's configured context window; null when unconfigured (percentage suppressed). */
+  contextWindow: number | null;
+  /** One-line "what the agent is doing now" (Runs only); null for a Conversation. */
+  activity: string | null;
+  tree: ProcessTree | null;
+  cost: Cost | null;
+}
+
+/**
+ * The live `run_usage` firehose delta (ADR 0010): a Run's latest live-usage
+ * snapshot plus Cost derived on read. The Activity view merges it into the
+ * matching row so tokens, context fill, cost, and the activity line tick live
+ * between snapshot polls.
+ */
+export interface RunUsageEvent {
+  runId: number;
+  usage: RunUsage;
+  contextTokens: number | null;
+  activity: string | null;
+  tree: ProcessTree;
+  cost: Cost | null;
+}
+
 export interface AppConfig {
   harnesses: Record<string, HarnessConfig>;
   prices: Record<string, ModelPrice>;

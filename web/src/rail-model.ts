@@ -31,10 +31,14 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
  * Settings (issue 6) joins the same way, as the operator config editor;
  * the former Channels modal now lives inside Settings as Notifications.
  */
-export const VIEWS = ['board', 'table', 'stats', 'api', 'settings'] as const;
+// Activity (issue #52) joins as a primary view beside the Board: the
+// instance-wide live view of every in-flight process across Workspaces, so it
+// sits high in the rail next to the queue it complements.
+export const VIEWS = ['board', 'activity', 'table', 'stats', 'api', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
+  activity: 'Activity',
   table: 'Table',
   stats: 'Stats',
   api: 'API',

@@ -85,12 +85,16 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(proc.conversationId).toBeNull();
     expect(typeof proc.taskId).toBe('number');
     expect(typeof proc.workspaceId).toBe('number');
+    expect(typeof proc.workspaceName).toBe('string'); // names its own Workspace (issue #52)
+    expect(typeof proc.title).toBe('string'); // derived from the Task prompt (issue #52)
     expect(proc.harness).toBe('claude');
     expect(proc.model).toBe('stub-model');
     expect(proc.state).toBe('running');
     expect(proc.isolation).toBe('direct');
     expect(proc.startedAt).toBeGreaterThan(0);
     expect(proc.trackerRef).toBeNull(); // native task, not a mirrored ticket
+    expect(proc.escalated).toBe(false); // afk run, not escalated (issue #52)
+    expect(proc.contextWindow).toBeNull(); // stub-model has no configured window
     expect(proc.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
     expect(proc.contextTokens).toBe(105); // input + cache read
     expect(proc.tree).toMatchObject({ id: sessionId, depth: 0 });
@@ -119,7 +123,10 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(chat.isolation).toBe('direct'); // Conversations are direct-only (ADR-0006)
     expect(chat.tree).toBeNull(); // no live tailer for Conversations
     expect(chat.trackerRef).toBeNull();
+    expect(chat.escalated).toBe(false); // Conversations don't carry the afk-escalation flag (issue #52)
+    expect(typeof chat.title).toBe('string');
     expect(typeof chat.workspaceId).toBe('number');
+    expect(typeof chat.workspaceName).toBe('string');
     expect(full.some((p) => p.type === 'run')).toBe(true);
 
     // A read (viz) key reaches the endpoint (not 403) but sees Runs only.

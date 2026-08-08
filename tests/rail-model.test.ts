@@ -43,8 +43,8 @@ describe('rail collapse persistence', () => {
 });
 
 describe('rail primary views', () => {
-  it('promotes API to a primary nav view alongside Board/Table/Stats (issue 5)', () => {
-    expect(VIEWS).toEqual(['board', 'table', 'stats', 'api', 'settings']);
+  it('promotes API to a primary nav view alongside Board/Table/Stats (issue 5); Activity sits beside the Board (issue #52)', () => {
+    expect(VIEWS).toEqual(['board', 'activity', 'table', 'stats', 'api', 'settings']);
   });
 
   it('labels every view', () => {

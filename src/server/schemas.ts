@@ -129,7 +129,11 @@ export const activityProcessSchema = z
     conversationId: z.number().nullable().meta({ example: null }),
     /** The owning Task's id (type `run`), else null. */
     taskId: z.number().nullable().meta({ example: 512 }),
+    /** Display title: a Run's Task prompt first line, a Conversation's title. */
+    title: z.string().meta({ example: 'Add the Activity rail view' }),
     workspaceId: z.number().meta({ example: 1 }),
+    /** The owning Workspace's name — the view spans Workspaces. */
+    workspaceName: z.string().meta({ example: 'harmonic' }),
     /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
@@ -141,10 +145,14 @@ export const activityProcessSchema = z
     startedAt: z.number().meta({ example: 1784032260000 }),
     /** The mirrored issue's tracker ref (a Run's Task); null on native Tasks and Conversations. */
     trackerRef: z.number().nullable().meta({ example: 51 }),
+    /** True when an afk Run escalated to a human at runtime (issue #33) — the "Needs you" signal; always false for a Conversation. */
+    escalated: z.boolean().meta({ example: false }),
     /** Rolled-up Usage; null before any tokens are reported. */
     usage: runUsageSchema.nullable(),
     /** Root session's latest context-window fill; null when unknown. */
     contextTokens: z.number().nullable().meta({ example: 48210 }),
+    /** The model's configured context window; null when unconfigured (percentage suppressed). */
+    contextWindow: z.number().nullable().meta({ example: 200000 }),
     /** One-line "what the agent is doing now" (Runs only); null otherwise. */
     activity: z.string().nullable().meta({ example: 'Editing src/foo.ts' }),
     /** The process's Process Tree (Runs only); null for a Conversation. */

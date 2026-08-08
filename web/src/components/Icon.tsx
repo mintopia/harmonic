@@ -8,6 +8,7 @@ import type { JSX } from 'react';
  */
 export type IconName =
   | 'board'
+  | 'activity'
   | 'table'
   | 'stats'
   | 'api'
@@ -37,6 +38,8 @@ const PATHS: Record<IconName, JSX.Element> = {
       <rect height="5" rx="1" width="3.5" x="10.75" y="2.75" />
     </>
   ),
+  // Live pulse waveform: the instance-wide Activity view (issue #52).
+  activity: <path d="M1.5 8h3l1.75-4 2.5 8 1.75-4H14.5" />,
   // Row grid.
   table: (
     <>
