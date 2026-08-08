@@ -165,6 +165,36 @@ export function buildMcpServer(ctx: AppContext): McpServer {
     wrap(({ runId }) => ctx.runs.listEvents(runId)),
   );
 
+  server.registerTool(
+    'finish_task',
+    {
+      description:
+        'Signal that this Task is finished so Harmonic stops re-prompting you to continue. ' +
+        'Call only when the work is genuinely complete and you have closed the tracker ticket. ' +
+        'Ending your turn without this leaves the run looking parked, and Harmonic will prompt you to continue.',
+      inputSchema: { ...taskId, summary: z.string().optional().describe('Optional note on what was finished') },
+    },
+    wrap(({ taskId }) => {
+      ctx.tasks.get(taskId); // 404s a bad id via DomainError
+      return { acknowledged: true, running: ctx.runner.markAgentFinished(taskId) };
+    }),
+  );
+
+  server.registerTool(
+    'escalate_task',
+    {
+      description:
+        'Raise this Task to a human and stop the run. Call when you are blocked on a decision, ' +
+        'need input only a human can give, or hit something you should not resolve unattended — ' +
+        'instead of guessing or idle-waiting. Include why in `reason`.',
+      inputSchema: { ...taskId, reason: z.string().min(1).describe('Why a human is needed') },
+    },
+    wrap(({ taskId, reason }) => {
+      ctx.tasks.get(taskId); // 404s a bad id via DomainError
+      return { acknowledged: true, running: ctx.runner.markEscalate(taskId, reason) };
+    }),
+  );
+
   if (ctx.configStore.get().agentReview) {
     server.registerTool(
       'accept_task',

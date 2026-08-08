@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
-import { defaultConfig, type AppConfig } from '../src/config.js';
+import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { Runner } from '../src/execution/runner.js';
@@ -82,6 +82,9 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
 const okGit = { merge: async () => ({ ok: true as const }) } as any;
 const conflictGit = { merge: async () => ({ ok: false as const, detail: 'CONFLICT' }) } as any;
 
+/** The unattended reminder AutoDrive.prompt appends, with the Task id filled in. */
+const reminder = (taskId: number) => UNATTENDED_REMINDER.replace(/\{taskId\}/g, String(taskId));
+
 describe('Drive Prompt fill (issue #33)', () => {
   it('splits title/body, maps skill by workflow/type, and fills every placeholder', () => {
     expect(skillFor({ wayfinderType: 'research' })).toBe('/research');
@@ -102,33 +105,61 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('AutoDrive.prompt uses the global template, the ticket url, and the workflow skill', () => {
     const config: AppConfig = {
       ...defaultConfig(),
-      drive: { prompt: '{skill} {ref} {url}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1 },
+      drive: { prompt: '{skill} {ref} {url}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1, continueAttempts: 1 },
     };
     const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
     const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
-    expect(drive.prompt(research)).toBe('/research 9 https://x/9\n\nInvestigate X::why');
+    expect(drive.prompt(research)).toBe(`/research 9 https://x/9\n\nInvestigate X::why\n\n${reminder(1)}`);
   });
 
   it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', () => {
     const config: AppConfig = {
       ...defaultConfig(),
-      drive: { prompt: '{skill} {ref}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1 },
+      drive: { prompt: '{skill} {ref}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1, continueAttempts: 1 },
     };
     const drive = new AutoDrive(() => config, () => null);
     const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
     expect(drive.prompt(withFeedback)).toBe(
-      '/implement 9\n\nFix it::details\n\n## Feedback from the previous attempt\n\ntests are red',
+      `/implement 9\n\nFix it::details\n\n## Feedback from the previous attempt\n\ntests are red\n\n${reminder(1)}`,
     );
-    // No feedback column → the drive prompt is unchanged.
+    // No feedback column → the drive prompt is just template + reminder.
     const plain = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: null });
-    expect(drive.prompt(plain)).toBe('/implement 9\n\nFix it::details');
+    expect(drive.prompt(plain)).toBe(`/implement 9\n\nFix it::details\n\n${reminder(1)}`);
+  });
+
+  it('the unattended reminder names both signal tools and this Task’s id', () => {
+    const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, prompt: '{skill}' } };
+    const drive = new AutoDrive(() => config, () => null);
+    const text = drive.prompt(worktreeTask({ id: 42 }));
+    expect(text).toContain('finish_task');
+    expect(text).toContain('escalate_task');
+    expect(text).toContain('taskId=42');
+    expect(text).toContain('running unattended');
+  });
+
+  it('continuePrompt nudges the agent to resume and carries the reminder', () => {
+    const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, continueAttempts: 3 } };
+    const drive = new AutoDrive(() => config, () => null);
+    const text = drive.continuePrompt(worktreeTask({ id: 7 }));
+    expect(text).toMatch(/not finished/i);
+    expect(text).toContain('finish_task');
+    expect(text).toContain('taskId=7');
+    expect(drive.continueAttempts()).toBe(3);
+  });
+
+  it('isResolved reflects the tracker ticket state', async () => {
+    const config: AppConfig = { ...defaultConfig() };
+    const closed = new AutoDrive(() => config, () => null, async () => fakeAdapter('closed').adapter);
+    const open = new AutoDrive(() => config, () => null, async () => fakeAdapter('open').adapter);
+    expect(await closed.isResolved(worktreeTask())).toBe(true);
+    expect(await open.isResolved(worktreeTask())).toBe(false);
   });
 });
 
 describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
   const cfg = (autoRetry: number): AppConfig => ({
     ...defaultConfig(),
-    drive: { prompt: '', mergeFate: 'auto-merge', autoRetry },
+    drive: { prompt: '', mergeFate: 'auto-merge', autoRetry, continueAttempts: 1 },
   });
 
   it('retries within the cap, then escalates — never a silent retry beyond it', () => {
@@ -146,7 +177,7 @@ describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
 describe('AutoDrive.onCompleted — Merge Fate + resolved gate (issue #33, ADR 0011)', () => {
   const cfg = (mergeFate: AppConfig['drive']['mergeFate']): AppConfig => ({
     ...defaultConfig(),
-    drive: { prompt: '', mergeFate, autoRetry: 1 },
+    drive: { prompt: '', mergeFate, autoRetry: 1, continueAttempts: 1 },
   });
   const spyGit = () => ({ merge: vi.fn(async () => ({ ok: true as const })) });
 
@@ -258,7 +289,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       ...defaultConfig().harnesses,
       claude: { command: process.execPath, args: [STUB], env: {}, models: ['stub'], defaultModel: 'stub' },
     },
-    drive: { prompt: '{skill} #{ref}', mergeFate: 'auto-merge', autoRetry: 1, ...over },
+    drive: { prompt: '{skill} #{ref}', mergeFate: 'auto-merge', autoRetry: 1, continueAttempts: 1, ...over },
   });
 
   const startMirrored = (id: number) => {
@@ -275,13 +306,17 @@ describe('Runner auto-drive settle (issue #33)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function build(cfg: AppConfig) {
+  function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
     tasks = new TaskService(db, () => cfg, allWorkspaces(db));
     runs = new RunStore(db);
-    // A resolved (agent-closed) ticket so a clean run actually completes (ADR 0011).
-    const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter('closed').adapter, okGit);
+    // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
+    // 'open' leaves the ticket unresolved, so the continue loop engages.
+    const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter, okGit);
     runner = new Runner(runs, tasks, () => cfg, { autoDrive: drive });
   }
+
+  const continueEvents = (runId: number) =>
+    runs.listEvents(runId).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
 
   it('a Run blocking on a human prompt Escalates: stop, drive→hitl, ready + flag', async () => {
     // The Drive Prompt template IS what reaches the harness — script the stub there.
@@ -368,5 +403,60 @@ describe('Runner auto-drive settle (issue #33)', () => {
     expect(afterSecond.state).toBe('ready');
     expect(afterSecond.drive).toBe('hitl');
     expect(runs.listForTask(task.id)).toHaveLength(2);
+  });
+
+  it('re-prompts an unfinished (ticket-open) Run continueAttempts times, then treats it as unresolved', async () => {
+    // The stub echoes the (non-JSON) drive prompt and ends its turn without
+    // closing the ticket — exactly the "parked / not done" case. autoRetry 0 so
+    // the exhausted-continue unresolved path Escalates to a deterministic end.
+    build(config({ continueAttempts: 2, autoRetry: 0 }), 'open');
+    const task = tasks.upsertMirrored(mirroredAfk(7));
+    startMirrored(task.id);
+
+    const settled = await vi.waitFor(() => {
+      const t = tasks.get(task.id);
+      if (!t.escalated) throw new Error('not escalated yet');
+      return t;
+    }, { timeout: 10_000 });
+
+    const lastRun = runs.listForTask(task.id).at(-1)!;
+    expect(continueEvents(lastRun.id)).toHaveLength(2); // re-prompted exactly continueAttempts times
+    expect(lastRun.reason).toMatch(/left open|escalated to human/);
+    expect(settled.escalated).toBe(true);
+  });
+
+  it('continueAttempts 0 keeps the old single-turn behaviour — no continue re-prompt', async () => {
+    build(config({ continueAttempts: 0, autoRetry: 0 }), 'open');
+    const task = tasks.upsertMirrored(mirroredAfk(7));
+    startMirrored(task.id);
+
+    await vi.waitFor(() => {
+      if (!tasks.get(task.id).escalated) throw new Error('not escalated yet');
+    }, { timeout: 10_000 });
+
+    const lastRun = runs.listForTask(task.id).at(-1)!;
+    expect(continueEvents(lastRun.id)).toHaveLength(0); // straight to the unresolved path
+  });
+
+  it('a resolved (ticket-closed) Run completes on the first turn — never continues', async () => {
+    build(config({ continueAttempts: 3 }), 'closed');
+    const task = tasks.upsertMirrored(mirroredAfk(7));
+    startMirrored(task.id);
+
+    const settled = await vi.waitFor(() => {
+      const t = tasks.get(task.id);
+      if (t.state === 'running') throw new Error('still running');
+      return t;
+    }, { timeout: 10_000 });
+
+    const lastRun = runs.listForTask(task.id).at(-1)!;
+    expect(continueEvents(lastRun.id)).toHaveLength(0);
+    expect(settled.escalated).toBe(false);
+  });
+
+  it('markAgentFinished / markEscalate no-op (return false) when the Task is not running here', () => {
+    build(config());
+    expect(runner.markAgentFinished(999)).toBe(false);
+    expect(runner.markEscalate(999, 'need input')).toBe(false);
   });
 });

@@ -136,6 +136,27 @@ describe('mcp server & scoped keys', () => {
     }
   });
 
+  it('exposes finish_task / escalate_task; acknowledges with running:false when the Task is not executing', async () => {
+    const client = await mcpClient(server, token);
+    const tools = (await client.listTools()).tools.map((t) => t.name);
+    expect(tools).toContain('finish_task'); // always available — a completion signal, not a merge gate
+    expect(tools).toContain('escalate_task');
+
+    const draft = parse(await client.callTool({ name: 'create_task', arguments: { prompt: 'idle', state: 'draft' } }));
+    expect(parse(await client.callTool({ name: 'finish_task', arguments: { taskId: draft.id } }))).toEqual({
+      acknowledged: true,
+      running: false,
+    });
+    expect(
+      parse(await client.callTool({ name: 'escalate_task', arguments: { taskId: draft.id, reason: 'need input' } })),
+    ).toEqual({ acknowledged: true, running: false });
+
+    // A bad id is a domain error, not a silent ack.
+    const bad = await client.callTool({ name: 'finish_task', arguments: { taskId: 999999 } });
+    expect(bad.isError).toBe(true);
+    await client.close();
+  });
+
   it('hides accept/reject behind the agent-review flag (default off)', async () => {
     const client = await mcpClient(server, token);
     const tools = (await client.listTools()).tools.map((t) => t.name);

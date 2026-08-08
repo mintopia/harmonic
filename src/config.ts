@@ -28,6 +28,22 @@ You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When th
 
 {body}`;
 
+/**
+ * Appended to every auto-driven prompt (initial and continue) by
+ * `AutoDrive.prompt`/`continuePrompt`. Harmonic settles a run when the prompt
+ * turn resolves, so an agent that ends its turn to idle-wait used to look
+ * "done". This tells the agent the turn boundary is a checkpoint, not an exit,
+ * and gives it the two explicit signals the Runner reads — `finish_task` and
+ * `escalate_task` — with its Harmonic Task id filled into `{taskId}`.
+ */
+export const UNATTENDED_REMINDER = `## You are running unattended
+
+You are Harmonic Task #{taskId} and no human is watching this turn. Ending your turn does not hand back to a person — Harmonic treats it as a checkpoint and will prompt you to continue only a limited number of times. Do not stop to idle-wait for background work (CI, a watcher) or for input; that wastes those attempts. Instead:
+
+- Keep working until the task is genuinely finished.
+- When it is finished (ticket closed as above), call the \`finish_task\` tool with taskId={taskId} so Harmonic stops re-prompting you.
+- If you are blocked on a decision or need input only a human can give, call the \`escalate_task\` tool with taskId={taskId} and a reason — do not guess and do not idle-wait.`;
+
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
   command: z.string().meta({ example: 'npx' }),
@@ -121,13 +137,17 @@ export const appConfigSchema = z.object({
    * global Drive Prompt template; `mergeFate` is the default fate of a
    * completed worktree Run's branch (research Tasks are always artifacts);
    * `autoRetry` is how many times a failed afk Run is silently re-queued
-   * before it Escalates to a human.
+   * before it Escalates to a human. `continueAttempts` is how many times a
+   * Run that ended its turn without an explicit finish/escalate signal (and
+   * with the ticket still open) is re-prompted to continue before the Run is
+   * treated as unresolved — 0 keeps the old single-turn behaviour.
    */
   drive: z
     .object({
       prompt: z.string().default(DEFAULT_DRIVE_PROMPT).meta({ example: DEFAULT_DRIVE_PROMPT }),
       mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
       autoRetry: z.number().int().min(0).default(1).meta({ example: 1 }),
+      continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
     })
     .prefault({}),
   /**
@@ -240,6 +260,7 @@ export function defaultConfig(): AppConfig {
       prompt: DEFAULT_DRIVE_PROMPT,
       mergeFate: 'auto-merge',
       autoRetry: 1,
+      continueAttempts: 1,
     },
     agentReview: false,
     conversationIdleTimeoutMinutes: 30,

@@ -65,6 +65,10 @@ interface ActiveRun {
   cwd: string;
   /** Latest current-activity line, updated from the run's session updates. */
   activity: string | null;
+  /** Set when the agent calls `finish_task` — stops the auto-drive continue loop. */
+  agentFinished: boolean;
+  /** Set (with a reason) when the agent calls `escalate_task` — routes to a human. */
+  escalateReason: string | null;
 }
 
 /**
@@ -171,6 +175,39 @@ export class Runner {
         this.events.onRunFinished?.(this.runStore.get(active.runId));
       }
     }
+  }
+
+  /**
+   * The agent-driven finish signal (`finish_task` MCP tool): mark this task's
+   * active Run so the auto-drive continue loop stops re-prompting it. Returns
+   * whether an active Run was found (false if the task isn't running here).
+   */
+  markAgentFinished(taskId: number): boolean {
+    return this.forActiveTask(taskId, (active) => {
+      active.agentFinished = true;
+    });
+  }
+
+  /**
+   * The agent-driven escalate signal (`escalate_task` MCP tool): the agent is
+   * blocked on something only a human can resolve. Records the reason so the
+   * run settles Escalated instead of continuing. Returns whether a Run matched.
+   */
+  markEscalate(taskId: number, reason: string): boolean {
+    return this.forActiveTask(taskId, (active) => {
+      active.escalateReason = reason;
+    });
+  }
+
+  /** Apply `fn` to a task's active Run, if any is running here. */
+  private forActiveTask(taskId: number, fn: (active: ActiveRun) => void): boolean {
+    for (const active of this.active.values()) {
+      if (active.taskId === taskId) {
+        fn(active);
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Kill every active harness (process shutdown). */
@@ -346,6 +383,8 @@ export class Runner {
       harness,
       cwd: workspace.cwd,
       activity: null,
+      agentFinished: false,
+      escalateReason: null,
     };
     this.active.set(run.id, active);
 
@@ -385,8 +424,27 @@ export class Runner {
         record('lifecycle', { event: 'mode_set', mode });
       }
 
-      const promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task);
-      const result = await driver.prompt([{ type: 'text', text: promptText }]);
+      // Harmonic settles a Run when its prompt turn resolves. But an afk agent
+      // may end its turn just to park (waiting on CI, a watcher), ticket still
+      // open — indistinguishable from "done" or "gave up". So for an auto-driven
+      // Run the turn boundary is a checkpoint, not an exit: re-prompt to continue
+      // until the agent signals finish/escalate, the ticket closes, or the
+      // continue budget runs out (then the settle block below routes it to the
+      // usual unresolved path). Native Runs stay strictly single-turn.
+      let promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task);
+      let result = await driver.prompt([{ type: 'text', text: promptText }]);
+      for (let attempt = 1; autoDriven && !escalating; attempt++) {
+        if (active.escalateReason) {
+          escalating = active.escalateReason; // agent asked for a human → settle Escalated
+          break;
+        }
+        if (active.agentFinished) break; // explicit finish signal
+        if (await this.autoDrive!.isResolved(task)) break; // ticket closed
+        if (attempt > this.autoDrive!.continueAttempts()) break; // budget spent → unresolved
+        record('lifecycle', { event: 'continue', attempt });
+        promptText = this.autoDrive!.continuePrompt(task);
+        result = await driver.prompt([{ type: 'text', text: promptText }]);
+      }
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       await finalize();

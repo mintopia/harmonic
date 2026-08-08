@@ -1,4 +1,4 @@
-import type { AppConfig, MergeFate } from '../config.js';
+import { UNATTENDED_REMINDER, type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { Git } from './git.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
@@ -57,7 +57,31 @@ export class AutoDrive {
     // prompt is re-derived from the ticket each poll). Append it so the retry
     // sees it — same section the native review/re-attempt path uses (run-prompt.ts).
     const feedback = task.feedback?.trim();
-    return feedback ? `${drive}\n\n## Feedback from the previous attempt\n\n${feedback}` : drive;
+    const withFeedback = feedback ? `${drive}\n\n## Feedback from the previous attempt\n\n${feedback}` : drive;
+    return `${withFeedback}\n\n${this.unattendedReminder(task)}`;
+  }
+
+  /** The unattended reminder with this Task's id filled in (initial + continue). */
+  private unattendedReminder(task: TaskRow): string {
+    return UNATTENDED_REMINDER.replace(/\{taskId\}/g, String(task.id));
+  }
+
+  /**
+   * Re-prompt for a Run that ended its turn without finishing or escalating.
+   * Nudges the agent to resume rather than idle-wait, and re-states the
+   * unattended reminder (working memory is short across turns).
+   */
+  continuePrompt(task: TaskRow): string {
+    return (
+      `Your previous turn ended but this Task is not finished — the tracker ticket is ` +
+      `still open and you have not called \`finish_task\`. Do not wait idly for background ` +
+      `work; pick the work back up and drive it to completion now.\n\n${this.unattendedReminder(task)}`
+    );
+  }
+
+  /** How many times to re-prompt an unfinished Run before treating it as unresolved. */
+  continueAttempts(): number {
+    return this.getConfig().drive.continueAttempts;
   }
 
   /** research is always an artifact; otherwise the global default (per-Task override deferred). */
@@ -103,7 +127,7 @@ export class AutoDrive {
     }
 
     // The gate: did the agent actually resolve the ticket?
-    if (!(await this.agentResolved(task))) return 'unresolved';
+    if (!(await this.isResolved(task))) return 'unresolved';
 
     if (worktree && fate === 'auto-merge') {
       const merge = await this.git.merge(task.workingDir, run.baseBranch!, run.branch!);
@@ -127,7 +151,7 @@ export class AutoDrive {
    * be confirmed closed (read error, or no tracker ref) counts as unresolved —
    * false-completing is worse than an extra retry/escalation.
    */
-  private async agentResolved(task: TaskRow): Promise<boolean> {
+  async isResolved(task: TaskRow): Promise<boolean> {
     if (task.trackerRef == null) return false;
     try {
       const adapter = await this.resolveAdapter(task.workingDir);

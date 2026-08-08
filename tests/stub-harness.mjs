@@ -48,9 +48,15 @@ let setModeParams = null;
 let cancelRequested = false;
 
 async function handlePrompt(msg) {
+  // Harmonic appends an "unattended" reminder (carrying taskId=<n>) to every
+  // auto-driven prompt. Capture the id, then strip the reminder so a JSON
+  // scenario still parses.
+  const rawText = msg.params.prompt[0].text;
+  const stubTaskId = Number(rawText.match(/taskId=(\d+)/)?.[1] ?? 0) || null;
+  const jsonText = rawText.split('\n\n## You are running unattended')[0];
   let scenario;
   try {
-    scenario = JSON.parse(msg.params.prompt[0].text);
+    scenario = JSON.parse(jsonText);
   } catch {
     // Non-JSON prompt: echo it back, so tests can assert what prompt
     // actually reached the harness.
@@ -175,6 +181,35 @@ async function handlePrompt(msg) {
           sessionUpdate: 'agent_message_chunk',
           content: { type: 'text', text: `mcp-error:${err.message}` },
         },
+      });
+    }
+  }
+
+  // Simulate the agent signalling finish/escalate over MCP mid-turn, using the
+  // taskId parsed from the injected reminder.
+  for (const [field, tool, extra] of [
+    ['mcpFinish', 'finish_task', {}],
+    ['mcpEscalate', 'escalate_task', { reason: scenario.mcpEscalate?.reason ?? 'need a human' }],
+  ]) {
+    if (!scenario[field]) continue;
+    try {
+      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+      const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+      const client = new Client({ name: 'stub-harness', version: '0.0.0' });
+      const transport = new StreamableHTTPClientTransport(new URL(process.env.HARMONIC_MCP_URL), {
+        requestInit: { headers: { authorization: `Bearer ${process.env.HARMONIC_API_KEY}` } },
+      });
+      await client.connect(transport);
+      const result = await client.callTool({ name: tool, arguments: { taskId: stubTaskId, ...extra } });
+      await client.close();
+      notify('session/update', {
+        sessionId: msg.params.sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `${tool}:${result.content[0].text}` } },
+      });
+    } catch (err) {
+      notify('session/update', {
+        sessionId: msg.params.sessionId,
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `mcp-error:${err.message}` } },
       });
     }
   }
