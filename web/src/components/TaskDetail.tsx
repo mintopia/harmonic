@@ -3,6 +3,7 @@ import { api } from '../api';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
 import { EventStream } from './EventStream';
+import { coalesceEvents } from '../event-stream-model';
 import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
@@ -14,7 +15,7 @@ const metaChip = `${chip} bg-raised text-muted`;
 const inlineSelect =
   'rounded-md border border-edge bg-field px-1 py-0.5 text-ink focus:border-accent focus:outline-none';
 
-type Tab = 'description' | 'output' | 'changes' | 'details';
+type Tab = 'description' | 'prompt' | 'output' | 'changes' | 'details';
 
 /** The Changes tab's diff fetch, as a state machine so a swallowed error
  * or the in-flight window is never mistaken for "no changes". */
@@ -243,6 +244,49 @@ function OutputTab({ run, events }: { run: Run | undefined; events: RunEvent[] }
   return <EventStream events={events} />;
 }
 
+/** The exact prompt sent to the agent for the selected Run — persisted at run
+ * time (native = the filled Task Prompt template + any feedback; mirrored =
+ * the filled Drive Prompt), so it reflects what actually went out even if the
+ * template has since changed. */
+function PromptTab({ run }: { run: Run | undefined }) {
+  if (!run) return <p className="text-muted">No runs yet.</p>;
+  if (!run.prompt) {
+    return (
+      <p className="text-muted">
+        {run.state === 'running' ? 'Prompt is sent as the run starts…' : 'No prompt recorded for this run.'}
+      </p>
+    );
+  }
+  return (
+    <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 font-data text-data text-ink">
+      {run.prompt}
+    </pre>
+  );
+}
+
+/** The tail of the agent's own message text for the selected Run — a quick
+ * read of how the run ended without opening the full Output stream. Thoughts
+ * and tool calls are dropped; only assistant prose survives, last three folded
+ * utterances shown newest-last. */
+function OutputSummary({ events }: { events: RunEvent[] }) {
+  const messages = coalesceEvents(events)
+    .filter((item): item is Extract<typeof item, { kind: 'text' }> => item.kind === 'text' && item.variant === 'message')
+    .map((item) => item.text.trim())
+    .filter(Boolean);
+  if (messages.length === 0) return null;
+  const tail = messages.slice(-3);
+  return (
+    <div className="py-3 first:pt-0">
+      <div className={`${labelType} mb-1 text-muted`}>Latest output</div>
+      <div className="space-y-2">
+        {tail.map((text, i) => (
+          <Markdown key={i} source={text} className="text-ink" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
   if (!run) return <p className="text-muted">No runs yet.</p>;
   if (!run.branch) return <p className="text-muted">Ran in direct mode — no branch or diff.</p>;
@@ -270,7 +314,7 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
   );
 }
 
-function DetailsTab({ task, run }: { task: Task; run: Run | undefined }) {
+function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunEvent[] }) {
   return (
     <div className="flex flex-col">
       {run && (
@@ -278,6 +322,7 @@ function DetailsTab({ task, run }: { task: Task; run: Run | undefined }) {
           <RunMeta run={run} />
         </div>
       )}
+      <OutputSummary events={events} />
       {run?.reviewFeedback && (
         <div className="py-3">
           <div className={`${labelType} mb-1 text-muted`}>
@@ -394,7 +439,7 @@ export function TaskDetail({
     };
   }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
 
-  const tabs: Tab[] = ['description', 'output', 'changes', 'details'];
+  const tabs: Tab[] = ['description', 'prompt', 'output', 'changes', 'details'];
 
   // Surface why a Task failed or Escalated up top — the reason lives on the
   // latest Run and was otherwise buried in the Details tab's meta line, so an
@@ -502,6 +547,9 @@ export function TaskDetail({
           <div role="tabpanel" id="task-panel-description" aria-labelledby="task-tab-description" hidden={tab !== 'description'}>
             <DescriptionTab task={task} />
           </div>
+          <div role="tabpanel" id="task-panel-prompt" aria-labelledby="task-tab-prompt" hidden={tab !== 'prompt'}>
+            <PromptTab run={selectedRun} />
+          </div>
           <div role="tabpanel" id="task-panel-output" aria-labelledby="task-tab-output" hidden={tab !== 'output'}>
             <OutputTab run={selectedRun} events={events} />
           </div>
@@ -509,7 +557,7 @@ export function TaskDetail({
             <ChangesTab run={selectedRun} diff={diff} />
           </div>
           <div role="tabpanel" id="task-panel-details" aria-labelledby="task-tab-details" hidden={tab !== 'details'}>
-            <DetailsTab task={task} run={selectedRun} />
+            <DetailsTab task={task} run={selectedRun} events={events} />
           </div>
         </div>
 

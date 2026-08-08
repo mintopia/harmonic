@@ -44,6 +44,16 @@ You are Harmonic Task #{taskId} and no human is watching this turn. Ending your 
 - When it is finished (ticket closed as above), call the \`finish_task\` tool with taskId={taskId} so Harmonic stops re-prompting you.
 - If you are blocked on a decision or need input only a human can give, call the \`escalate_task\` tool with taskId={taskId} and a reason — do not guess and do not idle-wait.`;
 
+/**
+ * The default Task Prompt template for a **native** (non-mirrored) Run. The
+ * bare `{prompt}` preserves the pre-template behaviour exactly — the Task's own
+ * prompt is sent verbatim. Operators can wrap it (a house preamble, a "when
+ * done" coda) using the placeholders `{prompt}` (the Task's prompt), `{id}`,
+ * `{workingDir}`, `{harness}`, `{model}`. Mirrored Tasks ignore this and use
+ * the Drive Prompt instead (auto-drive.ts).
+ */
+export const DEFAULT_TASK_PROMPT = `{prompt}`;
+
 export const harnessConfigSchema = z.object({
   /** Command + args spawned to speak ACP on stdio. */
   command: z.string().meta({ example: 'npx' }),
@@ -150,6 +160,15 @@ export const appConfigSchema = z.object({
       continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
     })
     .prefault({}),
+  /**
+   * The Task Prompt template for native (non-mirrored) Runs: the global,
+   * operator-editable wrapper around a Task's own prompt, with `{prompt}` /
+   * `{id}` / `{workingDir}` / `{harness}` / `{model}` placeholders. Defaults to
+   * bare `{prompt}`, so out of the box the Task's prompt is sent verbatim.
+   * A re-attempt's reviewer feedback is appended after the filled template, as
+   * before (run-prompt.ts).
+   */
+  taskPrompt: z.string().default(DEFAULT_TASK_PROMPT).meta({ example: DEFAULT_TASK_PROMPT }),
   /**
    * When true, Accept/Reject tools are exposed over MCP — agents can land
    * branches unattended (ADR-0002). Deliberate opt-in; default off.
@@ -262,6 +281,7 @@ export function defaultConfig(): AppConfig {
       autoRetry: 1,
       continueAttempts: 1,
     },
+    taskPrompt: DEFAULT_TASK_PROMPT,
     agentReview: false,
     conversationIdleTimeoutMinutes: 30,
   };

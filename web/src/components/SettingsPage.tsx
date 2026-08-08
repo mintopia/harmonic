@@ -200,6 +200,45 @@ const DRIVE_PLACEHOLDERS: [string, string][] = [
   ['{body}', 'issue body'],
 ];
 
+const TASK_PLACEHOLDERS: [string, string][] = [
+  ['{prompt}', "the task's own prompt"],
+  ['{id}', 'task id'],
+  ['{workingDir}', 'working directory'],
+  ['{harness}', 'harness id'],
+  ['{model}', 'model id'],
+];
+
+function TaskPromptFields({
+  config,
+  fieldErrors,
+  onChange,
+}: {
+  config: AppConfig;
+  fieldErrors: Record<string, string>;
+  onChange: (taskPrompt: string) => void;
+}) {
+  return (
+    <div>
+      <label className={fieldLabel} htmlFor="settings-task-prompt">Task prompt</label>
+      <textarea
+        id="settings-task-prompt"
+        className={`${field} min-h-36`}
+        value={config.taskPrompt}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <FieldError message={fieldErrors['taskPrompt']} />
+      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
+        {TASK_PLACEHOLDERS.map(([token, desc]) => (
+          <div key={token} className="contents">
+            <dt className="font-data text-ink">{token}</dt>
+            <dd>{desc}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function DriveFields({
   config,
   fieldErrors,
@@ -354,6 +393,17 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             config={local}
             fieldErrors={fieldErrors}
             onChange={(tracker) => setLocal({ ...local, tracker })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Task prompt"
+          description="Wraps a native task's own prompt before it's sent to the agent. Placeholders are filled per Task; the default bare {prompt} sends the prompt verbatim. Mirrored tickets use the Drive prompt instead."
+        >
+          <TaskPromptFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(taskPrompt) => setLocal({ ...local, taskPrompt })}
           />
         </SettingsSection>
 

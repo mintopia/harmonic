@@ -431,7 +431,11 @@ export class Runner {
       // until the agent signals finish/escalate, the ticket closes, or the
       // continue budget runs out (then the settle block below routes it to the
       // usual unresolved path). Native Runs stay strictly single-turn.
-      let promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task);
+      let promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task, this.getConfig().taskPrompt);
+      // Persist the exact text sent so Task detail can show it on every Run —
+      // native or mirrored — without re-deriving a template that may since have
+      // changed (the "Prompt" tab reads this column).
+      this.runStore.update(run.id, { prompt: promptText });
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
       for (let attempt = 1; autoDriven && !escalating; attempt++) {
         if (active.escalateReason) {
