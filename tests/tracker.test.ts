@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { resolveTrackerAdapter } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
+import { gitlabAdapter, type Fetcher } from '../src/tracker/gitlab.js';
 import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
 
 // A real `gh issue view --json` payload, trimmed to the fields the adapter reads.
@@ -103,6 +104,21 @@ describe('resolveTrackerAdapter', () => {
     try {
       expect((await resolveTrackerAdapter(root)).name).toBe('local-markdown');
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves GitLab (with token) and rejects it without one', async () => {
+    const root = mkRepo('# Issue tracker: GitLab\n\nProject: mintopia/harmonic\n');
+    const prev = process.env.GITLAB_TOKEN;
+    try {
+      process.env.GITLAB_TOKEN = 'glpat-xxx';
+      expect((await resolveTrackerAdapter(root)).name).toBe('gitlab');
+      delete process.env.GITLAB_TOKEN;
+      await expect(resolveTrackerAdapter(root)).rejects.toThrow(/GITLAB_TOKEN/);
+    } finally {
+      if (prev === undefined) delete process.env.GITLAB_TOKEN;
+      else process.env.GITLAB_TOKEN = prev;
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -236,5 +252,104 @@ describe('local-markdown tracker adapter', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('gitlab tracker adapter', () => {
+  // 36 (opened) declares `Part of #19` + `Blocked by: #22`; 22 (closed) is the Map.
+  const issues: Record<number, any> = {
+    36: {
+      iid: 36,
+      title: 'GitLab tracker adapter',
+      state: 'opened',
+      description: 'Part of #19\n\nBlocked by: #22',
+      created_at: '2026-08-08T10:00:00Z',
+      closed_at: null,
+      labels: ['ready-for-agent'],
+      assignees: [],
+      web_url: 'https://gitlab.com/mintopia/harmonic/-/issues/36',
+    },
+    22: {
+      iid: 22,
+      title: 'The Tracker Adapter interface',
+      state: 'closed',
+      description: 'The spine.',
+      created_at: '2026-08-06T10:00:00Z',
+      closed_at: '2026-08-07T09:00:00Z',
+      labels: ['wayfinder:map'],
+      assignees: [{ id: 5, username: 'mintopia' }],
+      web_url: 'https://gitlab.com/mintopia/harmonic/-/issues/22',
+    },
+  };
+
+  /** Fake GitLab REST v4: canned reads, recorded writes. */
+  function fakeGitlab() {
+    const writes: { method: string; path: string }[] = [];
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    const fetcher: Fetcher = async (input, init) => {
+      const url = String(input);
+      const method = (init as any)?.method ?? 'GET';
+      const path = url.replace('https://gitlab.com/api/v4', '');
+      if (method !== 'GET') writes.push({ method, path });
+      if (path === '/user') return json({ id: 7, username: 'harmonic-bot' });
+      if (/\/issues\?.*per_page/.test(path)) {
+        const page = Number(new URL(url).searchParams.get('page') ?? '1');
+        return json(page === 1 ? Object.values(issues) : []);
+      }
+      const notes = path.match(/\/issues\/(\d+)\/notes/);
+      if (notes) {
+        if (method === 'POST') return json({});
+        return json([
+          { body: 'first', system: false, author: { username: 'mintopia' }, created_at: '2026-08-08T12:00:00Z' },
+          { body: 'assigned', system: true, author: { username: 'mintopia' }, created_at: '2026-08-08T12:01:00Z' },
+        ]);
+      }
+      const single = path.match(/\/issues\/(\d+)(\?|$)/);
+      if (single) return json(issues[Number(single[1])]);
+      return json({}, 404);
+    };
+    return { fetcher, writes };
+  }
+
+  const cfg = { project: 'mintopia/harmonic', host: 'https://gitlab.com', token: 'glpat-x' };
+
+  it('scan normalises iid/opened-state and synthesises directional edges', async () => {
+    const { fetcher } = fakeGitlab();
+    const tickets = await gitlabAdapter(cfg, fetcher).scan();
+    const t36 = tickets.find((t) => t.number === 36)!;
+    const t22 = tickets.find((t) => t.number === 22)!;
+    expect(t36).toMatchObject({
+      number: 36,
+      state: 'open', // 'opened' → open
+      parent: 19, // body-line `Part of #19`
+      isMap: false,
+      labels: ['ready-for-agent'],
+      url: 'https://gitlab.com/mintopia/harmonic/-/issues/36',
+    });
+    expect(t36.blockedBy).toEqual([{ number: 22, title: 'The Tracker Adapter interface', state: 'closed' }]);
+    // reverse edge synthesised onto 22
+    expect(t22.blocking).toEqual([{ number: 36, title: 'GitLab tracker adapter', state: 'open' }]);
+    expect(t22).toMatchObject({ state: 'closed', isMap: true });
+    expect(t22.assignees).toEqual(['mintopia']);
+  });
+
+  it('readTicket adds non-system comments to the synthesised ticket', async () => {
+    const { fetcher } = fakeGitlab();
+    const t = await gitlabAdapter(cfg, fetcher).readTicket({ number: 36, title: '', state: 'open' });
+    expect(t.number).toBe(36);
+    expect(t.comments).toEqual([{ author: 'mintopia', body: 'first', createdAt: '2026-08-08T12:00:00Z' }]);
+  });
+
+  it('claim unions our id onto the current assignees; close comments then closes', async () => {
+    const { fetcher, writes } = fakeGitlab();
+    const gl = gitlabAdapter(cfg, fetcher);
+    await gl.claim({ number: 36 } as any);
+    await gl.close({ number: 36 } as any, 'done');
+    expect(await gl.whoami()).toBe('harmonic-bot');
+    const put = writes.find((w) => w.method === 'PUT' && w.path.includes('assignee_ids'))!;
+    expect(put.path).toContain('7'); // our user id assigned
+    expect(writes.some((w) => w.method === 'POST' && /\/issues\/36\/notes\?body=done/.test(w.path))).toBe(true);
+    expect(writes.some((w) => w.method === 'PUT' && /\/issues\/36\?state_event=close/.test(w.path))).toBe(true);
   });
 });
