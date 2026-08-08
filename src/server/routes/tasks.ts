@@ -308,6 +308,23 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.post(
+    '/tasks/:id/uncancel',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Return a cancelled task to the queue in place: ready, or blocked if it has unmet dependencies. Reachable with a run-scoped Run Key.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not cancelled.'),
+        },
+      },
+    },
+    async (req) => withDeps(ctx.tasks.uncancel(req.params.id)),
+  );
+
+  app.post(
     '/tasks/:id/reattempt',
     {
       schema: {

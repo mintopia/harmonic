@@ -78,6 +78,12 @@ export function TaskActions({
             Cancel
           </button>
         );
+      case 'uncancel':
+        return (
+          <button key={action} className={secondary} onClick={act(() => api.uncancelTask(task.id))}>
+            Uncancel
+          </button>
+        );
     }
   };
 

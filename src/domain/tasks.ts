@@ -324,6 +324,19 @@ export class TaskService {
   }
 
   /**
+   * Return a cancelled task to the queue in place (issue #57): ready, or
+   * blocked when it has unmet dependencies — the inverse of {@link cancel},
+   * and the transition behind dragging a card out of the Cancelled column.
+   */
+  uncancel(id: number): TaskRow {
+    const task = this.get(id);
+    if (task.state !== 'cancelled') {
+      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
+    }
+    return this.setState(id, this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready');
+  }
+
+  /**
    * Create a NEW task that re-attempts an existing one: a copy of its
    * config and dependencies, linked back via `reattemptOf`, carrying the
    * reviewer's feedback in full. The feedback is composed into the run

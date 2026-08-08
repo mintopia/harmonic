@@ -24,9 +24,9 @@ describe('taskActions', () => {
     expect(taskActions('blocked')).toEqual(['cancel']);
   });
 
-  it('offers no actions for terminal states (footer hides)', () => {
+  it('offers no actions for completed (footer hides), and uncancel for cancelled', () => {
     expect(taskActions('completed')).toEqual([]);
-    expect(taskActions('cancelled')).toEqual([]);
+    expect(taskActions('cancelled')).toEqual(['uncancel']);
   });
 
   it('covers every task state (no state falls through to undefined)', () => {

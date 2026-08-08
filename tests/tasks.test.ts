@@ -83,6 +83,32 @@ describe('task authoring', () => {
     expect((await server.api('POST', `/api/tasks/${created.body.id}/cancel`)).status).toBe(409);
   });
 
+  it('uncancels a cancelled task back to ready, and refuses a non-cancelled task', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'Uncancel me' });
+    await server.api('POST', `/api/tasks/${created.body.id}/cancel`);
+
+    const uncancelled = await server.api('POST', `/api/tasks/${created.body.id}/uncancel`);
+    expect(uncancelled.status).toBe(200);
+    expect(uncancelled.body.state).toBe('ready');
+
+    // ready is not cancelled: uncancel refuses.
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/uncancel`)).status).toBe(409);
+  });
+
+  it('uncancels to blocked when the task has an unmet dependency', async () => {
+    const dep = await server.api('POST', '/api/tasks', { prompt: 'Dependency' });
+    const blocked = await server.api('POST', '/api/tasks', {
+      prompt: 'Depends on an incomplete task',
+      dependsOn: [dep.body.id],
+    });
+    expect(blocked.body.state).toBe('blocked');
+
+    await server.api('POST', `/api/tasks/${blocked.body.id}/cancel`);
+    const uncancelled = await server.api('POST', `/api/tasks/${blocked.body.id}/uncancel`);
+    expect(uncancelled.status).toBe(200);
+    expect(uncancelled.body.state).toBe('blocked');
+  });
+
   it('rejects invalid input: empty prompt, unknown harness, unknown task', async () => {
     expect((await server.api('POST', '/api/tasks', { prompt: '' })).status).toBe(400);
     expect((await server.api('POST', '/api/tasks', { prompt: 'p', harness: 'gemini' })).status).toBe(400);
