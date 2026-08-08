@@ -307,7 +307,6 @@ export function App() {
             activeId={activeWorkspaceId}
             onSwitch={switchWorkspace}
             onCreated={(w) => setWorkspaces((current) => [...current, w])}
-            onUpdated={(w) => setWorkspaces((current) => current.map((x) => (x.id === w.id ? w : x)))}
           />
         </div>
         <div

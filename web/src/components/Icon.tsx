@@ -24,6 +24,7 @@ export type IconName =
   | 'send'
   | 'arrow-left'
   | 'edit'
+  | 'plus'
   | 'expand'
   | 'collapse';
 
@@ -99,6 +100,8 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M8.5 4.5 11.5 7.5" />
     </>
   ),
+  // Add affordance: a plain plus (add-workspace button, issue #66).
+  plus: <path d="M8 3.25v9.5M3.25 8h9.5" />,
   // Docked panel → full overlay: outward corner arrows (issue #15).
   expand: (
     <>
