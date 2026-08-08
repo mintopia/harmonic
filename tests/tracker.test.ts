@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { resolveTrackerAdapter } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
+import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
 
 // A real `gh issue view --json` payload, trimmed to the fields the adapter reads.
 const issue29 = {
@@ -96,6 +98,15 @@ describe('resolveTrackerAdapter', () => {
     }
   });
 
+  it('resolves local-markdown from the repo declaration', async () => {
+    const root = mkRepo('# Issue tracker: local-markdown\n\nPath: tickets\n');
+    try {
+      expect((await resolveTrackerAdapter(root)).name).toBe('local-markdown');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('rejects an unknown tracker and a missing declaration', async () => {
     const root = mkRepo('# Issue tracker: Jira\n');
     try {
@@ -104,5 +115,126 @@ describe('resolveTrackerAdapter', () => {
       rmSync(root, { recursive: true, force: true });
     }
     await expect(resolveTrackerAdapter('/no/such/repo')).rejects.toThrow(/No tracker declaration/);
+  });
+});
+
+describe('local-markdown tracker adapter', () => {
+  // Fixture: 37 blockedBy 29 (declared on 37); 29 blocking is only synthesised.
+  // 29 is a Map, parent 19 (which doesn't exist → dangling, dropped).
+  const fixture: Record<string, string> = {
+    '0029-adapter-interface.md': [
+      '---',
+      'title: Tracker Adapter interface',
+      'state: closed',
+      'createdAt: 2026-08-06T10:00:00Z',
+      'closedAt: 2026-08-07T09:00:00Z',
+      'labels: [wayfinder:map]',
+      'assignees: []',
+      'parent: 19',
+      'blockedBy: []',
+      'blocking: []',
+      '---',
+      '',
+      'The interface.',
+      '',
+      '<!-- comments -->',
+      '',
+      '### mintopia · 2026-08-07T09:00:00Z',
+      'shipped',
+    ].join('\n'),
+    '0037-local-markdown.md': [
+      '---',
+      'title: local-markdown tracker adapter',
+      'state: open',
+      'createdAt: 2026-08-08T10:00:00Z',
+      'labels: [ready-for-agent]',
+      'assignees: []',
+      'blockedBy: [29]',
+      '---',
+      '',
+      'Body here.',
+    ].join('\n'),
+    'notes.md': 'not a ticket (no numeric prefix)',
+  };
+
+  const mkTree = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
+    for (const [name, body] of Object.entries(fixture)) writeFileSync(join(dir, name), body);
+    return dir;
+  };
+
+  it('scan mints ids from the filename, parses frontmatter, skips non-tickets', async () => {
+    const dir = mkTree();
+    try {
+      const tickets = (await localMarkdownAdapter(dir).scan()).sort((a, b) => a.number - b.number);
+      expect(tickets.map((t) => t.number)).toEqual([29, 37]);
+      const t37 = tickets.find((t) => t.number === 37)!;
+      expect(t37).toMatchObject({
+        title: 'local-markdown tracker adapter',
+        state: 'open',
+        labels: ['ready-for-agent'],
+        parent: null,
+        isMap: false,
+        body: 'Body here.',
+      });
+      expect(t37.url).toMatch(/^file:.*0037-local-markdown\.md$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('synthesises directional edges from convention and drops dangling parent', async () => {
+    const dir = mkTree();
+    try {
+      const tickets = await localMarkdownAdapter(dir).scan();
+      const t29 = tickets.find((t) => t.number === 29)!;
+      const t37 = tickets.find((t) => t.number === 37)!;
+      // 37 declares blockedBy 29; the reverse blocking edge is synthesised onto 29.
+      expect(t37.blockedBy).toEqual([{ number: 29, title: 'Tracker Adapter interface', state: 'closed' }]);
+      expect(t29.blocking).toEqual([{ number: 37, title: 'local-markdown tracker adapter', state: 'open' }]);
+      expect(t29.isMap).toBe(true);
+      expect(t29.parent).toBeNull(); // 19 doesn't exist in the tree
+      expect(t29.comments).toEqual([{ author: 'mintopia', createdAt: '2026-08-07T09:00:00Z', body: 'shipped' }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('claim then close round-trip through the frontmatter', async () => {
+    const dir = mkTree();
+    try {
+      const md = localMarkdownAdapter(dir, { identity: 'jess' });
+      const ticket = await md.readTicket({ number: 37, title: '', state: 'open' });
+      await md.claim(ticket);
+      await md.close(ticket, 'accepted');
+
+      const after = await md.readTicket({ number: 37, title: '', state: 'open' });
+      expect(after.state).toBe('closed');
+      expect(after.closedAt).not.toBeNull();
+      expect(after.assignees).toEqual(['jess']);
+      expect(after.comments).toEqual([{ author: 'jess', createdAt: expect.any(String), body: 'accepted' }]);
+      // idempotent claim: no duplicate assignee.
+      await md.claim(after);
+      expect((await md.readTicket({ number: 37, title: '', state: 'open' })).assignees).toEqual(['jess']);
+      // the edge survives the rewrite.
+      const raw = readFileSync(join(dir, '0037-local-markdown.md'), 'utf8');
+      expect(raw).toContain('blockedBy: [29]');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a write preserves pre-existing comments', async () => {
+    const dir = mkTree();
+    try {
+      const md = localMarkdownAdapter(dir, { identity: 'jess' });
+      const t29 = await md.readTicket({ number: 29, title: '', state: 'closed' });
+      await md.claim(t29); // no new comment — must not drop the existing "shipped"
+      const after = await md.readTicket({ number: 29, title: '', state: 'closed' });
+      expect(after.comments).toEqual([{ author: 'mintopia', createdAt: '2026-08-07T09:00:00Z', body: 'shipped' }]);
+      expect(after.assignees).toEqual(['jess']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

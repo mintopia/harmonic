@@ -1,8 +1,12 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { githubAdapter } from './github.js';
+import { localMarkdownAdapter } from './local-markdown.js';
 
 export type TicketState = 'open' | 'closed';
+
+/** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
+export const MAP_LABEL = 'wayfinder:map';
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {
@@ -81,6 +85,8 @@ export interface OpenPRInput {
  * Resolve the repo's tracker from its `docs/agents/issue-tracker.md`
  * declaration (`# Issue tracker: <name>`) — the sibling of the Harness
  * Adapter's `adapterFor`. GitHub uses ambient `gh` auth (no config).
+ * local-markdown reads an optional `Path: <dir>` line (default `.scratch`,
+ * resolved relative to the repo unless absolute).
  */
 export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAdapter> {
   const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
@@ -94,6 +100,10 @@ export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAd
   switch (name?.toLowerCase()) {
     case 'github':
       return githubAdapter(repoRoot);
+    case 'local-markdown': {
+      const path = doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] ?? '.scratch';
+      return localMarkdownAdapter(isAbsolute(path) ? path : join(repoRoot, path));
+    }
     default:
       throw new Error(`Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
   }

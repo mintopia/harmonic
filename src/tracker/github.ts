@@ -1,14 +1,12 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { Ticket, TicketRef, TicketState, TrackerAdapter } from './adapter.js';
+import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
 /** The `gh` fields that normalise straight onto a `Ticket` — one bulk read covers relationships. */
 const FIELDS =
   'number,title,state,body,createdAt,closedAt,labels,assignees,comments,parent,blockedBy,blocking,url';
-
-const MAP_LABEL = 'wayfinder:map';
 
 /** Runs a `gh` subprocess in the repo (so `gh` infers the repo from its remote). Injectable for tests. */
 export type GhRunner = (args: string[], cwd: string) => Promise<string>;
