@@ -234,5 +234,12 @@ export interface AppConfig {
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
   /** Poll the working directory's issue tracker and mirror issues onto the board (issue #30). */
   tracker: { enabled: boolean; pollIntervalSeconds: number };
+  /** How afk mirrored Tasks are driven (issue #33): the prompt template, branch fate, and retry cap. */
+  drive: {
+    /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. */
+    prompt: string;
+    mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
+    autoRetry: number;
+  };
   agentReview: boolean;
 }

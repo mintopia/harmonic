@@ -163,6 +163,76 @@ function TrackerFields({
   );
 }
 
+const DRIVE_PLACEHOLDERS: [string, string][] = [
+  ['{skill}', 'workflow skill — /research or /implement'],
+  ['{ref}', 'issue number'],
+  ['{url}', 'issue URL'],
+  ['{title}', 'issue title'],
+  ['{body}', 'issue body'],
+];
+
+function DriveFields({
+  config,
+  fieldErrors,
+  onChange,
+}: {
+  config: AppConfig;
+  fieldErrors: Record<string, string>;
+  onChange: (drive: AppConfig['drive']) => void;
+}) {
+  const d = config.drive;
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <label className={fieldLabel} htmlFor="settings-drive-prompt">Drive prompt</label>
+        <textarea
+          id="settings-drive-prompt"
+          className={`${field} min-h-36`}
+          value={d.prompt}
+          onChange={(e) => onChange({ ...d, prompt: e.target.value })}
+        />
+        <FieldError message={fieldErrors['drive.prompt']} />
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
+          {DRIVE_PLACEHOLDERS.map(([token, desc]) => (
+            <div key={token} className="contents">
+              <dt className="font-data text-ink">{token}</dt>
+              <dd>{desc}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+        <div>
+          <label className={fieldLabel} htmlFor="settings-merge-fate">Merge fate</label>
+          <select
+            id="settings-merge-fate"
+            className={field}
+            value={d.mergeFate}
+            onChange={(e) => onChange({ ...d, mergeFate: e.target.value as AppConfig['drive']['mergeFate'] })}
+          >
+            <option value="auto-merge">auto-merge</option>
+            <option value="open-PR">open-PR</option>
+            <option value="artifact">artifact</option>
+          </select>
+          <FieldError message={fieldErrors['drive.mergeFate']} />
+        </div>
+        <div>
+          <label className={fieldLabel} htmlFor="settings-auto-retry">Auto-retry</label>
+          <input
+            id="settings-auto-retry"
+            type="number"
+            min={0}
+            className={`${field} w-28 font-data`}
+            value={d.autoRetry}
+            onChange={(e) => onChange({ ...d, autoRetry: Number(e.target.value) })}
+          />
+          <FieldError message={fieldErrors['drive.autoRetry']} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void }) {
   const [pristine, setPristine] = useState<AppConfig | null>(null);
   const [local, setLocal] = useState<AppConfig | null>(null);
@@ -246,6 +316,17 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             config={local}
             fieldErrors={fieldErrors}
             onChange={(tracker) => setLocal({ ...local, tracker })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Drive prompt"
+          description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate and auto-retry govern what happens after a run."
+        >
+          <DriveFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(drive) => setLocal({ ...local, drive })}
           />
         </SettingsSection>
 
