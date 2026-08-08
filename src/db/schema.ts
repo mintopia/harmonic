@@ -127,6 +127,11 @@ export const runs = sqliteTable('runs', {
   /** ACP stopReason from the session/prompt result. */
   stopReason: text('stop_reason'),
   sessionId: text('session_id'),
+  /** The exact prompt text sent to the harness for this Run (native = filled
+   * Task Prompt template + any feedback; mirrored = the filled Drive Prompt).
+   * Persisted so Task detail's Prompt tab shows what actually went to the
+   * agent; null for pre-feature Runs and until the prompt turn is sent. */
+  prompt: text('prompt'),
   /** Worktree mode: the run's branch and the branch it was cut from. */
   branch: text('branch'),
   baseBranch: text('base_branch'),

@@ -385,7 +385,11 @@ export class Runner {
         record('lifecycle', { event: 'mode_set', mode });
       }
 
-      const promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task);
+      const promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task, this.getConfig().taskPrompt);
+      // Persist the exact text sent so Task detail can show it on every Run —
+      // native or mirrored — without re-deriving a template that may since have
+      // changed (the "Prompt" tab reads this column).
+      this.runStore.update(run.id, { prompt: promptText });
       const result = await driver.prompt([{ type: 'text', text: promptText }]);
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });

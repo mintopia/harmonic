@@ -94,6 +94,9 @@ export interface Run {
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;
+  /** The exact prompt text sent to the harness for this Run; null for
+   * pre-feature Runs and while a Run is still starting up. */
+  prompt: string | null;
   branch: string | null;
   baseBranch: string | null;
   usage: {
@@ -348,5 +351,7 @@ export interface AppConfig {
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
     autoRetry: number;
   };
+  /** The Task Prompt template for native Runs, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
+  taskPrompt: string;
   agentReview: boolean;
 }
