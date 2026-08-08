@@ -387,7 +387,10 @@ export function TaskDetail({
 
   return (
     <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
-      <div className="flex max-h-[85vh] flex-col">
+      {/* Fixed height (not max-h): the modal stays one size across tabs, so
+          switching between a short Description and a long Output never resizes
+          it — each panel scrolls within this frame instead. */}
+      <div className="flex h-[85vh] flex-col">
         <header className="border-b border-hairline p-4">
           <div className="mb-1 flex items-center gap-2 text-small text-muted">
             <span>Task #{task.id}</span>
