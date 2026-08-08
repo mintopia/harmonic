@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { settings } from '../src/db/schema.js';
 import { startServer, TEST_PASSWORD, type TestServer } from './helpers.js';
@@ -67,6 +70,53 @@ describe('auth and api keys', () => {
     expect(logout.status).toBe(200);
     const after = await fetch(`${server.baseUrl}/api/tasks`, { headers: { cookie: sessionCookie } });
     expect(after.status).toBe(401);
+  });
+
+  it('removes the operator password, falling back to ungated', async () => {
+    const s = await startServer();
+    try {
+      // Wrong current password changes nothing.
+      expect((await s.api('DELETE', '/api/auth/password', { currentPassword: 'nope' })).status).toBe(401);
+      expect(s.app.ctx.auth.hasPassword()).toBe(true);
+
+      expect((await s.api('DELETE', '/api/auth/password', { currentPassword: TEST_PASSWORD })).status).toBe(200);
+      expect(s.app.ctx.auth.hasPassword()).toBe(false);
+      // Now ungated: an unauthenticated request goes through.
+      expect((await s.anonApi('GET', '/api/tasks')).status).toBe(200);
+      // Removing again is idempotent.
+      expect((await s.anonApi('DELETE', '/api/auth/password', { currentPassword: '' })).status).toBe(200);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('sets the initial password on an ungated install (currentPassword ignored)', async () => {
+    const s = await startServer(undefined, { password: '' });
+    try {
+      expect(s.app.ctx.auth.hasPassword()).toBe(false);
+      expect((await s.anonApi('POST', '/api/auth/change-password', { currentPassword: '', newPassword: 'hunter2' })).status).toBe(200);
+      expect(s.app.ctx.auth.hasPassword()).toBe(true);
+      // Gate is back on: unauthenticated is rejected, the new password logs in.
+      expect((await s.anonApi('GET', '/api/tasks')).status).toBe(401);
+      expect((await s.anonApi('POST', '/api/auth/login', { password: 'hunter2' })).status).toBe(200);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it('an empty boot password clears a previously-set one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-clearpw-'));
+    try {
+      const withPw = await startServer(undefined, { dataDir: dir, password: 'secret1' });
+      expect(withPw.app.ctx.auth.hasPassword()).toBe(true);
+      await withPw.close();
+
+      const cleared = await startServer(undefined, { dataDir: dir, password: '' });
+      expect(cleared.app.ctx.auth.hasPassword()).toBe(false);
+      await cleared.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('the password hash at rest is not the password', async () => {

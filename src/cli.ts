@@ -25,8 +25,9 @@ Options:
   --port      Port to listen on (default 4700)
   --host      Host to bind (default 0.0.0.0)
   --data-dir  State directory (default ~/.harmonic, or $HARMONIC_DATA_DIR)
-  --password  Set/update the operator password (or $HARMONIC_PASSWORD);
-              required on first run
+  --password  Set/update the operator password (or $HARMONIC_PASSWORD).
+              Optional; pass an empty value (--password '') to remove it and
+              run ungated
 `;
 
 /** 0.0.0.0 binds everywhere but isn't a clickable URL — show localhost. */

@@ -44,6 +44,11 @@ export class AuthService {
       .run();
   }
 
+  /** Remove the operator password — Harmonic falls back to ungated. Idempotent. */
+  clearPassword(): void {
+    this.db.delete(settings).where(eq(settings.key, AUTH_KEY)).run();
+  }
+
   verifyLogin(password: string): boolean {
     const stored = this.readAuth();
     if (!stored) return false;

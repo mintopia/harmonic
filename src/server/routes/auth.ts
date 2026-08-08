@@ -29,6 +29,10 @@ const changePasswordBodySchema = z.object({
   newPassword: z.string().min(4).meta({ example: '<your-new-password>' }),
 });
 
+const removePasswordBodySchema = z.object({
+  currentPassword: z.string().meta({ example: '<your-current-password>' }),
+});
+
 const createKeyBodySchema = z.object({
   name: z.string().min(1).meta({ example: 'ci-pipeline' }),
   /** 'full' (default) drives the whole fleet; 'read' is a viz-client key — GET tasks/runs/maps + WS, no mutations (issue #35). */
@@ -137,7 +141,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Auth'],
         description:
-          "Change the operator password. Verifies currentPassword first (a wrong current password changes nothing) and applies the same minimum-length rule as initial setup to newPassword. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched. Operator only; not reachable with a run-scoped Run Key.",
+          "Set or change the operator password. When one is already set, currentPassword must match (a wrong current password changes nothing); when none is set (ungated), currentPassword is ignored and this sets the initial password. newPassword takes the same minimum-length rule as initial setup. On success every session other than the caller's own is destroyed — a stolen cookie doesn't survive a credential rotation — but API Keys are untouched. Operator only; not reachable with a run-scoped Run Key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         body: changePasswordBodySchema,
         response: {
@@ -155,11 +159,39 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const { currentPassword, newPassword } = req.body;
-      if (!ctx.auth.verifyLogin(currentPassword)) {
+      // Ungated → this is the initial set, so skip the current-password check.
+      if (ctx.auth.hasPassword() && !ctx.auth.verifyLogin(currentPassword)) {
         return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong current password' } });
       }
       ctx.auth.setPassword(newPassword);
       ctx.auth.destroyOtherSessions(req.cookies[SESSION_COOKIE]);
+      return { ok: true } as const;
+    },
+  );
+
+  app.delete(
+    '/auth/password',
+    {
+      schema: {
+        tags: ['Auth'],
+        description:
+          'Remove the operator password — Harmonic falls back to ungated (every API surface open). Verifies currentPassword first when one is set; a no-op when none is set (idempotent). On success every session other than the caller\'s own is destroyed. Operator only; not reachable with a run-scoped Run Key.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        body: removePasswordBodySchema,
+        response: {
+          200: okResponseSchema.describe('The password is removed (or was already unset); Harmonic is now ungated.'),
+          401: errorResponse('A password is set and currentPassword did not match — nothing was changed.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      if (ctx.auth.hasPassword()) {
+        if (!ctx.auth.verifyLogin(req.body.currentPassword)) {
+          return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong current password' } });
+        }
+        ctx.auth.clearPassword();
+        ctx.auth.destroyOtherSessions(req.cookies[SESSION_COOKIE]);
+      }
       return { ok: true } as const;
     },
   );

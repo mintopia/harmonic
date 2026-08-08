@@ -1,28 +1,41 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api';
-import { btnGhost, field } from '../ui';
+import { btnGhost, btnQuietDestructive, field } from '../ui';
 import { fieldLabel } from './SettingsSection';
 
-/** Changes the operator password. Deliberately its own form with its own
- * submit button — a credential rotation isn't part of the config object, so
- * it never touches the Settings page's dirty-state/save-bar machinery. */
+/** Sets, changes, or removes the operator password. Deliberately its own form
+ * with its own submit — a credential change isn't part of the config object, so
+ * it never touches the Settings page's dirty-state/save-bar machinery. Adapts to
+ * whether a password is currently set (ungated installs show a Set form). */
 export function SecuritySection() {
+  const [configured, setConfigured] = useState<boolean | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((me: { passwordConfigured: boolean }) => setConfigured(me.passwordConfigured))
+      .catch(() => setConfigured(true));
+  }, []);
+
+  const run = async (fn: () => Promise<unknown>, thenReload: boolean) => {
     setBusy(true);
     setError(null);
     setConfirmed(false);
     try {
-      await api.changePassword(currentPassword, newPassword);
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmed(true);
+      await fn();
+      // Setting or removing the password flips the whole app's gate; a reload
+      // re-reads /auth/me so the login screen and logout button resync.
+      if (thenReload) location.reload();
+      else {
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmed(true);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -30,24 +43,36 @@ export function SecuritySection() {
     }
   };
 
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    // Change (password already set) stays in-page; initial Set reloads to sign in.
+    run(() => api.changePassword(currentPassword, newPassword), !configured);
+  };
+
+  if (configured === null) return null;
+
   return (
     <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
+      {configured && (
+        <div>
+          <label className={fieldLabel} htmlFor="security-current-password">Current Password</label>
+          <input
+            id="security-current-password"
+            type="password"
+            autoComplete="current-password"
+            className={field}
+            value={currentPassword}
+            onChange={(e) => {
+              setCurrentPassword(e.target.value);
+              setConfirmed(false);
+            }}
+          />
+        </div>
+      )}
       <div>
-        <label className={fieldLabel} htmlFor="security-current-password">Current Password</label>
-        <input
-          id="security-current-password"
-          type="password"
-          autoComplete="current-password"
-          className={field}
-          value={currentPassword}
-          onChange={(e) => {
-            setCurrentPassword(e.target.value);
-            setConfirmed(false);
-          }}
-        />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="security-new-password">New Password</label>
+        <label className={fieldLabel} htmlFor="security-new-password">
+          {configured ? 'New Password' : 'Password'}
+        </label>
         <input
           id="security-new-password"
           type="password"
@@ -60,14 +85,23 @@ export function SecuritySection() {
           }}
         />
       </div>
-      <div className="flex items-center gap-3 sm:col-span-2">
-        <button
-          type="submit"
-          disabled={busy || !currentPassword || !newPassword}
-          className={btnGhost}
-        >
-          {busy ? 'Changing…' : 'Change password'}
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+        <button type="submit" disabled={busy || !newPassword || (configured && !currentPassword)} className={btnGhost}>
+          {busy ? 'Saving…' : configured ? 'Change password' : 'Set password'}
         </button>
+        {configured && (
+          <button
+            type="button"
+            disabled={busy || !currentPassword}
+            className={btnQuietDestructive}
+            onClick={() => run(() => api.removePassword(currentPassword), true)}
+          >
+            Remove password
+          </button>
+        )}
+        {!configured && (
+          <p className="text-small text-muted">No password set — this console is ungated. Set one to require login.</p>
+        )}
         {confirmed && <p className="text-accept">Password changed.</p>}
         {error && <p className="text-fail">{error}</p>}
       </div>

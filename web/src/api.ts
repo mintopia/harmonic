@@ -67,6 +67,9 @@ export const api = {
     ),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+
+  removePassword: (currentPassword: string) =>
+    request<{ ok: true }>('DELETE', '/api/auth/password', { currentPassword }),
   conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/conversations'),
   conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
   createConversation: (input: { harness?: string; model?: string; workingDir?: string }) =>

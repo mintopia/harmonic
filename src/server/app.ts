@@ -50,7 +50,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 export interface AppOptions {
   dataDir: string;
   configOverrides?: DeepPartial<AppConfig> | undefined;
-  /** Set (or update) the operator password at boot — CLI/config first-run setup. */
+  /** Set/update the operator password at boot; an empty string clears it (ungated). Undefined leaves it untouched. */
   password?: string | undefined;
 }
 
@@ -138,7 +138,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
   const auth = new AuthService(db);
-  if (opts.password) auth.setPassword(opts.password);
+  // An explicit empty password clears the gate; undefined leaves it as-is.
+  if (opts.password !== undefined) {
+    if (opts.password === '') auth.clearPassword();
+    else auth.setPassword(opts.password);
+  }
   const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
     events: {
       onEvent: (event) => bus.emit('conversation_event', event),
