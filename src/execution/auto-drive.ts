@@ -46,13 +46,18 @@ export class AutoDrive {
   /** The Drive Prompt for a mirrored afk Task — the global template filled from it. */
   prompt(task: TaskRow): string {
     const { title, body } = splitTitleBody(task.prompt);
-    return buildDrivePrompt(this.getConfig().drive.prompt, {
+    const drive = buildDrivePrompt(this.getConfig().drive.prompt, {
       skill: skillFor(task),
       ref: String(task.trackerRef ?? ''),
       url: this.urlFor(task) ?? '',
       title,
       body,
     });
+    // A re-queued mirrored Task carries operator feedback in its column (the
+    // prompt is re-derived from the ticket each poll). Append it so the retry
+    // sees it — same section the native review/re-attempt path uses (run-prompt.ts).
+    const feedback = task.feedback?.trim();
+    return feedback ? `${drive}\n\n## Feedback from the previous attempt\n\n${feedback}` : drive;
   }
 
   /** research is always an artifact; otherwise the global default (per-Task override deferred). */

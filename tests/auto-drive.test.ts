@@ -108,6 +108,21 @@ describe('Drive Prompt fill (issue #33)', () => {
     const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
     expect(drive.prompt(research)).toBe('/research 9 https://x/9\n\nInvestigate X::why');
   });
+
+  it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', () => {
+    const config: AppConfig = {
+      ...defaultConfig(),
+      drive: { prompt: '{skill} {ref}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1 },
+    };
+    const drive = new AutoDrive(() => config, () => null);
+    const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
+    expect(drive.prompt(withFeedback)).toBe(
+      '/implement 9\n\nFix it::details\n\n## Feedback from the previous attempt\n\ntests are red',
+    );
+    // No feedback column → the drive prompt is unchanged.
+    const plain = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: null });
+    expect(drive.prompt(plain)).toBe('/implement 9\n\nFix it::details');
+  });
 });
 
 describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {

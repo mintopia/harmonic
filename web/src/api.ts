@@ -64,8 +64,9 @@ export const api = {
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
-  /** Send a failed task back to ready in place (failed → ready). */
-  requeueTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/requeue`),
+  /** Send a failed task back to ready in place (failed → ready), carrying optional feedback. */
+  requeueTask: (id: number, feedback?: string) =>
+    request<Task>('POST', `/api/tasks/${id}/requeue`, feedback ? { feedback } : {}),
   addDependency: (id: number, dependsOnId: number) =>
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
   removeDependency: (id: number, depId: number) =>

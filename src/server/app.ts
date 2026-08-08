@@ -167,9 +167,17 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
   });
   // Crash recovery before anything can execute: orphaned runs are failed
-  // as "interrupted" (never silently re-run), and their tasks fail loudly.
-  for (const orphan of runs.markInterrupted()) {
-    tasks.setState(orphan.taskId, 'failed');
+  // as "interrupted" (never silently re-run).
+  runs.markInterrupted();
+  // A fresh process is executing nothing, so any Task still `running` was
+  // orphaned by the restart — fail it loudly (re-queueable, with feedback).
+  // This is a superset of "fail the interrupted runs' tasks": it also catches a
+  // mirrored afk Task that crashed between the ready→running flip (the lock) and
+  // its Run being created. No orphaned Run row exists for that one, so the run
+  // sweep alone left it stuck `running` while its ticket stayed open — and the
+  // poll never rescues it (upsertMirrored refuses to move a Task off `running`).
+  for (const orphan of tasks.list({ state: 'running' })) {
+    tasks.setState(orphan.id, 'failed');
   }
   // Run Keys of every non-running run die here — catches keys orphaned by
   // a crash or restart. Conversation Keys can never survive a restart (their
