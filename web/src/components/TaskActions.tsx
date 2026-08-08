@@ -92,7 +92,17 @@ export function TaskActions({
 
   return (
     <>
-      <div className={container}>{actions.map(button)}</div>
+      <div className={container}>
+        {/* Un-escalate is a flag action, not a state action (issue #33
+            follow-up): hand an escalated mirrored Task back to afk drive.
+            Shown only while escalated, beside the state's own actions. */}
+        {task.escalated && (
+          <button className={secondary} onClick={act(() => api.unescalateTask(task.id))}>
+            Un-escalate
+          </button>
+        )}
+        {actions.map(button)}
+      </div>
       {rejecting && (
         <RejectDialog taskId={task.id} onClose={() => setRejecting(false)} onDone={done(() => setRejecting(false))} />
       )}

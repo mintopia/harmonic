@@ -98,6 +98,10 @@ export const runs = sqliteTable('runs', {
   /** Worktree mode: the run's branch and the branch it was cut from. */
   branch: text('branch'),
   baseBranch: text('base_branch'),
+  /** `git diff --stat` snapshot taken when the run settles to awaiting-review;
+   * null in direct mode or before settle. The card and Task detail both read
+   * this so they can never disagree (issue #36). */
+  stat: text('stat'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
   /** Review decision on this run: 'accepted' | 'rejected' | null. */

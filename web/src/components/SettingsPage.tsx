@@ -26,14 +26,23 @@ function TaskDefaultsFields({
   config,
   fieldErrors,
   onChange,
+  onDefaultModel,
 }: {
   config: AppConfig;
   fieldErrors: Record<string, string>;
   onChange: (defaults: AppConfig['defaults']) => void;
+  onDefaultModel: (model: string) => void;
 }) {
   const d = config.defaults;
   const set = <K extends keyof AppConfig['defaults']>(key: K, value: AppConfig['defaults'][K]) =>
     onChange({ ...d, [key]: value });
+
+  // The default model for new tasks is the default harness's defaultModel
+  // (see TaskService.resolveExecution). Editing it here writes through to that
+  // harness so it stays a single source of truth.
+  const harness = config.harnesses[d.harness];
+  const models = harness?.models ?? [];
+  const defaultModel = harness?.defaultModel ?? '';
 
   return (
     <div className="grid gap-3.5 sm:grid-cols-2">
@@ -47,6 +56,26 @@ function TaskDefaultsFields({
           ))}
         </select>
         <FieldError message={fieldErrors['defaults.harness']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-default-model">Default model</label>
+        <select
+          id="settings-default-model"
+          className={field}
+          value={defaultModel}
+          onChange={(e) => onDefaultModel(e.target.value)}
+          disabled={!harness}
+        >
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+          {defaultModel && !models.includes(defaultModel) && (
+            <option value={defaultModel}>{defaultModel} (not in models list)</option>
+          )}
+        </select>
+        <FieldError message={fieldErrors[`harnesses.${d.harness}.defaultModel`]} />
       </div>
       <div>
         <label className={fieldLabel} htmlFor="settings-workdir">Working directory</label>
@@ -294,6 +323,15 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             config={local}
             fieldErrors={fieldErrors}
             onChange={(defaults) => setLocal({ ...local, defaults })}
+            onDefaultModel={(model) =>
+              setLocal({
+                ...local,
+                harnesses: {
+                  ...local.harnesses,
+                  [local.defaults.harness]: { ...local.harnesses[local.defaults.harness]!, defaultModel: model },
+                },
+              })
+            }
           />
         </SettingsSection>
 

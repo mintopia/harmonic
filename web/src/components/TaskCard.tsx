@@ -1,5 +1,6 @@
 import type { Drive, Task } from '../types';
 import { card, chip } from '../ui';
+import { cardBranch, cardDiffstat } from './cardBranch';
 import { TaskActions } from './TaskActions';
 
 /** One truncating metadata line: id, harness · model, then only the facts
@@ -95,6 +96,8 @@ function MirroredCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => vo
 
 /** The native card — unchanged: hero prompt, one faint meta line, priority. */
 function NativeCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
+  const branch = cardBranch(task);
+  const diffstat = cardDiffstat(task);
   return (
     <>
       <TitleButton task={task} onOpen={onOpen} className="mb-2" />
@@ -113,6 +116,21 @@ function NativeCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void
           <span className="shrink-0 text-label font-semibold uppercase text-fail">on failed</span>
         )}
       </div>
+      {/* Branch is genuine code (the Mono Is Code Rule), so it stays mono even
+          on this sans-first card; the diffstat is a figure, so it's sans with
+          tabular-nums — no green/red (that would spend a state colour on a
+          non-state, the Signal Rule). Faint/muted keeps both a glance, not a
+          console. */}
+      {branch && (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="min-w-0 truncate font-data text-label text-faint">{branch}</span>
+          {diffstat && (
+            <span className="shrink-0 text-label tabular-nums text-muted">
+              +{diffstat.added} −{diffstat.removed}
+            </span>
+          )}
+        </div>
+      )}
     </>
   );
 }

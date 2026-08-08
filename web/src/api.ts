@@ -55,6 +55,7 @@ export const api = {
   rejectTask: (id: number, feedback?: string) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, feedback ? { feedback } : {}),
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
+  unescalateTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/unescalate`),
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
   taskUsage: (id: number) =>
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),

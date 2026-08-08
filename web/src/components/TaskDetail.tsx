@@ -14,7 +14,7 @@ const metaChip = `${chip} bg-raised text-muted`;
 const inlineSelect =
   'rounded-md border border-edge bg-field px-1 py-0.5 text-ink focus:border-accent focus:outline-none';
 
-type Tab = 'output' | 'changes' | 'details';
+type Tab = 'description' | 'output' | 'changes' | 'details';
 
 /** The Changes tab's diff fetch, as a state machine so a swallowed error
  * or the in-flight window is never mistaken for "no changes". */
@@ -215,6 +215,29 @@ function RunMeta({ run }: { run: Run }) {
   );
 }
 
+/** The task's description, on its own tab so the Output tab keeps the full
+ * panel height (issue #34 follow-up). Mirrored prompts render as Markdown;
+ * native prompts stay plain. */
+function DescriptionTab({ task }: { task: Task }) {
+  return (
+    <div>
+      {task.origin === 'mirrored' ? (
+        <Markdown source={task.prompt} className="text-ink" />
+      ) : (
+        <p className="whitespace-pre-wrap text-ink">{task.prompt}</p>
+      )}
+      {(task.reattemptOf !== null || task.reattempts.length > 0) && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
+          {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
+          {task.reattempts.length > 0 && (
+            <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OutputTab({ run, events }: { run: Run | undefined; events: RunEvent[] }) {
   if (!run) return <p className="text-muted">No runs yet.</p>;
   return <EventStream events={events} />;
@@ -290,7 +313,7 @@ export function TaskDetail({
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
-  const [tab, setTab] = useState<Tab>('output');
+  const [tab, setTab] = useState<Tab>('description');
   const [taskCost, setTaskCost] = useState<Cost | null>(null);
 
   useEffect(() => {
@@ -360,7 +383,7 @@ export function TaskDetail({
     };
   }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
 
-  const tabs: Tab[] = ['output', 'changes', 'details'];
+  const tabs: Tab[] = ['description', 'output', 'changes', 'details'];
 
   return (
     <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
@@ -379,19 +402,8 @@ export function TaskDetail({
                 of the corner it sits in. */}
             <div className="flex-1" />
           </div>
-          {task.origin === 'mirrored' ? (
-            <Markdown source={task.prompt} className="text-ink" />
-          ) : (
-            <p className="whitespace-pre-wrap text-ink">{task.prompt}</p>
-          )}
-          {(task.reattemptOf !== null || task.reattempts.length > 0) && (
-            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
-              {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
-              {task.reattempts.length > 0 && (
-                <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>
-              )}
-            </div>
-          )}
+          {/* The description moved to its own tab (below) so the Output tab
+              keeps the full panel height — a header-mounted prompt starved it. */}
         </header>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2">
@@ -446,6 +458,9 @@ export function TaskDetail({
             never discards in-progress state — notably a dependency edit
             held in the Dependencies component. */}
         <div className="flex-1 overflow-y-auto p-4">
+          <div role="tabpanel" id="task-panel-description" aria-labelledby="task-tab-description" hidden={tab !== 'description'}>
+            <DescriptionTab task={task} />
+          </div>
           <div role="tabpanel" id="task-panel-output" aria-labelledby="task-tab-output" hidden={tab !== 'output'}>
             <OutputTab run={selectedRun} events={events} />
           </div>

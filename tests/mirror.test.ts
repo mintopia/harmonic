@@ -82,6 +82,20 @@ describe('mirrorScan upsert', () => {
     });
   });
 
+  it('unescalate flips an escalated Task back to afk and clears the flag', () => {
+    const t = mirrorScan(tasks, [ticket({ number: 9, labels: ['ready-for-agent'] })])[0]!;
+    tasks.escalate(t.id); // afk Run handed to a human
+    expect(tasks.get(t.id)).toMatchObject({ drive: 'hitl', escalated: true });
+
+    const back = tasks.unescalate(t.id);
+    expect(back).toMatchObject({ drive: 'afk', escalated: false, state: 'ready' });
+
+    // Guards: not escalated, and native.
+    expect(() => tasks.unescalate(t.id)).toThrow(/not escalated/);
+    const native = tasks.create({ prompt: 'native' });
+    expect(() => tasks.unescalate(native.id)).toThrow(/native/);
+  });
+
   it('is idempotent across re-polls: 1:1, updates in place, preserves drive', () => {
     const t = ticket({ number: 7, labels: ['wayfinder:research'] });
     const first = mirrorScan(tasks, [t])[0]!;

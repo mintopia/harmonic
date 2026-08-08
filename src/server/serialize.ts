@@ -28,16 +28,23 @@ export type ApiTask = TaskWithDeps & {
   url: string | null;
   /** The parent Map's title, resolved from mapRef against the last poll's scan; null when unmapped or before a poll (issue #34). */
   mapTitle: string | null;
+  /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
+  branch: string | null;
+  /** The latest run's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
+  stat: string | null;
 };
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
-  const usages = ctx.runs.listForTask(task.id).map((run) => parseUsage(run.usage));
+  const runs = ctx.runs.listForTask(task.id);
+  const usages = runs.map((run) => parseUsage(run.usage));
   return {
     ...task,
     cost: costOfUsages(usages, pricesOf(ctx)),
     url: ctx.trackerPoller.urlFor(task.trackerRef),
     mapTitle: ctx.trackerPoller.titleForMap(task.mapRef),
+    branch: runs.at(-1)?.branch ?? null,
+    stat: runs.at(-1)?.stat ?? null,
   };
 }
 

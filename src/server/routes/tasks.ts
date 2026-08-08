@@ -74,6 +74,10 @@ const taskSchema = taskWithDepsSchema
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
     /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
+    /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
+    branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
+    /** The latest run's diffstat, snapshotted at settle; null until awaiting-review or in direct mode. */
+    stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
   })
   .meta({ id: 'Task' });
 
@@ -264,6 +268,23 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       ctx.runner.cancelForTask(task.id);
       return withDeps(task);
     },
+  );
+
+  app.post(
+    '/tasks/:id/unescalate',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Un-escalate a mirrored Task: clear the escalated flag and flip drive back to afk, handing it back to autonomous drive. The Task keeps its state (usually ready), so the Auto-Runner re-picks it. Operator only.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The Task, no longer escalated and back on afk drive.'),
+          409: errorResponse('The Task is native, or is not escalated.'),
+        },
+      },
+    },
+    async (req) => withDeps(ctx.tasks.unescalate(req.params.id)),
   );
 
   app.post(
@@ -469,8 +490,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const run = ctx.runs.get(req.params.id);
       if (!run.branch || !run.baseBranch) return { branch: null, baseBranch: null, stat: null };
+      // Prefer the settle-time snapshot so this endpoint and the board card can
+      // never show two different stats (issue #36); only compute live for a run
+      // that predates the snapshot column.
       const task = ctx.tasks.get(run.taskId);
-      const stat = await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
+      const stat = run.stat ?? (await Git.diffStat(task.workingDir, run.baseBranch, run.branch));
       return { branch: run.branch, baseBranch: run.baseBranch, stat };
     },
   );

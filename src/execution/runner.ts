@@ -317,7 +317,9 @@ export class Runner {
           this.settleAutoCompleted(task, run, patch);
         }
       } else {
-        this.settle(task, run, 'completed', null, patch);
+        // Snapshot the diffstat once, here, so the board card can show it
+        // without an N+1 git spawn per refresh (issue #36).
+        this.settle(task, run, 'completed', null, { ...patch, stat: await this.diffstatFor(task, run.id) });
       }
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
@@ -414,6 +416,18 @@ export class Runner {
       } catch {
         // Healing is best-effort; the run keeps its stored usage.
       }
+    }
+  }
+
+  /** The run's `git diff --stat` at settle time, or null (direct mode, or a
+   * git failure — the stat is decoration and must never fail the run). */
+  private async diffstatFor(task: TaskRow, runId: number): Promise<string | null> {
+    const run = this.runStore.get(runId);
+    if (!run.branch || !run.baseBranch) return null;
+    try {
+      return await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
+    } catch {
+      return null;
     }
   }
 

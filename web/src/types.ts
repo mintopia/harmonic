@@ -67,6 +67,10 @@ export interface Task {
   url: string | null;
   /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll (issue #34). */
   mapTitle: string | null;
+  /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
+  branch: string | null;
+  /** The latest run's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
+  stat: string | null;
 }
 
 export interface Run {

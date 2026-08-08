@@ -29,6 +29,8 @@ const task = (id: number, state: TaskState, createdAt: number): Task => ({
   mapRef: null,
   url: null,
   mapTitle: null,
+  branch: null,
+  stat: null,
 });
 
 describe('board column model', () => {

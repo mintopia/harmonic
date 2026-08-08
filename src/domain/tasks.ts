@@ -364,6 +364,29 @@ export class TaskService {
     return row;
   }
 
+  /**
+   * Un-escalate a mirrored Task (issue #33 follow-up): the operator hands a
+   * Task Harmonic escalated back to autonomous drive. Clears the flag and flips
+   * drive hitl→afk; the Task stays where it is (usually ready), so the
+   * task_changed→poke path re-picks it for an afk Run. The inverse of
+   * {@link escalate}.
+   */
+  unescalate(id: number): TaskRow {
+    const task = this.get(id);
+    if (task.origin !== 'mirrored') {
+      throw new DomainError('conflict', `task ${id} is native; only mirrored Tasks escalate`);
+    }
+    if (!task.escalated) throw new DomainError('invalid_state', `task ${id} is not escalated`);
+    const row = this.db
+      .update(tasks)
+      .set({ drive: 'afk', escalated: false, updatedAt: Date.now() })
+      .where(eq(tasks.id, id))
+      .returning()
+      .get()!;
+    this.onChanged(row);
+    return row;
+  }
+
   cancel(id: number): TaskRow {
     const task = this.get(id);
     if (!CANCELLABLE_STATES.includes(task.state)) {
