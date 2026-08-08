@@ -128,38 +128,50 @@ describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
   });
 });
 
-describe('AutoDrive.onCompleted — Merge Fate + fallback-close (issue #33)', () => {
+describe('AutoDrive.onCompleted — Merge Fate + resolved gate (issue #33, ADR 0011)', () => {
   const cfg = (mergeFate: AppConfig['drive']['mergeFate']): AppConfig => ({
     ...defaultConfig(),
     drive: { prompt: '', mergeFate, autoRetry: 1 },
   });
+  const spyGit = () => ({ merge: vi.fn(async () => ({ ok: true as const })) });
 
-  it('auto-merge (default): merges then fallback-closes', async () => {
-    const { adapter, calls } = fakeAdapter('open');
-    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, okGit);
+  it('auto-merge: agent-closed ticket completes and merges; Harmonic never closes', async () => {
+    const { adapter, calls } = fakeAdapter('closed');
+    const git = spyGit();
+    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, git as any);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
-    expect(calls.close).toEqual([7]);
+    expect(git.merge).toHaveBeenCalledTimes(1);
+    expect(calls.close).toEqual([]);
   });
 
-  it('auto-merge conflict escalates — branch left, ticket untouched', async () => {
+  it('clean run that left the ticket OPEN is unresolved — no merge, no close', async () => {
     const { adapter, calls } = fakeAdapter('open');
+    const git = spyGit();
+    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, git as any);
+    expect(await drive.onCompleted(worktreeTask(), run())).toBe('unresolved');
+    expect(git.merge).not.toHaveBeenCalled();
+    expect(calls.close).toEqual([]);
+  });
+
+  it('auto-merge conflict escalates (agent resolved, but the merge fails)', async () => {
+    const { adapter, calls } = fakeAdapter('closed');
     const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, conflictGit);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('escalate');
     expect(calls.close).toEqual([]);
   });
 
-  it('open-PR opens a PR and leaves the issue open for off-Harmonic review; no merge, no close', async () => {
-    const { adapter, calls } = fakeAdapter('open');
+  it('open-PR opens a PR and leaves the issue open; no merge, no close, no resolved gate', async () => {
+    const { adapter, calls } = fakeAdapter('open'); // open-PR does not require the agent to close it
     const merge = vi.fn();
     const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, { merge } as any);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
     expect(merge).not.toHaveBeenCalled();
     expect(calls.openPR).toHaveLength(1);
     expect(calls.openPR[0]).toMatchObject({ branch: 'harmonic/task-1-run-1', baseBranch: 'main' });
-    expect(calls.close).toEqual([]); // the PR's own merge closes the issue, not Harmonic
+    expect(calls.close).toEqual([]);
   });
 
-  it('open-PR that fails to create a PR escalates — the issue is not closed over stranded work', async () => {
+  it('open-PR that fails to create a PR escalates', async () => {
     const { adapter, calls } = fakeAdapter('open');
     adapter.openPR = async () => {
       throw new Error('no push permission');
@@ -169,47 +181,52 @@ describe('AutoDrive.onCompleted — Merge Fate + fallback-close (issue #33)', ()
     expect(calls.close).toEqual([]);
   });
 
-  it('open-PR degrades to artifact when the tracker has no PR capability: leave branch, close', async () => {
-    const { adapter, calls } = fakeAdapter('open');
-    delete adapter.openPR;
-    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => adapter, okGit);
-    expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
-    expect(calls.close).toEqual([7]);
+  it('open-PR without PR capability falls back to the resolved gate', async () => {
+    const closed = fakeAdapter('closed');
+    delete closed.adapter.openPR;
+    const drive = new AutoDrive(() => cfg('open-PR'), () => null, async () => closed.adapter, okGit);
+    expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed'); // closed → resolved
+    expect(closed.calls.close).toEqual([]);
+
+    const open = fakeAdapter('open');
+    delete open.adapter.openPR;
+    const drive2 = new AutoDrive(() => cfg('open-PR'), () => null, async () => open.adapter, okGit);
+    expect(await drive2.onCompleted(worktreeTask(), run())).toBe('unresolved'); // open → unresolved
   });
 
-  it('artifact leaves the branch, just closes', async () => {
-    const { adapter, calls } = fakeAdapter('open');
+  it('artifact: agent-closed completes with no merge and no close', async () => {
+    const { adapter, calls } = fakeAdapter('closed');
     const merge = vi.fn();
     const drive = new AutoDrive(() => cfg('artifact'), () => null, async () => adapter, { merge } as any);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
     expect(merge).not.toHaveBeenCalled();
     expect(calls.openPR).toEqual([]);
-    expect(calls.close).toEqual([7]);
+    expect(calls.close).toEqual([]);
   });
 
-  it('research is always an artifact, even under an auto-merge default', async () => {
-    const { adapter, calls } = fakeAdapter('open');
+  it('research is always an artifact: agent-closed completes without merging', async () => {
+    const { adapter } = fakeAdapter('closed');
     const merge = vi.fn();
     const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, { merge } as any);
     expect(await drive.onCompleted(worktreeTask({ wayfinderType: 'research' }), run())).toBe('completed');
     expect(merge).not.toHaveBeenCalled();
-    expect(calls.close).toEqual([7]);
   });
 
-  it('fallback-close is a fallback: an already-closed ticket is not re-closed', async () => {
-    const { adapter, calls } = fakeAdapter('closed');
-    const drive = new AutoDrive(() => cfg('artifact'), () => null, async () => adapter, okGit);
-    await drive.onCompleted(worktreeTask(), run());
-    expect(calls.close).toEqual([]);
-  });
-
-  it('direct mode has no branch: just fallback-closes', async () => {
-    const { adapter, calls } = fakeAdapter('open');
+  it('direct mode has no branch: agent-closed completes; open is unresolved', async () => {
+    const closed = fakeAdapter('closed');
     const merge = vi.fn();
-    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter, { merge } as any);
-    await drive.onCompleted(worktreeTask({ isolationMode: 'direct' }), run({ branch: null, baseBranch: null }));
+    const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => closed.adapter, { merge } as any);
+    expect(
+      await drive.onCompleted(worktreeTask({ isolationMode: 'direct' }), run({ branch: null, baseBranch: null })),
+    ).toBe('completed');
     expect(merge).not.toHaveBeenCalled();
-    expect(calls.close).toEqual([7]);
+    expect(closed.calls.close).toEqual([]);
+
+    const open = fakeAdapter('open');
+    const drive2 = new AutoDrive(() => cfg('auto-merge'), () => null, async () => open.adapter, { merge } as any);
+    expect(
+      await drive2.onCompleted(worktreeTask({ isolationMode: 'direct' }), run({ branch: null, baseBranch: null })),
+    ).toBe('unresolved');
   });
 });
 
@@ -246,7 +263,8 @@ describe('Runner auto-drive settle (issue #33)', () => {
   function build(cfg: AppConfig) {
     tasks = new TaskService(db, () => cfg, allWorkspaces(db));
     runs = new RunStore(db);
-    const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter('open').adapter, okGit);
+    // A resolved (agent-closed) ticket so a clean run actually completes (ADR 0011).
+    const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter('closed').adapter, okGit);
     runner = new Runner(runs, tasks, () => cfg, { autoDrive: drive });
   }
 

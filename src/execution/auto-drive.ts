@@ -61,42 +61,50 @@ export class AutoDrive {
   }
 
   /**
-   * Clean completion: settle the Run's branch by its Merge Fate. Returns
-   * 'escalate' — branch and ticket left for a human — when an auto-merge
-   * conflicts or an open-PR can't be created; 'completed' otherwise.
+   * A clean harness exit is not success. The success signal is the
+   * agent-via-skill having **closed the ticket** — the skills are the source of
+   * truth (ADR 0011). So:
    *
-   * open-PR leaves the ticket OPEN: review is off-Harmonic, and the PR's own
-   * merge closes the issue. Every other fate (auto-merge, artifact, research,
-   * direct mode) fallback-closes — the agent-via-skill normally closes it, so
-   * this only fires when the ticket is still open.
+   * - **'unresolved'** — the run ended without error but left the ticket open
+   *   (e.g. the agent gave up on a missing dependency). The Runner routes this
+   *   into the failure path (Auto-Retry within cap, then Escalate); the branch
+   *   is **not** merged, so half-done work never lands.
+   * - **'escalate'** — an auto-merge conflict or an open-PR that can't be created.
+   * - **'completed'** — the agent resolved the ticket; the branch is settled by
+   *   Merge Fate. open-PR is the exception: it intentionally leaves the ticket
+   *   open (the PR's own merge closes it), so its success is a created PR.
    */
-  async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate'> {
-    if (task.isolationMode === 'worktree' && run.branch && run.baseBranch) {
-      const fate = this.mergeFate(task);
-      if (fate === 'auto-merge') {
-        const merge = await this.git.merge(task.workingDir, run.baseBranch, run.branch);
-        if (!merge.ok) return 'escalate';
-      } else if (fate === 'open-PR') {
-        const adapter = await this.resolveAdapter(task.workingDir);
-        if (adapter.openPR) {
-          const { title } = splitTitleBody(task.prompt);
-          try {
-            await adapter.openPR({
-              branch: run.branch,
-              baseBranch: run.baseBranch,
-              title,
-              body: `Auto-driven by Harmonic for #${task.trackerRef}.`,
-            });
-          } catch {
-            return 'escalate'; // PR creation failed — don't close the issue over stranded work
-          }
-          return 'completed'; // the PR is now the review surface; leave the issue for it to close
+  async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate' | 'unresolved'> {
+    const worktree = task.isolationMode === 'worktree' && !!run.branch && !!run.baseBranch;
+    const fate = this.mergeFate(task);
+
+    if (worktree && fate === 'open-PR') {
+      const adapter = await this.resolveAdapter(task.workingDir);
+      if (adapter.openPR) {
+        const { title } = splitTitleBody(task.prompt);
+        try {
+          await adapter.openPR({
+            branch: run.branch!,
+            baseBranch: run.baseBranch!,
+            title,
+            body: `Auto-driven by Harmonic for #${task.trackerRef}.`,
+          });
+        } catch {
+          return 'escalate'; // PR creation failed — don't strand the work
         }
-        // No PR capability: degrade to artifact — leave the branch, fallback-close below.
+        return 'completed'; // the PR is the review surface; it closes the issue
       }
-      // artifact: leave the branch for a human / CI.
+      // No PR capability: degrade to artifact — fall through to the resolved gate.
     }
-    await this.fallbackClose(task).catch(() => {});
+
+    // The gate: did the agent actually resolve the ticket?
+    if (!(await this.agentResolved(task))) return 'unresolved';
+
+    if (worktree && fate === 'auto-merge') {
+      const merge = await this.git.merge(task.workingDir, run.baseBranch!, run.branch!);
+      if (!merge.ok) return 'escalate';
+    }
+    // artifact / direct: nothing to merge; the agent already closed the ticket.
     return 'completed';
   }
 
@@ -109,13 +117,20 @@ export class AutoDrive {
     return run.attempt > this.getConfig().drive.autoRetry ? 'escalate' : 'retry';
   }
 
-  /** Close the ticket only if the agent-via-skill didn't already — the "fallback" in fallback-close. */
-  private async fallbackClose(task: TaskRow): Promise<void> {
-    if (task.trackerRef == null) return;
-    const adapter = await this.resolveAdapter(task.workingDir);
-    const { title } = splitTitleBody(task.prompt);
-    const ticket = await adapter.readTicket({ number: task.trackerRef, title, state: 'open' });
-    if (ticket.state === 'closed') return;
-    await adapter.close(ticket, 'Resolved by Harmonic (auto-drive).');
+  /**
+   * The success signal: the agent-via-skill closed the ticket. A run that can't
+   * be confirmed closed (read error, or no tracker ref) counts as unresolved —
+   * false-completing is worse than an extra retry/escalation.
+   */
+  private async agentResolved(task: TaskRow): Promise<boolean> {
+    if (task.trackerRef == null) return false;
+    try {
+      const adapter = await this.resolveAdapter(task.workingDir);
+      const { title } = splitTitleBody(task.prompt);
+      const ticket = await adapter.readTicket({ number: task.trackerRef, title, state: 'open' });
+      return ticket.state === 'closed';
+    } catch {
+      return false;
+    }
   }
 }

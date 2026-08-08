@@ -93,8 +93,11 @@ runs it). Stored and mutable. Seeded from labels (ready-for-human / grilling /
 prototype / bare-task → hitl; ready-for-agent / research → afk); an
 **unclear** signal seeds *afk* — attempt optimistically. The Auto-Runner's
 whole predicate: pick-eligible iff `drive ≠ hitl`. Mirrored Tasks bypass the
-review gate entirely — closure is a tracker act (the agent via its skill,
-Harmonic as fallback on clean completion, or a human), never an Accept/Reject.
+review gate entirely — closure is a tracker act (the agent via its skill, or a
+human), never an Accept/Reject. A clean Run is not success: the agent-via-skill
+**closing the ticket** is the success signal (ADR 0011). A Run that ends without
+closing it is *unresolved* — Auto-Retried then Escalated, its branch never
+merged — never silently completed.
 _Avoid_: mode, assignee
 
 **Escalation**:
@@ -116,9 +119,10 @@ skills stay the source of truth. The Run then streams Run Events like any Run
 _Avoid_: injected command, auto-prompt
 
 **Merge Fate**:
-What becomes of a worktree Run's branch when an afk mirrored Task completes
-cleanly — **auto-merge** (default: merge into base on clean completion; a
-conflict Escalates rather than awaiting-review, which mirrored Tasks lack),
+What becomes of a worktree Run's branch when an afk mirrored Task is resolved
+(the agent closed its ticket) — **auto-merge** (default: merge into base once
+resolved; a conflict Escalates rather than awaiting-review, which mirrored Tasks
+lack),
 **open-PR** (branch → GitHub PR, review off-Harmonic), or **artifact** (leave
 the branch for a human/CI). Global default, per-Task override; worktree-only
 (direct isolation has no branch). Research findings branches are always
@@ -126,8 +130,9 @@ artifacts regardless.
 _Avoid_: merge policy
 
 **Auto-Retry**:
-On an afk Run failure (an error, or the skill's own `/code-review` rejecting
-the work) Harmonic re-queues the Task to *ready* as a fresh Run up to a
+On an afk Run failure (an error, the skill's own `/code-review` rejecting the
+work, or a clean Run that left the ticket *unresolved*) Harmonic re-queues the
+Task to *ready* as a fresh Run up to a
 configurable max (default 1), still afk; exhausting the retries Escalates to
 hitl (Run *failed*, drive→hitl, ticket open + un-assigned + flagged), never a
 silent retry beyond the cap.

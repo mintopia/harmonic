@@ -337,6 +337,11 @@ export class Runner {
         if (outcome === 'escalate') {
           record('lifecycle', { event: 'escalated', reason: 'merge conflict' });
           this.settleEscalated(task, run, 'merge conflict', patch);
+        } else if (outcome === 'unresolved') {
+          // Clean exit but the agent never closed the ticket — not success.
+          // Treat as a failure: Auto-Retry within cap, else Escalate.
+          record('lifecycle', { event: 'unresolved', reason: 'ticket left open' });
+          this.settleFailedOrRetry(task, run, 'run ended without resolving the ticket (left open)', patch);
         } else {
           this.settleAutoCompleted(task, run, patch);
         }
