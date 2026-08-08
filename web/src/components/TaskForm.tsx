@@ -32,15 +32,20 @@ export function TaskForm({
 
   const models = config.harnesses[harness]?.models ?? [];
 
+  // A new task inherits its Workspace's Working Directory (ADR-0008); only surface
+  // the field when editing, or when there's no Workspace to inherit from.
+  const showWorkingDir = !!task || workspaceId === null;
+
   const save = async (state?: 'draft' | 'ready') => {
     setBusy(true);
     setError(null);
     try {
-      const fields = { prompt, harness, model, workingDir, isolationMode, priority };
-      if (task) await api.updateTask(task.id, fields);
+      const fields = { prompt, harness, model, isolationMode, priority };
+      if (task) await api.updateTask(task.id, { ...fields, workingDir });
       else
         await api.createTask({
           ...fields,
+          ...(showWorkingDir ? { workingDir } : {}),
           ...(state ? { state } : {}),
           ...(workspaceId !== null ? { workspaceId } : {}),
         });
@@ -121,10 +126,12 @@ export function TaskForm({
           </div>
         </div>
 
-        <div className="mb-4">
-          <label className={label} htmlFor="task-workdir">Working Directory</label>
-          <input id="task-workdir" className={`${field} font-data`} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
-        </div>
+        {showWorkingDir && (
+          <div className="mb-4">
+            <label className={label} htmlFor="task-workdir">Working Directory</label>
+            <input id="task-workdir" className={`${field} font-data`} value={workingDir} onChange={(e) => setWorkingDir(e.target.value)} />
+          </div>
+        )}
 
         {error && <p className="mb-3 text-fail">{error}</p>}
 
