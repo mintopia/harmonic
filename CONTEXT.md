@@ -5,6 +5,21 @@ agent Tasks by driving agent Harnesses over ACP.
 
 ## Language
 
+### Workspaces
+
+**Workspace**:
+A named Working Directory (a repo root), unique by absolute path — the
+container for a board of Tasks and Conversations bound to that directory,
+its own execution settings (Task defaults, Auto-Runner, Tracker, Drive), and
+its own Tracker poll loop. One Harmonic instance hosts many; there is always
+at least one, and the last cannot be deleted. Deleting one is guarded (no
+in-flight work) and cascades to its Tasks, Runs, and Conversations.
+_Avoid_: project, repo, context
+
+**Machine Ceiling**:
+The global cap on total concurrent Runs across all Workspaces — the machine's
+safety limit that a Workspace's own concurrency cap can never breach.
+
 ### Tasks
 
 **Task**:
@@ -184,20 +199,23 @@ Codex, or Copilot — exclusively over ACP.
 _Avoid_: agent (ambiguous), backend, provider
 
 **Working Directory**:
-The directory where a Task's Runs execute; per-Task, defaulting from global
-configuration.
+The directory where a Task's Runs execute — its Workspace's directory,
+snapshotted onto the Task at creation so a finished Run's record never shifts
+if the Workspace is later renamed, repointed, or deleted.
 _Avoid_: cwd, project dir
 
 **Isolation Mode**:
 How a Run touches its Working Directory — **direct** (in place, unlocked;
 concurrent collisions are the operator's problem) or **worktree** (a
 temporary git worktree on branch `harmonic/task-<id>-run-<n>` off the base
-branch; the branch remains as the artifact). Global default, per-Task
+branch; the branch remains as the artifact). Workspace default, per-Task
 override.
 
 **Auto-Runner**:
-The scheduler. When enabled, starts *ready* Tasks — highest Priority first,
-FIFO within — up to a configured maximum of concurrent Runs.
+The single scheduler across all Workspaces. When a Workspace has it enabled,
+starts that Workspace's *ready* Tasks — highest Priority first, FIFO within —
+up to the Workspace's own concurrency cap, never exceeding the Machine
+Ceiling in total.
 _Avoid_: daemon, worker pool
 
 **Usage**:
