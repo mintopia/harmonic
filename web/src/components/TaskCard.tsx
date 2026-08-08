@@ -140,14 +140,29 @@ export function TaskCard({
   onEdit,
   onOpen,
   onChanged,
+  draggable = false,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
   onOpen: (task: Task) => void;
   onChanged: () => void;
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragEnd?: () => void;
 }) {
   return (
-    <article className={`${card} p-3.5 transition-shadow duration-150 hover:ring-1 hover:ring-edge`}>
+    <article
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={`${card} p-3.5 transition-shadow duration-150 hover:ring-1 hover:ring-edge ${
+        draggable ? 'cursor-grab active:cursor-grabbing' : ''
+      } ${dragging ? 'opacity-50' : ''}`}
+    >
       {task.origin === 'mirrored' ? (
         <MirroredCard task={task} onOpen={onOpen} />
       ) : (

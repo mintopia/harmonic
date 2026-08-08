@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACTIVE_STATES, TERMINAL_STATES, boardColumns } from '../web/src/board-model.js';
+import { ACTIVE_STATES, TERMINAL_STATES, boardColumns, canDrag, dropAction } from '../web/src/board-model.js';
 import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
 
 const task = (id: number, state: TaskState, createdAt: number): Task => ({
@@ -62,5 +62,44 @@ describe('board column model', () => {
     expect(ready.tasks.map((t) => t.id)).toEqual([2, 1]);
     expect(failed.terminal).toBe(true);
     expect(failed.tasks.map((t) => t.id)).toEqual([3]);
+  });
+});
+
+describe('drag-and-drop transitions (issue #58)', () => {
+  it('maps drops on Ready to the in-place requeue verbs', () => {
+    expect(dropAction('draft', 'ready')).toBe('promote');
+    expect(dropAction('failed', 'ready')).toBe('requeue');
+    expect(dropAction('cancelled', 'ready')).toBe('uncancel');
+  });
+
+  it('cancels a card dropped on Cancelled only where DESIGN.md offers cancel', () => {
+    // draft/blocked/ready/running — produced nothing to judge, or still producing.
+    for (const from of ['draft', 'blocked', 'ready', 'running'] as const) {
+      expect(dropAction(from, 'cancelled')).toBe('cancel');
+    }
+  });
+
+  it('snaps back awaiting-review dropped on Cancelled (cancel is not a gate action)', () => {
+    // The API can cancel it; the interface doesn't offer it (DESIGN.md § Buttons).
+    expect(dropAction('awaiting-review', 'cancelled')).toBeNull();
+  });
+
+  it('snaps back terminal cards dropped on Cancelled', () => {
+    for (const from of TERMINAL_STATES) expect(dropAction(from, 'cancelled')).toBeNull();
+  });
+
+  it('snaps back drops onto the side-effectful / same columns', () => {
+    // running/awaiting-review are button-only gates, ready→ready is a no-op.
+    expect(dropAction('ready', 'running')).toBeNull();
+    expect(dropAction('awaiting-review', 'completed')).toBeNull();
+    expect(dropAction('ready', 'ready')).toBeNull();
+    expect(dropAction('running', 'ready')).toBeNull();
+  });
+
+  it('makes every card draggable except completed and awaiting-review', () => {
+    // awaiting-review is a button-only gate (accept/reject); it has no drag move.
+    for (const state of TASK_STATES) {
+      expect(canDrag(state)).toBe(state !== 'completed' && state !== 'awaiting-review');
+    }
   });
 });

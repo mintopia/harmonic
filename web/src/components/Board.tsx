@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
-import { boardColumns } from '../board-model';
+import { boardColumns, canDrag, dropAction, type DropAction } from '../board-model';
+import { api } from '../api';
+import { toastError } from '../toast';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
 import { btnPrimary, btnQuiet, displayTitle, laneBorder, laneDot, stateCountPill } from '../ui';
@@ -119,6 +121,55 @@ export function Board({
   // to the finished panel so the board's geometry never reflows under load.
   const [peeked, setPeeked] = useState<ReadonlySet<TaskState>>(new Set());
 
+  // The card currently being dragged (issue #58). Its source state decides
+  // which columns are valid drops; we don't move optimistically, so an invalid
+  // drop is simply a no-op and the card snaps back on its own.
+  const [dragging, setDragging] = useState<{ id: number; state: TaskState } | null>(null);
+
+  const runDrop = (action: DropAction, id: number) => {
+    const call: Record<DropAction, (id: number) => Promise<unknown>> = {
+      promote: api.promoteTask,
+      requeue: api.requeueTask,
+      uncancel: api.uncancelTask,
+      cancel: api.cancelTask,
+    };
+    call[action](id).then(onChanged, toastError);
+  };
+
+  // Drop-target wiring for a column. Only preventDefault (which arms the drop)
+  // when the drag maps to a real action, so the browser shows a no-drop cursor
+  // over invalid columns and nothing happens if the operator releases there.
+  const dropProps = (to: TaskState) => {
+    const action = dragging ? dropAction(dragging.state, to) : null;
+    if (!action) return { valid: false, handlers: {} };
+    return {
+      valid: true,
+      handlers: {
+        onDragOver: (e: React.DragEvent) => e.preventDefault(),
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          runDrop(action, dragging!.id);
+          setDragging(null);
+        },
+      },
+    };
+  };
+
+  const cardDragProps = (task: Task) =>
+    canDrag(task.state)
+      ? {
+          draggable: true,
+          dragging: dragging?.id === task.id,
+          onDragStart: (e: React.DragEvent) => {
+            e.dataTransfer.effectAllowed = 'move';
+            // Firefox won't start a drag unless dragstart sets some data.
+            e.dataTransfer.setData('text/plain', String(task.id));
+            setDragging({ id: task.id, state: task.state });
+          },
+          onDragEnd: () => setDragging(null),
+        }
+      : {};
+
   // Disclosure focus loop: toggling a terminal column moves or unmounts the
   // button that was clicked (expanding the last one removes the whole finished
   // panel), so we hand focus to the control that now reflects the new state —
@@ -161,12 +212,19 @@ export function Board({
     <div className="flex gap-4 overflow-x-auto pb-4">
       {columns.map(({ state, terminal, tasks: column }) => {
         if (terminal && !peeked.has(state)) return null;
+        const drop = dropProps(state);
         return (
           // Fixed width + shrink-0 so peeking a terminal column appends and
           // scrolls the row (board container is overflow-x-auto) instead of
           // shrinking the pipeline columns. Load-independent geometry: the
           // operator's glance targets never move (DESIGN.md § The Board).
-          <section key={state} className="w-[262px] shrink-0">
+          <section
+            key={state}
+            {...drop.handlers}
+            className={`w-[262px] shrink-0 rounded-lg transition-colors duration-150 motion-reduce:transition-none ${
+              drop.valid ? 'bg-accent-tint ring-2 ring-accent' : ''
+            }`}
+          >
             {/* Lane colour lives on the header (Aurora's signal layer): a
                 state-coloured underline + dot, so the board reads with colour
                 while the task cards below stay calm. */}
@@ -190,7 +248,14 @@ export function Board({
             </h2>
             <div className="flex flex-col gap-3">
               {column.map((task) => (
-                <TaskCard key={task.id} task={task} onEdit={onEdit} onOpen={onOpen} onChanged={onChanged} />
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  onEdit={onEdit}
+                  onOpen={onOpen}
+                  onChanged={onChanged}
+                  {...cardDragProps(task)}
+                />
               ))}
             </div>
           </section>
@@ -209,35 +274,41 @@ export function Board({
         <aside aria-label="Finished tasks" className="relative w-36 shrink-0 rounded-lg bg-raised p-2.5">
           <h2 className="sr-only">Finished</h2>
           <div className="flex flex-col">
-            {collapsedTerminal.map(({ state, tasks: column }) => (
-              <button
-                key={state}
-                ref={(el) => {
-                  panelRowRefs.current.set(state, el);
-                }}
-                aria-expanded={false}
-                aria-label={`Expand ${COLUMN_LABELS[state]} column (${column.length} tasks)`}
-                className="group flex items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink"
-                onClick={() => togglePeek(state)}
-              >
-                <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${laneDot(state)}`} />
-                {COLUMN_LABELS[state]}
-                <span
-                  className={`ml-auto font-semibold ${
-                    state === 'failed' && column.length > 0
-                      ? 'text-fail'
-                      : column.length > 0
-                        ? 'text-ink'
-                        : 'text-faint'
+            {collapsedTerminal.map(({ state, tasks: column }) => {
+              const drop = dropProps(state);
+              return (
+                <button
+                  key={state}
+                  ref={(el) => {
+                    panelRowRefs.current.set(state, el);
+                  }}
+                  {...drop.handlers}
+                  aria-expanded={false}
+                  aria-label={`Expand ${COLUMN_LABELS[state]} column (${column.length} tasks)`}
+                  className={`group flex items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink motion-reduce:transition-none ${
+                    drop.valid ? 'bg-accent-tint text-ink ring-2 ring-accent' : ''
                   }`}
+                  onClick={() => togglePeek(state)}
                 >
-                  {column.length}
-                </span>
-                {/* Persistent disclosure caret so the row reads as expandable
-                    at rest, not only on hover (points right = closed). */}
-                <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint group-hover:text-muted" />
-              </button>
-            ))}
+                  <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${laneDot(state)}`} />
+                  {COLUMN_LABELS[state]}
+                  <span
+                    className={`ml-auto font-semibold ${
+                      state === 'failed' && column.length > 0
+                        ? 'text-fail'
+                        : column.length > 0
+                          ? 'text-ink'
+                          : 'text-faint'
+                    }`}
+                  >
+                    {column.length}
+                  </span>
+                  {/* Persistent disclosure caret so the row reads as expandable
+                      at rest, not only on hover (points right = closed). */}
+                  <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint group-hover:text-muted" />
+                </button>
+              );
+            })}
           </div>
         </aside>
       )}
