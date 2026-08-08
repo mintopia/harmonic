@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, gte, lte } from 'drizzle-orm';
+import { and, eq, gte, lte } from 'drizzle-orm';
 import type { App } from '../app.js';
-import { runs } from '../../db/schema.js';
+import { runs, tasks } from '../../db/schema.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
 import { costSchema, modelUsageSchema } from '../schemas.js';
@@ -13,6 +13,8 @@ const querySchema = z.object({
   from: z.coerce.number().int().nonnegative().default(0).meta({ example: 1783382400000 }),
   /** Epoch ms, inclusive; defaults to now. */
   to: z.coerce.number().int().nonnegative().default(() => Date.now()).meta({ example: 1784032260000 }),
+  /** Scope to one Workspace's runs (ADR-0008); omitted means every Workspace. */
+  workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
 });
 
 const daySeriesEntrySchema = z.object({
@@ -69,12 +71,24 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const { from, to } = req.query;
-      const rows = ctx.db
-        .select()
-        .from(runs)
-        .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to)))
-        .all();
+      const { from, to, workspaceId } = req.query;
+      // runs carries no workspaceId of its own (it inherits via its Task —
+      // ADR-0008), so scoping by Workspace means joining tasks.
+      const rows = (
+        workspaceId === undefined
+          ? ctx.db
+              .select()
+              .from(runs)
+              .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to)))
+              .all()
+          : ctx.db
+              .select({ runs })
+              .from(runs)
+              .innerJoin(tasks, eq(runs.taskId, tasks.id))
+              .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to), eq(tasks.workspaceId, workspaceId)))
+              .all()
+              .map((r) => r.runs)
+      );
 
       const usages = rows
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))

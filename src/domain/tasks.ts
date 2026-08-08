@@ -10,6 +10,7 @@ import {
   type Workflow,
   type WayfinderType,
   type Drive,
+  type WorkspaceRow,
 } from '../db/schema.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
@@ -20,6 +21,8 @@ import { DomainError } from './errors.js';
 // examples show what a caller *would* send, not what's required.
 export const createTaskInputSchema = z.object({
   prompt: z.string().min(1, 'prompt is required').meta({ example: 'Add rate limiting to POST /api/tasks' }),
+  /** The owning Workspace (ADR-0008); defaults to the earliest-created Workspace when omitted, so callers that predate Workspaces (MCP, older API clients) keep working unchanged. */
+  workspaceId: z.number().int().positive().optional().meta({ example: 1 }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   model: z.string().min(1).optional().meta({ example: 'sonnet-5' }),
   workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
@@ -30,10 +33,14 @@ export const createTaskInputSchema = z.object({
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
-export const updateTaskInputSchema = createTaskInputSchema.omit({ state: true, dependsOn: true }).partial();
+// A Task's Workspace is fixed at creation (no cross-Workspace move in this slice).
+export const updateTaskInputSchema = createTaskInputSchema
+  .omit({ state: true, dependsOn: true, workspaceId: true })
+  .partial();
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
 export const taskListQuerySchema = z.object({
+  workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
   state: z.enum(TASK_STATES).optional().meta({ example: 'awaiting-review' }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
@@ -99,12 +106,30 @@ export class TaskService {
   constructor(
     private readonly db: Db,
     private readonly getConfig: () => AppConfig,
+    private readonly getWorkspaces: () => WorkspaceRow[],
     private readonly onChanged: (task: TaskRow) => void = () => {},
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
   ) {}
 
+  /** The given Workspace, or the earliest-created one when `workspaceId` is omitted (ADR-0008) — the
+   * fallback that keeps callers who predate Workspaces (MCP, older API clients) working unchanged. */
+  private resolveWorkspace(workspaceId?: number): WorkspaceRow {
+    const list = this.getWorkspaces();
+    if (workspaceId === undefined) {
+      const first = list[0];
+      if (!first) throw new DomainError('validation', 'no workspace exists');
+      return first;
+    }
+    const found = list.find((w) => w.id === workspaceId);
+    if (!found) throw new DomainError('validation', `workspace ${workspaceId} not found`);
+    return found;
+  }
+
   /** Resolve execution defaults (harness/model/workingDir/isolationMode/priority) from optional overrides + config defaults. */
-  private resolveExecution(over: Partial<Pick<CreateTaskInput, 'harness' | 'model' | 'workingDir' | 'isolationMode' | 'priority'>> = {}) {
+  private resolveExecution(
+    over: Partial<Pick<CreateTaskInput, 'harness' | 'model' | 'workingDir' | 'isolationMode' | 'priority'>> = {},
+    workspace: WorkspaceRow,
+  ) {
     const config = this.getConfig();
     const harness = over.harness ?? config.defaults.harness;
     const harnessConfig = config.harnesses[harness];
@@ -112,13 +137,14 @@ export class TaskService {
     return {
       harness,
       model: over.model ?? harnessConfig.defaultModel,
-      workingDir: over.workingDir ?? config.defaults.workingDir,
+      workingDir: over.workingDir ?? workspace.workingDir,
       isolationMode: over.isolationMode ?? config.defaults.isolationMode,
       priority: over.priority ?? config.defaults.priority,
     };
   }
 
   create(input: CreateTaskInput): TaskRow {
+    const workspace = this.resolveWorkspace(input.workspaceId);
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     for (const depId of dependsOn) this.get(depId);
     const state: TaskState =
@@ -128,7 +154,8 @@ export class TaskService {
       .insert(tasks)
       .values({
         prompt: input.prompt,
-        ...this.resolveExecution(input),
+        workspaceId: workspace.id,
+        ...this.resolveExecution(input, workspace),
         state,
         createdAt: now,
         updatedAt: now,
@@ -180,11 +207,15 @@ export class TaskService {
       this.onChanged(row);
       return row;
     }
+    // The poller is not yet Workspace-aware (issue #45); every mirrored Task
+    // lands in the earliest-created Workspace, matching pre-Workspace behaviour.
+    const workspace = this.resolveWorkspace();
     const row = this.db
       .insert(tasks)
       .values({
         prompt: input.prompt,
-        ...this.resolveExecution(),
+        workspaceId: workspace.id,
+        ...this.resolveExecution({}, workspace),
         // Seed open Tasks ready; reconcileMirroredDeps re-derives blocked once
         // edges are wired in the same poll.
         state: input.closed ? 'completed' : 'ready',
@@ -207,6 +238,7 @@ export class TaskService {
 
   list(query: TaskListQuery = {}): TaskRow[] {
     const filters = [
+      query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state ? eq(tasks.state, query.state) : undefined,
       query.harness ? eq(tasks.harness, query.harness) : undefined,
       query.priority ? eq(tasks.priority, query.priority) : undefined,
@@ -312,6 +344,7 @@ export class TaskService {
       .insert(tasks)
       .values({
         prompt: original.prompt,
+        workspaceId: original.workspaceId,
         harness: original.harness,
         model: original.model,
         workingDir: original.workingDir,

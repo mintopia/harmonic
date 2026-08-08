@@ -11,7 +11,14 @@ const select =
 
 type SortKey = 'createdAt' | 'priority' | 'cost';
 
-export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
+export function TableView({
+  workspaceId,
+  onOpen,
+}: {
+  /** Scopes the table to the active Workspace (ADR-0008); no fetch until resolved. */
+  workspaceId: number | null;
+  onOpen: (task: Task) => void;
+}) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState('');
@@ -21,7 +28,9 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
+    if (workspaceId === null) return;
     const params = new URLSearchParams();
+    params.set('workspaceId', String(workspaceId));
     if (state) params.set('state', state);
     if (harness) params.set('harness', harness);
     if (priority) params.set('priority', priority);
@@ -34,7 +43,7 @@ export function TableView({ onOpen }: { onOpen: (task: Task) => void }) {
         setTasks(body.tasks);
         setLoading(false);
       });
-  }, [state, harness, priority, sortBy, order]);
+  }, [workspaceId, state, harness, priority, sortBy, order]);
 
   // The badge links to the original, which the current filter may hide, so
   // fall back to fetching it by id.

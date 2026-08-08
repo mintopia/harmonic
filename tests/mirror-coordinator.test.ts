@@ -7,6 +7,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { MirrorCoordinator } from '../src/tracker/coordinator.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
+import { allWorkspaces } from './helpers.js';
 
 const ticket = (number: number, assignees: string[] = []): Ticket => ({
   number,
@@ -67,7 +68,7 @@ describe('MirrorCoordinator (issue #32)', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-coord-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig());
+    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

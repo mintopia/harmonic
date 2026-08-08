@@ -21,6 +21,7 @@ import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
 import { ConversationStore } from '../domain/conversations.js';
+import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { ReviewService } from '../domain/review.js';
 import { Runner } from '../execution/runner.js';
@@ -32,6 +33,7 @@ import { MirrorCoordinator } from '../tracker/coordinator.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { mapRoutes } from './routes/maps.js';
+import { workspaceRoutes } from './routes/workspaces.js';
 import { conversationRoutes } from './routes/conversations.js';
 import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
@@ -99,6 +101,7 @@ function readScopeAllowed(path: string, method: string): boolean {
 export interface AppContext {
   db: Db;
   configStore: ConfigStore;
+  workspaces: WorkspaceService;
   tasks: TaskService;
   runs: RunStore;
   runner: Runner;
@@ -126,11 +129,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const db = openDb(opts.dataDir);
   const bus = new EventBus();
   const configStore = new ConfigStore(db, opts.configOverrides);
+  const workspaces = new WorkspaceService(db);
   const channels = new ChannelService(db);
   const notifier = new Notifier(channels, (msg) => console.error(msg));
   const tasks = new TaskService(
     db,
     () => configStore.get(),
+    () => workspaces.list(),
     (task) => bus.emit('task_changed', task),
     (event, task) => notifier.notify(event, task),
   );
@@ -224,7 +229,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerPoller, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerPoller, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -397,6 +402,7 @@ on reconnect or when it sees a \`mapRef\` it has not resolved yet.`;
 
   await app.register(taskRoutes, { prefix: '/api' });
   await app.register(mapRoutes, { prefix: '/api' });
+  await app.register(workspaceRoutes, { prefix: '/api' });
   await app.register(conversationRoutes, { prefix: '/api' });
   await app.register(permissionRuleRoutes, { prefix: '/api' });
   await app.register(configRoutes, { prefix: '/api' });

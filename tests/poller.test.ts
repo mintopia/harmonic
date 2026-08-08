@@ -7,6 +7,7 @@ import { defaultConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
+import { allWorkspaces } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -52,7 +53,7 @@ describe('TrackerPoller.poll', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-poller-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig());
+    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

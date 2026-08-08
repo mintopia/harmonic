@@ -9,6 +9,7 @@ import type { Conversation } from '../web/src/types.js';
 function conv(over: Partial<Conversation> & { id: number }): Conversation {
   return {
     title: null,
+    workspaceId: 1,
     harness: 'claude-code',
     model: 'sonnet',
     workingDir: '/repo',

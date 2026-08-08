@@ -27,9 +27,20 @@ export interface Cost {
   incomplete: boolean;
 }
 
+/** A Workspace (ADR-0008): a named Working Directory, unique by absolute path. */
+export interface Workspace {
+  id: number;
+  name: string;
+  workingDir: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Task {
   id: number;
   prompt: string;
+  /** The owning Workspace (ADR-0008). */
+  workspaceId: number;
   harness: string;
   model: string;
   workingDir: string;
@@ -115,6 +126,8 @@ export interface RunEvent {
 export interface Conversation {
   id: number;
   title: string | null;
+  /** The owning Workspace (ADR-0008). */
+  workspaceId: number;
   harness: string;
   model: string;
   workingDir: string;

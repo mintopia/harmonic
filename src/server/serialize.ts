@@ -22,7 +22,10 @@ export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
   return { ...run, usage, cost: costOfUsages([usage], pricesOf(ctx)) };
 }
 
-export type ApiTask = TaskWithDeps & {
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
+  // TaskRow.workspaceId is nullable only because SQLite can't add it NOT NULL
+  // to an existing table (schema.ts) — every row has one at rest.
+  workspaceId: number;
   cost: Cost | null;
   /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
   url: string | null;
@@ -40,6 +43,7 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
   const usages = runs.map((run) => parseUsage(run.usage));
   return {
     ...task,
+    workspaceId: task.workspaceId!,
     cost: costOfUsages(usages, pricesOf(ctx)),
     url: ctx.trackerPoller.urlFor(task.trackerRef),
     mapTitle: ctx.trackerPoller.titleForMap(task.mapRef),
@@ -53,7 +57,10 @@ export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
   return costOfUsages(runs.map((run) => parseUsage(run.usage)), pricesOf(ctx));
 }
 
-export type ApiConversation = Omit<ConversationRow, 'usage'> & {
+export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
+  // ConversationRow.workspaceId is nullable only because SQLite can't add it
+  // NOT NULL to an existing table (schema.ts) — every row has one at rest.
+  workspaceId: number;
   /** Running Usage accumulated across Turns (issue 12); null before any usage. */
   usage: RunUsage | null;
   /** Cost of the running Usage against the live price table; honest-incomplete. */
@@ -89,6 +96,7 @@ export function conversationToApi(ctx: AppContext, conversation: ConversationRow
   const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];
   return {
     ...rest,
+    workspaceId: conversation.workspaceId!,
     title: conversation.title ?? deriveConversationTitle(ctx.conversations.firstTurnText(conversation.id)),
     usage,
     cost: costOfUsages([usage], pricesOf(ctx)),

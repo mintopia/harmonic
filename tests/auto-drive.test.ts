@@ -10,6 +10,7 @@ import { Runner } from '../src/execution/runner.js';
 import { AutoDrive, buildDrivePrompt, skillFor, splitTitleBody } from '../src/execution/auto-drive.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
+import { allWorkspaces } from './helpers.js';
 
 const STUB = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -243,7 +244,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   function build(cfg: AppConfig) {
-    tasks = new TaskService(db, () => cfg);
+    tasks = new TaskService(db, () => cfg, allWorkspaces(db));
     runs = new RunStore(db);
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter('open').adapter, okGit);
     runner = new Runner(runs, tasks, () => cfg, { autoDrive: drive });

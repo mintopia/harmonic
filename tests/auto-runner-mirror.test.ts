@@ -9,6 +9,7 @@ import { AutoRunner, type MirrorClaim } from '../src/execution/auto-runner.js';
 import type { RunStore } from '../src/domain/runs.js';
 import type { Runner } from '../src/execution/runner.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
+import { allWorkspaces } from './helpers.js';
 
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
   trackerRef: ref,
@@ -29,7 +30,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig());
+    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

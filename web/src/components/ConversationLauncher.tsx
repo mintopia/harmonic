@@ -584,7 +584,14 @@ type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number 
  * `ended` (e.g. after a server restart orphaned it) still opens straight to
  * its detail — just read-only, never a fake resume.
  */
-export function ConversationLauncher({ config }: { config: AppConfig | null }) {
+export function ConversationLauncher({
+  config,
+  workspaceId,
+}: {
+  config: AppConfig | null;
+  /** The active Workspace (ADR-0008) a new Conversation binds to. */
+  workspaceId: number | null;
+}) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   // A one-shot flag that adds the entrance-flourish class for ~150ms after
@@ -737,7 +744,10 @@ export function ConversationLauncher({ config }: { config: AppConfig | null }) {
     if (id === null) {
       // First turn: spawns the harness server-side once this and the
       // turn below land — harness/model/workingDir lock from here on.
-      const created = await api.createConversation(fields);
+      const created = await api.createConversation({
+        ...fields,
+        ...(workspaceId !== null ? { workspaceId } : {}),
+      });
       id = created.id;
       setConversations((current) => upsertConversation(current, created));
       setConversation(created);

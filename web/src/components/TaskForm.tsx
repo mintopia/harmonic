@@ -10,11 +10,14 @@ const label = `mb-1 block ${labelType} text-muted`;
 export function TaskForm({
   config,
   task,
+  workspaceId,
   onClose,
   onSaved,
 }: {
   config: AppConfig;
   task: Task | null;
+  /** The active Workspace (ADR-0008) a new task binds to; ignored when editing. */
+  workspaceId: number | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -35,7 +38,12 @@ export function TaskForm({
     try {
       const fields = { prompt, harness, model, workingDir, isolationMode, priority };
       if (task) await api.updateTask(task.id, fields);
-      else await api.createTask({ ...fields, ...(state ? { state } : {}) });
+      else
+        await api.createTask({
+          ...fields,
+          ...(state ? { state } : {}),
+          ...(workspaceId !== null ? { workspaceId } : {}),
+        });
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

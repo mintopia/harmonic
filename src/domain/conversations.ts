@@ -24,6 +24,8 @@ export interface PersistedConversationEvent {
 }
 
 export interface CreateConversationInput {
+  /** The owning Workspace (ADR-0008); resolved by the route before this call. */
+  workspaceId: number;
   harness: string;
   model: string;
   workingDir: string;
@@ -47,6 +49,7 @@ export class ConversationStore {
       .insert(conversations)
       .values({
         title: null,
+        workspaceId: input.workspaceId,
         harness: input.harness,
         model: input.model,
         workingDir: input.workingDir,

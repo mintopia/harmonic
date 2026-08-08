@@ -8,6 +8,7 @@ import type {
   Run,
   RunEvent,
   Task,
+  Workspace,
 } from './types';
 
 class ApiError extends Error {
@@ -36,10 +37,16 @@ export const api = {
   config: () => request<AppConfig>('GET', '/api/config'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
-  tasks: () => request<{ tasks: Task[] }>('GET', '/api/tasks'),
+  tasks: (workspaceId?: number) =>
+    request<{ tasks: Task[] }>('GET', workspaceId ? `/api/tasks?workspaceId=${workspaceId}` : '/api/tasks'),
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
+  workspaces: () => request<{ workspaces: Workspace[] }>('GET', '/api/workspaces'),
+  createWorkspace: (input: { name: string; workingDir: string }) =>
+    request<Workspace>('POST', '/api/workspaces', input),
+  updateWorkspace: (id: number, patch: { name?: string; workingDir?: string }) =>
+    request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
@@ -73,7 +80,7 @@ export const api = {
     request<{ ok: true }>('DELETE', '/api/auth/password', { currentPassword }),
   conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/conversations'),
   conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
-  createConversation: (input: { harness?: string; model?: string; workingDir?: string }) =>
+  createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string }) =>
     request<Conversation>('POST', '/api/conversations', input),
   // title: null clears an operator-set title, falling back to the one
   // derived from the first Turn (issue #15's LOCKED contract).

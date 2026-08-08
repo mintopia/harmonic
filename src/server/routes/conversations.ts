@@ -9,6 +9,8 @@ import { conversationToApi } from '../serialize.js';
 import { costSchema, errorResponse, idParamsSchema, okResponseSchema, runUsageSchema } from '../schemas.js';
 
 const createConversationInputSchema = z.object({
+  /** The owning Workspace (ADR-0008); defaults to the earliest-created Workspace when omitted. */
+  workspaceId: z.number().int().positive().optional().meta({ example: 1 }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   model: z.string().min(1).optional().meta({ example: 'sonnet-5' }),
   workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
@@ -48,6 +50,8 @@ const conversationSchema = z
     id: z.number().meta({ example: 7402 }),
     /** Operator-set title; null falls back to a title derived from the first Turn (issue 15). */
     title: z.string().nullable().meta({ example: 'Rate limiting for the tasks API' }),
+    /** The owning Workspace (ADR-0008). */
+    workspaceId: z.number().meta({ example: 1 }),
     /** One of config.ts's HARNESS_IDS; stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
@@ -115,10 +119,24 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       const harness = req.body.harness ?? config.defaults.harness;
       const harnessConfig = config.harnesses[harness];
       if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
+      // Defaults to the earliest-created Workspace when omitted (ADR-0008), so
+      // callers that predate Workspaces keep working unchanged.
+      const workspaces = ctx.workspaces.list();
+      const workspace =
+        req.body.workspaceId !== undefined
+          ? workspaces.find((w) => w.id === req.body.workspaceId)
+          : workspaces[0];
+      if (!workspace) {
+        throw new DomainError(
+          'validation',
+          req.body.workspaceId !== undefined ? `workspace ${req.body.workspaceId} not found` : 'no workspace exists',
+        );
+      }
       const conversation = ctx.conversations.create({
+        workspaceId: workspace.id,
         harness,
         model: req.body.model ?? harnessConfig.defaultModel,
-        workingDir: req.body.workingDir ?? config.defaults.workingDir,
+        workingDir: req.body.workingDir ?? workspace.workingDir,
       });
       return reply.status(201).send(conversationToApi(ctx, conversation));
     },

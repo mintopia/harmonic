@@ -22,6 +22,23 @@ export const TASK_STATES = [
 ] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+/**
+ * A Workspace (ADR-0008): a named Working Directory, unique by absolute
+ * path. Owns a board of Tasks/Conversations; execution settings stay global
+ * for now (a later slice splits them per-Workspace).
+ */
+export const workspaces = sqliteTable('workspaces', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  workingDir: text('working_dir').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [
+  uniqueIndex('workspaces_working_dir_idx').on(t.workingDir),
+]);
+
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   prompt: text('prompt').notNull(),
@@ -31,6 +48,11 @@ export const tasks = sqliteTable('tasks', {
   isolationMode: text('isolation_mode').notNull(),
   priority: text('priority').notNull(),
   state: text('state').$type<TaskState>().notNull(),
+  /** The owning Workspace (ADR-0008). Nullable at the SQL level only because
+   * SQLite can't add a NOT NULL column with no default to an existing table;
+   * every insert path sets it and the boot-time backfill (db/index.ts) fills
+   * pre-Workspace rows, so it is never actually null at rest. */
+  workspaceId: integer('workspace_id').references(() => workspaces.id),
   /** The original this task re-attempts (a new attempt is a new, linked task). */
   reattemptOf: integer('reattempt_of').references((): AnySQLiteColumn => tasks.id),
   /** Reviewer feedback that seeded this re-attempt, stored in full, separate from the prompt. */
@@ -59,6 +81,8 @@ export const tasks = sqliteTable('tasks', {
   // The mirror upsert looks up by trackerRef every poll; unique enforces 1:1
   // (SQLite treats NULLs as distinct, so native Tasks are unconstrained).
   uniqueIndex('tasks_tracker_ref_idx').on(t.trackerRef),
+  // The board/table's list scope filters by the active Workspace on every load.
+  index('tasks_workspace_id_idx').on(t.workspaceId),
 ]);
 
 export const settings = sqliteTable('settings', {
@@ -140,6 +164,9 @@ export const conversations = sqliteTable('conversations', {
   harness: text('harness').notNull(),
   model: text('model').notNull(),
   workingDir: text('working_dir').notNull(),
+  /** The owning Workspace (ADR-0008); see the `tasks.workspaceId` comment
+   * for why this is nullable at the SQL level but never null at rest. */
+  workspaceId: integer('workspace_id').references(() => workspaces.id),
   state: text('state').$type<ConversationState>().notNull(),
   /** The warm ACP session id, set once the harness spawns; null before the first Turn. */
   sessionId: text('session_id'),

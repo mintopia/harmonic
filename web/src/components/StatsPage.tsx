@@ -52,19 +52,20 @@ function SummaryCell({ label, value, hero = false }: { label: string; value: str
   );
 }
 
-export function StatsPage() {
+export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const [range, setRange] = useState('7 days');
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (workspaceId === null) return;
     const span = RANGES[range] ?? null;
     const from = span === null ? 0 : Date.now() - span;
     let cancelled = false;
     setError(null);
     // A non-200 body ({error:{…}}) has none of the fields the render path
     // reads — storing it would throw and blank the page. Check ok, like api.ts.
-    fetch(`/api/stats?from=${from}&to=${Date.now()}`)
+    fetch(`/api/stats?from=${from}&to=${Date.now()}&workspaceId=${workspaceId}`)
       .then(async (r) => {
         const text = await r.text();
         const json = text ? JSON.parse(text) : null;
@@ -80,7 +81,7 @@ export function StatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [range]);
+  }, [range, workspaceId]);
 
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
 

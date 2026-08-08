@@ -5,6 +5,14 @@ import type { AddressInfo } from 'node:net';
 import { buildApp, type App } from '../src/server/app.js';
 import type { DeepPartial } from '../src/config.js';
 import type { AppConfig } from '../src/config.js';
+import type { Db } from '../src/db/index.js';
+import { workspaces } from '../src/db/schema.js';
+
+/** A `TaskService`/`ConversationStore`-shaped `getWorkspaces` callback over
+ * whatever Workspaces already exist in `db` (openDb's boot-time backfill
+ * seeds a default one) — the plumbing every domain test that constructs
+ * `TaskService` by hand needs, without repeating the select everywhere. */
+export const allWorkspaces = (db: Db) => () => db.select().from(workspaces).all();
 
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 

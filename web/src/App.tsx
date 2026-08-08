@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Cost, Task } from './types';
+import type { AppConfig, Cost, Task, Workspace } from './types';
 import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetail } from './components/TaskDetail';
@@ -15,8 +15,10 @@ import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
 import { Switch } from './components/Switch';
 import { ConversationLauncher } from './components/ConversationLauncher';
+import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
+import { loadActiveWorkspaceId, resolveActiveWorkspace, storeActiveWorkspaceId } from './workspace-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
 import {
   loadDismissed,
@@ -62,18 +64,18 @@ const THEME_LABELS: Record<ThemePref, string> = {
   dark: 'Theme: Dark',
 };
 
-/** Cost over the trailing 24h — the status strip's period cost. */
-function usePeriodCost(authed: boolean, tasks: Task[] | null) {
+/** Cost over the trailing 24h, scoped to the active Workspace — the status strip's period cost. */
+function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: number | null) {
   const [cost, setCost] = useState<Cost | null>(null);
   // Runs finishing move cost, and every finish changes the running count;
   // together with the task count this catches the transitions that matter.
   const shape = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'running').length}` : '';
   useEffect(() => {
-    if (!authed) return;
+    if (!authed || workspaceId === null) return;
     let live = true;
     const load = () => {
       const to = Date.now();
-      fetch(`/api/stats?from=${to - 24 * 3600_000}&to=${to}`)
+      fetch(`/api/stats?from=${to - 24 * 3600_000}&to=${to}&workspaceId=${workspaceId}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((s: { cost: Cost | null } | null) => live && s && setCost(s.cost))
         .catch(() => {}); // status readout only — never worth an alert
@@ -84,7 +86,7 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null) {
       live = false;
       clearInterval(timer);
     };
-  }, [authed, shape]);
+  }, [authed, shape, workspaceId]);
   return cost;
 }
 
@@ -96,6 +98,10 @@ export function App() {
   // null = first load still in flight; lets the board tell "loading" from "no tasks yet".
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() =>
+    loadActiveWorkspaceId(localStorage),
+  );
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
   const [view, setView] = useState<View>('board');
@@ -125,9 +131,13 @@ export function App() {
       .catch(() => setAuthed(false));
   }, []);
 
+  // Workspace scoping (ADR-0008): board/table/stats and the status strip only
+  // ever see the active Workspace's Tasks — undefined while workspaces
+  // haven't loaded yet keeps refresh() a no-op rather than fetching unscoped.
   const refresh = useCallback(async () => {
+    if (activeWorkspaceId === null) return;
     try {
-      const { tasks } = await api.tasks();
+      const { tasks } = await api.tasks(activeWorkspaceId);
       setTasks(tasks);
       // Keep an open detail modal fresh from the poll too, not only the
       // socket — otherwise its state-aware footer can go stale (and keep
@@ -137,15 +147,28 @@ export function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!authed) return;
     api.config().then(setConfig).catch(() => {});
+    api.workspaces().then(({ workspaces }) => {
+      setWorkspaces(workspaces);
+      const active = resolveActiveWorkspace(workspaces, loadActiveWorkspaceId(localStorage));
+      if (active) setActiveWorkspaceId(active.id);
+    }, toastError);
+  }, [authed]);
+
+  useEffect(() => {
+    if (!authed || activeWorkspaceId === null) return;
     refresh();
     // Live updates over WebSocket; slow polling as a reconnect safety net.
+    // The active Workspace can't change out from under this subscription's
+    // closure (each switch re-subscribes via the activeWorkspaceId dep), so
+    // filtering task_changed by workspaceId here is enough — no separate
+    // "did the Workspace change" check needed.
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'task_changed') {
+      if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
         setTasks((current) => {
           const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
           return [...rest, msg.task];
@@ -158,9 +181,9 @@ export function App() {
       unsubscribe();
       clearInterval(timer);
     };
-  }, [refresh, authed]);
+  }, [refresh, authed, activeWorkspaceId]);
 
-  const periodCost = usePeriodCost(authed === true, tasks);
+  const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
 
   if (authed === null) return null;
   if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
@@ -200,6 +223,12 @@ export function App() {
     const next = nextTheme(theme);
     setTheme(next);
     storeTheme(localStorage, next);
+  };
+
+  const switchWorkspace = (id: number) => {
+    setActiveWorkspaceId(id);
+    storeActiveWorkspaceId(localStorage, id);
+    setTasks(null); // "loading", not a flash of the old Workspace's (now stale) board
   };
 
   // Collapsed items keep their accessible name and gain a native tooltip;
@@ -271,6 +300,14 @@ export function App() {
           >
             Menu
           </button>
+        </div>
+        <div className={`px-4 pb-3 rail:px-3 ${railCollapsed ? 'rail:hidden' : ''}`}>
+          <WorkspaceSwitcher
+            workspaces={workspaces}
+            activeId={activeWorkspaceId}
+            onSwitch={switchWorkspace}
+            onCreated={(w) => setWorkspaces((current) => [...current, w])}
+          />
         </div>
         <div
           className={`${menuOpen ? 'flex' : 'hidden'} flex-col gap-0.5 overflow-y-auto border-t border-hairline p-2 rail:flex rail:flex-1 rail:border-t-0 rail:pt-0 ${
@@ -400,13 +437,13 @@ export function App() {
                 onNewTask={() => setEditing('new')}
               />
             )}
-            {view === 'table' && <TableView onOpen={setOpenTask} />}
-            {view === 'stats' && <StatsPage />}
+            {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}
+            {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
             {view === 'api' && <ApiPage />}
             {view === 'settings' && <SettingsPage onSaved={setConfig} />}
           </main>
 
-          <ConversationLauncher config={config} />
+          <ConversationLauncher config={config} workspaceId={activeWorkspaceId} />
         </div>
       </div>
 
@@ -423,6 +460,7 @@ export function App() {
         <TaskForm
           config={config}
           task={editing === 'new' ? null : editing}
+          workspaceId={activeWorkspaceId}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);

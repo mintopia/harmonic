@@ -5,6 +5,7 @@ import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
 const task = (id: number, state: TaskState, createdAt: number): Task => ({
   id,
   prompt: `task ${id}`,
+  workspaceId: 1,
   harness: 'claude',
   model: 'claude-fable-5',
   workingDir: '/tmp',

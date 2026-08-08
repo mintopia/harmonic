@@ -28,6 +28,8 @@ const taskWithDepsSchema = z
   .object({
     id: z.number().meta({ example: 4821 }),
     prompt: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
+    /** The owning Workspace (ADR-0008). */
+    workspaceId: z.number().meta({ example: 1 }),
     /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
     harness: z.string().meta({ example: 'claude' }),
     model: z.string().meta({ example: 'sonnet-5' }),
@@ -339,7 +341,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => ctx.tasks.addDependency(req.params.id, req.body.dependsOnId),
+    async (req) => {
+      const task = ctx.tasks.addDependency(req.params.id, req.body.dependsOnId);
+      return { ...task, workspaceId: task.workspaceId! };
+    },
   );
 
   app.delete(
@@ -352,7 +357,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         response: { 200: taskWithDepsSchema.describe('The task with the edge removed, and blocked/ready re-derived.') },
       },
     },
-    async (req) => ctx.tasks.removeDependency(req.params.id, req.params.depId),
+    async (req) => {
+      const task = ctx.tasks.removeDependency(req.params.id, req.params.depId);
+      return { ...task, workspaceId: task.workspaceId! };
+    },
   );
 
   app.post(

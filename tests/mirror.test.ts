@@ -9,6 +9,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { deriveRole, mirrorScan, deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket } from '../src/tracker/adapter.js';
+import { allWorkspaces } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -60,7 +61,7 @@ describe('mirrorScan upsert', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mirror-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig());
+    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -164,7 +165,7 @@ describe('deriveMaps (query-time rollup)', () => {
   it('groups mirrored Tasks under their map by mapRef, with per-state counts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-maps-'));
     const db = openDb(dir);
-    const tasks = new TaskService(db, () => defaultConfig());
+    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     const scan = [
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'] }),
