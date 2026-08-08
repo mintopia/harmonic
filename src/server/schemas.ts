@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RUN_STATES, CONVERSATION_STATES } from '../db/schema.js';
 
 /**
  * Shared response schemas for zod-declared routes (ADR-0005). Every route's
@@ -81,3 +82,74 @@ export const costSchema = z
     incomplete: z.boolean().meta({ example: false }),
   })
   .meta({ id: 'Cost' });
+
+/**
+ * One node of a Process Tree (execution/usage.ts `ProcessNode`): the root
+ * Run/Conversation session or a recursive Subagent. Recursive via a Zod-4
+ * lazy getter on `children`; `usage` is the node's *own* tokens (roll-ups
+ * sum the subtree).
+ */
+export const processNodeSchema = z
+  .object({
+    /** Harness session/subagent id (root: the run's sessionId). */
+    id: z.string().meta({ example: 'sess_01H8X…' }),
+    /** Subagent agentType, or a label for the root process. */
+    name: z.string().meta({ example: 'root' }),
+    /** Model serving this node's calls (its price bucket in a roll-up). */
+    model: z.string().meta({ example: 'sonnet-5' }),
+    /** This node's own token usage, excluding its children. */
+    usage: modelUsageSchema,
+    /** Latest context-window fill for this node; null when unknown. */
+    contextTokens: z.number().nullable().meta({ example: 48210 }),
+    status: z.enum(['active', 'inactive', 'hidden']).meta({ example: 'active' }),
+    /** 0 for the root; +1 per Subagent nesting level. */
+    depth: z.number().meta({ example: 0 }),
+    get children() {
+      return z.array(processNodeSchema);
+    },
+  })
+  .meta({ id: 'ProcessNode' });
+
+/**
+ * One live process in the instance-wide Activity snapshot (issue #51): an
+ * in-flight Run or a warm Conversation, from the in-memory registries joined
+ * with each session's latest Usage. A Run carries the full live snapshot
+ * (rolled-up Usage, context fill, current-activity line, Process Tree,
+ * derived Cost); a Conversation has no live tailer, so its `tree`/`activity`
+ * are null and its Usage/context come from the Conversation row. `startedAt`
+ * is the source of truth for elapsed — the client ticks it live rather than
+ * reading a value stale the moment it was sent.
+ */
+export const activityProcessSchema = z
+  .object({
+    type: z.enum(['run', 'chat']).meta({ example: 'run' }),
+    /** The Run's id (type `run`), else null. */
+    runId: z.number().nullable().meta({ example: 4821 }),
+    /** The Conversation's id (type `chat`), else null. */
+    conversationId: z.number().nullable().meta({ example: null }),
+    /** The owning Task's id (type `run`), else null. */
+    taskId: z.number().nullable().meta({ example: 512 }),
+    workspaceId: z.number().meta({ example: 1 }),
+    /** One of config.ts's HARNESS_IDS ('claude' | 'codex' | 'copilot'); stored as plain text. */
+    harness: z.string().meta({ example: 'claude' }),
+    model: z.string().meta({ example: 'sonnet-5' }),
+    /** A running Run's RunState, or a warm Conversation's ConversationState. */
+    state: z.enum([...RUN_STATES, ...CONVERSATION_STATES]).meta({ example: 'running' }),
+    /** Isolation Mode ('direct' | 'worktree', config.ts ISOLATION_MODES); always 'direct' for a Conversation (ADR-0006). Stored as plain text. */
+    isolation: z.string().meta({ example: 'worktree' }),
+    /** Epoch ms the process started; the client derives elapsed from it. */
+    startedAt: z.number().meta({ example: 1784032260000 }),
+    /** The mirrored issue's tracker ref (a Run's Task); null on native Tasks and Conversations. */
+    trackerRef: z.number().nullable().meta({ example: 51 }),
+    /** Rolled-up Usage; null before any tokens are reported. */
+    usage: runUsageSchema.nullable(),
+    /** Root session's latest context-window fill; null when unknown. */
+    contextTokens: z.number().nullable().meta({ example: 48210 }),
+    /** One-line "what the agent is doing now" (Runs only); null otherwise. */
+    activity: z.string().nullable().meta({ example: 'Editing src/foo.ts' }),
+    /** The process's Process Tree (Runs only); null for a Conversation. */
+    tree: processNodeSchema.nullable(),
+    /** Cost derived from Usage on read; null when nothing could be priced. */
+    cost: costSchema.nullable(),
+  })
+  .meta({ id: 'ActivityProcess' });

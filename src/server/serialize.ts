@@ -1,8 +1,8 @@
 import type { AppContext } from './app.js';
-import type { ConversationRow, RunRow } from '../db/schema.js';
+import type { ConversationRow, ConversationState, RunRow, RunState } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolvePrices, type Cost } from '../execution/pricing.js';
-import type { RunUsage, RunUsageSnapshot } from '../execution/usage.js';
+import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
@@ -69,6 +69,98 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
 /** Cost of an arbitrary set of runs against the live price table. */
 export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
   return costOfUsages(runs.map((run) => parseUsage(run.usage)), pricesOf(ctx));
+}
+
+/** One live process in the Activity snapshot (issue #51); see `activitySnapshot`. */
+export interface ApiActivityProcess {
+  type: 'run' | 'chat';
+  /** The Run's id (type `run`), else null. */
+  runId: number | null;
+  /** The Conversation's id (type `chat`), else null. */
+  conversationId: number | null;
+  /** The owning Task's id (type `run`), else null. */
+  taskId: number | null;
+  workspaceId: number;
+  harness: string;
+  model: string;
+  /** A running Run's RunState, or a warm Conversation's ConversationState. */
+  state: RunState | ConversationState;
+  /** Isolation Mode: `worktree`/`direct` for a Run; always `direct` for a Conversation (ADR-0006). */
+  isolation: string;
+  /** Epoch ms the process started; the client derives elapsed from it. */
+  startedAt: number;
+  /** The mirrored issue's tracker ref (a Run's Task); null on native Tasks and Conversations. */
+  trackerRef: number | null;
+  usage: RunUsage | null;
+  contextTokens: number | null;
+  /** One-line current-activity (Runs only); null for a Conversation. */
+  activity: string | null;
+  /** The process's Process Tree (Runs only); null for a Conversation. */
+  tree: ProcessTree | null;
+  cost: Cost | null;
+}
+
+/**
+ * The instance-wide Activity snapshot (issue #51, ADR 0010): every live
+ * process across Workspaces, read from the in-memory registries
+ * (`Runner.active` + `ConversationDriver.active`) and joined with each
+ * session's latest Usage. A Run carries its live-usage snapshot — rolled-up
+ * Usage, context fill, current-activity line, Process Tree — with Cost derived
+ * on read like every other Cost. A Conversation has no live tailer, so its
+ * `tree`/`activity` are null and its Usage/context come from the Conversation
+ * row. `includeChats` is false for a Read Key (a read-scoped viz client): Runs
+ * only, mirroring the firehose filter that hides Conversation traffic from
+ * Read Keys.
+ */
+export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiActivityProcess[] {
+  const prices = pricesOf(ctx);
+  const runs: ApiActivityProcess[] = ctx.runner.activeSnapshots().map(({ runId, taskId, snapshot }) => {
+    const run = ctx.runs.get(runId);
+    const task = ctx.tasks.get(taskId);
+    return {
+      type: 'run',
+      runId,
+      conversationId: null,
+      taskId,
+      workspaceId: atRestWorkspaceId(task.workspaceId),
+      harness: task.harness,
+      model: task.model,
+      state: run.state,
+      isolation: task.isolationMode,
+      startedAt: run.startedAt,
+      trackerRef: task.trackerRef,
+      usage: snapshot?.usage ?? null,
+      contextTokens: snapshot?.contextTokens ?? null,
+      activity: snapshot?.activity ?? null,
+      tree: snapshot?.tree ?? null,
+      cost: snapshot ? costOfUsages([snapshot.usage], prices) : null,
+    };
+  });
+  if (!includeChats) return runs;
+  const chats: ApiActivityProcess[] = ctx.conversationDriver.activeConversationIds().map((id) => {
+    const convo = ctx.conversations.get(id);
+    const usage = parseUsage(convo.usage);
+    return {
+      type: 'chat',
+      runId: null,
+      conversationId: id,
+      taskId: null,
+      workspaceId: atRestWorkspaceId(convo.workspaceId),
+      harness: convo.harness,
+      model: convo.model,
+      state: convo.state,
+      // Conversations are direct-mode only (ADR-0006) — no Isolation Mode.
+      isolation: 'direct',
+      startedAt: convo.createdAt,
+      trackerRef: null,
+      usage,
+      contextTokens: convo.contextTokens,
+      activity: null,
+      tree: null,
+      cost: costOfUsages([usage], prices),
+    };
+  });
+  return [...runs, ...chats];
 }
 
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {

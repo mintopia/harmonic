@@ -42,6 +42,7 @@ import { EventBus } from './bus.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
+import { activityRoutes } from './routes/activity.js';
 import { channelRoutes } from './routes/channels.js';
 import { openapiRoutes, readPackageManifest } from './routes/openapi.js';
 import { ChannelService } from '../notifications/channels.js';
@@ -83,10 +84,12 @@ function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
 
 /**
  * What a `read`-scoped key reaches (issue #35): read-only board access for a
- * viz client — GET tasks/runs/maps and the WS handshake. Every mutation is
- * blocked (GET-only), as is the operator surface (keys, config, channels,
- * Conversations). The per-Task channel overrides are operator config, so
- * they're excluded even though they hang off /api/tasks.
+ * viz client — GET tasks/runs/maps, the instance-wide Activity snapshot, and
+ * the WS handshake. Every mutation is blocked (GET-only), as is the operator
+ * surface (keys, config, channels, Conversations). The per-Task channel
+ * overrides are operator config, so they're excluded even though they hang off
+ * /api/tasks. /api/activity is in the read set but self-filters to Runs only
+ * (issue #51) — the same rule the firehose applies to Conversation traffic.
  */
 function readScopeAllowed(path: string, method: string): boolean {
   if (method !== 'GET') return false;
@@ -95,6 +98,7 @@ function readScopeAllowed(path: string, method: string): boolean {
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
   if (path.startsWith('/api/runs')) return true;
   if (path === '/api/maps' || path.startsWith('/api/maps/')) return true;
+  if (path === '/api/activity') return true;
   return false;
 }
 
@@ -304,10 +308,12 @@ Conversation and permission traffic dropped.
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
 \`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` tasks,
-runs, and maps, and open the WebSocket (filtered as above). Every mutation
-and the whole operator surface (keys, config, channels, Conversations) is
-blocked. There is no \`map_changed\` event — a client re-fetches \`/maps\`
-on reconnect or when it sees a \`mapRef\` it has not resolved yet.`;
+runs, maps, and the instance-wide Activity snapshot (\`/api/activity\`,
+filtered to Runs only for a read key), and open the WebSocket (filtered as
+above). Every mutation and the whole operator surface (keys, config,
+channels, Conversations) is blocked. There is no \`map_changed\` event — a
+client re-fetches \`/maps\` on reconnect or when it sees a \`mapRef\` it has
+not resolved yet.`;
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
@@ -418,6 +424,7 @@ on reconnect or when it sees a \`mapRef\` it has not resolved yet.`;
   await app.register(configRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
+  await app.register(activityRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 

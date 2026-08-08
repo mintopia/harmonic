@@ -114,6 +114,16 @@ export class ConversationDriver {
     return this.active.size;
   }
 
+  /**
+   * The ids of every warm (active) Conversation — the live-process set the
+   * Activity snapshot joins against Conversation rows (issue #51). A
+   * Conversation has no live-usage tailer/Process Tree, so the endpoint
+   * derives its Usage/context from the Conversation row instead.
+   */
+  activeConversationIds(): number[] {
+    return [...this.active.keys()];
+  }
+
   /** True while a warm harness process is held for this Conversation. */
   isWarm(conversationId: number): boolean {
     return this.active.has(conversationId);

@@ -114,6 +114,20 @@ export class Runner {
     return this.active.size;
   }
 
+  /**
+   * A live view of every active Run for the Activity snapshot (issue #51):
+   * each running Run's ids plus its freshest live-usage snapshot, sampled
+   * from the same source the ~1s tailer uses — so the endpoint reads the
+   * current Usage/Process Tree even between the tailer's ~10s persist ticks.
+   */
+  activeSnapshots(): { runId: number; taskId: number; snapshot: RunUsageSnapshot | null }[] {
+    return [...this.active.values()].map((a) => ({
+      runId: a.runId,
+      taskId: a.taskId,
+      snapshot: this.sampleSnapshot(a.runId),
+    }));
+  }
+
   /** Start a run for a ready task. Returns the created run immediately. */
   start(taskId: number): RunRow {
     const task = this.taskService.get(taskId);
