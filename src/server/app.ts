@@ -327,6 +327,10 @@ on reconnect or when it sees a \`mapRef\` it has not resolved yet.`;
     const path = req.url.split('?')[0] ?? req.url;
     if ((!path.startsWith('/api') && !path.startsWith('/mcp')) || PUBLIC_API_PATHS.has(path)) return;
 
+    // Open by default: with no operator password set, Harmonic runs ungated —
+    // a local single-user tool. Setting a password (once) turns the gate on.
+    if (!auth.hasPassword()) return;
+
     const forbidden = () =>
       reply
         .status(403)

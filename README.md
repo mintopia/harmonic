@@ -28,9 +28,11 @@ Useful flags and environment:
 
 - `--port <n>` — port to listen on (default 4700)
 - `--host <h>` — bind address (default `0.0.0.0`: reachable from your
-  network, gated by the operator password; use `127.0.0.1` for local-only)
+  network; use `127.0.0.1` for local-only)
 - `--data-dir <dir>` — where the SQLite database lives (default `~/.harmonic`)
-- `HARMONIC_PASSWORD` — the operator password (or `--password`; required on first run)
+- `HARMONIC_PASSWORD` — set an operator password (or `--password`). Optional:
+  with none set Harmonic runs ungated, so bind to `127.0.0.1` or set one before
+  exposing it on your network
 - `HARMONIC_DATA_DIR` — same as `--data-dir`
 
 ## Development

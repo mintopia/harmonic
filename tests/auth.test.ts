@@ -28,6 +28,20 @@ describe('auth and api keys', () => {
     expect(failed).toBe(true);
   });
 
+  it('runs ungated when no operator password is set — every surface is open', async () => {
+    const open = await startServer(undefined, { password: '' });
+    try {
+      expect(open.app.ctx.auth.hasPassword()).toBe(false);
+      expect((await open.anonApi('GET', '/api/tasks')).status).toBe(200);
+      expect((await open.anonApi('POST', '/api/tasks', { prompt: 'p' })).status).toBe(201);
+      expect((await open.anonApi('GET', '/api/config')).status).toBe(200);
+      // The SPA reads this to skip its login screen.
+      expect((await open.anonApi('GET', '/api/auth/me')).body).toMatchObject({ passwordConfigured: false });
+    } finally {
+      await open.close();
+    }
+  });
+
   it('logs in with the operator password set at boot, and out again', async () => {
     const wrong = await server.anonApi('POST', '/api/auth/login', { password: 'nope' });
     expect(wrong.status).toBe(401);

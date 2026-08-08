@@ -90,6 +90,9 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null) {
 
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
+  // False when no operator password is set: the app is ungated, so there's no
+  // login screen and no logout affordance.
+  const [passwordSet, setPasswordSet] = useState(true);
   // null = first load still in flight; lets the board tell "loading" from "no tasks yet".
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -115,7 +118,10 @@ export function App() {
   useEffect(() => {
     fetch('/api/auth/me')
       .then((r) => r.json())
-      .then((me: { authenticated: boolean }) => setAuthed(me.authenticated))
+      .then((me: { authenticated: boolean; passwordConfigured: boolean }) => {
+        setPasswordSet(me.passwordConfigured);
+        setAuthed(me.authenticated || !me.passwordConfigured);
+      })
       .catch(() => setAuthed(false));
   }, []);
 
@@ -321,14 +327,16 @@ export function App() {
           >
             <Icon name={THEME_ICONS[theme]} />
           </button>
-          <button
-            aria-label="Log out"
-            title="Log out"
-            className="inline-flex items-center justify-center rounded-md p-2.5 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
-            onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
-          >
-            <Icon name="logout" />
-          </button>
+          {passwordSet && (
+            <button
+              aria-label="Log out"
+              title="Log out"
+              className="inline-flex items-center justify-center rounded-md p-2.5 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+              onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
+            >
+              <Icon name="logout" />
+            </button>
+          )}
           <button onClick={() => setEditing('new')} className={btnPrimary}>
             New task
           </button>

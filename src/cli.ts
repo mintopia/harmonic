@@ -104,15 +104,16 @@ async function main(): Promise<void> {
   const dataDir = values['data-dir'] ?? defaultDataDir();
   const password = values.password ?? process.env.HARMONIC_PASSWORD;
   const app = await buildApp({ dataDir, password });
-  if (!app.ctx.auth.hasPassword()) {
-    console.error(
-      'No operator password is set. First run requires one:\n' +
-        '  harmonic serve --password <password>   (or HARMONIC_PASSWORD)',
-    );
-    process.exit(1);
-  }
   const port = Number(values.port);
   const host = values.host!;
+  if (!app.ctx.auth.hasPassword()) {
+    const loopback = host === '127.0.0.1' || host === '::1' || host === 'localhost';
+    console.warn(
+      `No operator password set — Harmonic is running ungated${loopback ? '' : ` and reachable on ${host}`}.\n` +
+        (loopback ? '' : '  Anyone who can reach this address has full access. Bind to 127.0.0.1 or set a password.\n') +
+        '  Set one any time: harmonic serve --password <password>   (or HARMONIC_PASSWORD)',
+    );
+  }
   await app.listen({ port, host });
   console.log(`Harmonic listening on ${displayUrl(host, port)} (bound to ${host}, data: ${dataDir})`);
 
