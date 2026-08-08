@@ -219,8 +219,25 @@ Ceiling in total.
 _Avoid_: daemon, worker pool
 
 **Usage**:
-Token counts and tool-call tallies for a Run, collected from ACP extension
-metadata or the Harness's native session log; aggregated for statistics.
+Token counts and tool-call tallies for a Run or Conversation, parsed
+continuously from the Harness's native session logs — the parent session plus
+every Subagent session — while it executes, rolled up so the parent's total
+includes its whole Process Tree. Persisted as a single latest snapshot during
+execution and finalised at the end; the source for Cost and statistics.
+
+**Subagent**:
+A nested agent a Harness spawns within a Run or Conversation — itself a
+token-spending session with its own model and Usage. Discovered from the
+Harness's native logs; its Usage rolls up into the parent's. Claude and
+Copilot spawn them; Codex does not.
+_Avoid_: helper, child task
+
+**Process Tree**:
+A root process (a Run or Conversation) and its recursive Subagents — each a
+node with its own model, Usage, context fill, and live status (active →
+inactive → hidden as idle age grows, reactivating on new writes). Derived
+per-Harness at read time; never stored as a structure.
+_Avoid_: call graph
 
 **Harness Adapter**:
 The per-Harness code module behind which all harness-specific knowledge
@@ -231,26 +248,35 @@ what is genuinely operator-tunable.
 _Avoid_: plugin, driver
 
 **Usage Collector**:
-The per-Harness mechanism that produces Usage for a Run: ACP-reported
-totals plus, where the Harness exposes one (native session log or ACP
-result metadata), a per-model breakdown. Each Harness has exactly one.
-_Avoid_: log parser (it is more than the log)
+The per-Harness mechanism that parses the Harness's native session logs into
+Usage and the Process Tree — a per-model token breakdown across the parent and
+every Subagent session. Claude and Codex read jsonl transcripts; Copilot reads
+its session store. Each Harness has exactly one. ACP result metadata and OTel
+are no longer the source (see ADR 0009).
+_Avoid_: log parser (it is more than one log)
 
 **Cost**:
 The API-equivalent dollar value of Usage: token counts priced per model,
 always derived from Usage on demand, never stored. A Task's Cost sums all
 its Runs, retries included. A model without a configured price yields no
 Cost, and any aggregate containing it is flagged incomplete — never a fake
-zero. Harness-native spend units (e.g. Copilot AI Units) are never folded
-into Cost.
+zero. A Run's Cost includes its Subagents' tokens (its whole Process Tree).
+Harness-native spend units (e.g. Copilot AI Units) are never folded into Cost.
 _Avoid_: spend, billing (it is an estimate, not an invoice)
 
 **AI Unit**:
-Copilot's native consumption unit (~$1 each). When observable per Run it
-is recorded on Usage and shown as actual spend alongside Cost — a
-separate figure, not a Cost input.
+Copilot's native consumption unit (~$1 each), read per-turn from Copilot's
+session store (with Subagent attribution). Recorded on Usage and shown as
+actual spend alongside Cost — a separate figure, not a Cost input.
 
 ### Interfaces
+
+**Activity**:
+The instance-wide live view of every in-flight harness process — Runs and
+active Conversations across all Workspaces — showing realtime Usage, context
+fill, Cost, and each process's Process Tree. Read-only but for a per-process
+Stop/Kill and a deep-link to a related ticket; holds no state of its own.
+_Avoid_: monitor, dashboard
 
 **Notification Channel**:
 A configured destination — Discord webhook, Slack webhook, Generic webhook,
