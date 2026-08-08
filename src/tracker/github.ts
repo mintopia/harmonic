@@ -55,8 +55,36 @@ interface RawIssue {
 const state = (s: string): TicketState => (s.toUpperCase() === 'CLOSED' ? 'closed' : 'open');
 const ref = (r: RawRef): TicketRef => ({ number: r.number, title: r.title, state: state(r.state) });
 
+/**
+ * Body-line dependency fallback. GitHub's native `blockedBy` is empty unless the
+ * repo enabled the dependency preview *and* the edges were filed in the UI, so
+ * also read the wayfinder body convention: any line mentioning "Blocked by" or
+ * "Depends on" contributes every `#n` that follows the keyword on that line
+ * (numbers *before* it — e.g. a "Part of #<map>" prefix — are ignored). Merged
+ * with, and deduped against, the native edges in `normalise`.
+ * ponytail: line-scoped tail scan; a stray `#n` later on the same line would be
+ * picked up too — fine for the one-relationship-per-line convention.
+ */
+function parseBodyBlockers(body: string): number[] {
+  const out = new Set<number>();
+  for (const line of body.split('\n')) {
+    const m = /\b(?:blocked by|depends on)\b[:\s]*(.*)/i.exec(line);
+    if (!m) continue;
+    for (const h of m[1]!.matchAll(/#(\d+)/g)) out.add(Number(h[1]));
+  }
+  return [...out];
+}
+
 function normalise(raw: RawIssue): Ticket {
   const labels = (raw.labels ?? []).map((l) => l.name);
+  const nativeBlockedBy = (raw.blockedBy?.nodes ?? []).map(ref);
+  const seen = new Set(nativeBlockedBy.map((r) => r.number));
+  const blockedBy = [
+    ...nativeBlockedBy,
+    ...parseBodyBlockers(raw.body ?? '')
+      .filter((n) => n !== raw.number && !seen.has(n))
+      .map((n): TicketRef => ({ number: n, title: '', state: 'open' })),
+  ];
   return {
     number: raw.number,
     title: raw.title,
@@ -67,7 +95,7 @@ function normalise(raw: RawIssue): Ticket {
     labels,
     assignees: (raw.assignees ?? []).map((a) => a.login),
     parent: raw.parent?.number ?? null,
-    blockedBy: (raw.blockedBy?.nodes ?? []).map(ref),
+    blockedBy,
     blocking: (raw.blocking?.nodes ?? []).map(ref),
     comments: (raw.comments ?? []).map((c) => ({
       author: c.author?.login ?? '',
