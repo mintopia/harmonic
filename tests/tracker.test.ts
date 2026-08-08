@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolveTrackerAdapter } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
 import { gitlabAdapter, type Fetcher } from '../src/tracker/gitlab.js';
@@ -116,6 +117,21 @@ describe('resolveTrackerAdapter', () => {
       expect((await resolveTrackerAdapter(root)).name).toBe('gitlab');
       delete process.env.GITLAB_TOKEN;
       await expect(resolveTrackerAdapter(root)).rejects.toThrow(/GITLAB_TOKEN/);
+    } finally {
+      if (prev === undefined) delete process.env.GITLAB_TOKEN;
+      else process.env.GITLAB_TOKEN = prev;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('infers GitLab project/host from the git remote when the doc omits them', async () => {
+    const root = mkRepo('# Issue tracker: GitLab\n\nIssues live in cloud-agent/base.\n');
+    execFileSync('git', ['-C', root, 'init', '-q']);
+    execFileSync('git', ['-C', root, 'remote', 'add', 'origin', 'git@gitlab.com:cloud-agent/base.git']);
+    const prev = process.env.GITLAB_TOKEN;
+    try {
+      process.env.GITLAB_TOKEN = 'glpat-xxx';
+      expect((await resolveTrackerAdapter(root)).name).toBe('gitlab');
     } finally {
       if (prev === undefined) delete process.env.GITLAB_TOKEN;
       else process.env.GITLAB_TOKEN = prev;
