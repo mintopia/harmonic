@@ -26,12 +26,19 @@ export type ApiTask = TaskWithDeps & {
   cost: Cost | null;
   /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
   url: string | null;
+  /** The parent Map's title, resolved from mapRef against the last poll's scan; null when unmapped or before a poll (issue #34). */
+  mapTitle: string | null;
 };
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
   const usages = ctx.runs.listForTask(task.id).map((run) => parseUsage(run.usage));
-  return { ...task, cost: costOfUsages(usages, pricesOf(ctx)), url: ctx.trackerPoller.urlFor(task.trackerRef) };
+  return {
+    ...task,
+    cost: costOfUsages(usages, pricesOf(ctx)),
+    url: ctx.trackerPoller.urlFor(task.trackerRef),
+    mapTitle: ctx.trackerPoller.titleForMap(task.mapRef),
+  };
 }
 
 /** Cost of an arbitrary set of runs against the live price table. */

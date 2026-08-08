@@ -104,6 +104,9 @@ describe('TrackerPoller.poll', () => {
     expect(poller.urlFor(30)).toBe('https://x/30');
     expect(poller.urlFor(999)).toBeNull(); // unknown ref
     expect(poller.urlFor(null)).toBeNull(); // native Task
+    expect(poller.titleForMap(19)).toBe('Wayfinder'); // mapRef → Map title (issue #34)
+    expect(poller.titleForMap(999)).toBeNull(); // unknown ref
+    expect(poller.titleForMap(null)).toBeNull(); // unmapped Task
   });
 
   it('no-ops when disabled — never resolves the adapter (safe by default)', async () => {

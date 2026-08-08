@@ -23,6 +23,7 @@ export class TrackerPoller {
   /** The last poll's scan — the "polled tracker" the Map rollup and Task urls read (D7). Empty before the first poll. */
   private lastScan: Ticket[] = [];
   private urlByRef = new Map<number, string>();
+  private titleByRef = new Map<number, string>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -45,6 +46,7 @@ export class TrackerPoller {
     const tickets = await adapter.scan();
     this.lastScan = tickets;
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
+    this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter, tickets);
     mirrorScan(this.tasks, tickets);
     this.onMirrored();
@@ -63,6 +65,11 @@ export class TrackerPoller {
   /** The tracker URL for a mirrored Task's ref, from the last scan; null for native Tasks or before a poll. */
   urlFor(ref: number | null): string | null {
     return ref === null ? null : (this.urlByRef.get(ref) ?? null);
+  }
+
+  /** The Map ticket's title for a mirrored Task's mapRef, from the last scan; null when unmapped or before a poll (issue #34). */
+  titleForMap(ref: number | null): string | null {
+    return ref === null ? null : (this.titleByRef.get(ref) ?? null);
   }
 
   /**

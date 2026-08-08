@@ -10,6 +10,13 @@ export const TASK_STATES = [
 ] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+/** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
+export type TaskOrigin = 'native' | 'mirrored';
+export type Workflow = 'wayfinder' | 'implement';
+export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task';
+/** afk = Harmonic auto-runs it; hitl = a human drives it. */
+export type Drive = 'afk' | 'hitl';
+
 /** Dollar value of Usage, computed server-side on read — never stored. */
 export interface Cost {
   /** Sum over priced models; null when nothing could be priced. */
@@ -42,6 +49,24 @@ export interface Task {
   reattempts: number[];
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
+  /** native = authored here; mirrored = a projection of a tracker issue (issue #30). */
+  origin: TaskOrigin;
+  /** The mirrored issue's number; null on native Tasks. */
+  trackerRef: number | null;
+  /** Mirrored role: which workflow the tracker labelled it; null on native Tasks. */
+  workflow: Workflow | null;
+  /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
+  wayfinderType: WayfinderType | null;
+  /** Mirrored role: afk (Harmonic drives) | hitl (you drive); null on native Tasks. */
+  drive: Drive | null;
+  /** True when an afk Run escalated to a human at runtime (issue #33). */
+  escalated: boolean;
+  /** The parent Map's tracker ref; null when unmapped or native. */
+  mapRef: number | null;
+  /** The mirrored issue's tracker URL, from the last poll; null on native Tasks or before a poll (issue #35). */
+  url: string | null;
+  /** The parent Map's title, resolved from mapRef; null when unmapped or before a poll (issue #34). */
+  mapTitle: string | null;
 }
 
 export interface Run {

@@ -20,6 +20,15 @@ const task = (id: number, state: TaskState, createdAt: number): Task => ({
   blockedOnFailed: false,
   reattempts: [],
   cost: null,
+  origin: 'native',
+  trackerRef: null,
+  workflow: null,
+  wayfinderType: null,
+  drive: null,
+  escalated: false,
+  mapRef: null,
+  url: null,
+  mapTitle: null,
 });
 
 describe('board column model', () => {

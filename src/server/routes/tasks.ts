@@ -72,6 +72,8 @@ const taskSchema = taskWithDepsSchema
     cost: costSchema.nullable(),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
+    /** The parent Map's title (resolved from mapRef, last poll); null when unmapped or before a poll. */
+    mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
   })
   .meta({ id: 'Task' });
 
