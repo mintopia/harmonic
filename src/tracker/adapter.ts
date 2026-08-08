@@ -6,11 +6,11 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
 /**
- * Parse `group/repo` + host from a repo's `origin` remote so a GitLab tracker
- * needs no redundant `Project:`/`Host:` lines (GitHub infers the same way). SSH
+ * Parse `group/repo` from a repo's `origin` remote so a GitLab tracker needs no
+ * redundant `Project:` line (GitHub infers the same way). SSH
  * (`git@gitlab.com:group/repo.git`) and HTTPS both supported; null if no origin.
  */
-async function gitlabRemote(repoRoot: string): Promise<{ project: string; host: string } | null> {
+async function gitlabRemote(repoRoot: string): Promise<string | null> {
   let url: string;
   try {
     const { stdout } = await execFileAsync('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']);
@@ -18,10 +18,8 @@ async function gitlabRemote(repoRoot: string): Promise<{ project: string; host: 
   } catch {
     return null;
   }
-  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)([^:/]+)[:/](.+?)(?:\.git)?$/);
-  if (!m) return null;
-  return { host: `https://${m[1]}`, project: m[2]!.replace(/^\d+\//, '') }; // strip ssh:// :port
-
+  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](.+?)(?:\.git)?$/);
+  return m ? m[1]!.replace(/^\d+\//, '') : null; // strip ssh:// :port
 }
 import { githubAdapter } from './github.js';
 import { gitlabAdapter } from './gitlab.js';
@@ -110,10 +108,9 @@ export interface OpenPRInput {
  * declaration (`# Issue tracker: <name>`) — the sibling of the Harness
  * Adapter's `adapterFor`. GitHub uses ambient `gh` auth (no config).
  * local-markdown reads an optional `Path: <dir>` line (default `.scratch`,
- * resolved relative to the repo unless absolute). GitLab reads optional
- * `Project: <group/repo>` and `Host: <url>` lines, inferring both from the
- * repo's `origin` remote when absent (default host `https://gitlab.com`); its
- * PAT comes from `GITLAB_TOKEN` (never the doc).
+ * resolved relative to the repo unless absolute). GitLab reads an optional
+ * `Project: <group/repo>` line, inferring it from the repo's `origin` remote
+ * when absent; auth and host come from the ambient `glab` CLI (never the doc).
  */
 export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAdapter> {
   const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
@@ -132,14 +129,10 @@ export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAd
       return localMarkdownAdapter(isAbsolute(path) ? path : join(repoRoot, path));
     }
     case 'gitlab': {
-      const remote = await gitlabRemote(repoRoot);
-      const project = doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? remote?.project;
-      const host = doc.match(/^\s*Host:\s*(.+?)\s*$/im)?.[1] ?? remote?.host ?? 'https://gitlab.com';
-      const token = process.env.GITLAB_TOKEN;
+      const project = doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot));
       if (!project)
         throw new Error(`GitLab tracker needs a "Project: <group/repo>" line in ${docPath} (or an origin remote)`);
-      if (!token) throw new Error('GitLab tracker needs a GITLAB_TOKEN environment variable');
-      return gitlabAdapter({ project, host, token });
+      return gitlabAdapter({ project, repoRoot });
     }
     default:
       throw new Error(`Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);

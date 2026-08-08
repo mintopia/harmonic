@@ -1,27 +1,38 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerAdapter } from './adapter.js';
 
-/** GitLab connection: the project (`group/repo` or numeric id), API host, and a PAT. */
+const execFileAsync = promisify(execFile);
+
+/** GitLab connection: the project (`group/repo` or numeric id) and the repo whose `glab` auth/host to use. */
 export interface GitlabConfig {
   project: string;
-  host: string;
-  token: string;
+  repoRoot: string;
 }
 
-/** Injectable for tests; defaults to the global `fetch`. */
-export type Fetcher = typeof fetch;
+/** Runs a `glab` subprocess in the repo (so `glab` picks its auth + host from the remote). Injectable for tests. */
+export type GlabRunner = (args: string[], cwd: string) => Promise<string>;
 
-export class GitlabError extends Error {
+export class GlabError extends Error {
   constructor(
     message: string,
-    public readonly status: number,
-    public readonly body: string,
+    public readonly stderr: string,
   ) {
     super(message);
-    this.name = 'GitlabError';
+    this.name = 'GlabError';
   }
 }
 
-// GitLab's REST v4 JSON, only the fields we read.
+const defaultGlab: GlabRunner = async (args, cwd) => {
+  try {
+    const { stdout } = await execFileAsync('glab', args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+    return stdout;
+  } catch (err: any) {
+    throw new GlabError(`glab ${args.join(' ')} failed: ${err.stderr?.trim() || err.message}`, err.stderr ?? '');
+  }
+};
+
+// GitLab's REST v4 JSON (via `glab api`), only the fields we read.
 interface RawIssue {
   iid: number;
   title: string;
@@ -108,54 +119,47 @@ function assigneeQuery(ids: Set<number>): string {
 }
 
 /**
- * The GitLab Tracker Adapter (R2/D1, issue #36). Reads via the REST v4 API with
- * a personal-access token (`PRIVATE-TOKEN`), swallowing the R2 divergences: the
- * `opened` state, the project `iid` (used as the portable `number`) vs the
- * global `id`, and the lack of free-tier native relationships — `parent` and
- * `blockedBy` come from the body-line wayfinder conventions and `blocking` is
- * reverse-synthesised, so no capability flags leak past the `Ticket`.
+ * The GitLab Tracker Adapter (R2/D1, issue #36). Reads through the `glab` CLI's
+ * REST passthrough (`glab api`), so it rides `glab`'s ambient auth and host — no
+ * PAT or host config of our own (the sibling of the GitHub adapter's `gh`).
+ * Swallows the R2 divergences: the `opened` state, the project `iid` (used as
+ * the portable `number`) vs the global `id`, and the lack of free-tier native
+ * relationships — `parent`/`blockedBy` come from the body-line wayfinder
+ * conventions and `blocking` is reverse-synthesised, so no capability flags leak.
  *
  * ponytail: native Epics/work-items and `blocks`/`is_blocked_by` issue links are
  * Premium+ and unused — body-line is the free-tier path and keeps `scan` to one
  * request per 100 issues (no N+1). Merge the links/epics API here if a Premium
  * instance needs the UI-visible edges instead.
  */
-export function gitlabAdapter(config: GitlabConfig, fetcher: Fetcher = fetch): TrackerAdapter {
-  const base = `${config.host.replace(/\/+$/, '')}/api/v4`;
-  const proj = `${base}/projects/${encodeURIComponent(config.project)}`;
+export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGlab): TrackerAdapter {
+  const proj = `projects/${encodeURIComponent(config.project)}`;
   let me: RawUser | undefined;
 
-  const api = async <T>(path: string, init?: RequestInit): Promise<T> => {
-    const url = path.startsWith('http') ? path : `${proj}${path}`;
-    const res = await fetcher(url, {
-      ...init,
-      headers: { 'PRIVATE-TOKEN': config.token, ...init?.headers },
-    });
-    if (!res.ok) {
-      throw new GitlabError(
-        `GitLab ${init?.method ?? 'GET'} ${url} → ${res.status}`,
-        res.status,
-        await res.text().catch(() => ''),
-      );
-    }
-    return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  // `glab api <endpoint>` — endpoint is relative to /api/v4; query string passes through, JSON on stdout.
+  const api = async <T>(endpoint: string, method = 'GET'): Promise<T> => {
+    const args = ['api'];
+    if (method !== 'GET') args.push('-X', method);
+    args.push(endpoint);
+    const out = await run(args, config.repoRoot);
+    return out.trim() ? (JSON.parse(out) as T) : (undefined as T);
   };
 
-  const ensureMe = async (): Promise<RawUser> => (me ??= await api<RawUser>(`${base}/user`));
+  const ensureMe = async (): Promise<RawUser> => (me ??= await api<RawUser>('user'));
 
   // Re-read assignees, apply `mutate`, write the whole list back — GitLab replaces, never merges.
   const reassign = async (iid: number, mutate: (ids: Set<number>) => void): Promise<void> => {
-    const current = await api<RawIssue>(`/issues/${iid}`);
+    const current = await api<RawIssue>(`${proj}/issues/${iid}`);
     const ids = new Set((current.assignees ?? []).map((a) => a.id));
     mutate(ids);
-    await api(`/issues/${iid}${assigneeQuery(ids)}`, { method: 'PUT' });
+    await api(`${proj}/issues/${iid}${assigneeQuery(ids)}`, 'PUT');
   };
 
   // ponytail: 1000-issue ceiling (10 pages), matching the GitHub adapter.
   const scanAll = async (): Promise<Ticket[]> => {
     const raws: RawIssue[] = [];
     for (let page = 1; page <= 10; page++) {
-      const batch = await api<RawIssue[]>(`/issues?per_page=100&page=${page}`);
+      const batch = await api<RawIssue[]>(`${proj}/issues?per_page=100&page=${page}`);
       raws.push(...batch);
       if (batch.length < 100) break;
     }
@@ -170,8 +174,8 @@ export function gitlabAdapter(config: GitlabConfig, fetcher: Fetcher = fetch): T
     async readTicket(ref: TicketRef) {
       // Fresh full scan for correct relationship synthesis + current assignees, then attach comments.
       const found = (await scanAll()).find((t) => t.number === ref.number);
-      if (!found) throw new GitlabError(`GitLab: no issue #${ref.number} in ${config.project}`, 404, '');
-      const notes = await api<RawNote[]>(`/issues/${ref.number}/notes?per_page=100&sort=asc`);
+      if (!found) throw new Error(`GitLab: no issue #${ref.number} in ${config.project}`);
+      const notes = await api<RawNote[]>(`${proj}/issues/${ref.number}/notes?per_page=100&sort=asc`);
       return {
         ...found,
         comments: notes
@@ -196,9 +200,9 @@ export function gitlabAdapter(config: GitlabConfig, fetcher: Fetcher = fetch): T
 
     async close(ticket: Ticket, comment: string) {
       if (comment) {
-        await api(`/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, { method: 'POST' });
+        await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
       }
-      await api(`/issues/${ticket.number}?state_event=close`, { method: 'PUT' });
+      await api(`${proj}/issues/${ticket.number}?state_event=close`, 'PUT');
     },
   };
 }
