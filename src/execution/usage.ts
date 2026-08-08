@@ -46,7 +46,12 @@ export type ProcessTree = ProcessNode;
 
 /** A Usage Collector's parse of one session: rolled-up Usage + its Process Tree. */
 export interface ParsedSession {
-  /** Usage rolled up across the whole tree (`rollUpUsage(tree)`). */
+  /**
+   * Usage rolled up across the whole tree (parent + every Subagent).
+   * Collectors keep the true per-model split (`usageFromModels`) rather
+   * than `rollUpUsage`'s dominant-model-per-node collapse, so a
+   * multi-model node (Copilot's `auto` router) prices exactly.
+   */
   usage: RunUsage;
   tree: ProcessTree;
 }
@@ -145,6 +150,29 @@ function tallyToolCalls(
     tally[name] = (tally[name] ?? 0) + 1;
   }
   return tally;
+}
+
+/** Wrap a per-model breakdown as a session-log-sourced RunUsage (ADR 0009). */
+export function usageFromModels(models: Record<string, ModelUsage>): RunUsage {
+  return { models, totals: sumModels(models), toolCalls: {}, source: 'session-log' };
+}
+
+/**
+ * The model owning the most tokens — the price bucket for a single
+ * Process Tree node whose calls span several models (Codex resume,
+ * Copilot's `auto` router). null for an empty breakdown.
+ */
+export function dominantModel(models: Record<string, ModelUsage>): string | null {
+  let best: string | null = null;
+  let bestTokens = -1;
+  for (const [model, u] of Object.entries(models)) {
+    const tokens = u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+    if (tokens > bestTokens) {
+      best = model;
+      bestTokens = tokens;
+    }
+  }
+  return best;
 }
 
 function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {

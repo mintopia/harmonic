@@ -286,6 +286,61 @@ describe('harness adapters', () => {
     });
   });
 
+  it("claude's parse() builds a recursive Subagent tree and rolls every Subagent's tokens up", () => {
+    const S = 'sess1';
+    const home = mkdtempSync(join(tmpdir(), 'claude-home-'));
+    const dir = join(home, '-w');
+    const subs = join(dir, S, 'subagents');
+    mkdirSync(join(subs, 'workflows', 'wf_x'), { recursive: true });
+
+    const assistant = (model: string, u: Record<string, number>, id = model) =>
+      JSON.stringify({ type: 'assistant', message: { id, model, usage: u } });
+    const toolResult = (toolUseId: string) =>
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: toolUseId }] } });
+
+    // Parent: its own tokens + the tool_result that marks sub1 finished.
+    writeFileSync(
+      join(dir, `${S}.jsonl`),
+      [
+        assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 5, cache_creation_input_tokens: 2 }),
+        toolResult('toolu_sub1'),
+      ].join('\n'),
+    );
+    // Depth-1 Subagent (completed), and its own depth-2 child (still running).
+    writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-opus-4-8', { input_tokens: 50, output_tokens: 5 }));
+    writeFileSync(join(subs, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'general-purpose', toolUseId: 'toolu_sub1', spawnDepth: 1 }));
+    writeFileSync(join(subs, 'agent-a2.jsonl'), assistant('claude-haiku-4-5', { input_tokens: 20, output_tokens: 2 }));
+    writeFileSync(join(subs, 'agent-a2.meta.json'), JSON.stringify({ agentType: 'Explore', toolUseId: 'toolu_sub2', parentAgentId: 'a1', spawnDepth: 2 }));
+    // Workflow agent (no toolUseId) — hangs off the root, recursively found.
+    writeFileSync(join(subs, 'workflows', 'wf_x', 'agent-a3.jsonl'), assistant('claude-opus-4-8', { input_tokens: 30, output_tokens: 3 }));
+    writeFileSync(join(subs, 'workflows', 'wf_x', 'agent-a3.meta.json'), JSON.stringify({ agentType: 'workflow-subagent', spawnDepth: 1 }));
+    // A meta whose transcript hasn't been written yet (mid-run): no throw, zero usage.
+    writeFileSync(join(subs, 'agent-a4.meta.json'), JSON.stringify({ agentType: 'code-reviewer', toolUseId: 'toolu_sub4', spawnDepth: 1 }));
+
+    const parsed = adapterFor('claude').usage!.parse!({ sessionLogDir: home, cwd: '/w', sessionId: S })!;
+
+    // Flat Usage rolls up the whole tree — every Subagent's tokens count (the undercount fix).
+    expect(parsed.usage.models['claude-opus-4-8']).toEqual({ inputTokens: 100 + 50 + 30, outputTokens: 10 + 5 + 3, cacheReadTokens: 5, cacheWriteTokens: 2 });
+    expect(parsed.usage.models['claude-haiku-4-5']).toEqual({ inputTokens: 20, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 });
+
+    // Root: own tokens only, latest message's input-side footprint as context fill.
+    expect(parsed.tree).toMatchObject({ id: S, depth: 0, model: 'claude-opus-4-8', contextTokens: 107 });
+    expect(parsed.tree.usage).toEqual({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5, cacheWriteTokens: 2 });
+
+    const byId = Object.fromEntries(parsed.tree.children.map((c) => [c.id, c]));
+    expect(Object.keys(byId).sort()).toEqual(['a1', 'a3', 'a4']);
+    expect(byId.a1).toMatchObject({ name: 'general-purpose', status: 'inactive', depth: 1 });
+    expect(byId.a3).toMatchObject({ name: 'workflow-subagent', status: 'active' });
+    expect(byId.a4).toMatchObject({ status: 'active' });
+    expect(byId.a4!.usage).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    // Depth-2 child nests under its spawning Subagent via parentAgentId.
+    expect(byId.a1!.children).toHaveLength(1);
+    expect(byId.a1!.children[0]).toMatchObject({ id: 'a2', name: 'Explore', model: 'claude-haiku-4-5', status: 'active', depth: 2 });
+
+    // No transcript yet → no log, never a fake zero.
+    expect(adapterFor('claude').usage!.parse!({ sessionLogDir: home, cwd: '/w', sessionId: 'missing' })).toBeNull();
+  });
+
   it("claude's Usage Collector locates the session log by the cwd-slug convention", () => {
     const usage = adapterFor('claude').usage!;
     expect(
