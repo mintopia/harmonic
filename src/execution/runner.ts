@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
 import { adapterFor } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, type RunUsage } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, type RunUsage, type RunUsageSnapshot } from './usage.js';
+import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
@@ -28,6 +29,8 @@ export interface RunnerEvents {
   onRunEvent?: (event: PersistedRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onRunFinished?: (run: RunRow) => void;
+  /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
+  onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
 }
 
 export interface RunnerOptions {
@@ -41,6 +44,8 @@ export interface RunnerOptions {
   };
   /** Auto-drive collaborator for afk mirrored Tasks (issue #33); absent on a native-only server. */
   autoDrive?: AutoDrive;
+  /** Push/persist cadence for the live-usage tailer; defaults to ~1s/~10s. */
+  tailerCadence?: TailerCadence;
 }
 
 interface Workspace {
@@ -54,6 +59,12 @@ interface ActiveRun {
   taskId: number;
   child: ChildProcess;
   driver: AcpDriver;
+  /** Sampler context for the live-usage tailer (ADR 0010). */
+  harnessId: string;
+  harness: HarnessConfig;
+  cwd: string;
+  /** Latest current-activity line, updated from the run's session updates. */
+  activity: string | null;
 }
 
 /**
@@ -68,6 +79,7 @@ export class Runner {
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
+  private readonly tailer: LiveUsageTailer;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -81,6 +93,21 @@ export class Runner {
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
+    this.tailer = new LiveUsageTailer(
+      {
+        sample: (runId) => this.sampleSnapshot(runId),
+        emit: (runId, snapshot) => this.events.onRunUsage?.({ runId, snapshot }),
+        // A live snapshot is decoration; a DB hiccup must never fail a run.
+        persist: (runId, snapshot) => {
+          try {
+            this.runStore.update(runId, { liveUsage: JSON.stringify(snapshot) });
+          } catch {
+            /* best-effort; the next tick or the finish flush retries */
+          }
+        },
+      },
+      options.tailerCadence,
+    );
   }
 
   get activeCount(): number {
@@ -134,7 +161,10 @@ export class Runner {
 
   /** Kill every active harness (process shutdown). */
   shutdown(): void {
-    for (const active of this.active.values()) this.kill(active);
+    for (const active of this.active.values()) {
+      this.tailer.stop(active.runId);
+      this.kill(active);
+    }
     this.active.clear();
   }
 
@@ -188,6 +218,11 @@ export class Runner {
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig): Promise<void> {
     const record = (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => {
       const event = this.runStore.appendEvent(run.id, { type, payload });
+      // Feed the live-usage tailer's current-activity line (ADR 0010).
+      if (type === 'session_update') {
+        const line = activityLine(payload);
+        if (line) active.activity = line;
+      }
       this.events.onRunEvent?.(event);
     };
 
@@ -244,6 +279,9 @@ export class Runner {
     const finalize = async () => {
       if (finalized) return;
       finalized = true;
+      // Stop tailing before the log's cwd (worktree) is torn down; this also
+      // flushes the final snapshot to the row (ADR 0010: always on finish).
+      this.tailer.stop(run.id);
       this.kill(active);
       try {
         this.keys?.revoke(run.id);
@@ -285,7 +323,16 @@ export class Runner {
       },
     });
 
-    const active: ActiveRun = { runId: run.id, taskId: task.id, child, driver };
+    const active: ActiveRun = {
+      runId: run.id,
+      taskId: task.id,
+      child,
+      driver,
+      harnessId: task.harness,
+      harness,
+      cwd: workspace.cwd,
+      activity: null,
+    };
     this.active.set(run.id, active);
 
     try {
@@ -302,6 +349,9 @@ export class Runner {
         // still leaves a session for usage backfill.
         onSessionCreated: (sessionId) => this.runStore.update(run.id, { sessionId }),
       });
+
+      // The session id is persisted; start tailing its native log (ADR 0010).
+      this.tailer.start(run.id);
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -376,6 +426,29 @@ export class Runner {
       this.active.delete(run.id);
       await finalize();
     }
+  }
+
+  /**
+   * The live snapshot for a run's tailer (ADR 0010): parse the harness's
+   * native log into rolled-up Usage + Process Tree, plus the root's context
+   * fill and the latest current-activity line. null before a session id or
+   * a log exists, or for a harness with no Usage Collector.
+   */
+  private sampleSnapshot(runId: number): RunUsageSnapshot | null {
+    const active = this.active.get(runId);
+    if (!active) return null;
+    const sessionId = this.runStore.get(runId).sessionId;
+    if (!sessionId) return null;
+    // ponytail: re-parses the whole native log each ~1s tick (parse() has no
+    // incremental cursor). Fine for coding-run log sizes; add a tail offset to
+    // parse() if a long run's per-second full scan shows up in a profile.
+    const parsed = adapterFor(active.harnessId).usage?.parse?.({
+      sessionLogDir: active.harness.sessionLogDir,
+      cwd: active.cwd,
+      sessionId,
+    });
+    if (!parsed) return null;
+    return { usage: parsed.usage, contextTokens: parsed.tree.contextTokens, activity: active.activity, tree: parsed.tree };
   }
 
   /** Usage is decoration on a finished run — never let it fail the run. */

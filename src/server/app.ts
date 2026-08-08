@@ -187,6 +187,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunFinished: (run) => bus.emit('run_changed', run),
+      onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
     worktreesDir: join(opts.dataDir, 'worktrees'),
     keys: {
@@ -285,16 +286,19 @@ the REST restrictions noted per endpoint below.
 \`GET /api/ws\` is a single firehose WebSocket (also outside this spec's
 paths): every run event, run state change, task state change, and
 Conversation event/change is broadcast to every connected client as JSON
-messages of the form \`{ type: 'run_event' | 'run_changed' |
+messages of the form \`{ type: 'run_event' | 'run_changed' | 'run_usage' |
 'task_changed' | 'conversation_event' | 'conversation_changed' |
 'permission_request', ... }\`, using the same Task/Run/Conversation shapes
-served over REST. \`permission_request\` announces a Harness blocked on an
+served over REST. \`run_usage\` is a live-usage snapshot for a running Run
+(tokens, context fill, derived Cost, current-activity line, and Process
+Tree), pushed about once a second while the Run tails its native log.
+\`permission_request\` announces a Harness blocked on an
 operator permission decision in a Conversation (ADR-0007), answered via
 \`POST /conversations/:id/permissions/:reqId\`. Authenticate by passing the
 session token or an API key as \`?token=\` (WebSocket clients cannot set an
 Authorization header). A \`read\`-scoped key gets a filtered firehose — only
-\`task_changed\`, \`run_changed\`, and \`run_event\` — with the Conversation
-and permission traffic dropped.
+\`task_changed\`, \`run_changed\`, \`run_event\`, and \`run_usage\` — with the
+Conversation and permission traffic dropped.
 
 ## Read scope
 

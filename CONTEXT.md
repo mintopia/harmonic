@@ -309,8 +309,8 @@ _Avoid_: token (ambiguous with Run Key)
 
 **Read Key**:
 A read-scoped API Key for a viz client: it may GET tasks, runs, and Maps and
-open the firehose WebSocket (filtered to task/run/run-event — no Conversation
-or permission traffic), but every mutation and the operator surface (keys,
+open the firehose WebSocket (filtered to task/run/run-event/run-usage — no
+Conversation or permission traffic), but every mutation and the operator surface (keys,
 config, channels, Conversations) is blocked. Operator-created and listed like
 a full API Key, unlike the ephemeral Run/Conversation Keys.
 _Avoid_: viz key, guest key

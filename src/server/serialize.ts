@@ -2,7 +2,7 @@ import type { AppContext } from './app.js';
 import type { ConversationRow, RunRow } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolvePrices, type Cost } from '../execution/pricing.js';
-import type { RunUsage } from '../execution/usage.js';
+import type { RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
@@ -20,11 +20,22 @@ const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices
  * at rest, so every API-facing shape narrows it back to `number` here. */
 export const atRestWorkspaceId = (workspaceId: number | null): number => workspaceId!;
 
-export type ApiRun = Omit<RunRow, 'usage'> & { usage: RunUsage | null; cost: Cost | null };
+export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage'> & { usage: RunUsage | null; cost: Cost | null };
 
 export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
   const usage = parseUsage(run.usage);
-  return { ...run, usage, cost: costOfUsages([usage], pricesOf(ctx)) };
+  // liveUsage is the Activity view's live/persisted snapshot, streamed as a
+  // `run_usage` firehose event — not part of the run's REST shape.
+  const { liveUsage: _liveUsage, ...rest } = run;
+  return { ...rest, usage, cost: costOfUsages([usage], pricesOf(ctx)) };
+}
+
+/** The firehose shape of a live-usage snapshot (ADR 0010): the persisted
+ * snapshot plus Cost derived from its Usage on read, like every other Cost. */
+export type ApiRunUsage = RunUsageSnapshot & { cost: Cost | null };
+
+export function runUsageToApi(ctx: AppContext, snapshot: RunUsageSnapshot): ApiRunUsage {
+  return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx)) };
 }
 
 export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {

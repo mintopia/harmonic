@@ -136,6 +136,10 @@ export const runs = sqliteTable('runs', {
   stat: text('stat'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
+  /** JSON: latest live-usage snapshot (rolled-up Usage + context fill +
+   * current-activity line + Process Tree), overwritten on a coarse ~10s
+   * cadence and on finish (ADR 0010). Cost is not stored — derived on read. */
+  liveUsage: text('live_usage'),
   /** Review decision on this run: 'accepted' | 'rejected' | null. */
   review: text('review'),
   reviewFeedback: text('review_feedback'),

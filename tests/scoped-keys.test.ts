@@ -113,7 +113,7 @@ describe('read-scoped key (issue #35)', () => {
     expect(await res.json()).toEqual({ maps: [] });
   });
 
-  it('filters the WebSocket to task/run/run-event, dropping Conversation and permission traffic', async () => {
+  it('filters the WebSocket to task/run/run-event/run-usage, dropping Conversation and permission traffic', async () => {
     const connect = async (token: string) => {
       const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${token}`);
       const messages: any[] = [];
@@ -127,13 +127,27 @@ describe('read-scoped key (issue #35)', () => {
     const readWs = await connect(readToken);
     const opWs = await connect(server.sessionToken);
 
-    // Synthetic bus events: run_event is in the read set, conversation_event is not.
+    // Synthetic bus events: run_event and run_usage are in the read set (Run
+    // traffic), conversation_event is not.
     server.app.ctx.bus.emit('run_event', { id: 1, runId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
+    server.app.ctx.bus.emit('run_usage', {
+      runId: 1,
+      snapshot: {
+        usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
+        contextTokens: 1234,
+        activity: 'Editing src/foo.ts',
+        tree: { id: 's1', name: 'root', model: 'unknown', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, contextTokens: 1234, status: 'active', depth: 0, children: [] },
+      },
+    } as any);
     server.app.ctx.bus.emit('conversation_event', { id: 1, conversationId: 1, seq: 1, ts: 0, type: 'lifecycle', payload: {} } as any);
 
-    // Operator sees both; use conversation_event's arrival as the barrier.
+    // Operator sees all; use conversation_event's arrival as the barrier.
     await waitFor(async () => opWs.messages.some((m) => m.type === 'conversation_event'));
     await waitFor(async () => readWs.messages.some((m) => m.type === 'run_event'));
+    // The read key sees live Run usage (ADR 0010), with Cost derived on read.
+    const usageMsg = readWs.messages.find((m) => m.type === 'run_usage');
+    expect(usageMsg).toMatchObject({ runId: 1, contextTokens: 1234, activity: 'Editing src/foo.ts' });
+    expect(usageMsg.cost).not.toBeUndefined();
     expect(readWs.messages.some((m) => m.type === 'conversation_event')).toBe(false);
 
     readWs.close();

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { conversationToApi, runToApi, taskToApi } from './serialize.js';
+import { conversationToApi, runToApi, runUsageToApi, taskToApi } from './serialize.js';
 
 /**
  * One firehose socket at /api/ws. Every run event, run state change, and
@@ -23,6 +23,10 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     const unsubscribes = [
       ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
       ctx.bus.on('run_changed', (run) => send({ type: 'run_changed', run: runToApi(ctx, run) })),
+      // Live Run usage (ADR 0010) is board/viz traffic — sent to read keys too;
+      // the Conversation's usage rides conversation_changed, already dropped below.
+      ctx.bus.on('run_usage', ({ runId, snapshot }) =>
+        send({ type: 'run_usage', runId, ...runUsageToApi(ctx, snapshot) })),
       // Enrich to the API task shape, same as the REST routes — the SPA
       // merges these payloads straight into its task list (issue 15).
       ctx.bus.on('task_changed', (task) =>

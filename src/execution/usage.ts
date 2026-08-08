@@ -44,6 +44,46 @@ export interface ProcessNode {
 /** A root process and its recursive Subagents (CONTEXT.md: Process Tree). */
 export type ProcessTree = ProcessNode;
 
+/**
+ * The live snapshot a session's tailer pushes (ADR 0010): rolled-up Usage,
+ * the root's context-window fill, the current-activity line, and the whole
+ * Process Tree. Cost is derived on read (never stored), so it isn't here —
+ * the firehose adds it at serialize time.
+ */
+export interface RunUsageSnapshot {
+  usage: RunUsage;
+  /** The root session's latest context-window fill; null when unknown. */
+  contextTokens: number | null;
+  /** One-line "what the agent is doing now", from the latest event; null before any. */
+  activity: string | null;
+  tree: ProcessTree;
+}
+
+/**
+ * A one-line current-activity label from an ACP `session/update` — the
+ * latest tool call's title or the latest assistant message text. Returns
+ * null for updates that aren't activity (thoughts, plans), so the caller
+ * keeps the previous line rather than blanking it.
+ */
+const ACTIVITY_MAX = 120;
+export function activityLine(update: unknown): string | null {
+  const u = update as any;
+  switch (u?.sessionUpdate) {
+    case 'tool_call':
+    case 'tool_call_update': {
+      const title = u.title ?? u.kind;
+      return typeof title === 'string' && title ? title.slice(0, ACTIVITY_MAX) : null;
+    }
+    case 'agent_message_chunk': {
+      const text = u.content?.type === 'text' ? u.content.text : null;
+      const line = typeof text === 'string' ? text.split('\n').find((l: string) => l.trim())?.trim() : null;
+      return line ? line.slice(0, ACTIVITY_MAX) : null;
+    }
+    default:
+      return null;
+  }
+}
+
 /** A Usage Collector's parse of one session: rolled-up Usage + its Process Tree. */
 export interface ParsedSession {
   /**

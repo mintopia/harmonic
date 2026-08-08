@@ -129,5 +129,8 @@ export function deserializeEvent(row: RunEventRow): PersistedRunEvent {
 }
 
 export function serializeRun(run: RunRow): Record<string, unknown> {
-  return { ...run, usage: run.usage ? JSON.parse(run.usage) : null };
+  // liveUsage is the Activity view's snapshot (streamed as `run_usage`), not
+  // part of the agent-facing run shape.
+  const { liveUsage: _liveUsage, ...rest } = run;
+  return { ...rest, usage: run.usage ? JSON.parse(run.usage) : null };
 }
