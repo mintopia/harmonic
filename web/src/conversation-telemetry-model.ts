@@ -4,8 +4,12 @@ import type { Conversation, ConversationEvent } from './types.js';
 
 /** Compact figure formatting (18.2k / 1.3M) — the same treatment StatsPage's
  * summary card uses, so a token count reads identically wherever it shows
- * up (issue #12's telemetry strip lives next to, not instead of, Stats). */
-const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+ * up (issue #12's telemetry strip lives next to, not instead of, Stats).
+ * Locale is pinned so the suffix is deterministic (an undefined locale renders
+ * the thousands unit as "K" or "k" depending on the host), then lowercased to
+ * the house "18.2k" style; larger units (M/B/T) keep their uppercase form. */
+const compactFmt = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+const compact = { format: (n: number) => compactFmt.format(n).replace(/K$/, 'k') };
 
 /**
  * Accumulated tokens across the Conversation's Turns so far: the harness's
