@@ -196,6 +196,19 @@ export function App() {
 
   const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
 
+  // Browser tab title: `Harmonic - {name} - {workspace}`. The instance name is
+  // dropped when unset and the workspace when none has resolved yet, so an
+  // unnamed single-workspace instance still reads a clean "Harmonic".
+  const activeWorkspaceName =
+    workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
+  const instanceName = config?.name.trim() ? config.name.trim() : 'Harmonic';
+  useEffect(() => {
+    const parts = ['Harmonic'];
+    if (config?.name.trim()) parts.push(config.name.trim());
+    if (activeWorkspaceName) parts.push(activeWorkspaceName);
+    document.title = parts.join(' - ');
+  }, [config?.name, activeWorkspaceName]);
+
   if (authed === null) return null;
   if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
 
@@ -300,9 +313,9 @@ export function App() {
           <span
             className={`whitespace-nowrap font-display text-title font-bold tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
           >
-            Harmonic
+            {instanceName}
           </span>
-          {railCollapsed && <span className="sr-only">Harmonic</span>}
+          {railCollapsed && <span className="sr-only">{instanceName}</span>}
           <button
             aria-expanded={menuOpen}
             aria-label="Menu"

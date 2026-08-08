@@ -14,6 +14,8 @@ import { HARNESS_IDS, ISOLATION_MODES, MERGE_FATES, PRIORITIES, appConfigSchema,
  */
 const configPatchBodySchema = z
   .object({
+    /** Operator display name for this instance; feeds the sidebar heading and browser title. */
+    name: z.string().meta({ example: 'Production' }),
     harnesses: z
       // partialRecord, not record: a record keyed by an enum requires every
       // enum key present (zod v4), but a config patch may touch only one

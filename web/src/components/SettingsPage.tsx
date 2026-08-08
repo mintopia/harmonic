@@ -355,6 +355,23 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
 
       <div className="mt-5 flex flex-col gap-4">
         <SettingsSection
+          title="Instance"
+          description="A display name for this Harmonic instance. Shows in the sidebar and the browser title as “Harmonic - {name} - {workspace}”. Leave blank to just show “Harmonic”."
+        >
+          <div className="max-w-sm">
+            <label className={fieldLabel} htmlFor="settings-instance-name">Name</label>
+            <input
+              id="settings-instance-name"
+              className={field}
+              placeholder="Harmonic"
+              value={local.name}
+              onChange={(e) => setLocal({ ...local, name: e.target.value })}
+            />
+            <FieldError message={fieldErrors['name']} />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
           title="Task defaults"
           description="Pre-filled into every new task; each task can override them."
         >
