@@ -46,6 +46,8 @@ export class AcpDriver {
   /** Rejects when the child dies, so every in-flight request loses the race. */
   private readonly exited: Promise<never>;
   sessionId = '';
+  /** Session mode ids the harness offers, from session/new — e.g. Claude's permission modes (auto, bypassPermissions, …). */
+  availableModes: string[] = [];
 
   constructor(child: ChildProcess, handlers: AcpDriverHandlers) {
     this.connection = new AcpConnection(child.stdin!, child.stdout!, {
@@ -65,8 +67,9 @@ export class AcpDriver {
     await this.race(this.connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }));
     const session = (await this.race(
       this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
-    )) as { sessionId: string };
+    )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };
     this.sessionId = session.sessionId;
+    this.availableModes = (session.modes?.availableModes ?? []).map((mode) => mode.id);
     opts.onSessionCreated?.(this.sessionId);
     if (opts.modelId !== undefined) {
       await this.race(
@@ -74,6 +77,11 @@ export class AcpDriver {
       );
     }
     return this.sessionId;
+  }
+
+  /** Put the session into a permission mode (ACP session/set_mode) — e.g. Claude's 'auto'. */
+  async setMode(modeId: string): Promise<void> {
+    await this.race(this.connection.request('session/set_mode', { sessionId: this.sessionId, modeId }));
   }
 
   /** One prompt turn on the current session; rejects if the harness dies first. */

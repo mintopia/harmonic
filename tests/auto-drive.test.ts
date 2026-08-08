@@ -269,6 +269,45 @@ describe('Runner auto-drive settle (issue #33)', () => {
     expect(last.reason).toContain('escalated to human');
   });
 
+  it('an afk Run enters auto permission mode before prompting, then runs unattended', async () => {
+    build(config({ prompt: JSON.stringify({ echoSetMode: true }) }));
+    const task = tasks.upsertMirrored(mirroredAfk(7));
+    startMirrored(task.id);
+
+    const settled = await vi.waitFor(() => {
+      const t = tasks.get(task.id);
+      if (t.state === 'running') throw new Error(`still ${t.state}`);
+      return t;
+    }, { timeout: 10_000 });
+
+    expect(settled.escalated).toBe(false); // ran to completion, not escalated on a prompt
+    expect(settled.drive).toBe('afk');
+    const last = runs.listForTask(task.id).at(-1)!;
+    const modeSet = runs
+      .listEvents(last.id)
+      .find((e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set');
+    expect((modeSet?.payload as any)?.mode).toBe('auto'); // session/set_mode auto went over the wire
+  });
+
+  it('an afk Run fails closed when the harness offers no unattended permission mode', async () => {
+    const cfg = config({ autoRetry: 0 });
+    cfg.harnesses.claude.env = { STUB_MODES: '' }; // advertise no session modes
+    build(cfg);
+    const task = tasks.upsertMirrored(mirroredAfk(8));
+    startMirrored(task.id);
+
+    const settled = await vi.waitFor(() => {
+      const t = tasks.get(task.id);
+      if (t.state === 'running') throw new Error(`still ${t.state}`);
+      return t;
+    }, { timeout: 10_000 });
+
+    const last = runs.listForTask(task.id).at(-1)!;
+    expect(last.state).toBe('failed');
+    expect(last.reason).toMatch(/unattended permission mode/);
+    expect(settled.escalated).toBe(true); // autoRetry 0 → escalates on the first failure
+  });
+
   it('retries a failed afk Run within the cap, then Escalates when it is exhausted', async () => {
     // The Drive Prompt template reaches the harness; make it crash before responding.
     build(config({ autoRetry: 1, prompt: JSON.stringify({ exit: 'crash-before-response' }) }));

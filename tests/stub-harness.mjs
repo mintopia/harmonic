@@ -42,6 +42,7 @@ const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
 let sessionNewParams = null;
 let setModelParams = null;
+let setModeParams = null;
 // Set by a session/cancel notification; the in-flight prompt loop checks it
 // and completes the turn with stopReason 'cancelled' (issue 14).
 let cancelRequested = false;
@@ -100,6 +101,16 @@ async function handlePrompt(msg) {
       update: {
         sessionUpdate: 'agent_message_chunk',
         content: { type: 'text', text: `set-model:${JSON.stringify(setModelParams)}` },
+      },
+    });
+  }
+
+  if (scenario.echoSetMode) {
+    notify('session/update', {
+      sessionId: msg.params.sessionId,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: `set-mode:${JSON.stringify(setModeParams)}` },
       },
     });
   }
@@ -203,10 +214,20 @@ rl.on('line', (line) => {
         send({ jsonrpc: '2.0', id: msg.id, error: JSON.parse(process.env.STUB_SESSION_NEW_ERROR) });
         break;
       }
-      send({ jsonrpc: '2.0', id: msg.id, result: { sessionId } });
+      {
+        // Advertise session modes like Claude's ACP adapter; STUB_MODES (comma-
+        // separated) overrides, '' means none (to test the fail-closed path).
+        const ids = (process.env.STUB_MODES ?? 'default,auto,bypassPermissions').split(',').filter(Boolean);
+        const modes = ids.length ? { currentModeId: ids[0], availableModes: ids.map((id) => ({ id, name: id })) } : undefined;
+        send({ jsonrpc: '2.0', id: msg.id, result: { sessionId, ...(modes ? { modes } : {}) } });
+      }
       break;
     case 'session/set_model':
       setModelParams = msg.params;
+      send({ jsonrpc: '2.0', id: msg.id, result: {} });
+      break;
+    case 'session/set_mode':
+      setModeParams = msg.params;
       send({ jsonrpc: '2.0', id: msg.id, result: {} });
       break;
     case 'session/prompt':

@@ -18,6 +18,11 @@ import type { TaskService } from '../domain/tasks.js';
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
 const STDERR_TAIL_CAP = 8000;
 
+/** ACP session modes an afk Run tries, in order: Claude's 'auto' classifier
+ * (asks only on risky tools) first, then 'bypassPermissions' (no callback) for
+ * harnesses without 'auto'. Set via session/set_mode after the handshake. */
+const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
+
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
   onRunEvent?: (event: PersistedRunEvent) => void;
@@ -252,10 +257,11 @@ export class Runner {
       onSessionUpdate: (update) => record('session_update', update),
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
-          // An afk mirrored Run needs a human decision → Escalate: decline the
-          // permission, stop the turn, and flag it so the settle path hands the
-          // Task back (issue #33). (A clarifying question has no ACP signal
-          // beyond this — permission requests are the concrete trigger.)
+          // In auto mode the harness only asks on a genuinely risky tool (safe
+          // ones are auto-approved and never reach here), so a request from an
+          // afk Run means "needs a human decision" → Escalate: decline, stop the
+          // turn, and flag it for the settle path to hand the Task back (issue
+          // #33). Without auto mode the Run has already failed closed upstream.
           if (autoDriven) {
             escalating = (params as any)?.toolCall?.title ?? 'permission request';
             const outcome = { outcome: 'cancelled' };
@@ -296,6 +302,24 @@ export class Runner {
         // still leaves a session for usage backfill.
         onSessionCreated: (sessionId) => this.runStore.update(run.id, { sessionId }),
       });
+
+      // An afk Run executes unattended, so put the harness into an auto
+      // permission mode: Claude's 'auto' classifier auto-approves safe tools
+      // and only asks on genuinely risky ones (those still Escalate, below);
+      // 'bypassPermissions' is the fallback for harnesses without 'auto'. Fail
+      // closed if neither is offered, rather than prompt on every tool call and
+      // Escalate immediately (issue #33 follow-up; pattern from ../starchart).
+      if (autoDriven) {
+        const mode = AFK_PERMISSION_MODES.find((m) => driver.availableModes.includes(m));
+        if (!mode) {
+          throw new Error(
+            `harness '${task.harness}' offers no unattended permission mode ` +
+              `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
+          );
+        }
+        await driver.setMode(mode);
+        record('lifecycle', { event: 'mode_set', mode });
+      }
 
       const promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task);
       const result = await driver.prompt([{ type: 'text', text: promptText }]);
