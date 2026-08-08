@@ -32,6 +32,8 @@ export interface Workspace {
   id: number;
   name: string;
   workingDir: string;
+  trackerEnabled: boolean;
+  trackerPollIntervalSeconds: number;
   createdAt: number;
   updatedAt: number;
 }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { eq } from 'drizzle-orm';
 import { openDb } from '../src/db/index.js';
 import * as schema from '../src/db/schema.js';
 
@@ -88,5 +89,48 @@ describe('pre-Workspace DB migration (ADR-0008, issue #39)', () => {
     const db = openDb(dataDir); // second boot: must be a no-op
     expect(db.select().from(schema.workspaces).all()).toHaveLength(1);
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it('carries the legacy global tracker setting onto the Default Workspace (issue #45 regression)', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-tracker-backfill-'));
+    const migrationsFolder = preWorkspaceMigrationsFolder();
+
+    // A pre-Workspace install that had global tracking ON.
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    migrate(drizzle(sqlite, { schema }), { migrationsFolder });
+    sqlite.prepare(`insert into settings (key, value) values ('config', ?)`).run(
+      JSON.stringify({ defaults: { workingDir: '/tmp/p' }, tracker: { enabled: true, pollIntervalSeconds: 120 } }),
+    );
+    sqlite.close();
+
+    const db = openDb(dataDir);
+    const ws = db.select().from(schema.workspaces).all();
+    expect(ws).toHaveLength(1);
+    expect(ws[0]).toMatchObject({ trackerEnabled: true, trackerPollIntervalSeconds: 120 });
+
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+
+  it('is a one-shot: never re-enables tracker after a later disable', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-tracker-oneshot-'));
+    const migrationsFolder = preWorkspaceMigrationsFolder();
+
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    migrate(drizzle(sqlite, { schema }), { migrationsFolder });
+    sqlite.prepare(`insert into settings (key, value) values ('config', ?)`).run(
+      JSON.stringify({ defaults: { workingDir: '/tmp/p' }, tracker: { enabled: true, pollIntervalSeconds: 60 } }),
+    );
+    sqlite.close();
+
+    const db1 = openDb(dataDir); // carry-over runs once -> enabled
+    const id = db1.select().from(schema.workspaces).all()[0]!.id;
+    db1.update(schema.workspaces).set({ trackerEnabled: false }).where(eq(schema.workspaces.id, id)).run();
+
+    const db2 = openDb(dataDir); // must NOT re-enable
+    expect(db2.select().from(schema.workspaces).all()[0]!.trackerEnabled).toBe(false);
+
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
   });
 });

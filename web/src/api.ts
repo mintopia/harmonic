@@ -45,8 +45,10 @@ export const api = {
   workspaces: () => request<{ workspaces: Workspace[] }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),
-  updateWorkspace: (id: number, patch: { name?: string; workingDir?: string }) =>
-    request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
+  updateWorkspace: (
+    id: number,
+    patch: { name?: string; workingDir?: string; trackerEnabled?: boolean; trackerPollIntervalSeconds?: number },
+  ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
