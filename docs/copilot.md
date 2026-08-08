@@ -33,15 +33,21 @@ spike and encoded by issue 26.
 
 ## Usage, Cost, and AI Units
 
-- Per-model Usage comes from the CLI's OpenTelemetry file exporter;
-  Harmonic points `COPILOT_OTEL_FILE_EXPORTER_PATH` at
-  `<dataDir>/copilot-otel/<cwd-slug>.jsonl` (override the root with
+- Per-model Usage is read from Copilot's native store
+  `~/.copilot/session-store.db` — the `assistant_usage_events` table,
+  keyed by session id (override the `~/.copilot` root with
   `harnesses.copilot.sessionLogDir`). Usage is attributed to the model
-  that actually served each call.
-- **AI Units** (Copilot's native consumption unit) are recorded per Run
-  from the same spans and shown on the run detail as actual spend
+  that actually served each call, and Subagent rows
+  (`parent_tool_call_id`) roll up into the Run (ADR 0009). The OTel file
+  exporter is gone.
+- **AI Units** (Copilot's native consumption unit) come from the same
+  rows (`total_nano_aiu`) and are shown on the run detail as actual spend
   alongside Cost — never folded into it. Cost stays API-equivalent per
   observed serving model.
+- Rows land per completed call, so live Usage updates coarsely (one step
+  per Copilot turn), not token-by-token. Subagent name and live status
+  come from `~/.copilot/session-state/<id>/events.jsonl`
+  (`subagent.started`/`completed`).
 
 ## Quirks encoded in the adapter
 

@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,6 +29,52 @@ export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'
       },
     },
   } as DeepPartial<AppConfig>;
+}
+
+export interface CopilotUsageRow {
+  session_id: string;
+  model: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  total_nano_aiu?: number | null;
+  parent_tool_call_id?: string | null;
+}
+
+/** Write a minimal Copilot `session-store.db` with the given usage rows. */
+export function writeCopilotUsageDb(dbPath: string, rows: CopilotUsageRow[]): void {
+  const db = new Database(dbPath);
+  db.exec(`CREATE TABLE IF NOT EXISTS assistant_usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    turn_index INTEGER,
+    agent_id TEXT,
+    parent_tool_call_id TEXT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cache_read_tokens INTEGER,
+    cache_write_tokens INTEGER,
+    reasoning_tokens INTEGER,
+    total_nano_aiu INTEGER
+  )`);
+  const stmt = db.prepare(
+    `INSERT INTO assistant_usage_events
+       (session_id, parent_tool_call_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_nano_aiu)
+     VALUES (@session_id, @parent_tool_call_id, @model, @input_tokens, @output_tokens, @cache_read_tokens, @cache_write_tokens, @total_nano_aiu)`,
+  );
+  for (const r of rows)
+    stmt.run({
+      parent_tool_call_id: null,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      total_nano_aiu: null,
+      ...r,
+    });
+  db.close();
 }
 
 export async function waitFor<T>(

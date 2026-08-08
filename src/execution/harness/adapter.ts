@@ -56,9 +56,9 @@ export interface UsageCollector {
   sessionLogFile(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string | null }): string | null;
   /**
    * Per-model token usage parsed from the session log at `file`.
-   * `sessionId` disambiguates logs shared between runs (copilot's OTel
-   * file is keyed by cwd, so direct-mode runs of one directory share it);
-   * harnesses with per-session files ignore it.
+   * `sessionId` disambiguates rows shared between runs (copilot's
+   * `session-store.db` is a single store keyed by session id); harnesses
+   * with per-session files ignore it.
    */
   modelsFromSessionLog(file: string, sessionId?: string | null): Record<string, ModelUsage>;
   /**

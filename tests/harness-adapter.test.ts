@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/adapter.js';
+import { writeCopilotUsageDb } from './helpers.js';
 
 /** Every adapter call in these tests runs "in" this directory. */
 const spawnInput = (model: string, extra: { cwd?: string; sessionLogDir?: string } = {}) => ({
@@ -47,31 +48,15 @@ describe('harness adapters', () => {
     expect(adapterFor('codex').sessionModelId).toBeUndefined();
   });
 
-  it('copilot spawn tweaks disable auto-update and point the OTel exporter at the usage log — never a --model-style pin', () => {
-    const root = mkdtempSync(join(tmpdir(), 'copilot-otel-'));
-    const env = adapterFor('copilot').spawnEnv({
-      model: 'claude-haiku-4.5',
-      cwd: '/tmp/my.work_dir',
-      sessionLogDir: join(root, 'otel'),
-    });
+  it('copilot spawn tweaks disable auto-update and never pin via --model or OTel', () => {
+    const env = adapterFor('copilot').spawnEnv(spawnInput('claude-haiku-4.5'));
     // The CLI updated itself mid-spike; runs must be reproducible.
     expect(env.COPILOT_AUTO_UPDATE).toBe('false');
-    // The exporter path is the Usage Collector's session log — the two
-    // must derive the same file from the same run inputs.
-    expect(env.COPILOT_OTEL_FILE_EXPORTER_PATH).toBe(
-      adapterFor('copilot').usage!.sessionLogFile({
-        sessionLogDir: join(root, 'otel'),
-        cwd: '/tmp/my.work_dir',
-        sessionId: 'any',
-      }),
-    );
-    // The exporter silently drops spans if the directory is missing, and
-    // creates the file lazily — spawnEnv pre-creates it so the usage
-    // flush-race retry has a file to re-read on a directory's first run.
-    expect(existsSync(env.COPILOT_OTEL_FILE_EXPORTER_PATH!)).toBe(true);
     // Spike capture 13: --model/COPILOT_MODEL falsify the session's
     // reported model without changing it. The pin goes via set_model only.
     expect(env.COPILOT_MODEL).toBeUndefined();
+    // OTel is gone (ADR 0009): Usage now comes from session-store.db.
+    expect(env).not.toHaveProperty('COPILOT_OTEL_FILE_EXPORTER_PATH');
   });
 
   it.each(['claude', 'codex', 'copilot'])(
@@ -90,71 +75,42 @@ describe('harness adapters', () => {
     },
   );
 
-  it("copilot's Usage Collector keys the OTel log by cwd slug and needs a sessionId to attribute spans", () => {
+  it("copilot's Usage Collector reads the native store and needs a sessionId to attribute rows", () => {
     const usage = adapterFor('copilot').usage!;
-    expect(usage.sessionLogFile({ sessionLogDir: '/otel', cwd: '/tmp/my.work_dir', sessionId: 's1' })).toBe(
-      '/otel/-tmp-my-work-dir.jsonl',
+    expect(usage.sessionLogFile({ sessionLogDir: '/copilot', cwd: '/w', sessionId: 's1' })).toBe(
+      '/copilot/session-store.db',
     );
-    // No sessionId (spawn died before session/new): spans cannot be
-    // attributed to this run, so there is no log to read.
-    expect(usage.sessionLogFile({ sessionLogDir: '/otel', cwd: '/w', sessionId: null })).toBeNull();
+    // No sessionId (spawn died before session/new): nothing to attribute.
+    expect(usage.sessionLogFile({ sessionLogDir: '/copilot', cwd: '/w', sessionId: null })).toBeNull();
   });
 
-  it("copilot's Usage Collector aggregates OTel chat spans by serving model, with the cache split and AI Units", () => {
-    // Span shapes verbatim from the spike's OTel excerpts (captures 3/4),
-    // trimmed to the attributes the collector reads.
+  it("copilot's Usage Collector aggregates session-store.db rows by model, with the cache split and AI Units", () => {
+    // Row shapes from the real session-store.db: input_tokens is TOTAL
+    // input, cache columns omit-when-zero, total_nano_aiu → AI Units.
     const S = '574df71c-25b3-4829-b01a-4dc8d50f47e8';
-    const span = (attributes: Record<string, unknown>) => JSON.stringify({ type: 'span', attributes });
-    const lines = [
-      // First call of a session: no cache attributes at all (omit-when-zero).
-      span({
-        'gen_ai.operation.name': 'chat',
-        'gen_ai.conversation.id': S,
-        'gen_ai.request.model': 'auto',
-        'gen_ai.response.model': 'gpt-5-mini',
-        'gen_ai.usage.input_tokens': 35068,
-        'gen_ai.usage.output_tokens': 4539,
-        'gen_ai.usage.reasoning.output_tokens': 4480,
-        'github.copilot.nano_aiu': 1784500000.0,
-      }),
-      // Later call: cache_read present; input_tokens is TOTAL input.
-      span({
-        'gen_ai.operation.name': 'chat',
-        'gen_ai.conversation.id': S,
-        'gen_ai.request.model': 'auto',
-        'gen_ai.response.model': 'gpt-5-mini',
-        'gen_ai.usage.input_tokens': 39727,
-        'gen_ai.usage.output_tokens': 783,
-        'gen_ai.usage.cache_read.input_tokens': 39552,
-        'github.copilot.nano_aiu': 259855000.0,
-      }),
-      // Served by a different model, with a cache write.
-      span({
-        'gen_ai.operation.name': 'chat',
-        'gen_ai.conversation.id': S,
-        'gen_ai.request.model': 'auto',
-        'gen_ai.response.model': 'claude-haiku-4.5',
-        'gen_ai.usage.input_tokens': 48503,
-        'gen_ai.usage.output_tokens': 145,
-        'gen_ai.usage.cache_creation.input_tokens': 48494,
-        'github.copilot.nano_aiu': 6135150000.0,
-      }),
-      // Another run sharing the file (direct mode): filtered out.
-      span({
-        'gen_ai.operation.name': 'chat',
-        'gen_ai.conversation.id': 'other-session',
-        'gen_ai.response.model': 'gpt-5-mini',
-        'gen_ai.usage.input_tokens': 999999,
-        'gen_ai.usage.output_tokens': 999999,
-        'github.copilot.nano_aiu': 9e9,
-      }),
-      // The exporter interleaves metric lines; and tolerate log noise.
-      JSON.stringify({ type: 'metric', name: 'gen_ai.client.token.usage', dataPoints: [] }),
-      'not json',
-    ];
-    const dir = mkdtempSync(join(tmpdir(), 'copilot-otel-log-'));
-    const file = join(dir, 'log.jsonl');
-    writeFileSync(file, lines.join('\n'));
+    const dir = mkdtempSync(join(tmpdir(), 'copilot-db-'));
+    const file = join(dir, 'session-store.db');
+    writeCopilotUsageDb(file, [
+      { session_id: S, model: 'gpt-5-mini', input_tokens: 35068, output_tokens: 4539, total_nano_aiu: 1784500000 },
+      {
+        session_id: S,
+        model: 'gpt-5-mini',
+        input_tokens: 39727,
+        output_tokens: 783,
+        cache_read_tokens: 39552,
+        total_nano_aiu: 259855000,
+      },
+      {
+        session_id: S,
+        model: 'claude-haiku-4.5',
+        input_tokens: 48503,
+        output_tokens: 145,
+        cache_write_tokens: 48494,
+        total_nano_aiu: 6135150000,
+      },
+      // Another session sharing the store: filtered out by session_id.
+      { session_id: 'other-session', model: 'gpt-5-mini', input_tokens: 999999, output_tokens: 999999, total_nano_aiu: 9e9 },
+    ]);
 
     // ModelUsage.inputTokens is uncached-only: total minus both cache figures.
     expect(adapterFor('copilot').usage!.modelsFromSessionLog(file, S)).toEqual({
@@ -173,9 +129,62 @@ describe('harness adapters', () => {
         aiUnits: 6135150000 / 1e9,
       },
     });
-    expect(adapterFor('copilot').usage!.modelsFromSessionLog(join(dir, 'missing.jsonl'), S)).toEqual({});
+    expect(adapterFor('copilot').usage!.modelsFromSessionLog(join(dir, 'missing.db'), S)).toEqual({});
     // No sessionId to filter on: nothing is attributable, never guess.
     expect(adapterFor('copilot').usage!.modelsFromSessionLog(file, null)).toEqual({});
+  });
+
+  it("copilot's parse() builds a Subagent tree from the store + events.jsonl and rolls Subagent tokens up", () => {
+    const S = 'parse-session';
+    const home = mkdtempSync(join(tmpdir(), 'copilot-home-'));
+    writeCopilotUsageDb(join(home, 'session-store.db'), [
+      { session_id: S, model: 'gpt-5-mini', input_tokens: 1000, output_tokens: 100, total_nano_aiu: 500000000 },
+      { session_id: S, model: 'gpt-5-mini', input_tokens: 2000, output_tokens: 200, cache_read_tokens: 1500, total_nano_aiu: 100000000 },
+      // A Subagent's rows, joined to its spawning tool call.
+      {
+        session_id: S,
+        parent_tool_call_id: 'tool_sub',
+        model: 'claude-haiku-4.5',
+        input_tokens: 500,
+        output_tokens: 50,
+        total_nano_aiu: 300000000,
+      },
+    ]);
+    const eventsDir = join(home, 'session-state', S);
+    mkdirSync(eventsDir, { recursive: true });
+    writeFileSync(
+      join(eventsDir, 'events.jsonl'),
+      [
+        JSON.stringify({ type: 'subagent.started', data: { toolCallId: 'tool_sub', agentName: 'rubber-duck' } }),
+        JSON.stringify({ type: 'subagent.completed', data: { toolCallId: 'tool_sub', agentName: 'rubber-duck', model: 'claude-haiku-4.5' } }),
+        // Started but no tokens yet: still a live (active) node.
+        JSON.stringify({ type: 'subagent.started', data: { toolCallId: 'tool_pending', agentName: 'laravel-specialist' } }),
+        'not json',
+      ].join('\n'),
+    );
+
+    const parsed = adapterFor('copilot').usage!.parse!({ sessionLogDir: home, cwd: '/w', sessionId: S })!;
+
+    // Flat Usage rolls up the whole tree — Subagent tokens count (the fix).
+    expect(parsed.usage.models['claude-haiku-4.5']).toMatchObject({ inputTokens: 500, outputTokens: 50, aiUnits: 0.3 });
+    expect(parsed.usage.models['gpt-5-mini']).toMatchObject({ inputTokens: 1000 + (2000 - 1500) });
+    expect(parsed.usage.totals?.aiUnits).toBeCloseTo(0.9, 10);
+
+    // Root node: own tokens only (no Subagent), latest request as context fill.
+    expect(parsed.tree).toMatchObject({ id: S, depth: 0, model: 'gpt-5-mini', contextTokens: 2000 });
+    expect(parsed.tree.usage).toMatchObject({ inputTokens: 1000 + (2000 - 1500), outputTokens: 300 });
+
+    const children = parsed.tree.children;
+    expect(children).toHaveLength(2);
+    const sub = children.find((c) => c.id === 'tool_sub')!;
+    expect(sub).toMatchObject({ name: 'rubber-duck', model: 'claude-haiku-4.5', status: 'inactive', depth: 1 });
+    expect(sub.usage).toMatchObject({ inputTokens: 500, outputTokens: 50 });
+    const pending = children.find((c) => c.id === 'tool_pending')!;
+    expect(pending).toMatchObject({ name: 'laravel-specialist', status: 'active' });
+    expect(pending.usage).toMatchObject({ inputTokens: 0, outputTokens: 0 });
+
+    // No store and no events → no log yet, never a fake zero.
+    expect(adapterFor('copilot').usage!.parse!({ cwd: '/w', sessionId: 'nope', sessionLogDir: home })).toBeNull();
   });
 
   it("codex's Usage Collector reads the per-model breakdown off the ACP prompt result", () => {
@@ -284,6 +293,51 @@ describe('harness adapters', () => {
     expect(adapterFor('codex').usage!.modelsFromSessionLog(file)).toEqual({
       m1: { inputTokens: 90, outputTokens: 12, cacheReadTokens: 60, cacheWriteTokens: 0 },
     });
+  });
+
+  it("codex's parse() builds a single-node tree with context fill and the dominant model", () => {
+    const lines = [
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'low' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 16173, cached_input_tokens: 9984, output_tokens: 5, total_tokens: 16178 },
+            last_token_usage: { input_tokens: 16173, cached_input_tokens: 9984, output_tokens: 5, total_tokens: 16178 },
+            model_context_window: 258400,
+          },
+        },
+      }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini', effort: 'low' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 31723, cached_input_tokens: 15488, output_tokens: 26, total_tokens: 31749 },
+            last_token_usage: { input_tokens: 15550, cached_input_tokens: 5504, output_tokens: 21, total_tokens: 15571 },
+            model_context_window: 258400,
+          },
+        },
+      }),
+    ];
+    const root = mkdtempSync(join(tmpdir(), 'codex-parse-'));
+    const day = join(root, '2026', '07', '14');
+    mkdirSync(day, { recursive: true });
+    writeFileSync(join(day, 'rollout-x-s1.jsonl'), lines.join('\n'));
+
+    const parsed = adapterFor('codex').usage!.parse!({ sessionLogDir: root, cwd: '/w', sessionId: 's1' })!;
+    // Flat Usage keeps the true per-model split.
+    expect(parsed.usage.models).toEqual({
+      'gpt-5.6-sol': { inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 },
+      'gpt-5.4-mini': { inputTokens: 10046, outputTokens: 21, cacheReadTokens: 5504, cacheWriteTokens: 0 },
+    });
+    // Single node: no Subagents, dominant model, latest request as context fill.
+    expect(parsed.tree).toMatchObject({ id: 's1', depth: 0, model: 'gpt-5.6-sol', contextTokens: 15550, children: [] });
+    expect(parsed.tree.usage).toEqual({ inputTokens: 16235, outputTokens: 26, cacheReadTokens: 15488, cacheWriteTokens: 0 });
+    // No rollout yet → no log coming, never a fake zero.
+    expect(adapterFor('codex').usage!.parse!({ sessionLogDir: root, cwd: '/w', sessionId: 'missing' })).toBeNull();
   });
 
   it("claude's parse() builds a recursive Subagent tree and rolls every Subagent's tokens up", () => {

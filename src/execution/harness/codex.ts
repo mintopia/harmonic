@@ -1,9 +1,78 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+
+/**
+ * One pass over a rollout log: per-model usage (turn_context × token_count
+ * deltas) plus the latest context-window fill. `turn_context` names the
+ * model driving the turn; `event_msg/token_count` carries the *cumulative*
+ * session usage, so each entry's delta against the previous one is the
+ * current model's spend. Rollout `input_tokens` includes cached reads;
+ * ModelUsage.inputTokens is uncached-only. No cache-write figure exists
+ * (report 0). Context fill is the most recent request's input footprint
+ * (`last_token_usage.input_tokens`, cache included) — how full the window
+ * is right now.
+ *
+ * ponytail: the rollout's `model_context_window` (window *size*) is not
+ * surfaced — ProcessNode has no capacity field (T1/#47) and window size
+ * already comes from config (`harnesses.*.models` → `contextWindow`).
+ * Read it here if a node ever needs a per-served-model capacity.
+ */
+function scanRollout(file: string): { models: Record<string, ModelUsage>; contextTokens: number | null } {
+  if (!existsSync(file)) return { models: {}, contextTokens: null };
+
+  const models: Record<string, ModelUsage> = {};
+  let model: string | null = null;
+  let contextTokens: number | null = null;
+  const prev = { input: 0, cached: 0, output: 0 };
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    let entry: any;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
+      model = entry.payload.model;
+      continue;
+    }
+    const info = entry?.type === 'event_msg' && entry.payload?.type === 'token_count' ? entry.payload.info : null;
+    const total = info?.total_token_usage;
+    if (!total) continue;
+    if (typeof info.last_token_usage?.input_tokens === 'number') contextTokens = info.last_token_usage.input_tokens;
+    const input = num(total.input_tokens);
+    const cached = num(total.cached_input_tokens);
+    const output = num(total.output_tokens);
+    // A shrinking cumulative counter means it was reset (session resume):
+    // the entry is its own delta. Never emit negatives.
+    const reset = input < prev.input || cached < prev.cached || output < prev.output;
+    const delta = reset
+      ? { input, cached, output }
+      : { input: input - prev.input, cached: cached - prev.cached, output: output - prev.output };
+    // Pre-turn_context spend is unattributable: drop it (never guess),
+    // but still advance the baseline so it can't leak into a model.
+    if (model) {
+      const bucket = (models[model] ??= {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      });
+      bucket.inputTokens += delta.input - delta.cached;
+      bucket.cacheReadTokens += delta.cached;
+      bucket.outputTokens += delta.output;
+    }
+    prev.input = input;
+    prev.cached = cached;
+    prev.output = output;
+  }
+  return { models, contextTokens };
+}
 
 /** Entries of `dir`, newest name first; [] when unreadable. */
 function entriesNewestFirst(dir: string): string[] {
@@ -47,6 +116,36 @@ export const codexAdapter: HarnessAdapter = {
   ],
 
   usage: {
+    /**
+     * Rollout parse into rolled-up Usage + Process Tree (ADR 0009). Codex
+     * has no Subagent concept, so the tree is a single root node: its own
+     * tokens are the whole session and its context fill is the latest
+     * request's input footprint. Returns null when the rollout has not
+     * appeared yet.
+     *
+     * ponytail: single-model-per-node — a session that switched models
+     * (manual resume with a different pin) collapses the node's tokens
+     * under its dominant model. The flat `usage` keeps the true per-model
+     * split; only the tree node is lossy. Split per model if the Activity
+     * view ever needs exact per-node pricing.
+     */
+    parse(input) {
+      const file = codexAdapter.usage!.sessionLogFile(input);
+      if (!file || !existsSync(file)) return null;
+      const { models, contextTokens } = scanRollout(file);
+      const root: ProcessNode = {
+        id: input.sessionId ?? file,
+        name: 'root',
+        model: dominantModel(models) ?? 'unknown',
+        usage: foldModels(models),
+        contextTokens,
+        status: 'active',
+        depth: 0,
+        children: [],
+      };
+      return { usage: usageFromModels(models), tree: root } satisfies ParsedSession;
+    },
+
     /**
      * Codex attributes usage per model on the prompt result itself —
      * `_meta.quota.model_usage` (spike finding); `inputTokens` there is
@@ -104,63 +203,10 @@ export const codexAdapter: HarnessAdapter = {
       return null;
     },
 
-    /**
-     * `turn_context` entries name the model driving the turn;
-     * `event_msg/token_count` entries carry the *cumulative* session
-     * usage, so each entry's delta against the previous one is the
-     * current model's spend. Rollout `input_tokens` includes cached
-     * reads; ModelUsage.inputTokens is uncached-only. No cache-write
-     * figure exists (report 0).
-     */
+    // Rollout parse (audit fallback — the prompt result is the primary
+    // source): per-model usage from turn_context × token_count deltas.
     modelsFromSessionLog(file) {
-      if (!existsSync(file)) return {};
-
-      const models: Record<string, ModelUsage> = {};
-      let model: string | null = null;
-      const prev = { input: 0, cached: 0, output: 0 };
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
-        if (!line.trim()) continue;
-        let entry: any;
-        try {
-          entry = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
-          model = entry.payload.model;
-          continue;
-        }
-        const total = entry?.type === 'event_msg' && entry.payload?.type === 'token_count'
-          ? entry.payload.info?.total_token_usage
-          : null;
-        if (!total) continue;
-        const input = num(total.input_tokens);
-        const cached = num(total.cached_input_tokens);
-        const output = num(total.output_tokens);
-        // A shrinking cumulative counter means it was reset (session
-        // resume): the entry is its own delta. Never emit negatives.
-        const reset = input < prev.input || cached < prev.cached || output < prev.output;
-        const delta = reset
-          ? { input, cached, output }
-          : { input: input - prev.input, cached: cached - prev.cached, output: output - prev.output };
-        // Pre-turn_context spend is unattributable: drop it (never guess),
-        // but still advance the baseline so it can't leak into a model.
-        if (model) {
-          const bucket = (models[model] ??= {
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            cacheWriteTokens: 0,
-          });
-          bucket.inputTokens += delta.input - delta.cached;
-          bucket.cacheReadTokens += delta.cached;
-          bucket.outputTokens += delta.output;
-        }
-        prev.input = input;
-        prev.cached = cached;
-        prev.output = output;
-      }
-      return models;
+      return scanRollout(file).models;
     },
 
     // No `_meta.<harness>.toolName` equivalent exists (spike finding);

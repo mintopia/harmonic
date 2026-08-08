@@ -1,21 +1,10 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { dominantModel, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
+import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
-
-function sumModels(models: Record<string, ModelUsage>): ModelUsage {
-  const total: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
-  for (const u of Object.values(models)) {
-    total.inputTokens += u.inputTokens;
-    total.outputTokens += u.outputTokens;
-    total.cacheReadTokens += u.cacheReadTokens;
-    total.cacheWriteTokens += u.cacheWriteTokens;
-  }
-  return total;
-}
 
 function mergeInto(dest: Record<string, ModelUsage>, src: Record<string, ModelUsage>): void {
   for (const [model, u] of Object.entries(src)) {
@@ -179,7 +168,7 @@ export const claudeAdapter: HarnessAdapter = {
         id: input.sessionId ?? rootFile,
         name: 'root',
         model: dominantModel(rootScan.models) ?? 'unknown',
-        usage: sumModels(rootScan.models),
+        usage: foldModels(rootScan.models),
         contextTokens: rootScan.contextTokens,
         status: 'active',
         depth: 0,
@@ -193,7 +182,7 @@ export const claudeAdapter: HarnessAdapter = {
           id: s.id,
           name: s.meta.agentType ?? s.meta.name ?? 'subagent',
           model: dominantModel(s.scan.models) ?? s.meta.model ?? 'unknown',
-          usage: sumModels(s.scan.models),
+          usage: foldModels(s.scan.models),
           contextTokens: s.scan.contextTokens,
           status: s.meta.toolUseId && completed.has(s.meta.toolUseId) ? 'inactive' : 'active',
           depth: typeof s.meta.spawnDepth === 'number' ? s.meta.spawnDepth : 1,

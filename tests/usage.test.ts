@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, writeCopilotUsageDb, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
 describe('usage collection retry (log-flush race)', () => {
@@ -278,45 +278,28 @@ describe('usage collection and statistics', () => {
     expect(run.usage.source).toBe('session-log');
   });
 
-  it('copilot: derives the per-model breakdown and AI Units from the OTel file-exporter log', async () => {
-    const otelRoot = mkdtempSync(join(tmpdir(), 'harmonic-otel-'));
+  it('copilot: derives the per-model breakdown and AI Units from session-store.db', async () => {
+    const copilotHome = mkdtempSync(join(tmpdir(), 'harmonic-copilot-home-'));
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-copilot-work-'));
     const overrides = stubHarness('copilot') as DeepPartial<AppConfig> & {
       harnesses: { copilot: Record<string, unknown> };
     };
-    overrides.harnesses.copilot.sessionLogDir = otelRoot;
+    overrides.harnesses.copilot.sessionLogDir = copilotHome;
     overrides.harnesses.copilot.env = { STUB_SESSION_ID: 'copilot-e2e-session' };
 
-    // Harmonic's own exporter-path convention: <sessionLogDir>/<slugified
-    // cwd>.jsonl, spans tagged with the ACP sessionId as conversation id.
-    const span = (model: string, attrs: object) =>
-      JSON.stringify({
-        type: 'span',
-        attributes: {
-          'gen_ai.operation.name': 'chat',
-          'gen_ai.conversation.id': 'copilot-e2e-session',
-          'gen_ai.request.model': 'auto',
-          'gen_ai.response.model': model,
-          ...attrs,
-        },
-      });
-    const slug = workDir.replace(/[^a-zA-Z0-9]/g, '-');
-    writeFileSync(
-      join(otelRoot, `${slug}.jsonl`),
-      [
-        span('gpt-5-mini', {
-          'gen_ai.usage.input_tokens': 35068,
-          'gen_ai.usage.output_tokens': 4539,
-          'github.copilot.nano_aiu': 1784500000,
-        }),
-        span('claude-haiku-4.5', {
-          'gen_ai.usage.input_tokens': 48503,
-          'gen_ai.usage.output_tokens': 145,
-          'gen_ai.usage.cache_creation.input_tokens': 48494,
-          'github.copilot.nano_aiu': 6135150000,
-        }),
-      ].join('\n'),
-    );
+    // Native store: <sessionLogDir>/session-store.db, rows keyed by the ACP
+    // sessionId. input_tokens is TOTAL input; cache columns omit-when-zero.
+    writeCopilotUsageDb(join(copilotHome, 'session-store.db'), [
+      { session_id: 'copilot-e2e-session', model: 'gpt-5-mini', input_tokens: 35068, output_tokens: 4539, total_nano_aiu: 1784500000 },
+      {
+        session_id: 'copilot-e2e-session',
+        model: 'claude-haiku-4.5',
+        input_tokens: 48503,
+        output_tokens: 145,
+        cache_write_tokens: 48494,
+        total_nano_aiu: 6135150000,
+      },
+    ]);
 
     server = await startServer(overrides);
     // The real copilot prompt result is bare — no usage, no _meta (spike Q3).

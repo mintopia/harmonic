@@ -1,46 +1,128 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { defaultDataDir } from '../../config.js';
+import Database from 'better-sqlite3';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type ProcessStatus } from '../usage.js';
 import type { HarnessAdapter, ModelUsage } from './adapter.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
 /**
- * The OTel file exporter is Copilot's Usage source (spike, issue 25): the
- * ACP prompt result is bare and the native session log carries no token
- * counts. Harmonic picks the path, keyed by cwd slug — direct-mode runs
- * of one directory share the file, so spans are attributed to a run by
- * `gen_ai.conversation.id`, which equals the ACP sessionId verbatim.
+ * Copilot's Usage lives in its native store `<home>/session-store.db`
+ * (ADR 0009): the `assistant_usage_events` table carries per-turn tokens,
+ * AI Units (`total_nano_aiu`), and Subagent attribution
+ * (`agent_id`/`parent_tool_call_id`). Default home is `~/.copilot`;
+ * operator override via `harnesses.copilot.sessionLogDir`.
  */
-function otelLogFile(sessionLogDir: string | undefined, cwd: string): string {
-  const root = sessionLogDir ?? join(defaultDataDir(), 'copilot-otel');
-  return join(root, cwd.replace(/[^a-zA-Z0-9]/g, '-') + '.jsonl');
+function copilotHome(sessionLogDir: string | undefined): string {
+  return sessionLogDir ?? join(homedir(), '.copilot');
+}
+
+interface UsageRow {
+  parent_tool_call_id: string | null;
+  model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  total_nano_aiu: number | null;
+}
+
+/** A session's usage rows, oldest first; [] when the DB is missing/unreadable. */
+function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
+  try {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      return db
+        .prepare(
+          `SELECT parent_tool_call_id, model, input_tokens, output_tokens,
+                  cache_read_tokens, cache_write_tokens, total_nano_aiu
+             FROM assistant_usage_events WHERE session_id = ? ORDER BY id`,
+        )
+        .all(sessionId) as UsageRow[];
+    } finally {
+      db.close();
+    }
+  } catch {
+    // Usage degrades to unavailable — never a fake zero, never a crash.
+    return [];
+  }
+}
+
+/**
+ * Group rows into a per-model breakdown. DB `input_tokens` is TOTAL input;
+ * the omit-when-zero cache columns are subtracted to keep the uncached-input
+ * convention Claude and Codex use. `total_nano_aiu` sums to per-model AI Units.
+ */
+function rowsToModels(rows: UsageRow[]): Record<string, ModelUsage> {
+  const models: Record<string, ModelUsage> = {};
+  const nano: Record<string, number> = {};
+  for (const r of rows) {
+    const bucket = (models[r.model] ??= {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    const cacheRead = num(r.cache_read_tokens);
+    const cacheWrite = num(r.cache_write_tokens);
+    bucket.inputTokens += Math.max(0, num(r.input_tokens) - cacheRead - cacheWrite);
+    bucket.outputTokens += num(r.output_tokens);
+    bucket.cacheReadTokens += cacheRead;
+    bucket.cacheWriteTokens += cacheWrite;
+    if (typeof r.total_nano_aiu === 'number') nano[r.model] = (nano[r.model] ?? 0) + r.total_nano_aiu;
+  }
+  for (const [model, units] of Object.entries(nano)) models[model]!.aiUnits = units / 1e9;
+  return models;
+}
+
+interface SubagentInfo {
+  name: string;
+  model?: string;
+  status: ProcessStatus;
+}
+
+/**
+ * Live Subagent status from `events.jsonl`: `subagent.started` (active) →
+ * `subagent.completed`/`failed` (inactive). `toolCallId` is the DB's
+ * `parent_tool_call_id`, joining a Subagent's usage rows to its name/status.
+ */
+function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
+  const map = new Map<string, SubagentInfo>();
+  if (!existsSync(eventsFile)) return map;
+  for (const line of readFileSync(eventsFile, 'utf8').split('\n')) {
+    if (!line.trim()) continue;
+    let event: any;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const data = event?.data;
+    const id = data?.toolCallId;
+    if (typeof id !== 'string') continue;
+    const name = data.agentName ?? data.agentDisplayName ?? 'subagent';
+    if (event.type === 'subagent.started') {
+      map.set(id, { name, status: 'active' });
+    } else if (event.type === 'subagent.completed' || event.type === 'subagent.failed') {
+      const prev = map.get(id);
+      map.set(id, {
+        name: prev?.name ?? name,
+        model: typeof data.model === 'string' ? data.model : prev?.model,
+        status: 'inactive',
+      });
+    }
+  }
+  return map;
 }
 
 /** Copilot Harness Adapter, built on the issue-25 spike findings. */
 export const copilotAdapter: HarnessAdapter = {
-  // No model env here on purpose: --model and COPILOT_MODEL are ignored
-  // in --acp mode, and --model falsifies session/new's reported
-  // currentModelId without changing the session (spike capture 13). The
-  // pin goes through sessionModelId below.
-  spawnEnv: ({ cwd, sessionLogDir }) => {
-    const file = otelLogFile(sessionLogDir, cwd);
-    try {
-      // The exporter writes nothing if the directory is missing, and
-      // creates the file lazily — pre-create it (append-safe) so the
-      // usage flush-race retry sees "log exists, keep re-reading" instead
-      // of "no log is coming" on a directory's first run.
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, '', { flag: 'a' });
-    } catch {
-      // Usage degrades to unavailable; never block the spawn.
-    }
-    return {
-      // The CLI updated itself between two spike runs; keep runs reproducible.
-      COPILOT_AUTO_UPDATE: 'false',
-      COPILOT_OTEL_FILE_EXPORTER_PATH: file,
-    };
-  },
+  // No model env: --model and COPILOT_MODEL are ignored in --acp mode, and
+  // --model falsifies session/new's reported currentModelId without changing
+  // the session (spike capture 13). The pin goes through sessionModelId. The
+  // CLI updated itself between two spike runs, so pin auto-update off.
+  spawnEnv: () => ({ COPILOT_AUTO_UPDATE: 'false' }),
 
   // Sent for every run, 'auto' included: an unpinned ACP session inherits
   // the operator's persisted settings.json model, not auto (capture 13).
@@ -60,57 +142,78 @@ export const copilotAdapter: HarnessAdapter = {
   ],
 
   usage: {
-    /** Spans are attributed by conversation id: no sessionId, no log to read. */
-    sessionLogFile({ sessionLogDir, cwd, sessionId }) {
+    /**
+     * Parse the native store into rolled-up Usage + the Process Tree (ADR
+     * 0009). Root node = the main agent's rows (`parent_tool_call_id`
+     * null); each Subagent = the rows sharing a spawning tool-call id,
+     * named and status-flagged from `events.jsonl`. The flat `usage` sums
+     * the whole tree — the undercount fix (Subagent tokens count toward
+     * the Run). Returns null when no store/events exist yet.
+     *
+     * ponytail: single-model-per-node — Copilot's `auto` router serves
+     * several models within one node, folded here under the node's
+     * dominant model. The flat `usage` keeps the true per-model split;
+     * only the tree node is lossy. Split per model if the Activity view
+     * ever needs exact per-node pricing.
+     *
+     * ponytail: one-level tree keyed by `parent_tool_call_id` — every
+     * observed Subagent is a direct child of the root (`agent_id` is null
+     * in all captured rows, and `events.jsonl` chains Subagents flatly by
+     * `toolCallId`). Attribute deeper nesting via `agent_id` if Copilot
+     * ever spawns Subagents-of-Subagents; ProcessNode is already recursive.
+     */
+    parse(input) {
+      const { sessionId } = input;
       if (!sessionId) return null;
-      return otelLogFile(sessionLogDir, cwd);
+      const home = copilotHome(input.sessionLogDir);
+      const rows = readUsageRows(join(home, 'session-store.db'), sessionId);
+      const subagents = readSubagents(join(home, 'session-state', sessionId, 'events.jsonl'));
+      if (rows.length === 0 && subagents.size === 0) return null;
+
+      const byParent = new Map<string, UsageRow[]>();
+      for (const row of rows) {
+        if (row.parent_tool_call_id == null) continue;
+        const list = byParent.get(row.parent_tool_call_id) ?? [];
+        list.push(row);
+        byParent.set(row.parent_tool_call_id, list);
+      }
+
+      const node = (id: string, name: string, rs: UsageRow[], depth: number, info?: SubagentInfo): ProcessNode => {
+        const models = rowsToModels(rs);
+        return {
+          id,
+          name,
+          model: dominantModel(models) ?? info?.model ?? 'unknown',
+          usage: foldModels(models),
+          contextTokens: rs.length ? num(rs[rs.length - 1]!.input_tokens) : null,
+          status: info?.status ?? 'active',
+          depth,
+          children: [],
+        };
+      };
+
+      // A Subagent shows up in the DB, in events, or both (started but no
+      // tokens yet). Union the keys so a just-started Subagent is visible.
+      const childIds = new Set<string>([...byParent.keys(), ...subagents.keys()]);
+      const children = [...childIds].map((id) =>
+        node(id, subagents.get(id)?.name ?? 'subagent', byParent.get(id) ?? [], 1, subagents.get(id)),
+      );
+
+      const root = node(sessionId, 'root', rows.filter((r) => r.parent_tool_call_id == null), 0);
+      root.children = children;
+      return { usage: usageFromModels(rowsToModels(rows)), tree: root } satisfies ParsedSession;
     },
 
-    /**
-     * Aggregate `chat` spans by `gen_ai.response.model` — the model that
-     * actually served the call. `input_tokens` is TOTAL input; the
-     * omit-when-zero cache attributes are subtracted to keep the
-     * uncached-input convention Claude and Codex use. `nano_aiu` sums to
-     * per-model AI Units (spike Q7).
-     */
-    modelsFromSessionLog(file, sessionId) {
-      if (!sessionId || !existsSync(file)) return {};
+    /** The native store; sessionId keys the rows, so none means nothing to read. */
+    sessionLogFile({ sessionLogDir, sessionId }) {
+      if (!sessionId) return null;
+      return join(copilotHome(sessionLogDir), 'session-store.db');
+    },
 
-      const models: Record<string, ModelUsage> = {};
-      // Summed in integer nano-units; divided once to keep floats exact.
-      const nano: Record<string, number> = {};
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
-        if (!line.trim()) continue;
-        let entry: any;
-        try {
-          entry = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (entry?.type !== 'span') continue;
-        const attrs = entry.attributes;
-        if (attrs?.['gen_ai.operation.name'] !== 'chat') continue;
-        if (attrs['gen_ai.conversation.id'] !== sessionId) continue;
-        const model = attrs['gen_ai.response.model'];
-        if (typeof model !== 'string') continue;
-        const bucket = (models[model] ??= {
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-        });
-        const cacheRead = num(attrs['gen_ai.usage.cache_read.input_tokens']);
-        const cacheWrite = num(attrs['gen_ai.usage.cache_creation.input_tokens']);
-        bucket.inputTokens += Math.max(0, num(attrs['gen_ai.usage.input_tokens']) - cacheRead - cacheWrite);
-        bucket.outputTokens += num(attrs['gen_ai.usage.output_tokens']);
-        bucket.cacheReadTokens += cacheRead;
-        bucket.cacheWriteTokens += cacheWrite;
-        if (typeof attrs['github.copilot.nano_aiu'] === 'number') {
-          nano[model] = (nano[model] ?? 0) + attrs['github.copilot.nano_aiu'];
-        }
-      }
-      for (const [model, units] of Object.entries(nano)) models[model]!.aiUnits = units / 1e9;
-      return models;
+    /** Whole-session per-model breakdown (root + Subagent rows) from the store. */
+    modelsFromSessionLog(file, sessionId) {
+      if (!sessionId) return {};
+      return rowsToModels(readUsageRows(file, sessionId));
     },
 
     // No `_meta.<harness>.toolName` equivalent exists (spike finding);

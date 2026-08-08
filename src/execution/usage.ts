@@ -158,6 +158,23 @@ export function usageFromModels(models: Record<string, ModelUsage>): RunUsage {
 }
 
 /**
+ * Sum a per-model breakdown into one ModelUsage — a single Process Tree
+ * node's own tokens, all its models folded together. AI Units total only
+ * when some model reported them; never a fake zero.
+ */
+export function foldModels(models: Record<string, ModelUsage>): ModelUsage {
+  const total: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  for (const u of Object.values(models)) {
+    total.inputTokens += u.inputTokens;
+    total.outputTokens += u.outputTokens;
+    total.cacheReadTokens += u.cacheReadTokens;
+    total.cacheWriteTokens += u.cacheWriteTokens;
+    if (u.aiUnits !== undefined) total.aiUnits = (total.aiUnits ?? 0) + u.aiUnits;
+  }
+  return total;
+}
+
+/**
  * The model owning the most tokens — the price bucket for a single
  * Process Tree node whose calls span several models (Codex resume,
  * Copilot's `auto` router). null for an empty breakdown.
