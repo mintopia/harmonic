@@ -65,6 +65,8 @@ export const codexAdapter: HarnessAdapter = {
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
         });
+        // ACP prompt result reports uncached `inputTokens` already (see the
+        // docstring above) — unlike the rollout-log path, so no subtraction.
         bucket.inputTokens += num(entry.token_count.inputTokens);
         bucket.outputTokens += num(entry.token_count.outputTokens);
         bucket.cacheReadTokens += num(entry.token_count.cachedInputTokens);
