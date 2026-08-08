@@ -77,6 +77,10 @@ const conversationSchema = z
   .meta({ id: 'Conversation' });
 
 const conversationsListResponseSchema = z.object({ conversations: z.array(conversationSchema) });
+const conversationsListQuerySchema = z.object({
+  /** Scope to one Workspace's Conversations (ADR-0008); omitted means every Workspace. */
+  workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
+});
 
 const conversationEventSchema = z.object({
   id: z.number().meta({ example: 88104 }),
@@ -121,17 +125,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
       // Defaults to the earliest-created Workspace when omitted (ADR-0008), so
       // callers that predate Workspaces keep working unchanged.
-      const workspaces = ctx.workspaces.list();
-      const workspace =
-        req.body.workspaceId !== undefined
-          ? workspaces.find((w) => w.id === req.body.workspaceId)
-          : workspaces[0];
-      if (!workspace) {
-        throw new DomainError(
-          'validation',
-          req.body.workspaceId !== undefined ? `workspace ${req.body.workspaceId} not found` : 'no workspace exists',
-        );
-      }
+      const workspace = ctx.workspaces.resolve(req.body.workspaceId);
       const conversation = ctx.conversations.create({
         workspaceId: workspace.id,
         harness,
@@ -147,14 +141,18 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     {
       schema: {
         tags: ['Conversations'],
-        description: 'List Conversations, newest first. Operator only; not reachable with a run-scoped key.',
+        description:
+          'List Conversations, newest first, optionally scoped to one Workspace. Operator only; not reachable with a run-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: conversationsListQuerySchema,
         response: {
-          200: conversationsListResponseSchema.describe('Every Conversation, active and ended alike, newest first.'),
+          200: conversationsListResponseSchema.describe('Every matching Conversation, active and ended alike, newest first.'),
         },
       },
     },
-    async () => ({ conversations: ctx.conversations.list().map((c) => conversationToApi(ctx, c)) }),
+    async (req) => ({
+      conversations: ctx.conversations.list(req.query.workspaceId).map((c) => conversationToApi(ctx, c)),
+    }),
   );
 
   app.get(

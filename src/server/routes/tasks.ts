@@ -6,7 +6,7 @@ import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } fro
 import { TASK_STATES, RUN_STATES, TASK_ORIGINS, WORKFLOWS, WAYFINDER_TYPES, DRIVES } from '../../db/schema.js';
 import { Git } from '../../execution/git.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
-import { costOfRuns, runToApi, taskToApi } from '../serialize.js';
+import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi } from '../serialize.js';
 import { errorResponse, idParamsSchema, costSchema, runUsageSchema } from '../schemas.js';
 
 /** The reviewer's note, carried onto the re-attempt or back to the queue. */
@@ -343,7 +343,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const task = ctx.tasks.addDependency(req.params.id, req.body.dependsOnId);
-      return { ...task, workspaceId: task.workspaceId! };
+      return { ...task, workspaceId: atRestWorkspaceId(task.workspaceId) };
     },
   );
 
@@ -359,7 +359,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const task = ctx.tasks.removeDependency(req.params.id, req.params.depId);
-      return { ...task, workspaceId: task.workspaceId! };
+      return { ...task, workspaceId: atRestWorkspaceId(task.workspaceId) };
     },
   );
 

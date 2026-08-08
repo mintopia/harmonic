@@ -71,9 +71,15 @@ export class ConversationStore {
     return row;
   }
 
-  /** Reverse-chronological: newest first, both active and ended (issue 15's list). */
-  list(): ConversationRow[] {
-    return this.db.select().from(conversations).orderBy(desc(conversations.createdAt)).all();
+  /** Reverse-chronological: newest first, both active and ended (issue 15's list).
+   * Scoped to `workspaceId` when given (ADR-0008); omitted means every Workspace. */
+  list(workspaceId?: number): ConversationRow[] {
+    return this.db
+      .select()
+      .from(conversations)
+      .where(workspaceId !== undefined ? eq(conversations.workspaceId, workspaceId) : undefined)
+      .orderBy(desc(conversations.createdAt))
+      .all();
   }
 
   update(id: number, patch: Partial<ConversationRow>): ConversationRow {

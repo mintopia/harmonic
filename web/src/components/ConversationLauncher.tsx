@@ -662,15 +662,21 @@ export function ConversationLauncher({
   // feed, so a title/usage/state change is reflected in the history list
   // whether or not it's currently on screen.
   useEffect(() => {
-    api.conversations().then(({ conversations }) => setConversations(conversations), toastError);
+    if (workspaceId === null) return;
+    // A Workspace switch replaces the list outright rather than merging —
+    // the previous Workspace's Conversations don't belong here anymore.
+    setConversations([]);
+    api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
     const unsubscribe = subscribe((msg) => {
       setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
-      if (msg.type === 'conversation_changed') {
+      // Scoped to the active Workspace (ADR-0008) — same treatment as the
+      // board's task_changed filter in App.tsx.
+      if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {
         setConversations((current) => upsertConversation(current, msg.conversation));
       }
     });
     return unsubscribe;
-  }, []);
+  }, [workspaceId]);
 
   // The focused Conversation's own detail stream (issues #10–#14, largely
   // unchanged): replay the persisted events, then append live ones as they

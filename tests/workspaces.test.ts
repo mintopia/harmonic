@@ -137,6 +137,17 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(body.workingDir).toBe(dirB);
   });
 
+  it('GET /api/conversations?workspaceId= scopes the list to that Workspace only', async () => {
+    const scoped = await server.api('GET', `/api/conversations?workspaceId=${workspaceB}`);
+    expect(scoped.status).toBe(200);
+    expect(scoped.body.conversations.length).toBeGreaterThan(0);
+    expect(scoped.body.conversations.every((c: any) => c.workspaceId === workspaceB)).toBe(true);
+
+    const scopedElsewhere = await server.api('GET', `/api/conversations?workspaceId=${workspaceA}`);
+    expect(scopedElsewhere.status).toBe(200);
+    expect(scopedElsewhere.body.conversations.every((c: any) => c.workspaceId === workspaceA)).toBe(true);
+  });
+
   it('/api/stats?workspaceId= scopes run/cost totals to that Workspace', async () => {
     const scoped = await server.api('GET', `/api/stats?workspaceId=${workspaceA}`);
     expect(scoped.status).toBe(200);

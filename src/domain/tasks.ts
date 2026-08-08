@@ -12,6 +12,7 @@ import {
   type Drive,
   type WorkspaceRow,
 } from '../db/schema.js';
+import { resolveWorkspace } from './workspaces.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 
@@ -111,18 +112,9 @@ export class TaskService {
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
   ) {}
 
-  /** The given Workspace, or the earliest-created one when `workspaceId` is omitted (ADR-0008) — the
-   * fallback that keeps callers who predate Workspaces (MCP, older API clients) working unchanged. */
+  /** {@link resolveWorkspace} over this service's Workspace list — see its doc comment. */
   private resolveWorkspace(workspaceId?: number): WorkspaceRow {
-    const list = this.getWorkspaces();
-    if (workspaceId === undefined) {
-      const first = list[0];
-      if (!first) throw new DomainError('validation', 'no workspace exists');
-      return first;
-    }
-    const found = list.find((w) => w.id === workspaceId);
-    if (!found) throw new DomainError('validation', `workspace ${workspaceId} not found`);
-    return found;
+    return resolveWorkspace(this.getWorkspaces(), workspaceId);
   }
 
   /** Resolve execution defaults (harness/model/workingDir/isolationMode/priority) from optional overrides + config defaults. */

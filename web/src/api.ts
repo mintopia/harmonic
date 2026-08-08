@@ -78,7 +78,11 @@ export const api = {
 
   removePassword: (currentPassword: string) =>
     request<{ ok: true }>('DELETE', '/api/auth/password', { currentPassword }),
-  conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/conversations'),
+  conversations: (workspaceId?: number) =>
+    request<{ conversations: Conversation[] }>(
+      'GET',
+      workspaceId ? `/api/conversations?workspaceId=${workspaceId}` : '/api/conversations',
+    ),
   conversation: (id: number) => request<Conversation>('GET', `/api/conversations/${id}`),
   createConversation: (input: { workspaceId?: number; harness?: string; model?: string; workingDir?: string }) =>
     request<Conversation>('POST', '/api/conversations', input),

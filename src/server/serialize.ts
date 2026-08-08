@@ -15,6 +15,11 @@ const parseUsage = (raw: string | null): RunUsage | null => (raw ? (JSON.parse(r
 
 const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices);
 
+/** A Task/Conversation row's `workspaceId` is nullable only because SQLite
+ * can't add it NOT NULL to an existing table (schema.ts) — every row has one
+ * at rest, so every API-facing shape narrows it back to `number` here. */
+export const atRestWorkspaceId = (workspaceId: number | null): number => workspaceId!;
+
 export type ApiRun = Omit<RunRow, 'usage'> & { usage: RunUsage | null; cost: Cost | null };
 
 export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
@@ -23,8 +28,6 @@ export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
 }
 
 export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
-  // TaskRow.workspaceId is nullable only because SQLite can't add it NOT NULL
-  // to an existing table (schema.ts) — every row has one at rest.
   workspaceId: number;
   cost: Cost | null;
   /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
@@ -43,7 +46,7 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
   const usages = runs.map((run) => parseUsage(run.usage));
   return {
     ...task,
-    workspaceId: task.workspaceId!,
+    workspaceId: atRestWorkspaceId(task.workspaceId),
     cost: costOfUsages(usages, pricesOf(ctx)),
     url: ctx.trackerPoller.urlFor(task.trackerRef),
     mapTitle: ctx.trackerPoller.titleForMap(task.mapRef),
@@ -58,8 +61,6 @@ export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
 }
 
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {
-  // ConversationRow.workspaceId is nullable only because SQLite can't add it
-  // NOT NULL to an existing table (schema.ts) — every row has one at rest.
   workspaceId: number;
   /** Running Usage accumulated across Turns (issue 12); null before any usage. */
   usage: RunUsage | null;
@@ -96,7 +97,7 @@ export function conversationToApi(ctx: AppContext, conversation: ConversationRow
   const modelInfo = config.modelInfo[conversation.model] ?? config.modelInfo[conversation.model.replace(/-\d{8}$/, '')];
   return {
     ...rest,
-    workspaceId: conversation.workspaceId!,
+    workspaceId: atRestWorkspaceId(conversation.workspaceId),
     title: conversation.title ?? deriveConversationTitle(ctx.conversations.firstTurnText(conversation.id)),
     usage,
     cost: costOfUsages([usage], pricesOf(ctx)),

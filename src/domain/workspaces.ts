@@ -16,6 +16,24 @@ export const updateWorkspaceInputSchema = createWorkspaceInputSchema.partial();
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /**
+ * The given Workspace, or the earliest-created one when `id` is omitted —
+ * the shared "default Workspace" fallback (ADR-0008) that keeps callers who
+ * predate Workspaces (MCP, older API clients) working unchanged. Shared by
+ * `WorkspaceService.resolve` and `TaskService` (which only holds a
+ * `getWorkspaces` closure, not the service itself) so the rule lives once.
+ */
+export function resolveWorkspace(list: WorkspaceRow[], id?: number): WorkspaceRow {
+  if (id === undefined) {
+    const first = list[0];
+    if (!first) throw new DomainError('validation', 'no workspace exists');
+    return first;
+  }
+  const found = list.find((w) => w.id === id);
+  if (!found) throw new DomainError('validation', `workspace ${id} not found`);
+  return found;
+}
+
+/**
  * A Workspace (ADR-0008): a named Working Directory, unique by absolute
  * path. CRUD only — no delete yet (not in scope until a later slice adds
  * per-Workspace execution settings to guard against deleting one mid-run).
@@ -31,6 +49,11 @@ export class WorkspaceService {
     const row = this.db.select().from(workspaces).where(eq(workspaces.id, id)).get();
     if (!row) throw new DomainError('not_found', `workspace ${id} not found`);
     return row;
+  }
+
+  /** {@link resolveWorkspace} over the current list — see its doc comment. */
+  resolve(id?: number): WorkspaceRow {
+    return resolveWorkspace(this.list(), id);
   }
 
   create(input: CreateWorkspaceInput): WorkspaceRow {
