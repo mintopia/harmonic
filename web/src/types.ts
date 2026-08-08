@@ -338,6 +338,8 @@ export interface RunUsageEvent {
 }
 
 export interface AppConfig {
+  /** Operator display name for this instance; empty string means unnamed (UI falls back to "Harmonic"). */
+  name: string;
   harnesses: Record<string, HarnessConfig>;
   prices: Record<string, ModelPrice>;
   defaults: {

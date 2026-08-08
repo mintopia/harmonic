@@ -94,6 +94,13 @@ export const modelInfoSchema = z.object({
 });
 
 export const appConfigSchema = z.object({
+  /**
+   * Operator-chosen display name for this instance (issue: instance rename).
+   * Harmonic still calls itself Harmonic everywhere in prose; this only feeds
+   * the sidebar heading and the browser title (`Harmonic - {name} - {workspace}`).
+   * Empty string (the default) means unnamed — the UI falls back to "Harmonic".
+   */
+  name: z.string().default('').meta({ example: 'Production' }),
   // A record declares no shape, so the API docs fall back to printing its
   // JSON Schema unless it carries an example of its own.
   harnesses: z.record(z.enum(HARNESS_IDS), harnessConfigSchema).meta({
@@ -204,6 +211,7 @@ export type DeepPartial<T> = {
 
 export function defaultConfig(): AppConfig {
   return {
+    name: '',
     harnesses: {
       claude: {
         // Per the spike: the bare npm name `claude-code-acp` is a
