@@ -38,6 +38,9 @@ export interface ProcessNode {
   status: ProcessStatus;
   /** 0 for the root; +1 per Subagent nesting level. */
   depth: number;
+  /** For a Subagent, the spawning `Agent`/`Task` tool-use id — the key the
+   * Activity drill-in frames its transcript on (issue #53); null for the root. */
+  toolUseId: string | null;
   children: ProcessNode[];
 }
 

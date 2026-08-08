@@ -141,6 +141,7 @@ export const codexAdapter: HarnessAdapter = {
         contextTokens,
         status: 'active',
         depth: 0,
+        toolUseId: null,
         children: [],
       };
       return { usage: usageFromModels(models), tree: root } satisfies ParsedSession;

@@ -104,6 +104,8 @@ export const processNodeSchema = z
     status: z.enum(['active', 'inactive', 'hidden']).meta({ example: 'active' }),
     /** 0 for the root; +1 per Subagent nesting level. */
     depth: z.number().meta({ example: 0 }),
+    /** A Subagent's spawning tool-use id — the drill-in frame key; null for the root. */
+    toolUseId: z.string().nullable().meta({ example: 'toolu_01H8X…' }),
     get children() {
       return z.array(processNodeSchema);
     },

@@ -188,6 +188,9 @@ export const copilotAdapter: HarnessAdapter = {
           contextTokens: rs.length ? num(rs[rs.length - 1]!.input_tokens) : null,
           status: info?.status ?? 'active',
           depth,
+          // A Copilot Subagent's node id *is* its spawning tool-call id (it
+          // joins the store rows) — so that doubles as the drill-in frame key.
+          toolUseId: depth === 0 ? null : id,
           children: [],
         };
       };

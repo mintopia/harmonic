@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
@@ -37,6 +37,7 @@ import {
   type PendingPermissions,
 } from '../conversation-permissions-model';
 import { computeContextUsage, formatContextUsage } from '../conversation-telemetry-model';
+import { ProcessDrillIn } from './ProcessDrillIn';
 
 /** Compact figures ("18.2k") — the same treatment Stats and the telemetry strip use. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
@@ -221,16 +222,39 @@ function RowActions({
   );
 }
 
+/** The expand toggle for a Run row — a quiet chevron that opens the Process Tree
+ * drill-in below (issue #53). A Conversation has no tree, so its slot stays an
+ * inert placeholder that keeps the badge/title column aligned row-to-row. */
+function ExpandToggle({ expandable, expanded, onToggle }: { expandable: boolean; expanded: boolean; onToggle: () => void }) {
+  if (!expandable) return <span aria-hidden="true" className="w-4 shrink-0" />;
+  return (
+    <button
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-label={expanded ? 'Collapse process tree' : 'Expand process tree'}
+      className="w-4 shrink-0 text-muted transition-colors duration-150 hover:text-ink"
+    >
+      <span className={`inline-block transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}>›</span>
+    </button>
+  );
+}
+
 function ProcessRow({
   process,
   now,
   pending,
   onAnswered,
+  expandable,
+  expanded,
+  onToggleExpand,
 }: {
   process: ActivityProcess;
   now: number;
   pending?: PendingPermission;
   onAnswered: (reqId: string) => void;
+  expandable: boolean;
+  expanded: boolean;
+  onToggleExpand: () => void;
 }) {
   const tokens = usageTotalTokens(process.usage);
   const cost = formatCost(process.cost);
@@ -240,6 +264,7 @@ function ProcessRow({
       {/* Process: the content — badge + title lead; metadata and the live activity line whisper below. */}
       <div className="min-w-0">
         <div className="flex items-center gap-2">
+          <ExpandToggle expandable={expandable} expanded={expanded} onToggle={onToggleExpand} />
           <StateDot process={process} />
           <span className={`${chip} bg-raised text-muted`}>{process.type === 'run' ? 'Run' : 'Chat'}</span>
           {process.escalated && <span className={`${chip} bg-accent-tint text-accent`}>escalated</span>}
@@ -304,6 +329,9 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   // holds no data — these only shape the pure filter/sort of the live snapshot.
   const [filter, setFilter] = useState<ActivityFilter>(NO_ACTIVITY_FILTER);
   const [sort, setSort] = useState<ActivitySort>('attention');
+  // Which row is drilled into its Process Tree (issue #53) — at most one open at
+  // a time, keyed the same way the rows are. Runs with a tree only.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   // Initial snapshot + a slow poll to catch processes starting/ending; the
   // run_usage firehose keeps existing rows ticking live in between (ADR 0010).
@@ -467,19 +495,30 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                     <span className={`${labelType} ${section.pinned ? 'text-accent' : 'text-muted'}`}>{section.label}</span>
                     <span className="text-label tabular-nums text-faint">{section.rows.length}</span>
                   </div>
-                  {section.rows.map((p) => (
-                    <ProcessRow
-                      key={p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`}
-                      process={p}
-                      now={now}
-                      pending={
-                        p.type === 'chat'
-                          ? Object.values(pending).find((pp) => pp.conversationId === p.conversationId)
-                          : undefined
-                      }
-                      onAnswered={answered}
-                    />
-                  ))}
+                  {section.rows.map((p) => {
+                    const key = p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`;
+                    // A Run with a live Process Tree can drill in; a Conversation has none.
+                    const expandable = p.type === 'run' && p.tree !== null;
+                    const expanded = expandable && expandedKey === key;
+                    return (
+                      <Fragment key={key}>
+                        <ProcessRow
+                          process={p}
+                          now={now}
+                          pending={
+                            p.type === 'chat'
+                              ? Object.values(pending).find((pp) => pp.conversationId === p.conversationId)
+                              : undefined
+                          }
+                          onAnswered={answered}
+                          expandable={expandable}
+                          expanded={expanded}
+                          onToggleExpand={() => setExpandedKey((cur) => (cur === key ? null : key))}
+                        />
+                        {expanded && <ProcessDrillIn process={p} now={now} />}
+                      </Fragment>
+                    );
+                  })}
                 </div>
               ))}
             </div>

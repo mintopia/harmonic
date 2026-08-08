@@ -172,6 +172,7 @@ export const claudeAdapter: HarnessAdapter = {
         contextTokens: rootScan.contextTokens,
         status: 'active',
         depth: 0,
+        toolUseId: null,
         children: [],
       };
 
@@ -186,6 +187,7 @@ export const claudeAdapter: HarnessAdapter = {
           contextTokens: s.scan.contextTokens,
           status: s.meta.toolUseId && completed.has(s.meta.toolUseId) ? 'inactive' : 'active',
           depth: typeof s.meta.spawnDepth === 'number' ? s.meta.spawnDepth : 1,
+          toolUseId: s.meta.toolUseId ?? null,
           children: [],
         };
         byId.set(s.id, node);
