@@ -172,7 +172,7 @@ export function defaultConfig(): AppConfig {
         command: 'npx',
         args: ['--yes', '@agentclientprotocol/claude-agent-acp'],
         env: {},
-        models: ['claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5'],
+        models: ['claude-opus-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-opus-4-8', 'claude-haiku-4-5'],
         defaultModel: 'claude-sonnet-5',
       },
       codex: {
