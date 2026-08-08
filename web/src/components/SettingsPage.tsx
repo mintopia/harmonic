@@ -126,6 +126,43 @@ function AutoRunnerFields({
   );
 }
 
+function TrackerFields({
+  config,
+  fieldErrors,
+  onChange,
+}: {
+  config: AppConfig;
+  fieldErrors: Record<string, string>;
+  onChange: (tracker: AppConfig['tracker']) => void;
+}) {
+  const t = config.tracker;
+  return (
+    <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+      <div>
+        <span className={fieldLabel}>Enabled</span>
+        <div className="pt-1">
+          <Switch checked={t.enabled} onChange={(enabled) => onChange({ ...t, enabled })}>
+            Mirror tracker issues onto the board
+          </Switch>
+        </div>
+        <FieldError message={fieldErrors['tracker.enabled']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-poll-interval">Poll interval (seconds)</label>
+        <input
+          id="settings-poll-interval"
+          type="number"
+          min={5}
+          className={`${field} w-28 font-data`}
+          value={t.pollIntervalSeconds}
+          onChange={(e) => onChange({ ...t, pollIntervalSeconds: Number(e.target.value) })}
+        />
+        <FieldError message={fieldErrors['tracker.pollIntervalSeconds']} />
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void }) {
   const [pristine, setPristine] = useState<AppConfig | null>(null);
   const [local, setLocal] = useState<AppConfig | null>(null);
@@ -198,6 +235,17 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             config={local}
             fieldErrors={fieldErrors}
             onChange={(autoRunner) => setLocal({ ...local, autoRunner })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Tracker mirroring"
+          description="Poll the working directory's issue tracker and mirror its issues onto the board as Tasks. Needs docs/agents/issue-tracker.md in that repo and gh (GitHub) auth."
+        >
+          <TrackerFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(tracker) => setLocal({ ...local, tracker })}
           />
         </SettingsSection>
 

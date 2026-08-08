@@ -232,5 +232,7 @@ export interface AppConfig {
     priority: 'high' | 'normal' | 'low';
   };
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
+  /** Poll the working directory's issue tracker and mirror issues onto the board (issue #30). */
+  tracker: { enabled: boolean; pollIntervalSeconds: number };
   agentReview: boolean;
 }
