@@ -3,6 +3,7 @@ import { api } from '../api';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
 import { EventStream } from './EventStream';
+import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
@@ -378,7 +379,11 @@ export function TaskDetail({
                 of the corner it sits in. */}
             <div className="flex-1" />
           </div>
-          <p className="line-clamp-4 whitespace-pre-wrap text-ink">{task.prompt}</p>
+          {task.origin === 'mirrored' ? (
+            <Markdown source={task.prompt} className="text-ink" />
+          ) : (
+            <p className="whitespace-pre-wrap text-ink">{task.prompt}</p>
+          )}
           {(task.reattemptOf !== null || task.reattempts.length > 0) && (
             <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
               {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}

@@ -1,14 +1,6 @@
 import type { Drive, Task } from '../types';
 import { card, chip } from '../ui';
 import { TaskActions } from './TaskActions';
-import { Markdown } from './Markdown';
-
-/** A mirrored Task's prompt is `title\n\nbody`; split the hero title from the
- * (Markdown) description body. */
-function splitTitleBody(prompt: string): { title: string; body: string } {
-  const i = prompt.indexOf('\n\n');
-  return i === -1 ? { title: prompt.trim(), body: '' } : { title: prompt.slice(0, i).trim(), body: prompt.slice(i + 2).trim() };
-}
 
 /** One truncating metadata line: id, harness · model, then only the facts
  * that deviate from defaults (isolation, deps, cost). Sans, not mono — these
@@ -28,27 +20,16 @@ function typeTagLabel(task: Task): string {
   return task.workflow === 'implement' ? 'implement' : (task.wayfinderType ?? 'wayfinder');
 }
 
-/** The card's hero: clickable to open the Task. Shared by both card kinds so
- * the title never drifts; the mirrored card weights it medium and passes just
- * the title line (its body renders as Markdown below). */
-function TitleButton({
-  task,
-  onOpen,
-  text,
-  className = '',
-}: {
-  task: Task;
-  onOpen: (task: Task) => void;
-  text?: string;
-  className?: string;
-}) {
+/** The card's hero: the prompt, clickable to open the Task. Shared by both card
+ * kinds so the title never drifts; the mirrored card weights it medium. */
+function TitleButton({ task, onOpen, className = '' }: { task: Task; onOpen: (task: Task) => void; className?: string }) {
   return (
     <button
       type="button"
       className={`line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-ink ${className}`}
       onClick={() => onOpen(task)}
     >
-      {text ?? task.prompt}
+      {task.prompt}
     </button>
   );
 }
@@ -93,10 +74,8 @@ function DriveBadge({ drive }: { drive: Drive }) {
 }
 
 /** The wayfinder role, grafted from prototype A (issue #34): a badge row (drive
- * + type + escalation) above the title, the Markdown description body (issue
- * #34 follow-up — expandable, rendered), and the parent Map named below. */
+ * + type + escalation) above the title, and the parent Map named below it. */
 function MirroredCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
-  const { title, body } = splitTitleBody(task.prompt);
   return (
     <>
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
@@ -104,12 +83,7 @@ function MirroredCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => vo
         <span className={`${chip} bg-raised text-muted`}>{typeTagLabel(task)}</span>
         {task.escalated && <span className={`${chip} bg-running-tint text-running`}>escalated</span>}
       </div>
-      <TitleButton task={task} onOpen={onOpen} text={title} className="mb-2 font-medium" />
-      {body && (
-        <div className="mb-2.5">
-          <Markdown source={body} />
-        </div>
-      )}
+      <TitleButton task={task} onOpen={onOpen} className="mb-2.5 font-medium" />
       <div className="mb-2 flex items-center gap-1.5 text-small text-muted">
         <MapGlyph />
         <span className="min-w-0 truncate text-ink">{task.mapTitle ?? '—'}</span>
