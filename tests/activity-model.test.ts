@@ -11,6 +11,7 @@ import {
   HIGH_LOAD_FILL,
   mergeRunUsage,
   rankActivity,
+  resolveActivityFilter,
   sortActivity,
   sortLabel,
   ACTIVITY_SORTS,
@@ -160,6 +161,30 @@ describe('activityWorkspaces', () => {
   });
   it('is empty for an empty fleet', () => {
     expect(activityWorkspaces([])).toEqual([]);
+  });
+});
+
+describe('resolveActivityFilter', () => {
+  const workspaces = [
+    { id: 1, name: 'harmonic' },
+    { id: 2, name: 'sidecar' },
+  ];
+  it('leaves a filter with no Workspace untouched', () => {
+    const filter = { type: 'runs' as const, workspaceId: null };
+    expect(resolveActivityFilter(filter, workspaces)).toBe(filter);
+  });
+  it('keeps a Workspace filter that still matches a live Workspace', () => {
+    const filter = { type: 'all' as const, workspaceId: 2 };
+    expect(resolveActivityFilter(filter, workspaces)).toBe(filter);
+  });
+  it('drops a Workspace filter whose Workspace has drained out, preserving type', () => {
+    expect(resolveActivityFilter({ type: 'chats', workspaceId: 9 }, workspaces)).toEqual({
+      type: 'chats',
+      workspaceId: null,
+    });
+  });
+  it('drops a Workspace filter when the fleet is empty', () => {
+    expect(resolveActivityFilter({ type: 'all', workspaceId: 1 }, [])).toEqual({ type: 'all', workspaceId: null });
   });
 });
 

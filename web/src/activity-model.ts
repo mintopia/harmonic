@@ -119,6 +119,19 @@ export function activityWorkspaces(processes: ActivityProcess[]): WorkspaceOptio
 }
 
 /**
+ * Drop a Workspace filter that no longer matches any live Workspace. The
+ * dropdown hides once a single Workspace remains, so a filter left pointing at
+ * a Workspace that has since drained out would otherwise strand the table on an
+ * unclearable "Nothing matches" empty state. Healing it here lets the filter
+ * re-render correctly as the fleet changes.
+ */
+export function resolveActivityFilter(filter: ActivityFilter, workspaces: WorkspaceOption[]): ActivityFilter {
+  if (filter.workspaceId === null) return filter;
+  if (workspaces.some((w) => w.id === filter.workspaceId)) return filter;
+  return { ...filter, workspaceId: null };
+}
+
+/**
  * The Activity toolbar's sort modes (issue #54). 'attention' is the default —
  * the tiered ranker above; the rest order by a single live metric, largest
  * first, with the "Needs you" tier always pinned on top (see `sortActivity`).

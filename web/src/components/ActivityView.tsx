@@ -14,6 +14,7 @@ import {
   contextFillFraction,
   elapsedMs,
   filterActivity,
+  resolveActivityFilter,
   mergeRunUsage,
   sortLabel,
   usageTotalTokens,
@@ -370,7 +371,10 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   // filters only the table below it.
   const summary = activitySummary(processes, ceiling, now);
   const workspaces = activityWorkspaces(processes);
-  const filtered = filterActivity(processes, filter);
+  // Heal a Workspace filter whose Workspace has drained out — otherwise the
+  // reset control (hidden below two Workspaces) can strand the table empty.
+  const activeFilter = resolveActivityFilter(filter, workspaces);
+  const filtered = filterActivity(processes, activeFilter);
   const sections = activitySections(filtered, sort, now);
 
   return (
@@ -411,7 +415,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
               <select
                 aria-label="Filter by workspace"
                 className={select}
-                value={filter.workspaceId ?? ''}
+                value={activeFilter.workspaceId ?? ''}
                 onChange={(e) =>
                   setFilter((f) => ({ ...f, workspaceId: e.target.value === '' ? null : Number(e.target.value) }))
                 }
