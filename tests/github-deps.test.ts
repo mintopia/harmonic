@@ -47,4 +47,19 @@ describe('GitHub adapter — body-line dependency fallback (issue #46 regression
     const [t] = await scanning([raw({ number: 47, body: 'Part of #46. Depends on: none.' })]).scan();
     expect(t!.blockedBy).toEqual([]);
   });
+
+  it('does not leak a same-line "Blocks:" clause into blockedBy (reverse-edge regression)', async () => {
+    // "Depends on: none. Blocks: #a, #b" declares only outgoing edges; none belong in blockedBy.
+    const [t] = await scanning([
+      raw({ number: 59, body: 'Part of #70. Depends on: none. Blocks: #60, #63, #64, #65.' }),
+    ]).scan();
+    expect(t!.blockedBy).toEqual([]);
+  });
+
+  it('keeps the "Depends on" refs but drops the trailing "Blocks" refs on a mixed line', async () => {
+    const [t] = await scanning([
+      raw({ number: 65, body: 'Part of #70. Depends on: #59. Blocks: #64.' }),
+    ]).scan();
+    expect(t!.blockedBy.map((b) => b.number)).toEqual([59]);
+  });
 });

@@ -62,15 +62,20 @@ const ref = (r: RawRef): TicketRef => ({ number: r.number, title: r.title, state
  * "Depends on" contributes every `#n` that follows the keyword on that line
  * (numbers *before* it — e.g. a "Part of #<map>" prefix — are ignored). Merged
  * with, and deduped against, the native edges in `normalise`.
- * ponytail: line-scoped tail scan; a stray `#n` later on the same line would be
- * picked up too — fine for the one-relationship-per-line convention.
+ *
+ * The tail scan stops before a "Blocks"/"Blocking" clause on the same line: the
+ * common one-liner "Depends on: #a. Blocks: #b" declares both directions at
+ * once, and letting the `Blocks` refs leak into `blockedBy` would wire reverse
+ * edges — the two ends then depend on each other and both mirror as blocked
+ * forever (the `blocking` side is meant to "never wire", see mirror.ts).
  */
 function parseBodyBlockers(body: string): number[] {
   const out = new Set<number>();
   for (const line of body.split('\n')) {
     const m = /\b(?:blocked by|depends on)\b[:\s]*(.*)/i.exec(line);
     if (!m) continue;
-    for (const h of m[1]!.matchAll(/#(\d+)/g)) out.add(Number(h[1]));
+    const clause = m[1]!.split(/\bblock(?:s|ing)\b/i)[0]!;
+    for (const h of clause.matchAll(/#(\d+)/g)) out.add(Number(h[1]));
   }
   return [...out];
 }
