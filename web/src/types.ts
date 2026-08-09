@@ -27,6 +27,22 @@ export interface Cost {
   incomplete: boolean;
 }
 
+/** One immediate child directory from `GET /api/fs` (issue #62). */
+export interface FsEntry {
+  name: string;
+  /** Absolute path — feed straight back as `?path=` to descend into it. */
+  path: string;
+}
+
+/** The immediate child directories of one path, for the lazy directory picker (issue #62). */
+export interface FsListing {
+  /** The absolute path that was browsed (the resolved home when none was given). */
+  path: string;
+  /** The parent directory's absolute path, or `null` at the filesystem root. */
+  parent: string | null;
+  entries: FsEntry[];
+}
+
 /** A Workspace (ADR-0008): a named Working Directory, unique by absolute path. */
 export interface Workspace {
   id: number;

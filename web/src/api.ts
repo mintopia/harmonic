@@ -4,6 +4,7 @@ import type {
   Conversation,
   ConversationEvent,
   Cost,
+  FsListing,
   PermissionRule,
   Run,
   RunEvent,
@@ -52,6 +53,10 @@ export const api = {
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),
+  // Lazy directory picker (issue #67): one level deep per call; an omitted
+  // path starts at the server user's home. Operator-only (full-scope session).
+  browseFs: (path?: string) =>
+    request<FsListing>('GET', path ? `/api/fs?path=${encodeURIComponent(path)}` : '/api/fs'),
   workspaces: () => request<{ workspaces: Workspace[] }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),

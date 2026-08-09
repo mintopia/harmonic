@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { Workspace } from '../types';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
+import { DirectoryPicker } from './DirectoryPicker';
 import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../ui';
 
 function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Workspace) => void }) {
@@ -48,6 +49,9 @@ function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreat
           <label className={`mb-1 block ${labelType} text-muted`} htmlFor="workspace-dir">
             Working Directory
           </label>
+          <div className="mb-2">
+            <DirectoryPicker selected={workingDir} onSelect={setWorkingDir} />
+          </div>
           <input
             id="workspace-dir"
             className={`${field} font-data`}
