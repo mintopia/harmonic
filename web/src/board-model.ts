@@ -21,11 +21,20 @@ export interface BoardColumn {
   tasks: Task[];
 }
 
+// Cards stack in the order the scheduler will process them (issue: board
+// ordering): highest priority first, then lowest id first as a stable
+// tiebreak. Mirrors the server's priority rank in src/domain/tasks.ts.
+const PRIORITY_RANK: Record<Task['priority'], number> = { high: 0, normal: 1, low: 2 };
+
+function byProcessingOrder(a: Task, b: Task): number {
+  return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id - b.id;
+}
+
 export function boardColumns(tasks: Task[]): BoardColumn[] {
   return TASK_STATES.map((state) => ({
     state,
     terminal: (TERMINAL_STATES as readonly TaskState[]).includes(state),
-    tasks: tasks.filter((t) => t.state === state).sort((a, b) => b.createdAt - a.createdAt),
+    tasks: tasks.filter((t) => t.state === state).sort(byProcessingOrder),
   }));
 }
 

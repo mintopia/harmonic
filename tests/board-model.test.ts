@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ACTIVE_STATES, TERMINAL_STATES, boardColumns, canDrag, dropAction } from '../web/src/board-model.js';
 import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
 
-const task = (id: number, state: TaskState, createdAt: number): Task => ({
+const task = (id: number, state: TaskState, createdAt: number, priority: Task['priority'] = 'normal'): Task => ({
   id,
   prompt: `task ${id}`,
   workspaceId: 1,
@@ -10,7 +10,7 @@ const task = (id: number, state: TaskState, createdAt: number): Task => ({
   model: 'claude-fable-5',
   workingDir: '/tmp',
   isolationMode: 'direct',
-  priority: 'normal',
+  priority,
   state,
   reattemptOf: null,
   feedback: null,
@@ -50,7 +50,7 @@ describe('board column model', () => {
     for (const column of columns) expect(column.tasks).toEqual([]);
   });
 
-  it('marks terminal columns and buckets tasks newest-first', () => {
+  it('marks terminal columns and buckets tasks in processing order (id ascending at equal priority)', () => {
     const columns = boardColumns([
       task(1, 'ready', 100),
       task(2, 'ready', 300),
@@ -59,9 +59,23 @@ describe('board column model', () => {
     const ready = columns.find((c) => c.state === 'ready')!;
     const failed = columns.find((c) => c.state === 'failed')!;
     expect(ready.terminal).toBe(false);
-    expect(ready.tasks.map((t) => t.id)).toEqual([2, 1]);
+    expect(ready.tasks.map((t) => t.id)).toEqual([1, 2]);
     expect(failed.terminal).toBe(true);
     expect(failed.tasks.map((t) => t.id)).toEqual([3]);
+  });
+
+  it('orders each column by the scheduler processing order: priority then id ascending', () => {
+    // Insertion order is deliberately scrambled and createdAt is irrelevant to the sort.
+    const columns = boardColumns([
+      task(5, 'ready', 100, 'low'),
+      task(2, 'ready', 100, 'high'),
+      task(4, 'ready', 100, 'normal'),
+      task(1, 'ready', 100, 'high'),
+      task(3, 'ready', 100, 'normal'),
+    ]);
+    const ready = columns.find((c) => c.state === 'ready')!;
+    // high (id asc) → normal (id asc) → low
+    expect(ready.tasks.map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
   });
 });
 
