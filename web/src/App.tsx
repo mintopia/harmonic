@@ -19,7 +19,7 @@ import { ConversationLauncher } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
-import { VIEW_LABELS, VIEWS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import { RAIL_VIEWS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
 import {
   hasNoWorkspaces,
@@ -320,7 +320,7 @@ export function App() {
   const navItems = (
     <>
       <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
-        {VIEWS.map((v) => (
+        {RAIL_VIEWS.map((v) => (
           <button
             key={v}
             aria-current={view === v ? 'page' : undefined}
@@ -406,7 +406,7 @@ export function App() {
             >
               <span
                 className="font-medium text-muted"
-                title={`Max concurrent runs: ${config.autoRunner.maxConcurrentRuns}`}
+                title={`Machine Ceiling: ${config.autoRunner.maxConcurrentRuns}`}
               >
                 Auto-runner
               </span>
@@ -432,6 +432,17 @@ export function App() {
             </span>
           )}
           <div className="flex-1" />
+          <button
+            aria-label="Settings"
+            aria-current={view === 'settings' ? 'page' : undefined}
+            title="Settings"
+            className={`inline-flex items-center justify-center rounded-md p-2.5 transition-colors duration-150 ${
+              view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
+            }`}
+            onClick={() => pickView('settings')}
+          >
+            <Icon name="settings" />
+          </button>
           <button
             aria-label={THEME_LABELS[theme]}
             title={THEME_LABELS[theme]}

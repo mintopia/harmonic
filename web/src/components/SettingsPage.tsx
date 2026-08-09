@@ -66,16 +66,6 @@ function TaskDefaultsFields({
         <FieldError message={fieldErrors[`harnesses.${d.harness}.defaultModel`]} />
       </div>
       <div>
-        <label className={fieldLabel} htmlFor="settings-workdir">Working directory</label>
-        <input
-          id="settings-workdir"
-          className={`${field} font-data`}
-          value={d.workingDir}
-          onChange={(e) => set('workingDir', e.target.value)}
-        />
-        <FieldError message={fieldErrors['defaults.workingDir']} />
-      </div>
-      <div>
         <label className={fieldLabel} htmlFor="settings-isolation">Isolation mode</label>
         <select
           id="settings-isolation"
@@ -128,7 +118,7 @@ function AutoRunnerFields({
         <FieldError message={fieldErrors['autoRunner.enabled']} />
       </div>
       <div>
-        <label className={fieldLabel} htmlFor="settings-max-runs">Max concurrent runs</label>
+        <label className={fieldLabel} htmlFor="settings-max-runs">Machine Ceiling</label>
         <input
           id="settings-max-runs"
           type="number"

@@ -42,6 +42,14 @@ export const VIEWS = ['board', 'activity', 'table', 'stats', 'api', 'settings', 
 export type View = (typeof VIEWS)[number];
 
 /**
+ * Views shown as left-rail nav items. Global Settings (issue #63, ADR 0012)
+ * is deliberately absent: its entry moved to a header icon next to the theme
+ * toggle, leaving the rail for the working views plus the per-Workspace
+ * settings page. 'settings' stays a real View — reachable, just not from here.
+ */
+export const RAIL_VIEWS: readonly View[] = VIEWS.filter((v) => v !== 'settings');
+
+/**
  * Views scoped to the active Workspace (ADR-0008): they read the active
  * Workspace's Tasks/stats and go blank without one, so with zero Workspaces
  * they yield to the "No workspace open" empty state (#68). Activity is

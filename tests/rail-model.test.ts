@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RAIL_COLLAPSED_KEY,
+  RAIL_VIEWS,
   VIEW_LABELS,
   VIEWS,
   isWorkspaceScopedView,
@@ -52,6 +53,11 @@ describe('rail collapse persistence', () => {
 describe('rail primary views', () => {
   it('promotes API to a primary nav view alongside Board/Table/Stats (issue 5); Activity sits beside the Board (issue #52); Workspace settings is last (issue #64)', () => {
     expect(VIEWS).toEqual(['board', 'activity', 'table', 'stats', 'api', 'settings', 'workspace']);
+  });
+
+  it('omits global Settings from the rail — its entry moved to a header icon (issue #63)', () => {
+    expect(RAIL_VIEWS).toEqual(['board', 'activity', 'table', 'stats', 'api', 'workspace']);
+    expect(RAIL_VIEWS).not.toContain('settings');
   });
 
   it('labels every view', () => {
