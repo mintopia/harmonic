@@ -133,6 +133,15 @@ export const appConfigSchema = z.object({
     isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
     priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
   }),
+  /**
+   * Global Auto-Runner settings (ADR-0012). `enabled` is the fleet-wide
+   * **master switch** — the one-click pause that gates every Workspace
+   * (a Task runs only if `master ∧ workspace-enabled`, where the per-Workspace
+   * enable lives on the Workspace row and inherits when unset).
+   * `maxConcurrentRuns` is the **Machine Ceiling**: the global cap on total
+   * concurrent Runs across all Workspaces, which a per-Workspace cap override
+   * can never breach (it is clamped to this — see `resolveCap`).
+   */
   autoRunner: z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),

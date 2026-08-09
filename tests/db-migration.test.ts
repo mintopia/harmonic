@@ -33,6 +33,64 @@ function preWorkspaceMigrationsFolder(): string {
   return dir;
 }
 
+/** A migrations folder frozen just before `boundary` (e.g. '0018'), built the
+ * same way as {@link preWorkspaceMigrationsFolder} — upgrades a real historical
+ * schema rather than a hand-rolled one. */
+function migrationsFolderBefore(boundary: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'harmonic-migrations-'));
+  mkdirSync(join(dir, 'meta'));
+  for (const file of readdirSync(REPO_MIGRATIONS)) {
+    if (file.endsWith('.sql') && file < boundary) copyFileSync(join(REPO_MIGRATIONS, file), join(dir, file));
+  }
+  for (const file of readdirSync(join(REPO_MIGRATIONS, 'meta'))) {
+    if (file.endsWith('_snapshot.json') && file < boundary) {
+      copyFileSync(join(REPO_MIGRATIONS, 'meta', file), join(dir, 'meta', file));
+    }
+  }
+  const journal = JSON.parse(readFileSync(join(REPO_MIGRATIONS, 'meta', '_journal.json'), 'utf8'));
+  journal.entries = journal.entries.filter((e: { tag: string }) => e.tag < boundary);
+  writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify(journal));
+  return dir;
+}
+
+describe('Setting Override migration (ADR-0012, issue #59)', () => {
+  it('adds nullable override columns; an existing Workspace reads them as inherit (null)', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-override-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0018');
+
+    // A pre-override install: migrate up to just before 0018 and seed a
+    // Workspace the way an upgraded instance would have one — none of the
+    // override columns exist yet.
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    sqlite.pragma('foreign_keys = ON');
+    migrate(drizzle(sqlite, { schema }), { migrationsFolder });
+    const now = Date.now();
+    sqlite
+      .prepare(
+        `insert into workspaces (name, working_dir, tracker_enabled, tracker_poll_interval_seconds, created_at, updated_at)
+         values ('Legacy', '/tmp/legacy-project', 0, 60, ?, ?)`,
+      )
+      .run(now, now);
+    sqlite.close();
+
+    // Boot to head applies 0018 and leaves the existing row's overrides null.
+    const db = openDb(dataDir);
+    const ws = db.select().from(schema.workspaces).all();
+    const legacy = ws.find((w) => w.name === 'Legacy')!;
+    expect(legacy).toMatchObject({
+      harness: null,
+      model: null,
+      isolationMode: null,
+      priority: null,
+      maxConcurrentRuns: null,
+      autoRunnerEnabled: null,
+    });
+
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});
+
 describe('pre-Workspace DB migration (ADR-0008, issue #39)', () => {
   it('creates exactly one default Workspace from defaults.workingDir and backfills every existing Task/Conversation', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-premigrate-'));

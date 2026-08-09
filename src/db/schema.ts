@@ -26,8 +26,13 @@ export type TaskState = (typeof TASK_STATES)[number];
  * A Workspace (ADR-0008): a named Working Directory, unique by absolute
  * path. Owns a board of Tasks/Conversations. Its tracker mirroring is
  * per-Workspace (issue #45): each tracker-enabled Workspace polls its own
- * Working Directory on its own interval into its own board. The remaining
- * execution settings stay global for now.
+ * Working Directory on its own interval into its own board.
+ *
+ * Setting Overrides (ADR-0012, issue #59): the overridable execution settings
+ * — Task defaults (harness, model, Isolation Mode, Priority), the concurrency
+ * cap, and Auto-Runner enable — are nullable columns here where `null` means
+ * *inherit* the global default. A non-null value overrides it. Effective values
+ * are resolved at read time by `resolve`/`resolveCap` (domain/setting-override.ts).
  */
 export const workspaces = sqliteTable('workspaces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -37,6 +42,25 @@ export const workspaces = sqliteTable('workspaces', {
   trackerEnabled: integer('tracker_enabled', { mode: 'boolean' }).notNull().default(false),
   /** How often this Workspace's poll loop scans its repo, in seconds. */
   trackerPollIntervalSeconds: integer('tracker_poll_interval_seconds').notNull().default(60),
+  // --- Setting Overrides (ADR-0012, issue #59). Null ⇒ inherit the global
+  // default; a non-null value overrides it. Task defaults resolved here are
+  // snapshotted onto a Task at creation, so a later default change never
+  // shifts a finished Run. ---
+  /** Task-default Harness override; null inherits `config.defaults.harness`. */
+  harness: text('harness'),
+  /** Task-default model override; null inherits the harness's default model. */
+  model: text('model'),
+  /** Task-default Isolation Mode override; null inherits `config.defaults.isolationMode`. */
+  isolationMode: text('isolation_mode'),
+  /** Task-default Priority override; null inherits `config.defaults.priority`. */
+  priority: text('priority'),
+  /** Per-Workspace concurrency cap; null inherits the Machine Ceiling
+   * (`config.autoRunner.maxConcurrentRuns`). Clamped to the ceiling on read —
+   * an override can never breach the machine's limit (`resolveCap`). */
+  maxConcurrentRuns: integer('max_concurrent_runs'),
+  /** Per-Workspace Auto-Runner enable; null inherits the global default. Gated
+   * by the global master switch — a Task runs only if `master ∧ resolved`. */
+  autoRunnerEnabled: integer('auto_runner_enabled', { mode: 'boolean' }),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
