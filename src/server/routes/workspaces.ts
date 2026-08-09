@@ -108,13 +108,13 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Workspaces'],
         description:
-          'Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses the last Workspace or one with a running Task. Operator only; not reachable with a run-scoped Run Key.',
+          'Delete a Workspace and everything on its board, stopping its tracker poll loop. Refuses a Workspace with a running Task; deleting the last Workspace is allowed. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
         response: {
           204: z.null().describe('The Workspace and its board were deleted.'),
           404: errorResponse('No Workspace has that id.'),
-          409: errorResponse('It is the only Workspace, or it has a running Task.'),
+          409: errorResponse('It has a running Task.'),
         },
       },
     },

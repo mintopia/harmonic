@@ -64,6 +64,10 @@ export const api = {
     id: number,
     patch: { name?: string; workingDir?: string; trackerEnabled?: boolean; trackerPollIntervalSeconds?: number },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
+  // Deletes the Workspace and cascades its board; the server 204s (empty body,
+  // handled by request's 204 branch). Deleting the last Workspace is allowed
+  // (issue #61) — the app falls to the empty state; a running Task 409s.
+  deleteWorkspace: (id: number) => request<null>('DELETE', `/api/workspaces/${id}`),
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>

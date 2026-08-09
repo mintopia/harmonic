@@ -109,16 +109,16 @@ export class WorkspaceService {
 
   /**
    * Delete a Workspace and everything on its board (issue #45 needs deletion to
-   * tear down its poll loop). Refuses the last Workspace — the default-Workspace
-   * fallback (ADR-0008) needs one to exist — and any Workspace with a running
-   * Task (the mid-run guard #42 deferred deletion for). Cascades in a
-   * transaction: its Tasks (+ their Runs, Run events, Dependency edges, Channel
-   * links) and Conversations (+ their events) go first, since no FK declares
-   * ON DELETE CASCADE.
+   * tear down its poll loop). Refuses any Workspace with a running Task (the
+   * mid-run guard #42 deferred deletion for). Deleting the last Workspace is
+   * allowed (issue #61): the app lands in the empty state (#68), and the
+   * default-Workspace fallback (ADR-0008) resolves the next one created.
+   * Cascades in a transaction: its Tasks (+ their Runs, Run events, Dependency
+   * edges, Channel links) and Conversations (+ their events) go first, since no
+   * FK declares ON DELETE CASCADE.
    */
   delete(id: number): void {
     this.get(id); // 404 if missing
-    if (this.list().length <= 1) throw new DomainError('conflict', 'cannot delete the only workspace');
     const running = this.db
       .select({ id: tasks.id })
       .from(tasks)

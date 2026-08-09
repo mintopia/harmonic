@@ -146,7 +146,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(tasks.list({ workspaceId: a.id })).toHaveLength(0); // board went with it
   });
 
-  it('delete refuses the last Workspace and one with a running Task', () => {
+  it('delete refuses a running Task but allows the last Workspace (issue #61)', () => {
     const a = workspaces.create({ name: 'A', workingDir: repoA });
     const running = tasks.create({ prompt: 'busy', workspaceId: a.id });
     tasks.setState(running.id, 'running');
@@ -156,7 +156,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     workspaces.delete(a.id); // now allowed
     const last = workspaces.list();
     expect(last).toHaveLength(1);
-    expect(() => workspaces.delete(last[0]!.id)).toThrow(/only workspace/);
+    workspaces.delete(last[0]!.id); // the last Workspace goes too — no more guard
+    expect(workspaces.list()).toHaveLength(0);
   });
 
   it('repointing the repo or interval rebuilds the loop against the new value', () => {
