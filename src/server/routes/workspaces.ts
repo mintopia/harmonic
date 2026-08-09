@@ -13,6 +13,14 @@ const workspaceSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     trackerEnabled: z.boolean().meta({ example: false }),
     trackerPollIntervalSeconds: z.number().meta({ example: 60 }),
+    // Per-workspace setting overrides (ADR-0012): null ⇒ inherit the global
+    // default, a value overrides it. Resolved at read time (issue #60).
+    harness: z.string().nullable().meta({ example: null }),
+    model: z.string().nullable().meta({ example: null }),
+    isolationMode: z.string().nullable().meta({ example: null }),
+    priority: z.string().nullable().meta({ example: null }),
+    maxConcurrentRuns: z.number().nullable().meta({ example: null }),
+    autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })

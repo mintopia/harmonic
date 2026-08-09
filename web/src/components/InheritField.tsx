@@ -22,6 +22,7 @@ export function InheritField<T>({
   value,
   inherited,
   onChange,
+  format = String,
   children,
 }: {
   /** Field name shown above the control and in the toggle's accessible label. */
@@ -34,6 +35,9 @@ export function InheritField<T>({
   inherited: T;
   /** Persist the new stored value: a real value overrides, `null` inherits. */
   onChange: (next: T | null) => void;
+  /** How to render the inherited value's read-only line. Defaults to `String`;
+   * pass a formatter for values `String` mangles — a boolean as "On"/"Off". */
+  format?: (value: T) => string;
   /** The input to reveal once overridden, wired to the effective value. */
   children: (input: { id?: string; value: T; onChange: (value: T) => void }) => ReactNode;
 }) {
@@ -60,7 +64,7 @@ export function InheritField<T>({
         </>
       ) : (
         <p className="text-ink">
-          {String(effective)}{' '}
+          {format(effective)}{' '}
           <span className="text-small text-muted">· Inherited from global default</span>
         </p>
       )}

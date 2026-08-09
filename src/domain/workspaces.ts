@@ -26,7 +26,25 @@ export const createWorkspaceInputSchema = z.object({
 });
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
 
-export const updateWorkspaceInputSchema = createWorkspaceInputSchema.partial();
+/**
+ * Per-workspace setting overrides (ADR-0012, issues #59/#64). Each is nullable:
+ * `null` clears the override back to *inherit* the global default, an explicit
+ * value overrides it, and an omitted (`undefined`) field is left untouched. The
+ * Workspace settings page (#64) writes these through PATCH; the values are
+ * consumed at read time (#60) — this schema only carries them.
+ */
+export const workspaceOverridesSchema = z.object({
+  harness: z.string().min(1).nullable().optional().meta({ example: 'codex' }),
+  model: z.string().min(1).nullable().optional().meta({ example: 'gpt-5' }),
+  isolationMode: z.enum(['direct', 'worktree']).nullable().optional().meta({ example: 'worktree' }),
+  priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
+  maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
+  autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
+});
+
+export const updateWorkspaceInputSchema = createWorkspaceInputSchema
+  .partial()
+  .extend(workspaceOverridesSchema.shape);
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /**
@@ -93,6 +111,11 @@ export class WorkspaceService {
     const current = this.get(id);
     const workingDir = input.workingDir !== undefined ? this.assertUsableDir(input.workingDir) : current.workingDir;
     if (workingDir !== current.workingDir) this.assertUniquePath(workingDir, id);
+    // Overridable settings are nullable, so `null` (clear to inherit) and
+    // `undefined` (field omitted) mean different things: `?? current` would
+    // wrongly treat a clear as a keep. `patch` keeps a field only when it is
+    // genuinely absent, letting a null through as an explicit inherit.
+    const patch = <T>(next: T | null | undefined, kept: T | null): T | null => (next === undefined ? kept : next);
     return this.db
       .update(workspaces)
       .set({
@@ -100,6 +123,12 @@ export class WorkspaceService {
         workingDir,
         trackerEnabled: input.trackerEnabled ?? current.trackerEnabled,
         trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? current.trackerPollIntervalSeconds,
+        harness: patch(input.harness, current.harness),
+        model: patch(input.model, current.model),
+        isolationMode: patch(input.isolationMode, current.isolationMode),
+        priority: patch(input.priority, current.priority),
+        maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
+        autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
         updatedAt: Date.now(),
       })
       .where(eq(workspaces.id, id))

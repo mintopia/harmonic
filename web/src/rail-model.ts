@@ -34,7 +34,11 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 // Activity (issue #52) joins as a primary view beside the Board: the
 // instance-wide live view of every in-flight process across Workspaces, so it
 // sits high in the rail next to the queue it complements.
-export const VIEWS = ['board', 'activity', 'table', 'stats', 'api', 'settings'] as const;
+// Workspace (issue #64) is the per-Workspace settings page, scoped to the
+// active Workspace (the switcher above the nav picks which). It sits last, next
+// to the global Settings it mirrors — Settings holds machine + default config,
+// Workspace holds one Workspace's identity and its overrides of those defaults.
+export const VIEWS = ['board', 'activity', 'table', 'stats', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -45,7 +49,7 @@ export type View = (typeof VIEWS)[number];
  * global, so those still render on a fresh, workspace-less instance.
  */
 export function isWorkspaceScopedView(view: View): boolean {
-  return view === 'board' || view === 'table' || view === 'stats';
+  return view === 'board' || view === 'table' || view === 'stats' || view === 'workspace';
 }
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
@@ -54,4 +58,5 @@ export const VIEW_LABELS: Record<View, string> = {
   stats: 'Stats',
   api: 'API',
   settings: 'Settings',
+  workspace: 'Workspace',
 };

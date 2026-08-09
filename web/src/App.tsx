@@ -17,6 +17,7 @@ import { Icon, type IconName } from './components/Icon';
 import { Switch } from './components/Switch';
 import { ConversationLauncher } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
+import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
 import { VIEW_LABELS, VIEWS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
@@ -232,6 +233,7 @@ export function App() {
   // Workspace and stay reachable on a fresh instance.
   const noWorkspaces = hasNoWorkspaces(workspaces, workspacesLoaded);
   const showWorkspaceEmptyState = noWorkspaces && isWorkspaceScopedView(view);
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const runningCount = taskList.filter((t) => t.state === 'running').length;
   const cost24h = formatCost(periodCost);
 
@@ -280,6 +282,29 @@ export function App() {
   const handleWorkspaceCreated = (w: Workspace) => {
     setWorkspaces((current) => [...current, w]);
     switchWorkspace(w.id);
+  };
+
+  // A Workspace edited on its settings page (#64): replace it in the list so the
+  // switcher name and the tab title pick up a rename immediately.
+  const handleWorkspaceSaved = (updated: Workspace) => {
+    setWorkspaces((current) => current.map((w) => (w.id === updated.id ? updated : w)));
+  };
+
+  // Deleting from the Workspace page (#64): drop it, then land on the board of
+  // the next Workspace — or, if it was the last, on the empty state (#68).
+  const handleWorkspaceDeleted = (id: number) => {
+    const remaining = workspaces.filter((w) => w.id !== id);
+    setWorkspaces(remaining);
+    if (id === activeWorkspaceId) {
+      const next = remaining[0];
+      if (next) {
+        switchWorkspace(next.id);
+      } else {
+        setActiveWorkspaceId(null);
+        setTasks(null);
+      }
+    }
+    setView('board');
   };
 
   // Collapsed items keep their accessible name and gain a native tooltip;
@@ -508,6 +533,15 @@ export function App() {
                 {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
                 {view === 'api' && <ApiPage />}
                 {view === 'settings' && <SettingsPage onSaved={setConfig} />}
+                {view === 'workspace' && config && activeWorkspace && (
+                  <WorkspaceSettingsPage
+                    workspace={activeWorkspace}
+                    config={config}
+                    blockedByRunningTask={runningCount > 0}
+                    onSaved={handleWorkspaceSaved}
+                    onDeleted={handleWorkspaceDeleted}
+                  />
+                )}
               </>
             )}
           </main>

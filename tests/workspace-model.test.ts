@@ -23,6 +23,12 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   workingDir: `/repo/${name}`,
   trackerEnabled: false,
   trackerPollIntervalSeconds: 60,
+  harness: null,
+  model: null,
+  isolationMode: null,
+  priority: null,
+  maxConcurrentRuns: null,
+  autoRunnerEnabled: null,
   createdAt: id,
   updatedAt: id,
 });

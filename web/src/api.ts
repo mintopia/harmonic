@@ -60,9 +60,22 @@ export const api = {
   workspaces: () => request<{ workspaces: Workspace[] }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),
+  // Overridable fields (ADR-0012, issue #64) accept `null` to clear an override
+  // back to inherit; an omitted field is left untouched server-side.
   updateWorkspace: (
     id: number,
-    patch: { name?: string; workingDir?: string; trackerEnabled?: boolean; trackerPollIntervalSeconds?: number },
+    patch: {
+      name?: string;
+      workingDir?: string;
+      trackerEnabled?: boolean;
+      trackerPollIntervalSeconds?: number;
+      harness?: string | null;
+      model?: string | null;
+      isolationMode?: 'direct' | 'worktree' | null;
+      priority?: 'high' | 'normal' | 'low' | null;
+      maxConcurrentRuns?: number | null;
+      autoRunnerEnabled?: boolean | null;
+    },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,
   // handled by request's 204 branch). Deleting the last Workspace is allowed

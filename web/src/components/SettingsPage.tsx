@@ -4,23 +4,11 @@ import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import type { AppConfig } from '../types';
-import { btnGhost, btnPrimary, displayTitle, field } from '../ui';
+import { displayTitle, field } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
-import { FieldError, SettingsSection, fieldLabel } from './SettingsSection';
+import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import { FloatingSaveBar } from './FloatingSaveBar';
 import { Switch } from './Switch';
-
-/** Server validation errors arrive as one `path: message; path: message`
- * string (src/server/app.ts's error handler) — split it back into a
- * per-field map, falling back to the whole string for anything unmapped. */
-function parseFieldErrors(message: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const part of message.split('; ')) {
-    const i = part.indexOf(': ');
-    if (i === -1) continue;
-    out[part.slice(0, i)] = part.slice(i + 2);
-  }
-  return out;
-}
 
 function TaskDefaultsFields({
   config,
@@ -486,29 +474,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </SettingsSection>
       </div>
 
-      {/* Floating save bar: deep-config edits happen far from the page
-          header, so the dirty-state actions float above the viewport
-          bottom on the bar shadow — the page's one primary action. */}
-      {dirty && (
-        <div className="sticky bottom-4 z-10 mt-6 max-w-3xl">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-surface px-4 py-2.5 shadow-bar">
-            <p className="font-medium text-muted">Unsaved changes</p>
-            {error && (
-              <p className="min-w-0 flex-1 truncate text-fail" title={error}>
-                {error}
-              </p>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              <button disabled={saving} onClick={discard} className={btnGhost}>
-                Discard
-              </button>
-              <button disabled={saving} onClick={save} className={btnPrimary}>
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {dirty && <FloatingSaveBar error={error} saving={saving} onDiscard={discard} onSave={save} />}
     </div>
   );
 }

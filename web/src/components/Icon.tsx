@@ -13,6 +13,7 @@ export type IconName =
   | 'stats'
   | 'api'
   | 'settings'
+  | 'workspace'
   | 'logout'
   | 'chevrons-left'
   | 'chevron-down'
@@ -58,6 +59,9 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M8 2.5v1.6M8 11.9v1.6M13.5 8h-1.6M4.1 8H2.5M11.7 4.3l-1.1 1.1M5.4 10.6l-1.1 1.1M11.7 11.7l-1.1-1.1M5.4 5.4 4.3 4.3" />
     </>
   ),
+  // Folder: the per-Workspace settings page (issue #64) — a Workspace is a
+  // named Working Directory, so its glyph is the directory it points at.
+  workspace: <path d="M1.75 4.25a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1Z" />,
   // Door frame with an outbound arrow.
   logout: (
     <>

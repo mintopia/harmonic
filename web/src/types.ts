@@ -50,6 +50,14 @@ export interface Workspace {
   workingDir: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
+  /** Per-workspace setting overrides (ADR-0012, issue #64). `null` inherits the
+   * global default; a value overrides it. Resolved at read time (issue #60). */
+  harness: string | null;
+  model: string | null;
+  isolationMode: 'direct' | 'worktree' | null;
+  priority: 'high' | 'normal' | 'low' | null;
+  maxConcurrentRuns: number | null;
+  autoRunnerEnabled: boolean | null;
   createdAt: number;
   updatedAt: number;
 }
