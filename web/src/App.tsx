@@ -16,10 +16,16 @@ import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
 import { Switch } from './components/Switch';
 import { ConversationLauncher } from './components/ConversationLauncher';
-import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
-import { VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
+import { EmptyState } from './components/EmptyState';
+import { VIEW_LABELS, VIEWS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
-import { loadActiveWorkspaceId, resolveActiveWorkspace, storeActiveWorkspaceId } from './workspace-model';
+import {
+  hasNoWorkspaces,
+  loadActiveWorkspaceId,
+  resolveActiveWorkspace,
+  storeActiveWorkspaceId,
+} from './workspace-model';
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
 import {
   loadDismissed,
@@ -100,9 +106,14 @@ export function App() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Distinguishes the pre-load `[]` from a genuinely empty list, so the
+  // no-workspace empty state (#68) never flashes over the board before the
+  // first fetch resolves.
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<number | null>(() =>
     loadActiveWorkspaceId(localStorage),
   );
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
   const [view, setView] = useState<View>('board');
@@ -165,6 +176,7 @@ export function App() {
     api.config().then(setConfig).catch(() => {});
     api.workspaces().then(({ workspaces }) => {
       setWorkspaces(workspaces);
+      setWorkspacesLoaded(true);
       const active = resolveActiveWorkspace(workspaces, loadActiveWorkspaceId(localStorage));
       if (active) setActiveWorkspaceId(active.id);
     }, toastError);
@@ -213,6 +225,13 @@ export function App() {
   if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
 
   const taskList = tasks ?? [];
+  // Zero Workspaces (first launch, or after deleting the last one) → a
+  // full-screen invitation to create one, never a board stuck on "loading"
+  // because there's no active Workspace to fetch Tasks for (issue #68). Only
+  // the Workspace-scoped views yield to it; Activity/API/Settings need no
+  // Workspace and stay reachable on a fresh instance.
+  const noWorkspaces = hasNoWorkspaces(workspaces, workspacesLoaded);
+  const showWorkspaceEmptyState = noWorkspaces && isWorkspaceScopedView(view);
   const runningCount = taskList.filter((t) => t.state === 'running').length;
   const cost24h = formatCost(periodCost);
 
@@ -253,6 +272,14 @@ export function App() {
     setActiveWorkspaceId(id);
     storeActiveWorkspaceId(localStorage, id);
     setTasks(null); // "loading", not a flash of the old Workspace's (now stale) board
+  };
+
+  // One "a Workspace was created" flow for both entry points (the switcher's +
+  // and the empty state): append it and make it active, which switches away
+  // from the empty state onto the new Workspace's board.
+  const handleWorkspaceCreated = (w: Workspace) => {
+    setWorkspaces((current) => [...current, w]);
+    switchWorkspace(w.id);
   };
 
   // Collapsed items keep their accessible name and gain a native tooltip;
@@ -330,7 +357,7 @@ export function App() {
             workspaces={workspaces}
             activeId={activeWorkspaceId}
             onSwitch={switchWorkspace}
-            onCreated={(w) => setWorkspaces((current) => [...current, w])}
+            onCreated={handleWorkspaceCreated}
           />
         </div>
         <div
@@ -451,24 +478,41 @@ export function App() {
             under ~520px (63 → 121 → 165px measured). */}
         <div className="relative min-h-0 flex-1">
           <main className="h-full min-w-0 overflow-y-auto px-6 py-5">
-            {view === 'board' && (
-              <Board
-                tasks={taskList}
-                loading={tasks === null}
-                onEdit={setEditing}
-                onOpen={setOpenTask}
-                onChanged={refresh}
-                onNewTask={() => setEditing('new')}
-              />
+            {showWorkspaceEmptyState ? (
+              <EmptyState
+                title="No workspace open"
+                className="mt-24"
+                action={
+                  <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
+                    Open a workspace
+                  </button>
+                }
+              >
+                A workspace points Harmonic at a project directory — its tasks, runs, and cost all
+                scope to it. Open one to get started.
+              </EmptyState>
+            ) : (
+              <>
+                {view === 'board' && (
+                  <Board
+                    tasks={taskList}
+                    loading={tasks === null}
+                    onEdit={setEditing}
+                    onOpen={setOpenTask}
+                    onChanged={refresh}
+                    onNewTask={() => setEditing('new')}
+                  />
+                )}
+                {view === 'activity' && <ActivityView config={config} />}
+                {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}
+                {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+                {view === 'api' && <ApiPage />}
+                {view === 'settings' && <SettingsPage onSaved={setConfig} />}
+              </>
             )}
-            {view === 'activity' && <ActivityView config={config} />}
-            {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}
-            {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
-            {view === 'api' && <ApiPage />}
-            {view === 'settings' && <SettingsPage onSaved={setConfig} />}
           </main>
 
-          <ConversationLauncher config={config} workspaceId={activeWorkspaceId} />
+          {!noWorkspaces && <ConversationLauncher config={config} workspaceId={activeWorkspaceId} />}
         </div>
       </div>
 
@@ -478,6 +522,13 @@ export function App() {
           onEdit={setEditing}
           onChanged={refresh}
           onClose={() => setOpenTask(null)}
+        />
+      )}
+
+      {creatingWorkspace && (
+        <NewWorkspaceForm
+          onClose={() => setCreatingWorkspace(false)}
+          onCreated={handleWorkspaceCreated}
         />
       )}
 

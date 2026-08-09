@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_WORKSPACE_KEY,
+  hasNoWorkspaces,
   loadActiveWorkspaceId,
   resolveActiveWorkspace,
   storeActiveWorkspaceId,
@@ -73,5 +74,20 @@ describe('resolveActiveWorkspace', () => {
   it('falls back to the first Workspace when the persisted id no longer exists (e.g. deleted)', () => {
     const workspaces = [ws(1), ws(2)];
     expect(resolveActiveWorkspace(workspaces, 999)?.id).toBe(1);
+  });
+});
+
+describe('hasNoWorkspaces', () => {
+  it('stays false before the list has loaded, so the empty state never flashes on boot', () => {
+    expect(hasNoWorkspaces([], false)).toBe(false);
+  });
+
+  it('is true once the load has come back empty (genuine first launch or last-Workspace delete)', () => {
+    expect(hasNoWorkspaces([], true)).toBe(true);
+  });
+
+  it('is false when a Workspace exists, loaded or not', () => {
+    expect(hasNoWorkspaces([ws(1)], true)).toBe(false);
+    expect(hasNoWorkspaces([ws(1)], false)).toBe(false);
   });
 });

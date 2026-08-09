@@ -36,3 +36,12 @@ export function resolveActiveWorkspace(workspaces: Workspace[], persistedId: num
   const persisted = persistedId !== null ? workspaces.find((w) => w.id === persistedId) : undefined;
   return persisted ?? workspaces[0]!;
 }
+
+/** Whether to show the full-screen "No workspace open" empty state (issue #68):
+ * the list has finished loading and come back empty — genuine first launch, or
+ * after deleting the last Workspace (#61). Gated on `loaded` so the initial
+ * `[]` before the first fetch resolves never flashes the empty state over the
+ * board. */
+export function hasNoWorkspaces(workspaces: Workspace[], loaded: boolean): boolean {
+  return loaded && workspaces.length === 0;
+}

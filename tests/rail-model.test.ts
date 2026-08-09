@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { RAIL_COLLAPSED_KEY, VIEW_LABELS, VIEWS, loadRailCollapsed, storeRailCollapsed } from '../web/src/rail-model.js';
+import {
+  RAIL_COLLAPSED_KEY,
+  VIEW_LABELS,
+  VIEWS,
+  isWorkspaceScopedView,
+  loadRailCollapsed,
+  storeRailCollapsed,
+} from '../web/src/rail-model.js';
 
 /** Minimal Storage stand-in — node tests have no localStorage. */
 const memoryStorage = (initial: Record<string, string> = {}) => {
@@ -51,5 +58,12 @@ describe('rail primary views', () => {
     for (const v of VIEWS) expect(VIEW_LABELS[v]).toBeTruthy();
     expect(VIEW_LABELS.api).toBe('API');
     expect(VIEW_LABELS.settings).toBe('Settings');
+  });
+
+  it('scopes only Board/Table/Stats to a Workspace, so the empty state (#68) spares Activity/API/Settings', () => {
+    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'table', 'stats']);
+    expect(isWorkspaceScopedView('activity')).toBe(false);
+    expect(isWorkspaceScopedView('api')).toBe(false);
+    expect(isWorkspaceScopedView('settings')).toBe(false);
   });
 });

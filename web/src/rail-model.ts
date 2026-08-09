@@ -36,6 +36,17 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 // sits high in the rail next to the queue it complements.
 export const VIEWS = ['board', 'activity', 'table', 'stats', 'api', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
+
+/**
+ * Views scoped to the active Workspace (ADR-0008): they read the active
+ * Workspace's Tasks/stats and go blank without one, so with zero Workspaces
+ * they yield to the "No workspace open" empty state (#68). Activity is
+ * instance-wide (every process across Workspaces), and API/Settings are
+ * global, so those still render on a fresh, workspace-less instance.
+ */
+export function isWorkspaceScopedView(view: View): boolean {
+  return view === 'board' || view === 'table' || view === 'stats';
+}
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   activity: 'Activity',

@@ -6,7 +6,13 @@ import { Icon } from './Icon';
 import { DirectoryPicker } from './DirectoryPicker';
 import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../ui';
 
-function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Workspace) => void }) {
+/**
+ * The create-a-Workspace dialog: name + a #67 directory picker (with a
+ * free-text path fallback). Reused by the switcher's `+` button and by the
+ * no-workspace empty state (issue #68), so it lives at module scope and is
+ * exported rather than nested in the switcher.
+ */
+export function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Workspace) => void }) {
   const [name, setName] = useState('');
   const [workingDir, setWorkingDir] = useState('');
   const [busy, setBusy] = useState(false);
@@ -128,13 +134,7 @@ export function WorkspaceSwitcher({
       </button>
 
       {creating && (
-        <NewWorkspaceForm
-          onClose={() => setCreating(false)}
-          onCreated={(w) => {
-            onCreated(w);
-            onSwitch(w.id);
-          }}
-        />
+        <NewWorkspaceForm onClose={() => setCreating(false)} onCreated={onCreated} />
       )}
     </div>
   );
