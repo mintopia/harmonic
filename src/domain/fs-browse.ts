@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { z } from 'zod';
@@ -12,6 +12,8 @@ export const fsEntrySchema = z
     path: z.string().meta({ example: '/home/dev/harmonic' }),
   })
   .meta({ id: 'FsEntry' });
+
+export type FsEntry = z.infer<typeof fsEntrySchema>;
 
 /** The immediate child directories of one path, for the lazy directory picker. */
 export const fsListingSchema = z
@@ -30,9 +32,11 @@ export type FsListing = z.infer<typeof fsListingSchema>;
  * List the immediate child directories of `inputPath`, one level deep — the
  * data behind the workspace directory picker (issue #62). An empty or omitted
  * path starts at the server user's home. Files and hidden (dot) directories are
- * excluded; entries are sorted by name. There is deliberately no root
- * restriction (a sysadmin concern, per the map decision): any directory the
- * running user can read is browsable.
+ * excluded; entries are sorted by name. Symlinks that point at a directory are
+ * followed and listed (a symlinked project dir is a normal thing to pick);
+ * dangling ones are skipped. There is deliberately no root restriction (a
+ * sysadmin concern, per the map decision): any directory the running user can
+ * read is browsable.
  *
  * Throws a `DomainError` the route turns into a status: `not_found` (404) for a
  * missing path, `validation` (400) for a non-directory or a permission-denied
@@ -53,9 +57,27 @@ export async function browseDirectory(inputPath?: string): Promise<FsListing> {
     throw err;
   }
 
-  const entries = dirents
-    .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
-    .map((d) => ({ name: d.name, path: join(target, d.name) }))
+  const candidates = await Promise.all(
+    dirents
+      .filter((d) => !d.name.startsWith('.'))
+      .map(async (d): Promise<FsEntry | null> => {
+        const path = join(target, d.name);
+        if (d.isDirectory()) return { name: d.name, path };
+        // A symlink's Dirent reports isSymbolicLink(), not isDirectory(); stat
+        // follows the link so a symlinked directory still shows up. A dangling
+        // link throws (ENOENT) and is dropped.
+        if (d.isSymbolicLink()) {
+          try {
+            if ((await stat(path)).isDirectory()) return { name: d.name, path };
+          } catch {
+            /* broken symlink — skip */
+          }
+        }
+        return null;
+      }),
+  );
+  const entries = candidates
+    .filter((e): e is FsEntry => e !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const parent = dirname(target);
