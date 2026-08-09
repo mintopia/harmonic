@@ -201,10 +201,10 @@ export function App() {
   // unnamed single-workspace instance still reads a clean "Harmonic".
   const activeWorkspaceName =
     workspaces.find((w) => w.id === activeWorkspaceId)?.name ?? null;
-  const instanceName = config?.name.trim() ? config.name.trim() : 'Harmonic';
+  const instanceName = config?.name?.trim() ? config.name.trim() : 'Harmonic';
   useEffect(() => {
     const parts = ['Harmonic'];
-    if (config?.name.trim()) parts.push(config.name.trim());
+    if (config?.name?.trim()) parts.push(config.name.trim());
     if (activeWorkspaceName) parts.push(activeWorkspaceName);
     document.title = parts.join(' - ');
   }, [config?.name, activeWorkspaceName]);
