@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { runs, runEvents, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
+import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 
 export interface RunEventInput {
@@ -89,6 +89,26 @@ export class RunStore {
         .where(eq(runs.state, 'running'))
         .get()?.n ?? 0
     );
+  }
+
+  /**
+   * Running-Run count per owning Workspace, for the Auto-Runner's per-Workspace
+   * concurrency cap (ADR-0012, issue #60). Runs carry no Workspace column, so
+   * the count joins through the Task; the same running-Run source as
+   * {@link countRunning}, so the per-Workspace tallies and the Machine-Ceiling
+   * total can never disagree. Workspaces with no running Run are absent (read as 0).
+   */
+  countRunningByWorkspace(): Map<number, number> {
+    const rows = this.db
+      .select({ workspaceId: tasks.workspaceId, n: sql<number>`count(*)` })
+      .from(runs)
+      .innerJoin(tasks, eq(runs.taskId, tasks.id))
+      .where(eq(runs.state, 'running'))
+      .groupBy(tasks.workspaceId)
+      .all();
+    const counts = new Map<number, number>();
+    for (const row of rows) if (row.workspaceId != null) counts.set(row.workspaceId, row.n);
+    return counts;
   }
 
   /**

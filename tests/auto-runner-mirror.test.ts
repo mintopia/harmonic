@@ -65,10 +65,13 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
         started.push({ id, via: 'launchClaimed' });
       },
     } as unknown as Runner;
-    const runStore = { countRunning: () => started.length } as unknown as RunStore;
+    const runStore = {
+      countRunning: () => started.length,
+      countRunningByWorkspace: () => new Map<number, number>(),
+    } as unknown as RunStore;
     const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
 
-    const runner$ = new AutoRunner(tasks, runStore, runner, () => config, mirror);
+    const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(db), mirror);
     runner$.poke();
     await vi.waitFor(() => expect(started).toHaveLength(3));
 

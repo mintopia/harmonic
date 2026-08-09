@@ -1,7 +1,8 @@
 import type { AppConfig, Priority } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { RunStore } from '../domain/runs.js';
-import type { TaskRow } from '../db/schema.js';
+import type { TaskRow, WorkspaceRow } from '../db/schema.js';
+import { resolve, resolveCap } from '../domain/setting-override.js';
 import type { Runner } from './runner.js';
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
@@ -20,10 +21,17 @@ export interface MirrorClaim {
 
 /**
  * The scheduler. When enabled, fills free run slots with ready tasks —
- * highest priority first, FIFO by creation time within a priority — up
- * to the configured maximum of concurrent runs. `poke()` whenever
- * something may have changed (task became ready, run finished, config
+ * highest priority first, FIFO by creation time within a priority. `poke()`
+ * whenever something may have changed (task became ready, run finished, config
  * toggled); it coalesces and never re-enters.
+ *
+ * Concurrency is two-level (ADR-0012, issue #60): the global **Machine
+ * Ceiling** (`config.autoRunner.maxConcurrentRuns`) caps total concurrent Runs
+ * across all Workspaces, and each Workspace has its own cap clamped to the
+ * ceiling — so per-Workspace caps summing higher than the ceiling still can't
+ * breach it. Enable is gated too: a Task runs only if `master ∧ workspace
+ * enabled`, where `master` is the global switch and the per-Workspace enable
+ * inherits it when unset.
  *
  * A mirrored afk Task's pick is more than a spawn: the predicate is
  * `drive ≠ hitl ∧ deps satisfied (ready) ∧ no foreign assignee`, and the
@@ -40,6 +48,7 @@ export class AutoRunner {
     private readonly runStore: RunStore,
     private readonly runner: Runner,
     private readonly getConfig: () => AppConfig,
+    private readonly getWorkspaces: () => WorkspaceRow[],
     private readonly mirror?: MirrorClaim,
   ) {}
 
@@ -63,13 +72,19 @@ export class AutoRunner {
     try {
       do {
         this.refill = false;
-        const { enabled, maxConcurrentRuns } = this.getConfig().autoRunner;
-        if (!enabled) return;
+        // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
+        // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
+        const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
+        if (!master) return;
+        const workspacesById = new Map(this.getWorkspaces().map((w) => [w.id, w]));
         // Tasks parked this cycle (yielded to a human, or un-spawnable) so the
         // slow claim path can't spin re-picking the same one before a re-scan.
         const skip = new Set<number>();
-        while (this.runStore.countRunning() < maxConcurrentRuns) {
-          const next = this.pickNext(skip);
+        while (this.runStore.countRunning() < ceiling) {
+          // Recomputed each iteration: startPicked adds a running Run, so a
+          // Workspace can reach its own cap mid-fill while the ceiling has room.
+          const runningByWorkspace = this.runStore.countRunningByWorkspace();
+          const next = this.pickNext(skip, workspacesById, runningByWorkspace, ceiling);
           if (!next) break;
           await this.startPicked(next, skip);
         }
@@ -113,18 +128,30 @@ export class AutoRunner {
 
   /**
    * Highest priority first; FIFO (creation time, then id) within. Skips hitl and
-   * foreign-claimed mirrored Tasks, and any parked this cycle.
+   * foreign-claimed mirrored Tasks, and any parked this cycle. Also skips a Task
+   * whose Workspace is Auto-Runner-disabled (master is already on here, so an
+   * inheriting Workspace counts as enabled) or already at its resolved cap — the
+   * per-Workspace half of the two-level limit (ADR-0012, issue #60).
    */
-  private pickNext(skip: Set<number>): TaskRow | undefined {
+  private pickNext(
+    skip: Set<number>,
+    workspacesById: Map<number, WorkspaceRow>,
+    runningByWorkspace: Map<number, number>,
+    ceiling: number,
+  ): TaskRow | undefined {
     return this.taskService
       .list()
-      .filter(
-        (t) =>
-          t.state === 'ready' &&
-          t.drive !== 'hitl' &&
-          !skip.has(t.id) &&
-          !this.mirror?.foreignAssignee(t),
-      )
+      .filter((t) => {
+        if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
+        if (this.mirror?.foreignAssignee(t)) return false;
+        const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
+        // Master is on (fill returned early otherwise), so an inheriting
+        // Workspace (null) is enabled; only an explicit `false` opts out.
+        if (!resolve(workspace?.autoRunnerEnabled, true)) return false;
+        const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
+        const running = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
+        return running < cap;
+      })
       .sort(
         (a, b) =>
           PRIORITY_RANK[a.priority as Priority] - PRIORITY_RANK[b.priority as Priority] ||

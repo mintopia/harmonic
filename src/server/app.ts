@@ -226,7 +226,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     recheckAndClaim: async (task) =>
       (await trackerManagerRef?.coordinatorFor(task.workspaceId)?.recheckAndClaim(task)) ?? 'spawn',
   };
-  const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get(), mirror);
+  const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get(), () => workspaces.list(), mirror);
   // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
   // poll pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
   const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), undefined, () => autoRunner.poke());

@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 const slowScenario = (ms: number) =>
@@ -99,5 +102,123 @@ describe('auto-runner', () => {
     await server.api('POST', `/api/tasks/${dep.body.id}/accept`);
     // blocked → ready → auto-started → awaiting-review, hands-free.
     await waitFor(async () => (await state(dependent.body.id)) === 'awaiting-review');
+  });
+});
+
+/**
+ * Two-level Auto-Runner cap + master gate (ADR-0012, issue #60). The global
+ * Machine Ceiling caps total concurrency across all Workspaces; each Workspace
+ * has its own cap clamped to the ceiling; and a Task runs only if the master
+ * switch AND its Workspace's (resolved) enable are both on.
+ */
+describe('auto-runner — two-level cap + master gate (issue #60)', () => {
+  let server: TestServer;
+  let secondDir: string;
+
+  beforeEach(async () => {
+    server = await startServer(stubHarness());
+    secondDir = mkdtempSync(join(tmpdir(), 'harmonic-ws2-'));
+  });
+  afterEach(async () => {
+    await server.close();
+  });
+
+  const state = async (id: number) => (await server.api('GET', `/api/tasks/${id}`)).body.state;
+  const defaultWorkspaceId = async () => (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
+  const createWorkspace = async (name: string) =>
+    (await server.api('POST', '/api/workspaces', { name, workingDir: secondDir })).body.id;
+  const makeTask = (workspaceId: number, ms: number) =>
+    server.api('POST', '/api/tasks', { prompt: slowScenario(ms), workspaceId });
+
+  /**
+   * Sample running Tasks until `done()` (all Tasks settled), returning peak
+   * total and peak-per-Workspace. Sampling across the whole run lifecycle — not
+   * a fixed window — means the concurrency peak is always observed, so the peak
+   * assertions stay deterministic on a slow runner.
+   */
+  const samplePeaksUntil = async (done: () => Promise<boolean>) => {
+    let maxTotal = 0;
+    const maxByWorkspace = new Map<number, number>();
+    do {
+      const running: Array<{ workspaceId: number }> = (
+        await server.api('GET', '/api/tasks?state=running')
+      ).body.tasks;
+      maxTotal = Math.max(maxTotal, running.length);
+      const now = new Map<number, number>();
+      for (const t of running) now.set(t.workspaceId, (now.get(t.workspaceId) ?? 0) + 1);
+      for (const [ws, n] of now) maxByWorkspace.set(ws, Math.max(maxByWorkspace.get(ws) ?? 0, n));
+      await new Promise((r) => setTimeout(r, 5));
+    } while (!(await done()));
+    return { maxTotal, maxByWorkspace };
+  };
+
+  const allSettled = (ids: number[]) => async () => {
+    const states = await Promise.all(ids.map(state));
+    return states.every((s) => s === 'awaiting-review');
+  };
+
+  it('never breaches the Machine Ceiling even when per-workspace caps sum higher (3+3, ceiling 4 → ≤4)', async () => {
+    const ws1 = await defaultWorkspaceId();
+    const ws2 = await createWorkspace('Second');
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 4 } });
+    await server.api('PATCH', `/api/workspaces/${ws1}`, { maxConcurrentRuns: 3 });
+    await server.api('PATCH', `/api/workspaces/${ws2}`, { maxConcurrentRuns: 3 });
+
+    const created = [];
+    for (let i = 0; i < 4; i++) created.push(await makeTask(ws1, 120), await makeTask(ws2, 120));
+    const ids = created.map((t) => t.body.id);
+
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+    const { maxTotal, maxByWorkspace } = await samplePeaksUntil(allSettled(ids));
+
+    // The ceiling holds even though the caps sum to 6.
+    expect(maxTotal).toBeLessThanOrEqual(4);
+    // …and the ceiling is actually reached (not trivially capped low).
+    expect(maxTotal).toBe(4);
+    for (const [, n] of maxByWorkspace) expect(n).toBeLessThanOrEqual(3);
+  });
+
+  it('holds a per-workspace cap below the ceiling (cap 2, ceiling 10 → ≤2 in that workspace)', async () => {
+    const ws1 = await defaultWorkspaceId();
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 10 } });
+    await server.api('PATCH', `/api/workspaces/${ws1}`, { maxConcurrentRuns: 2 });
+
+    const created = [];
+    for (let i = 0; i < 4; i++) created.push(await makeTask(ws1, 120));
+    const ids = created.map((t) => t.body.id);
+
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+    const { maxTotal } = await samplePeaksUntil(allSettled(ids));
+    expect(maxTotal).toBeLessThanOrEqual(2);
+    expect(maxTotal).toBe(2); // the cap is actually reached, not trivially low
+  });
+
+  it('runs only master ∧ workspace-enabled: skips a disabled workspace while the master is on', async () => {
+    const ws1 = await defaultWorkspaceId();
+    const ws2 = await createWorkspace('Disabled');
+    await server.api('PATCH', `/api/workspaces/${ws2}`, { autoRunnerEnabled: false });
+
+    const enabled = await makeTask(ws1, 80);
+    const disabled = await makeTask(ws2, 80);
+
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+
+    // The enabled Workspace's Task runs to completion; the disabled one never leaves ready.
+    await waitFor(async () => (await state(enabled.body.id)) === 'awaiting-review');
+    expect(await state(disabled.body.id)).toBe('ready');
+  });
+
+  it('master off pauses the fleet even for an explicitly-enabled workspace', async () => {
+    const ws1 = await defaultWorkspaceId();
+    await server.api('PATCH', `/api/workspaces/${ws1}`, { autoRunnerEnabled: true });
+
+    const task = await makeTask(ws1, 80);
+    // Master stays off (default). Give the scheduler a chance to (not) act.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await state(task.body.id)).toBe('ready');
+
+    // Flip the master on → it starts.
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+    await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
   });
 });
