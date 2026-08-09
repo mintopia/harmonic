@@ -44,6 +44,7 @@ import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
 import { channelRoutes } from './routes/channels.js';
+import { fsRoutes } from './routes/fs.js';
 import { openapiRoutes, readPackageManifest } from './routes/openapi.js';
 import { ChannelService } from '../notifications/channels.js';
 import { Notifier } from '../notifications/notifier.js';
@@ -434,6 +435,7 @@ not resolved yet.`;
   await app.register(statsRoutes, { prefix: '/api' });
   await app.register(activityRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
+  await app.register(fsRoutes, { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
