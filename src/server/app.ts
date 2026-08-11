@@ -11,7 +11,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { Git } from '../execution/git.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
@@ -475,9 +475,30 @@ not resolved yet.`;
   // Serve the embedded SPA when a build exists (dist/web next to dist/server code).
   const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist', 'web');
   if (existsSync(webRoot)) {
-    await app.register(fastifyStatic, { root: webRoot });
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      // The entry point must never be cached: it's what pins the app to a given
+      // set of content-hashed asset filenames. Hashed assets under /assets are
+      // immutable by construction (the hash changes when the bytes change), so
+      // they can be cached forever. Getting this wrong strands browsers on a
+      // stale index.html that points at asset hashes we've already deleted.
+      setHeaders(reply, filePath) {
+        if (filePath.endsWith('index.html')) {
+          reply.header('Cache-Control', 'no-cache');
+        } else if (filePath.includes(`${sep}assets${sep}`)) {
+          reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    });
     app.setNotFoundHandler((req, reply) => {
       if (req.method === 'GET' && !req.url.startsWith('/api')) {
+        // Don't serve the SPA shell in place of a missing asset. A stale
+        // index.html requesting a deleted hash must get a clean 404, not
+        // HTML-with-200 that the browser then tries to execute as JS/CSS.
+        const path = req.url.split('?')[0] ?? '';
+        if (path.startsWith('/assets/') || /\.[a-z0-9]+$/i.test(path)) {
+          return reply.status(404).send({ error: { code: 'not_found', message: 'not found' } });
+        }
         return reply.sendFile('index.html');
       }
       return reply.status(404).send({ error: { code: 'not_found', message: 'not found' } });
