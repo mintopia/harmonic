@@ -2,6 +2,11 @@ name: Release
 
 # Publish to npm when a semver tag (vX.Y.Z, optionally -prerelease) is pushed.
 # The tag drives the version — no version bump commit is needed in the repo.
+#
+# Auth is npm Trusted Publishing (OIDC): no NPM_TOKEN secret. The package's
+# trusted publisher must be configured on npmjs.com to this repo + workflow
+# (Settings -> Trusted Publisher -> GitHub Actions: mintopia/harmonic,
+# workflow release.yml). Provenance is generated automatically.
 on:
   push:
     tags:
@@ -10,7 +15,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance (public package, GitHub OIDC)
+  id-token: write # OIDC token for Trusted Publishing + provenance
 
 jobs:
   publish:
@@ -27,6 +32,9 @@ jobs:
       # Installs deps and, via `prepare`, builds dist/ (server + SPA).
       - run: npm ci
 
+      # Trusted Publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10.
+      - run: npm install -g npm@latest
+
       - run: npm run typecheck
       - run: npm test
 
@@ -42,7 +50,7 @@ jobs:
           echo "npm_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Publishing $VERSION to dist-tag '$TAG'"
 
+      # No NODE_AUTH_TOKEN: npm exchanges the GitHub OIDC token for a short-lived
+      # publish credential, and attaches provenance automatically.
       - name: Publish to npm
-        run: npm publish --provenance --tag "${{ steps.ver.outputs.npm_tag }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag "${{ steps.ver.outputs.npm_tag }}"
