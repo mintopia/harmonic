@@ -84,7 +84,17 @@ export const api = {
   // Force an immediate tracker poll (the board's manual refresh) — rescans the
   // repo and mirrors changes now. 409 if the Workspace has tracking disabled.
   refreshTracker: (id: number) => request<{ ok: true }>('POST', `/api/workspaces/${id}/tracker/refresh`),
-  updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
+  // The four Task-default fields (ADR-0012) accept `null` to clear the override
+  // back to inherit; other fields keep their non-null Partial<Task> shape.
+  updateTask: (
+    id: number,
+    input: Partial<Omit<Task, 'harness' | 'model' | 'isolationMode' | 'priority'>> & {
+      harness?: string | null;
+      model?: string | null;
+      isolationMode?: 'direct' | 'worktree' | null;
+      priority?: 'high' | 'normal' | 'low' | null;
+    },
+  ) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),

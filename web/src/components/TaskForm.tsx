@@ -1,36 +1,54 @@
 import { useState, type FormEvent } from 'react';
 import { api } from '../api';
-import type { AppConfig, Task } from '../types';
+import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
 import { ModelCombobox } from './ModelCombobox';
+import { InheritField } from './InheritField';
 import { btnGhost, btnPrimary, field, panelTitle, labelType } from '../ui';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
+/** The four inheritable Task defaults as the form holds them: `null` ⇒ inherit
+ * (track the Workspace/global default), a value ⇒ pin to this Task (ADR-0012). */
+type Overrides = Task['overrides'];
+
 export function TaskForm({
   config,
   task,
+  workspace,
   workspaceId,
   onClose,
   onSaved,
 }: {
   config: AppConfig;
   task: Task | null;
+  /** The active Workspace, for the inherited (effective) default each field
+   * shows while inheriting; null when there's no Workspace yet. */
+  workspace: Workspace | null;
   /** The active Workspace (ADR-0008) a new task binds to; ignored when editing. */
   workspaceId: number | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
-  const [harness, setHarness] = useState(task?.harness ?? config.defaults.harness);
-  const [model, setModel] = useState(task?.model ?? config.harnesses[config.defaults.harness]?.defaultModel ?? '');
+  // Hold the raw overrides (null = inherit). A new task inherits everything;
+  // editing seeds from what was pinned, so untouched fields stay inherited.
+  const [ov, setOv] = useState<Overrides>(
+    task?.overrides ?? { harness: null, model: null, isolationMode: null, priority: null },
+  );
   const [workingDir, setWorkingDir] = useState(task?.workingDir ?? config.defaults.workingDir);
-  const [isolationMode, setIsolationMode] = useState(task?.isolationMode ?? config.defaults.isolationMode);
-  const [priority, setPriority] = useState(task?.priority ?? config.defaults.priority);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const models = config.harnesses[harness]?.models ?? [];
+  const set = <K extends keyof Overrides>(key: K, value: Overrides[K]) =>
+    setOv((current) => ({ ...current, [key]: value }));
+
+  // The value each field shows while inheriting: the Workspace override, else
+  // the global default — mirroring the server's read-time resolution so the
+  // form's "Inherited" line matches what the Task will actually run with.
+  const effHarness = ov.harness ?? workspace?.harness ?? config.defaults.harness;
+  const inheritedModel = workspace?.model ?? config.harnesses[effHarness]?.defaultModel ?? '';
+  const models = config.harnesses[effHarness]?.models ?? [];
 
   // A new task inherits its Workspace's Working Directory (ADR-0008); only surface
   // the field when editing, or when there's no Workspace to inherit from.
@@ -40,15 +58,22 @@ export function TaskForm({
     setBusy(true);
     setError(null);
     try {
-      const fields = { prompt, harness, model, isolationMode, priority };
-      if (task) await api.updateTask(task.id, { ...fields, workingDir });
-      else
+      if (task) {
+        // Edit: send the overrides verbatim — a `null` clears that field back
+        // to inherit, a value pins it.
+        await api.updateTask(task.id, { ...ov, prompt, workingDir });
+      } else {
+        // Create: omit inherited (null) fields — the create endpoint reads an
+        // absent default as inherit (and rejects a null harness/priority enum).
+        const pinned = Object.fromEntries(Object.entries(ov).filter(([, v]) => v !== null));
         await api.createTask({
-          ...fields,
+          prompt,
+          ...pinned,
           ...(showWorkingDir ? { workingDir } : {}),
           ...(state ? { state } : {}),
           ...(workspaceId !== null ? { workspaceId } : {}),
         });
+      }
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -59,12 +84,6 @@ export function TaskForm({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save(task ? undefined : 'ready');
-  };
-
-  const pickHarness = (h: string) => {
-    setHarness(h);
-    const cfg = config.harnesses[h];
-    if (cfg) setModel(cfg.defaultModel);
   };
 
   return (
@@ -85,45 +104,74 @@ export function TaskForm({
         </div>
 
         <div className="mb-3 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={label} htmlFor="task-harness">Harness</label>
-            <select id="task-harness" className={field} value={harness} onChange={(e) => pickHarness(e.target.value)}>
-              {Object.keys(config.harnesses).map((h) => (
-                <option key={h} value={h}>
-                  {h}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={label} htmlFor="task-model">Model (pick or type any ID)</label>
-            <ModelCombobox id="task-model" value={model} onChange={setModel} options={models} />
-          </div>
-          <div>
-            <label className={label} htmlFor="task-isolation">Isolation Mode</label>
-            <select
-              id="task-isolation"
-              className={field}
-              value={isolationMode}
-              onChange={(e) => setIsolationMode(e.target.value as 'direct' | 'worktree')}
-            >
-              <option value="direct">direct</option>
-              <option value="worktree">worktree</option>
-            </select>
-          </div>
-          <div>
-            <label className={label} htmlFor="task-priority">Priority</label>
-            <select
-              id="task-priority"
-              className={field}
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as 'high' | 'normal' | 'low')}
-            >
-              <option value="high">high</option>
-              <option value="normal">normal</option>
-              <option value="low">low</option>
-            </select>
-          </div>
+          <InheritField
+            label="Harness"
+            htmlFor="task-harness"
+            value={ov.harness}
+            inherited={workspace?.harness ?? config.defaults.harness}
+            onChange={(harness) => set('harness', harness)}
+          >
+            {({ id, value, onChange }) => (
+              <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                {Object.keys(config.harnesses).map((h) => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+            )}
+          </InheritField>
+
+          <InheritField
+            label="Model"
+            htmlFor="task-model"
+            value={ov.model}
+            inherited={inheritedModel}
+            onChange={(model) => set('model', model)}
+          >
+            {({ id, value, onChange }) => (
+              <ModelCombobox id={id} value={value} onChange={onChange} options={models} />
+            )}
+          </InheritField>
+
+          <InheritField
+            label="Isolation Mode"
+            htmlFor="task-isolation"
+            value={ov.isolationMode}
+            inherited={workspace?.isolationMode ?? config.defaults.isolationMode}
+            onChange={(isolationMode) => set('isolationMode', isolationMode)}
+          >
+            {({ id, value, onChange }) => (
+              <select
+                id={id}
+                className={field}
+                value={value}
+                onChange={(e) => onChange(e.target.value as 'direct' | 'worktree')}
+              >
+                <option value="direct">direct</option>
+                <option value="worktree">worktree</option>
+              </select>
+            )}
+          </InheritField>
+
+          <InheritField
+            label="Priority"
+            htmlFor="task-priority"
+            value={ov.priority}
+            inherited={workspace?.priority ?? config.defaults.priority}
+            onChange={(priority) => set('priority', priority)}
+          >
+            {({ id, value, onChange }) => (
+              <select
+                id={id}
+                className={field}
+                value={value}
+                onChange={(e) => onChange(e.target.value as 'high' | 'normal' | 'low')}
+              >
+                <option value="high">high</option>
+                <option value="normal">normal</option>
+                <option value="low">low</option>
+              </select>
+            )}
+          </InheritField>
         </div>
 
         {showWorkingDir && (

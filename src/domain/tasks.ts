@@ -6,6 +6,7 @@ import {
   taskDependencies,
   TASK_STATES,
   type TaskRow,
+  type RawTaskRow,
   type TaskState,
   type Workflow,
   type WayfinderType,
@@ -13,6 +14,7 @@ import {
   type WorkspaceRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
+import { resolve as resolveOverride } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 
@@ -35,10 +37,27 @@ export const createTaskInputSchema = z.object({
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 // A Task's Workspace is fixed at creation (no cross-Workspace move in this slice).
+// The four Task-default overrides accept `null` (ADR-0012): clearing one back to
+// *inherit* is a first-class edit, so an operator can un-pin a field as well as
+// pin it. `undefined` (omitted) leaves the stored value untouched.
 export const updateTaskInputSchema = createTaskInputSchema
   .omit({ state: true, dependsOn: true, workspaceId: true })
-  .partial();
+  .partial()
+  .extend({
+    harness: createTaskInputSchema.shape.harness.nullable(),
+    model: createTaskInputSchema.shape.model.nullable(),
+    isolationMode: createTaskInputSchema.shape.isolationMode.nullable(),
+    priority: createTaskInputSchema.shape.priority.nullable(),
+  });
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
+
+/** The four inheritable Task defaults as stored (raw): `null` ⇒ inherit. */
+export interface TaskOverrides {
+  harness: string | null;
+  model: string | null;
+  isolationMode: string | null;
+  priority: string | null;
+}
 
 export const taskListQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
@@ -59,10 +78,15 @@ export interface TaskWithDeps extends TaskRow {
   blockedOnFailed: boolean;
   /** Task ids that re-attempt this one (reverse of `reattemptOf`). */
   reattempts: number[];
+  /** The four defaults as stored (`null` ⇒ inherited): lets the editor tell an
+   * inherited field from a pinned one, since the row's own fields are resolved. */
+  overrides: TaskOverrides;
 }
 
-/** States an operator may edit a task in. */
-const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
+/** States an operator may edit a task in. blocked is editable so its defaults
+ * (model, harness, …) can be changed while it waits on a dependency (issue: a
+ * blocked ticket often needs its model re-pointed before it ever runs). */
+const EDITABLE_STATES: TaskState[] = ['draft', 'ready', 'blocked'];
 /** Finished states — the only ones a task can be re-attempted from (a
  * non-terminal original could still run, so cloning it would duplicate work). */
 const TERMINAL_STATES: TaskState[] = ['completed', 'failed', 'cancelled'];
@@ -117,37 +141,87 @@ export class TaskService {
     return resolveWorkspace(this.getWorkspaces(), workspaceId);
   }
 
-  /** Resolve execution defaults (harness/model/workingDir/isolationMode/priority) from optional overrides + config defaults. */
-  private resolveExecution(
-    over: Partial<Pick<CreateTaskInput, 'harness' | 'model' | 'workingDir' | 'isolationMode' | 'priority'>> = {},
-    workspace: WorkspaceRow,
-  ) {
+  /**
+   * The effective values of the four inheritable Task defaults, resolved at
+   * read time down the three-level chain (ADR-0012): a non-null Task override
+   * wins, else this Task's Workspace override, else the global default. Never
+   * throws — a stored harness that isn't configured in this instance still
+   * resolves (the runner surfaces that at spawn); resolving must not break the
+   * board's every-row read.
+   */
+  private resolveDefaults(over: Partial<TaskOverrides>, workspace: WorkspaceRow) {
     const config = this.getConfig();
-    const harness = over.harness ?? config.defaults.harness;
-    const harnessConfig = config.harnesses[harness];
-    if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
+    const harness = over.harness ?? resolveOverride(workspace.harness, config.defaults.harness);
+    // `harness` is plain text (a stored override or Workspace value), so it may
+    // name a harness this instance doesn't configure — `?.` handles that.
+    const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
     return {
       harness,
-      model: over.model ?? harnessConfig.defaultModel,
-      workingDir: over.workingDir ?? workspace.workingDir,
-      isolationMode: over.isolationMode ?? config.defaults.isolationMode,
-      priority: over.priority ?? config.defaults.priority,
+      model: over.model ?? resolveOverride(workspace.model, harnessConfig?.defaultModel ?? ''),
+      isolationMode: over.isolationMode ?? resolveOverride(workspace.isolationMode, config.defaults.isolationMode),
+      priority: over.priority ?? resolveOverride(workspace.priority, config.defaults.priority),
     };
+  }
+
+  /** Fill a raw row's four inheritable defaults with their resolved values —
+   * the sole boundary where a `RawTaskRow` becomes the public `TaskRow`. */
+  private resolve(raw: RawTaskRow): TaskRow {
+    const workspace = this.resolveWorkspace(raw.workspaceId ?? undefined);
+    return { ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) };
+  }
+
+  private overridesOf(raw: RawTaskRow): TaskOverrides {
+    return {
+      harness: raw.harness,
+      model: raw.model,
+      isolationMode: raw.isolationMode,
+      priority: raw.priority,
+    };
+  }
+
+  /** The raw stored row (four defaults nullable); TaskService-internal. */
+  private getRaw(id: number): RawTaskRow {
+    const row = this.db.select().from(tasks).where(eq(tasks.id, id)).get();
+    if (!row) throw new DomainError('not_found', `task ${id} not found`);
+    return row;
+  }
+
+  /** Resolve a just-written raw row, fire onChanged with it, and return it —
+   * every mutation's exit, so downstream always sees effective values. */
+  private changed(raw: RawTaskRow): TaskRow {
+    const task = this.resolve(raw);
+    this.onChanged(task);
+    return task;
+  }
+
+  private assertHarnessConfigured(harness: string | null | undefined): void {
+    const config = this.getConfig();
+    if (harness && !config.harnesses[harness as keyof typeof config.harnesses]) {
+      throw new DomainError('validation', `harness '${harness}' is not configured`);
+    }
   }
 
   create(input: CreateTaskInput): TaskRow {
     const workspace = this.resolveWorkspace(input.workspaceId);
+    this.assertHarnessConfigured(input.harness);
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     for (const depId of dependsOn) this.get(depId);
     const state: TaskState =
       input.state === 'draft' ? 'draft' : this.hasUnmet(dependsOn) ? 'blocked' : 'ready';
     const now = Date.now();
+    // Store the operator's picks raw: an omitted default is `null` ⇒ inherit,
+    // resolved on every read. Working Directory is not inheritable — it is Task
+    // identity — so it is snapshotted from the Workspace at creation.
     const row = this.db
       .insert(tasks)
       .values({
         prompt: input.prompt,
         workspaceId: workspace.id,
-        ...this.resolveExecution(input, workspace),
+        harness: input.harness ?? null,
+        model: input.model ?? null,
+        isolationMode: input.isolationMode ?? null,
+        priority: input.priority ?? null,
+        workingDir: input.workingDir ?? workspace.workingDir,
         state,
         createdAt: now,
         updatedAt: now,
@@ -157,9 +231,10 @@ export class TaskService {
     if (dependsOn.length > 0) {
       this.db.insert(taskDependencies).values(dependsOn.map((dependsOnId) => ({ taskId: row.id, dependsOnId }))).run();
     }
-    this.onChanged(row);
-    this.onNotify('task.created', row);
-    return row;
+    const task = this.resolve(row);
+    this.onChanged(task);
+    this.onNotify('task.created', task);
+    return task;
   }
 
   /**
@@ -204,8 +279,9 @@ export class TaskService {
         .where(eq(tasks.id, existing.id))
         .returning()
         .get()!;
-      this.onChanged(row);
-      return row;
+      // Re-poll never touches the four defaults, so an operator's pin on a
+      // mirrored Task survives every scan.
+      return this.changed(row);
     }
     // Each Workspace's poll loop mirrors into its own board (issue #45): the
     // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
@@ -215,7 +291,14 @@ export class TaskService {
       .values({
         prompt: input.prompt,
         workspaceId: workspace.id,
-        ...this.resolveExecution({}, workspace),
+        // A mirrored Task has no operator picks: the four defaults inherit
+        // (null) and resolve to the Workspace/global defaults on read, so
+        // retargeting the board's model is a single Workspace-setting change.
+        harness: null,
+        model: null,
+        isolationMode: null,
+        priority: null,
+        workingDir: workspace.workingDir,
         // Seed open Tasks ready; reconcileMirroredDeps re-derives blocked once
         // edges are wired in the same poll.
         state: input.closed ? 'completed' : 'ready',
@@ -232,22 +315,24 @@ export class TaskService {
       .get();
     // No task.created notify: a mirrored Task is a projection, not an authored
     // Task, and a first poll would otherwise storm one notification per issue.
-    this.onChanged(row);
-    return row;
+    return this.changed(row);
   }
 
   list(query: TaskListQuery = {}): TaskRow[] {
+    // Only the non-inheritable columns (workspace, state) filter in SQL; harness
+    // and priority can be inherited, so they filter on the resolved value below.
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state ? eq(tasks.state, query.state) : undefined,
-      query.harness ? eq(tasks.harness, query.harness) : undefined,
-      query.priority ? eq(tasks.priority, query.priority) : undefined,
     ].filter((f) => f !== undefined);
     let rows = this.db
       .select()
       .from(tasks)
       .where(filters.length > 0 ? and(...filters) : undefined)
-      .all();
+      .all()
+      .map((raw) => this.resolve(raw));
+    if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
+    if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
       const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
@@ -263,30 +348,24 @@ export class TaskService {
   }
 
   get(id: number): TaskRow {
-    const row = this.db.select().from(tasks).where(eq(tasks.id, id)).get();
-    if (!row) throw new DomainError('not_found', `task ${id} not found`);
-    return row;
+    return this.resolve(this.getRaw(id));
   }
 
   update(id: number, input: UpdateTaskInput): TaskRow {
     const task = this.get(id);
     if (!EDITABLE_STATES.includes(task.state)) {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft or ready tasks can be edited`);
+      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft, ready, or blocked tasks can be edited`);
     }
-    if (input.harness) {
-      const config = this.getConfig();
-      if (!config.harnesses[input.harness]) {
-        throw new DomainError('validation', `harness '${input.harness}' is not configured`);
-      }
-    }
+    // A provided default of `null` clears the override back to inherit; an
+    // omitted one is simply not in `input`, so the stored value is untouched.
+    this.assertHarnessConfigured(input.harness);
     const row = this.db
       .update(tasks)
       .set({ ...input, updatedAt: Date.now() })
       .where(eq(tasks.id, id))
       .returning()
       .get()!;
-    this.onChanged(row);
-    return row;
+    return this.changed(row);
   }
 
   /** Promote a draft to ready (or blocked, when dependencies are unmet). */
@@ -329,8 +408,7 @@ export class TaskService {
       }
     }
     const row = this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
-    this.onChanged(row);
-    return row;
+    return this.changed(row);
   }
 
   /**
@@ -354,7 +432,9 @@ export class TaskService {
    * pristine. The original task is left untouched.
    */
   reattempt(originalId: number, feedback?: string): TaskRow {
-    const original = this.get(originalId);
+    // Copy from the raw row so an inherited default (`null`) is re-attempted as
+    // inherited, not frozen to the value it happened to resolve to today.
+    const original = this.getRaw(originalId);
     if (!TERMINAL_STATES.includes(original.state)) {
       throw new DomainError(
         'invalid_state',
@@ -397,9 +477,10 @@ export class TaskService {
       // Emit even when the state didn't flip: blockedOnFailed changed.
       this.onChanged(this.get(dependentId));
     }
-    this.onChanged(row);
-    this.onNotify('task.created', row);
-    return row;
+    const task = this.resolve(row);
+    this.onChanged(task);
+    this.onNotify('task.created', task);
+    return task;
   }
 
   /**
@@ -416,8 +497,7 @@ export class TaskService {
       .where(eq(tasks.id, id))
       .returning()
       .get()!;
-    this.onChanged(row);
-    return row;
+    return this.changed(row);
   }
 
   /**
@@ -439,8 +519,7 @@ export class TaskService {
       .where(eq(tasks.id, id))
       .returning()
       .get()!;
-    this.onChanged(row);
-    return row;
+    return this.changed(row);
   }
 
   cancel(id: number): TaskRow {
@@ -458,9 +537,10 @@ export class TaskService {
       .where(eq(tasks.id, id))
       .returning()
       .get()!;
-    this.onChanged(row);
+    const task = this.resolve(row);
+    this.onChanged(task);
     const notification = STATE_NOTIFICATIONS[state];
-    if (notification) this.onNotify(notification, row);
+    if (notification) this.onNotify(notification, task);
     // Completion is what satisfies dependents (accepted, not merely
     // finished) — unblock any whose last unmet dependency this was.
     if (state === 'completed') {
@@ -471,7 +551,7 @@ export class TaskService {
         }
       }
     }
-    return row;
+    return task;
   }
 
   // ---- Dependencies ----
@@ -605,6 +685,9 @@ export class TaskService {
       blockedOnFailed:
         task.state === 'blocked' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
       reattempts: this.reattempts(task.id),
+      // The resolved row can't tell inherit from pin, so read the raw overrides
+      // straight from storage — the editor needs to distinguish the two.
+      overrides: this.overridesOf(this.getRaw(task.id)),
     };
   }
 

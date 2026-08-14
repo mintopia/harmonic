@@ -40,9 +40,19 @@ it), which until now was aspirational: the code had a single global
 ## Consequences
 
 - Overridable settings become nullable per-Workspace columns; reads resolve
-  `workspace ?? global`. Task defaults are snapshotted onto a Task at creation
-  as today, so a resolved value is captured once and a later default change
-  never shifts a finished Run's record.
+  `workspace ?? global`.
+- Task defaults inherit one level further, at read time (**amended** — this
+  supersedes the original "snapshotted at creation" decision). The four
+  Task-default columns (harness, model, Isolation Mode, Priority) are themselves
+  nullable on a Task and resolve `Task ?? Workspace ?? global` on every read. A
+  Task that never pinned a default follows its Workspace/global default as it
+  changes — so retargeting a whole board's model is one Workspace-setting edit —
+  while a pinned Task stays put. An imported (mirrored) Task pins nothing, so a
+  tracker-fed board retargets wholesale; native Tasks pin only what the operator
+  set in the task form. A Task is editable while blocked for the same reason: an
+  operator can re-point a waiting Task's model before it ever runs. (A Run reads
+  its Task's *resolved* values when it spawns, so a change after a Run finishes
+  never rewrites that Run's history.)
 - The Auto-Runner cap is now two-level: a global **Machine Ceiling** and an
   optional per-workspace cap that can never exceed it (a Workspace override is
   clamped to the ceiling). Total concurrency across all Workspaces still

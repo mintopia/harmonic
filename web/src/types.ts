@@ -67,11 +67,23 @@ export interface Task {
   prompt: string;
   /** The owning Workspace (ADR-0008). */
   workspaceId: number;
+  /** Effective (resolved) Task defaults: a pinned override, else the
+   * Workspace override, else the global default (ADR-0012). `overrides` says
+   * which of these were pinned vs inherited. */
   harness: string;
   model: string;
   workingDir: string;
   isolationMode: 'direct' | 'worktree';
   priority: 'high' | 'normal' | 'low';
+  /** The four defaults as stored: `null` ⇒ inherited (tracks the Workspace/
+   * global default), a value ⇒ pinned to this Task. The editor seeds its
+   * inherit/override toggles from these. */
+  overrides: {
+    harness: string | null;
+    model: string | null;
+    isolationMode: 'direct' | 'worktree' | null;
+    priority: 'high' | 'normal' | 'low' | null;
+  };
   state: TaskState;
   /** The original this task re-attempts, or null. */
   reattemptOf: number | null;

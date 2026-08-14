@@ -302,6 +302,10 @@ export function App() {
   // switcher name and the tab title pick up a rename immediately.
   const handleWorkspaceSaved = (updated: Workspace) => {
     setWorkspaces((current) => current.map((w) => (w.id === updated.id ? updated : w)));
+    // A changed Workspace default (harness/model/…) re-resolves every board
+    // Task that inherits it (ADR-0012), so pull the freshly-resolved values now
+    // rather than waiting on the 10s poll.
+    refresh();
   };
 
   // Deleting from the Workspace page (#64): drop it, then land on the board of
@@ -615,6 +619,7 @@ export function App() {
         <TaskForm
           config={config}
           task={editing === 'new' ? null : editing}
+          workspace={activeWorkspace}
           workspaceId={activeWorkspaceId}
           onClose={() => setEditing(null)}
           onSaved={() => {

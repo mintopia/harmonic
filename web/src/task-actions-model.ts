@@ -24,8 +24,11 @@ export function taskActions(state: TaskState): TaskAction[] {
       return ['run', 'edit', 'cancel'];
     case 'draft':
       return ['ready', 'edit', 'cancel'];
-    case 'running':
+    // Blocked can still be edited — re-point its model/harness while it waits
+    // on a dependency (ADR-0012) — but not run; running can only be cancelled.
     case 'blocked':
+      return ['edit', 'cancel'];
+    case 'running':
       return ['cancel'];
     // Uncancel returns the card to the queue in place (issue #57).
     case 'cancelled':

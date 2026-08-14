@@ -65,6 +65,18 @@ const taskWithDepsSchema = z
     blockedOnFailed: z.boolean().meta({ example: false }),
     /** Task ids that re-attempt this one (reverse of reattemptOf). */
     reattempts: z.array(z.number()).meta({ example: [] }),
+    /** The four Task-default overrides as stored (ADR-0012): `null` ⇒ this field
+     * *inherits* (Workspace override → global default), so the sibling
+     * harness/model/isolationMode/priority above are the resolved effective
+     * values while these say whether each was pinned. The editor reads both. */
+    overrides: z
+      .object({
+        harness: z.string().nullable().meta({ example: null }),
+        model: z.string().nullable().meta({ example: 'opus-4.8' }),
+        isolationMode: z.string().nullable().meta({ example: null }),
+        priority: z.string().nullable().meta({ example: null }),
+      })
+      .meta({ example: { harness: null, model: 'opus-4.8', isolationMode: null, priority: null } }),
   })
   .meta({ id: 'TaskWithDeps' });
 
@@ -219,13 +231,13 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Edit a draft or ready task. Reachable with a run-scoped Run Key.',
+          'Edit a draft, ready, or blocked task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: updateTaskInputSchema,
         response: {
           200: taskSchema.describe('The updated task.'),
           400: errorResponse('The payload failed validation — see the error message for the offending field.'),
-          409: errorResponse('The task is past draft, so its definition is frozen.'),
+          409: errorResponse('The task is running or finished, so its definition is frozen.'),
         },
       },
     },

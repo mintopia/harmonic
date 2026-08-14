@@ -19,9 +19,12 @@ describe('taskActions', () => {
     expect(taskActions('draft')).toEqual(['ready', 'edit', 'cancel']);
   });
 
-  it('offers only cancel while a task is in flight', () => {
+  it('offers only cancel while a task is running', () => {
     expect(taskActions('running')).toEqual(['cancel']);
-    expect(taskActions('blocked')).toEqual(['cancel']);
+  });
+
+  it('lets a blocked task be edited (re-point its model) or cancelled', () => {
+    expect(taskActions('blocked')).toEqual(['edit', 'cancel']);
   });
 
   it('offers no actions for completed (footer hides), and uncancel for cancelled', () => {

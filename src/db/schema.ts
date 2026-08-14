@@ -43,9 +43,10 @@ export const workspaces = sqliteTable('workspaces', {
   /** How often this Workspace's poll loop scans its repo, in seconds. */
   trackerPollIntervalSeconds: integer('tracker_poll_interval_seconds').notNull().default(60),
   // --- Setting Overrides (ADR-0012, issue #59). Null ⇒ inherit the global
-  // default; a non-null value overrides it. Task defaults resolved here are
-  // snapshotted onto a Task at creation, so a later default change never
-  // shifts a finished Run. ---
+  // default; a non-null value overrides it. Task defaults resolved here are the
+  // middle tier of a three-level chain (Task override → this Workspace override
+  // → global default), resolved at read time so a change follows every Task
+  // that hasn't pinned its own value. ---
   /** Task-default Harness override; null inherits `config.defaults.harness`. */
   harness: text('harness'),
   /** Task-default model override; null inherits the harness's default model. */
@@ -72,11 +73,16 @@ export type WorkspaceRow = typeof workspaces.$inferSelect;
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   prompt: text('prompt').notNull(),
-  harness: text('harness').notNull(),
-  model: text('model').notNull(),
+  // --- Task-default overrides (ADR-0012). Nullable: `null` ⇒ *inherit* this
+  // Task's Workspace override → the global default, resolved at read time by
+  // TaskService (setting-override.ts's `resolve`). A non-null value pins the
+  // Task. So a later Workspace/global default change follows every not-yet-
+  // pinned Task — the public `TaskRow` these read back as always resolved. ---
+  harness: text('harness'),
+  model: text('model'),
   workingDir: text('working_dir').notNull(),
-  isolationMode: text('isolation_mode').notNull(),
-  priority: text('priority').notNull(),
+  isolationMode: text('isolation_mode'),
+  priority: text('priority'),
   state: text('state').$type<TaskState>().notNull(),
   /** The owning Workspace (ADR-0008). Nullable at the SQL level only because
    * SQLite can't add a NOT NULL column with no default to an existing table;
@@ -309,6 +315,17 @@ export const apiKeys = sqliteTable('api_keys', {
 
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
 
-export type TaskRow = typeof tasks.$inferSelect;
+/** The raw `tasks` row: the four Task-default overrides read back nullable
+ * (`null` ⇒ inherit). Used only inside TaskService, which resolves them. */
+export type RawTaskRow = typeof tasks.$inferSelect;
+/** A `tasks` row as every consumer sees it: the four inheritable defaults
+ * already resolved to their effective values (never null). TaskService.get/
+ * list/etc. return this; storage speaks `RawTaskRow`. */
+export type TaskRow = Omit<RawTaskRow, 'harness' | 'model' | 'isolationMode' | 'priority'> & {
+  harness: string;
+  model: string;
+  isolationMode: string;
+  priority: string;
+};
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;

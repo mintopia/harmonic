@@ -123,3 +123,66 @@ describe('task authoring', () => {
     expect(body.harnesses.claude.defaultModel).toBe('claude-sonnet-5');
   });
 });
+
+/**
+ * Per-Task default overrides that inherit at read time (ADR-0012): a Task that
+ * never pinned a default follows its Workspace/global default as it changes,
+ * and a blocked Task can be re-pointed while it waits.
+ */
+describe('task-default inheritance', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  const workspaceId = async () => (await server.api('GET', '/api/workspaces')).body.workspaces[0].id as number;
+
+  it('serves the effective model but marks an unpinned default as inherited (overrides null)', async () => {
+    const { body } = await server.api('POST', '/api/tasks', { prompt: 'inherit my model' });
+    expect(body.model).toBe('claude-sonnet-5'); // resolved global default
+    expect(body.overrides.model).toBeNull(); // ...but not pinned
+  });
+
+  it("follows the Workspace default model for tasks that haven't pinned one, leaving pinned tasks alone", async () => {
+    const inheriting = (await server.api('POST', '/api/tasks', { prompt: 'follow the workspace' })).body;
+    const pinned = (await server.api('POST', '/api/tasks', { prompt: 'stay put', model: 'pinned-model' })).body;
+    expect(inheriting.overrides.model).toBeNull();
+    expect(pinned.overrides.model).toBe('pinned-model');
+
+    const patched = await server.api('PATCH', `/api/workspaces/${await workspaceId()}`, { model: 'ws-default-model' });
+    expect(patched.status).toBe(200);
+
+    const after = (await server.api('GET', `/api/tasks/${inheriting.id}`)).body;
+    expect(after.model).toBe('ws-default-model'); // the inheriting task moved
+    expect(after.overrides.model).toBeNull(); // still inheriting, not silently pinned
+
+    const stillPinned = (await server.api('GET', `/api/tasks/${pinned.id}`)).body;
+    expect(stillPinned.model).toBe('pinned-model'); // the pinned task did not
+  });
+
+  it('edits a blocked task to re-point its model, and clears it back to inherit', async () => {
+    const dep = await server.api('POST', '/api/tasks', { prompt: 'Dependency', state: 'draft' });
+    const blocked = await server.api('POST', '/api/tasks', {
+      prompt: 'Blocked, needs a new model',
+      dependsOn: [dep.body.id],
+    });
+    expect(blocked.body.state).toBe('blocked');
+
+    const pinned = await server.api('PATCH', `/api/tasks/${blocked.body.id}`, { model: 'chosen-model' });
+    expect(pinned.status).toBe(200);
+    expect(pinned.body.state).toBe('blocked'); // still blocked, just re-pointed
+    expect(pinned.body.model).toBe('chosen-model');
+    expect(pinned.body.overrides.model).toBe('chosen-model');
+
+    const cleared = await server.api('PATCH', `/api/tasks/${blocked.body.id}`, { model: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.overrides.model).toBeNull(); // back to inherit
+    // Inherit resolves to the Workspace default set by the test above — proof
+    // the cleared field tracks the Workspace, not a frozen global default.
+    expect(cleared.body.model).toBe('ws-default-model');
+  });
+});
