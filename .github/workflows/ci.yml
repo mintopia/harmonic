@@ -1,0 +1,34 @@
+name: CI
+
+# Typecheck + tests on every branch push and PR. Tag pushes are intentionally
+# excluded (the `branches` filter never matches a tag) — releases run their own
+# gated checks in release.yml.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `prepare` builds dist/ on install, so this also proves the build.
+      - run: npm ci
+
+      - run: npm run typecheck
+      - run: npm test
