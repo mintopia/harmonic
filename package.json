@@ -1,7 +1,6 @@
 {
-  "name": "harmonic",
+  "name": "@mintopia/harmonic",
   "version": "0.1.0",
-  "private": true,
   "description": "Queue, run, and review autonomous coding-agent tasks over ACP",
   "repository": "github:mintopia/harmonic",
   "main": "index.js",
@@ -21,6 +20,9 @@
   "type": "module",
   "bin": {
     "harmonic": "dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.1",
