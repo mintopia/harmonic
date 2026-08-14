@@ -1,6 +1,6 @@
 {
   "name": "@mintopia/harmonic",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Queue, run, and review autonomous coding-agent tasks over ACP",
   "repository": "github:mintopia/harmonic",
   "main": "index.js",
