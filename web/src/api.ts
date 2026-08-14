@@ -81,6 +81,9 @@ export const api = {
   // handled by request's 204 branch). Deleting the last Workspace is allowed
   // (issue #61) — the app falls to the empty state; a running Task 409s.
   deleteWorkspace: (id: number) => request<null>('DELETE', `/api/workspaces/${id}`),
+  // Force an immediate tracker poll (the board's manual refresh) — rescans the
+  // repo and mirrors changes now. 409 if the Workspace has tracking disabled.
+  refreshTracker: (id: number) => request<{ ok: true }>('POST', `/api/workspaces/${id}/tracker/refresh`),
   updateTask: (id: number, input: Partial<Task>) => request<Task>('PATCH', `/api/tasks/${id}`, input),
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>

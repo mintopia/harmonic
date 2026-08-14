@@ -64,6 +64,18 @@ describe('board column model', () => {
     expect(failed.tasks.map((t) => t.id)).toEqual([3]);
   });
 
+  it('orders terminal columns newest-first (most recently completed on top), id desc on ties', () => {
+    // task()'s createdAt arg doubles as updatedAt; the completion is the last update.
+    const columns = boardColumns([
+      task(1, 'completed', 100),
+      task(2, 'completed', 300),
+      task(3, 'completed', 300), // tie with 2 → higher id first
+      task(4, 'completed', 200),
+    ]);
+    const completed = columns.find((c) => c.state === 'completed')!;
+    expect(completed.tasks.map((t) => t.id)).toEqual([3, 2, 4, 1]);
+  });
+
   it('orders each column by the scheduler processing order: priority then id ascending', () => {
     // Insertion order is deliberately scrambled and createdAt is irrelevant to the sort.
     const columns = boardColumns([

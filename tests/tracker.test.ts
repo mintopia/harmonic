@@ -109,6 +109,15 @@ describe('resolveTrackerAdapter', () => {
     }
   });
 
+  it('resolves local-markdown case- and separator-insensitively ("Local Markdown")', async () => {
+    const root = mkRepo('# Issue tracker: Local Markdown\n\nblah\n');
+    try {
+      expect((await resolveTrackerAdapter(root)).name).toBe('local-markdown');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('resolves GitLab from the repo declaration (auth via glab, no token)', async () => {
     const root = mkRepo('# Issue tracker: GitLab\n\nProject: mintopia/harmonic\n');
     try {
@@ -140,123 +149,193 @@ describe('resolveTrackerAdapter', () => {
   });
 });
 
-describe('local-markdown tracker adapter', () => {
-  // Fixture: 37 blockedBy 29 (declared on 37); 29 blocking is only synthesised.
-  // 29 is a Map, parent 19 (which doesn't exist → dangling, dropped).
+describe('local-markdown tracker adapter (mattpocock format)', () => {
+  // Fixture: mattpocock prose tickets under a single feature dir. 02 declares
+  // "Blocked by: 01"; the reverse blocking edge onto 01 is synthesised. 02's
+  // "Status: done" closes it; 01 stays open. `notes.md` isn't a ticket.
   const fixture: Record<string, string> = {
-    '0029-adapter-interface.md': [
-      '---',
-      'title: Tracker Adapter interface',
-      'state: closed',
-      'createdAt: 2026-08-06T10:00:00Z',
-      'closedAt: 2026-08-07T09:00:00Z',
-      'labels: [wayfinder:map]',
-      'assignees: []',
-      'parent: 19',
-      'blockedBy: []',
-      'blocking: []',
-      '---',
+    '01-adapter-interface.md': [
+      '# 01 — Tracker Adapter interface',
       '',
-      'The interface.',
+      '**What to build:** the normalised Ticket shape and the read path.',
       '',
-      '<!-- comments -->',
+      '**Blocked by:** None — can start immediately.',
       '',
-      '### mintopia · 2026-08-07T09:00:00Z',
-      'shipped',
+      '**Status:** ready-for-agent',
+      '',
+      '- [ ] scan returns tickets',
+      '- [ ] readTicket by number',
     ].join('\n'),
-    '0037-local-markdown.md': [
-      '---',
-      'title: local-markdown tracker adapter',
-      'state: open',
-      'createdAt: 2026-08-08T10:00:00Z',
-      'labels: [ready-for-agent]',
-      'assignees: []',
-      'blockedBy: [29]',
-      '---',
+    '02-local-markdown.md': [
+      '# 02 — local-markdown tracker adapter',
       '',
-      'Body here.',
+      '**What to build:** read mattpocock tickets from disk.',
+      '',
+      '**Blocked by:** 01',
+      '',
+      '**Status:** ready-for-agent', // stays ready-for-agent; completeness is the ticked boxes below
+      '',
+      '- [x] parse heading',
+      '- [X] parse status',
     ].join('\n'),
     'notes.md': 'not a ticket (no numeric prefix)',
   };
 
-  const mkTree = () => {
-    const dir = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
-    for (const [name, body] of Object.entries(fixture)) writeFileSync(join(dir, name), body);
-    return dir;
+  const specBody = ['# Spec: local-markdown tracker', '', 'The problem and the solution.'].join('\n');
+
+  /** Writes the fixture under `<root>/<feature>/issues/`, with a sibling `spec.md` unless `withSpec` is false. */
+  const mkTree = (feature = 'harmonic-v1', withSpec = true) => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
+    const issues = join(root, feature, 'issues');
+    mkdirSync(issues, { recursive: true });
+    for (const [name, body] of Object.entries(fixture)) writeFileSync(join(issues, name), body);
+    if (withSpec) writeFileSync(join(root, feature, 'spec.md'), specBody);
+    return root;
   };
 
-  it('scan mints ids from the filename, parses frontmatter, skips non-tickets', async () => {
-    const dir = mkTree();
+  it('scan mints ids from the filename, parses the prose fields, skips non-tickets', async () => {
+    const root = mkTree();
     try {
-      const tickets = (await localMarkdownAdapter(dir).scan()).sort((a, b) => a.number - b.number);
-      expect(tickets.map((t) => t.number)).toEqual([29, 37]);
-      const t37 = tickets.find((t) => t.number === 37)!;
-      expect(t37).toMatchObject({
-        title: 'local-markdown tracker adapter',
+      const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
+      expect(tickets.map((t) => t.number)).toEqual([0, 1, 2]); // 0 is the spec Map
+      const t1 = tickets.find((t) => t.number === 1)!;
+      expect(t1).toMatchObject({
+        title: 'Tracker Adapter interface',
         state: 'open',
         labels: ['ready-for-agent'],
-        parent: null,
+        assignees: [],
+        parent: 0, // points at the spec Map
         isMap: false,
-        body: 'Body here.',
+        comments: [],
       });
-      expect(t37.url).toMatch(/^file:.*0037-local-markdown\.md$/);
+      expect(t1.body).toContain('**What to build:**');
+      expect(t1.body).not.toMatch(/^# 01/); // heading stripped from body
+      expect(t1.url).toMatch(/^file:.*01-adapter-interface\.md$/);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('synthesises directional edges from convention and drops dangling parent', async () => {
-    const dir = mkTree();
+  it('surfaces spec.md as the wayfinder Map (id 0) that every issue parents to', async () => {
+    const root = mkTree();
     try {
-      const tickets = await localMarkdownAdapter(dir).scan();
-      const t29 = tickets.find((t) => t.number === 29)!;
-      const t37 = tickets.find((t) => t.number === 37)!;
-      // 37 declares blockedBy 29; the reverse blocking edge is synthesised onto 29.
-      expect(t37.blockedBy).toEqual([{ number: 29, title: 'Tracker Adapter interface', state: 'closed' }]);
-      expect(t29.blocking).toEqual([{ number: 37, title: 'local-markdown tracker adapter', state: 'open' }]);
-      expect(t29.isMap).toBe(true);
-      expect(t29.parent).toBeNull(); // 19 doesn't exist in the tree
-      expect(t29.comments).toEqual([{ author: 'mintopia', createdAt: '2026-08-07T09:00:00Z', body: 'shipped' }]);
+      const tickets = await localMarkdownAdapter(root).scan();
+      const map = tickets.find((t) => t.number === 0)!;
+      expect(map).toMatchObject({ isMap: true, title: 'local-markdown tracker', parent: null });
+      expect(map.body).toBe('The problem and the solution.');
+      expect(map.url).toMatch(/spec\.md$/);
+      // both issues parent onto the Map; the Map itself is not blocked/blocking.
+      expect(tickets.filter((t) => !t.isMap).every((t) => t.parent === 0)).toBe(true);
+      expect(map.blockedBy).toEqual([]);
+      expect(map.blocking).toEqual([]);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('claim then close round-trip through the frontmatter', async () => {
-    const dir = mkTree();
+  it('no spec.md → no Map, and issues have a null parent', async () => {
+    const root = mkTree('harmonic-v1', false);
     try {
-      const md = localMarkdownAdapter(dir, { identity: 'jess' });
-      const ticket = await md.readTicket({ number: 37, title: '', state: 'open' });
+      const tickets = await localMarkdownAdapter(root).scan();
+      expect(tickets.some((t) => t.isMap)).toBe(false);
+      expect(tickets.map((t) => t.number).sort((a, b) => a - b)).toEqual([1, 2]);
+      expect(tickets.every((t) => t.parent === null)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('synthesises directional edges; a ticket closes when all its checkboxes are ticked', async () => {
+    const root = mkTree();
+    try {
+      const tickets = await localMarkdownAdapter(root).scan();
+      const t1 = tickets.find((t) => t.number === 1)!;
+      const t2 = tickets.find((t) => t.number === 2)!;
+      // 02 declares blockedBy 01; the reverse blocking edge is synthesised onto 01.
+      expect(t2.blockedBy).toEqual([{ number: 1, title: 'Tracker Adapter interface', state: 'open' }]);
+      expect(t1.blocking).toEqual([{ number: 2, title: 'local-markdown tracker adapter', state: 'closed' }]);
+      // "Blocked by: None" → no blockers.
+      expect(t1.blockedBy).toEqual([]);
+      // 02: all checkboxes ticked → closed (even though Status is still ready-for-agent).
+      expect(t2.state).toBe('closed');
+      expect(t2.closedAt).not.toBeNull();
+      expect(t2.labels).toEqual(['ready-for-agent']);
+      // 01: has unticked checkboxes → open.
+      expect(t1.state).toBe('open');
+      expect(t1.closedAt).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('completeness comes from the checkboxes; Status is the fallback when there are none', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
+    const issues = join(root, 'f', 'issues');
+    mkdirSync(issues, { recursive: true });
+    const t = (n: number, status: string, ...lines: string[]) =>
+      writeFileSync(join(issues, `0${n}-t.md`), [`# 0${n} — T${n}`, '', `**Status:** ${status}`, '', ...lines].join('\n'));
+    t(1, 'ready-for-agent', '- [x] a', '- [ ] b'); // one unticked, status not done → open
+    t(2, 'ready-for-agent', '- [x] a', '- [X] b'); // all ticked (mixed case) → closed
+    t(3, 'done'); // no checkboxes → Status → closed
+    t(4, 'ready-for-agent'); // no checkboxes, status not done → open
+    t(5, 'done', '- [ ] a'); // Status done OR-closes even with an unticked box
+    try {
+      const byNum = new Map((await localMarkdownAdapter(root).scan()).map((x) => [x.number, x.state]));
+      expect([byNum.get(1), byNum.get(2), byNum.get(3), byNum.get(4), byNum.get(5)]).toEqual([
+        'open',
+        'closed',
+        'closed',
+        'open',
+        'closed',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('is read-only: claim/release/close never touch the files', async () => {
+    const root = mkTree();
+    try {
+      const md = localMarkdownAdapter(root, { identity: 'jess' });
+      const file = join(root, 'harmonic-v1', 'issues', '02-local-markdown.md');
+      const before = readFileSync(file, 'utf8');
+      const ticket = await md.readTicket({ number: 2, title: '', state: 'open' });
       await md.claim(ticket);
+      await md.release(ticket);
       await md.close(ticket, 'accepted');
-
-      const after = await md.readTicket({ number: 37, title: '', state: 'open' });
-      expect(after.state).toBe('closed');
-      expect(after.closedAt).not.toBeNull();
-      expect(after.assignees).toEqual(['jess']);
-      expect(after.comments).toEqual([{ author: 'jess', createdAt: expect.any(String), body: 'accepted' }]);
-      // idempotent claim: no duplicate assignee.
-      await md.claim(after);
-      expect((await md.readTicket({ number: 37, title: '', state: 'open' })).assignees).toEqual(['jess']);
-      // the edge survives the rewrite.
-      const raw = readFileSync(join(dir, '0037-local-markdown.md'), 'utf8');
-      expect(raw).toContain('blockedBy: [29]');
+      expect(readFileSync(file, 'utf8')).toBe(before);
+      // scan still reports the on-disk state, unchanged.
+      const after = await md.readTicket({ number: 2, title: '', state: 'open' });
+      expect(after.assignees).toEqual([]);
+      expect(after.state).toBe('closed'); // from the ticked checkboxes on disk, not from close()
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('a write preserves pre-existing comments', async () => {
-    const dir = mkTree();
+  it('aggregates coexisting feature specs, namespacing ids per feature', async () => {
+    const root = mkTree('feature-a'); // ids 0 (map), 1, 2
     try {
-      const md = localMarkdownAdapter(dir, { identity: 'jess' });
-      const t29 = await md.readTicket({ number: 29, title: '', state: 'closed' });
-      await md.claim(t29); // no new comment — must not drop the existing "shipped"
-      const after = await md.readTicket({ number: 29, title: '', state: 'closed' });
-      expect(after.comments).toEqual([{ author: 'mintopia', createdAt: '2026-08-07T09:00:00Z', body: 'shipped' }]);
-      expect(after.assignees).toEqual(['jess']);
+      // a second feature dir, sorted after the first → base 10000
+      const issuesB = join(root, 'feature-b', 'issues');
+      mkdirSync(issuesB, { recursive: true });
+      writeFileSync(join(issuesB, '01-foo.md'), '# 01 — Foo\n\n**Blocked by:** None\n\n**Status:** ready-for-agent\n');
+      writeFileSync(join(issuesB, '02-bar.md'), '# 02 — Bar\n\n**Blocked by:** 01\n\n**Status:** ready-for-agent\n');
+      writeFileSync(join(root, 'feature-b', 'spec.md'), '# Spec: feature B\n\nBody.');
+
+      const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
+      // feature-a: 0,1,2  feature-b: 10000 (map),10001,10002 — no collisions.
+      expect(tickets.map((t) => t.number)).toEqual([0, 1, 2, 10000, 10001, 10002]);
+      // two Maps, each parenting only its own feature's issues.
+      expect(tickets.filter((t) => t.isMap).map((t) => t.number)).toEqual([0, 10000]);
+      expect(tickets.find((t) => t.number === 1)!.parent).toBe(0);
+      expect(tickets.find((t) => t.number === 10001)!.parent).toBe(10000);
+      // feature-local "Blocked by: 01" resolves within feature-b (→ 10001), not feature-a.
+      expect(tickets.find((t) => t.number === 10002)!.blockedBy).toEqual([
+        { number: 10001, title: 'Foo', state: 'open' },
+      ]);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

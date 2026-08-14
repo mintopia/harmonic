@@ -30,12 +30,22 @@ function byProcessingOrder(a: Task, b: Task): number {
   return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id - b.id;
 }
 
+// Terminal columns have no scheduler order to honour, so they read newest-first:
+// the task that reached its terminal state most recently sits at the top (its
+// `updatedAt` is that transition). id descending is the stable tiebreak.
+function byRecencyDesc(a: Task, b: Task): number {
+  return b.updatedAt - a.updatedAt || b.id - a.id;
+}
+
 export function boardColumns(tasks: Task[]): BoardColumn[] {
-  return TASK_STATES.map((state) => ({
-    state,
-    terminal: (TERMINAL_STATES as readonly TaskState[]).includes(state),
-    tasks: tasks.filter((t) => t.state === state).sort(byProcessingOrder),
-  }));
+  return TASK_STATES.map((state) => {
+    const terminal = (TERMINAL_STATES as readonly TaskState[]).includes(state);
+    return {
+      state,
+      terminal,
+      tasks: tasks.filter((t) => t.state === state).sort(terminal ? byRecencyDesc : byProcessingOrder),
+    };
+  });
 }
 
 /**

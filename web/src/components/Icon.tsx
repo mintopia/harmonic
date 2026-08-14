@@ -28,7 +28,8 @@ export type IconName =
   | 'edit'
   | 'plus'
   | 'expand'
-  | 'collapse';
+  | 'collapse'
+  | 'refresh';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
@@ -125,6 +126,13 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M2.5 2.5 7 7" />
       <path d="M9.5 9.5h4v4" />
       <path d="M13.5 13.5 9 9" />
+    </>
+  ),
+  // Circular arrow: force a re-poll of the tracker (the board's manual refresh).
+  refresh: (
+    <>
+      <path d="M12.75 8a4.75 4.75 0 1 1-1.4-3.36" />
+      <path d="M12.75 2.5V5H10.25" />
     </>
   ),
 };

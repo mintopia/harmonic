@@ -95,6 +95,17 @@ export class TrackerPollerManager {
     return this.entryFor(workspaceId)?.poller.titleForMap(ref) ?? null;
   }
 
+  /**
+   * Force an immediate poll for a Workspace's tracker — the board's manual
+   * refresh. Rescans the repo and mirrors any changes now instead of waiting
+   * for the interval. No-op if the Workspace has no running poll loop (tracking
+   * off); resolves once the scan + mirror settle, and rejects if the scan fails
+   * (unlike the background loop, which swallows) so a manual refresh surfaces it.
+   */
+  async pollNow(workspaceId: number): Promise<void> {
+    await this.entryFor(workspaceId)?.poller.poll();
+  }
+
   /** Stop every poll loop (server shutdown). */
   stopAll(): void {
     for (const entry of this.entries.values()) entry.poller.stop();

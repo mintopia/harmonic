@@ -129,6 +129,9 @@ export function App() {
   const [reviewHintDismissed, setReviewHintDismissed] = useState(() =>
     loadDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY),
   );
+  // A manual tracker refresh is in flight — disables the board's Refresh control
+  // and spins its icon until the rescan + mirror settle.
+  const [refreshingTracker, setRefreshingTracker] = useState(false);
 
   useEffect(() => {
     applyTheme(document.documentElement, theme);
@@ -268,6 +271,17 @@ export function App() {
     const next = nextTheme(theme);
     setTheme(next);
     storeTheme(localStorage, next);
+  };
+
+  // Force a tracker re-poll now (rescan the repo + mirror), then re-fetch the
+  // board so mirrored changes land immediately instead of on the next interval.
+  const refreshTracker = () => {
+    if (activeWorkspaceId === null || refreshingTracker) return;
+    setRefreshingTracker(true);
+    api
+      .refreshTracker(activeWorkspaceId)
+      .then(refresh, toastError)
+      .finally(() => setRefreshingTracker(false));
   };
 
   const switchWorkspace = (id: number) => {
@@ -530,14 +544,34 @@ export function App() {
             ) : (
               <>
                 {view === 'board' && (
-                  <Board
-                    tasks={taskList}
-                    loading={tasks === null}
-                    onEdit={setEditing}
-                    onOpen={setOpenTask}
-                    onChanged={refresh}
-                    onNewTask={() => setEditing('new')}
-                  />
+                  <>
+                    {/* Manual tracker refresh — only when this Workspace mirrors a
+                        tracker; otherwise there's nothing to re-poll. */}
+                    {activeWorkspace?.trackerEnabled && (
+                      <div className="mb-4 flex">
+                        <button
+                          className={`${btnQuiet} inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 hover:bg-raised disabled:opacity-60`}
+                          disabled={refreshingTracker}
+                          title="Rescan the tracker and mirror ticket changes now"
+                          onClick={refreshTracker}
+                        >
+                          <Icon
+                            name="refresh"
+                            className={refreshingTracker ? 'motion-safe:animate-spin' : ''}
+                          />
+                          {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
+                        </button>
+                      </div>
+                    )}
+                    <Board
+                      tasks={taskList}
+                      loading={tasks === null}
+                      onEdit={setEditing}
+                      onOpen={setOpenTask}
+                      onChanged={refresh}
+                      onNewTask={() => setEditing('new')}
+                    />
+                  </>
                 )}
                 {view === 'activity' && <ActivityView config={config} />}
                 {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}

@@ -160,6 +160,22 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect(workspaces.list()).toHaveLength(0);
   });
 
+  it('pollNow forces an immediate re-poll for a Workspace; a tracker-off one is a no-op', async () => {
+    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    manager.sync();
+    // A ticket appears after the loop started; a manual refresh mirrors it now.
+    ticketsByRepo.set(repoA, [ticket(7)]);
+    await manager.pollNow(a.id);
+    expect(tasks.list({ workspaceId: a.id }).map((t) => t.trackerRef)).toContain(7);
+
+    // The default (tracker-off) Workspace has no loop — pollNow resolves without polling it.
+    const off = workspaces.list().find((w) => w.id !== a.id)!;
+    const before = polled.length;
+    await expect(manager.pollNow(off.id)).resolves.toBeUndefined();
+    expect(polled).not.toContain(off.workingDir);
+    expect(polled.length).toBe(before);
+  });
+
   it('repointing the repo or interval rebuilds the loop against the new value', () => {
     const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     manager.sync();

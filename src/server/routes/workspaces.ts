@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
+import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 
 /** A Workspace (ADR-0008) as the API serves it (domain/workspaces.ts `WorkspaceRow`). */
@@ -130,6 +131,31 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       ctx.workspaces.delete(req.params.id);
       ctx.trackerManager.sync(); // the deleted Workspace's poll loop stops here
       return reply.status(204).send(null);
+    },
+  );
+
+  app.post(
+    '/workspaces/:id/tracker/refresh',
+    {
+      schema: {
+        tags: ['Workspaces'],
+        description:
+          'Force an immediate tracker poll for a Workspace — rescan its Working Directory and mirror any ticket changes onto the board now, instead of waiting for the next interval. Operator only; not reachable with a run-scoped Run Key.',
+        security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        params: idParamsSchema,
+        response: {
+          200: z.object({ ok: z.literal(true) }).describe('The tracker was re-polled.'),
+          404: errorResponse('No Workspace has that id.'),
+          409: errorResponse('Tracking is not enabled for this Workspace.'),
+          500: errorResponse('The tracker scan failed (e.g. an unreadable ticket directory).'),
+        },
+      },
+    },
+    async (req) => {
+      const ws = ctx.workspaces.get(req.params.id); // 404 if missing
+      if (!ws.trackerEnabled) throw new DomainError('conflict', `tracking is not enabled for workspace ${ws.id}`);
+      await ctx.trackerManager.pollNow(ws.id);
+      return { ok: true as const };
     },
   );
 }

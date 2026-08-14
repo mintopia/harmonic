@@ -121,7 +121,9 @@ export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAd
     throw new Error(`No tracker declaration at ${docPath}`);
   }
   const name = doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
-  switch (name?.toLowerCase()) {
+  // Normalise the declared name: case-insensitive, spaces/underscores → hyphens,
+  // so "Local Markdown", "local markdown", and "local-markdown" all resolve.
+  switch (name?.trim().toLowerCase().replace(/[\s_]+/g, '-')) {
     case 'github':
       return githubAdapter(repoRoot);
     case 'local-markdown': {
