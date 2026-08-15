@@ -38,6 +38,7 @@ export default defineConfig({
           items: [
             { label: 'Architecture', link: '/how-it-works/architecture/' },
             { label: 'ACP & harness adapters', link: '/how-it-works/acp-and-adapters/' },
+            { label: 'Tracker mirroring & skills', link: '/how-it-works/tracker-mirroring/' },
             { label: 'Design decisions', link: '/how-it-works/design-decisions/' },
           ],
         },
