@@ -75,6 +75,33 @@ describe('TrackerPoller.poll', () => {
     expect(pokes).toBe(1);
   });
 
+  it('reports its Resolved Tracker each poll — success, then the failure when resolution breaks (issue #83)', async () => {
+    const { adapter } = stubAdapter([ticket({ number: 7, labels: ['ready-for-agent'] })]);
+    let broken = false;
+    const reported: Array<{ ok: boolean }> = [];
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => {
+        if (broken) throw new Error('declaration vanished');
+        return adapter;
+      },
+      undefined,
+      undefined,
+      undefined,
+      (r) => reported.push(r),
+    );
+
+    await poller.poll();
+    expect(reported.at(-1)).toEqual({ ok: true, name: 'stub', label: 'stub' });
+
+    broken = true;
+    await expect(poller.poll()).rejects.toThrow(/declaration vanished/); // scan never reached
+    expect(reported.at(-1)).toMatchObject({ ok: false, code: 'misconfigured' });
+  });
+
   it('is idempotent across polls: re-poll upserts, never duplicates', async () => {
     const { adapter } = stubAdapter([ticket({ number: 7, labels: ['ready-for-agent'] })]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);

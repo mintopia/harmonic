@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolveTrackerAdapter } from '../src/tracker/adapter.js';
+import { resolveTracker, resolveTrackerAdapter } from '../src/tracker/adapter.js';
 import { githubAdapter, type GhRunner } from '../src/tracker/github.js';
 import { gitlabAdapter, type GlabRunner } from '../src/tracker/gitlab.js';
 import { localMarkdownAdapter } from '../src/tracker/local-markdown.js';
@@ -146,6 +146,57 @@ describe('resolveTrackerAdapter', () => {
       rmSync(root, { recursive: true, force: true });
     }
     await expect(resolveTrackerAdapter('/no/such/repo')).rejects.toThrow(/No tracker declaration/);
+  });
+});
+
+describe('resolveTracker (Resolved Tracker surface, issue #83)', () => {
+  const mkRepo = (declaration: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-resolved-'));
+    mkdirSync(join(root, 'docs/agents'), { recursive: true });
+    writeFileSync(join(root, 'docs/agents/issue-tracker.md'), declaration);
+    return root;
+  };
+
+  it('resolves to the adapter display label on success', async () => {
+    const root = mkRepo('# Issue tracker: GitHub\n');
+    try {
+      expect(await resolveTracker(root)).toEqual({ ok: true, name: 'github', label: 'GitHub' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('labels local-markdown as "Local Markdown"', async () => {
+    const root = mkRepo('# Issue tracker: Local Markdown\n');
+    try {
+      expect(await resolveTracker(root)).toMatchObject({ ok: true, name: 'local-markdown', label: 'Local Markdown' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports "no-declaration" when the repo has no issue-tracker.md', async () => {
+    expect(await resolveTracker('/no/such/repo')).toMatchObject({ ok: false, code: 'no-declaration' });
+  });
+
+  it('reports "unsupported" for a declared name no adapter serves', async () => {
+    const root = mkRepo('# Issue tracker: Jira\n');
+    try {
+      const res = await resolveTracker(root);
+      expect(res).toMatchObject({ ok: false, code: 'unsupported' });
+      if (!res.ok) expect(res.reason).toMatch(/Jira/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports "misconfigured" for a GitLab declaration with no project and no remote', async () => {
+    const root = mkRepo('# Issue tracker: GitLab\n\nIssues live somewhere.\n');
+    try {
+      expect(await resolveTracker(root)).toMatchObject({ ok: false, code: 'misconfigured' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

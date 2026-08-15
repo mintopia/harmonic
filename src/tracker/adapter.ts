@@ -104,6 +104,78 @@ export interface OpenPRInput {
 }
 
 /**
+ * Why a repo's tracker couldn't resolve (issue #83). Distinct machine codes so
+ * the Resolved Tracker surface can word each reason for itself:
+ * - `no-declaration`: no `docs/agents/issue-tracker.md` in the repo.
+ * - `unsupported`: the declared name is one no adapter serves (or absent).
+ * - `misconfigured`: the name resolves but the tracker is mis-set (e.g. a GitLab
+ *   declaration with neither a `Project:` line nor an inferable origin remote).
+ */
+export type TrackerResolveFailureCode = 'no-declaration' | 'unsupported' | 'misconfigured';
+
+/** A typed resolution failure so callers can branch on {@link code}, not a message string. */
+export class TrackerResolutionError extends Error {
+  constructor(
+    readonly code: TrackerResolveFailureCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TrackerResolutionError';
+  }
+}
+
+/**
+ * The Resolved Tracker of a Workspace's repo (issue #83): the adapter's display
+ * label on success, or a coded reason it can't resolve. Computed at poll time
+ * and cached by the poller manager; a resolution failure stops the poll loop
+ * from starting rather than erroring every cycle.
+ */
+export type ResolvedTracker =
+  | { ok: true; name: string; label: string }
+  | { ok: false; code: TrackerResolveFailureCode; reason: string };
+
+/** Human display labels for the internal adapter names (`github` → `GitHub`). */
+const TRACKER_LABELS: Record<string, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  'local-markdown': 'Local Markdown',
+};
+
+/** The display label for an adapter name, falling back to the raw name. */
+export function trackerLabel(name: string): string {
+  return TRACKER_LABELS[name] ?? name;
+}
+
+/** A resolved adapter as a successful {@link ResolvedTracker}. */
+export function resolutionSuccess(adapter: TrackerAdapter): ResolvedTracker & { ok: true } {
+  return { ok: true, name: adapter.name, label: trackerLabel(adapter.name) };
+}
+
+/** A resolution error as a failed {@link ResolvedTracker} — a {@link TrackerResolutionError}'s code, else `misconfigured`. */
+export function resolutionFailure(err: unknown): ResolvedTracker & { ok: false } {
+  const code = err instanceof TrackerResolutionError ? err.code : 'misconfigured';
+  return { ok: false, code, reason: err instanceof Error ? err.message : String(err) };
+}
+
+/**
+ * Resolve a repo's tracker to a structured {@link ResolvedTracker} — the
+ * non-throwing sibling of {@link resolveTrackerAdapter} used by the poll-loop
+ * gate and the Resolved Tracker surface (issue #83). Reuses the same resolver
+ * (injectable for tests); the poller reports its per-cycle resolution the same
+ * way via {@link resolutionSuccess}/{@link resolutionFailure}.
+ */
+export async function resolveTracker(
+  repoRoot: string,
+  resolve: (r: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
+): Promise<ResolvedTracker> {
+  try {
+    return resolutionSuccess(await resolve(repoRoot));
+  } catch (err) {
+    return resolutionFailure(err);
+  }
+}
+
+/**
  * Resolve the repo's tracker from its `docs/agents/issue-tracker.md`
  * declaration (`# Issue tracker: <name>`) — the sibling of the Harness
  * Adapter's `adapterFor`. GitHub uses ambient `gh` auth (no config).
@@ -118,7 +190,7 @@ export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAd
   try {
     doc = await readFile(docPath, 'utf8');
   } catch {
-    throw new Error(`No tracker declaration at ${docPath}`);
+    throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
   }
   const name = doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
   // Normalise the declared name: case-insensitive, spaces/underscores → hyphens,
@@ -133,10 +205,13 @@ export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAd
     case 'gitlab': {
       const project = doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot));
       if (!project)
-        throw new Error(`GitLab tracker needs a "Project: <group/repo>" line in ${docPath} (or an origin remote)`);
+        throw new TrackerResolutionError(
+          'misconfigured',
+          `GitLab tracker needs a "Project: <group/repo>" line in ${docPath} (or an origin remote)`,
+        );
       return gitlabAdapter({ project, repoRoot });
     }
     default:
-      throw new Error(`Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
+      throw new TrackerResolutionError('unsupported', `Unsupported tracker "${name ?? '(none)'}" in ${docPath}`);
   }
 }

@@ -2,11 +2,30 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
+import type { WorkspaceRow } from '../../db/schema.js';
+import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 
-/** A Workspace (ADR-0008) as the API serves it (domain/workspaces.ts `WorkspaceRow`). */
+/**
+ * The Resolved Tracker of a Workspace (issue #83), flattened for the API: a
+ * display `label` when resolved, else a coded `reason` it can't. `null` when the
+ * Workspace has tracking off (nothing to resolve). The `ok` flag discriminates
+ * which of `label` / (`code`,`reason`) is populated.
+ */
+const resolvedTrackerSchema = z
+  .object({
+    ok: z.boolean().meta({ example: true }),
+    label: z.string().nullable().meta({ example: 'GitHub' }),
+    code: z.string().nullable().meta({ example: null }),
+    reason: z.string().nullable().meta({ example: null }),
+  })
+  .nullable()
+  .meta({ description: 'The tracker this Workspace resolved (issue #83), or null when tracking is off.' });
+
+/** A Workspace (ADR-0008) as the API serves it — the `WorkspaceRow` plus the
+ * `resolvedTracker` the route injects at serialize time (issue #83). */
 const workspaceSchema = z
   .object({
     id: z.number().meta({ example: 1 }),
@@ -14,6 +33,7 @@ const workspaceSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     trackerEnabled: z.boolean().meta({ example: false }),
     trackerPollIntervalSeconds: z.number().meta({ example: 60 }),
+    resolvedTracker: resolvedTrackerSchema,
     // Per-workspace setting overrides (ADR-0012): null ⇒ inherit the global
     // default, a value overrides it. Resolved at read time (issue #60).
     harness: z.string().nullable().meta({ example: null }),
@@ -33,6 +53,20 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
+  /** Flatten the manager's Resolved Tracker (issue #83) into the API's nullable shape. */
+  const serializeResolvedTracker = (r: ResolvedTracker | null) =>
+    r === null
+      ? null
+      : r.ok
+        ? { ok: true, label: r.label, code: null, reason: null }
+        : { ok: false, label: null, code: r.code, reason: r.reason };
+
+  /** A Workspace row plus its live Resolved Tracker, as every workspace endpoint returns it. */
+  const serialize = (ws: WorkspaceRow) => ({
+    ...ws,
+    resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
+  });
+
   app.get(
     '/workspaces',
     {
@@ -43,7 +77,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         response: { 200: workspacesListResponseSchema.describe('Every Workspace, oldest first.') },
       },
     },
-    async () => ({ workspaces: ctx.workspaces.list() }),
+    async () => ({ workspaces: ctx.workspaces.list().map(serialize) }),
   );
 
   app.post(
@@ -64,8 +98,8 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const workspace = ctx.workspaces.create(req.body);
-      ctx.trackerManager.sync(); // created with tracker on ⇒ start its poll loop now
-      return reply.status(201).send(workspace);
+      await ctx.trackerManager.sync(); // created with tracker on ⇒ resolve + start its poll loop now
+      return reply.status(201).send(serialize(workspace));
     },
   );
 
@@ -83,7 +117,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => ctx.workspaces.get(req.params.id),
+    async (req) => serialize(ctx.workspaces.get(req.params.id)),
   );
 
   app.patch(
@@ -106,8 +140,8 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const workspace = ctx.workspaces.update(req.params.id, req.body);
-      ctx.trackerManager.sync(); // toggling tracker / repointing the repo / changing the interval takes effect now
-      return workspace;
+      await ctx.trackerManager.sync(); // toggling tracker / repointing the repo / changing the interval takes effect now
+      return serialize(workspace);
     },
   );
 
@@ -129,7 +163,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       ctx.workspaces.delete(req.params.id);
-      ctx.trackerManager.sync(); // the deleted Workspace's poll loop stops here
+      await ctx.trackerManager.sync(); // the deleted Workspace's poll loop stops here
       return reply.status(204).send(null);
     },
   );

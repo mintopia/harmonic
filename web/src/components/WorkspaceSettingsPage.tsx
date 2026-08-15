@@ -164,6 +164,10 @@ export function WorkspaceSettingsPage({
               />
               <FieldError message={fieldErrors['trackerPollIntervalSeconds']} />
             </div>
+            <div>
+              <span className={fieldLabel}>Resolved tracker</span>
+              <ResolvedTrackerValue workspace={pristine} />
+            </div>
           </div>
         </SettingsSection>
 
@@ -342,6 +346,39 @@ export function WorkspaceSettingsPage({
         />
       )}
     </div>
+  );
+}
+
+/** Friendly phrasing per failure code, with the raw reason kept as a tooltip. */
+const RESOLVE_FAILURE_LABEL: Record<string, string> = {
+  'no-declaration': 'No tracker declared',
+  unsupported: 'Unsupported tracker',
+  misconfigured: 'Tracker misconfigured',
+};
+
+/**
+ * The read-only Resolved Tracker (issue #83): the resolved adapter label when
+ * it resolves, the reason it can't when it doesn't, or a hint that tracking is
+ * off. Read straight from the server (the pristine Workspace), not local edits —
+ * it recomputes only when a save re-syncs the poll loop.
+ */
+function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
+  const resolved = workspace.resolvedTracker;
+  if (!resolved) {
+    return (
+      <p className="pt-1 text-small text-muted">
+        {workspace.trackerEnabled ? 'Resolving…' : 'Enable mirroring to resolve the tracker.'}
+      </p>
+    );
+  }
+  if (resolved.ok) {
+    return <p className="pt-1 font-medium text-ink">{resolved.label}</p>;
+  }
+  const friendly = (resolved.code && RESOLVE_FAILURE_LABEL[resolved.code]) ?? 'Cannot resolve tracker';
+  return (
+    <p className="pt-1 text-fail" title={resolved.reason ?? undefined}>
+      {friendly}
+    </p>
   );
 }
 

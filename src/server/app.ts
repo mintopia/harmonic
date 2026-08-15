@@ -468,7 +468,7 @@ not resolved yet.`;
       conversationDriver.mcpUrl = mcpUrl;
     }
     autoRunner.poke();
-    trackerManager.sync();
+    await trackerManager.sync();
   });
   await app.register(wsRoutes, { prefix: '/api' });
 

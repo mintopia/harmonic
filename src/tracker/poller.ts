@@ -1,6 +1,6 @@
 import type { TaskService } from '../domain/tasks.js';
-import type { Ticket, TrackerAdapter } from './adapter.js';
-import { resolveTrackerAdapter } from './adapter.js';
+import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
+import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
 
 /** The mirror coordinator's poll-side surface (issue #32): cache the scan for picks, then reconcile assignments. */
@@ -35,16 +35,27 @@ export class TrackerPoller {
     private readonly onMirrored: () => void = () => {},
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
     private readonly mirror?: MirrorSync,
+    /** Report each cycle's Resolved Tracker so the manager's cache stays fresh at poll time (issue #83). */
+    private readonly onResolved: (r: ResolvedTracker) => void = () => {},
   ) {}
 
   /**
-   * One poll cycle: scan → cache for picks → mirror 1:1 into this Workspace →
-   * poke → reconcile assignments (issue #32). `observe` runs before the poke so
-   * a freshly-mirrored Task's pick sees the current assignees; `reconcile` runs
-   * after so it settles against final state.
+   * One poll cycle: resolve → scan → cache for picks → mirror 1:1 into this
+   * Workspace → poke → reconcile assignments (issue #32). The resolution is
+   * reported to {@link onResolved} either way (issue #83) so the Resolved
+   * Tracker surface refreshes every poll, not just on the manager's reconcile.
+   * `observe` runs before the poke so a freshly-mirrored Task's pick sees the
+   * current assignees; `reconcile` runs after so it settles against final state.
    */
   async poll(): Promise<void> {
-    const adapter = await this.resolveAdapter(this.workingDir);
+    let adapter: TrackerAdapter;
+    try {
+      adapter = await this.resolveAdapter(this.workingDir);
+    } catch (err) {
+      this.onResolved(resolutionFailure(err));
+      throw err;
+    }
+    this.onResolved(resolutionSuccess(adapter));
     const tickets = await adapter.scan();
     this.lastScan = tickets;
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));

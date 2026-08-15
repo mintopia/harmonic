@@ -43,6 +43,15 @@ export interface FsListing {
   entries: FsEntry[];
 }
 
+/**
+ * A Workspace's Resolved Tracker (issue #83), as the API flattens it: a display
+ * `label` when resolved, else a coded `reason` it can't. A discriminated union so
+ * `ok` narrows which fields are present, matching the flat JSON on the wire.
+ */
+export type ResolvedTracker =
+  | { ok: true; label: string; code: null; reason: null }
+  | { ok: false; label: null; code: string; reason: string };
+
 /** A Workspace (ADR-0008): a named Working Directory, unique by absolute path. */
 export interface Workspace {
   id: number;
@@ -50,6 +59,8 @@ export interface Workspace {
   workingDir: string;
   trackerEnabled: boolean;
   trackerPollIntervalSeconds: number;
+  /** The {@link ResolvedTracker} (issue #83); `null` when tracking is off. */
+  resolvedTracker: ResolvedTracker | null;
   /** Per-workspace setting overrides (ADR-0012, issue #64). `null` inherits the
    * global default; a value overrides it. Resolved at read time (issue #60). */
   harness: string | null;

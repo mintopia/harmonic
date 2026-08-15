@@ -1,7 +1,7 @@
 import type { WorkspaceRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import type { TrackerAdapter } from './adapter.js';
-import { resolveTrackerAdapter } from './adapter.js';
+import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
+import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import type { DerivedMap } from './mirror.js';
@@ -26,6 +26,14 @@ const sigOf = (ws: WorkspaceRow): string => `${ws.workingDir}|${ws.trackerPollIn
  */
 export class TrackerPollerManager {
   private entries = new Map<number, Entry>();
+  /**
+   * The last-computed Resolved Tracker per tracker-enabled Workspace (issue
+   * #83). Set whenever resolution runs — in {@link sync} before the poll-loop
+   * gate and on a manual {@link pollNow} refresh — and dropped when a Workspace
+   * disables tracking or is deleted. In-memory, like the poller's own scan
+   * cache: derived from the repo, never persisted.
+   */
+  private resolved = new Map<number, ResolvedTracker>();
 
   constructor(
     private readonly tasks: TaskService,
@@ -35,8 +43,16 @@ export class TrackerPollerManager {
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
   ) {}
 
-  /** Reconcile running pollers to the current set of tracker-enabled Workspaces. Idempotent. */
-  sync(): void {
+  /**
+   * Reconcile running pollers to the current set of tracker-enabled Workspaces.
+   * Idempotent. Async because starting a loop is now gated on resolving the
+   * Workspace's tracker (issue #83): an enabled-but-unresolvable Workspace
+   * caches its failure reason and never starts a loop, rather than erroring
+   * every cycle. A Workspace that already has a running loop isn't re-resolved
+   * here — its own poll cycles keep the cached Resolved Tracker fresh (the
+   * poller's `onResolved`), and a manual {@link pollNow} forces it immediately.
+   */
+  async sync(): Promise<void> {
     const wsById = new Map(this.getWorkspaces().map((w) => [w.id, w]));
     // Stop pollers whose Workspace is gone, disabled tracking, or changed its repo/interval.
     for (const [id, entry] of this.entries) {
@@ -46,23 +62,43 @@ export class TrackerPollerManager {
         this.entries.delete(id);
       }
     }
-    // Start a poller for every tracker-enabled Workspace that lacks one.
+    // Drop cached resolutions for Workspaces gone or with tracking off — no poll, no Resolved Tracker.
+    for (const id of [...this.resolved.keys()]) {
+      const ws = wsById.get(id);
+      if (!ws || !ws.trackerEnabled) this.resolved.delete(id);
+    }
+    // For every tracker-enabled Workspace lacking a running loop: resolve its
+    // tracker, cache the result, and start a loop only when it resolves. An
+    // unresolvable one surfaces its reason but stays loop-less (issue #83).
     for (const ws of wsById.values()) {
       if (!ws.trackerEnabled || this.entries.has(ws.id)) continue;
-      const mirror = new MirrorCoordinator(this.tasks, ws.id);
-      const poller = new TrackerPoller(
-        this.tasks,
-        ws.id,
-        ws.workingDir,
-        ws.trackerPollIntervalSeconds * 1000,
-        this.resolveAdapter,
-        this.onMirrored,
-        this.onError,
-        mirror,
-      );
-      this.entries.set(ws.id, { poller, mirror, sig: sigOf(ws) });
-      poller.start();
+      const resolved = await resolveTracker(ws.workingDir, this.resolveAdapter);
+      this.resolved.set(ws.id, resolved);
+      if (resolved.ok) this.startLoop(ws);
     }
+  }
+
+  /** Build and start a poll loop for a Workspace (its tracker already resolved). */
+  private startLoop(ws: WorkspaceRow): void {
+    const mirror = new MirrorCoordinator(this.tasks, ws.id);
+    const poller = new TrackerPoller(
+      this.tasks,
+      ws.id,
+      ws.workingDir,
+      ws.trackerPollIntervalSeconds * 1000,
+      this.resolveAdapter,
+      this.onMirrored,
+      this.onError,
+      mirror,
+      (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
+    );
+    this.entries.set(ws.id, { poller, mirror, sig: sigOf(ws) });
+    poller.start();
+  }
+
+  /** The last-resolved tracker for a Workspace, or null when tracking is off / not yet resolved (issue #83). */
+  resolvedTracker(workspaceId: number): ResolvedTracker | null {
+    return this.resolved.get(workspaceId) ?? null;
   }
 
   private entryFor(workspaceId: number | null): Entry | undefined {
@@ -97,13 +133,30 @@ export class TrackerPollerManager {
 
   /**
    * Force an immediate poll for a Workspace's tracker — the board's manual
-   * refresh. Rescans the repo and mirrors any changes now instead of waiting
-   * for the interval. No-op if the Workspace has no running poll loop (tracking
-   * off); resolves once the scan + mirror settle, and rejects if the scan fails
-   * (unlike the background loop, which swallows) so a manual refresh surfaces it.
+   * refresh. Re-resolves the tracker first and refreshes the cached Resolved
+   * Tracker (issue #83), so a refresh both re-mirrors and re-checks resolution:
+   * - tracking off / no such Workspace ⇒ no-op.
+   * - now unresolvable ⇒ cache the reason and tear down any running loop.
+   * - resolvable but loop-less (a prior failure, now fixed) ⇒ bring the loop up.
+   * - already running ⇒ rescan now, rejecting if the scan fails (unlike the
+   *   background loop, which swallows) so a manual refresh surfaces it.
    */
   async pollNow(workspaceId: number): Promise<void> {
-    await this.entryFor(workspaceId)?.poller.poll();
+    const ws = this.getWorkspaces().find((w) => w.id === workspaceId);
+    if (!ws || !ws.trackerEnabled) return;
+    const resolved = await resolveTracker(ws.workingDir, this.resolveAdapter);
+    this.resolved.set(ws.id, resolved);
+    const entry = this.entries.get(ws.id);
+    if (!resolved.ok) {
+      entry?.poller.stop();
+      this.entries.delete(ws.id);
+      return;
+    }
+    if (entry) {
+      await entry.poller.poll();
+    } else {
+      this.startLoop(ws); // resolution just started passing — its own immediate poll mirrors now
+    }
   }
 
   /** Stop every poll loop (server shutdown). */

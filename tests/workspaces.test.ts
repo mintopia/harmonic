@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, type TestServer } from './helpers.js';
@@ -84,6 +84,8 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const created = await server.api('POST', '/api/workspaces', { name: 'Tracked', workingDir: dir });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ trackerEnabled: false, trackerPollIntervalSeconds: 60 });
+    // Tracking off ⇒ nothing to resolve.
+    expect(created.body.resolvedTracker).toBeNull();
 
     const on = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       trackerEnabled: true,
@@ -92,6 +94,37 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(on.status).toBe(200);
     expect(on.body).toMatchObject({ trackerEnabled: true, trackerPollIntervalSeconds: 120 });
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('surfaces the Resolved Tracker: a reason when unresolvable, the label when resolved (issue #83)', async () => {
+    // A repo with no issue-tracker.md: enabling tracking surfaces the reason, no poll loop.
+    const bare = mkdtempSync(join(tmpdir(), 'harmonic-workspace-bare-'));
+    const undeclared = await server.api('POST', '/api/workspaces', {
+      name: 'Undeclared',
+      workingDir: bare,
+      trackerEnabled: true,
+    });
+    expect(undeclared.status).toBe(201);
+    expect(undeclared.body.resolvedTracker).toMatchObject({ ok: false, code: 'no-declaration' });
+
+    // A repo that declares GitHub resolves to the "GitHub" label.
+    const repo = mkdtempSync(join(tmpdir(), 'harmonic-workspace-gh-'));
+    mkdirSync(join(repo, 'docs/agents'), { recursive: true });
+    writeFileSync(join(repo, 'docs/agents/issue-tracker.md'), '# Issue tracker: GitHub\n');
+    const declared = await server.api('POST', '/api/workspaces', {
+      name: 'Declared',
+      workingDir: repo,
+      trackerEnabled: true,
+    });
+    expect(declared.status).toBe(201);
+    expect(declared.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
+
+    // It also comes back on a plain GET.
+    const fetched = await server.api('GET', `/api/workspaces/${declared.body.id}`);
+    expect(fetched.body.resolvedTracker).toMatchObject({ ok: true, label: 'GitHub' });
+
+    rmSync(bare, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
   });
 
   it('DELETE removes a Workspace and 404s an unknown id (issue #45)', async () => {
