@@ -10,6 +10,7 @@ export type IconName =
   | 'board'
   | 'activity'
   | 'table'
+  | 'graph'
   | 'stats'
   | 'api'
   | 'settings'
@@ -47,6 +48,15 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <rect height="9.5" rx="1" width="12.5" x="1.75" y="3.25" />
       <path d="M1.75 6.5h12.5M1.75 9.75h12.5" />
+    </>
+  ),
+  // A small dependency DAG (one node fanning out to two): the Graph view.
+  graph: (
+    <>
+      <path d="M5 8 11 4.25M5 8 11 11.75" />
+      <circle cx="3.25" cy="8" r="1.75" />
+      <circle cx="12.75" cy="4" r="1.75" />
+      <circle cx="12.75" cy="12" r="1.75" />
     </>
   ),
   // Bar chart, bottom-aligned.

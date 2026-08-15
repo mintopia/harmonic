@@ -33,6 +33,7 @@
     "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.13",
     "drizzle-orm": "^0.45.2",
+    "elkjs": "^0.10.2",
     "fastify": "^5.10.0",
     "fastify-type-provider-zod": "^7.0.0",
     "marked": "^18.0.9",

@@ -51,24 +51,25 @@ describe('rail collapse persistence', () => {
 });
 
 describe('rail primary views', () => {
-  it('promotes API to a primary nav view alongside Board/Table/Stats (issue 5); Activity sits beside the Board (issue #52); Workspace settings is last (issue #64)', () => {
-    expect(VIEWS).toEqual(['board', 'activity', 'table', 'stats', 'api', 'settings', 'workspace']);
+  it('promotes API to a primary nav view alongside Board/Table/Stats (issue 5); Activity sits beside the Board (issue #52); Graph joins beside Table (issue #85); Workspace settings is last (issue #64)', () => {
+    expect(VIEWS).toEqual(['board', 'activity', 'table', 'graph', 'stats', 'api', 'settings', 'workspace']);
   });
 
   it('omits global Settings from the rail — its entry moved to a header icon (issue #63)', () => {
-    expect(RAIL_VIEWS).toEqual(['board', 'activity', 'table', 'stats', 'api', 'workspace']);
+    expect(RAIL_VIEWS).toEqual(['board', 'activity', 'table', 'graph', 'stats', 'api', 'workspace']);
     expect(RAIL_VIEWS).not.toContain('settings');
   });
 
   it('labels every view', () => {
     for (const v of VIEWS) expect(VIEW_LABELS[v]).toBeTruthy();
     expect(VIEW_LABELS.api).toBe('API');
+    expect(VIEW_LABELS.graph).toBe('Graph');
     expect(VIEW_LABELS.settings).toBe('Settings');
     expect(VIEW_LABELS.workspace).toBe('Workspace');
   });
 
-  it('scopes Board/Table/Stats and the per-Workspace settings page to a Workspace, so the empty state (#68) spares Activity/API/Settings', () => {
-    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'table', 'stats', 'workspace']);
+  it('scopes Board/Table/Graph/Stats and the per-Workspace settings page to a Workspace, so the empty state (#68) spares Activity/API/Settings', () => {
+    expect(VIEWS.filter(isWorkspaceScopedView)).toEqual(['board', 'table', 'graph', 'stats', 'workspace']);
     expect(isWorkspaceScopedView('activity')).toBe(false);
     expect(isWorkspaceScopedView('api')).toBe(false);
     expect(isWorkspaceScopedView('settings')).toBe(false);

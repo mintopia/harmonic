@@ -60,6 +60,15 @@ order; ties break FIFO by creation time.
 
 ### Tracker mirroring
 
+**Resolved Tracker**:
+Which issue tracker a Workspace's repo declares — **GitHub**, **GitLab**, or
+**Local Markdown** — resolved from its `docs/agents/issue-tracker.md` at poll
+time, never auto-detected. Surfaced read-only on the Workspace so the operator
+can see what will be mirrored, or why nothing can be (no declaration, an
+unsupported name). A resolution failure stops the poll loop from starting
+rather than erroring every cycle.
+_Avoid_: detected tracker, tracker type, provider
+
 **Origin**:
 Whether a Task was authored in Harmonic (**native**) or is a 1:1 projection
 of a tracker issue (**mirrored**). One board carries both; only the origin
@@ -295,6 +304,14 @@ active Conversations across all Workspaces — showing realtime Usage, context
 fill, Cost, and each process's Process Tree. Read-only but for a per-process
 Stop/Kill and a deep-link to a related ticket; holds no state of its own.
 _Avoid_: monitor, dashboard
+
+**Dependency Graph**:
+A read-only, per-Workspace view (rail label **Graph**) that lays out the
+board's Tasks as a directed acyclic graph over their Dependency edges — native
+and mirrored alike. Active-state Tasks by default, terminal ones behind a
+toggle; Tasks sharing a Map are positioned together, not boxed. A node
+deep-links to its Task; edits happen in Task detail, never on the graph.
+_Avoid_: DAG view, tree, board graph
 
 **Notification Channel**:
 A configured destination — Discord webhook, Slack webhook, Generic webhook,

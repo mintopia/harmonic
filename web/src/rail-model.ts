@@ -38,7 +38,9 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 // active Workspace (the switcher above the nav picks which). It sits last, next
 // to the global Settings it mirrors — Settings holds machine + default config,
 // Workspace holds one Workspace's identity and its overrides of those defaults.
-export const VIEWS = ['board', 'activity', 'table', 'stats', 'api', 'settings', 'workspace'] as const;
+// Graph (issue #85, ADR 0015) is the read-only Dependency Graph view — a
+// workspace-scoped sibling of Board/Table, so it sits beside Table in the rail.
+export const VIEWS = ['board', 'activity', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -57,12 +59,15 @@ export const RAIL_VIEWS: readonly View[] = VIEWS.filter((v) => v !== 'settings')
  * global, so those still render on a fresh, workspace-less instance.
  */
 export function isWorkspaceScopedView(view: View): boolean {
-  return view === 'board' || view === 'table' || view === 'stats' || view === 'workspace';
+  return (
+    view === 'board' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
+  );
 }
 export const VIEW_LABELS: Record<View, string> = {
   board: 'Board',
   activity: 'Activity',
   table: 'Table',
+  graph: 'Graph',
   stats: 'Stats',
   api: 'API',
   settings: 'Settings',

@@ -11,6 +11,7 @@ import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
+import { GraphView } from './components/GraphView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
@@ -579,6 +580,9 @@ export function App() {
                 )}
                 {view === 'activity' && <ActivityView config={config} />}
                 {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}
+                {view === 'graph' && (
+                  <GraphView tasks={taskList} loading={tasks === null} onOpen={setOpenTask} />
+                )}
                 {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
                 {view === 'api' && <ApiPage />}
                 {view === 'settings' && <SettingsPage onSaved={setConfig} />}
