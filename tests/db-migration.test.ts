@@ -91,6 +91,68 @@ describe('Setting Override migration (ADR-0012, issue #59)', () => {
   });
 });
 
+describe('per-task-defaults table rebuild (ADR-0016, issue #81)', () => {
+  it('migrates a populated pre-0019 DB (Task + Dependency edge + Run) through 0019 and boots green', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-fk-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0019');
+
+    // Build a populated pre-0019 install: migrate to just before 0019, then seed
+    // a Workspace, a Dependency edge, a Run, and a Channel edge — the exact child
+    // rows in task_dependencies/runs/task_channels that reference tasks and would
+    // make 0019's `DROP TABLE tasks` raise SQLITE_CONSTRAINT_FOREIGNKEY when
+    // foreign keys are enforced during migration.
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    sqlite.pragma('foreign_keys = ON');
+    migrate(drizzle(sqlite, { schema }), { migrationsFolder });
+    const now = Date.now();
+    sqlite
+      .prepare(
+        `insert into workspaces (name, working_dir, tracker_enabled, tracker_poll_interval_seconds, created_at, updated_at)
+         values ('Legacy', '/tmp/legacy-project', 0, 60, ?, ?)`,
+      )
+      .run(now, now);
+    const insertTask = sqlite.prepare(
+      `insert into tasks (prompt, harness, model, working_dir, isolation_mode, priority, state, workspace_id, origin, created_at, updated_at)
+       values (?, 'claude', 'sonnet', '/tmp/legacy-project', 'direct', 'normal', 'ready', 1, 'native', ?, ?)`,
+    );
+    const blockerId = Number(insertTask.run('a blocker task', now, now).lastInsertRowid);
+    const dependentId = Number(insertTask.run('a dependent task', now, now).lastInsertRowid);
+    sqlite
+      .prepare(`insert into task_dependencies (task_id, depends_on_id) values (?, ?)`)
+      .run(dependentId, blockerId);
+    sqlite
+      .prepare(
+        `insert into runs (task_id, attempt, state, started_at) values (?, 1, 'completed', ?)`,
+      )
+      .run(blockerId, now);
+    sqlite
+      .prepare(`insert into channels (name, type, config, events, created_at) values ('ops', 'webhook', '{}', '[]', ?)`)
+      .run(now);
+    sqlite.prepare(`insert into task_channels (task_id, channel_id) values (?, 1)`).run(blockerId);
+    sqlite.close();
+
+    // The real boot path: this used to throw FOREIGN KEY constraint failed on
+    // 0019's DROP TABLE tasks. It must now boot cleanly.
+    const db = openDb(dataDir);
+
+    expect(db.select().from(schema.tasks).all()).toHaveLength(2);
+    expect(db.select().from(schema.taskDependencies).all()).toEqual([
+      { taskId: dependentId, dependsOnId: blockerId },
+    ]);
+    expect(db.select().from(schema.runs).all()).toHaveLength(1);
+    expect(db.select().from(schema.taskChannels).all()).toEqual([{ taskId: blockerId, channelId: 1 }]);
+
+    // Foreign keys are enforced for runtime writes after boot: a Run pointing at
+    // a non-existent Task is rejected with a foreign-key constraint error.
+    expect(() =>
+      db.insert(schema.runs).values({ taskId: 999999, attempt: 1, state: 'completed', startedAt: now }).run(),
+    ).toThrow(/FOREIGN KEY constraint failed/);
+
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});
+
 describe('pre-Workspace DB migration (ADR-0008, issue #39)', () => {
   it('creates exactly one default Workspace from defaults.workingDir and backfills every existing Task/Conversation', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-premigrate-'));

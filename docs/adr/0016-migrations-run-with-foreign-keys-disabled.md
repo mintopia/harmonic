@@ -7,7 +7,7 @@ migration in one — so the `PRAGMA foreign_keys=OFF` the generated migration em
 does nothing. `openDb` used to set `foreign_keys = ON` *before* `migrate()`, so
 migration `0019`'s `DROP TABLE tasks` hit `SQLITE_CONSTRAINT_FOREIGNKEY` on any
 populated database (child rows in `runs`, `task_dependencies`, and
-`conversations` reference the `tasks` rows the drop implicitly deletes) — a hard
+`task_channels` reference the `tasks` rows the drop implicitly deletes) — a hard
 boot failure for **every existing database**, while fresh ones passed because
 they have no rows to delete.
 

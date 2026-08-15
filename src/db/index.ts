@@ -77,10 +77,21 @@ export function openDb(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(join(dataDir, 'harmonic.db'));
   sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
+  // ADR-0016: table-rebuild migrations (create __new_x, copy, DROP TABLE x,
+  // rename) need foreign-key enforcement OFF, and SQLite ignores
+  // `PRAGMA foreign_keys` inside a transaction (drizzle wraps each migration in
+  // one), so the pragma the generated migration emits is a no-op. Disable at the
+  // connection level *before* migrate(), verify integrity with
+  // foreign_key_check, then enforce foreign keys for runtime.
+  sqlite.pragma('foreign_keys = OFF');
   const db = drizzle(sqlite, { schema });
   const migrationsFolder = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle');
   migrate(db, { migrationsFolder });
+  const violations = sqlite.pragma('foreign_key_check') as unknown[];
+  if (violations.length > 0) {
+    throw new Error(`Database failed foreign_key_check after migration: ${JSON.stringify(violations)}`);
+  }
+  sqlite.pragma('foreign_keys = ON');
   backfillDefaultWorkspace(db);
   return db;
 }
