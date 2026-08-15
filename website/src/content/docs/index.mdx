@@ -1,0 +1,62 @@
+---
+title: Harmonic
+tagline: Trustworthy autonomy for your coding agents.
+template: splash
+hero:
+  title: Harmonic
+  tagline: Queue, run, and review autonomous coding-agent tasks — from one board, over open ACP.
+  actions:
+    - text: Getting started
+      link: /harmonic/using-harmonic/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/mintopia/harmonic
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What Harmonic is
+
+Harmonic queues, runs, and reviews autonomous coding-agent Tasks. It drives
+agent harnesses — Claude Code, Codex, Copilot — over
+[ACP](https://agentclientprotocol.com) from one board: agents run
+unattended, and nothing merges without passing the review gate.
+
+## The trustworthy-autonomy promise
+
+Success for Harmonic is **trustworthy autonomy**: agents run unattended,
+the operator gets notified, reviews the result, and accepts or rejects it —
+nothing lands without passing that review gate. The operator rarely has to
+babysit a run; they set tasks up, get notified, review, and accept.
+
+<CardGrid stagger>
+  <Card title="Runs unattended" icon="rocket">
+    Set a Task up and let the harness work — Harmonic drives the agent over
+    ACP without you watching every step.
+  </Card>
+  <Card title="The review gate is sacred" icon="approve-check">
+    Nothing merges without passing review. Accept or reject what comes back
+    before it lands.
+  </Card>
+  <Card title="No vendor lock-in" icon="open-book">
+    Harmonic speaks to every harness over the open [ACP](https://agentclientprotocol.com)
+    protocol — Claude Code, Codex, Copilot, and beyond.
+  </Card>
+  <Card title="One board" icon="list-format">
+    A single queue keeps agent work moving, glanceable from a side monitor
+    between other work.
+  </Card>
+</CardGrid>
+
+## Get started
+
+```sh
+npm install -g @mintopia/harmonic
+harmonic start
+```
+
+Then open `http://localhost:4700`. See [Getting started](/harmonic/using-harmonic/getting-started/)
+for the full walkthrough.

@@ -1,0 +1,28 @@
+/*
+ * Aurora theme (light-touch v1) — see website/PLAN.md and DESIGN.md § 2.
+ * Accent cobalt: #2563EB (light) / #6E8BFF (dark).
+ * Fonts: Space Grotesk (display/body) + JetBrains Mono (code).
+ */
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/jetbrains-mono';
+
+:root {
+  --sl-font: 'Space Grotesk Variable', system-ui, sans-serif;
+  --sl-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+/* Dark mode (default) — accent #6E8BFF */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #1c2b57;
+  --sl-color-accent: #6e8bff;
+  --sl-color-accent-high: #c4d0ff;
+  --sl-color-text-accent: #a8b8ff;
+}
+
+/* Light mode — accent #2563EB */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d6e2fd;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #16305c;
+  --sl-color-text-accent: #1d4fc4;
+}

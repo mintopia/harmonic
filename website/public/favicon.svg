@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Harmonic">
+  <rect width="32" height="32" rx="7" fill="#0d1117" />
+  <!-- Aurora cobalt harmonic waveform -->
+  <path d="M4 16 C 8 4, 12 4, 16 16 S 24 28, 28 16"
+        fill="none" stroke="#6e8bff" stroke-width="2.5"
+        stroke-linecap="round" />
+</svg>

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+.astro/
 .DS_Store
 
 scratch_*
