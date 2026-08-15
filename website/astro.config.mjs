@@ -35,6 +35,7 @@ export default defineConfig({
             { label: 'Harnesses', link: '/using-harmonic/harnesses/' },
             { label: 'Notifications', link: '/using-harmonic/notifications/' },
             { label: 'Settings & overrides', link: '/using-harmonic/settings-and-overrides/' },
+            { label: 'Security', link: '/using-harmonic/security/' },
             { label: 'API & MCP', link: '/using-harmonic/api-and-mcp/' },
           ],
         },
@@ -57,6 +58,7 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'CLI reference', link: '/reference/cli/' },
+            { label: 'Configuration reference', link: '/reference/configuration/' },
             { label: 'Glossary', link: '/reference/glossary/' },
           ],
         },

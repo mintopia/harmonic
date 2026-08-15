@@ -1,24 +1,73 @@
 ---
 title: Getting started
-description: A hands-on walkthrough of your first Task in Harmonic, from creation through the review gate to Accept or Reject.
+description: Install Harmonic, run the background server, open it at localhost:4700, and walk your first Task through the review gate.
 ---
 
-This page walks you through your first Task end to end: create it, run
-it, review what came back, and decide whether it merges. By the end
-you'll have seen the whole loop that every Task in Harmonic follows.
+Install Harmonic, start the server, open it in a browser, and run your
+first Task end to end. By the end you'll have Harmonic running and have
+seen the whole loop every Task follows: create, run, review, decide.
 
-## Before you start
+## Install
 
-Harmonic is installed and running:
+Install from npm once and you get the `harmonic` command on your PATH:
 
-```
+```sh
 npm install -g @mintopia/harmonic
-harmonic start
 ```
 
-Open `http://localhost:4700`. Harmonic always has at least one
-**Workspace** — a named Working Directory pointing at a repo root — so
-there's somewhere for your first Task to live.
+Rather not install anything globally? Every command also works through
+`npx`, which fetches and runs the latest release on demand:
+
+```sh
+npx @mintopia/harmonic start
+```
+
+The two are interchangeable everywhere on this page — use `harmonic <cmd>`
+after a global install, or `npx @mintopia/harmonic <cmd>` without one.
+
+## Run
+
+The recommended way to keep Harmonic on hand is the background server.
+`start` launches it detached and returns immediately, logging to
+`harmonic.log` inside the data directory (`~/.harmonic` by default):
+
+```sh
+harmonic start          # background; logs to ~/.harmonic/harmonic.log
+```
+
+Manage that background server with:
+
+```sh
+harmonic status         # is it running, and where? (non-zero exit if not)
+harmonic stop           # shut it down
+```
+
+For a quick one-off, run it in the **foreground** instead and stop it
+with Ctrl-C:
+
+```sh
+harmonic serve
+```
+
+Both `serve` and `start` accept `--port`, `--host`, `--data-dir`, and
+`--password`; see the [CLI reference](/harmonic/reference/cli/) for every
+command and option, and the
+[Configuration reference](/harmonic/reference/configuration/) for the
+environment variables that back them.
+
+## Open it
+
+However you started it, open **`http://localhost:4700`** — the default
+port. Harmonic always has at least one **Workspace** — a named Working
+Directory pointing at a repo root — so there's somewhere for your first
+Task to live.
+
+:::caution
+With no password set, Harmonic runs **ungated**: anyone who can reach the
+address has full access, and the default `--host 0.0.0.0` is reachable
+from your whole network. Before exposing it, bind to `127.0.0.1` or set a
+password — see [Security](/harmonic/using-harmonic/security/).
+:::
 
 ## 1. Create a Task
 
@@ -77,7 +126,7 @@ From *awaiting-review* you make the call:
 Accept/Reject is a human-only decision unless your instance has the
 agent-review config flag enabled.
 
-## What's next
+## Where to go next
 
 That's the full loop: create, run, review, decide. To see how these
 pieces — Workspace, Task, Run, Harness, Isolation Mode, and the rest —
@@ -90,3 +139,5 @@ One exception to note: mirrored Tasks — those projected 1:1 from an
 issue tracker — bypass the review gate entirely. Closing the tracker
 issue is what resolves them, not Accept/Reject. See
 [Core concepts](/harmonic/using-harmonic/core-concepts/) for more.
+</content>
+</invoke>
