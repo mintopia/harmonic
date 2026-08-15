@@ -11,8 +11,13 @@ import { costSchema, modelUsageSchema } from '../schemas.js';
 const querySchema = z.object({
   /** Epoch ms, inclusive; defaults to 0, i.e. all of recorded history. */
   from: z.coerce.number().int().nonnegative().default(0).meta({ example: 1783382400000 }),
-  /** Epoch ms, inclusive; defaults to now. */
-  to: z.coerce.number().int().nonnegative().default(() => Date.now()).meta({ example: 1784032260000 }),
+  /**
+   * Epoch ms, inclusive; when omitted, defaults to "now" — resolved in the
+   * handler, not via a zod `.default(() => Date.now())`, so the generated
+   * OpenAPI spec stays byte-stable (a live-timestamp default would make the
+   * committed snapshot churn on every export — issue #74).
+   */
+  to: z.coerce.number().int().nonnegative().optional().meta({ example: 1784032260000 }),
   /** Scope to one Workspace's runs (ADR-0008); omitted means every Workspace. */
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
 });
@@ -71,7 +76,10 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const { from, to, workspaceId } = req.query;
+      const { from, workspaceId } = req.query;
+      // Omitted `to` means "up to now" — applied here so the query schema
+      // carries no dynamic default (keeps the OpenAPI snapshot deterministic).
+      const to = req.query.to ?? Date.now();
       // runs carries no workspaceId of its own (it inherits via its Task —
       // ADR-0008), so scoping by Workspace means joining tasks.
       const rows = (

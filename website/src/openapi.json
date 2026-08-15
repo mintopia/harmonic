@@ -8691,7 +8691,6 @@
           },
           {
             "schema": {
-              "default": 1786805695255,
               "example": 1784032260000,
               "type": "integer",
               "minimum": 0,
