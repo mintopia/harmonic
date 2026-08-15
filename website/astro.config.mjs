@@ -2,6 +2,7 @@
 // Deploys as a GitHub Pages *project* page at https://mintopia.github.io/harmonic/,
 // so `site` + `base` must match that path exactly (see .github/workflows/docs.yml).
 import starlight from '@astrojs/starlight';
+import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
@@ -23,6 +24,15 @@ export default defineConfig({
           tag: 'script',
           content: `if (!localStorage.getItem('starlight-theme')) { localStorage.setItem('starlight-theme', 'dark'); }`,
         },
+      ],
+      plugins: [
+        starlightOpenAPI([
+          {
+            base: 'reference/api',
+            label: 'API reference',
+            schema: './src/openapi.json',
+          },
+        ]),
       ],
       sidebar: [
         {
@@ -62,6 +72,7 @@ export default defineConfig({
             { label: 'Glossary', link: '/reference/glossary/' },
           ],
         },
+        ...openAPISidebarGroups,
       ],
     }),
   ],

@@ -52,6 +52,9 @@ Because the reference is generated straight from the zod route schemas
 (ADR 0005), it can never drift out of sync with the code — read it as the
 authoritative, always-current description of `/api`.
 
+A browsable copy of this same spec is also published on this docs site at
+[API reference](/harmonic/reference/api/).
+
 ## MCP server
 
 Harmonic runs its own **MCP server** (`@modelcontextprotocol/sdk`), exposed

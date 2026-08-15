@@ -32,3 +32,12 @@ jobs:
 
       - run: npm run typecheck
       - run: npm test
+
+      # The committed OpenAPI snapshot (website/src/openapi.json, issue #74)
+      # must match the live zod route schemas: regenerate it and fail if it
+      # drifted. The docs deploy regenerates it anyway, so the live site is
+      # never stale — this keeps the in-repo snapshot that offline `dev` reads
+      # honest after a route-schema change.
+      - run: npm run docs:openapi
+      - name: Fail if the OpenAPI snapshot is stale (run `npm run docs:openapi`)
+        run: git diff --exit-code website/src/openapi.json
