@@ -19,8 +19,8 @@ describe('taskActions', () => {
     expect(taskActions('draft')).toEqual(['ready', 'edit', 'cancel']);
   });
 
-  it('offers only cancel while a task is running', () => {
-    expect(taskActions('running')).toEqual(['cancel']);
+  it('offers complete (operator override) and cancel while a task is running', () => {
+    expect(taskActions('running')).toEqual(['complete', 'cancel']);
   });
 
   it('lets a blocked task be edited (re-point its model) or cancelled', () => {

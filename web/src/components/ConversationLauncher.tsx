@@ -237,16 +237,17 @@ function Composer({
   events: ConversationEvent[];
   expanded: boolean;
   onSend: (
-    fields: { harness: string; model: string; workingDir: string },
+    fields: { harness: string; model: string },
     text: string,
   ) => Promise<{ queued: boolean }>;
 }) {
   // Defaulted from config exactly like TaskForm — only meaningful before a
-  // conversation exists; once spawned the process's harness/model/workingDir
-  // are read from the conversation itself and can no longer change.
+  // conversation exists; once spawned the process's harness/model are read
+  // from the conversation itself and can no longer change. Working directory
+  // isn't offered here: a new conversation inherits its Workspace's working
+  // directory server-side (ADR-0008).
   const [harness, setHarness] = useState(config.defaults.harness);
   const [model, setModel] = useState(config.harnesses[config.defaults.harness]?.defaultModel ?? '');
-  const [workingDir, setWorkingDir] = useState(config.defaults.workingDir);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
@@ -278,7 +279,7 @@ function Composer({
     if (!trimmed || busy || ended) return;
     setBusy(true);
     try {
-      const result = await onSend({ harness, model, workingDir }, trimmed);
+      const result = await onSend({ harness, model }, trimmed);
       setText('');
       if (result.queued) {
         setQueued(true);
@@ -322,10 +323,9 @@ function Composer({
   return (
     <div className="border-t border-hairline p-3">
       {!locked && (
-        // Three across only when the panel is expanded; in the narrow dock
-        // they stack, so the Working Directory path input isn't crushed to
-        // ~120px (the grid keys off panel state, not viewport width).
-        <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-3' : ''}`}>
+        // Two across only when the panel is expanded; in the narrow dock they
+        // stack (the grid keys off panel state, not viewport width).
+        <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
           <div>
             <label className={fieldLabel} htmlFor="conv-harness">
               Harness
@@ -348,17 +348,6 @@ function Composer({
               Model
             </label>
             <ModelCombobox id="conv-model" value={model} onChange={setModel} options={models} />
-          </div>
-          <div>
-            <label className={fieldLabel} htmlFor="conv-workdir">
-              Working Directory
-            </label>
-            <input
-              id="conv-workdir"
-              className={`${field} font-data`}
-              value={workingDir}
-              onChange={(e) => setWorkingDir(e.target.value)}
-            />
           </div>
         </div>
       )}
@@ -745,11 +734,12 @@ export function ConversationLauncher({
     clearConversationId(localStorage);
   };
 
-  const send = async (fields: { harness: string; model: string; workingDir: string }, text: string) => {
+  const send = async (fields: { harness: string; model: string }, text: string) => {
     let id = view.kind === 'detail' ? view.conversationId : null;
     if (id === null) {
-      // First turn: spawns the harness server-side once this and the
-      // turn below land — harness/model/workingDir lock from here on.
+      // First turn: spawns the harness server-side once this and the turn
+      // below land — harness/model lock from here on. Working directory is
+      // inherited from the Workspace server-side (ADR-0008).
       const created = await api.createConversation({
         ...fields,
         ...(workspaceId !== null ? { workspaceId } : {}),

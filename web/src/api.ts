@@ -98,6 +98,8 @@ export const api = {
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
+  /** Operator override: stop a running task's agent and settle it completed, skipping review. */
+  completeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/complete`),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
   /** Send a failed task back to ready in place (failed → ready), carrying optional feedback. */
   requeueTask: (id: number, feedback?: string) =>

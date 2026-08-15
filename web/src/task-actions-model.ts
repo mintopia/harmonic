@@ -7,7 +7,16 @@ import type { TaskState } from './types.js';
  * state. Order is display order (left to right). completed offers nothing,
  * which hides the action bar entirely.
  */
-export type TaskAction = 'accept' | 'reject' | 'reattempt' | 'run' | 'ready' | 'edit' | 'cancel' | 'uncancel';
+export type TaskAction =
+  | 'accept'
+  | 'reject'
+  | 'reattempt'
+  | 'run'
+  | 'ready'
+  | 'edit'
+  | 'complete'
+  | 'cancel'
+  | 'uncancel';
 
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
@@ -28,8 +37,10 @@ export function taskActions(state: TaskState): TaskAction[] {
     // on a dependency (ADR-0012) — but not run; running can only be cancelled.
     case 'blocked':
       return ['edit', 'cancel'];
+    // Complete is an operator override (stop the agent, mark it done, skip the
+    // review gate); Cancel keeps its familiar rightmost destructive slot.
     case 'running':
-      return ['cancel'];
+      return ['complete', 'cancel'];
     // Uncancel returns the card to the queue in place (issue #57).
     case 'cancelled':
       return ['uncancel'];

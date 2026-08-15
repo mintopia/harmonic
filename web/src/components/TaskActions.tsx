@@ -23,6 +23,21 @@ function CancelButton({ className, onConfirm }: { className: string; onConfirm: 
   );
 }
 
+/** Force-complete a running task, armed with a two-step confirm — it SIGKILLs a
+ * working agent and skips the review gate, so no single misclick commits it. */
+function CompleteButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+  return (
+    <button
+      ref={ref}
+      className={armed ? 'font-semibold text-accept transition-colors duration-150' : className}
+      onClick={trigger}
+    >
+      {armed ? 'Sure?' : 'Complete'}
+    </button>
+  );
+}
+
 /**
  * The task's operator actions, rendered from the shared taskActions() map
  * so the board card and the detail modal footer never drift. The only
@@ -88,6 +103,8 @@ export function TaskActions({
             Edit
           </button>
         );
+      case 'complete':
+        return <CompleteButton key={action} className={secondary} onConfirm={act(() => api.completeTask(task.id))} />;
       case 'cancel':
         return (
           <CancelButton key={action} className={btnQuietDestructive} onConfirm={act(() => api.cancelTask(task.id))} />

@@ -37,6 +37,12 @@ export class TrackerPoller {
     private readonly mirror?: MirrorSync,
     /** Report each cycle's Resolved Tracker so the manager's cache stays fresh at poll time (issue #83). */
     private readonly onResolved: (r: ResolvedTracker) => void = () => {},
+    /**
+     * A mirrored Task whose ticket has closed in the tracker but which is still
+     * `running` on the board. The board-refresh backstop: the Runner stops the
+     * parked agent and settles the Task done. No-op by default (native-only server).
+     */
+    private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
   ) {}
 
   /**
@@ -61,8 +67,17 @@ export class TrackerPoller {
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter, tickets);
-    mirrorScan(this.tasks, tickets, this.workspaceId);
+    const mirrored = mirrorScan(this.tasks, tickets, this.workspaceId);
     this.onMirrored();
+    // Backstop: upsertMirrored never moves a Task off `running` (nothing
+    // interrupts a live Run), so a ticket a human closed mid-run leaves the Task
+    // stuck running with a parked agent. Hand those to the Runner to stop + settle.
+    const closedRefs = new Set(tickets.filter((t) => t.state === 'closed').map((t) => t.number));
+    for (const task of mirrored) {
+      if (task.state === 'running' && task.trackerRef != null && closedRefs.has(task.trackerRef)) {
+        this.onClosedWhileRunning(task.id);
+      }
+    }
     await this.mirror?.reconcile();
   }
 

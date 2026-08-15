@@ -69,6 +69,20 @@ interface ActiveRun {
   agentFinished: boolean;
   /** Set (with a reason) when the agent calls `escalate_task` — routes to a human. */
   escalateReason: string | null;
+  /**
+   * True while the agent has *ended its turn and is parked* between continue
+   * prompts — not mid-tool-call. The board-refresh backstop
+   * ({@link Runner.completeClosedMirrored}) only stops an agent that has ended
+   * its turn, so it never SIGKILLs one mid-work. False during a prompt turn and
+   * once the Run leaves the continue loop to settle.
+   */
+  idle: boolean;
+  /**
+   * Latched by {@link Runner.completeClosedMirrored} when the poll settles this
+   * Run out from under {@link Runner.drive}. `drive` checks it after each await
+   * and skips its own settle so the Run isn't finished twice.
+   */
+  externallySettled: boolean;
 }
 
 /**
@@ -175,6 +189,59 @@ export class Runner {
         this.events.onRunFinished?.(this.runStore.get(active.runId));
       }
     }
+  }
+
+  /**
+   * Stop a task's active run because an operator force-completed it (the task is
+   * already `completed` by the time we get here). Mirrors {@link cancelForTask}
+   * but settles the Run `completed`: SIGKILL even mid-turn, and drive()'s catch
+   * no-ops (finish is idempotent, and its settle only fires while the task is
+   * still `running`). Unlike {@link completeClosedMirrored} this does not wait
+   * for the agent to park — the operator asked for it to stop now.
+   */
+  completeForTask(taskId: number): void {
+    for (const active of this.active.values()) {
+      if (active.taskId === taskId) {
+        this.runStore.finish(active.runId, 'completed', { reason: null });
+        this.kill(active);
+        this.events.onRunFinished?.(this.runStore.get(active.runId));
+      }
+    }
+  }
+
+  /**
+   * Board-refresh backstop. A mirrored Task's tracker ticket has closed while the
+   * Task is still `running` and its agent is parked between turns (it ended a turn
+   * without finishing). The continue loop's own {@link AutoDrive.isResolved} check
+   * reads a single ticket and can lag the poll's authoritative scan, so a parked
+   * agent would keep burning continue budget against an already-done ticket. When
+   * the poll sees the close, stop the agent and settle the Task `completed` — the
+   * same terminal state {@link settleAutoCompleted} reaches, consistent with
+   * ADR-0011 (the ticket *is* closed).
+   *
+   * No-op unless there is an active Run for the Task whose agent has ended its
+   * turn (`idle`): a mid-turn agent is left to finish (its own loop or the next
+   * poll settles it), never SIGKILLed mid-tool-call. Fully synchronous, so it runs
+   * atomically against {@link drive}'s await points; `drive` then sees
+   * `externallySettled` and skips its own settle. Returns whether it acted.
+   */
+  completeClosedMirrored(taskId: number): boolean {
+    for (const active of this.active.values()) {
+      if (active.taskId !== taskId) continue;
+      if (active.externallySettled || !active.idle) return false; // mid-turn or already settling
+      active.externallySettled = true;
+      // Flush the final usage snapshot before the log's cwd (worktree) is torn down.
+      this.tailer.stop(active.runId);
+      const finished = this.runStore.finish(active.runId, 'completed', { reason: null });
+      // Only settle a still-running Task — a racing cancel/escalate wins.
+      if (this.taskService.get(taskId).state === 'running') {
+        this.taskService.setState(taskId, 'completed');
+      }
+      this.kill(active); // stop the parked agent; drive() finalizes the worktree + keys
+      this.events.onRunFinished?.(finished);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -385,6 +452,8 @@ export class Runner {
       activity: null,
       agentFinished: false,
       escalateReason: null,
+      idle: false,
+      externallySettled: false,
     };
     this.active.set(run.id, active);
 
@@ -437,7 +506,9 @@ export class Runner {
       // changed (the "Prompt" tab reads this column).
       this.runStore.update(run.id, { prompt: promptText });
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
+      active.idle = true; // turn ended → parked; the backstop may settle a closed ticket here
       for (let attempt = 1; autoDriven && !escalating; attempt++) {
+        if (active.externallySettled) break; // the poll settled a closed ticket while parked
         if (active.escalateReason) {
           escalating = active.escalateReason; // agent asked for a human → settle Escalated
           break;
@@ -447,7 +518,18 @@ export class Runner {
         if (attempt > this.autoDrive!.continueAttempts()) break; // budget spent → unresolved
         record('lifecycle', { event: 'continue', attempt });
         promptText = this.autoDrive!.continuePrompt(task);
+        active.idle = false; // a new turn is in flight — not parked, don't stop it
         result = await driver.prompt([{ type: 'text', text: promptText }]);
+        active.idle = true;
+      }
+      // Leaving the loop to settle: no longer "parked awaiting work", so the
+      // backstop must not race the settle below (it would skip Merge Fate).
+      active.idle = false;
+      if (active.externallySettled) {
+        // The poll already finished the Run completed and settled the Task; drop
+        // the harness and stop — settling again would finish the Run twice.
+        await finalize();
+        return;
       }
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
@@ -484,6 +566,9 @@ export class Runner {
       const tail = stderrTail.trim();
       const reason = tail ? `${base}\n\nharness stderr:\n${tail}` : base;
       await finalize();
+      // The poll may have stopped a parked agent on a closed ticket; that Run is
+      // already settled completed, so don't re-settle it as failed.
+      if (active.externallySettled) return;
       const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
       this.noteModelMismatch(task, usage, record);
       const patch = { usage: usage ? JSON.stringify(usage) : null };

@@ -288,6 +288,27 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.post(
+    '/tasks/:id/complete',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Force a running task to completed (operator override): stop the agent and settle it done, skipping the review gate. Operator only.',
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The task in its new state.'),
+          409: errorResponse('The task is not running.'),
+        },
+      },
+    },
+    async (req) => {
+      const task = ctx.tasks.complete(req.params.id);
+      ctx.runner.completeForTask(task.id);
+      return withDeps(task);
+    },
+  );
+
+  app.post(
     '/tasks/:id/unescalate',
     {
       schema: {

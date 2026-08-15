@@ -41,6 +41,8 @@ export class TrackerPollerManager {
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     private readonly onMirrored: () => void = () => {},
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
+    /** A mirrored Task whose ticket closed while it was still running (board-refresh backstop) — routed to the Runner to stop the parked agent and settle it done. */
+    private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
   ) {}
 
   /**
@@ -91,6 +93,7 @@ export class TrackerPollerManager {
       this.onError,
       mirror,
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
+      this.onClosedWhileRunning,
     );
     this.entries.set(ws.id, { poller, mirror, sig: sigOf(ws) });
     poller.start();

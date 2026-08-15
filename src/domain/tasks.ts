@@ -530,6 +530,18 @@ export class TaskService {
     return this.setState(id, 'cancelled');
   }
 
+  /** Operator override: force a running task straight to completed, skipping the
+   * review gate (ADR-0002). Unblocks dependents like any completion. Pairs with
+   * runner.completeForTask, which stops the still-running agent. Running only —
+   * every other state has its own path to (or away from) completion. */
+  complete(id: number): TaskRow {
+    const task = this.get(id);
+    if (task.state !== 'running') {
+      throw new DomainError('invalid_state', `task ${id} is ${task.state}, not running`);
+    }
+    return this.setState(id, 'completed');
+  }
+
   setState(id: number, state: TaskState): TaskRow {
     const row = this.db
       .update(tasks)

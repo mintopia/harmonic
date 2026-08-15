@@ -76,6 +76,9 @@ const PUBLIC_API_PATHS = new Set([
  */
 function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
   if (path.startsWith('/mcp')) return true;
+  // Force-complete is a manual operator override (kills a running agent mid-work,
+  // skips the review gate) with no agent-facing use — agents signal via finish_task.
+  if (/^\/api\/tasks\/\d+\/complete$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return agentReview;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
@@ -229,7 +232,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get(), () => workspaces.list(), mirror);
   // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
   // poll pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
-  const trackerManager = new TrackerPollerManager(tasks, () => workspaces.list(), undefined, () => autoRunner.poke());
+  const trackerManager = new TrackerPollerManager(
+    tasks,
+    () => workspaces.list(),
+    undefined,
+    () => autoRunner.poke(),
+    undefined,
+    // Board-refresh backstop (ADR-0011): a ticket closed while its mirrored Task
+    // was still running with a parked agent — stop the agent and settle it done.
+    (taskId) => runner.completeClosedMirrored(taskId),
+  );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   bus.on('task_changed', (task) => {
     if (task.state === 'ready') autoRunner.poke();

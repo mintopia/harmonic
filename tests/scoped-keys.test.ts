@@ -47,6 +47,9 @@ describe('run-scoped key restrictions', () => {
     expect(await asAgent('PATCH', '/api/config', { agentReview: true })).toBe(403);
     expect(await asAgent('PUT', '/api/config', {})).toBe(403);
     expect(await asAgent('GET', '/api/channels')).toBe(403);
+    // Force-complete is an operator override, not part of the agent surface
+    // (gate fires before the handler, so the id need not exist).
+    expect(await asAgent('POST', '/api/tasks/1/complete')).toBe(403);
   });
 
   it('keeps the review gate human unless agent-review is enabled', async () => {

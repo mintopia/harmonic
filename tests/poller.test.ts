@@ -133,4 +133,64 @@ describe('TrackerPoller.poll', () => {
     expect(poller.titleForMap(999)).toBeNull(); // unknown ref
     expect(poller.titleForMap(null)).toBeNull(); // unmapped Task
   });
+
+  /** Poll #42, flip it running, then re-poll it with a new state — the board-refresh path. */
+  async function pollThenReRunning(finalState: 'open' | 'closed') {
+    const first = ticket({ number: 42, labels: ['ready-for-agent'] });
+    let current = first;
+    const closed: number[] = [];
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => ({ ...stubAdapter([]).adapter, scan: async () => [current] }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (id) => closed.push(id),
+    );
+    await poller.poll();
+    const task = tasks.list()[0]!;
+    tasks.setState(task.id, 'running'); // a live Run flipped it (Runner.start / launchClaimed)
+    current = ticket({ number: 42, labels: ['ready-for-agent'], state: finalState });
+    await poller.poll();
+    return { closed, taskId: task.id };
+  }
+
+  it('reports a running Task whose ticket closed, so the Runner stops the parked agent', async () => {
+    const { closed, taskId } = await pollThenReRunning('closed');
+    expect(closed).toEqual([taskId]);
+    // The poll itself never moves a Task off running — the Runner callback does.
+    expect(tasks.get(taskId).state).toBe('running');
+  });
+
+  it('does not report a running Task whose ticket is still open', async () => {
+    const { closed } = await pollThenReRunning('open');
+    expect(closed).toEqual([]);
+  });
+
+  it('does not report a resting Task that closed — upsert completes it directly', async () => {
+    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
+    let state: 'open' | 'closed' = 'open';
+    const closed: number[] = [];
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => ({ ...adapter, scan: async () => [ticket({ number: 42, labels: ['ready-for-agent'], state })] }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (id) => closed.push(id),
+    );
+    await poller.poll(); // ready
+    state = 'closed';
+    await poller.poll(); // resting → completed via upsert, not the backstop
+    expect(closed).toEqual([]);
+    expect(tasks.list()[0]!.state).toBe('completed');
+  });
 });

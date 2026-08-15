@@ -107,6 +107,24 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.state).toBe('cancelled');
   });
 
+  it('force-completing a running task kills the harness and settles the run completed', async () => {
+    const { taskId, runId } = await createAndRun({ exit: 'hang' });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'running');
+
+    const completed = await server.api('POST', `/api/tasks/${taskId}/complete`);
+    expect(completed.status).toBe(200);
+    expect(completed.body.state).toBe('completed');
+
+    const run = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      return body.state === 'completed' ? body : undefined;
+    });
+    expect(run.state).toBe('completed');
+
+    // Terminal: a second complete refuses.
+    expect((await server.api('POST', `/api/tasks/${taskId}/complete`)).status).toBe(409);
+  });
+
   it('auto-grants permission requests and records them as run events', async () => {
     const { taskId, runId } = await createAndRun({
       requestPermission: { title: 'Write hello.txt' },
