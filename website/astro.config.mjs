@@ -37,7 +37,14 @@ export default defineConfig({
           label: 'How it works',
           items: [
             { label: 'Architecture', link: '/how-it-works/architecture/' },
+            { label: 'ACP & harness adapters', link: '/how-it-works/acp-and-adapters/' },
             { label: 'Design decisions', link: '/how-it-works/design-decisions/' },
+          ],
+        },
+        {
+          label: 'Contributing',
+          items: [
+            { label: 'Development & contributing', link: '/contributing/' },
           ],
         },
         {
