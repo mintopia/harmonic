@@ -31,6 +31,8 @@ export default defineConfig({
             { label: 'Introduction', link: '/' },
             { label: 'Getting started', link: '/using-harmonic/getting-started/' },
             { label: 'Core concepts', link: '/using-harmonic/core-concepts/' },
+            { label: 'Conversations', link: '/using-harmonic/conversations/' },
+            { label: 'Harnesses', link: '/using-harmonic/harnesses/' },
             { label: 'Notifications', link: '/using-harmonic/notifications/' },
             { label: 'Settings & overrides', link: '/using-harmonic/settings-and-overrides/' },
             { label: 'API & MCP', link: '/using-harmonic/api-and-mcp/' },
