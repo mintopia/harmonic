@@ -4,6 +4,12 @@ A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP.
 See `CONTEXT.md` for the domain glossary.
 
+## Agent Workflow
+
+Use subagents for tasks.
+Subagents must use an appropriate model, eg. Sonnet for coding, Opus for reasoning and Haiku for trivial.
+Subagents must use an appropriate subagent type.
+
 ## Agent skills
 
 ### Issue tracker
