@@ -69,13 +69,6 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
-    tracker: z
-      .object({
-        enabled: z.boolean().meta({ example: false }),
-        pollIntervalSeconds: z.number().int().min(5).meta({ example: 60 }),
-      })
-      .partial()
-      .optional(),
     drive: z
       .object({
         prompt: z.string().meta({ example: '{skill}\n\nResolve #{ref} ({url}) end to end.\n\n## {title}\n\n{body}' }),

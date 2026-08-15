@@ -147,18 +147,6 @@ export const appConfigSchema = z.object({
     maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
   }),
   /**
-   * Vestigial global tracker settings. Superseded by per-Workspace tracker
-   * mirroring (issue #45): each Workspace now owns its own `trackerEnabled` +
-   * `trackerPollIntervalSeconds` and its own poll loop. Kept in the schema so
-   * existing configs/clients still validate; nothing reads it. The Settings-UI
-   * split that removes it belongs to #42's config-split slice.
-   * ponytail: dead config kept to avoid churning config/openapi/UI; delete with #42's Settings split.
-   */
-  tracker: z.object({
-    enabled: z.boolean().meta({ example: false }),
-    pollIntervalSeconds: z.number().int().min(5).meta({ example: 60 }),
-  }),
-  /**
    * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
    * global Drive Prompt template; `mergeFate` is the default fate of a
    * completed worktree Run's branch (research Tasks are always artifacts);
@@ -287,10 +275,6 @@ export function defaultConfig(): AppConfig {
     autoRunner: {
       enabled: false,
       maxConcurrentRuns: 1,
-    },
-    tracker: {
-      enabled: false,
-      pollIntervalSeconds: 60,
     },
     drive: {
       prompt: DEFAULT_DRIVE_PROMPT,

@@ -23,18 +23,6 @@ describe('PUT /api/config', () => {
     expect(after.body.defaults.workingDir).toBe('/tmp/elsewhere');
   });
 
-  it('exposes the tracker poll toggle over PATCH, default off (issue #30)', async () => {
-    const current = (await server.api('GET', '/api/config')).body;
-    expect(current.tracker).toEqual({ enabled: false, pollIntervalSeconds: 60 });
-
-    // Aim the poll at a repo with no tracker declaration, so enabling it here
-    // resolves to nothing (best-effort catch) rather than shelling out to `gh`.
-    await server.api('PATCH', '/api/config', { defaults: { workingDir: '/tmp/harmonic-no-tracker' } });
-    const patched = await server.api('PATCH', '/api/config', { tracker: { enabled: true, pollIntervalSeconds: 15 } });
-    expect(patched.status).toBe(200);
-    expect(patched.body.tracker).toEqual({ enabled: true, pollIntervalSeconds: 15 });
-  });
-
   it('rejects an invalid config atomically: 400, and a prior GET is unaffected', async () => {
     const current = (await server.api('GET', '/api/config')).body;
     const invalid = { ...current, autoRunner: { ...current.autoRunner, maxConcurrentRuns: 0 } };

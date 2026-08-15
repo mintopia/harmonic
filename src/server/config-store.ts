@@ -25,7 +25,7 @@ export class ConfigStore {
   ) {
     const stored = this.db.select().from(settings).where(eq(settings.key, CONFIG_KEY)).get();
     // Overlay stored config on the current defaults rather than parse it bare:
-    // a config saved before a field existed (e.g. `tracker`) is missing it, and
+    // a config saved before a field existed (e.g. `drive`) is missing it, and
     // a bare parse would throw on boot. Merging fills new fields from defaults.
     const base = stored
       ? mergeConfig(defaultConfig(), JSON.parse(stored.value) as DeepPartial<AppConfig>)

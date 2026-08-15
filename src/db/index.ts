@@ -7,12 +7,23 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
 import { conversations, settings, tasks, workspaces } from './schema.js';
-import { defaultConfig, type AppConfig } from '../config.js';
+import { defaultConfig } from '../config.js';
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
 /** Settings marker so the legacy-tracker carry-over below runs exactly once. */
 const TRACKER_BACKFILL_KEY = 'trackerEnabledBackfilled';
+
+/**
+ * The subset of a raw stored config the backfill reads directly off JSON,
+ * including the legacy global `tracker` block that no longer exists in the
+ * current config schema (ADR-0014). Decoupled from AppConfig on purpose so the
+ * one-shot carry-over keeps working after the schema drops the field.
+ */
+type LegacyStoredConfig = {
+  defaults?: { workingDir?: string };
+  tracker?: { enabled?: boolean; pollIntervalSeconds?: number };
+};
 
 /**
  * ADR-0008 migration: a pre-Workspace database has no `workspaces` row and
@@ -31,7 +42,7 @@ const TRACKER_BACKFILL_KEY = 'trackerEnabledBackfilled';
  */
 function backfillDefaultWorkspace(db: Db): void {
   const stored = db.select().from(settings).where(eq(settings.key, 'config')).get();
-  const storedConfig = stored ? (JSON.parse(stored.value) as Partial<AppConfig>) : undefined;
+  const storedConfig = stored ? (JSON.parse(stored.value) as LegacyStoredConfig) : undefined;
 
   let defaultWorkspace = db.select().from(workspaces).orderBy(workspaces.id).get();
   if (!defaultWorkspace) {
