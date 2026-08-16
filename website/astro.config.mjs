@@ -8,6 +8,15 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
   site: 'https://mintopia.github.io',
   base: '/harmonic',
+  // `astro preview` blocks unknown Host headers (DNS-rebind protection); its
+  // static preview server reads THIS key (server.allowedHosts), not
+  // vite.preview.allowedHosts. The previewed docs are reached only through an
+  // authenticated cloudagent HTTPS forward whose subdomain varies per
+  // workspace, so allow any host. Dev/preview only — unused by the static
+  // GitHub Pages build.
+  server: {
+    allowedHosts: true,
+  },
   integrations: [
     starlight({
       title: 'Harmonic',
