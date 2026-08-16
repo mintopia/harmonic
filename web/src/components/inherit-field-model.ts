@@ -25,6 +25,18 @@ export function inheritState<T>(value: T | null | undefined, inherited: T): Inhe
 }
 
 /**
+ * Which layer supplies an inheriting field's value, for the "Inherited from …"
+ * note (issue #93). A Task inherits the *Workspace* override when the Workspace
+ * pinned that field (non-nullish, same rule as {@link inheritState}); only when
+ * the Workspace also inherits does the value fall through to the global default.
+ * Pass the Workspace's stored value for the field, not the Task's.
+ */
+export type InheritSource = 'workspace' | 'global default';
+export function inheritSource(workspaceValue: unknown): InheritSource {
+  return workspaceValue !== null && workspaceValue !== undefined ? 'workspace' : 'global default';
+}
+
+/**
  * The stored value after the operator flips the override toggle. Turning it on
  * seeds from the current override if one somehow lingers, else from the
  * inherited default (so the revealed input starts on the effective value).

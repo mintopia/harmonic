@@ -4,6 +4,7 @@ import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
 import { ModelCombobox } from './ModelCombobox';
 import { InheritField } from './InheritField';
+import { inheritSource } from './inherit-field-model';
 import { btnGhost, btnPrimary, field, panelTitle, labelType } from '../ui';
 
 const label = `mb-1 block ${labelType} text-muted`;
@@ -109,6 +110,7 @@ export function TaskForm({
             htmlFor="task-harness"
             value={ov.harness}
             inherited={workspace?.harness ?? config.defaults.harness}
+            inheritedFrom={inheritSource(workspace?.harness)}
             onChange={(harness) => set('harness', harness)}
           >
             {({ id, value, onChange }) => (
@@ -125,6 +127,7 @@ export function TaskForm({
             htmlFor="task-model"
             value={ov.model}
             inherited={inheritedModel}
+            inheritedFrom={inheritSource(workspace?.model)}
             onChange={(model) => set('model', model)}
           >
             {({ id, value, onChange }) => (
@@ -137,6 +140,7 @@ export function TaskForm({
             htmlFor="task-isolation"
             value={ov.isolationMode}
             inherited={workspace?.isolationMode ?? config.defaults.isolationMode}
+            inheritedFrom={inheritSource(workspace?.isolationMode)}
             onChange={(isolationMode) => set('isolationMode', isolationMode)}
           >
             {({ id, value, onChange }) => (
@@ -157,6 +161,7 @@ export function TaskForm({
             htmlFor="task-priority"
             value={ov.priority}
             inherited={workspace?.priority ?? config.defaults.priority}
+            inheritedFrom={inheritSource(workspace?.priority)}
             onChange={(priority) => set('priority', priority)}
           >
             {({ id, value, onChange }) => (

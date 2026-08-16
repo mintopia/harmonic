@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inheritState, toggleOverride } from '../web/src/components/inherit-field-model.js';
+import { inheritSource, inheritState, toggleOverride } from '../web/src/components/inherit-field-model.js';
 
 describe('inheritState', () => {
   it('reads null as inheriting, so the effective value is the global default', () => {
@@ -25,6 +25,24 @@ describe('inheritState', () => {
 
   it('does not read 0 as inherit (falsy but a real override)', () => {
     expect(inheritState(0, 4)).toEqual({ overridden: true, effective: 0 });
+  });
+});
+
+describe('inheritSource', () => {
+  it('names the workspace when it pinned the field (a Task inherits that)', () => {
+    expect(inheritSource('codex')).toBe('workspace');
+  });
+
+  it('falls through to the global default when the workspace also inherits (null)', () => {
+    expect(inheritSource(null)).toBe('global default');
+  });
+
+  it('reads undefined (unset field) as the global default too', () => {
+    expect(inheritSource(undefined)).toBe('global default');
+  });
+
+  it('treats a falsy-but-real workspace value (0) as the workspace source', () => {
+    expect(inheritSource(0)).toBe('workspace');
   });
 });
 

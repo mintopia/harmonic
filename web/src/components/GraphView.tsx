@@ -135,6 +135,10 @@ export function GraphView({
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [t, setT] = useState<Transform>({ k: 1, tx: 0, ty: 0 });
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  // A render-visible mirror of `drag`: the cursor must flip to "grabbing" the
+  // instant a pan starts, but `drag` is a ref (no re-render), so the style would
+  // otherwise only catch up on the first pointer-move. Kept in state for that.
+  const [dragging, setDragging] = useState(false);
   // Distinguishes a pan-drag from a click-to-open: a gesture that moved past a
   // few px opens nothing.
   const moved = useRef(false);
@@ -219,10 +223,11 @@ export function GraphView({
         <div
           ref={hostRef}
           className="absolute inset-0 select-none"
-          style={{ touchAction: 'none', cursor: drag.current ? 'grabbing' : 'grab' }}
+          style={{ touchAction: 'none', cursor: dragging ? 'grabbing' : 'grab' }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             drag.current = { x: e.clientX, y: e.clientY, tx: t.tx, ty: t.ty };
+            setDragging(true);
             moved.current = false;
             pressed.current = nodeIdAt(e.target);
           }}
@@ -235,8 +240,16 @@ export function GraphView({
           onPointerUp={(e) => {
             e.currentTarget.releasePointerCapture(e.pointerId);
             drag.current = null;
+            setDragging(false);
             // A tap that didn't pan on a node deep-links to its Task detail.
             if (!moved.current) openNode(pressed.current);
+            pressed.current = null;
+          }}
+          onPointerCancel={() => {
+            // A cancelled gesture (e.g. the OS steals the pointer) never fires
+            // pointerup — reset here so the grabbing cursor can't stick.
+            drag.current = null;
+            setDragging(false);
             pressed.current = null;
           }}
           onDoubleClick={fit}

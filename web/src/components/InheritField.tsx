@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 import { btnQuiet, labelType } from '../ui';
 import { Switch } from './Switch';
-import { inheritState, toggleOverride } from './inherit-field-model';
+import { inheritState, toggleOverride, type InheritSource } from './inherit-field-model';
 
 /**
  * Inheritance field wrapper (ADR-0012, issue #65): the per-Workspace face of an
  * overridable setting. While inheriting it shows the effective value with a
- * muted "Inherited from global default" note and an Override toggle; flipping
+ * muted "Inherited from …" note naming the real source (this workspace when a
+ * Workspace override supplies the value, else the global default) and an
+ * Override toggle; flipping
  * the toggle reveals the input (rendered by `children`) seeded on that value,
  * and a "Reset to default" link clears the override back to inherit (`null`).
  *
@@ -21,6 +23,7 @@ export function InheritField<T>({
   htmlFor,
   value,
   inherited,
+  inheritedFrom = 'global default',
   onChange,
   format = String,
   children,
@@ -31,8 +34,12 @@ export function InheritField<T>({
   htmlFor?: string;
   /** The Workspace's stored value: `null`/`undefined` = inherit. */
   value: T | null | undefined;
-  /** The resolved global default shown while inheriting and used to seed an override. */
+  /** The resolved default shown while inheriting and used to seed an override. */
   inherited: T;
+  /** Which layer supplies `inherited`, for the note (issue #93). Defaults to the
+   * global default — the root case; a Task overrides it to `'workspace'` when the
+   * Workspace pinned the field. */
+  inheritedFrom?: InheritSource;
   /** Persist the new stored value: a real value overrides, `null` inherits. */
   onChange: (next: T | null) => void;
   /** How to render the inherited value's read-only line. Defaults to `String`;
@@ -65,7 +72,9 @@ export function InheritField<T>({
       ) : (
         <p className="text-ink">
           {format(effective)}{' '}
-          <span className="text-small text-muted">· Inherited from global default</span>
+          <span className="text-small text-muted">
+            · Inherited from {inheritedFrom === 'workspace' ? 'this workspace' : 'global default'}
+          </span>
         </p>
       )}
     </div>
