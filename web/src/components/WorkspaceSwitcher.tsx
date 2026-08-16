@@ -4,7 +4,7 @@ import type { Workspace } from '../types';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { DirectoryPicker } from './DirectoryPicker';
-import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../ui';
+import { btnGhost, btnPrimary, field, labelType, panelTitle, selectField } from '../ui';
 
 /**
  * The create-a-Workspace dialog: name + a #67 directory picker (with a
@@ -112,7 +112,7 @@ export function WorkspaceSwitcher({
     <div className="flex items-center gap-2">
       <select
         aria-label="Active workspace"
-        className={`${field} min-w-0 flex-1`}
+        className={`${selectField} min-w-0 flex-1`}
         value={activeId ?? ''}
         onChange={(e) => onSwitch(Number(e.target.value))}
       >

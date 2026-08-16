@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { buildApiReference, describeType } from '../openapi-reference';
 import type { ApiReferenceEndpoint, ApiReferenceGroup, SchemaNode } from '../openapi-reference';
-import { card, chip, labelType, sectionTitle } from '../ui';
+import { card, chip, labelType, sectionTitle, touchOverlay } from '../ui';
 
 /** Disclosure chevron, private to this file — mirrors Icon.tsx's stroke
  * vocabulary (16 viewBox, 1.5 stroke, currentColor) without adding to the
@@ -187,7 +187,7 @@ function StatusTab({ status, active, onClick }: { status: string; active: boolea
   return (
     <button
       aria-selected={active}
-      className={`${chip} font-data tracking-normal transition-colors duration-150 ${
+      className={`relative ${chip} font-data tracking-normal transition-colors duration-150 ${
         active ? statusStyle(status) : 'text-muted hover:text-ink'
       }`}
       onClick={onClick}
@@ -195,6 +195,7 @@ function StatusTab({ status, active, onClick }: { status: string; active: boolea
       type="button"
     >
       {status}
+      <span aria-hidden="true" className={touchOverlay} />
     </button>
   );
 }
@@ -207,7 +208,7 @@ function PaneTab({ label, active, onClick }: { label: string; active: boolean; o
   return (
     <button
       aria-selected={active}
-      className={`-mb-px border-b-2 px-1 pb-1 font-medium transition-colors duration-150 ${
+      className={`relative -mb-px border-b-2 px-1 pb-1 font-medium transition-colors duration-150 ${
         active ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
       }`}
       onClick={onClick}
@@ -215,6 +216,7 @@ function PaneTab({ label, active, onClick }: { label: string; active: boolean; o
       type="button"
     >
       {label}
+      <span aria-hidden="true" className={touchOverlay} />
     </button>
   );
 }

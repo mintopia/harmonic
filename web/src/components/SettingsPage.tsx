@@ -4,7 +4,7 @@ import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
 import type { AppConfig } from '../types';
-import { displayTitle, field } from '../ui';
+import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
@@ -36,7 +36,7 @@ function TaskDefaultsFields({
     <div className="grid gap-3.5 sm:grid-cols-2">
       <div>
         <label className={fieldLabel} htmlFor="settings-harness">Harness</label>
-        <select id="settings-harness" className={field} value={d.harness} onChange={(e) => set('harness', e.target.value)}>
+        <select id="settings-harness" className={`${selectField} w-full`} value={d.harness} onChange={(e) => set('harness', e.target.value)}>
           {Object.keys(config.harnesses).map((h) => (
             <option key={h} value={h}>
               {h}
@@ -49,7 +49,7 @@ function TaskDefaultsFields({
         <label className={fieldLabel} htmlFor="settings-default-model">Default model</label>
         <select
           id="settings-default-model"
-          className={field}
+          className={`${selectField} w-full`}
           value={defaultModel}
           onChange={(e) => onDefaultModel(e.target.value)}
           disabled={!harness}
@@ -69,7 +69,7 @@ function TaskDefaultsFields({
         <label className={fieldLabel} htmlFor="settings-isolation">Isolation mode</label>
         <select
           id="settings-isolation"
-          className={field}
+          className={`${selectField} w-full`}
           value={d.isolationMode}
           onChange={(e) => set('isolationMode', e.target.value as 'direct' | 'worktree')}
         >
@@ -82,7 +82,7 @@ function TaskDefaultsFields({
         <label className={fieldLabel} htmlFor="settings-priority">Priority</label>
         <select
           id="settings-priority"
-          className={field}
+          className={`${selectField} w-full`}
           value={d.priority}
           onChange={(e) => set('priority', e.target.value as 'high' | 'normal' | 'low')}
         >
@@ -120,7 +120,7 @@ function ChatDefaultsFields({
         <label className={fieldLabel} htmlFor="settings-chat-harness">Harness</label>
         <select
           id="settings-chat-harness"
-          className={field}
+          className={`${selectField} w-full`}
           value={config.chat.harness}
           onChange={(e) => pickHarness(e.target.value)}
         >
@@ -136,7 +136,7 @@ function ChatDefaultsFields({
         <label className={fieldLabel} htmlFor="settings-chat-model">Model</label>
         <select
           id="settings-chat-model"
-          className={field}
+          className={`${selectField} w-full`}
           value={config.chat.model}
           onChange={(e) => onChange({ ...config.chat, model: e.target.value })}
           disabled={!harness}
@@ -275,7 +275,7 @@ function DriveFields({
           <label className={fieldLabel} htmlFor="settings-merge-fate">Merge fate</label>
           <select
             id="settings-merge-fate"
-            className={field}
+            className={`${selectField} w-full`}
             value={d.mergeFate}
             onChange={(e) => onChange({ ...d, mergeFate: e.target.value as AppConfig['drive']['mergeFate'] })}
           >

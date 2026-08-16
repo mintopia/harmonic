@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AppConfig, HarnessConfig, ModelPrice } from '../types';
-import { btnGhost, btnQuiet, field } from '../ui';
+import { btnGhost, btnQuiet, field, selectField, touchTarget, touchTargetInline } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
 import { renameRecordKey } from './settings-rename';
@@ -42,7 +42,7 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
       {items.map((item, i) => (
         <div key={i} className="flex items-center gap-2.5">
           <input aria-label={ariaLabel} className={`${field} font-data`} value={item} onChange={(e) => update(i, e.target.value)} />
-          <button type="button" aria-label={`Remove ${ariaLabel}`} onClick={() => remove(i)} className={`${btnQuiet} px-2 py-1.5`}>
+          <button type="button" aria-label={`Remove ${ariaLabel}`} onClick={() => remove(i)} className={`${touchTarget} ${btnQuiet}`}>
             ✕
           </button>
         </div>
@@ -97,11 +97,11 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
             type="button"
             aria-label={revealed[key] ? 'Hide value' : 'Reveal value'}
             onClick={() => setRevealed((r) => ({ ...r, [key]: !r[key] }))}
-            className={`${btnQuiet} px-2 py-1.5`}
+            className={`${touchTargetInline} ${btnQuiet}`}
           >
             {revealed[key] ? 'Hide' : 'Show'}
           </button>
-          <button type="button" aria-label="Remove env var" onClick={() => remove(key)} className={`${btnQuiet} px-2 py-1.5`}>
+          <button type="button" aria-label="Remove env var" onClick={() => remove(key)} className={`${touchTarget} ${btnQuiet}`}>
             ✕
           </button>
         </div>
@@ -192,7 +192,7 @@ function HarnessCard({
             <label className={fieldLabel} htmlFor={`harness-${id}-default-model`}>Default Model</label>
             <select
               id={`harness-${id}-default-model`}
-              className={`${field} font-data`}
+              className={`${selectField} w-full font-data`}
               value={harness.defaultModel}
               onChange={(e) => set('defaultModel', e.target.value)}
             >
@@ -306,7 +306,7 @@ export function PriceOverridesSection({
                   onChange={(e) => setPrice(model, { ...price, [k]: Number(e.target.value) })}
                 />
               ))}
-              <button type="button" aria-label="Remove price override" onClick={() => remove(model)} className={`${btnQuiet} px-2 py-1.5`}>
+              <button type="button" aria-label="Remove price override" onClick={() => remove(model)} className={`${touchTarget} ${btnQuiet}`}>
                 ✕
               </button>
             </div>

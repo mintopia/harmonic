@@ -5,7 +5,7 @@ import { api } from '../api';
 import { toastError } from '../toast';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
-import { btnPrimary, btnQuiet, displayTitle, laneBorder, laneDot, stateCountPill } from '../ui';
+import { btnPrimary, btnQuiet, displayTitle, laneBorder, laneDot, stateCountPill, touchTargetInline } from '../ui';
 
 const COLUMN_LABELS: Record<TaskState, string> = {
   draft: 'Draft',
@@ -239,7 +239,7 @@ export function Board({
                   }}
                   aria-expanded={true}
                   aria-label={`Collapse ${COLUMN_LABELS[state]} column`}
-                  className={`ml-auto ${btnQuiet}`}
+                  className={`${touchTargetInline} ml-auto ${btnQuiet}`}
                   onClick={() => togglePeek(state)}
                 >
                   Collapse
@@ -285,7 +285,7 @@ export function Board({
                   {...drop.handlers}
                   aria-expanded={false}
                   aria-label={`Expand ${COLUMN_LABELS[state]} column (${column.length} tasks)`}
-                  className={`group flex items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink motion-reduce:transition-none ${
+                  className={`group flex min-h-11 items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink motion-reduce:transition-none ${
                     drop.valid ? 'bg-accent-tint text-ink ring-2 ring-accent' : ''
                   }`}
                   onClick={() => togglePeek(state)}

@@ -45,7 +45,10 @@ import {
   panelTitle,
   labelType,
   permissionOptionButtonClass,
+  selectField,
   toolChip,
+  touchTarget,
+  touchTargetInline,
 } from '../ui';
 
 /**
@@ -337,7 +340,7 @@ function Composer({
             </label>
             <select
               id="conv-harness"
-              className={field}
+              className={`${selectField} w-full`}
               value={harness}
               onChange={(e) => pickHarness(e.target.value)}
             >
@@ -457,7 +460,7 @@ function ConversationHeader({
   return (
     <div className="border-b border-hairline px-4 py-3">
       <div className="flex items-center gap-1.5">
-        <button aria-label="Back to conversations" className={btnQuiet} onClick={onBack}>
+        <button aria-label="Back to conversations" className={`${touchTarget} ${btnQuiet}`} onClick={onBack}>
           <Icon name="arrow-left" />
         </button>
         {editing ? (
@@ -481,10 +484,10 @@ function ConversationHeader({
                 }
               }}
             />
-            <button aria-label="Save title" className={btnQuiet} disabled={saving} onClick={save}>
+            <button aria-label="Save title" className={`${touchTarget} ${btnQuiet}`} disabled={saving} onClick={save}>
               <Icon name="check" />
             </button>
-            <button aria-label="Cancel rename" className={btnQuiet} disabled={saving} onClick={() => setEditing(false)}>
+            <button aria-label="Cancel rename" className={`${touchTarget} ${btnQuiet}`} disabled={saving} onClick={() => setEditing(false)}>
               <Icon name="close" />
             </button>
           </>
@@ -492,7 +495,7 @@ function ConversationHeader({
           <>
             <span className={`${panelTitle} min-w-0 flex-1 truncate`}>{title}</span>
             {conversation && (
-              <button aria-label="Rename conversation" className={btnQuiet} onClick={startEdit}>
+              <button aria-label="Rename conversation" className={`${touchTarget} ${btnQuiet}`} onClick={startEdit}>
                 <Icon name="edit" />
               </button>
             )}
@@ -500,22 +503,22 @@ function ConversationHeader({
         )}
         <button
           aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
-          className={btnQuiet}
+          className={`${touchTarget} ${btnQuiet}`}
           onClick={onToggleExpand}
         >
           <Icon name={expanded ? 'collapse' : 'expand'} />
         </button>
         {conversation?.state === 'active' && (
-          <button className={btnQuiet} onClick={onEnd}>
+          <button className={`${touchTargetInline} ${btnQuiet}`} onClick={onEnd}>
             End
           </button>
         )}
         {conversation && (
-          <button className={btnQuietDestructive} onClick={onDelete}>
+          <button className={`${touchTargetInline} ${btnQuietDestructive}`} onClick={onDelete}>
             Delete
           </button>
         )}
-        <button aria-label="Close conversation panel" className={btnQuiet} onClick={onClose}>
+        <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
           <Icon name="close" />
         </button>
       </div>

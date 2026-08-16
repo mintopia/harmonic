@@ -5,7 +5,7 @@ import { Modal } from './Modal';
 import { ModelCombobox } from './ModelCombobox';
 import { InheritField } from './InheritField';
 import { inheritSource } from './inherit-field-model';
-import { btnGhost, btnPrimary, field, panelTitle, labelType } from '../ui';
+import { btnGhost, btnPrimary, field, panelTitle, labelType, selectField } from '../ui';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
@@ -114,7 +114,7 @@ export function TaskForm({
             onChange={(harness) => set('harness', harness)}
           >
             {({ id, value, onChange }) => (
-              <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+              <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
                 {Object.keys(config.harnesses).map((h) => (
                   <option key={h} value={h}>{h}</option>
                 ))}
@@ -146,7 +146,7 @@ export function TaskForm({
             {({ id, value, onChange }) => (
               <select
                 id={id}
-                className={field}
+                className={`${selectField} w-full`}
                 value={value}
                 onChange={(e) => onChange(e.target.value as 'direct' | 'worktree')}
               >
@@ -167,7 +167,7 @@ export function TaskForm({
             {({ id, value, onChange }) => (
               <select
                 id={id}
-                className={field}
+                className={`${selectField} w-full`}
                 value={value}
                 onChange={(e) => onChange(e.target.value as 'high' | 'normal' | 'low')}
               >

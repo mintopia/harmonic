@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, Workspace } from '../types';
-import { btnGhost, btnQuietDestructive, displayTitle, field } from '../ui';
+import { btnGhost, btnQuietDestructive, displayTitle, field, selectField } from '../ui';
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
@@ -242,7 +242,7 @@ export function WorkspaceSettingsPage({
                 onChange={(harness) => set('harness', harness)}
               >
                 {({ id, value, onChange }) => (
-                  <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
                     {Object.keys(config.harnesses).map((h) => (
                       <option key={h} value={h}>
                         {h}
@@ -263,7 +263,7 @@ export function WorkspaceSettingsPage({
                 onChange={(model) => set('model', model)}
               >
                 {({ id, value, onChange }) => (
-                  <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
                     {models.map((m) => (
                       <option key={m} value={m}>
                         {m}
@@ -288,7 +288,7 @@ export function WorkspaceSettingsPage({
                 {({ id, value, onChange }) => (
                   <select
                     id={id}
-                    className={field}
+                    className={`${selectField} w-full`}
                     value={value}
                     onChange={(e) => onChange(e.target.value as 'direct' | 'worktree')}
                   >
@@ -310,7 +310,7 @@ export function WorkspaceSettingsPage({
                 {({ id, value, onChange }) => (
                   <select
                     id={id}
-                    className={field}
+                    className={`${selectField} w-full`}
                     value={value}
                     onChange={(e) => onChange(e.target.value as 'high' | 'normal' | 'low')}
                   >
@@ -339,7 +339,7 @@ export function WorkspaceSettingsPage({
                 onChange={(chatHarness) => set('chatHarness', chatHarness)}
               >
                 {({ id, value, onChange }) => (
-                  <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
                     {Object.keys(config.harnesses).map((h) => (
                       <option key={h} value={h}>
                         {h}
@@ -360,7 +360,7 @@ export function WorkspaceSettingsPage({
                 onChange={(chatModel) => set('chatModel', chatModel)}
               >
                 {({ id, value, onChange }) => (
-                  <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                  <select id={id} className={`${selectField} w-full`} value={value} onChange={(e) => onChange(e.target.value)}>
                     {chatModels.map((m) => (
                       <option key={m} value={m}>
                         {m}

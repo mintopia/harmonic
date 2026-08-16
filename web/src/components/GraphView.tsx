@@ -4,7 +4,7 @@ import { graphEdges, mapBadges, nodeTitle, visibleTasks } from '../graph-model';
 import { layoutGraph, type LaidNode, type Layout } from '../graph-layout';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
-import { displayTitle, labelType, touchTarget } from '../ui';
+import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
 
 /**
  * The read-only Dependency Graph view (issue #85, ADR 0015). It renders the
@@ -364,7 +364,7 @@ export function GraphView({
           </button>
           <div className="mx-0.5 h-4 w-px bg-edge" />
           <button
-            className="inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold text-muted hover:bg-raised hover:text-ink"
+            className={`${touchTargetInline} rounded-full px-3 text-xs font-semibold text-muted hover:bg-raised hover:text-ink`}
             onClick={fit}
           >
             Fit

@@ -4,7 +4,7 @@ import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
-import { btnQuietDestructive, card, chip, displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
+import { btnQuietDestructive, card, chip, displayTitle, labelType, selectField, touchOverlay, touchTarget, touchTargetInline } from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
 import {
@@ -46,11 +46,6 @@ const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumF
  * tiers. The trailing `auto` column holds the row's operator actions (issue #55). */
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_10rem_5.5rem_7rem_5rem_auto] items-center gap-x-4 px-4';
-
-/** The Workspace / sort dropdowns — the same field treatment the Table view's filters use.
- * `min-h-11` gives the native control a ≥44px touch target (issue #56). */
-const select =
-  'min-h-11 rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
 
 /** Human labels for the type segments (issue #54). "Conversations" is the domain
  * noun (CONTEXT.md avoids "chat" as a noun), even though the filter id is `chats`. */
@@ -263,7 +258,7 @@ function ExpandToggle({ expandable, expanded, onToggle }: { expandable: boolean;
       {/* A ≥44×44 touch target (issue #56) centred on the 16px chevron, without
           growing the row's grid: the overlay overflows into the row's own inert
           leading space, so density and column alignment are untouched. */}
-      <span aria-hidden="true" className="absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2" />
+      <span aria-hidden="true" className={touchOverlay} />
       <span className={`inline-block transition-transform duration-150 motion-reduce:transition-none ${expanded ? 'rotate-90' : ''}`}>›</span>
     </button>
   );
@@ -484,7 +479,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
             {workspaces.length > 1 && (
               <select
                 aria-label="Filter by workspace"
-                className={select}
+                className={selectField}
                 value={activeFilter.workspaceId ?? ''}
                 onChange={(e) =>
                   setFilter((f) => ({ ...f, workspaceId: e.target.value === '' ? null : Number(e.target.value) }))
@@ -498,7 +493,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                 ))}
               </select>
             )}
-            <select aria-label="Sort by" className={select} value={sort} onChange={(e) => setSort(e.target.value as ActivitySort)}>
+            <select aria-label="Sort by" className={selectField} value={sort} onChange={(e) => setSort(e.target.value as ActivitySort)}>
               {ACTIVITY_SORTS.map((s) => (
                 <option key={s} value={s}>
                   Sort: {sortLabel(s)}

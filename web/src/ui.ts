@@ -3,11 +3,16 @@ import type { Conversation, PermissionAcpRequest, TaskState } from './types';
 /** One component vocabulary (DESIGN.md § Components); screens share these
  * class strings so a button or field never drifts between surfaces. */
 
+/** The pill buttons carry the ≥44px touch-target floor by construction (issue
+ * #89): `inline-flex min-h-11 items-center justify-center` gives every primary/
+ * ghost the accessible minimum height without any surface needing to remember
+ * to add it. Density is unchanged — the glyph/label and padding are the same;
+ * only the *minimum* height grows to the floor. */
 export const btnPrimary =
-  'rounded-md bg-accent px-3.5 py-2 font-semibold text-on-accent shadow-btn transition-colors duration-150 hover:bg-accent-hot disabled:opacity-50 disabled:hover:bg-accent';
+  'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-3.5 py-2 font-semibold text-on-accent shadow-btn transition-colors duration-150 hover:bg-accent-hot disabled:opacity-50 disabled:hover:bg-accent';
 
 export const btnGhost =
-  'rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-ink transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-ink transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
 
 export const btnQuiet = 'font-medium text-muted transition-colors duration-150 hover:text-ink';
 
@@ -19,6 +24,15 @@ export const btnQuiet = 'font-medium text-muted transition-colors duration-150 h
  * own text/colour classes. */
 export const touchTarget = 'inline-flex min-h-11 min-w-11 items-center justify-center';
 export const touchTargetInline = 'inline-flex min-h-11 items-center';
+
+/** A transparent ≥44×44px hit overlay (issues #56/#89) for a compact glyph
+ * that must stay visually small — a table sort header, a tab pill, the Modal's
+ * ✕ — where growing the control itself would change the surface's density. The
+ * parent must establish a positioning context (`relative`, or already
+ * `absolute`); the `aria-hidden` span overflows into the surrounding inert
+ * space, so the glyph, alignment and row height are untouched while the touch
+ * target meets the floor. Clicks on the overflow land on the parent button. */
+export const touchOverlay = 'absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2';
 
 /** Quiet, but destructive (§5 Buttons: "destructive quiet actions hover to
  * fail red") — the Reject option on a permission prompt, cancel/remove
@@ -43,6 +57,17 @@ export const btnReject = btnGhost;
 
 export const field =
   'w-full rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';
+
+/** The one select-field style (issue #89): the `field` look plus the ≥44px
+ * touch-target floor. A native `<select>` can't carry a transparent overlay the
+ * way an icon button can, so the control itself grows to the floor via
+ * `min-h-11` — the same treatment issue #56 gave the Activity/Table filters,
+ * now the single definition every `<select>` in the app shares (it replaces the
+ * two diverged inline `select` strings the filters had grown). Width is left to
+ * the caller: full-width settings selects pass `w-full`, compact toolbar
+ * filters size to their content. */
+export const selectField =
+  'min-h-11 rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none';
 
 /** Label role (DESIGN.md § 3): field labels and table headers — the only
  * uppercase in the system. The tracking comes from the `--text-label` token
@@ -90,9 +115,9 @@ export const toolChip = `${chip} bg-tool-tint text-tool`;
  * harness chrome, not a task-state action, so it must not read as the
  * accept/reject task vocabulary or spend the One Cobalt Rule's budget. */
 export const btnPermAllow =
-  'rounded-md bg-tool-tint px-3.5 py-2 font-semibold text-tool transition-opacity duration-150 hover:opacity-80 disabled:opacity-50 disabled:hover:opacity-100';
+  'inline-flex min-h-11 items-center justify-center rounded-md bg-tool-tint px-3.5 py-2 font-semibold text-tool transition-opacity duration-150 hover:opacity-80 disabled:opacity-50 disabled:hover:opacity-100';
 export const btnPermAllowSecondary =
-  'rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-tool transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
+  'inline-flex min-h-11 items-center justify-center rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-tool transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
 
 const PERMISSION_OPTION_STYLES: Record<PermissionAcpRequest['options'][number]['kind'], string> = {
   allow_once: btnPermAllow,

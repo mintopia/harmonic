@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Channel } from '../types';
-import { btnGhost, btnQuiet, btnQuietDestructive, chip, field } from '../ui';
+import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
 
 const EVENTS = [
   'task.created',
@@ -108,7 +108,7 @@ export function ChannelsSection() {
         <div className="mt-4 border-t border-hairline pt-4">
           <div className="mb-2 grid grid-cols-2 gap-2">
             <input aria-label="Channel name" className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-            <select aria-label="Channel type" className={field} value={type} onChange={(e) => setType(e.target.value as Channel['type'])}>
+            <select aria-label="Channel type" className={`${selectField} w-full`} value={type} onChange={(e) => setType(e.target.value as Channel['type'])}>
               <option value="discord">Discord webhook</option>
               <option value="slack">Slack webhook</option>
               <option value="webhook">Generic webhook</option>

@@ -3,12 +3,9 @@ import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
-import { btnQuiet, card, displayTitle, labelType, stateChip, tableHead } from '../ui';
+import { btnQuiet, card, displayTitle, labelType, selectField, stateChip, tableHead, touchOverlay } from '../ui';
 import { toastError } from '../toast';
 import { fetchTasks } from '../table-model';
-
-const select =
-  'rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
 
 type SortKey = 'createdAt' | 'priority' | 'cost';
 
@@ -53,7 +50,7 @@ export function TableView({
       {/* Buttons don't inherit text-transform, so restate the Label casing. */}
       <button
         type="button"
-        className={`${labelType} cursor-pointer select-none hover:text-ink`}
+        className={`relative ${labelType} cursor-pointer select-none hover:text-ink`}
         onClick={() => {
           if (sortBy === key) setOrder(order === 'asc' ? 'desc' : 'asc');
           else {
@@ -63,6 +60,7 @@ export function TableView({
         }}
       >
         {label} {sortBy === key ? (order === 'asc' ? '↑' : '↓') : ''}
+        <span aria-hidden="true" className={touchOverlay} />
       </button>
     </th>
   );
@@ -78,7 +76,7 @@ export function TableView({
           <span className={`${labelType} text-muted`}>tasks</span>
         </span>
         <div className="flex-1" />
-        <select aria-label="Filter by state" className={select} value={state} onChange={(e) => setState(e.target.value)}>
+        <select aria-label="Filter by state" className={selectField} value={state} onChange={(e) => setState(e.target.value)}>
           <option value="">All states</option>
           {TASK_STATES.map((s) => (
             <option key={s} value={s}>
@@ -86,7 +84,7 @@ export function TableView({
             </option>
           ))}
         </select>
-        <select aria-label="Filter by harness" className={select} value={harness} onChange={(e) => setHarness(e.target.value)}>
+        <select aria-label="Filter by harness" className={selectField} value={harness} onChange={(e) => setHarness(e.target.value)}>
           <option value="">All harnesses</option>
           {['claude', 'codex', 'copilot'].map((h) => (
             <option key={h} value={h}>
@@ -94,7 +92,7 @@ export function TableView({
             </option>
           ))}
         </select>
-        <select aria-label="Filter by priority" className={select} value={priority} onChange={(e) => setPriority(e.target.value)}>
+        <select aria-label="Filter by priority" className={selectField} value={priority} onChange={(e) => setPriority(e.target.value)}>
           <option value="">All priorities</option>
           {['high', 'normal', 'low'].map((p) => (
             <option key={p} value={p}>

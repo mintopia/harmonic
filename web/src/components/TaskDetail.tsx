@@ -8,12 +8,10 @@ import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
-import { btnGhost, chip, labelType, stateChip } from '../ui';
+import { btnGhost, chip, labelType, selectField, stateChip } from '../ui';
 import { toastError } from '../toast';
 
 const metaChip = `${chip} bg-raised text-muted`;
-const inlineSelect =
-  'rounded-md border border-edge bg-field px-1 py-0.5 text-ink focus:border-accent focus:outline-none';
 
 type Tab = 'description' | 'prompt' | 'output' | 'changes' | 'details';
 
@@ -64,7 +62,7 @@ function Dependencies({ task }: { task: Task }) {
         {editable && candidates.length > 0 && (
           <select
             aria-label="Add dependency"
-            className={inlineSelect}
+            className={selectField}
             value={pick}
             onChange={(e) => {
               const id = Number(e.target.value);
@@ -151,7 +149,7 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
       {candidates.length > 0 && (
         <select
           aria-label="Route notifications to channel"
-          className={inlineSelect}
+          className={selectField}
           value=""
           onChange={(e) => {
             const channelId = Number(e.target.value);

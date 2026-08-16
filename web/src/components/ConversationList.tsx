@@ -3,7 +3,7 @@ import { conversationDisplayTitle } from '../conversation-list-model';
 import { formatTokens } from '../conversation-telemetry-model';
 import { formatCost } from '../cost';
 import type { Conversation } from '../types';
-import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle } from '../ui';
+import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touchTarget } from '../ui';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 
@@ -112,12 +112,12 @@ export function ConversationList({
         </button>
         <button
           aria-label={expanded ? 'Collapse to panel' : 'Expand to full view'}
-          className={btnQuiet}
+          className={`${touchTarget} ${btnQuiet}`}
           onClick={onToggleExpand}
         >
           <Icon name={expanded ? 'collapse' : 'expand'} />
         </button>
-        <button aria-label="Close conversation panel" className={btnQuiet} onClick={onClose}>
+        <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
           <Icon name="close" />
         </button>
       </div>

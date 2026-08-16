@@ -37,7 +37,7 @@ import {
   RUN_HINT_DISMISSED_KEY,
   REVIEW_HINT_DISMISSED_KEY,
 } from './onboarding-model';
-import { btnPrimary, btnQuiet } from './ui';
+import { btnPrimary, btnQuiet, touchTarget } from './ui';
 import { Toaster, toastError } from './toast';
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
@@ -58,7 +58,7 @@ function useRailBreakpoint() {
 // shows icon + label, so collapsed styles are rail:-prefixed throughout.
 // Active is the sidebar's only accent: a cobalt tint under cobalt text.
 const railItem = (active: boolean, collapsed: boolean) =>
-  `flex w-full items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
+  `flex w-full min-h-11 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
   } ${active ? 'bg-accent-tint font-semibold text-accent' : 'font-medium text-muted hover:bg-raised hover:text-ink'}`;
 
@@ -455,7 +455,7 @@ export function App() {
             aria-label="Settings"
             aria-current={view === 'settings' ? 'page' : undefined}
             title="Settings"
-            className={`inline-flex items-center justify-center rounded-md p-2.5 transition-colors duration-150 ${
+            className={`${touchTarget} rounded-md transition-colors duration-150 ${
               view === 'settings' ? 'bg-accent-tint text-accent' : 'text-muted hover:bg-raised hover:text-ink'
             }`}
             onClick={() => pickView('settings')}
@@ -465,7 +465,7 @@ export function App() {
           <button
             aria-label={THEME_LABELS[theme]}
             title={THEME_LABELS[theme]}
-            className="inline-flex items-center justify-center rounded-md p-2.5 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+            className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
             onClick={cycleTheme}
           >
             <Icon name={THEME_ICONS[theme]} />
@@ -474,7 +474,7 @@ export function App() {
             <button
               aria-label="Log out"
               title="Log out"
-              className="inline-flex items-center justify-center rounded-md p-2.5 text-muted transition-colors duration-150 hover:bg-raised hover:text-ink"
+              className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
               onClick={() => fetch('/api/auth/logout', { method: 'POST' }).then(() => setAuthed(false))}
             >
               <Icon name="logout" />

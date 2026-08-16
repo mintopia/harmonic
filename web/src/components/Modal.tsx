@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { touchOverlay } from '../ui';
 
 /**
  * Native <dialog> modal: focus trapping, Escape-to-close, top-layer stacking
@@ -56,6 +57,7 @@ export function Modal({
         onClick={() => ref.current?.close()}
         className="absolute right-3 top-3 z-10 rounded-md px-1.5 py-0.5 text-faint transition-colors duration-150 hover:text-ink"
       >
+        <span aria-hidden="true" className={touchOverlay} />
         ✕
       </button>
       {children}
