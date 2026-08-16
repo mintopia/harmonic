@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../api';
 import type { Task } from '../types';
 import { taskActions, type TaskAction } from '../task-actions-model';
-import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '../ui';
+import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject, sectionTitle } from '../ui';
 import { toastError } from '../toast';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
@@ -118,8 +118,18 @@ export function TaskActions({
     }
   };
 
-  const container =
-    variant === 'footer'
+  // On awaiting-review, the detail-modal footer IS the review gate (DESIGN
+  // § Task detail): it takes its own ground (the Raised inset) and a short
+  // label so it reads unmistakably as THE gate rather than a generic action
+  // row. The cobalt stays where the design puts the gate's loudness — the
+  // accent top-rule (the awaiting-review state's lane colour) and the Accept
+  // primary within — so the ground itself doesn't spend the accent budget
+  // (the One Cobalt Rule). The gate lives only in the footer; the board card
+  // stays a glance (issue #94).
+  const isReviewGate = variant === 'footer' && task.state === 'awaiting-review';
+  const container = isReviewGate
+    ? 'flex flex-wrap items-center gap-2.5 border-t border-accent bg-raised px-4 py-3'
+    : variant === 'footer'
       ? 'flex flex-wrap items-center justify-end gap-2.5 border-t border-hairline px-4 py-3'
       : 'flex flex-wrap items-center justify-end gap-2.5';
   const done = (close: () => void) => () => {
@@ -130,6 +140,12 @@ export function TaskActions({
   return (
     <>
       <div className={container}>
+        {isReviewGate && (
+          <div className="mr-auto">
+            <div className={sectionTitle}>Review gate</div>
+            <div className="text-small text-muted">Read the changes, then accept to merge.</div>
+          </div>
+        )}
         {/* Un-escalate is a flag action, not a state action (issue #33
             follow-up): hand an escalated mirrored Task back to afk drive.
             Shown only while escalated, beside the state's own actions. */}

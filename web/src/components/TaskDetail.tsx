@@ -8,7 +8,7 @@ import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
-import { chip, labelType, stateChip } from '../ui';
+import { btnGhost, chip, labelType, stateChip } from '../ui';
 import { toastError } from '../toast';
 
 const metaChip = `${chip} bg-raised text-muted`;
@@ -286,10 +286,13 @@ function SteerBox({ taskId }: { taskId: number }) {
           placeholder="Redirect the agent — delivered at its next turn boundary…"
           className="min-w-0 flex-1 resize-none rounded-md border border-edge bg-field px-2 py-1 text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
+        {/* Ghost, not a cobalt fill: steering a running run is a secondary
+            move, and the modal keeps its one cobalt primary for the review
+            gate's Accept (the One Cobalt Rule; issue #94). */}
         <button
           onClick={() => void send()}
           disabled={sending || text.trim().length === 0}
-          className="rounded-md bg-accent px-3 py-1.5 font-medium text-on-accent transition-opacity duration-150 disabled:opacity-40"
+          className={btnGhost}
         >
           {sending ? 'Sending…' : 'Send'}
         </button>
@@ -546,9 +549,13 @@ export function TaskDetail({
               key={run.id}
               aria-pressed={run.id === selectedRunId}
               onClick={() => setSelectedRunId(run.id)}
+              // Selected run reads as selected by weight + a neutral raised
+              // ground, not cobalt: the modal reserves the accent for the
+              // review gate's Accept so it stays unambiguously the primary
+              // (issue #94).
               className={`rounded-md px-2 py-1 transition-colors duration-150 ${
                 run.id === selectedRunId
-                  ? 'bg-accent-tint font-semibold text-accent'
+                  ? 'bg-raised font-semibold text-ink'
                   : 'font-medium text-muted hover:bg-raised hover:text-ink'
               }`}
             >

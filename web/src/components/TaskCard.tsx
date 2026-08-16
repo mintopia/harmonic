@@ -3,14 +3,15 @@ import { card, chip } from '../ui';
 import { cardBranch, cardDiffstat } from './cardBranch';
 import { TaskActions } from './TaskActions';
 
-/** One truncating metadata line: id, harness · model, then only the facts
- * that deviate from defaults (isolation, deps, cost). Sans, not mono — these
- * are names and figures, not code (the Mono Is Code Rule); never chip slabs. */
+/** One truncating identity line: id, harness · model, plus at most one
+ * deviation — a non-direct isolation mode. Secondary facts (dependency count,
+ * running cost) read in Task detail, not on the glance card: the card's job is
+ * to let the title be the hero, so the meta line stays identity + one deviation
+ * and never a stack of facts (issue #94). Sans, not mono — these are names and
+ * figures, not code (the Mono Is Code Rule); never chip slabs. */
 function metaLine(task: Task): string {
   const bits = [`#${task.id}`, `${task.harness} · ${task.model}`];
   if (task.isolationMode !== 'direct') bits.push(task.isolationMode);
-  if (task.dependsOn.length > 0) bits.push(`⇠ ${task.dependsOn.length} dep${task.dependsOn.length > 1 ? 's' : ''}`);
-  if (task.cost?.totalUsd != null) bits.push(`${task.cost.incomplete ? '≥' : ''}$${task.cost.totalUsd.toFixed(2)}`);
   return bits.join('  ');
 }
 
@@ -22,12 +23,15 @@ function typeTagLabel(task: Task): string {
 }
 
 /** The card's hero: the prompt, clickable to open the Task. Shared by both card
- * kinds so the title never drifts; the mirrored card weights it medium. */
+ * kinds so the title renders identically — the Title role (ink, 600) that makes
+ * it the visually dominant element on either card species (DESIGN §Board "the
+ * title is the hero"; issue #94). Callers pass only spacing, never weight or
+ * size, so native and mirrored can't drift. */
 function TitleButton({ task, onOpen, className = '' }: { task: Task; onOpen: (task: Task) => void; className?: string }) {
   return (
     <button
       type="button"
-      className={`line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-ink ${className}`}
+      className={`line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-title font-semibold text-ink ${className}`}
       onClick={() => onOpen(task)}
     >
       {task.prompt}
@@ -84,7 +88,7 @@ function MirroredCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => vo
         <span className={`${chip} bg-raised text-muted`}>{typeTagLabel(task)}</span>
         {task.escalated && <span className={`${chip} bg-running-tint text-running`}>escalated</span>}
       </div>
-      <TitleButton task={task} onOpen={onOpen} className="mb-2.5 font-medium" />
+      <TitleButton task={task} onOpen={onOpen} className="mb-2.5" />
       <div className="mb-2 flex items-center gap-1.5 text-small text-muted">
         <MapGlyph />
         <span className="min-w-0 truncate text-ink">{task.mapTitle ?? '—'}</span>
