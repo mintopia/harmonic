@@ -39,9 +39,12 @@ model, Working Directory, Isolation Mode) that moves through a lifecycle.
 _Avoid_: job, ticket, item
 
 **Run**:
-One execution attempt of a Task by a Harness, owning its event stream,
-Usage, and result. A retry is a new Run.
-_Avoid_: execution, attempt, session
+One execution attempt of a Task by a Harness that settles to one reviewable
+result, owning its event stream, Usage, and result. A retry is a new Run —
+reusing the prior Session while its cache is warm, else a fresh Session that
+references the prior work.
+_Avoid_: execution, attempt, session (a Run runs *against* a Session; they are
+not the same — see Session)
 
 **Run Event**:
 One ACP `session/update` (message chunk, thought, tool call, plan update)
@@ -212,8 +215,9 @@ rejected. Re-queueable to *ready*, optionally with feedback.
 **Accept / Reject**:
 The review decision on an *awaiting-review* Task. Accept completes it (and
 in worktree mode merges the Run's branch into its base branch; a conflict
-returns it to *awaiting-review*). Reject fails it. Human-only unless the
-agent-review config flag is enabled.
+returns it to *awaiting-review*). Reject fails it and, within the cache window,
+its fix continues in the same Session. Human-only unless a Verification agent is
+configured to auto-accept on a *pass*.
 _Avoid_: approve, merge (as the verb for the decision)
 
 ### Execution
@@ -222,6 +226,22 @@ _Avoid_: approve, merge (as the verb for the decision)
 An agent CLI that Harmonic drives to execute Runs — Claude (Claude Code),
 Codex, or Copilot — exclusively over ACP.
 _Avoid_: agent (ambiguous), backend, provider
+
+**Session**:
+One ACP conversation with a Harness — 1:1 with the harness's own session
+(`sessionId`), the unit a Run or Conversation prompts over `session/prompt`.
+A Session outlives a single Run: a retry, an automated or human rejection, or
+a crash all continue in the **same** Session while its provider prompt-cache is
+still warm, so the agent resumes with full context instead of from cold. The
+reuse window is a **per-Harness constant** matched to that harness's prompt-cache
+TTL — short (order of minutes; Claude's is ~5 min) and **opaque to the ACP
+client**, so it is configured per Harness, never read. The whole point is to
+never resume a cold cache; past the window a new Session is opened that
+*references* the prior work. A cheap no-op **keepalive** turn can slide the
+window forward through a known wait (e.g. automated Verification). A Session is
+reloadable into a fresh harness process (`session/load`, supported by all three
+harnesses) — it is not tied to a live process.
+_Avoid_: thread, chat (the interactive sibling is a Conversation)
 
 **Working Directory**:
 The directory where a Task's Runs execute — its Workspace's directory,
@@ -242,8 +262,45 @@ starts that Workspace's *ready* Tasks — highest Priority first, FIFO within �
 up to the Workspace's own concurrency cap, never exceeding the Machine
 Ceiling in total. A global **master switch** gates all of them: a Task runs
 only when the master is on *and* its Workspace has the Auto-Runner enabled, so
-the master is the one-click fleet-wide pause.
+the master is the one-click fleet-wide pause. It also honours the Work Context
+House Rule: it will not start an afk Run into a Work Context already occupied by
+an afk Run that is running or awaiting verification/review.
 _Avoid_: daemon, worker pool
+
+**Guardrail**:
+A limit Harmonic enforces over a *running* Run that, when it **trips**, stops
+the Run and Escalates it with a short reason — the runtime's own authority to
+end a Run it is watching, alongside the agent's own signals (`finish_task` /
+`escalate_task`), process death, and operator action. Resolves as a global
+default with a per-Workspace override (per-Task deferred); invisible until it
+trips, when the reason surfaces on the card in the same slot as the escalated
+tag. Members being designed: a **budget** Guardrail on elapsed time, token
+count, or cost, a **progress** Guardrail against a stalled or looping agent,
+and a
+**branch-contract** Guardrail that the agent left branch and worktree
+management to Harmonic.
+_Avoid_: limit, timeout, watchdog, quota
+
+**Work Context**:
+The (Working Directory + branch) an automatic Run occupies — in *direct* mode
+the shared directory on its live branch, in *worktree* mode the Run's own
+worktree and branch. The unit of the **House Rule**: at most **one automatic
+(afk) Run per Work Context** may be running or awaiting verification/review at
+once, so unreviewed work is never stacked on top of. Enforced by the
+Auto-Runner as a pick predicate.
+_Avoid_: workspace (that is the board container), sandbox
+
+**Verification**:
+An automated check that gates a Run's result before it merges or reaches the
+human review gate — a **command** (the Workspace's test/lint), an **agent** (a
+critic Harness with its own configurable prompt and model), or both; resolved
+global default with a per-Workspace override. Its verdict is **pass / fail /
+inconclusive**; *inconclusive* fails safe (Escalate, never a silent pass). A
+fail drives a bounded self-heal — the agent fixes it in the **same Session** —
+before Escalating. The agent verifier **replaces** the older agent-review flag:
+its *pass* is what auto-accepts where configured.
+_Avoid_: review (that is the human Accept/Reject gate), lint, test (it is more
+than either)
 
 **Usage**:
 Token counts and tool-call tallies for a Run or Conversation, parsed
