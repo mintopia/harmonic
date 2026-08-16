@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { formatCost, usd } from '../cost';
 import type { Cost, TaskState } from '../types';
 import { card, chip, displayTitle, labelType, STATE_CHIP_STYLES, tableHead } from '../ui';
-import { CostChart, fillSeries, type DayCost } from './CostChart';
+import { CostChart } from './CostChart';
+import { fillSeries, type DayCost } from './costChart-model';
 import { EmptyState } from './EmptyState';
 
 interface Stats {

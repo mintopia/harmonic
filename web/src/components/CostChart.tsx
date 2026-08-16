@@ -1,11 +1,6 @@
 import { useMemo, useState } from 'react';
 import { usd } from '../cost';
-
-export interface DayCost {
-  day: number;
-  totalUsd: number | null;
-  incomplete: boolean;
-}
+import { costFloor, type DayCost } from './costChart-model';
 
 const W = 720;
 const H = 180;
@@ -14,38 +9,31 @@ const PAD_R = 56; // room for the endpoint label
 const PAD_T = 14;
 const PAD_B = 28;
 
+type Pt = { x: number; y: number };
+
 const dayLabel = (ms: number) =>
   new Date(ms).toLocaleDateString(undefined, { weekday: 'short', month: undefined });
 const dateLabel = (ms: number) =>
   new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-/** Zero-fill the gaps between buckets so a quiet day reads as $0, not as
- * a skipped point — but only over ranges small enough to label honestly. */
-export function fillSeries(series: DayCost[], from: number, to: number): DayCost[] {
-  const first = series[0];
-  if (!first) return [];
-  const DAY = 24 * 3600_000;
-  const start = new Date(Math.max(from, first.day));
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(Math.min(to, Date.now()));
-  end.setHours(0, 0, 0, 0);
-  const span = Math.round((end.getTime() - start.getTime()) / DAY) + 1;
-  if (span < 2 || span > 62) return series; // all-time sprawl: plot the data as-is
-  const byDay = new Map(series.map((s) => [s.day, s]));
-  const out: DayCost[] = [];
-  for (let i = 0; i < span; i++) {
-    const d = new Date(start.getTime() + i * DAY + DAY / 2); // DST-safe: mid-day, then floor
-    d.setHours(0, 0, 0, 0);
-    const key = d.getTime();
-    out.push(byDay.get(key) ?? { day: key, totalUsd: 0, incomplete: false });
-  }
-  return out;
-}
+const pathOf = (seg: Pt[]) =>
+  seg.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+
+/** Close a segment's line into a filled area down to the baseline. A lone
+ * point has no area to fill, so it returns null (the caller marks it as a dot). */
+const areaOf = (seg: Pt[]): string | null => {
+  const first = seg[0];
+  const lastp = seg[seg.length - 1];
+  if (!first || !lastp || seg.length < 2) return null;
+  return `${pathOf(seg)} L${lastp.x.toFixed(1)} ${H - PAD_B} L${first.x.toFixed(1)} ${H - PAD_B} Z`;
+};
 
 /**
  * Cost-per-day area chart (DESIGN.md § Charts): one cobalt series, faint
  * grid, emphasized endpoint, crosshair on hover — arrow keys walk the
- * days when focused. Honest numbers: incomplete days tooltip as floors.
+ * days when focused. Honest numbers: incomplete days tooltip as floors, and
+ * unpriceable days break the line (a gap + a hollow flag) rather than being
+ * drawn on the zero baseline as if they were free.
  */
 export function CostChart({ series }: { series: DayCost[] }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -59,20 +47,37 @@ export function CostChart({ series }: { series: DayCost[] }) {
     const innerH = H - PAD_T - PAD_B;
     const xOf = (i: number) => PAD_L + (series.length === 1 ? innerW / 2 : (i / (series.length - 1)) * innerW);
     const yOf = (v: number) => PAD_T + innerH - (v / ceil) * innerH;
-    const points = series.map((s, i) => ({ x: xOf(i), y: yOf(s.totalUsd ?? 0), ...s }));
+    // An unpriceable day has no honest y — it carries y === null and is
+    // omitted from every drawn segment (a gap), never pinned to the baseline.
+    const points = series.map((s, i) => ({
+      x: xOf(i),
+      y: s.totalUsd === null ? null : yOf(s.totalUsd),
+      ...s,
+    }));
     // xOf stays local: points already carry their x, so only yOf is needed
     // outside (the gridlines resolve their own y).
     return { points, gridValues: [ceil, ceil / 2], yOf };
   }, [series]);
 
-  const firstPoint = points[0];
-  const last = points[points.length - 1];
   const firstDay = series[0];
   const lastDay = series[series.length - 1];
-  if (series.length < 2 || !firstPoint || !last || !firstDay || !lastDay) return null;
+  const last = points[points.length - 1];
+  if (series.length < 2 || !last || !firstDay || !lastDay) return null;
 
-  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-  const area = `${line} L${last.x.toFixed(1)} ${H - PAD_B} L${firstPoint.x.toFixed(1)} ${H - PAD_B} Z`;
+  // Split priced points into contiguous runs; null days end the current run,
+  // leaving a visible gap where cost is unknown.
+  const segments: Pt[][] = [];
+  let run: Pt[] = [];
+  for (const p of points) {
+    if (p.y === null) {
+      if (run.length) segments.push(run);
+      run = [];
+    } else {
+      run.push({ x: p.x, y: p.y });
+    }
+  }
+  if (run.length) segments.push(run);
+  const nullPoints = points.filter((p) => p.y === null);
 
   // ≤8 x labels, always including first and last.
   const step = Math.max(1, Math.ceil(series.length / 8));
@@ -94,13 +99,12 @@ export function CostChart({ series }: { series: DayCost[] }) {
   };
 
   const hovered = hover === null ? null : (points[hover] ?? null);
-  const total = series.reduce((sum, s) => sum + (s.totalUsd ?? 0), 0);
-  const anyIncomplete = series.some((s) => s.incomplete);
+  const { total, isFloor } = costFloor(series);
 
   return (
     <svg
       role="img"
-      aria-label={`Cost per day, ${dateLabel(firstDay.day)} to ${dateLabel(lastDay.day)}, totalling ${anyIncomplete ? 'at least ' : ''}${usd(total)}. Use arrow keys to inspect days.`}
+      aria-label={`Cost per day, ${dateLabel(firstDay.day)} to ${dateLabel(lastDay.day)}, totalling ${isFloor ? 'at least ' : ''}${usd(total)}. Use arrow keys to inspect days.`}
       tabIndex={0}
       viewBox={`0 0 ${W} ${H}`}
       className="block w-full focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
@@ -131,12 +135,43 @@ export function CostChart({ series }: { series: DayCost[] }) {
       ))}
       <line className="stroke-hairline" x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} />
 
-      <path d={area} fill="url(#hm-cost-fill)" />
-      <path d={line} className="stroke-accent" fill="none" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      <circle className="fill-accent" cx={last.x} cy={last.y} r="3.5" />
+      {segments.map((seg, i) => {
+        const area = areaOf(seg);
+        const lone = seg.length < 2 ? seg[0] : null;
+        return (
+          <g key={`seg-${i}`}>
+            {area && <path d={area} fill="url(#hm-cost-fill)" />}
+            {seg.length >= 2 && (
+              <path
+                d={pathOf(seg)}
+                className="stroke-accent"
+                fill="none"
+                strokeWidth="2"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            )}
+            {lone && <circle className="fill-accent" cx={lone.x} cy={lone.y} r="2.5" />}
+          </g>
+        );
+      })}
+
+      {/* Unpriceable days: a hollow muted flag along the top edge. It asserts
+          no value (there is none to assert) — only that the day is unpriced. */}
+      {nullPoints.map((p) => (
+        <circle key={`null-${p.day}`} className="fill-none stroke-muted" strokeWidth="1.2" cx={p.x} cy={PAD_T} r="2.5" />
+      ))}
+
+      {last.y !== null && <circle className="fill-accent" cx={last.x} cy={last.y} r="3.5" />}
       {hover === null && (
-        <text className="fill-ink tabular-nums" fontSize="11" fontWeight="600" x={last.x + 8} y={last.y + 4}>
-          {`${last.incomplete ? '≥' : ''}${usd(last.totalUsd ?? 0)}`}
+        <text
+          className="fill-ink tabular-nums"
+          fontSize="11"
+          fontWeight="600"
+          x={last.x + 8}
+          y={(last.y ?? H - PAD_B) + 4}
+        >
+          {last.totalUsd === null ? 'unpriced' : `${last.incomplete ? '≥' : ''}${usd(last.totalUsd)}`}
         </text>
       )}
 
@@ -149,7 +184,7 @@ export function CostChart({ series }: { series: DayCost[] }) {
       {hovered && (
         <g>
           <line className="stroke-edge" x1={hovered.x} y1={PAD_T} x2={hovered.x} y2={H - PAD_B} />
-          <circle className="fill-accent" cx={hovered.x} cy={hovered.y} r="3.5" />
+          {hovered.y !== null && <circle className="fill-accent" cx={hovered.x} cy={hovered.y} r="3.5" />}
           {(() => {
             const label = `${dateLabel(hovered.day)}  ${hovered.totalUsd === null ? 'unpriced' : `${hovered.incomplete ? '≥' : ''}${usd(hovered.totalUsd)}`}`;
             const w = label.length * 6.2 + 16;
