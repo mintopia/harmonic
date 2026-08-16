@@ -26,6 +26,8 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   resolvedTracker: null,
   harness: null,
   model: null,
+  chatHarness: null,
+  chatModel: null,
   isolationMode: null,
   priority: null,
   maxConcurrentRuns: null,

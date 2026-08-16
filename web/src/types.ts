@@ -65,6 +65,9 @@ export interface Workspace {
    * global default; a value overrides it. Resolved at read time (issue #60). */
   harness: string | null;
   model: string | null;
+  /** Chat defaults (ADR-0012); `null` inherits `config.chat.*`. */
+  chatHarness: string | null;
+  chatModel: string | null;
   isolationMode: 'direct' | 'worktree' | null;
   priority: 'high' | 'normal' | 'low' | null;
   maxConcurrentRuns: number | null;
@@ -394,6 +397,13 @@ export interface AppConfig {
     workingDir: string;
     isolationMode: 'direct' | 'worktree';
     priority: 'high' | 'normal' | 'low';
+  };
+  /** The default Harness and model a new Conversation ("chat") starts with,
+   * separate from the Task defaults. Global-default with a per-Workspace
+   * override (ADR-0012), resolved server-side at Conversation-create time. */
+  chat: {
+    harness: string;
+    model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
   /** How afk mirrored Tasks are driven (issue #33): the prompt template, branch fate, and retry cap. */

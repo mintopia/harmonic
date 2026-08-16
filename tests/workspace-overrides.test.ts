@@ -30,6 +30,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const ws = workspaces.list()[0]!;
     expect(ws.harness).toBeNull();
     expect(ws.model).toBeNull();
+    expect(ws.chatHarness).toBeNull();
+    expect(ws.chatModel).toBeNull();
     expect(ws.isolationMode).toBeNull();
     expect(ws.priority).toBeNull();
     expect(ws.maxConcurrentRuns).toBeNull();
@@ -41,6 +43,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const updated = workspaces.update(ws.id, {
       harness: 'codex',
       model: 'gpt-5',
+      chatHarness: 'claude',
+      chatModel: 'claude-opus-5',
       isolationMode: 'worktree',
       priority: 'high',
       maxConcurrentRuns: 2,
@@ -48,17 +52,36 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     });
     expect(updated.harness).toBe('codex');
     expect(updated.model).toBe('gpt-5');
+    expect(updated.chatHarness).toBe('claude');
+    expect(updated.chatModel).toBe('claude-opus-5');
     expect(updated.isolationMode).toBe('worktree');
     expect(updated.priority).toBe('high');
     expect(updated.maxConcurrentRuns).toBe(2);
     expect(updated.autoRunnerEnabled).toBe(true);
   });
 
+  it('overrides the chat default independently of the Task default', () => {
+    const ws = workspaces.list()[0]!;
+    // Chat and Tasks are separate columns: pointing chat at a different agent
+    // leaves the Task default untouched.
+    const updated = workspaces.update(ws.id, { harness: 'codex', chatHarness: 'claude', chatModel: 'claude-opus-5' });
+    expect(updated.harness).toBe('codex'); // Task default
+    expect(updated.chatHarness).toBe('claude'); // chat default, independent
+    expect(updated.chatModel).toBe('claude-opus-5');
+    expect(updated.model).toBeNull(); // Task model still inherits
+  });
+
   it('clears an override back to inherit with null', () => {
     const ws = workspaces.list()[0]!;
-    workspaces.update(ws.id, { harness: 'codex', maxConcurrentRuns: 2, autoRunnerEnabled: false });
-    const cleared = workspaces.update(ws.id, { harness: null, maxConcurrentRuns: null, autoRunnerEnabled: null });
+    workspaces.update(ws.id, { harness: 'codex', chatHarness: 'claude', maxConcurrentRuns: 2, autoRunnerEnabled: false });
+    const cleared = workspaces.update(ws.id, {
+      harness: null,
+      chatHarness: null,
+      maxConcurrentRuns: null,
+      autoRunnerEnabled: null,
+    });
     expect(cleared.harness).toBeNull();
+    expect(cleared.chatHarness).toBeNull();
     expect(cleared.maxConcurrentRuns).toBeNull();
     expect(cleared.autoRunnerEnabled).toBeNull();
   });

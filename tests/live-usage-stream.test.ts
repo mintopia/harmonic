@@ -34,6 +34,9 @@ describe('live run_usage firehose (ADR 0010)', () => {
 
     const config: DeepPartial<AppConfig> = {
       defaults: { workingDir: workDir, isolationMode: 'direct' },
+      // Chat default tracks the stub harness so its model stays valid (config
+      // schema enforces chat.model ∈ the harness's models).
+      chat: { harness: 'claude', model: 'stub-model' },
       harnesses: {
         claude: {
           command: process.execPath,

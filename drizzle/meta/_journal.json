@@ -141,6 +141,13 @@
       "when": 1786739487596,
       "tag": "0019_per_task_default_overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1786808503095,
+      "tag": "0020_chat_defaults",
+      "breakpoints": true
     }
   ]
 }

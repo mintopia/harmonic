@@ -599,7 +599,12 @@ export function App() {
             )}
           </main>
 
-          {!noWorkspaces && <ConversationLauncher config={config} workspaceId={activeWorkspaceId} />}
+          {!noWorkspaces && (
+            <ConversationLauncher
+              config={config}
+              workspace={workspaces.find((w) => w.id === activeWorkspaceId) ?? null}
+            />
+          )}
         </div>
       </div>
 

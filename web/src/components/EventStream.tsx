@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { coalesceEvents, type StreamEvent, type ToolCallView } from '../event-stream-model';
-import { chip, toolChip } from '../ui';
+import { chip, labelType, toolChip } from '../ui';
 
 // ACP tool kinds → the short word on the chip. Anything unknown or absent
 // reads as a generic "tool" — the opaque toolCallId is never a label.
@@ -112,6 +112,19 @@ function renderEventLine(event: StreamEvent): ReactNode {
       <div className="text-tool">
         model mismatch: ran on <span className="font-medium">{(event.payload.observed ?? []).join(', ')}</span> (task
         pinned <span className="font-medium">{event.payload.expected}</span>)
+      </div>
+    );
+  }
+  if (event.payload.event === 'steer_delivered' || event.payload.event === 'steer_queued') {
+    // The operator steered this run. Keep it in the transcript so the redirect
+    // is visible next to the turn it lands on — queued shows it was accepted,
+    // delivered shows the turn it opened. Rendered as an operator aside, not
+    // agent prose: accent-tinted, labelled, the steering text quoted verbatim.
+    const queued = event.payload.event === 'steer_queued';
+    return (
+      <div className="rounded-md bg-accent-tint px-2 py-1 text-ink">
+        <span className={`${labelType} mr-2 text-accent`}>{queued ? 'steer queued' : 'steering'}</span>
+        <span className="whitespace-pre-wrap">{String(event.payload.text ?? '')}</span>
       </div>
     );
   }

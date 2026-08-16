@@ -5,9 +5,10 @@ import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
 import { TASK_STATES, RUN_STATES, TASK_ORIGINS, WORKFLOWS, WAYFINDER_TYPES, DRIVES } from '../../db/schema.js';
 import { Git } from '../../execution/git.js';
+import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi } from '../serialize.js';
-import { errorResponse, idParamsSchema, costSchema, runUsageSchema } from '../schemas.js';
+import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
 /** The reviewer's note, carried onto the re-attempt or back to the queue. */
 const feedbackExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -18,6 +19,9 @@ const reattemptInputSchema = z
 const rejectInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
 const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().meta({ example: 4818 }) });
+const steerInputSchema = z.object({
+  text: z.string().min(1).meta({ example: 'Stop — check the existing tests before changing the limiter.' }),
+});
 const depParamsSchema = z.object({
   id: z.coerce.number().int().meta({ example: 4821 }),
   depId: z.coerce.number().int().meta({ example: 4818 }),
@@ -305,6 +309,30 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       const task = ctx.tasks.complete(req.params.id);
       ctx.runner.completeForTask(task.id);
       return withDeps(task);
+    },
+  );
+
+  app.post(
+    '/tasks/:id/steer',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          "Steer a running task: queue an operator message for its active run. The message is not injected mid-turn — it is held and sent as a fresh prompt turn at the next turn boundary, so the agent's current turn finishes cleanly. Use it to redirect an agent that has gone off-track, or to nudge one that ended its turn and parked. Operator only.",
+        params: idParamsSchema,
+        body: steerInputSchema,
+        response: {
+          200: okResponseSchema.describe('The message was queued for the next turn boundary of the task\'s active run.'),
+          409: errorResponse('The task has no active run to steer (it is not running here).'),
+        },
+      },
+    },
+    async (req) => {
+      ctx.tasks.get(req.params.id); // 404 on unknown task
+      if (!ctx.runner.steer(req.params.id, req.body.text)) {
+        throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer`);
+      }
+      return { ok: true } as const;
     },
   );
 

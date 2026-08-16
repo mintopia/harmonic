@@ -76,6 +76,8 @@ export function WorkspaceSettingsPage({
         trackerPollIntervalSeconds: local.trackerPollIntervalSeconds,
         harness: local.harness,
         model: local.model,
+        chatHarness: local.chatHarness,
+        chatModel: local.chatModel,
         isolationMode: local.isolationMode,
         priority: local.priority,
         maxConcurrentRuns: local.maxConcurrentRuns,
@@ -100,6 +102,13 @@ export function WorkspaceSettingsPage({
   const harnessConfig = config.harnesses[effectiveHarness];
   const inheritedModel = harnessConfig?.defaultModel ?? '';
   const models = harnessConfig?.models ?? [];
+
+  // Chat defaults resolve independently of the Task defaults (ADR-0012): the
+  // effective chat harness drives the model option list, but the inherited
+  // model is the global chat model (a standalone value, not the harness's
+  // defaultModel) — chat and Tasks can pin different models of one Harness.
+  const effectiveChatHarness = local.chatHarness ?? config.chat.harness;
+  const chatModels = config.harnesses[effectiveChatHarness]?.models ?? [];
 
   return (
     <div>
@@ -312,6 +321,58 @@ export function WorkspaceSettingsPage({
                 )}
               </InheritField>
               <FieldError message={fieldErrors['priority']} />
+            </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Chat defaults"
+          description="The Harness and model new Conversations in this Workspace start with. Each inherits the global chat default until overridden; every chat can still change them before its first turn."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <InheritField
+                label="Harness"
+                htmlFor="workspace-chat-harness"
+                value={local.chatHarness}
+                inherited={config.chat.harness}
+                onChange={(chatHarness) => set('chatHarness', chatHarness)}
+              >
+                {({ id, value, onChange }) => (
+                  <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                    {Object.keys(config.harnesses).map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                    {value && !config.harnesses[value] && <option value={value}>{value} (not configured)</option>}
+                  </select>
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['chatHarness']} />
+            </div>
+            <div>
+              <InheritField
+                label="Model"
+                htmlFor="workspace-chat-model"
+                value={local.chatModel}
+                inherited={config.chat.model}
+                onChange={(chatModel) => set('chatModel', chatModel)}
+              >
+                {({ id, value, onChange }) => (
+                  <select id={id} className={field} value={value} onChange={(e) => onChange(e.target.value)}>
+                    {chatModels.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                    {value && !chatModels.includes(value) && (
+                      <option value={value}>{value} (not in models list)</option>
+                    )}
+                  </select>
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['chatModel']} />
             </div>
           </div>
         </SettingsSection>

@@ -38,6 +38,8 @@ const workspaceSchema = z
     // default, a value overrides it. Resolved at read time (issue #60).
     harness: z.string().nullable().meta({ example: null }),
     model: z.string().nullable().meta({ example: null }),
+    chatHarness: z.string().nullable().meta({ example: null }),
+    chatModel: z.string().nullable().meta({ example: null }),
     isolationMode: z.string().nullable().meta({ example: null }),
     priority: z.string().nullable().meta({ example: null }),
     maxConcurrentRuns: z.number().nullable().meta({ example: null }),

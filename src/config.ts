@@ -134,6 +134,20 @@ export const appConfigSchema = z.object({
     priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
   }),
   /**
+   * The default Harness and model a new Conversation ("chat") starts with,
+   * separate from the Task defaults above — an operator often wants to *talk*
+   * to a different agent than the one that runs the board. Global-default with
+   * a per-Workspace override (ADR-0012): a Workspace stores `null` to inherit
+   * these, a value to override, resolved at Conversation-create time. Unlike
+   * the Task default, the chat model is its own stored value (not derived from
+   * the harness's `defaultModel`), so chat and Tasks can pin different models
+   * of the same Harness.
+   */
+  chat: z.object({
+    harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
+    model: z.string().meta({ example: 'claude-sonnet-5' }),
+  }),
+  /**
    * Global Auto-Runner settings (ADR-0012). `enabled` is the fleet-wide
    * **master switch** — the one-click pause that gates every Workspace
    * (a Task runs only if `master ∧ workspace-enabled`, where the per-Workspace
@@ -196,6 +210,17 @@ export const appConfigSchema = z.object({
         message: `defaultModel must be one of the harness's models`,
       });
     }
+  }
+  // The chat default model must be one of its harness's models (same rationale
+  // as defaultModel above — the Settings UI offers a select over that list, and
+  // a stray value would silently start Conversations on an unintended model).
+  const chatHarness = config.harnesses[config.chat.harness];
+  if (chatHarness && chatHarness.models.length > 0 && !chatHarness.models.includes(config.chat.model)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['chat', 'model'],
+      message: `chat model must be one of the ${config.chat.harness} harness's models`,
+    });
   }
 });
 
@@ -271,6 +296,10 @@ export function defaultConfig(): AppConfig {
       workingDir: process.cwd(),
       isolationMode: 'direct',
       priority: 'normal',
+    },
+    chat: {
+      harness: 'claude',
+      model: 'claude-sonnet-5',
     },
     autoRunner: {
       enabled: false,

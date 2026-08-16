@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { HARNESS_IDS } from '../../config.js';
 import { CONVERSATION_STATES } from '../../db/schema.js';
+import { resolve as resolveOverride } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { conversationToApi } from '../serialize.js';
 import { costSchema, errorResponse, idParamsSchema, okResponseSchema, runUsageSchema } from '../schemas.js';
@@ -120,16 +121,22 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     },
     async (req, reply) => {
       const config = ctx.configStore.get();
-      const harness = req.body.harness ?? config.defaults.harness;
-      const harnessConfig = config.harnesses[harness];
-      if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
       // Defaults to the earliest-created Workspace when omitted (ADR-0008), so
       // callers that predate Workspaces keep working unchanged.
       const workspace = ctx.workspaces.resolve(req.body.workspaceId);
+      // The chat default (ADR-0012), resolved like every other overridable
+      // setting: an explicit request value wins, else this Workspace's chat
+      // override, else the global chat default. Distinct from the Task defaults —
+      // a Conversation talks to whatever agent chat is pointed at.
+      const harness = req.body.harness ?? resolveOverride(workspace.chatHarness, config.chat.harness);
+      // `harness` may be a Workspace override (plain text), so it can name a
+      // harness this instance doesn't configure — `?.` handles that, guarded below.
+      const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
+      if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
       const conversation = ctx.conversations.create({
         workspaceId: workspace.id,
         harness,
-        model: req.body.model ?? harnessConfig.defaultModel,
+        model: req.body.model ?? resolveOverride(workspace.chatModel, config.chat.model),
         workingDir: req.body.workingDir ?? workspace.workingDir,
       });
       return reply.status(201).send(conversationToApi(ctx, conversation));

@@ -28,6 +28,9 @@ export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'
         defaultModel: 'stub-model',
       },
     },
+    // Point the chat default at the stub too, so its model stays one of the
+    // stub harness's models (the config schema enforces chat.model ∈ models).
+    chat: { harness: harnessId, model: 'stub-model' },
   } as DeepPartial<AppConfig>;
 }
 

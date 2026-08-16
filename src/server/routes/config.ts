@@ -62,6 +62,15 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
+    chat: z
+      .object({
+        /** Default Harness a new Conversation starts with. */
+        harness: z.enum(HARNESS_IDS).meta({ example: 'claude' }),
+        /** Default model a new Conversation starts with; must be one of that harness's models (enforced on write). */
+        model: z.string().meta({ example: 'claude-sonnet-5' }),
+      })
+      .partial()
+      .optional(),
     autoRunner: z
       .object({
         enabled: z.boolean().meta({ example: true }),

@@ -96,6 +96,66 @@ function TaskDefaultsFields({
   );
 }
 
+function ChatDefaultsFields({
+  config,
+  fieldErrors,
+  onChange,
+}: {
+  config: AppConfig;
+  fieldErrors: Record<string, string>;
+  onChange: (chat: AppConfig['chat']) => void;
+}) {
+  const harness = config.harnesses[config.chat.harness];
+  const models = harness?.models ?? [];
+
+  // Repointing the Harness moves the model to that harness's default, so the
+  // pair never lands on a model the new Harness doesn't serve (the config
+  // schema enforces chat.model ∈ the harness's models on save).
+  const pickHarness = (h: string) =>
+    onChange({ harness: h, model: config.harnesses[h]?.defaultModel ?? config.chat.model });
+
+  return (
+    <div className="grid gap-3.5 sm:grid-cols-2">
+      <div>
+        <label className={fieldLabel} htmlFor="settings-chat-harness">Harness</label>
+        <select
+          id="settings-chat-harness"
+          className={field}
+          value={config.chat.harness}
+          onChange={(e) => pickHarness(e.target.value)}
+        >
+          {Object.keys(config.harnesses).map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <FieldError message={fieldErrors['chat.harness']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-chat-model">Model</label>
+        <select
+          id="settings-chat-model"
+          className={field}
+          value={config.chat.model}
+          onChange={(e) => onChange({ ...config.chat, model: e.target.value })}
+          disabled={!harness}
+        >
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+          {config.chat.model && !models.includes(config.chat.model) && (
+            <option value={config.chat.model}>{config.chat.model} (not in models list)</option>
+          )}
+        </select>
+        <FieldError message={fieldErrors['chat.model']} />
+      </div>
+    </div>
+  );
+}
+
 function AutoRunnerFields({
   config,
   fieldErrors,
@@ -329,6 +389,17 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
                 },
               })
             }
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Chat defaults"
+          description="The Harness and model a new Conversation starts with — separate from the task defaults, so you can chat with a different agent than the one that runs the board. Each Workspace can override these, and every new chat can still change them before its first turn."
+        >
+          <ChatDefaultsFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(chat) => setLocal({ ...local, chat })}
           />
         </SettingsSection>
 

@@ -71,6 +71,8 @@ export const api = {
       trackerPollIntervalSeconds?: number;
       harness?: string | null;
       model?: string | null;
+      chatHarness?: string | null;
+      chatModel?: string | null;
       isolationMode?: 'direct' | 'worktree' | null;
       priority?: 'high' | 'normal' | 'low' | null;
       maxConcurrentRuns?: number | null;
@@ -100,6 +102,9 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
   /** Operator override: stop a running task's agent and settle it completed, skipping review. */
   completeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/complete`),
+  /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */
+  steerTask: (id: number, text: string) =>
+    request<{ ok: true }>('POST', `/api/tasks/${id}/steer`, { text }),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
   /** Send a failed task back to ready in place (failed → ready), carrying optional feedback. */
   requeueTask: (id: number, feedback?: string) =>

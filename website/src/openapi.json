@@ -1463,6 +1463,28 @@
             ],
             "example": null
           },
+          "chatHarness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "chatModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "isolationMode": {
             "anyOf": [
               {
@@ -1525,6 +1547,8 @@
           "resolvedTracker",
           "harness",
           "model",
+          "chatHarness",
+          "chatModel",
           "isolationMode",
           "priority",
           "maxConcurrentRuns",
@@ -1848,6 +1872,24 @@
                   "low"
                 ],
                 "example": "normal"
+              }
+            }
+          },
+          "chat": {
+            "type": "object",
+            "properties": {
+              "harness": {
+                "type": "string",
+                "enum": [
+                  "claude",
+                  "codex",
+                  "copilot"
+                ],
+                "example": "claude"
+              },
+              "model": {
+                "type": "string",
+                "example": "claude-sonnet-5"
               }
             }
           },
@@ -3466,6 +3508,28 @@
             ],
             "example": null
           },
+          "chatHarness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "chatModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "isolationMode": {
             "anyOf": [
               {
@@ -3528,6 +3592,8 @@
           "resolvedTracker",
           "harness",
           "model",
+          "chatHarness",
+          "chatModel",
           "isolationMode",
           "priority",
           "maxConcurrentRuns",
@@ -3856,6 +3922,25 @@
                   "low"
                 ],
                 "example": "normal"
+              }
+            },
+            "additionalProperties": false
+          },
+          "chat": {
+            "type": "object",
+            "properties": {
+              "harness": {
+                "type": "string",
+                "enum": [
+                  "claude",
+                  "codex",
+                  "copilot"
+                ],
+                "example": "claude"
+              },
+              "model": {
+                "type": "string",
+                "example": "claude-sonnet-5"
               }
             },
             "additionalProperties": false
@@ -4570,6 +4655,69 @@
           },
           "409": {
             "description": "The task is not running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/steer": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Steer a running task: queue an operator message for its active run. The message is not injected mid-turn — it is held and sent as a fresh prompt turn at the next turn boundary, so the agent's current turn finishes cleanly. Use it to redirect an agent that has gone off-track, or to nudge one that ended its turn and parked. Operator only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Stop — check the existing tests before changing the limiter."
+                  }
+                },
+                "required": [
+                  "text"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message was queued for the next turn boundary of the task's active run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The task has no active run to steer (it is not running here).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5784,6 +5932,30 @@
                   },
                   "model": {
                     "example": "gpt-5",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "chatHarness": {
+                    "example": "codex",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "chatModel": {
+                    "example": "gpt-5.6-sol",
                     "anyOf": [
                       {
                         "type": "string",
@@ -7135,6 +7307,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "chat": {
+                      "type": "object",
+                      "properties": {
+                        "harness": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "example": "claude-sonnet-5"
+                        }
+                      },
+                      "required": [
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -7219,6 +7414,7 @@
                     "prices",
                     "modelInfo",
                     "defaults",
+                    "chat",
                     "autoRunner",
                     "drive",
                     "taskPrompt",
@@ -7478,6 +7674,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "chat": {
+                      "type": "object",
+                      "properties": {
+                        "harness": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "example": "claude-sonnet-5"
+                        }
+                      },
+                      "required": [
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -7562,6 +7781,7 @@
                     "prices",
                     "modelInfo",
                     "defaults",
+                    "chat",
                     "autoRunner",
                     "drive",
                     "taskPrompt",
@@ -7795,6 +8015,28 @@
                       "priority"
                     ]
                   },
+                  "chat": {
+                    "type": "object",
+                    "properties": {
+                      "harness": {
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ],
+                        "example": "claude"
+                      },
+                      "model": {
+                        "type": "string",
+                        "example": "claude-sonnet-5"
+                      }
+                    },
+                    "required": [
+                      "harness",
+                      "model"
+                    ]
+                  },
                   "autoRunner": {
                     "type": "object",
                     "properties": {
@@ -7869,6 +8111,7 @@
                 "required": [
                   "harnesses",
                   "defaults",
+                  "chat",
                   "autoRunner"
                 ]
               }
@@ -8105,6 +8348,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "chat": {
+                      "type": "object",
+                      "properties": {
+                        "harness": {
+                          "type": "string",
+                          "enum": [
+                            "claude",
+                            "codex",
+                            "copilot"
+                          ],
+                          "example": "claude"
+                        },
+                        "model": {
+                          "type": "string",
+                          "example": "claude-sonnet-5"
+                        }
+                      },
+                      "required": [
+                        "harness",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
                     "autoRunner": {
                       "type": "object",
                       "properties": {
@@ -8189,6 +8455,7 @@
                     "prices",
                     "modelInfo",
                     "defaults",
+                    "chat",
                     "autoRunner",
                     "drive",
                     "taskPrompt",

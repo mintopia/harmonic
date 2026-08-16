@@ -36,6 +36,10 @@ export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
 export const workspaceOverridesSchema = z.object({
   harness: z.string().min(1).nullable().optional().meta({ example: 'codex' }),
   model: z.string().min(1).nullable().optional().meta({ example: 'gpt-5' }),
+  /** Chat-default Harness override; null inherits `config.chat.harness`. */
+  chatHarness: z.string().min(1).nullable().optional().meta({ example: 'codex' }),
+  /** Chat-default model override; null inherits `config.chat.model`. */
+  chatModel: z.string().min(1).nullable().optional().meta({ example: 'gpt-5.6-sol' }),
   isolationMode: z.enum(['direct', 'worktree']).nullable().optional().meta({ example: 'worktree' }),
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
@@ -125,6 +129,8 @@ export class WorkspaceService {
         trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? current.trackerPollIntervalSeconds,
         harness: patch(input.harness, current.harness),
         model: patch(input.model, current.model),
+        chatHarness: patch(input.chatHarness, current.chatHarness),
+        chatModel: patch(input.chatModel, current.chatModel),
         isolationMode: patch(input.isolationMode, current.isolationMode),
         priority: patch(input.priority, current.priority),
         maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),

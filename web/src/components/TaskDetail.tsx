@@ -241,7 +241,61 @@ function DescriptionTab({ task }: { task: Task }) {
 
 function OutputTab({ run, events }: { run: Run | undefined; events: RunEvent[] }) {
   if (!run) return <p className="text-muted">No runs yet.</p>;
-  return <EventStream events={events} />;
+  return (
+    <div>
+      <EventStream events={events} />
+      {run.state === 'running' && <SteerBox taskId={run.taskId} />}
+    </div>
+  );
+}
+
+/** Steer a running run: queue an operator message that is delivered as a fresh
+ * turn at the next turn boundary (never mid-turn). For an agent that has gone
+ * off-track, or one that ended its turn and parked waiting for a prompt. */
+function SteerBox({ taskId }: { taskId: number }) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    const message = text.trim();
+    if (!message || sending) return;
+    setSending(true);
+    try {
+      await api.steerTask(taskId, message);
+      setText('');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div className="mt-3 border-t border-hairline pt-3">
+      <div className={`${labelType} mb-1 text-muted`}>Steer this run</div>
+      <div className="flex items-end gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          // Enter sends; Shift+Enter for a newline — the chat-input convention.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+          rows={2}
+          placeholder="Redirect the agent — delivered at its next turn boundary…"
+          className="min-w-0 flex-1 resize-none rounded-md border border-edge bg-field px-2 py-1 text-ink placeholder:text-muted focus:border-accent focus:outline-none"
+        />
+        <button
+          onClick={() => void send()}
+          disabled={sending || text.trim().length === 0}
+          className="rounded-md bg-accent px-3 py-1.5 font-medium text-on-accent transition-opacity duration-150 disabled:opacity-40"
+        >
+          {sending ? 'Sending…' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /** The exact prompt sent to the agent for the selected Run — persisted at run

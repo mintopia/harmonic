@@ -163,6 +163,23 @@ export function GraphView({
       return { k, tx: cx - ((cx - p.tx) / p.k) * k, ty: cy - ((cy - p.ty) / p.k) * k };
     });
 
+  // Trackpad / scrollwheel zoom. Attached natively with { passive: false } so
+  // preventDefault() actually stops the page from scrolling under the gesture —
+  // React's synthetic onWheel is passive and can't. zoomAt only closes over the
+  // stable setT, so binding once is safe.
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const nodeIdAt = (target: EventTarget): number | null => {
     const el = (target as Element).closest?.('[data-task-id]');
     const raw = el?.getAttribute('data-task-id');
@@ -203,10 +220,6 @@ export function GraphView({
           ref={hostRef}
           className="absolute inset-0 select-none"
           style={{ touchAction: 'none', cursor: drag.current ? 'grabbing' : 'grab' }}
-          onWheel={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
-          }}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             drag.current = { x: e.clientX, y: e.clientY, tx: t.tx, ty: t.ty };
@@ -313,34 +326,36 @@ export function GraphView({
               })}
             </g>
           </svg>
+        </div>
 
-          {/* Zoom controls (top-right). Each control carries a ≥44px touch
-              target (issue #56) via the shared helper, even though the glyphs
-              read compact. */}
-          <div className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-surface px-1 shadow-card ring-1 ring-edge">
-            <button
-              className={`${touchTarget} rounded-full text-muted hover:bg-raised hover:text-ink`}
-              onClick={() => zoomAt(vp.w / 2, vp.h / 2, 1 / 1.2)}
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <span className="w-12 text-center text-xs tabular-nums text-muted">{Math.round(t.k * 100)}%</span>
-            <button
-              className={`${touchTarget} rounded-full text-muted hover:bg-raised hover:text-ink`}
-              onClick={() => zoomAt(vp.w / 2, vp.h / 2, 1.2)}
-              aria-label="Zoom in"
-            >
-              +
-            </button>
-            <div className="mx-0.5 h-4 w-px bg-edge" />
-            <button
-              className="inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold text-muted hover:bg-raised hover:text-ink"
-              onClick={fit}
-            >
-              Fit
-            </button>
-          </div>
+        {/* Zoom controls (top-right). Rendered as a sibling of the pan/zoom
+            host — not a child — so a button press never triggers the host's
+            pointer capture, which would otherwise swallow the click. Each
+            control carries a ≥44px touch target (issue #56) via the shared
+            helper, even though the glyphs read compact. */}
+        <div className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-surface px-1 shadow-card ring-1 ring-edge">
+          <button
+            className={`${touchTarget} rounded-full text-muted hover:bg-raised hover:text-ink`}
+            onClick={() => zoomAt(vp.w / 2, vp.h / 2, 1 / 1.2)}
+            aria-label="Zoom out"
+          >
+            −
+          </button>
+          <span className="w-12 text-center text-xs tabular-nums text-muted">{Math.round(t.k * 100)}%</span>
+          <button
+            className={`${touchTarget} rounded-full text-muted hover:bg-raised hover:text-ink`}
+            onClick={() => zoomAt(vp.w / 2, vp.h / 2, 1.2)}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+          <div className="mx-0.5 h-4 w-px bg-edge" />
+          <button
+            className="inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold text-muted hover:bg-raised hover:text-ink"
+            onClick={fit}
+          >
+            Fit
+          </button>
         </div>
       </div>
     </div>

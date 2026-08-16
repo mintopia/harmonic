@@ -70,6 +70,14 @@ interface ActiveRun {
   /** Set (with a reason) when the agent calls `escalate_task` — routes to a human. */
   escalateReason: string | null;
   /**
+   * Operator steering messages queued while the Run is driving, drained FIFO at
+   * the next turn boundary (never mid-turn — see {@link Runner.steer}). Each
+   * delivered message is a fresh prompt turn, so a native Run that would have
+   * settled after one turn takes the steer instead, and an afk Run's steer
+   * jumps ahead of the auto-drive continue nudge without spending its budget.
+   */
+  steerQueue: string[];
+  /**
    * True while the agent has *ended its turn and is parked* between continue
    * prompts — not mid-tool-call. The board-refresh backstop
    * ({@link Runner.completeClosedMirrored}) only stops an agent that has ended
@@ -219,11 +227,20 @@ export class Runner {
    * same terminal state {@link settleAutoCompleted} reaches, consistent with
    * ADR-0011 (the ticket *is* closed).
    *
-   * No-op unless there is an active Run for the Task whose agent has ended its
-   * turn (`idle`): a mid-turn agent is left to finish (its own loop or the next
-   * poll settles it), never SIGKILLed mid-tool-call. Fully synchronous, so it runs
-   * atomically against {@link drive}'s await points; `drive` then sees
-   * `externallySettled` and skips its own settle. Returns whether it acted.
+   * When an agent *is* attached, no-op unless its turn has ended (`idle`): a
+   * mid-turn agent is left to finish (its own loop or the next poll settles it),
+   * never SIGKILLed mid-tool-call. Fully synchronous, so it runs atomically
+   * against {@link drive}'s await points; `drive` then sees `externallySettled`
+   * and skips its own settle.
+   *
+   * When *no* agent is attached — the Task is still `running` on the board but no
+   * Run is driving it (a Run that ended without settling, or a pick that flipped
+   * the Task running against a since-closed ticket) — there is nothing to stop, so
+   * settle the Task `completed` directly. Guarded on there being no live Run row:
+   * between a Run's ready→running flip (the pick's lock) or its spawn and its
+   * {@link ActiveRun} landing in {@link active}, the Task is momentarily `running`
+   * with no active Run — a live Run is imminent, so leave it to that Run (or the
+   * next poll) rather than settle out from under it. Returns whether it acted.
    */
   completeClosedMirrored(taskId: number): boolean {
     for (const active of this.active.values()) {
@@ -241,7 +258,13 @@ export class Runner {
       this.events.onRunFinished?.(finished);
       return true;
     }
-    return false;
+    // No agent is working this Task. Settle it done anyway (the ticket is closed;
+    // ADR-0011) — but only a still-running Task with no live Run in flight, so we
+    // never race a Run that is mid-spawn (its ActiveRun not yet registered).
+    if (this.taskService.get(taskId).state !== 'running') return false;
+    if (this.runStore.listForTask(taskId).some((r) => r.state === 'running')) return false;
+    this.taskService.setState(taskId, 'completed');
+    return true;
   }
 
   /**
@@ -263,6 +286,24 @@ export class Runner {
   markEscalate(taskId: number, reason: string): boolean {
     return this.forActiveTask(taskId, (active) => {
       active.escalateReason = reason;
+    });
+  }
+
+  /**
+   * Queue an operator steering message for a task's active Run (issue: steer a
+   * running Task). The message is *not* injected mid-turn: it is held and sent
+   * as a fresh prompt turn at the next turn boundary, so the agent's current
+   * turn finishes cleanly and the transcript stays honest (no illusion of
+   * seamless mid-thought redirection — the same contract as Conversation
+   * steering, but queued rather than cancel-and-resend). Records the queued
+   * message so it survives on the Run's event stream even before delivery.
+   * Returns whether a running Run was found (false ⇒ the task isn't running here).
+   */
+  steer(taskId: number, text: string): boolean {
+    return this.forActiveTask(taskId, (active) => {
+      active.steerQueue.push(text);
+      const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
+      this.events.onRunEvent?.(event);
     });
   }
 
@@ -452,6 +493,7 @@ export class Runner {
       activity: null,
       agentFinished: false,
       escalateReason: null,
+      steerQueue: [],
       idle: false,
       externallySettled: false,
     };
@@ -499,20 +541,35 @@ export class Runner {
       // Run the turn boundary is a checkpoint, not an exit: re-prompt to continue
       // until the agent signals finish/escalate, the ticket closes, or the
       // continue budget runs out (then the settle block below routes it to the
-      // usual unresolved path). Native Runs stay strictly single-turn.
+      // usual unresolved path). A native Run is otherwise single-turn — but
+      // either kind takes a queued operator steer as an extra turn first (below).
       let promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task, this.getConfig().taskPrompt);
       // Persist the exact text sent so Task detail can show it on every Run —
       // native or mirrored — without re-deriving a template that may since have
-      // changed (the "Prompt" tab reads this column).
+      // changed (the "Prompt" tab reads this column). Steer/continue turns are
+      // recorded as lifecycle events, not folded into this initial prompt.
       this.runStore.update(run.id, { prompt: promptText });
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
       active.idle = true; // turn ended → parked; the backstop may settle a closed ticket here
-      for (let attempt = 1; autoDriven && !escalating; attempt++) {
+      // Steering + auto-drive continue loop. `attempt` counts only auto-drive
+      // continue nudges, so operator steers never eat into the continue budget.
+      for (let attempt = 1; !escalating; ) {
         if (active.externallySettled) break; // the poll settled a closed ticket while parked
         if (active.escalateReason) {
           escalating = active.escalateReason; // agent asked for a human → settle Escalated
           break;
         }
+        // A queued operator steer takes the next turn — for native and afk Runs
+        // alike — ahead of any continue nudge, without spending continue budget.
+        const steer = active.steerQueue.shift();
+        if (steer !== undefined) {
+          record('lifecycle', { event: 'steer_delivered', text: steer });
+          active.idle = false; // a new turn is in flight — not parked, don't stop it
+          result = await driver.prompt([{ type: 'text', text: steer }]);
+          active.idle = true;
+          continue; // re-check: more steers, then the agent's own finish/continue state
+        }
+        if (!autoDriven) break; // native Run with nothing queued → settle the single turn
         if (active.agentFinished) break; // explicit finish signal
         if (await this.autoDrive!.isResolved(task)) break; // ticket closed
         if (attempt > this.autoDrive!.continueAttempts()) break; // budget spent → unresolved
@@ -521,6 +578,7 @@ export class Runner {
         active.idle = false; // a new turn is in flight — not parked, don't stop it
         result = await driver.prompt([{ type: 'text', text: promptText }]);
         active.idle = true;
+        attempt++;
       }
       // Leaving the loop to settle: no longer "parked awaiting work", so the
       // backstop must not race the settle below (it would skip Merge Fate).

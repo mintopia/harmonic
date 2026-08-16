@@ -51,6 +51,11 @@ export const workspaces = sqliteTable('workspaces', {
   harness: text('harness'),
   /** Task-default model override; null inherits the harness's default model. */
   model: text('model'),
+  /** Chat-default Harness override; null inherits `config.chat.harness`. New
+   * Conversations here start with this Harness (ADR-0012). */
+  chatHarness: text('chat_harness'),
+  /** Chat-default model override; null inherits `config.chat.model`. */
+  chatModel: text('chat_model'),
   /** Task-default Isolation Mode override; null inherits `config.defaults.isolationMode`. */
   isolationMode: text('isolation_mode'),
   /** Task-default Priority override; null inherits `config.defaults.priority`. */

@@ -62,3 +62,13 @@ it), which until now was aspirational: the code had a single global
   switch stays the one-click fleet-wide pause.
 - Working Directory leaves the global Task defaults — it is Workspace identity,
   not a default.
+- **Amended — chat defaults join the overridable set.** A new Conversation's
+  default Harness and model are their own global-default-with-per-workspace-
+  override pair (`config.chat.{harness,model}`, Workspace `chat_harness` /
+  `chat_model` columns), resolved the same `Workspace value ?? global default`
+  way at Conversation-create time. They are deliberately separate from the Task
+  defaults: an operator often wants to *talk* to a different agent than the one
+  that runs the board, so the chat model is its own stored value rather than the
+  harness's `defaultModel`. A Conversation still has no per-row override beyond
+  the create request — it locks its Harness/model at creation, so the chain is
+  two levels (Workspace → global), not three.

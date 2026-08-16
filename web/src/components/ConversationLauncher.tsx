@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { api } from '../api';
 import { subscribe } from '../ws';
-import type { AppConfig, Conversation, ConversationEvent } from '../types';
+import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../types';
 import { segmentTranscript } from '../conversation-transcript-model';
 import { isTurnRunning } from '../conversation-steering-model';
 import {
@@ -227,12 +227,16 @@ function PermissionPrompt({
 
 function Composer({
   config,
+  workspace,
   conversation,
   events,
   expanded,
   onSend,
 }: {
   config: AppConfig;
+  /** The active Workspace, for its chat-default overrides; null on a fresh
+   * instance with no Workspace yet. */
+  workspace: Workspace | null;
   conversation: Conversation | null;
   events: ConversationEvent[];
   expanded: boolean;
@@ -241,13 +245,14 @@ function Composer({
     text: string,
   ) => Promise<{ queued: boolean }>;
 }) {
-  // Defaulted from config exactly like TaskForm — only meaningful before a
-  // conversation exists; once spawned the process's harness/model are read
-  // from the conversation itself and can no longer change. Working directory
-  // isn't offered here: a new conversation inherits its Workspace's working
-  // directory server-side (ADR-0008).
-  const [harness, setHarness] = useState(config.defaults.harness);
-  const [model, setModel] = useState(config.harnesses[config.defaults.harness]?.defaultModel ?? '');
+  // Seeded from the resolved chat default (ADR-0012): this Workspace's override,
+  // else the global chat default — the same resolution the server does when the
+  // request omits these. Only meaningful before a conversation exists; once
+  // spawned the process's harness/model are read from the conversation itself
+  // and can no longer change. Working directory isn't offered here: a new
+  // conversation inherits its Workspace's working directory server-side (ADR-0008).
+  const [harness, setHarness] = useState(workspace?.chatHarness ?? config.chat.harness);
+  const [model, setModel] = useState(workspace?.chatModel ?? config.chat.model);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
@@ -575,12 +580,14 @@ type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number 
  */
 export function ConversationLauncher({
   config,
-  workspaceId,
+  workspace,
 }: {
   config: AppConfig | null;
-  /** The active Workspace (ADR-0008) a new Conversation binds to. */
-  workspaceId: number | null;
+  /** The active Workspace (ADR-0008) a new Conversation binds to, and whose
+   * chat-default overrides seed the Composer; null on a fresh instance. */
+  workspace: Workspace | null;
 }) {
+  const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
   // A one-shot flag that adds the entrance-flourish class for ~150ms after
@@ -912,6 +919,7 @@ export function ConversationLauncher({
             composerReady && (
               <Composer
                 config={config}
+                workspace={workspace}
                 conversation={conversation}
                 events={events}
                 expanded={expanded}

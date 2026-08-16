@@ -79,6 +79,9 @@ function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
   // Force-complete is a manual operator override (kills a running agent mid-work,
   // skips the review gate) with no agent-facing use — agents signal via finish_task.
   if (/^\/api\/tasks\/\d+\/complete$/.test(path)) return false;
+  // Steering redirects a running agent — a manual operator override; an agent
+  // does not steer itself (it drives its own turn).
+  if (/^\/api\/tasks\/\d+\/steer$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return agentReview;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
