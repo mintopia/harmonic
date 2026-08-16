@@ -109,6 +109,8 @@ export function Board({
   onOpen,
   onChanged,
   onNewTask,
+  peeked,
+  onTogglePeek,
 }: {
   tasks: Task[];
   loading: boolean;
@@ -116,11 +118,12 @@ export function Board({
   onOpen: (task: Task) => void;
   onChanged: () => void;
   onNewTask: () => void;
+  /** Terminal columns the operator has peeked open (lives in the URL — issue
+   * #103); everything else keeps to the finished panel so the board's
+   * geometry never reflows under load. */
+  peeked: ReadonlySet<TaskState>;
+  onTogglePeek: (state: TaskState) => void;
 }) {
-  // Terminal columns the operator has peeked open; everything else keeps
-  // to the finished panel so the board's geometry never reflows under load.
-  const [peeked, setPeeked] = useState<ReadonlySet<TaskState>>(new Set());
-
   // The card currently being dragged (issue #58). Its source state decides
   // which columns are valid drops; we don't move optimistically, so an invalid
   // drop is simply a no-op and the card snaps back on its own.
@@ -192,18 +195,12 @@ export function Board({
 
   if (tasks.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
 
-  const togglePeek = (state: TaskState) =>
-    setPeeked((current) => {
-      const next = new Set(current);
-      if (next.has(state)) {
-        next.delete(state);
-        focusTarget.current = { kind: 'row', state };
-      } else {
-        next.add(state);
-        focusTarget.current = { kind: 'collapse', state };
-      }
-      return next;
-    });
+  const togglePeek = (state: TaskState) => {
+    focusTarget.current = peeked.has(state)
+      ? { kind: 'row', state }
+      : { kind: 'collapse', state };
+    onTogglePeek(state);
+  };
 
   const columns = boardColumns(tasks);
   const collapsedTerminal = columns.filter(({ state, terminal }) => terminal && !peeked.has(state));

@@ -3,27 +3,27 @@ import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
+import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import { btnQuiet, card, displayTitle, labelType, selectField, stateChip, tableHead, touchOverlay } from '../ui';
 import { toastError } from '../toast';
 import { fetchTasks } from '../table-model';
 
-type SortKey = 'createdAt' | 'priority' | 'cost';
-
 export function TableView({
   workspaceId,
   onOpen,
+  filters,
+  onFiltersChange,
 }: {
   /** Scopes the table to the active Workspace (ADR-0008); no fetch until resolved. */
   workspaceId: number | null;
   onOpen: (task: Task) => void;
+  /** Filter/sort selection — lives in the URL (issue #103), owned by App. */
+  filters: TableFilters;
+  onFiltersChange: (next: TableFilters) => void;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [state, setState] = useState('');
-  const [harness, setHarness] = useState('');
-  const [priority, setPriority] = useState('');
-  const [sortBy, setSortBy] = useState<SortKey>('createdAt');
-  const [order, setOrder] = useState<'asc' | 'desc'>('desc');
+  const { state, harness, priority, sortBy, order } = filters;
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -32,6 +32,9 @@ export function TableView({
       .then(setTasks)
       .catch(toastError)
       .finally(() => setLoading(false));
+    // Refetch when the filter/sort selection changes. The destructured filter
+    // fields (from route.table, issue #103) are stable primitives, so this
+    // fires only on a real filter change — not on every re-render.
   }, [workspaceId, state, harness, priority, sortBy, order]);
 
   // The badge links to the original, which the current filter may hide, so
@@ -52,11 +55,8 @@ export function TableView({
         type="button"
         className={`relative ${labelType} cursor-pointer select-none hover:text-ink`}
         onClick={() => {
-          if (sortBy === key) setOrder(order === 'asc' ? 'desc' : 'asc');
-          else {
-            setSortBy(key);
-            setOrder('asc');
-          }
+          if (sortBy === key) onFiltersChange({ ...filters, order: order === 'asc' ? 'desc' : 'asc' });
+          else onFiltersChange({ ...filters, sortBy: key, order: 'asc' });
         }}
       >
         {label} {sortBy === key ? (order === 'asc' ? '↑' : '↓') : ''}
@@ -76,7 +76,12 @@ export function TableView({
           <span className={`${labelType} text-muted`}>tasks</span>
         </span>
         <div className="flex-1" />
-        <select aria-label="Filter by state" className={selectField} value={state} onChange={(e) => setState(e.target.value)}>
+        <select
+          aria-label="Filter by state"
+          className={selectField}
+          value={state}
+          onChange={(e) => onFiltersChange({ ...filters, state: e.target.value })}
+        >
           <option value="">All states</option>
           {TASK_STATES.map((s) => (
             <option key={s} value={s}>
@@ -84,17 +89,27 @@ export function TableView({
             </option>
           ))}
         </select>
-        <select aria-label="Filter by harness" className={selectField} value={harness} onChange={(e) => setHarness(e.target.value)}>
+        <select
+          aria-label="Filter by harness"
+          className={selectField}
+          value={harness}
+          onChange={(e) => onFiltersChange({ ...filters, harness: e.target.value })}
+        >
           <option value="">All harnesses</option>
-          {['claude', 'codex', 'copilot'].map((h) => (
+          {TABLE_HARNESSES.map((h) => (
             <option key={h} value={h}>
               {h}
             </option>
           ))}
         </select>
-        <select aria-label="Filter by priority" className={selectField} value={priority} onChange={(e) => setPriority(e.target.value)}>
+        <select
+          aria-label="Filter by priority"
+          className={selectField}
+          value={priority}
+          onChange={(e) => onFiltersChange({ ...filters, priority: e.target.value })}
+        >
           <option value="">All priorities</option>
-          {['high', 'normal', 'low'].map((p) => (
+          {TABLE_PRIORITIES.map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
@@ -178,11 +193,7 @@ export function TableView({
                       <p className="text-muted">No tasks match these filters.</p>
                       <button
                         className={`${btnQuiet} mt-2`}
-                        onClick={() => {
-                          setState('');
-                          setHarness('');
-                          setPriority('');
-                        }}
+                        onClick={() => onFiltersChange({ ...filters, state: '', harness: '', priority: '' })}
                       >
                         Clear filters
                       </button>

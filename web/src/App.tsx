@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Cost, Task, Workspace } from './types';
+import type { AppConfig, Cost, Task, TaskState, Workspace } from './types';
 import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetail } from './components/TaskDetail';
@@ -22,6 +22,7 @@ import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
 import { RAIL_VIEWS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
+import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
 import {
   hasNoWorkspaces,
   loadActiveWorkspaceId,
@@ -61,6 +62,42 @@ const railItem = (active: boolean, collapsed: boolean) =>
   `flex w-full min-h-11 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
   } ${active ? 'bg-accent-tint font-semibold text-accent' : 'font-medium text-muted hover:bg-raised hover:text-ink'}`;
+
+// Client routing (issue #103): the active view and its per-view filter/sort/
+// peek state live in the URL, so a refresh restores where the operator was
+// and Back steps between views instead of leaving the app. Pushes a history
+// entry for real navigation and replaces for in-place param tweaks — see the
+// callers below for which is which.
+function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void] {
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.search));
+  useEffect(() => {
+    // Canonicalize a hand-edited or bookmarked URL on load (drop unknown params,
+    // normalize order) so the no-op-navigation guard in navigate() can trust
+    // window.location — otherwise re-selecting the active view would push a lone
+    // canonicalization entry and cost a dead Back press.
+    const canonical = `${window.location.pathname}${serializeRoute(parseRoute(window.location.search))}`;
+    if (canonical !== `${window.location.pathname}${window.location.search}`) {
+      window.history.replaceState(null, '', canonical);
+    }
+    const onPop = () => setRoute(parseRoute(window.location.search));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const navigate = useCallback((next: Route, opts?: { replace?: boolean }) => {
+    const url = `${window.location.pathname}${serializeRoute(next)}`;
+    // Re-selecting the active view (or otherwise landing on the URL we're
+    // already at) must not push a duplicate entry — that leaves a dead Back
+    // press. Sync state without touching history when nothing moved.
+    if (url === `${window.location.pathname}${window.location.search}`) {
+      setRoute(next);
+      return;
+    }
+    if (opts?.replace) window.history.replaceState(null, '', url);
+    else window.history.pushState(null, '', url);
+    setRoute(next);
+  }, []);
+  return [route, navigate];
+}
 
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
@@ -118,7 +155,8 @@ export function App() {
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
-  const [view, setView] = useState<View>('board');
+  const [route, navigate] = useRoute();
+  const view = route.view;
   const [menuOpen, setMenuOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed(localStorage));
   const [theme, setTheme] = useState<ThemePref>(() => loadTheme(localStorage));
@@ -133,6 +171,10 @@ export function App() {
   // A manual tracker refresh is in flight — disables the board's Refresh control
   // and spins its icon until the rescan + mirror settle.
   const [refreshingTracker, setRefreshingTracker] = useState(false);
+
+  // Board's peeked terminal columns now live in the route; a Set is the
+  // shape Board wants, the array is what the URL can serialize.
+  const peeked = useMemo(() => new Set(route.peeked), [route.peeked]);
 
   useEffect(() => {
     applyTheme(document.documentElement, theme);
@@ -257,10 +299,23 @@ export function App() {
     setReviewHintDismissed(true);
   };
 
+  // Picking a view is real navigation — push, so Back returns to the
+  // previous view rather than leaving the app.
   const pickView = (v: View) => {
-    setView(v);
+    navigate({ ...route, view: v });
     setMenuOpen(false);
   };
+
+  // Peek/filter tweaks are in-place param changes on the current location,
+  // not a new place to visit — replace, so they don't spam history.
+  const togglePeek = (state: TaskState) => {
+    const next = new Set(route.peeked);
+    if (next.has(state)) next.delete(state);
+    else next.add(state);
+    navigate({ ...route, peeked: [...next] }, { replace: true });
+  };
+
+  const setTableFilters = (table: TableFilters) => navigate({ ...route, table }, { replace: true });
 
   const toggleRail = () => {
     const next = !railCollapsed;
@@ -323,7 +378,9 @@ export function App() {
         setTasks(null);
       }
     }
-    setView('board');
+    // Programmatic redirect off the deleted Workspace's page, not a place the
+    // operator chose to visit — replace, no history entry.
+    navigate({ ...route, view: 'board' }, { replace: true });
   };
 
   // Collapsed items keep their accessible name and gain a native tooltip;
@@ -575,11 +632,20 @@ export function App() {
                       onOpen={setOpenTask}
                       onChanged={refresh}
                       onNewTask={() => setEditing('new')}
+                      peeked={peeked}
+                      onTogglePeek={togglePeek}
                     />
                   </>
                 )}
                 {view === 'activity' && <ActivityView config={config} />}
-                {view === 'table' && <TableView workspaceId={activeWorkspaceId} onOpen={setOpenTask} />}
+                {view === 'table' && (
+                  <TableView
+                    workspaceId={activeWorkspaceId}
+                    onOpen={setOpenTask}
+                    filters={route.table}
+                    onFiltersChange={setTableFilters}
+                  />
+                )}
                 {view === 'graph' && (
                   <GraphView tasks={taskList} loading={tasks === null} onOpen={setOpenTask} />
                 )}
