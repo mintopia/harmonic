@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchTasks, tasksQuery } from '../web/src/table-model.js';
+import { fetchTasks, filterBySearch, paginate, tasksQuery } from '../web/src/table-model.js';
 import type { Task } from '../web/src/types.js';
 
 /**
@@ -52,5 +52,51 @@ describe('fetchTasks', () => {
   it('throws the server error message on a non-OK response instead of parsing it as tasks', async () => {
     vi.stubGlobal('fetch', fakeFetch(JSON.stringify({ error: { message: 'boom' } }), { status: 500 }));
     await expect(fetchTasks(baseQuery)).rejects.toThrow('boom');
+  });
+});
+
+describe('filterBySearch', () => {
+  const tasks = [{ prompt: 'Add rate limiting' }, { prompt: 'Fix login' }] as Partial<Task>[] as Task[];
+
+  it('matches a substring, case-insensitively', () => {
+    expect(filterBySearch(tasks, 'rate')).toEqual([tasks[0]]);
+    expect(filterBySearch(tasks, 'LOGIN')).toEqual([tasks[1]]);
+  });
+
+  it('treats a blank or whitespace-only query as "no search"', () => {
+    expect(filterBySearch(tasks, '')).toEqual(tasks);
+    expect(filterBySearch(tasks, '   ')).toEqual(tasks);
+  });
+
+  it('returns an empty list when nothing matches', () => {
+    expect(filterBySearch(tasks, 'zzz')).toEqual([]);
+  });
+});
+
+describe('paginate', () => {
+  const items = Array.from({ length: 120 }, (_, i) => i);
+
+  it('splits into pages of the default size', () => {
+    const p = paginate(items, 1);
+    expect(p.items).toHaveLength(50);
+    expect(p.pageCount).toBe(3);
+    expect(p.total).toBe(120);
+  });
+
+  it('clamps an out-of-range page to the last page', () => {
+    const p = paginate(items, 99);
+    expect(p.page).toBe(3);
+  });
+
+  it('clamps page 0 or negative to page 1', () => {
+    expect(paginate(items, 0).page).toBe(1);
+    expect(paginate(items, -5).page).toBe(1);
+  });
+
+  it('gives an empty list a single, empty page', () => {
+    const p = paginate([], 1);
+    expect(p.pageCount).toBe(1);
+    expect(p.page).toBe(1);
+    expect(p.items).toEqual([]);
   });
 });

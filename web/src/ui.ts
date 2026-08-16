@@ -69,6 +69,14 @@ export const field =
 export const selectField =
   'min-h-11 rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none';
 
+/** The text-input style for compact toolbar controls (issue #104 search box):
+ * the `field` look plus the ≥44px touch-target floor baked in, so the floor is
+ * carried by the shared vocabulary rather than re-derived inline per surface —
+ * the same treatment `selectField` gave the filters (issue #89). Width is left
+ * to the caller, exactly like `selectField`. */
+export const searchField =
+  'min-h-11 rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink placeholder:text-muted focus:border-accent focus:outline-none';
+
 /** Label role (DESIGN.md § 3): field labels and table headers — the only
  * uppercase in the system. The tracking comes from the `--text-label` token
  * (0.05em), so don't add `tracking-*` on top of it, same as `displayTitle`. */

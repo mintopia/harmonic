@@ -37,7 +37,14 @@ describe('parseRoute', () => {
 
   it('parses table filters and validates each against its allowed set', () => {
     const t = parseRoute('?view=table&state=running&harness=claude&priority=high&sort=cost&order=asc').table;
-    expect(t).toEqual({ state: 'running', harness: 'claude', priority: 'high', sortBy: 'cost', order: 'asc' });
+    expect(t).toEqual({
+      state: 'running',
+      harness: 'claude',
+      priority: 'high',
+      search: '',
+      sortBy: 'cost',
+      order: 'asc',
+    });
   });
 
   it('drops invalid table filter values back to their defaults', () => {
@@ -74,7 +81,7 @@ describe('serializeRoute', () => {
     const route: Route = {
       ...DEFAULT_ROUTE,
       view: 'table',
-      table: { state: 'running', harness: '', priority: '', sortBy: 'cost', order: 'asc' },
+      table: { state: 'running', harness: '', priority: '', search: '', sortBy: 'cost', order: 'asc' },
     };
     const parsed = parseRoute(serializeRoute(route));
     expect(parsed.table).toEqual(route.table);
@@ -82,10 +89,42 @@ describe('serializeRoute', () => {
   });
 });
 
+describe('search', () => {
+  it('parses the q param into table.search', () => {
+    expect(parseRoute('?q=rate%20limit').table.search).toBe('rate limit');
+  });
+
+  it('defaults to an empty search when q is absent', () => {
+    expect(parseRoute('').table.search).toBe('');
+  });
+
+  it('serializes a non-empty search to the q param', () => {
+    const qs = serializeRoute({
+      ...DEFAULT_ROUTE,
+      view: 'table',
+      table: { ...DEFAULT_TABLE_FILTERS, search: 'boom' },
+    });
+    expect(qs.includes('q=boom')).toBe(true);
+  });
+
+  it('round-trips a search through serialize → parse', () => {
+    const route: Route = {
+      ...DEFAULT_ROUTE,
+      view: 'table',
+      table: { ...DEFAULT_TABLE_FILTERS, search: 'rate limit' },
+    };
+    expect(parseRoute(serializeRoute(route))).toEqual(route);
+  });
+});
+
 describe('round-trip', () => {
   const routes: Route[] = [
     DEFAULT_ROUTE,
-    { view: 'table', peeked: [], table: { state: 'running', harness: 'codex', priority: 'low', sortBy: 'priority', order: 'asc' } },
+    {
+      view: 'table',
+      peeked: [],
+      table: { state: 'running', harness: 'codex', priority: 'low', search: '', sortBy: 'priority', order: 'asc' },
+    },
     { view: 'board', peeked: ['completed', 'failed', 'cancelled'], table: DEFAULT_TABLE_FILTERS },
     { view: 'stats', peeked: ['completed'], table: { ...DEFAULT_TABLE_FILTERS, sortBy: 'cost' } },
   ];

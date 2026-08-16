@@ -33,6 +33,8 @@ export interface TableFilters {
   state: string;
   harness: string;
   priority: string;
+  /** Free-text search over prompt text (issue #104). Empty means "no search". */
+  search: string;
   sortBy: SortKey;
   order: 'asc' | 'desc';
 }
@@ -41,6 +43,7 @@ export const DEFAULT_TABLE_FILTERS: TableFilters = {
   state: '',
   harness: '',
   priority: '',
+  search: '',
   sortBy: 'createdAt',
   order: 'desc',
 };
@@ -67,6 +70,7 @@ const PARAM = {
   state: 'state',
   harness: 'harness',
   priority: 'priority',
+  q: 'q',
   sort: 'sort',
   order: 'order',
 } as const;
@@ -112,6 +116,7 @@ export function parseRoute(search: string): Route {
     state: isTaskState(rawState) ? rawState : '',
     harness: (TABLE_HARNESSES as readonly string[]).includes(rawHarness) ? rawHarness : '',
     priority: (TABLE_PRIORITIES as readonly string[]).includes(rawPriority) ? rawPriority : '',
+    search: params.get(PARAM.q) ?? '',
     sortBy: isSortKey(params.get(PARAM.sort)) ? (params.get(PARAM.sort) as SortKey) : 'createdAt',
     order: rawOrder === 'asc' ? 'asc' : 'desc',
   };
@@ -138,6 +143,7 @@ export function serializeRoute(route: Route): string {
   if (t.state) params.set(PARAM.state, t.state);
   if (t.harness) params.set(PARAM.harness, t.harness);
   if (t.priority) params.set(PARAM.priority, t.priority);
+  if (t.search) params.set(PARAM.q, t.search);
   if (t.sortBy !== 'createdAt') params.set(PARAM.sort, t.sortBy);
   if (t.order !== 'desc') params.set(PARAM.order, t.order);
 

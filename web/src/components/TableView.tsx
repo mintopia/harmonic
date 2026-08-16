@@ -4,9 +4,20 @@ import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
-import { btnQuiet, card, displayTitle, labelType, selectField, stateChip, tableHead, touchOverlay } from '../ui';
+import {
+  btnGhost,
+  btnQuiet,
+  card,
+  displayTitle,
+  labelType,
+  searchField,
+  selectField,
+  stateChip,
+  tableHead,
+  touchOverlay,
+} from '../ui';
 import { toastError } from '../toast';
-import { fetchTasks } from '../table-model';
+import { fetchTasks, filterBySearch, paginate, TABLE_PAGE_SIZE } from '../table-model';
 
 export function TableView({
   workspaceId,
@@ -23,7 +34,8 @@ export function TableView({
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const { state, harness, priority, sortBy, order } = filters;
+  const [page, setPage] = useState(1);
+  const { state, harness, priority, search, sortBy, order } = filters;
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -34,8 +46,20 @@ export function TableView({
       .finally(() => setLoading(false));
     // Refetch when the filter/sort selection changes. The destructured filter
     // fields (from route.table, issue #103) are stable primitives, so this
-    // fires only on a real filter change — not on every re-render.
+    // fires only on a real filter change — not on every re-render. `search`
+    // is deliberately excluded (issue #104): it filters the already-fetched
+    // list client-side, so typing in the box never triggers a refetch.
   }, [workspaceId, state, harness, priority, sortBy, order]);
+
+  const filtered = filterBySearch(tasks, search);
+  const { items: pageTasks, page: currentPage, pageCount, total } = paginate(filtered, page);
+
+  // Reset to page 1 whenever the result set's inputs change, so narrowing the
+  // list never leaves the operator staring at a now-out-of-range page. The
+  // paginate() clamp is the safety net; this is the intent.
+  useEffect(() => {
+    setPage(1);
+  }, [workspaceId, state, harness, priority, sortBy, order, search]);
 
   // The badge links to the original, which the current filter may hide, so
   // fall back to fetching it by id.
@@ -68,14 +92,23 @@ export function TableView({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-baseline gap-2">
-        {/* The view's anchor figure: how many tasks the filters select. */}
+        {/* The view's anchor figure: how many tasks the filters (including
+            search, issue #104) select. */}
         <span className="flex items-baseline gap-1.5">
-          <span className={`${displayTitle} tabular-nums ${tasks.length > 0 || loading ? '' : 'text-faint'}`}>
-            {loading ? '…' : tasks.length}
+          <span className={`${displayTitle} tabular-nums ${total > 0 || loading ? '' : 'text-faint'}`}>
+            {loading ? '…' : total}
           </span>
           <span className={`${labelType} text-muted`}>tasks</span>
         </span>
         <div className="flex-1" />
+        <input
+          type="search"
+          aria-label="Search prompts"
+          placeholder="Search prompts"
+          className={`${searchField} w-full sm:w-56`}
+          value={search}
+          onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
+        />
         <select
           aria-label="Filter by state"
           className={selectField}
@@ -143,7 +176,7 @@ export function TableView({
               flight — the top-edge progress bar and aria-busy carry the loading
               signal instead of dimming the whole table below AA. */}
           <tbody>
-            {tasks.map((task) => (
+            {pageTasks.map((task) => (
               <tr
                 key={task.id}
                 className="cursor-pointer border-t border-hairline transition-colors duration-150 hover:bg-raised"
@@ -166,6 +199,7 @@ export function TableView({
                   )}
                   <button
                     type="button"
+                    title={task.prompt}
                     className="block w-full cursor-pointer truncate text-left text-ink"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -185,15 +219,17 @@ export function TableView({
                 <td className="pl-4 text-data tabular-nums text-muted">{new Date(task.createdAt).toLocaleString()}</td>
               </tr>
             ))}
-            {!loading && tasks.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <tr>
                 <td colSpan={8} className="py-10 text-center">
-                  {state || harness || priority ? (
+                  {state || harness || priority || search ? (
                     <>
                       <p className="text-muted">No tasks match these filters.</p>
                       <button
                         className={`${btnQuiet} mt-2`}
-                        onClick={() => onFiltersChange({ ...filters, state: '', harness: '', priority: '' })}
+                        onClick={() =>
+                          onFiltersChange({ ...filters, state: '', harness: '', priority: '', search: '' })
+                        }
                       >
                         Clear filters
                       </button>
@@ -211,6 +247,38 @@ export function TableView({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination (issue #104): only shown once there's more than a page to
+          page through, so the single-page (common) case stays uncluttered. */}
+      {pageCount > 1 && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-small tabular-nums text-muted">
+            {total === 0 ? 0 : (currentPage - 1) * TABLE_PAGE_SIZE + 1}–
+            {(currentPage - 1) * TABLE_PAGE_SIZE + pageTasks.length} of {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={btnGhost}
+              disabled={currentPage <= 1}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              Prev
+            </button>
+            <span className="text-small tabular-nums text-muted">
+              Page {currentPage} of {pageCount}
+            </span>
+            <button
+              type="button"
+              className={btnGhost}
+              disabled={currentPage >= pageCount}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
