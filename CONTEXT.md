@@ -229,18 +229,17 @@ _Avoid_: agent (ambiguous), backend, provider
 
 **Session**:
 One ACP conversation with a Harness — 1:1 with the harness's own session
-(`sessionId`), the unit a Run or Conversation prompts over `session/prompt`.
-A Session outlives a single Run: a retry, an automated or human rejection, or
-a crash all continue in the **same** Session while its provider prompt-cache is
-still warm, so the agent resumes with full context instead of from cold. The
-reuse window is a **per-Harness constant** matched to that harness's prompt-cache
-TTL — short (order of minutes; Claude's is ~5 min) and **opaque to the ACP
-client**, so it is configured per Harness, never read. The whole point is to
-never resume a cold cache; past the window a new Session is opened that
-*references* the prior work. A cheap no-op **keepalive** turn can slide the
-window forward through a known wait (e.g. automated Verification). A Session is
-reloadable into a fresh harness process (`session/load`, supported by all three
-harnesses) — it is not tied to a live process.
+(`sessionId`), the unit a Run or Conversation prompts over `session/prompt`, and
+a durable first-class resource. A Session outlives a single Run: a retry, an
+automated or human rejection, or a crash-recovery continue in the **same**
+Session — reloaded into a fresh harness process via `session/load` (supported by
+all three harnesses) as a **new Run and new prompt turn**, never by reattaching a
+dead process. Reuse is always valid; the provider prompt-cache being warm only
+makes the resumed turn **cheaper** — it is a cost signal, not a correctness gate.
+The warm window is a per-Harness **cost estimate** (Claude ~1 h on a subscription
+via `ENABLE_PROMPT_CACHING_1H`; others shorter), never a promise: Harmonic
+records `lastActiveAt` and an estimated warm-until, and frames reuse as
+full-context vs a condensed new Session by cost, not a hard TTL cutoff.
 _Avoid_: thread, chat (the interactive sibling is a Conversation)
 
 **Working Directory**:
