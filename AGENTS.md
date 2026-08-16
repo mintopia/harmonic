@@ -43,3 +43,33 @@ ago — terminal-native "Signal Console" was dropped for Aurora, and zinc + ambe
 is long gone. Telling readers to distrust the spec is worse than saying nothing:
 if DESIGN.md and the code ever disagree again, that is a bug in one of them to
 be reconciled and written down, not a standing caveat to route around.)
+
+## Code Exploration Policy
+
+Always use jCodeMunch-MCP for code navigation. Never fall back to Read, Grep, Glob, or Bash for code exploration.
+**Exception:** use `Read` when you are about to edit a file — the harness requires a `Read` before `Edit`/`Write`. Use jCodeMunch to *find and understand* code, then `Read` only the file you are changing.
+
+This server runs the **front door** surface: three tools reach every jCodeMunch capability, so the tool list stays small and the catalogue is fetched only when you need it.
+
+**Start any session:**
+1. `order { "action": "resolve_repo", "args": { "path": "." } }` — confirm the project is indexed. If it is not: `order { "action": "index_folder", "args": { "path": "." } }`
+
+**Then, for any task:**
+- Know what you want → `order { "action": "<name>", "args": { ... } }`
+- Know the goal, not the tool → `route { "query": "your task in a sentence" }` picks the action and shapes the arguments
+- Want to see what exists → `menu { "query": "what you are trying to do" }` returns matching actions with example arguments
+- Want the whole catalogue and the usage rules → `jcodemunch_guide`
+
+`menu` and `jcodemunch_guide` list every action this server can run, including ones absent from your tool list. That is expected: the front door is the way to call them.
+
+**Interpreting results:**
+- A `verdict` of `no_implementation_found` is evidence of absence. Report the gap; do not re-search with different wording.
+- A `verdict` of `degraded` means a channel was unavailable, so absence is NOT proven. Read the note before relying on the result.
+- `source: ""` alongside `source_status` means the body could not be read, not that the symbol is empty.
+
+**After editing files:**
+- With PostToolUse hooks installed (Claude Code), edited files are reindexed automatically.
+- Otherwise `order { "action": "register_edit", "args": { "paths": [...] } }` after an edit, batched for bulk changes.
+
+**Announce your model once per session** so the server can size its answers: `announce_model { "model": "<your-model-id>" }`.
+
