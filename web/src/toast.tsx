@@ -80,3 +80,13 @@ export function Toaster() {
     </div>
   );
 }
+
+/** Collapse consecutive toasts carrying the same message into one. */
+export function dedupeToasts<T extends { message: string }>(toasts: readonly T[]): T[] {
+  const out: T[] = [];
+  for (const t of toasts) {
+    if (out.length && out[out.length - 1].message === t.message) continue;
+    out.push(t);
+  }
+  return out;
+}
