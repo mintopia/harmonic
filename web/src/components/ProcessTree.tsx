@@ -73,12 +73,12 @@ function TreeRow({
       aria-pressed={selected}
       className={`flex min-h-11 w-full items-stretch gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
         selected ? 'bg-accent-tint' : 'hover:bg-raised'
-      } ${idle ? 'opacity-55' : ''}`}
+      }`}
     >
       <Connectors guides={guides} isLast={isLast} depth={depth} />
       <span className="flex min-w-0 flex-1 items-center gap-2 self-center">
         <StatusDot status={status} />
-        <span className="truncate font-medium text-ink" title={node.name}>
+        <span className={`truncate font-medium ${idle ? 'text-muted' : 'text-ink'}`} title={node.name}>
           {depth === 0 ? 'root' : node.name}
         </span>
         <span className={`${chip} shrink-0 bg-raised text-muted`} title={node.model}>
