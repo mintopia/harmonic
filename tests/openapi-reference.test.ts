@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { buildApiReference, describeType, toSchemaNode } from '../web/src/openapi-reference.js';
+import { buildApiReference, describeType, endpointAnchor, filterApiReference, toSchemaNode } from '../web/src/openapi-reference.js';
+import type { ApiReferenceGroup } from '../web/src/openapi-reference.js';
 import { startServer, type TestServer } from './helpers.js';
 
 /** Minimal hand-written OpenAPI 3.1-shaped fixture, built up per test. */
@@ -385,5 +386,115 @@ describe('buildApiReference: real spec invariant', () => {
         }
       }
     }
+  });
+});
+
+describe('endpointAnchor', () => {
+  it('slugifies method + path into a stable, URL-safe anchor', () => {
+    expect(endpointAnchor('GET', '/api/tasks/{id}')).toBe('ep-get-api-tasks-id');
+  });
+
+  it('lower-cases the method', () => {
+    expect(endpointAnchor('POST', '/api/tasks')).toBe('ep-post-api-tasks');
+  });
+
+  it('collapses runs of non-alphanumeric characters to a single dash', () => {
+    expect(endpointAnchor('GET', '/api/runs/{id}/events')).toBe('ep-get-api-runs-id-events');
+  });
+
+  it('strips leading/trailing dashes from the slug portion', () => {
+    expect(endpointAnchor('GET', '/')).toBe('ep-get');
+  });
+
+  it('is stable across repeated calls for the same method + path', () => {
+    expect(endpointAnchor('DELETE', '/api/tasks/{id}')).toBe(endpointAnchor('DELETE', '/api/tasks/{id}'));
+  });
+});
+
+describe('filterApiReference', () => {
+  function groupsFixture(): ApiReferenceGroup[] {
+    return [
+      {
+        name: 'Tasks',
+        endpoints: [
+          {
+            method: 'GET',
+            path: '/api/tasks',
+            tags: ['Tasks'],
+            summary: 'List tasks',
+            parameters: [],
+            requestBody: null,
+            responses: [],
+          },
+          {
+            method: 'POST',
+            path: '/api/tasks',
+            tags: ['Tasks'],
+            summary: 'Create a task',
+            parameters: [],
+            requestBody: null,
+            responses: [],
+          },
+        ],
+      },
+      {
+        name: 'Runs',
+        endpoints: [
+          {
+            method: 'GET',
+            path: '/api/runs/{id}',
+            tags: ['Runs'],
+            summary: 'Fetch a run',
+            parameters: [],
+            requestBody: null,
+            responses: [],
+          },
+        ],
+      },
+    ];
+  }
+
+  it('returns groups unchanged for an empty query', () => {
+    const groups = groupsFixture();
+    expect(filterApiReference(groups, '')).toEqual(groups);
+  });
+
+  it('returns groups unchanged for a whitespace-only query', () => {
+    const groups = groupsFixture();
+    expect(filterApiReference(groups, '   ')).toEqual(groups);
+  });
+
+  it('filters case-insensitively by method', () => {
+    const result = filterApiReference(groupsFixture(), 'post');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.endpoints.map((e) => e.method)).toEqual(['POST']);
+  });
+
+  it('filters by path substring', () => {
+    const result = filterApiReference(groupsFixture(), 'runs');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe('Runs');
+  });
+
+  it('filters by summary substring', () => {
+    const result = filterApiReference(groupsFixture(), 'fetch a run');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.endpoints[0]!.path).toBe('/api/runs/{id}');
+  });
+
+  it('requires ALL whitespace-separated terms to match (AND)', () => {
+    const result = filterApiReference(groupsFixture(), 'tasks create');
+    expect(result).toHaveLength(1);
+    expect(result[0]!.endpoints).toHaveLength(1);
+    expect(result[0]!.endpoints[0]!.method).toBe('POST');
+  });
+
+  it('drops groups with no surviving endpoints', () => {
+    const result = filterApiReference(groupsFixture(), 'runs');
+    expect(result.map((g) => g.name)).toEqual(['Runs']);
+  });
+
+  it('returns [] when no endpoint matches any group', () => {
+    expect(filterApiReference(groupsFixture(), 'nonexistent-term')).toEqual([]);
   });
 });

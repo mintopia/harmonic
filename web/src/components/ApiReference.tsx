@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { buildApiReference, describeType } from '../openapi-reference';
+import { buildApiReference, describeType, endpointAnchor, filterApiReference } from '../openapi-reference';
 import type { ApiReferenceEndpoint, ApiReferenceGroup, SchemaNode } from '../openapi-reference';
-import { card, chip, labelType, sectionTitle, touchOverlay } from '../ui';
+import { card, chip, labelType, searchField, sectionTitle, touchOverlay } from '../ui';
 
 /** Disclosure chevron, private to this file — mirrors Icon.tsx's stroke
  * vocabulary (16 viewBox, 1.5 stroke, currentColor) without adding to the
@@ -186,12 +186,11 @@ function exampleFor(node: SchemaNode): unknown {
 function StatusTab({ status, active, onClick }: { status: string; active: boolean; onClick: () => void }) {
   return (
     <button
-      aria-selected={active}
+      aria-pressed={active}
       className={`relative ${chip} font-data tracking-normal transition-colors duration-150 ${
         active ? statusStyle(status) : 'text-muted hover:text-ink'
       }`}
       onClick={onClick}
-      role="tab"
       type="button"
     >
       {status}
@@ -207,12 +206,11 @@ function StatusTab({ status, active, onClick }: { status: string; active: boolea
 function PaneTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
-      aria-selected={active}
+      aria-pressed={active}
       className={`relative -mb-px border-b-2 px-1 pb-1 font-medium transition-colors duration-150 ${
         active ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
       }`}
       onClick={onClick}
-      role="tab"
       type="button"
     >
       {label}
@@ -235,7 +233,7 @@ function SchemaBody({ schema, pane }: { schema: SchemaNode; pane: 'example' | 's
 /** The Example|Schema switch on its own, for the same callers. */
 function PaneTabs({ pane, onChange }: { pane: 'example' | 'schema'; onChange: (p: 'example' | 'schema') => void }) {
   return (
-    <div aria-label="Schema view" className="flex gap-3" role="tablist">
+    <div aria-label="Schema view" className="flex gap-3" role="group">
       <PaneTab active={pane === 'example'} label="Example" onClick={() => onChange('example')} />
       <PaneTab active={pane === 'schema'} label="Schema" onClick={() => onChange('schema')} />
     </div>
@@ -270,7 +268,7 @@ function StatusTabs({
     <div
       aria-label="Response codes"
       className="inline-flex w-fit items-center gap-1 rounded-lg bg-raised p-1"
-      role="tablist"
+      role="group"
     >
       {responses.map((r) => (
         <StatusTab active={r.status === current} key={r.status} onClick={() => onChange(r.status)} status={r.status} />
@@ -362,26 +360,46 @@ function EndpointRow({
   endpoint,
   open,
   onToggle,
+  onLink,
 }: {
   endpoint: ApiReferenceEndpoint;
   open: boolean;
   onToggle: () => void;
+  onLink: () => void;
 }) {
+  const anchor = endpointAnchor(endpoint.method, endpoint.path);
   return (
-    <div>
-      <button
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 py-2 text-left"
-        onClick={onToggle}
-        type="button"
-      >
-        <Chevron open={open} />
-        <MethodPill method={endpoint.method} />
-        <span className="shrink-0 truncate font-data text-data text-ink">{endpoint.path}</span>
-        {endpoint.summary && (
-          <span className="ml-auto hidden truncate pl-3 text-right text-muted md:block">{endpoint.summary}</span>
-        )}
-      </button>
+    <div id={anchor}>
+      <div className="flex w-full items-center gap-2.5 py-2 text-left">
+        <button
+          aria-expanded={open}
+          className="flex flex-1 items-center gap-2.5 text-left"
+          onClick={onToggle}
+          type="button"
+        >
+          <Chevron open={open} />
+          <MethodPill method={endpoint.method} />
+          <span className="shrink-0 truncate font-data text-data text-ink">{endpoint.path}</span>
+          {endpoint.summary && (
+            <span className="ml-auto hidden truncate pl-3 text-right text-muted md:block">{endpoint.summary}</span>
+          )}
+        </button>
+        {/* Deep-link glyph, quiet by default: a copy/share handle for this row
+            that opens it (rather than toggling closed) and updates the URL. */}
+        <a
+          aria-label="Link to this endpoint"
+          className="relative shrink-0 text-muted hover:text-ink"
+          href={`#${anchor}`}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onLink();
+          }}
+        >
+          #
+          <span aria-hidden="true" className={touchOverlay} />
+        </a>
+      </div>
       {open && (
         <div className="mb-3 ml-[1.625rem] pl-4">
           <EndpointPaired endpoint={endpoint} />
@@ -397,6 +415,7 @@ export function ApiReference() {
   const [groups, setGroups] = useState<ApiReferenceGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     fetch('/api/openapi.json')
@@ -408,6 +427,23 @@ export function ApiReference() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
+  // Deep-link restore (once groups are in): if the URL landed with an
+  // endpoint's anchor in the hash, open that row and scroll it into view.
+  useEffect(() => {
+    if (!groups) return;
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return;
+    for (const group of groups) {
+      for (const endpoint of group.endpoints) {
+        if (endpointAnchor(endpoint.method, endpoint.path) !== hash) continue;
+        const key = `${endpoint.method} ${endpoint.path}`;
+        setOpen((prev) => new Set(prev).add(key));
+        document.getElementById(hash)?.scrollIntoView();
+        return;
+      }
+    }
+  }, [groups]);
+
   const toggle = (key: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -416,18 +452,36 @@ export function ApiReference() {
       return next;
     });
 
+  const openKey = (key: string) =>
+    setOpen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+
   const endpointCount = groups?.reduce((n, g) => n + g.endpoints.length, 0) ?? 0;
+  const filteredGroups = groups ? filterApiReference(groups, query) : null;
+  const filteredCount = filteredGroups?.reduce((n, g) => n + g.endpoints.length, 0) ?? 0;
 
   return (
     <section className={`${card} p-5`}>
       <h3 className="mb-2 flex items-baseline gap-2 text-title font-semibold">
         Endpoint reference
-        {groups && <span className="text-small font-normal tabular-nums text-muted">{endpointCount}</span>}
+        {groups && <span className="text-small font-normal tabular-nums text-muted">{filteredCount}</span>}
       </h3>
       {error && <p className="text-fail">Failed to load the API reference ({error}).</p>}
       {!error && !groups && <p className="text-muted">Loading reference…</p>}
       {groups && groups.length === 0 && <p className="text-muted">No endpoints documented.</p>}
-      {groups?.map((group) => (
+      {groups && groups.length > 0 && (
+        <input
+          aria-label="Filter endpoints"
+          className={`${searchField} mb-4 w-full`}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by method, path, or summary"
+          type="text"
+          value={query}
+        />
+      )}
+      {filteredGroups && filteredGroups.length === 0 && endpointCount > 0 && (
+        <p className="text-muted">No endpoints match “{query}”.</p>
+      )}
+      {filteredGroups?.map((group) => (
         <div className="mb-6 last:mb-0" key={group.name}>
           <h4 className="mb-1 flex items-baseline gap-2 border-b border-hairline pb-1.5 text-title font-semibold">
             {group.name}
@@ -436,7 +490,18 @@ export function ApiReference() {
           <div className="flex flex-col gap-1">
             {group.endpoints.map((endpoint) => {
               const key = `${endpoint.method} ${endpoint.path}`;
-              return <EndpointRow endpoint={endpoint} key={key} onToggle={() => toggle(key)} open={open.has(key)} />;
+              return (
+                <EndpointRow
+                  endpoint={endpoint}
+                  key={key}
+                  onLink={() => {
+                    openKey(key);
+                    history.replaceState(null, '', `#${endpointAnchor(endpoint.method, endpoint.path)}`);
+                  }}
+                  onToggle={() => toggle(key)}
+                  open={open.has(key)}
+                />
+              );
             })}
           </div>
         </div>

@@ -217,6 +217,33 @@ function buildSchemaNode(schema: unknown, doc: unknown, seenRefs: ReadonlySet<st
   return { kind: 'raw', raw: schema, description };
 }
 
+/** Stable, URL-safe anchor id for an endpoint deep link, e.g. "ep-get-api-tasks-id".
+ *  Derived from method + path so it is stable across reloads and reorderings. */
+export function endpointAnchor(method: string, path: string): string {
+  const slug = `${method}-${path}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `ep-${slug}`;
+}
+
+/** Filters groups by a case-insensitive query matched over each endpoint's
+ *  method, path and summary. Whitespace-separated terms must ALL match (AND).
+ *  Groups with no surviving endpoints are dropped. Empty/whitespace query returns groups unchanged. */
+export function filterApiReference(groups: ApiReferenceGroup[], query: string): ApiReferenceGroup[] {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter((t) => t.length > 0);
+  if (terms.length === 0) return groups;
+  return groups
+    .map((group) => ({
+      name: group.name,
+      endpoints: group.endpoints.filter((endpoint) => {
+        const target = `${endpoint.method} ${endpoint.path} ${endpoint.summary ?? ''}`.toLowerCase();
+        return terms.every((term) => target.includes(term));
+      }),
+    }))
+    .filter((group) => group.endpoints.length > 0);
+}
+
 /** Short human label for a parameter/summary line, e.g. "string[]", "enum(a | b)". */
 export function describeType(node: SchemaNode): string {
   switch (node.kind) {

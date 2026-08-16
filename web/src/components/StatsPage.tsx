@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { formatCost, usd } from '../cost';
 import type { Cost, TaskState } from '../types';
 import { card, chip, displayTitle, labelType, STATE_CHIP_STYLES, tableHead } from '../ui';
+import { orderedRunStates } from '../stats-model';
 import { CostChart } from './CostChart';
 import { fillSeries, type DayCost } from './costChart-model';
 import { EmptyState } from './EmptyState';
@@ -111,6 +112,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         <p className="rounded-lg bg-fail-tint px-4 py-2 text-fail">Couldn’t load statistics: {error}</p>
       )}
 
+      {!stats && !error && <div className={`${card} p-5 text-muted`}>Loading…</div>}
+
       {stats && stats.runCount === 0 && (
         <EmptyState title="No runs to chart yet">
           Cost, tokens, and the per-model breakdown appear here once an agent has run. If you’ve run
@@ -137,6 +140,20 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               <CostChart series={filled} />
             </section>
           )}
+
+          <section className={`${card} mb-4 p-5`}>
+            <h3 className="mb-3 text-title font-semibold">Run states</h3>
+            <div className="flex flex-wrap gap-2">
+              {orderedRunStates(stats.runsByState).map(({ state, count }) => (
+                <span
+                  key={state}
+                  className={`${chip} ${STATE_CHIP_STYLES[state as TaskState] ?? 'bg-raised text-muted'}`}
+                >
+                  {state} <span className="font-semibold">{count.toLocaleString()}</span>
+                </span>
+              ))}
+            </div>
+          </section>
 
           <div className="grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
@@ -201,17 +218,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                 </table>
               )}
             </section>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-2">
-            {Object.entries(stats.runsByState).map(([state, count]) => (
-              <span
-                key={state}
-                className={`${chip} ${count > 0 ? (STATE_CHIP_STYLES[state as TaskState] ?? 'bg-raised text-muted') : 'bg-raised text-faint'}`}
-              >
-                {state} <span className="font-semibold">{fmt(count)}</span>
-              </span>
-            ))}
           </div>
         </>
       )}
