@@ -4,10 +4,15 @@ A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP.
 See `CONTEXT.md` for the domain glossary.
 
-## Implementation
+## House Rules
 
 Use subagents for tasks.
-Subagents must use an appropriate model, eg. Sonnet for coding, Opus for reasoning and Haiku for trivial.
+Subagents must use an appropriate model, defaults:
+
+ - Explore and Coding: Sonnet
+ - Reasoning and Planning: Opus
+ - Trivial, Documentation: Haiku
+
 Subagents must use an appropriate subagent type.
 
 ## Agent skills
