@@ -43,3 +43,19 @@ it nor notices it.
   suspenders, not relied on).
 - Pairs with the Work Context House Rule (ADR-0022): the context stays locked
   until settle, so a stray branch cannot become the next Run's base.
+
+## Reconciliation with the v5 design (post-Codex review)
+
+Decision holds (Harmonic owns branching; enforced by detection). Hardened by the
+review: validation runs in the `validating` phase **before** any commit/cleanup;
+persist start OID + dirty fingerprint; **afk direct requires a clean context and
+rejects submodules**; detached HEAD is rejected or needs an operator-selected
+landing branch. **Direct-mode afk executes on a private detached Harmonic ref** so
+agent commits never touch the live target; the candidate is built via
+`commit-tree`/a private ref and rematerialized for corrective turns. **Owned-ref
+tracking** makes unattributed ref deltas ambiguous (never auto-recovered).
+**Landing is journaled + crash-idempotent**, in a dedicated admin worktree, with an
+expected-old-OID CAS and a **point of no cancellation**. **Deterministic git
+recovery is preferred**; agent re-merge is a bounded fallback whose success is
+defined as matching an allowed commit-set/tree-diff, else Escalate. See
+`docs/reliability-design.md` Unit D and §0.3.

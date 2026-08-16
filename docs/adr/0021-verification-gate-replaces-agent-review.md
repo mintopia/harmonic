@@ -38,3 +38,18 @@ for the same job.
   red.
 - The `agentReview` config flag is removed; its behavior is subsumed by the
   verify-agent's *pass → auto-accept*.
+
+## Reconciliation with the v5 design (post-Codex review)
+
+Decision holds (Verification — command and/or agent — replaces `agentReview`).
+Refined by the review: it runs as a **pipeline** against a frozen candidate OID
+(validate → candidate snapshot via a private ref/`commit-tree` → verify in a
+**disposable checkout** → self-heal → re-verify the full suite); the critic is
+**read-only, no mutating tools/creds**, emits a **structured schema verdict**, and
+is injection-contained (inconclusive/malformed → Escalate; only actionable fails
+self-heal). **Self-heal runs in the builder Session and re-enters `validating`.**
+**Native review precedes landing** (`verifying → review → landing`), governed by an
+explicit origin × verifier × verdict × merge-fate table. **Mirrored closes the
+ticket only after verify + land**, Merge-Fate-specific, reopening/escalating on
+every non-success disposition. `agentReview` removal is an **authorization
+migration**. See `docs/reliability-design.md` Unit B.

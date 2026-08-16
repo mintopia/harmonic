@@ -58,3 +58,22 @@ harnesses (claude-code-acp, codex-acp, copilot `--acp`) yet is wired nowhere.
   binds to the same Session.
 - Copilot's TTL and exact `loadSession` flag are unverified — default to the
   tightest window and confirm by measurement.
+
+## Reconciliation with the v5 design (post-Codex review)
+
+The review materially corrected this ADR — the passages above describing *reattach*,
+a hardcoded warm window, and a *keepalive* are **superseded** by the following:
+
+- **Cache warmth is a COST signal, not a correctness gate.** `session/load` is valid
+  warm or cold; warmth only changes cost/latency. Resume eligibility is a
+  **compatibility matrix**; the per-harness window is a cost *estimate*
+  (`estimatedWarmUntil`), never a promise.
+- **Resume = a new Run + a new prompt turn on a loaded Session** after repo
+  reconciliation — **not** reattaching a dead process or an outstanding tool call.
+- A first-class **Session entity** (Harmonic-generated id; **credential-free** MCP
+  templates minted fresh at load) is required; `sessionId` alone cannot reload.
+- **Keepalive is dropped** (an agent turn is not a side-effect-free cache ping).
+- Load-time `session/update` replay is **quarantined** out of current-turn usage,
+  `run_facts`, and progress detection.
+
+See `docs/reliability-design.md` Unit C.

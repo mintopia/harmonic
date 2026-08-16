@@ -38,3 +38,14 @@ enforced.
   trip→Escalate outcome, same card slot.
 - New global + per-Workspace settings; per-Task override deferred until a Task
   demonstrably needs one.
+
+## Reconciliation with the v5 design (post-Codex review)
+
+The core decision holds (a Guardrail trip → Escalation). The 5-round adversarial
+review added: a trip is an append-only `run_fact` and the **coordinator** computes
+terminal disposition by fixed precedence (not a direct settle or first-writer CAS);
+a persisted **Execution Chain** carries cumulative budget across
+retry/reject/resume/self-heal so a retry cannot reset-and-bypass the ceiling;
+budgets are **phase-scoped** (execution vs review-SLA vs landing-timeout), and an
+unmeasurable configured guard **trips to Escalation** rather than silently
+degrading. See `docs/reliability-design.md` §0 and Unit A.

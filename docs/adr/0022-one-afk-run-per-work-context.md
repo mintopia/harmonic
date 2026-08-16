@@ -33,3 +33,22 @@ the next (ADR-0023).
   shared base still parallelize, each on its own branch.
 - Pairs with ADR-0023: because a context stays locked until settle, a stray
   branch cannot silently become the next Run's base.
+
+## Reconciliation with the v5 design (post-Codex review)
+
+The review reframed the rule from a scheduler predicate to a **durable lease** — the
+"dir+branch predicate" framing above is **superseded**:
+
+- A `work_context_leases` row, enforced in `Runner.start`/`launchClaimed` (not only
+  `pickNext`), with a coordinator-emitted **heartbeat**, phase TTLs, and **expiry →
+  `suspect` (never auto-release)**.
+- **Key by isolation mode**: **direct** keys on **canonical working-directory
+  identity alone** (path+branch would wrongly admit two leases on one checkout);
+  **worktree** keys on `{path, branch}`.
+- In **worktree** mode the "≤1 per context" rule is largely vacuous (unique branch
+  per run); it is replaced there by **short repository-operation locks** around
+  worktree create/merge/remove.
+- Anti-starvation: operator supersede/unlock + queue diagnostics + boot
+  reconciliation.
+
+See `docs/reliability-design.md` §0.5.
