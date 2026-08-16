@@ -22,8 +22,8 @@ Commands:
   stop        Stop the background server
 
 Options:
-  --port      Port to listen on (default 4700)
-  --host      Host to bind (default 0.0.0.0)
+  --port, -p  Port to listen on (default 4700)
+  --host, -H  Host to bind (default 0.0.0.0)
   --data-dir  State directory (default ~/.harmonic, or $HARMONIC_DATA_DIR)
   --password  Set/update the operator password (or $HARMONIC_PASSWORD).
               Optional; pass an empty value (--password '') to remove it and
