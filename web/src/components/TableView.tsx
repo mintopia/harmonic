@@ -5,6 +5,7 @@ import type { Task } from '../types';
 import { TASK_STATES } from '../types';
 import { btnQuiet, card, displayTitle, labelType, stateChip, tableHead } from '../ui';
 import { toastError } from '../toast';
+import { fetchTasks } from '../table-model';
 
 const select =
   'rounded-md border border-edge bg-field px-2 py-1 text-ink focus:border-accent focus:outline-none';
@@ -29,20 +30,11 @@ export function TableView({
 
   useEffect(() => {
     if (workspaceId === null) return;
-    const params = new URLSearchParams();
-    params.set('workspaceId', String(workspaceId));
-    if (state) params.set('state', state);
-    if (harness) params.set('harness', harness);
-    if (priority) params.set('priority', priority);
-    params.set('sortBy', sortBy);
-    params.set('order', order);
     setLoading(true);
-    fetch(`/api/tasks?${params}`)
-      .then((r) => r.json())
-      .then((body: { tasks: Task[] }) => {
-        setTasks(body.tasks);
-        setLoading(false);
-      });
+    fetchTasks({ workspaceId, state, harness, priority, sortBy, order })
+      .then(setTasks)
+      .catch(toastError)
+      .finally(() => setLoading(false));
   }, [workspaceId, state, harness, priority, sortBy, order]);
 
   // The badge links to the original, which the current filter may hide, so
@@ -112,7 +104,15 @@ export function TableView({
         </select>
       </div>
 
-      <div className={`${card} overflow-x-auto px-4 py-1`}>
+      <div className={`${card} relative overflow-x-auto px-4 py-1`} aria-busy={loading}>
+        {loading && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden rounded-t-lg"
+          >
+            <div className="progress-indeterminate h-full w-1/3 bg-muted" />
+          </div>
+        )}
         <table className="w-full text-left">
           <thead className={tableHead}>
             <tr>
@@ -126,9 +126,10 @@ export function TableView({
               {sortHeader('createdAt', 'Created', undefined, 'pl-4')}
             </tr>
           </thead>
-          {/* Stale rows stay visible while a refetch is in flight, dimmed so the
-              "Loading…" count isn't the only signal. */}
-          <tbody className={loading ? 'opacity-60' : ''}>
+          {/* Stale rows stay visible and fully legible while a refetch is in
+              flight — the top-edge progress bar and aria-busy carry the loading
+              signal instead of dimming the whole table below AA. */}
+          <tbody>
             {tasks.map((task) => (
               <tr
                 key={task.id}

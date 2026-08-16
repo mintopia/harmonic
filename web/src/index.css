@@ -261,9 +261,31 @@
     }
   }
 
+  /* Indeterminate top-edge progress: a sliver sweeps across the track while a
+     fetch is in flight. motion-reduce falls back to a static filled track so
+     the affordance is still visible without animation. */
+  @keyframes indeterminate-progress {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(400%);
+    }
+  }
+
+  .progress-indeterminate {
+    animation: indeterminate-progress 1.1s ease-in-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     dialog[open] {
       animation: none;
+    }
+
+    .progress-indeterminate {
+      width: 100%;
+      animation: none;
+      opacity: 0.5;
     }
   }
 }
