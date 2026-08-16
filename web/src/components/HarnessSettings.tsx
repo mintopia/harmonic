@@ -3,6 +3,33 @@ import type { AppConfig, HarnessConfig, ModelPrice } from '../types';
 import { btnGhost, btnQuiet, field } from '../ui';
 import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
+import { renameRecordKey } from './settings-rename';
+
+/** Draft-name editing for a record keyed by an editable name.
+ *
+ * Holds the in-progress name in local state so typing never rewrites the
+ * parent object's key — which is what remounted the row and stole focus. The
+ * rename is committed to the parent only on `commit` (called on blur), via
+ * {@link renameRecordKey}, which silently keeps the old name on an empty or
+ * colliding rename. Shared by the env-var and model-price editors below. */
+function useKeyRename<V>(record: Record<string, V>, onChange: (next: Record<string, V>) => void) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  return {
+    /** The value to show in the name input: the live draft, or the committed key. */
+    nameFor: (key: string) => drafts[key] ?? key,
+    setName: (key: string, value: string) => setDrafts((d) => ({ ...d, [key]: value })),
+    commit: (key: string) => {
+      const draft = drafts[key];
+      setDrafts((d) => {
+        const { [key]: _omit, ...rest } = d;
+        return rest;
+      });
+      if (draft === undefined) return;
+      const next = renameRecordKey(record, key, draft);
+      if (next !== record) onChange(next);
+    },
+  };
+}
 
 /** Add/remove/edit rows of a plain string list (harness args, models). */
 function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange: (items: string[]) => void; ariaLabel: string }) {
@@ -33,19 +60,9 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
  * per-row reveal toggle. */
 function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (env: Record<string, string>) => void }) {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const rename = useKeyRename(env, onChange);
   const entries = Object.entries(env);
 
-  const rename = (oldKey: string, newKey: string, value: string) => {
-    const next: Record<string, string> = {};
-    for (const [k, v] of entries) {
-      if (k === oldKey) {
-        if (newKey) next[newKey] = value;
-      } else {
-        next[k] = v;
-      }
-    }
-    onChange(next);
-  };
   const setValue = (key: string, value: string) => onChange({ ...env, [key]: value });
   const remove = (key: string) => {
     const { [key]: _dropped, ...rest } = env;
@@ -65,8 +82,9 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
           <input
             aria-label="Env var name"
             className={`${field} w-1/3 font-data`}
-            value={key}
-            onChange={(e) => rename(key, e.target.value, value)}
+            value={rename.nameFor(key)}
+            onChange={(e) => rename.setName(key, e.target.value)}
+            onBlur={() => rename.commit(key)}
           />
           <input
             aria-label="Env var value"
@@ -236,13 +254,9 @@ export function PriceOverridesSection({
   fieldErrors: Record<string, string>;
   onChange: (prices: AppConfig['prices']) => void;
 }) {
+  const rename = useKeyRename(config.prices, onChange);
   const entries = Object.entries(config.prices);
 
-  const renameModel = (oldModel: string, newModel: string) => {
-    const next: AppConfig['prices'] = {};
-    for (const [m, p] of entries) next[m === oldModel ? newModel : m] = p;
-    onChange(next);
-  };
   const setPrice = (model: string, price: ModelPrice) => onChange({ ...config.prices, [model]: price });
   const remove = (model: string) => {
     const { [model]: _dropped, ...rest } = config.prices;
@@ -276,8 +290,9 @@ export function PriceOverridesSection({
               <input
                 aria-label="Model id"
                 className={`${field} font-data`}
-                value={model}
-                onChange={(e) => renameModel(model, e.target.value)}
+                value={rename.nameFor(model)}
+                onChange={(e) => rename.setName(model, e.target.value)}
+                onBlur={() => rename.commit(model)}
               />
               {PRICE_FIELDS.map((k) => (
                 <input
