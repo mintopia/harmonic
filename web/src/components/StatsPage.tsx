@@ -189,10 +189,11 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                     {Object.entries(stats.toolCalls)
                       .sort(([, a], [, b]) => b - a)
                       .map(([tool, count]) => (
-                        // Cyan is the documented voice for tooling metadata
-                        // (the Signal Rule) — its one use on this page.
+                        // The tool name is a row label, not a state — colour stays
+                        // off content and lives only on the state/signal layer (the
+                        // Signal Rule; issue #87). So the name renders in ink.
                         <tr key={tool} className="border-t border-hairline">
-                          <td className="py-2 text-data text-tool">{tool}</td>
+                          <td className="py-2 text-data text-ink">{tool}</td>
                           <td className="text-right text-data tabular-nums text-ink">{fmt(count)}</td>
                         </tr>
                       ))}

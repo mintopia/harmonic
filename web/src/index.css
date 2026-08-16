@@ -19,30 +19,31 @@
   --hm-raised: #f1f2f6; /* inset fills: count pills, hovers, finished panel */
   --hm-hairline: #ecedf3; /* shared-edge dividers only */
   --hm-edge: #dddfea; /* interactive borders: fields, ghost buttons */
+  --hm-switch-off: #8b8d9c; /* Switch off-track: ≥3:1 vs the white knob and the white card (issue #87) */
   --hm-ink: #16182b;
   --hm-muted: #5a5e78; /* secondary text — the informational floor */
-  --hm-faint: #9296b0; /* icon-only affordances, disabled, quiet metadata */
+  --hm-faint: #6a6c80; /* icon-only affordances, disabled, quiet metadata — ≥4.5:1 as text on every neutral bg (issue #87) */
   --hm-accent: #2563eb; /* cobalt: the interface's one voice */
   --hm-accent-hot: #1d4fd8; /* light presses darker */
-  --hm-accent-tint: #e7eefe; /* active nav, selected pills, operator message */
+  --hm-accent-tint: #f0f5fe; /* active nav, selected pills, operator message — holds AA under accent text (issue #87) */
   --hm-on-accent: #ffffff;
 
   /* State-signal family (the aurora): text · dot · tint, per state. */
-  --hm-running: #b25e06;
+  --hm-running: #a45606;
   --hm-running-dot: #e08a0e;
   --hm-running-tint: #fbefd8;
-  --hm-ready: #15803d;
+  --hm-ready: #14793a;
   --hm-ready-dot: #1ba35b;
   --hm-ready-tint: #daf4e4;
   --hm-accept: #067a55; /* completed / accepted */
   --hm-accept-dot: #10b981;
   --hm-accept-tint: #d6f5e7;
-  --hm-fail: #cb3a52; /* failed / rejected / destructive */
+  --hm-fail: #b9354b; /* failed / rejected / destructive */
   --hm-fail-dot: #f0576e;
   --hm-fail-tint: #fde3e8;
-  --hm-blocked: #6a6f86; /* slate — waiting on a dependency */
+  --hm-blocked: #64687e; /* slate — waiting on a dependency */
   --hm-blocked-tint: #edeef3;
-  --hm-tool: #0e8aa0; /* tooling metadata: cyan */
+  --hm-tool: #0c7486; /* tooling metadata: cyan */
   --hm-tool-dot: #16a6be;
   --hm-tool-tint: #daf3f8;
 
@@ -65,9 +66,10 @@
   --hm-raised: #1f232d;
   --hm-hairline: #232833;
   --hm-edge: #2a2f3b;
+  --hm-switch-off: #666980; /* Switch off-track: distinct from the dark card and the white knob (issue #87) */
   --hm-ink: #ebedf5;
   --hm-muted: #9ba0b5;
-  --hm-faint: #6b7185;
+  --hm-faint: #858b9b; /* ≥4.5:1 as text on surface, canvas, and raised (issue #87) */
   --hm-accent: #6e8bff;
   --hm-accent-hot: #8aa1ff; /* dark presses lighter */
   --hm-accent-tint: #1b2340;
@@ -107,9 +109,10 @@
     --hm-raised: #1f232d;
     --hm-hairline: #232833;
     --hm-edge: #2a2f3b;
+    --hm-switch-off: #666980; /* Switch off-track: distinct from the dark card and the white knob (issue #87) */
     --hm-ink: #ebedf5;
     --hm-muted: #9ba0b5;
-    --hm-faint: #6b7185;
+    --hm-faint: #858b9b; /* ≥4.5:1 as text on surface, canvas, and raised (issue #87) */
     --hm-accent: #6e8bff;
     --hm-accent-hot: #8aa1ff;
     --hm-accent-tint: #1b2340;
@@ -147,6 +150,7 @@
   --color-raised: var(--hm-raised);
   --color-hairline: var(--hm-hairline);
   --color-edge: var(--hm-edge);
+  --color-switch-off: var(--hm-switch-off);
   --color-ink: var(--hm-ink);
   --color-muted: var(--hm-muted);
   --color-faint: var(--hm-faint);

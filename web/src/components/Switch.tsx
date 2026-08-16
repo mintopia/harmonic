@@ -31,7 +31,7 @@ export function Switch({
       <span
         aria-hidden="true"
         className={`relative h-[18px] w-8 shrink-0 rounded-full transition-colors duration-150 ${
-          checked ? 'bg-accent' : 'bg-edge'
+          checked ? 'bg-accent' : 'bg-switch-off'
         }`}
       >
         <span

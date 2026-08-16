@@ -22,7 +22,7 @@ colors:
   accent-dark: "#6E8BFF"
   accent-hover: "#1D4FD8"
   accent-hover-dark: "#8AA1FF"
-  accent-tint-light: "#E7EEFE"
+  accent-tint-light: "#F0F5FE"
   accent-tint-dark: "#1B2340"
   on-accent-light: "#FFFFFF"
   on-accent-dark: "#0E1016"
@@ -38,18 +38,20 @@ colors:
   hairline-dark: "#232833"
   edge-light: "#DDDFEA"
   edge-dark: "#2A2F3B"
+  switch-off-light: "#8B8D9C"
+  switch-off-dark: "#666980"
   ink-light: "#16182B"
   ink-dark: "#EBEDF5"
   muted-light: "#5A5E78"
   muted-dark: "#9BA0B5"
-  faint-light: "#9296B0"
-  faint-dark: "#6B7185"
-  running-text-light: "#B25E06"
+  faint-light: "#6A6C80"
+  faint-dark: "#858B9B"
+  running-text-light: "#A45606"
   running-dot-light: "#E08A0E"
   running-tint-light: "#FBEFD8"
   running-text-dark: "#F0A93A"
   running-tint-dark: "#3A2C12"
-  ready-text-light: "#15803D"
+  ready-text-light: "#14793A"
   ready-dot-light: "#1BA35B"
   ready-tint-light: "#DAF4E4"
   ready-dot-dark: "#34D399"
@@ -59,16 +61,16 @@ colors:
   completed-tint-light: "#D6F5E7"
   completed-text-dark: "#34D399"
   completed-tint-dark: "#123026"
-  failed-text-light: "#CB3A52"
+  failed-text-light: "#B9354B"
   failed-dot-light: "#F0576E"
   failed-tint-light: "#FDE3E8"
   failed-text-dark: "#FB7185"
   failed-tint-dark: "#3A1720"
-  blocked-slate-light: "#6A6F86"
+  blocked-slate-light: "#64687E"
   blocked-tint-light: "#EDEEF3"
   blocked-slate-dark: "#8A90A6"
   blocked-tint-dark: "#22262F"
-  tool-text-light: "#0E8AA0"
+  tool-text-light: "#0C7486"
   tool-dot-light: "#16A6BE"
   tool-tint-light: "#DAF3F8"
   tool-text-dark: "#38BDF8"
@@ -150,11 +152,11 @@ Aurora keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (ca
 
 ## 2. Colours: The Aurora Palette
 
-A cool-neutral sky, one cobalt accent, and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme.
+A cool-neutral sky, one cobalt accent, and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme — text-on-tint state pills at ≥4.5:1, the Faint role at ≥4.5:1 where it labels metadata, and non-text affordances (the Switch off-track, the neutral lane rules) at ≥3:1 — in **both** themes. `tests/contrast.test.ts` computes every documented pairing from `web/src/index.css` and fails the build if any drops below its floor (issue #87).
 
 ### Accent (the interface's one voice)
 - **Cobalt Accent** (#2563EB light / #6E8BFF dark): primary actions, active nav, current selection, focus rings, the chart series, and the *awaiting-review* state (the state that needs the operator is deliberately the accent). Filled buttons pair it with white in light / near-black (#0E1016) in dark. Hover: #1D4FD8 light, #8AA1FF dark.
-- **Accent Tint** (#E7EEFE / #1B2340): fill under active nav, selected pills, the operator's own chat message.
+- **Accent Tint** (#F0F5FE / #1B2340): fill under active nav, selected pills, the operator's own chat message. The light tint holds AA under the accent text it carries (awaiting-review, active nav).
 
 ### Neutral (cool near-zero-chroma sky)
 - **Canvas** (#FBFBFD / #0E1016): the page field.
@@ -162,18 +164,18 @@ A cool-neutral sky, one cobalt accent, and a semantic state-signal family. Every
 - **Surface** (#FFFFFF / #171A22): cards and dialogs.
 - **Raised** (#F1F2F6 / #1F232D): inset fills — count pills, hovers, the finished panel.
 - **Field** (#FFFFFF / #14161D): form controls only. (Corrected 2026-07-17: Raised's line used to claim form fields too, but fields have always had their own token — they read as surfaces you type *into*, so light mode lifts them above the Raised grey rather than sinking them into it, and dark mode sinks them below it. See `--hm-field` in `web/src/index.css` and the shared `field` class in `web/src/ui.ts`.)
-- **Hairline** (#ECEDF3 / #232833): shared-edge dividers only. **Edge** (#DDDFEA / #2A2F3B): interactive borders (fields, ghost buttons).
-- **Ink** (#16182B / #EBEDF5): primary text. **Muted** (#5A5E78 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#9296B0 / #6B7185): icon-only affordances, disabled text, and quiet metadata lines exclusively.
+- **Hairline** (#ECEDF3 / #232833): shared-edge dividers only. **Edge** (#DDDFEA / #2A2F3B): interactive borders (fields, ghost buttons). **Switch off-track** (#8B8D9C / #666980): the one control neutral pitched dark enough to hold ≥3:1 against both the white knob and the card behind it.
+- **Ink** (#16182B / #EBEDF5): primary text. **Muted** (#5A5E78 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#6A6C80 / #858B9B): icon-only affordances, disabled text, and quiet metadata lines exclusively — held at ≥4.5:1 on every neutral background (surface, canvas, raised), since it carries readable labels (branch names, ids, zero counts, the dialog close ✕).
 
 ### State-signal family (the aurora — belongs to the work, not the chrome)
 Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, and state pills:
-- **Running amber** (#B25E06 / dot #E08A0E / tint #FBEFD8 · dark #F0A93A / tint #3A2C12): work in flight.
-- **Ready green** (#15803D / dot #1BA35B / tint #DAF4E4 · dark dot #34D399 / tint #123026): queued to run.
+- **Running amber** (#A45606 / dot #E08A0E / tint #FBEFD8 · dark #F0A93A / tint #3A2C12): work in flight.
+- **Ready green** (#14793A / dot #1BA35B / tint #DAF4E4 · dark dot #34D399 / tint #123026): queued to run.
 - **Awaiting review = the cobalt accent** (it needs you — it's the accent, not a separate hue).
-- **Blocked slate** (#6A6F86 / tint #EDEEF3 · dark #8A90A6 / tint #22262F): waiting on a dependency.
+- **Blocked slate** (#64687E / tint #EDEEF3 · dark #8A90A6 / tint #22262F): waiting on a dependency.
 - **Completed emerald** (#067A55 / dot #10B981 / tint #D6F5E7 · dark #34D399 / tint #123026): finished, accepted.
-- **Failed rose** (#CB3A52 / dot #F0576E / tint #FDE3E8 · dark #FB7185 / tint #3A1720): failed, rejected, destructive.
-- **Tooling cyan** (#0E8AA0 / dot #16A6BE / tint #DAF3F8 · dark #38BDF8 / tint #10303B): tool calls, branches, harness metadata.
+- **Failed rose** (#B9354B / dot #F0576E / tint #FDE3E8 · dark #FB7185 / tint #3A1720): failed, rejected, destructive.
+- **Tooling cyan** (#0C7486 / dot #16A6BE / tint #DAF3F8 · dark #38BDF8 / tint #10303B): tool calls, branches, harness metadata.
 - **Draft** is neutral (Muted/Faint) — nothing is happening yet. Priority is typographic (ink + weight), never a hue. (Amended 2026-07-17: this line used to contradict itself, adding "a HIGH flag borrows the Failed rose text only as a small label" straight after "never a hue". The code never did it, and shouldn't: rose means *failed*, and a HIGH task hasn't failed. Spending a state colour on something that isn't a state is the same mistake the retired accept-tint/fail-tint gate made — see § Elevation and `web/src/ui.ts`.)
 
 *Tuning note (open):* Ready is the one "waiting" state given a colour; it may read neutral instead if the board feels too green. Draft stays neutral either way.

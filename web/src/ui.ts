@@ -204,16 +204,19 @@ export function stateCountPill(state: TaskState, count: number): string {
 
 /** Board column lane colour (Aurora's signal layer — DESIGN §Board): the
  * column-header underline and lane dot take the column's state colour, so the
- * board reads with colour without loading it onto the calm task cards. */
+ * board reads with colour without loading it onto the calm task cards. The
+ * neutral lanes (draft/cancelled) carry no state hue, so they take the Faint
+ * neutral rule — a visible lane divider, not the near-invisible hairline the
+ * header underline used to fall back to (issue #87). */
 const LANE_BORDER: Record<TaskState, string> = {
-  draft: 'border-hairline',
+  draft: 'border-faint',
   blocked: 'border-blocked',
   ready: 'border-ready-dot',
   running: 'border-running-dot',
   'awaiting-review': 'border-accent',
   completed: 'border-accept-dot',
   failed: 'border-fail-dot',
-  cancelled: 'border-hairline',
+  cancelled: 'border-faint',
 };
 const LANE_DOT: Record<TaskState, string> = {
   draft: 'bg-faint',
