@@ -355,3 +355,42 @@ export type TaskRow = Omit<RawTaskRow, 'harness' | 'model' | 'isolationMode' | '
 };
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;
+
+export const LEASE_STATES = ['held', 'suspect'] as const;
+export type LeaseState = (typeof LEASE_STATES)[number];
+
+/**
+ * A Work Context lease (issue #118, ADR-0022, reliability-design §0.5): the
+ * persisted claim that a Run owns exclusive occupancy of a Work Context (a
+ * canonical working-directory/branch identity, `workContextKey` in
+ * domain/work-context-key.ts) for a phase of its lifecycle. `phase` is always
+ * `'running'` today — the phase machine (#114) will widen it. `expiry` is
+ * nullable until the TTL sweep lands (#122); `state` starts `'held'` and only
+ * flips to `'suspect'` once reconciliation (#123) exists to clear it.
+ *
+ * The unique index on `key` alone — not `(key, state)` — is deliberate and is
+ * the compare-and-set acquire primitive: a `suspect` row still blocks a new
+ * acquire on the same key, because a suspect lease is an unresolved claim, not
+ * a free one. Only an explicit `release` (or, later, reconciliation) frees the
+ * key. The Runner's use of this substrate is out of scope here (#118 is the
+ * schema/store only).
+ */
+export const workContextLeases = sqliteTable('work_context_leases', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** The canonical Work Context identity (`workContextKey`). */
+  key: text('key').notNull(),
+  /** Occupancy phase; always 'running' until the phase machine (#114). */
+  phase: text('phase').notNull(),
+  ownerRunId: integer('owner_run_id')
+    .notNull()
+    .references(() => runs.id),
+  heartbeat: integer('heartbeat').notNull(),
+  /** TTL deadline; null until the heartbeat/TTL sweep (#122) is built. */
+  expiry: integer('expiry'),
+  state: text('state').$type<LeaseState>().notNull(),
+  acquiredAt: integer('acquired_at').notNull(),
+}, (t) => [
+  uniqueIndex('work_context_leases_key_unique').on(t.key),
+]);
+
+export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;

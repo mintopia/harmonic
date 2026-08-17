@@ -254,3 +254,34 @@ describe('pre-Workspace DB migration (ADR-0008, issue #39)', () => {
     rmSync(migrationsFolder, { recursive: true, force: true });
   });
 });
+
+describe('work_context_leases table (issue #118, ADR-0022)', () => {
+  it('exists at head with a unique index on key that rejects a second row for the same key', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-wcl-migrate-'));
+    const db = openDb(dataDir);
+
+    const task = db.insert(schema.tasks).values({
+      prompt: 'seed',
+      workingDir: '/tmp/p',
+      state: 'ready',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }).returning().get();
+    const run = db.insert(schema.runs).values({ taskId: task.id, attempt: 1, state: 'running', startedAt: Date.now() }).returning().get();
+
+    // Raw better-sqlite3 against the same file, exercising the migrated
+    // unique index directly rather than through the store.
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    const insert = sqlite.prepare(
+      `insert into work_context_leases (key, phase, owner_run_id, heartbeat, expiry, state, acquired_at)
+       values (?, 'running', ?, ?, null, 'held', ?)`,
+    );
+    const now = Date.now();
+    insert.run('direct:/tmp/p', run.id, now, now);
+
+    expect(() => insert.run('direct:/tmp/p', run.id, now, now)).toThrow(/UNIQUE constraint failed/);
+
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+});
