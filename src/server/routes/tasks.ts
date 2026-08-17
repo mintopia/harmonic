@@ -324,18 +324,18 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: queue an operator message for its active run. The message is not injected mid-turn — it is held and sent as a fresh prompt turn at the next turn boundary, so the agent's current turn finishes cleanly. Use it to redirect an agent that has gone off-track, or to nudge one that ended its turn and parked. Operator only.",
+          "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. Use it to redirect an agent that has gone off-track, or to nudge one that ended its turn and parked. Operator only.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
-          200: okResponseSchema.describe('The message was queued for the next turn boundary of the task\'s active run.'),
+          200: okResponseSchema.describe('The message was injected into the running turn, or queued for the next turn boundary, of the task\'s active run.'),
           409: errorResponse('The task has no active run to steer (it is not running here).'),
         },
       },
     },
     async (req) => {
       ctx.tasks.get(req.params.id); // 404 on unknown task
-      if (!ctx.runner.steer(req.params.id, req.body.text)) {
+      if (!(await ctx.runner.steer(req.params.id, req.body.text))) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer`);
       }
       return { ok: true } as const;

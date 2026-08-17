@@ -1,13 +1,29 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import type { DeepPartial } from '../src/config.js';
+import type { AppConfig } from '../src/config.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
-// Steer a running task (ADR-0018): an operator message is queued on the active
-// run and delivered as a fresh prompt turn at the next turn boundary — never
-// injected mid-turn. Exercised end-to-end against the stub harness, which echoes
-// a non-JSON prompt back as `prompt-received:<text>`, so the steer turn is
-// visible in the run's session updates.
+/** A first turn that streams for a while, so a steer lands while it runs. */
+const slowFirstTurn = (n = 6, delayMs = 80) =>
+  scenario({
+    updates: Array.from({ length: n }, (_, i) => ({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: `step ${i}` },
+    })),
+    delayMs,
+    stopReason: 'end_turn',
+  });
+
+// Steer a running task (ADR-0018): when the harness supports ACP mid-turn
+// steering (`_session/steering`, claude-agent-acp ≥0.69), an operator message
+// is injected into the running turn immediately — pre-empting the current
+// generation without cancelling it. Otherwise (or when the agent is parked
+// between turns) it is queued and delivered as a fresh prompt turn at the
+// next turn boundary. Exercised end-to-end against the stub harness, which
+// echoes a non-JSON prompt back as `prompt-received:<text>` and, for
+// `_session/steering`, streams `steer-injected:<text>`.
 describe('steering a running task', () => {
   let server: TestServer;
 
@@ -18,32 +34,81 @@ describe('steering a running task', () => {
     await server.close();
   });
 
-  it('delivers a queued steer as a follow-up turn, then settles', async () => {
-    // A first turn that streams for a while, so the steer lands while it runs.
-    const first = {
-      updates: Array.from({ length: 6 }, (_, i) => ({
-        sessionUpdate: 'agent_message_chunk',
-        content: { type: 'text', text: `step ${i}` },
-      })),
-      delayMs: 80,
-      stopReason: 'end_turn',
-    };
-    const created = await server.api('POST', '/api/tasks', { prompt: scenario(first) });
+  it('delivers a queued steer as a follow-up turn, then settles (harness without mid-turn steering)', async () => {
+    // Simulate a harness that lacks ACP `_session/steering` (codex/copilot),
+    // so this exercises the boundary-queue fallback specifically.
+    const overrides = stubHarness() as DeepPartial<AppConfig> & { harnesses: { claude: Record<string, unknown> } };
+    overrides.harnesses.claude.env = { STUB_NO_STEERING: '1' };
+    const noSteerServer = await startServer(overrides);
+    try {
+      const created = await noSteerServer.api('POST', '/api/tasks', { prompt: slowFirstTurn() });
+      expect(created.status).toBe(201);
+      const taskId = created.body.id;
+      const started = await noSteerServer.api('POST', `/api/tasks/${taskId}/run`);
+      expect(started.status).toBe(201);
+      const runId = started.body.id;
+
+      // Queue the steer once the run is active (the task flips running before the
+      // ActiveRun registers, so a steer can 409 briefly — retry until it lands).
+      const steered = await waitFor(async () => {
+        const res = await noSteerServer.api('POST', `/api/tasks/${taskId}/steer`, { text: 'reread the tests first' });
+        return res.status === 200 ? res : undefined;
+      });
+      expect(steered.body).toEqual({ ok: true });
+
+      // The steer turn (and everything after) runs, then the task settles.
+      await waitFor(async () => {
+        const { body } = await noSteerServer.api('GET', `/api/tasks/${taskId}`);
+        return body.state === 'awaiting-review' ? body : undefined;
+      });
+
+      const { body } = await noSteerServer.api('GET', `/api/runs/${runId}/events`);
+      const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
+      expect(lifecycle.find((e: any) => e.payload.event === 'steer_queued')?.payload.text).toBe('reread the tests first');
+      expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('reread the tests first');
+      expect(lifecycle.find((e: any) => e.payload.event === 'steer_injected')).toBeUndefined();
+
+      // The stub echoed the steer text back as its own turn — proof the message
+      // was sent as a prompt, not just recorded.
+      const chunks = body.events
+        .filter((e: any) => e.type === 'session_update' && e.payload.sessionUpdate === 'agent_message_chunk')
+        .map((e: any) => e.payload.content?.text);
+      expect(chunks).toContain('prompt-received:reread the tests first');
+    } finally {
+      await noSteerServer.close();
+    }
+  });
+
+  it('injects a steer into the running turn when the harness supports it', async () => {
+    // A first turn that streams for a while, so the steer lands mid-turn.
+    const created = await server.api('POST', '/api/tasks', { prompt: slowFirstTurn() });
     expect(created.status).toBe(201);
     const taskId = created.body.id;
     const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     expect(started.status).toBe(201);
     const runId = started.body.id;
 
-    // Queue the steer once the run is active (the task flips running before the
+    // Wait for the turn to actually be streaming — not just the ActiveRun
+    // registered — so the steer lands after the harness's session/prompt has
+    // gone out, past the ACP handshake window, and is genuinely mid-turn.
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${runId}/events`);
+      return body.events.some(
+        (e: any) => e.type === 'session_update' && e.payload.sessionUpdate === 'agent_message_chunk',
+      )
+        ? true
+        : undefined;
+    });
+
+    // Steer once the run is active (the task flips running before the
     // ActiveRun registers, so a steer can 409 briefly — retry until it lands).
     const steered = await waitFor(async () => {
-      const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'reread the tests first' });
+      const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'switch to the other approach' });
       return res.status === 200 ? res : undefined;
     });
     expect(steered.body).toEqual({ ok: true });
 
-    // The steer turn (and everything after) runs, then the task settles.
+    // The turn (and everything after) runs, then the task settles.
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'awaiting-review' ? body : undefined;
@@ -51,15 +116,16 @@ describe('steering a running task', () => {
 
     const { body } = await server.api('GET', `/api/runs/${runId}/events`);
     const lifecycle = body.events.filter((e: any) => e.type === 'lifecycle');
-    expect(lifecycle.find((e: any) => e.payload.event === 'steer_queued')?.payload.text).toBe('reread the tests first');
-    expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('reread the tests first');
+    expect(lifecycle.find((e: any) => e.payload.event === 'steer_injected')?.payload.text).toBe(
+      'switch to the other approach',
+    );
+    expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')).toBeUndefined();
 
-    // The stub echoed the steer text back as its own turn — proof the message
-    // was sent as a prompt, not just recorded.
+    // The stub streamed the steer text as injected output on the running turn.
     const chunks = body.events
       .filter((e: any) => e.type === 'session_update' && e.payload.sessionUpdate === 'agent_message_chunk')
       .map((e: any) => e.payload.content?.text);
-    expect(chunks).toContain('prompt-received:reread the tests first');
+    expect(chunks).toContain('steer-injected:switch to the other approach');
   });
 
   it('409s a steer after the run has fully settled, never a 200 that vanishes', async () => {

@@ -15,6 +15,13 @@
 // }
 //
 // A non-JSON prompt runs a two-chunk "hello" scenario.
+//
+// ACP `_session/steering` (mid-turn injection, claude-agent-acp ≥0.69) is
+// supported by default: while a prompt turn is in flight the stub streams a
+// `steer-injected:<text>` chunk and replies `{ outcome: 'injected' }`; when
+// idle it replies `{ outcome: 'promptRequired', reason: 'noRunningTurn' }`.
+// Set STUB_NO_STEERING to simulate a harness without the method (a JSON-RPC
+// "method not found" error), exercising Harmonic's boundary-queue fallback.
 import { createInterface } from 'node:readline';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -46,6 +53,9 @@ let setModeParams = null;
 // Set by a session/cancel notification; the in-flight prompt loop checks it
 // and completes the turn with stopReason 'cancelled' (issue 14).
 let cancelRequested = false;
+// True while a session/prompt turn is in flight, so `_session/steering` can
+// tell "inject into the running turn" from "idle, reply promptRequired".
+let promptInFlight = false;
 
 async function handlePrompt(msg) {
   // Harmonic appends an "unattended" reminder (carrying taskId=<n>) to every
@@ -69,6 +79,7 @@ async function handlePrompt(msg) {
       ],
     };
   }
+  promptInFlight = true;
   const delayMs = scenario.delayMs ?? 5;
   cancelRequested = false;
 
@@ -88,6 +99,7 @@ async function handlePrompt(msg) {
   // Interrupted mid-turn (issue 14): complete the prompt with a cancelled
   // stop reason and run none of the trailing scenario steps.
   if (cancelRequested) {
+    promptInFlight = false;
     send({ jsonrpc: '2.0', id: msg.id, result: { stopReason: 'cancelled' } });
     return;
   }
@@ -217,6 +229,7 @@ async function handlePrompt(msg) {
   const exit = scenario.exit ?? 'clean';
   if (exit === 'crash-before-response') process.exit(1);
   if (exit === 'hang') return; // never respond; must be killed
+  promptInFlight = false;
   send({
     jsonrpc: '2.0',
     id: msg.id,
@@ -270,6 +283,20 @@ rl.on('line', (line) => {
       break;
     case 'session/cancel':
       cancelRequested = true;
+      break;
+    case '_session/steering':
+      if (process.env.STUB_NO_STEERING) {
+        send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } });
+      } else if (promptInFlight) {
+        const stext = msg.params.prompt?.[0]?.text ?? '';
+        notify('session/update', {
+          sessionId: msg.params.sessionId,
+          update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `steer-injected:${stext}` } },
+        });
+        send({ jsonrpc: '2.0', id: msg.id, result: { outcome: 'injected' } });
+      } else {
+        send({ jsonrpc: '2.0', id: msg.id, result: { outcome: 'promptRequired', reason: 'noRunningTurn' } });
+      }
       break;
     default:
       if (msg.id !== undefined) send({ jsonrpc: '2.0', id: msg.id, result: null });

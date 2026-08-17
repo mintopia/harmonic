@@ -101,6 +101,13 @@ interface ActiveRun {
    * closes (cleanly rejected 409) — never silently accepted then dropped.
    */
   steerable: boolean;
+  /**
+   * Whether this Run's harness implements ACP `_session/steering` (mid-turn
+   * injection). `undefined` until the first in-flight steer probes it; then
+   * cached true/false so a non-supporting harness (codex/copilot) is probed
+   * only once and every later steer falls straight through to boundary queueing.
+   */
+  steerSupported?: boolean;
 }
 
 /**
@@ -300,29 +307,54 @@ export class Runner {
   }
 
   /**
-   * Queue an operator steering message for a task's active Run (issue: steer a
-   * running Task). The message is *not* injected mid-turn: it is held and sent
-   * as a fresh prompt turn at the next turn boundary, so the agent's current
-   * turn finishes cleanly and the transcript stays honest (no illusion of
-   * seamless mid-thought redirection — the same contract as Conversation
-   * steering, but queued rather than cancel-and-resend). Records the queued
-   * message so it survives on the Run's event stream even before delivery.
-   * Rejects (false ⇒ 409) once the matched Run has closed its
+   * Steer a task's active Run (issue: steer a running Task; ADR-0018 mid-turn
+   * injection). When a turn is in flight and the harness has not already
+   * shown it lacks ACP `_session/steering`, the message is injected into the
+   * RUNNING turn — pre-empting the current generation without cancelling it,
+   * so the operator's redirect lands immediately. Otherwise (a parked/idle
+   * Run, or a harness that doesn't support the RPC — codex/copilot) the
+   * message is queued and delivered as a fresh prompt turn at the next turn
+   * boundary, same as before. Records a `steer_injected` or `steer_queued`
+   * lifecycle event so the message survives on the Run's event stream either
+   * way. Rejects (false ⇒ 409) once the matched Run has closed its
    * {@link ActiveRun.steerable steerable} gate — i.e. it has already
    * committed to settling — rather than accepting a steer that would then be
-   * silently dropped. Returns whether a running, steerable Run was found
-   * (false ⇒ the task isn't running here, or its Run is no longer steerable).
+   * silently dropped. Returns whether a running, steerable Run accepted the
+   * steer (false ⇒ the task isn't running here, or its Run is no longer
+   * steerable).
    */
-  steer(taskId: number, text: string): boolean {
-    for (const active of this.active.values()) {
-      if (active.taskId !== taskId) continue;
-      if (!active.steerable) return false; // committed to settling — reject honestly, no silent drop
-      active.steerQueue.push(text);
-      const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
-      this.events.onRunEvent?.(event);
-      return true;
+  async steer(taskId: number, text: string): Promise<boolean> {
+    const active = [...this.active.values()].find((a) => a.taskId === taskId);
+    if (!active || !active.steerable) return false;
+    // A turn is in flight (not parked) and the harness has not been shown to
+    // lack steering → inject into the running turn now, pre-empting the current
+    // generation without cancelling it. Opt into promptRequired so an idle
+    // session never makes the harness start an untracked turn.
+    if (!active.idle && active.steerSupported !== false) {
+      try {
+        const res = await active.driver.steer([{ type: 'text', text }], { steering: { idleBehavior: 'promptRequired' } });
+        if (res.outcome === 'injected') {
+          active.steerSupported = true;
+          const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
+          this.events.onRunEvent?.(event);
+          return true;
+        }
+        // 'promptRequired' (the turn ended between the idle check and the RPC →
+        // session idle): the harness ran nothing. Fall through to queueing.
+        active.steerSupported = true;
+      } catch {
+        // No _session/steering on this harness (codex/copilot, or older
+        // claude-acp): remember it and never probe the RPC again for this Run.
+        active.steerSupported = false;
+      }
     }
-    return false;
+    // Queue for the next turn boundary (parked run, idle session, or unsupported
+    // harness). Re-check the gate: a settle may have begun during the RPC await.
+    if (!active.steerable) return false;
+    active.steerQueue.push(text);
+    const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
+    this.events.onRunEvent?.(event);
+    return true;
   }
 
   /** Apply `fn` to a task's active Run, if any is running here. */

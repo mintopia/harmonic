@@ -94,6 +94,24 @@ export class AcpDriver {
     this.connection.notify('session/cancel', { sessionId: this.sessionId });
   }
 
+  /**
+   * Steer the in-flight turn via ACP `_session/steering` (claude-agent-acp
+   * ≥0.69): inject `prompt` into the RUNNING turn at the harness's steer
+   * priority — pre-empting the current generation without cancelling the turn.
+   * Returns the harness's outcome. Rejects if the harness does not implement
+   * the method (JSON-RPC "method not found") or the child dies first, so
+   * callers can fall back to boundary queueing.
+   */
+  async steer(prompt: unknown, meta?: unknown): Promise<{ outcome: string; reason?: string }> {
+    return this.race(
+      this.connection.request('_session/steering', {
+        sessionId: this.sessionId,
+        prompt,
+        ...(meta !== undefined ? { _meta: meta } : {}),
+      }),
+    );
+  }
+
   /** Race any request against child death. */
   private race<T>(p: Promise<T>): Promise<T> {
     return Promise.race([p, this.exited]);
