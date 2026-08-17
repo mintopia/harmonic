@@ -3,6 +3,12 @@ import { api } from '../api';
 import { subscribe } from '../ws';
 import type { AppConfig, Conversation, ConversationEvent, Workspace } from '../types';
 import { segmentTranscript } from '../conversation-transcript-model';
+import { coalesceEvents } from '../event-stream-model';
+import {
+  announceTransitions,
+  EMPTY_ANNOUNCE_CURSOR,
+  type AnnounceCursor,
+} from '../stream-announce-model';
 import { isTurnRunning } from '../conversation-steering-model';
 import {
   addPendingPermission,
@@ -153,6 +159,58 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
 }
 
 /**
+ * A single polite live region that speaks transcript TRANSITIONS — a tool
+ * call finishing, a fresh agent message beginning, a Turn ending — and
+ * nothing else (issue #96). The transcript itself is deliberately NOT a live
+ * region: re-announcing coalesced prose as it streams would bury these
+ * signals under per-chunk spam. Announcements are *appended* as their own
+ * nodes rather than replacing the last, so a repeated line ("New message"
+ * twice in a turn) is still read out — a polite region whose text only swaps
+ * for an identical string stays silent on the repeat.
+ */
+function StreamAnnouncer({
+  events,
+  resetKey,
+}: {
+  events: ConversationEvent[];
+  resetKey: number | string;
+}) {
+  const cursor = useRef<AnnounceCursor>(EMPTY_ANNOUNCE_CURSOR);
+  const seededFor = useRef<number | string | null>(null);
+  const nextId = useRef(0);
+  const [log, setLog] = useState<{ id: number; text: string }[]>([]);
+
+  useEffect(() => {
+    const items = coalesceEvents(events);
+    // First render for a Conversation: swallow its backlog. Opening a
+    // conversation with history must not read every past tool call aloud —
+    // only transitions that land *while the operator is here* get spoken.
+    if (seededFor.current !== resetKey) {
+      cursor.current = announceTransitions(items, EMPTY_ANNOUNCE_CURSOR).cursor;
+      seededFor.current = resetKey;
+      setLog([]);
+      return;
+    }
+    const { announcements, cursor: next } = announceTransitions(items, cursor.current);
+    cursor.current = next;
+    if (announcements.length === 0) return;
+    // Cap the node list so a long-lived conversation doesn't grow the DOM
+    // without bound; dropping old nodes is silent (removals aren't announced).
+    setLog((prev) =>
+      [...prev, ...announcements.map((text) => ({ id: nextId.current++, text }))].slice(-20),
+    );
+  }, [events, resetKey]);
+
+  return (
+    <div aria-live="polite" className="sr-only">
+      {log.map((entry) => (
+        <p key={entry.id}>{entry.text}</p>
+      ))}
+    </div>
+  );
+}
+
+/**
  * One outstanding ACP permission request (issue #11): the Harness is
  * genuinely blocked on the operator's decision, so this renders prominently
  * — its own banded section between the transcript and composer, always in
@@ -179,6 +237,16 @@ function PermissionPrompt({
   const kind = pending.request.toolCall?.kind;
   const alwaysAllowOptionId = chooseAlwaysAllowOptionId(pending.request.options);
 
+  // The Harness is blocked on the operator, so when this prompt appears focus
+  // moves to its first choice (issue #96): a screen-reader or keyboard user
+  // lands on the decision without hunting the panel for it. Keyed per
+  // reqId-mounted instance, this runs once on appear and never yanks focus
+  // back mid-decision.
+  const firstOptionRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    firstOptionRef.current?.focus();
+  }, []);
+
   const choose = async (key: string, optionId: string, remember?: boolean) => {
     if (busyKey) return;
     setBusyKey(key);
@@ -193,6 +261,11 @@ function PermissionPrompt({
     <div
       role="group"
       aria-label={`Permission request: ${title}`}
+      // The Harness is genuinely blocked on a human, so this interrupts the
+      // screen reader assertively the moment it mounts rather than waiting its
+      // turn behind the polite transcript announcer (issue #96).
+      aria-live="assertive"
+      aria-atomic="true"
       className="border-t border-hairline bg-running-tint px-4 py-3"
     >
       {/* The ask is the one prominent element (DESIGN.md § Conversation): the
@@ -213,9 +286,10 @@ function PermissionPrompt({
       </div>
       <p className="mb-2.5 mt-1 text-small text-muted">This turn is paused until you respond.</p>
       <div className="flex flex-wrap items-center gap-2">
-        {pending.request.options.map((option) => (
+        {pending.request.options.map((option, index) => (
           <button
             key={option.optionId}
+            ref={index === 0 ? firstOptionRef : undefined}
             type="button"
             disabled={busyKey !== null}
             className={permissionOptionButtonClass(option.kind)}
@@ -918,6 +992,11 @@ export function ConversationLauncher({
           <div className="flex-1 overflow-y-auto p-4">
             <Transcript events={events} />
           </div>
+          {/* Adjoins the transcript, never wraps it (issue #96): the scroll
+              container above stays a plain region so streaming prose isn't
+              re-read; only this sibling speaks the transitions. */}
+          <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
+
 
           {/* Pending prompts sit outside the scrollable transcript so a
               paused Turn stays visible without hunting for it — the panel
