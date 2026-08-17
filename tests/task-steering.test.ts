@@ -62,6 +62,25 @@ describe('steering a running task', () => {
     expect(chunks).toContain('prompt-received:reread the tests first');
   });
 
+  it('409s a steer after the run has fully settled, never a 200 that vanishes', async () => {
+    // Regression for the "steer after the turn has ended" race: once a Run
+    // commits to settling it closes its steerable gate synchronously, so a
+    // steer arriving anywhere in (or after) the settle sequence is rejected
+    // honestly rather than accepted into a queue nobody will ever drain.
+    const created = await server.api('POST', '/api/tasks', { prompt: 'quick task' });
+    const taskId = created.body.id;
+    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect(started.status).toBe(201);
+
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+
+    const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'too late' });
+    expect(res.status).toBe(409);
+  });
+
   it('409s when the task has no active run to steer', async () => {
     const draft = await server.api('POST', '/api/tasks', { prompt: 'not running' });
     const res = await server.api('POST', `/api/tasks/${draft.body.id}/steer`, { text: 'hello' });

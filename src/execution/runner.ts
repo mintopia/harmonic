@@ -91,6 +91,16 @@ interface ActiveRun {
    * and skips its own settle so the Run isn't finished twice.
    */
   externallySettled: boolean;
+  /**
+   * True while the Run can still accept operator steers. Set false
+   * synchronously the instant {@link Runner.drive} commits to leaving the
+   * steering loop to settle — before any settle `await`. Because both this
+   * assignment and {@link Runner.steer} run synchronously (no await between
+   * the loop exit and the gate close), a steer is either already in the queue
+   * when the loop's last `shift()` runs (delivered) or arrives after the gate
+   * closes (cleanly rejected 409) — never silently accepted then dropped.
+   */
+  steerable: boolean;
 }
 
 /**
@@ -297,14 +307,22 @@ export class Runner {
    * seamless mid-thought redirection — the same contract as Conversation
    * steering, but queued rather than cancel-and-resend). Records the queued
    * message so it survives on the Run's event stream even before delivery.
-   * Returns whether a running Run was found (false ⇒ the task isn't running here).
+   * Rejects (false ⇒ 409) once the matched Run has closed its
+   * {@link ActiveRun.steerable steerable} gate — i.e. it has already
+   * committed to settling — rather than accepting a steer that would then be
+   * silently dropped. Returns whether a running, steerable Run was found
+   * (false ⇒ the task isn't running here, or its Run is no longer steerable).
    */
   steer(taskId: number, text: string): boolean {
-    return this.forActiveTask(taskId, (active) => {
+    for (const active of this.active.values()) {
+      if (active.taskId !== taskId) continue;
+      if (!active.steerable) return false; // committed to settling — reject honestly, no silent drop
       active.steerQueue.push(text);
       const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
       this.events.onRunEvent?.(event);
-    });
+      return true;
+    }
+    return false;
   }
 
   /** Apply `fn` to a task's active Run, if any is running here. */
@@ -496,6 +514,7 @@ export class Runner {
       steerQueue: [],
       idle: false,
       externallySettled: false,
+      steerable: true,
     };
     this.active.set(run.id, active);
 
@@ -583,6 +602,19 @@ export class Runner {
       // Leaving the loop to settle: no longer "parked awaiting work", so the
       // backstop must not race the settle below (it would skip Merge Fate).
       active.idle = false;
+      // Close the steer gate synchronously so no new steer is accepted into a
+      // Run that is committing to settle (steer() now 409s). A steer accepted
+      // during the loop's final async settle-check — after the last shift(),
+      // before this gate closed — is still queued; deliver it as a final turn
+      // rather than dropping it. The gate is closed, so no new steer can extend
+      // this drain and it terminates. Skip when the Run was already settled out
+      // from under us, or is escalating.
+      active.steerable = false;
+      while (!active.externallySettled && !escalating && active.steerQueue.length > 0) {
+        const steer = active.steerQueue.shift()!;
+        record('lifecycle', { event: 'steer_delivered', text: steer });
+        result = await driver.prompt([{ type: 'text', text: steer }]);
+      }
       if (active.externallySettled) {
         // The poll already finished the Run completed and settled the Task; drop
         // the harness and stop — settling again would finish the Run twice.
