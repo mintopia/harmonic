@@ -39,28 +39,45 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
   describe('resolveVerifiers (issue #132, ADR-0021)', () => {
     it('resolves an empty verifier set when nothing is configured anywhere', () => {
-      const config = { verification: { command: null, critic: null } };
-      expect(resolveVerifiers({ verificationCommand: null, verificationCritic: null }, config)).toEqual({
+      const config = { verification: { command: null, critic: null, autoAccept: false } };
+      expect(
+        resolveVerifiers(
+          { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+          config,
+        ),
+      ).toEqual({
         command: null,
         critic: null,
+        autoAccept: false,
       });
     });
 
     it('inherits the global command when the Workspace column is null, per-key from critic', () => {
       const config = {
-        verification: { command: { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }, critic: null },
+        verification: {
+          command: { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 },
+          critic: null,
+          autoAccept: false,
+        },
       };
-      const resolved = resolveVerifiers({ verificationCommand: null, verificationCritic: null }, config as any);
+      const resolved = resolveVerifiers(
+        { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+        config as any,
+      );
       expect(resolved.command).toEqual(config.verification.command);
       expect(resolved.critic).toBeNull();
     });
 
     it('uses a Workspace command override over the global default, independent of critic', () => {
       const globalCritic = { prompt: 'global review', model: 'claude-opus-5' };
-      const config = { verification: { command: null, critic: globalCritic } };
+      const config = { verification: { command: null, critic: globalCritic, autoAccept: false } };
       const override = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
       const resolved = resolveVerifiers(
-        { verificationCommand: JSON.stringify(override), verificationCritic: null },
+        {
+          verificationCommand: JSON.stringify(override),
+          verificationCritic: null,
+          verificationAutoAccept: null,
+        },
         config as any,
       );
       expect(resolved.command).toEqual(override);
@@ -69,14 +86,33 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
     it('uses a Workspace critic override over the global default, independent of command', () => {
       const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-      const config = { verification: { command: globalCommand, critic: null } };
+      const config = { verification: { command: globalCommand, critic: null, autoAccept: false } };
       const override = { prompt: 'review the diff', model: 'claude-opus-5' };
       const resolved = resolveVerifiers(
-        { verificationCommand: null, verificationCritic: JSON.stringify(override) },
+        {
+          verificationCommand: null,
+          verificationCritic: JSON.stringify(override),
+          verificationAutoAccept: null,
+        },
         config as any,
       );
       expect(resolved.critic).toEqual(override);
       expect(resolved.command).toEqual(globalCommand); // command still inherits its own global
+    });
+
+    it('inherits the global auto-accept when the Workspace column is null, and a Workspace override wins', () => {
+      const config = { verification: { command: null, critic: null, autoAccept: true } };
+      const inherited = resolveVerifiers(
+        { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+        config as any,
+      );
+      expect(inherited.autoAccept).toBe(true);
+
+      const overridden = resolveVerifiers(
+        { verificationCommand: null, verificationCritic: null, verificationAutoAccept: false },
+        config as any,
+      );
+      expect(overridden.autoAccept).toBe(false); // an explicit "off", not inherit
     });
   });
 

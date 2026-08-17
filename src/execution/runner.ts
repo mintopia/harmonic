@@ -79,9 +79,24 @@ export interface RunnerOptions {
   ) =>
     | Pick<
         WorkspaceRow,
-        'guardrailBudget' | 'guardrailProgress' | 'verificationCommand' | 'verificationCritic'
+        | 'guardrailBudget'
+        | 'guardrailProgress'
+        | 'verificationCommand'
+        | 'verificationCritic'
+        | 'verificationAutoAccept'
       >
     | undefined;
+  /** Lands a native auto-accept Run (issue #138): the verifier passed and the
+   * resolved verifier config sets auto-accept, so Harmonic lands the result via
+   * the same journaled LandingCoordinator the human Accept uses (#115), skipping
+   * the review gate. Absent → auto-accept never fires (Runs park for review).
+   * Returns ok:false on a landing failure (e.g. a merge conflict from a moved
+   * base) — the Runner then degrades to the human gate rather than settling. */
+  autoAcceptLand?: (
+    task: TaskRow,
+    run: RunRow,
+    patch: Partial<RunRow>,
+  ) => Promise<{ ok: boolean; detail?: string | undefined }>;
 }
 
 interface Workspace {
@@ -179,6 +194,7 @@ export class Runner {
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
+  private readonly autoAcceptLand: RunnerOptions['autoAcceptLand'];
   private readonly runFacts: RunFactStore;
   /** The Verification attempt log (issue #135/#136): every command/critic
    * verifier invocation against a Run's frozen candidate is appended here. */
@@ -204,6 +220,7 @@ export class Runner {
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
+    this.autoAcceptLand = options.autoAcceptLand;
     this.runFacts = new RunFactStore(this.db);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
@@ -625,9 +642,14 @@ export class Runner {
    *
    * Today only the command verifier (#135) is wired; the critic (#136,
    * `runCritic`) plugs in as a second verdict feeding the same `combineVerdicts`
-   * when its integration ticket lands. With no verifier configured the verdict
-   * set is empty and `combineVerdicts` returns `proceed`, so a Run behaves
-   * exactly as it did before this gate existed.
+   * when its integration ticket lands. Also returns whether a verifier actually
+   * `ran` (produced a verdict) and the resolved `autoAccept` from the same
+   * `resolveVerifiers` call (issue #138): `drive` needs both, separately from the
+   * decision, to distinguish "proceed because a verifier passed" (auto-accept
+   * eligible) from "proceed, nothing configured to verify" (`combineVerdicts([])`
+   * is also `proceed`, but there's nothing to auto-accept). With no verifier
+   * configured the verdict set is empty and `combineVerdicts` returns `proceed`,
+   * so a Run behaves exactly as it did before this gate existed.
    *
    * Each completed attempt is persisted (`VerificationAttemptStore`) before its
    * verdict drives the settle, giving a durable per-attempt audit record. A Run
@@ -644,10 +666,10 @@ export class Runner {
     run: RunRow,
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
-  ): Promise<VerificationDecision> {
+  ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
     const ws = this.getWorkspace?.(task.workspaceId);
-    const { command } = resolveVerifiers(
-      ws ?? { verificationCommand: null, verificationCritic: null },
+    const { command, autoAccept } = resolveVerifiers(
+      ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
       this.getConfig(),
     );
 
@@ -693,7 +715,7 @@ export class Runner {
       }
     }
 
-    return combineVerdicts(verdicts);
+    return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0, autoAccept };
   }
 
   /**
@@ -1003,7 +1025,7 @@ export class Runner {
         // non-`proceed` outcome hands the Task to a human, which is what
         // "broken work never lands unattended" means at this stage.
         advancePhase('verifying', autoDriven ? 'auto' : 'human');
-        const decision = await this.runVerification(task, run, active.verifyAbort.signal, record);
+        const { decision, ran, autoAccept } = await this.runVerification(task, run, active.verifyAbort.signal, record);
         // Verification can take up to the command's timeout (minutes). Re-check
         // the two ways the Run may have been settled out from under us during
         // that window before acting on the verdict:
@@ -1041,8 +1063,46 @@ export class Runner {
             advancePhase('landing', 'auto');
             this.settleAutoCompleted(task, run, patch);
           }
+        } else if (ran && autoAccept && this.autoAcceptLand) {
+          // Native auto-accept (issue #138, ADR-0021): a verifier ran and
+          // PASSED, and the resolved config sets auto-accept — the verifier's
+          // pass IS the accept, so the Run lands WITHOUT the human review gate:
+          // executing → validating → verifying → landing → terminal ('auto' gate).
+          // `ran` (not just `outcome === 'proceed'`) is required here — with NO
+          // verifier configured `combineVerdicts([])` is also `proceed`, but
+          // there's nothing verified to auto-accept, so that case falls through
+          // to the human-gated branch below instead.
+          advancePhase('landing', 'auto');
+          // Re-fetch: `run` (the drive-loop's original parameter) predates
+          // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
+          // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
+          // afk branch above already uses, so `landingEffectsFor` sees the real
+          // branch to merge rather than a stale null.
+          const landed = await this.autoAcceptLand(task, this.runStore.get(run.id), patch);
+          if (!landed.ok) {
+            // CRITICAL: `LandingCoordinator.land` writes the land fact + PONC
+            // BEFORE the (possibly failing) merge (#115). Calling any settle here
+            // would project that already-written land fact and SILENTLY COMPLETE
+            // a failed merge (`run-settle.ts` writes the terminal row while the
+            // Run is still `running`) — the exact "broken work lands" failure
+            // this epic exists to prevent. So do NOT settle here. Degrade to the
+            // human gate instead: park in review with the failure as feedback so
+            // a human resolves the conflict and re-accepts (landing reconciles
+            // the half-applied effect), or the review-SLA sweep (#114) collects
+            // it. No silent pass, no lease left wedged.
+            record('lifecycle', { event: 'auto-accept-landing-failed', reason: landed.detail ?? 'landing failed' });
+            this.parkForReview(task, run, {
+              ...patch,
+              reviewFeedback: `auto-accept landing failed: ${landed.detail ?? 'merge conflict'}`,
+              stat: await this.diffstatFor(task, run.id),
+            });
+          }
+          // landed.ok: `LandingCoordinator.land` (via `autoAcceptLand`) already
+          // settled the Run completed + phase terminal and moved the Task to
+          // completed — nothing more to do here.
         } else {
-          // A native Run is human-gated: a passing verification moves it
+          // A native Run is human-gated: no verifier ran, or one ran but
+          // auto-accept is off, so a passing verification moves it
           // executing → validating → verifying → review, where it PARKS —
           // non-terminal, holding its Work Context lease — until the human
           // accepts (lands) or rejects it, or its review SLA lapses (#114). It

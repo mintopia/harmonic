@@ -1,0 +1,1 @@
+ALTER TABLE `workspaces` ADD `verification_auto_accept` integer;

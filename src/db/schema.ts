@@ -96,6 +96,9 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace progress-detector toggle override (issue #126); null inherits
    * `config.guardrails.progress`. */
   guardrailProgress: integer('guardrail_progress', { mode: 'boolean' }),
+  /** Per-Workspace auto-accept override (issue #138); null = inherit
+   * `config.verification.autoAccept`. */
+  verificationAutoAccept: integer('verification_auto_accept', { mode: 'boolean' }),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

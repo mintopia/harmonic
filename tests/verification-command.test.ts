@@ -175,3 +175,160 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
   });
 });
+
+/**
+ * Native review-before-land transition table + auto-accept (issue #138,
+ * ADR-0021). The single new row: native + a verifier that actually RAN and
+ * PASSED + auto-accept ON → land with no human gate. Every other cell of the
+ * table (no verifier, auto-accept off, a fail/inconclusive verdict) still
+ * routes to review/Escalate exactly as #135 left it — auto-accept only ever
+ * *skips* the human gate on a genuine pass, it never rescues a red verdict
+ * and never fires with nothing verified. A dedicated server + repo (rather
+ * than the shared one above) keeps each transition's Workspace state isolated.
+ */
+describe('native auto-accept (issue #138, ADR-0021)', () => {
+  let server: TestServer;
+  let repoDir: string;
+  let workspaceId: number;
+
+  beforeAll(async () => {
+    repoDir = makeRepo();
+    server = await startServer(stubHarness());
+    const ws = server.app.ctx.workspaces.list()[0]!;
+    workspaceId = ws.id;
+    server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+  });
+  afterAll(async () => {
+    await server.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  async function createAndRun(): Promise<{ taskId: number; runId: number }> {
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ stopReason: 'end_turn' }),
+    });
+    expect(created.status).toBe(201);
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    expect(started.status).toBe(201);
+    return { taskId: created.body.id, runId: started.body.id };
+  }
+
+  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
+
+  it('row 2 (regression): auto-accept OFF + a pass still parks for review', async () => {
+    server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: exitCommand(0),
+      verificationAutoAccept: false,
+    });
+    const { taskId, runId } = await createAndRun();
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+    expect(task.state).toBe('awaiting-review');
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.phase).toBe('review');
+  });
+
+  it('row 3 (NEW): auto-accept ON + a pass lands directly, never parking for review', async () => {
+    server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: exitCommand(0),
+      verificationAutoAccept: true,
+    });
+    const { taskId, runId } = await createAndRun();
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'completed' ? body : undefined;
+    });
+    expect(task.state).toBe('completed');
+    expect(task.state).not.toBe('awaiting-review');
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.state).toBe('completed');
+    expect(run.phase).toBe('terminal');
+    expect(run.finishedAt).not.toBeNull();
+
+    const rows = attempts(runId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
+  });
+
+  it('safety: auto-accept ON + a fail still Escalates — auto-accept never rescues a red verdict', async () => {
+    server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: exitCommand(1),
+      verificationAutoAccept: true,
+    });
+    const { taskId, runId } = await createAndRun();
+
+    const run = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      return body.state === 'failed' ? body : undefined;
+    });
+    expect(run.state).toBe('failed');
+    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('review');
+
+    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+    expect(task.state).not.toBe('completed');
+    expect(task.state).not.toBe('awaiting-review');
+    expect(task.escalated).toBe(true);
+  });
+
+  it('row 1: auto-accept ON but NO verifier configured still parks for review (nothing to auto-accept)', async () => {
+    server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: null,
+      verificationAutoAccept: true,
+    });
+    const { taskId, runId } = await createAndRun();
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+    expect(task.state).toBe('awaiting-review');
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.phase).toBe('review');
+    expect(run.state).toBe('running'); // parked, not settled
+
+    // No verifier ran at all — the attempt log is empty.
+    expect(attempts(runId)).toHaveLength(0);
+  });
+
+  it('a worktree auto-accept lands the merge into the base branch (no human gate)', async () => {
+    server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: exitCommand(0),
+      verificationAutoAccept: true,
+    });
+    const baseOidBefore = git(repoDir, 'rev-parse', 'main');
+
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'auto-accept-feature.txt': 'made by agent\n' } }),
+      workingDir: repoDir,
+      isolationMode: 'worktree',
+    });
+    expect(created.status).toBe(201);
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    expect(started.status).toBe(201);
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${created.body.id}`);
+      return body.state === 'completed' ? body : undefined;
+    });
+    expect(task.state).toBe('completed');
+
+    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    expect(run.state).toBe('completed');
+    expect(run.phase).toBe('terminal');
+
+    // The merge actually happened: the base branch moved and now contains the
+    // Run's commit, without any human ever calling Accept.
+    const baseOidAfter = git(repoDir, 'rev-parse', 'main');
+    expect(baseOidAfter).not.toBe(baseOidBefore);
+    const mergedFiles = git(repoDir, 'show', `${baseOidAfter}:auto-accept-feature.txt`);
+    expect(mergedFiles).toBe('made by agent');
+  });
+});

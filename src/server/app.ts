@@ -29,6 +29,7 @@ import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import { LandingCoordinator, type LandingEffectExec } from '../domain/landing-coordinator.js';
+import type { TaskRow, RunRow } from '../db/schema.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
 import { Runner } from '../execution/runner.js';
@@ -238,6 +239,33 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => configStore.get(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
   );
+  // The one live landing effect today (issue #115): a worktree Task's merge,
+  // journaled as `target-ref`. Idempotency identity is the base/run branch
+  // pair — stable for the Run's whole lifetime and known before the merge
+  // ever runs, so `recordIntent` doesn't need to wait on a Git call. Empty for
+  // a non-worktree Task — "no effects -> straight land" preserves the
+  // pre-#115 no-op `acceptHook` default exactly. Named (not inline) so both
+  // the human Accept path (`ReviewService`, below) and the native auto-accept
+  // path (`Runner.autoAcceptLand`, issue #138) journal/apply the identical
+  // effect list through the same `LandingCoordinator` — auto-accept is not a
+  // second, divergent landing mechanism.
+  const landingEffectsFor = (task: TaskRow, run: RunRow): LandingEffectExec[] => {
+    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return [];
+    const baseBranch = run.baseBranch;
+    const branch = run.branch;
+    return [
+      {
+        effect: 'target-ref',
+        idempotencyKey: `${baseBranch}<-${branch}`,
+        expected: { baseBranch, branch },
+        apply: async () => {
+          const result = await Git.merge(task.workingDir, baseBranch, branch);
+          if (!result.ok) return { ok: false, detail: result.detail };
+          return { ok: true, observed: { baseBranch, branch } };
+        },
+      },
+    ];
+  };
   const runner = new Runner(runs, tasks, leases, db, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
@@ -258,6 +286,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         return undefined;
       }
     },
+    // Lands a native auto-accept Run (issue #138) through the same journaled
+    // LandingCoordinator the human Accept uses, skipping the review gate: the
+    // verifier's pass IS the accept, so no `review: 'accepted'` decoration —
+    // no human reviewed it. `patch` still carries the run's usage/stopReason.
+    autoAcceptLand: async (task, run, patch) =>
+      landing.land(
+        task,
+        run,
+        { runState: 'completed', taskAction: 'completed', reason: null },
+        landingEffectsFor(task, run),
+        patch,
+      ),
   });
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
@@ -271,29 +311,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
       return Git.merge(task.workingDir, run.baseBranch, run.branch);
     },
-    // The one live landing effect today (issue #115): a worktree Task's merge,
-    // journaled as `target-ref`. Idempotency identity is the base/run branch
-    // pair — stable for the Run's whole lifetime and known before the merge
-    // ever runs, so `recordIntent` doesn't need to wait on a Git call. Empty
-    // for a non-worktree Task — "no effects -> straight land" preserves the
-    // pre-#115 no-op `acceptHook` default exactly.
-    (task, run): LandingEffectExec[] => {
-      if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return [];
-      const baseBranch = run.baseBranch;
-      const branch = run.branch;
-      return [
-        {
-          effect: 'target-ref',
-          idempotencyKey: `${baseBranch}<-${branch}`,
-          expected: { baseBranch, branch },
-          apply: async () => {
-            const result = await Git.merge(task.workingDir, baseBranch, branch);
-            if (!result.ok) return { ok: false, detail: result.detail };
-            return { ok: true, observed: { baseBranch, branch } };
-          },
-        },
-      ];
-    },
+    landingEffectsFor,
   );
   // Review-SLA sweep at boot (issue #114): a Run left parked in `review` past its
   // deadline by a previous instance is settled to a terminal disposition now, so

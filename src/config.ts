@@ -258,6 +258,12 @@ export const appConfigSchema = z.object({
     .object({
       command: verificationCommandSchema.nullable().default(null),
       critic: verificationCriticSchema.nullable().default(null),
+      /** Auto-accept (issue #138, ADR-0021): when true, a native Run whose
+       * verifier(s) PASS lands without the human review gate — the verifier's pass
+       * IS the accept (ADR-0021 folds in the old `agentReview` flag). Off → a
+       * passing native Run still parks for human review. No verifier configured →
+       * always review, regardless of this flag (nothing verified to auto-accept). */
+      autoAccept: z.boolean().default(false),
     })
     .prefault({}),
   /**
@@ -420,6 +426,7 @@ export function defaultConfig(): AppConfig {
     verification: {
       command: null,
       critic: null,
+      autoAccept: false,
     },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },

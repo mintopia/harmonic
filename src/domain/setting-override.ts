@@ -33,6 +33,9 @@ export function resolveCap(workspaceCap: number | null | undefined, machineCeili
 export type ResolvedVerifiers = {
   command: VerificationCommand | null;
   critic: VerificationCritic | null;
+  /** Auto-accept (issue #138, ADR-0021): when true, a native Run whose
+   * verifier(s) PASS lands without the human review gate. */
+  autoAccept: boolean;
 };
 
 /**
@@ -45,12 +48,13 @@ export type ResolvedVerifiers = {
  * here — this only resolves the config.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
+  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic' | 'verificationAutoAccept'>,
   config: Pick<AppConfig, 'verification'>,
 ): ResolvedVerifiers {
   return {
     command: resolve(parseVerifier<VerificationCommand>(ws.verificationCommand), config.verification.command),
     critic: resolve(parseVerifier<VerificationCritic>(ws.verificationCritic), config.verification.critic),
+    autoAccept: ws.verificationAutoAccept ?? config.verification.autoAccept,
   };
 }
 

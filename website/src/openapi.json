@@ -1287,6 +1287,28 @@
             ],
             "example": "main"
           },
+          "candidateOid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "0f758cd2200565e7605902a86c2827c65ad25ce0"
+          },
+          "candidateRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "refs/harmonic/candidate/run-9137"
+          },
           "usage": {
             "anyOf": [
               {
@@ -1369,6 +1391,8 @@
           "prompt",
           "branch",
           "baseBranch",
+          "candidateOid",
+          "candidateRef",
           "usage",
           "review",
           "reviewFeedback",
@@ -3540,6 +3564,28 @@
             ],
             "example": "main"
           },
+          "candidateOid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "0f758cd2200565e7605902a86c2827c65ad25ce0"
+          },
+          "candidateRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "refs/harmonic/candidate/run-9137"
+          },
           "usage": {
             "anyOf": [
               {
@@ -3622,6 +3668,8 @@
           "prompt",
           "branch",
           "baseBranch",
+          "candidateOid",
+          "candidateRef",
           "usage",
           "review",
           "reviewFeedback",
@@ -6534,6 +6582,17 @@
                       }
                     ]
                   },
+                  "verificationAutoAccept": {
+                    "example": true,
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "guardrailBudget": {
                     "anyOf": [
                       {
@@ -7922,8 +7981,8 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -8064,11 +8123,16 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "autoAccept": {
+                          "default": false,
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "command",
-                        "critic"
+                        "critic",
+                        "autoAccept"
                       ],
                       "additionalProperties": false
                     },
@@ -8446,8 +8510,8 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -8588,11 +8652,16 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "autoAccept": {
+                          "default": false,
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "command",
-                        "critic"
+                        "critic",
+                        "autoAccept"
                       ],
                       "additionalProperties": false
                     },
@@ -8943,8 +9012,8 @@
                     "type": "object",
                     "properties": {
                       "prompt": {
-                        "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
-                        "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
+                        "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                        "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
                         "type": "string"
                       },
                       "mergeFate": {
@@ -9074,6 +9143,10 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "autoAccept": {
+                        "default": false,
+                        "type": "boolean"
                       }
                     }
                   },
@@ -9414,8 +9487,8 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact `gh` mechanics.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -9556,11 +9629,16 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "autoAccept": {
+                          "default": false,
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "command",
-                        "critic"
+                        "critic",
+                        "autoAccept"
                       ],
                       "additionalProperties": false
                     },

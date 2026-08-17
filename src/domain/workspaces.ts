@@ -49,6 +49,8 @@ export const workspaceOverridesSchema = z.object({
   verificationCommand: verificationCommandSchema.nullable().optional(),
   /** Critic-verifier override (issue #132); null inherits `config.verification.critic`. */
   verificationCritic: verificationCriticSchema.nullable().optional(),
+  /** Auto-accept override (issue #138); null inherits `config.verification.autoAccept`. */
+  verificationAutoAccept: z.boolean().nullable().optional().meta({ example: true }),
   /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override (issue #126); null inherits `config.guardrails.progress`. */
@@ -150,6 +152,7 @@ export class WorkspaceService {
         autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
         verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
         verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
+        verificationAutoAccept: patch(input.verificationAutoAccept, current.verificationAutoAccept),
         guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
         guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
         updatedAt: Date.now(),
