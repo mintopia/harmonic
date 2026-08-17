@@ -4,6 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
 import { snapshotCandidate } from './candidate.js';
+import {
+  detachForDirectRun,
+  captureDirectHead,
+  restoreLiveCheckout,
+  rematerializeCandidate,
+} from './execution-isolation.js';
 import { adapterFor } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, totalTokensOf, type RunUsage, type RunUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
@@ -50,6 +56,7 @@ import {
   evaluateAdmission,
   AdmissionRejected,
   type StartStateProbe,
+  type RunStartState,
 } from '../domain/run-start-state.js';
 import type { Db } from '../db/index.js';
 
@@ -143,6 +150,14 @@ interface Workspace {
    * before the agent touches it, so a dirty/concurrently-editable context is
    * not snapshotted (its pre-existing edits would otherwise be swept in). */
   startDirty?: boolean;
+  /**
+   * Set for an afk **direct** Run whose HEAD was detached onto a private
+   * Harmonic ref at start (issue #152): the branch it was parked on and the
+   * start commit. Its presence tells `finalizeWorkspace` to restore the live
+   * target checkout coherently at settle (re-attach HEAD to `startBranch`,
+   * sweep the agent's changes — already frozen in the candidate). Unset for
+   * worktree mode, native direct Runs, and non-git contexts. */
+  directIsolation?: { startBranch: string; startCommit: string };
 }
 
 interface ActiveRun {
@@ -668,8 +683,45 @@ export class Runner {
           );
           workspace.baseRev = probe.headOid;
           workspace.startDirty = false; // admission guarantees a clean context
+
+          // Direct-mode execution isolation (issue #152, reliability-design
+          // Unit D): detach HEAD at the recorded start commit before the agent
+          // is spawned, so its commits/reset land on a private line and can
+          // never advance the live target branch. `finalizeWorkspace` restores
+          // the live checkout coherently at settle. A native (operator-driven)
+          // direct Run keeps its live branch attached — only afk Runs, where no
+          // human is watching the checkout, are isolated this way.
+          await detachForDirectRun(task.workingDir, gate.startState.startCommit);
+          workspace.directIsolation = {
+            startBranch: gate.startState.startBranch,
+            startCommit: gate.startState.startCommit,
+          };
         }
         return workspace;
+      }
+
+      // Self-heal continuation (issue #137) of an afk-direct Run: turn 1's
+      // `finalizeWorkspace` restored the live checkout, sweeping the leased
+      // work off the tree (it lives in the frozen candidate). Rematerialise that
+      // candidate and re-detach, so the continuation resumes its prior work AND
+      // stays isolated — symmetric to worktree mode re-checking out the run
+      // branch (below). The candidate is re-parented on the SAME validated base
+      // the first turn recorded, so the re-verify judges the full diff. Missing
+      // start-state or candidate (the snapshot was skipped/failed) leaves the
+      // turn to the best-effort capture below — nothing to rematerialise.
+      if (afk && resume) {
+        const start = this.startStateOf(run.id);
+        const candidateOid = this.runStore.get(run.id).candidateOid;
+        if (start && candidateOid) {
+          await rematerializeCandidate(task.workingDir, candidateOid);
+          workspace.baseRev = start.startCommit;
+          workspace.startDirty = false;
+          workspace.directIsolation = {
+            startBranch: start.startBranch,
+            startCommit: start.startCommit,
+          };
+          return workspace;
+        }
       }
 
       // Capture the validated base + dirty-state now, before the agent edits
@@ -722,6 +774,17 @@ export class Runner {
    * `revParse`) when `dir` is not a git repo, so the caller treats a non-git
    * context as having no start-state to record or reject.
    */
+  /**
+   * Read back the `run-start-state` fact (issue #149) a Run recorded at
+   * admission — the start branch + commit a later turn detaches from and
+   * restores to (issue #152). Returns null when no fact was recorded (a native
+   * Run, or a non-git context), so the caller falls back to best-effort capture.
+   */
+  private startStateOf(runId: number): RunStartState | null {
+    const fact = this.runFacts.list(runId).find((f) => f.type === 'run-start-state');
+    return fact ? (JSON.parse(fact.payload) as RunStartState) : null;
+  }
+
   private async probeStartState(dir: string): Promise<StartStateProbe> {
     const [root, remote] = await Promise.all([Git.toplevel(dir), Git.originUrl(dir)]);
     const [headOid, branch, dirty, dirtyFingerprint, submodules, nestedRepos] = await Promise.all([
@@ -889,16 +952,51 @@ export class Runner {
   }
 
   /**
-   * Snapshot the run's work onto its branch and drop the worktree; the
-   * branch remains as the artifact. Runs before the task settles so an
-   * awaiting-review task always has a reviewable branch.
+   * Tear the leased workspace down before the task settles, per isolation mode:
+   * a **direct** Run whose HEAD was detached (issue #152) has its live checkout
+   * restored coherently; a **worktree** Run has its work snapshotted onto its
+   * branch and the worktree dropped, leaving the branch as the artifact. Runs
+   * before the task settles so an awaiting-review task always has a reviewable
+   * artifact and the operator's checkout is coherent again.
    */
   private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
+    if (workspace.directIsolation) {
+      // Direct-mode execution isolation (issue #152): the Run executed on a
+      // detached HEAD so its commits never moved the live target branch. Undo
+      // the isolation symmetrically to the worktree teardown below — pin the
+      // agent's commit chain to the private ref, then restore the live checkout
+      // coherently. Runs before the lease is released at settle, so nothing
+      // else can grab the context mid-restore.
+      await this.restoreDirectCheckout(task, run, workspace.directIsolation);
+      return;
+    }
     if (!workspace.worktree) return;
     try {
       await Git.commitAll(workspace.worktree.path, `harmonic: task ${task.id} run ${run.attempt}`);
     } finally {
       await Git.removeWorktree(workspace.worktree.repoDir, workspace.worktree.path).catch(() => {});
+    }
+  }
+
+  /**
+   * Undo direct-mode execution isolation (issue #152): capture the agent's
+   * commit chain onto the private `refs/harmonic/direct/run-<id>` ref, then
+   * re-attach HEAD to the start branch and sweep the agent's changes so the
+   * operator's checkout is coherent again. The work is not lost — the full tree
+   * is frozen in the candidate (#134) and the commit chain on the private ref.
+   * Best-effort: a failed restore leaves the checkout detached for the startup
+   * sweep + owned-ref tracking to reconcile, and never breaks the settle funnel.
+   */
+  private async restoreDirectCheckout(
+    task: TaskRow,
+    run: RunRow,
+    isolation: { startBranch: string; startCommit: string },
+  ): Promise<void> {
+    try {
+      await captureDirectHead(task.workingDir, run.id);
+      await restoreLiveCheckout(task.workingDir, isolation.startBranch);
+    } catch {
+      // Non-fatal: recorded start-state + owned-ref tracking are the backstop.
     }
   }
 
@@ -1063,6 +1161,10 @@ export class Runner {
     let child: ChildProcess;
     let workspace: Workspace;
     let mcpServers: unknown[] = [];
+    // Tracked separately from `workspace` so the catch below can restore a
+    // direct-mode detach (issue #152) even if the harness never spawns —
+    // `finalize()` (which normally restores) is only wired after this try.
+    let directIsolation: Workspace['directIsolation'] = undefined;
     // A harness that dies without a clean ACP error (codex-acp exiting
     // non-zero mid-handshake) explains itself only on stderr. Retain its
     // tail so the failure reason carries the cause, not a bare exit code;
@@ -1071,6 +1173,7 @@ export class Runner {
     let stderrFlushed: Promise<void> = Promise.resolve();
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined);
+      directIsolation = workspace.directIsolation;
       // Agents reach the MCP server with zero setup: a Run Key (its
       // lifetime follows the run's) plus the endpoint, in the environment
       // — and, where the harness supports it (codex), registered directly
@@ -1099,6 +1202,12 @@ export class Runner {
         this.keys?.revoke(run.id);
       } catch {
         // Best-effort; the startup sweep is the backstop.
+      }
+      // If prepareWorkspace already detached the live checkout (issue #152) but
+      // the harness never started, restore it here — `finalize()` is not reached
+      // on this path, so nothing else would re-attach HEAD to the live branch.
+      if (directIsolation) {
+        await this.restoreDirectCheckout(task, run, directIsolation);
       }
       if (err instanceof AdmissionRejected) {
         // Admission gate (issue #149): a context Harmonic cannot safely own is

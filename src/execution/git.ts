@@ -181,6 +181,37 @@ export const Git = {
   addDetachedWorktree: (dir: string, worktreePath: string, oid: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'add', '--detach', worktreePath, oid)),
 
+  /**
+   * Detach HEAD at `oid` in `dir`'s own working tree, force-discarding any
+   * working-tree changes (`-f`). This **parks the branch** HEAD was on: while
+   * detached, an agent `git commit` / `reset` / `checkout -B` moves only HEAD,
+   * so the live target branch ref cannot advance and expose unverified work on
+   * the live branch (reliability-design Unit D, issue #152). Unlike
+   * {@link addDetachedWorktree}, this operates on the leased checkout itself
+   * (direct mode), not a disposable worktree, so it takes no base-repo lock —
+   * the Work Context lease already gives the Run exclusive use of the checkout.
+   */
+  checkoutDetach: (dir: string, oid: string) => git(dir, 'checkout', '-f', '--detach', oid),
+
+  /**
+   * Re-attach HEAD to `branch` and reset the tracked working tree/index to it,
+   * force-discarding tracked changes (`-f`). Used to restore the live target
+   * checkout coherently at settle (issue #152): the branch never moved while the
+   * Run executed detached, so re-checking it out returns HEAD to the live target
+   * at its recorded start OID. Untracked files are removed separately via
+   * {@link cleanUntracked}.
+   */
+  checkoutForce: (dir: string, branch: string) => git(dir, 'checkout', '-f', branch),
+
+  /**
+   * Remove untracked files and directories (`clean -fd`), leaving ignored files
+   * (no `-x`) untouched. A coherent restore (issue #152) must match the **clean**
+   * context admission (#149) recorded at Run start, so agent-created untracked
+   * files are swept — they were already captured hermetically in the candidate.
+   * Ignored artifacts (build output, `node_modules`) are deliberately preserved.
+   */
+  cleanUntracked: (dir: string) => git(dir, 'clean', '-fd'),
+
   clone: async (repo: string, dest: string): Promise<void> => {
     await execFileAsync('git', ['clone', repo, dest], { maxBuffer: 10 * 1024 * 1024 });
   },
