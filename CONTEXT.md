@@ -104,7 +104,10 @@ structure the tracker holds (native sub-issues, or a body task-list / `Part of
 #<n>` line) and copes; setting the tickets up is the operator's or an agent's
 job. Not a Task and not a stored entity — a query-time roll-up over the polled
 tracker. The **leaf-most** Epic — the immediate parent of implementation Tasks —
-is the unit its children are scheduled and landed as a group by.
+is the unit its children are scheduled and landed as a group by. An Epic is a
+**container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
+is never projected — an Epic contains, it does not gate) nor **runs** (its drive
+is forced *hitl*, so the Auto-Runner never executes the container itself).
 _Avoid_: effort, project, batch, tranche, convoy
 
 **Map**:
