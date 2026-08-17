@@ -104,11 +104,11 @@ export function wallClockTrip(args: {
 /**
  * Render a millisecond duration the way a human reads it, at whichever unit
  * keeps the number small: minutes once it's at least a minute, seconds once
- * it's at least a second, otherwise raw milliseconds. Not exported — this is
- * a rendering detail of `formatBudgetReason`, not a general-purpose duration
- * formatter the rest of the app should depend on.
+ * it's at least a second, otherwise raw milliseconds. Exported (issue #131) so
+ * `guardrail-tool-timeout.ts` can reuse the same rendering for its own
+ * card reason rather than duplicating it.
  */
-function humanizeMs(ms: number): string {
+export function humanizeMs(ms: number): string {
   if (ms >= 60_000) return `${Math.round(ms / 60_000)}m`;
   if (ms >= 1_000) return `${Math.round(ms / 1_000)}s`;
   return `${ms}ms`;

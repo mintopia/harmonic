@@ -509,3 +509,146 @@ describe('wall-clock guardrail (issue #127)', () => {
     }
   });
 });
+
+describe('progress guardrail (issue #131)', () => {
+  const chunk = (text: string) => ({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } });
+
+  it('nudges once through the steer channel, then trips a still-stalled run to Escalation', async () => {
+    // The progress detector sees a monologue (three consecutive assistant
+    // messages, no tool progress). At the first turn boundary it delivers ONE
+    // nudge through the steer channel (not a continue turn — ADR-0018); the
+    // nudge turn still makes no progress, so the second boundary trips → the Run
+    // Escalates through the same run_fact + coordinator + guardrail_events
+    // machinery as the wall-clock Guardrail (ADR-0019, reliability-design Unit A).
+    const server = await startServer({
+      ...stubHarness(),
+      guardrails: { progress: true },
+    });
+    try {
+      const created = await server.api('POST', '/api/tasks', {
+        prompt: scenario({ updates: [chunk('thinking…'), chunk('still thinking…'), chunk('hmm…')], stopReason: 'end_turn' }),
+      });
+      expect(created.status).toBe(201);
+      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+      expect(started.status).toBe(201);
+      const taskId = created.body.id;
+      const runId = started.body.id;
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.escalated ? body : undefined;
+      });
+      expect(task.escalated).toBe(true);
+
+      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/^stalled:/);
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      // Exactly one nudge was delivered (never spends the continue budget).
+      const nudges = events.filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge');
+      expect(nudges).toHaveLength(1);
+      // …delivered through the steer channel, at a turn boundary.
+      expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'steer_delivered')).toBe(true);
+      // …and the trip is recorded on the timeline.
+      const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
+      expect(trip.payload.dimension).toBe('progress');
+
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!).toMatchObject({ dimension: 'progress', configSource: 'default' });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('does not false-trip while a tool call is outstanding (the suspend rule)', async () => {
+    // The same monologue that would trip above, but the turn ends with an
+    // unpaired tool_call still in flight. Idle detection SUSPENDS while a tool
+    // call is outstanding (a slow build is indistinguishable from a stuck
+    // agent), so the detector returns null: no nudge, no trip — the Run
+    // completes normally to awaiting-review. Tool-timeout is left at its
+    // generous default, so it never fires inside the test window.
+    const server = await startServer({
+      ...stubHarness(),
+      guardrails: { progress: true },
+    });
+    try {
+      const created = await server.api('POST', '/api/tasks', {
+        prompt: scenario({
+          updates: [
+            chunk('thinking…'),
+            chunk('still thinking…'),
+            chunk('hmm…'),
+            { sessionUpdate: 'tool_call', toolCallId: 'slow-1', title: 'Long build', kind: 'execute', status: 'in_progress' },
+          ],
+          stopReason: 'end_turn',
+        }),
+      });
+      const taskId = created.body.id;
+      const runId = startedId(await server.api('POST', `/api/tasks/${taskId}/run`));
+
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+      const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+      expect(task.escalated).toBeFalsy();
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge')).toBe(false);
+      expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped')).toBe(false);
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('a hard tool-timeout backstops a hung tool call: emits a run_fact and Escalates', async () => {
+    // A tool call opens and never completes (the turn hangs). The stall detector
+    // stays suspended, but the hard tool-timeout watchdog bounds it: past the
+    // generous configured limit it emits a `tool-timeout` guardrail_events row +
+    // a guardrail-trip run_fact and Escalates (reliability-design Unit A).
+    const server = await startServer({
+      ...stubHarness(),
+      guardrails: { progress: true, toolTimeoutMinutes: 0.01 }, // 600ms tool-timeout
+    });
+    try {
+      const created = await server.api('POST', '/api/tasks', {
+        prompt: scenario({
+          updates: [{ sessionUpdate: 'tool_call', toolCallId: 'hang-1', title: 'Endless build', kind: 'execute', status: 'in_progress' }],
+          exit: 'hang',
+        }),
+      });
+      const taskId = created.body.id;
+      const runId = startedId(await server.api('POST', `/api/tasks/${taskId}/run`));
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.escalated ? body : undefined;
+      });
+      expect(task.escalated).toBe(true);
+
+      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/tool unresponsive/);
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
+      expect(trip.payload.dimension).toBe('tool-timeout');
+
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!).toMatchObject({ dimension: 'tool-timeout', configSource: 'default' });
+      expect(['executing', 'validating', 'verifying']).toContain(rows[0]!.phase);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+/** POST /run returns the created Run; assert 201 and hand back its id. */
+function startedId(res: { status: number; body: { id: number } }): number {
+  expect(res.status).toBe(201);
+  return res.body.id;
+}

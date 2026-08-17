@@ -63,10 +63,12 @@ function parseVerifier<T>(stored: string | null | undefined): T | null {
   return stored ? (JSON.parse(stored) as T) : null;
 }
 
-/** A Workspace's effective Guardrail config: the budget bounds and progress toggle. */
+/** A Workspace's effective Guardrail config: the budget bounds, progress
+ * toggle, and hard tool-timeout bound. */
 export type ResolvedGuardrails = {
   budget: BudgetGuardrail;
   progress: boolean;
+  toolTimeoutMinutes: number;
 };
 
 /**
@@ -76,6 +78,9 @@ export type ResolvedGuardrails = {
  * same `workspace ?? global` rule as every scalar override. This only resolves
  * config; nothing is enforced (#126). The Runner snapshots the result onto the
  * Run at start so a later config change can't retroactively change a trip.
+ *
+ * `toolTimeoutMinutes` (issue #131) is global-only: there is no per-Workspace
+ * override column for it, so it always resolves straight from `config`.
  */
 export function resolveGuardrails(
   ws: Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'>,
@@ -84,6 +89,7 @@ export function resolveGuardrails(
   return {
     budget: resolve(parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
     progress: resolve(ws.guardrailProgress, config.guardrails.progress),
+    toolTimeoutMinutes: config.guardrails.toolTimeoutMinutes,
   };
 }
 

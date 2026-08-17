@@ -679,13 +679,16 @@ export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
 
 /**
  * The Guardrail budget dimensions this table has a slot for (issue #127,
- * ADR-0019, reliability-design Unit A). Only `'wall-clock'` has an emitter
- * today — the phase-scoped wall-clock Guardrail that trips a Run to
- * Escalation; `'tokens'` and `'cost'` hold their slot for the sibling budget
- * dimensions already named in `budgetGuardrailSchema` (setting-override.ts)
- * but not yet wired to an emitter.
+ * ADR-0019, reliability-design Unit A). `'wall-clock'` is the phase-scoped
+ * wall-clock Guardrail that trips a Run to Escalation; `'progress'` and
+ * `'tool-timeout'` (issue #131) now have emitters too — the stall/loop
+ * detector (`domain/guardrail-progress.ts`, `domain/stall-detector.ts`) and
+ * its hard tool-timeout backstop (`domain/guardrail-tool-timeout.ts`)
+ * respectively. `'tokens'` and `'cost'` still only hold their slot for the
+ * sibling budget dimensions already named in `budgetGuardrailSchema`
+ * (setting-override.ts) but not yet wired to an emitter.
  */
-export const GUARDRAIL_DIMENSIONS = ['wall-clock', 'tokens', 'cost'] as const;
+export const GUARDRAIL_DIMENSIONS = ['wall-clock', 'tokens', 'cost', 'progress', 'tool-timeout'] as const;
 export type GuardrailDimension = (typeof GUARDRAIL_DIMENSIONS)[number];
 
 /** Where a Guardrail's configured limit resolved from, at the moment it

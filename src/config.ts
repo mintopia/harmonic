@@ -277,11 +277,21 @@ export const appConfigSchema = z.object({
    * domain/setting-override.ts); per-Task deferred. Config only in #126 — no
    * Guardrail is enforced yet; the effective config + price table are snapshotted
    * onto a Run at start so a mid-Run change never retroactively trips it.
+   *
+   * `toolTimeoutMinutes` (issue #131) is a hard backstop paired with the
+   * progress detector, not an override of it: the stall detector suspends
+   * itself for the duration of any outstanding tool call (reliability-design
+   * Unit A), so a genuinely hung tool call would otherwise never trip —
+   * this bounds how long any single tool call may run before it does. The
+   * default (20 minutes) is deliberately generous, well above any legitimate
+   * slow build/test, so it only fires on a tool that is truly stuck.
+   * Global-only: there is no per-Workspace override column for it yet.
    */
   guardrails: z
     .object({
       budget: budgetGuardrailSchema.prefault({}),
       progress: z.boolean().default(false),
+      toolTimeoutMinutes: z.number().positive().default(20),
     })
     .prefault({}),
 }).superRefine((config, ctx) => {
@@ -434,6 +444,7 @@ export function defaultConfig(): AppConfig {
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
       progress: false,
+      toolTimeoutMinutes: 20,
     },
   };
 }

@@ -24,7 +24,19 @@ import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, type ResolvedGuardrails } from '../domain/setting-override.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
-import { wallClockBudgetMs, wallClockTrip, formatBudgetReason } from '../domain/guardrail-budget.js';
+import {
+  wallClockBudgetMs,
+  wallClockTrip,
+  formatBudgetReason,
+  countsTowardExecutionBudget,
+} from '../domain/guardrail-budget.js';
+import { detectStall } from '../domain/stall-detector.js';
+import { toProgressEvents, formatProgressReason } from '../domain/guardrail-progress.js';
+import {
+  toolTimeoutBudgetMs,
+  toolTimeoutTrip,
+  formatToolTimeoutReason,
+} from '../domain/guardrail-tool-timeout.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
@@ -36,6 +48,13 @@ import type { Db } from '../db/index.js';
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
 const STDERR_TAIL_CAP = 8000;
+
+/** The single nudge the progress Guardrail delivers through the steer channel
+ * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
+ * course-correction prompt — one turn, no back-and-forth. */
+const PROGRESS_NUDGE_TEXT =
+  'You appear to be repeating the same step without making progress. Stop, re-read the task and the most ' +
+  'recent error or result, and try a genuinely different approach — or finish if the work is already done.';
 
 /** ACP session modes an afk Run tries, in order: Claude's 'auto' classifier
  * (asks only on risky tools) first, then 'bypassPermissions' (no callback) for
@@ -1010,7 +1029,10 @@ export class Runner {
     };
 
     const driver = new AcpDriver(child, {
-      onSessionUpdate: (update) => record('session_update', update),
+      onSessionUpdate: (update) => {
+        record('session_update', update);
+        observeTool(update); // feed the tool-timeout watchdog (issue #131)
+      },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
           // In auto mode the harness only asks on a genuinely risky tool (safe
@@ -1123,6 +1145,175 @@ export class Runner {
       guardrailTimer.unref?.();
     };
 
+    // Progress Guardrail (issue #131, ADR-0019, reliability-design Unit A). Two
+    // paired mechanisms, both OFF unless `guardrails.progress` was enabled in
+    // the Run's immutable start snapshot (issue #126):
+    //
+    //  1. A stall/loop detector (`detectStall`, issue #130) evaluated at each
+    //     turn boundary in the drive loop below. On the first detected stall it
+    //     delivers exactly ONE nudge through the steer channel (does not spend
+    //     the continue budget — ADR-0018); if the Run is still stalled after
+    //     that nudge turn it trips → Escalates through the same
+    //     `run_fact` + coordinator + `guardrail_events` machinery as the
+    //     wall-clock Guardrail.
+    //  2. A hard tool-timeout watchdog. The detector deliberately SUSPENDS while
+    //     a tool call is outstanding (a slow build is indistinguishable from a
+    //     stuck agent), so a genuinely hung tool would otherwise never trip. The
+    //     watchdog backstops that rule: a tool call outstanding past the
+    //     generous configured bound emits a `tool-timeout` `guardrail_events`
+    //     row + a `guardrail-trip` run_fact and Escalates. When it and the
+    //     wall-clock both fire, both append `guardrail-trip` facts and the
+    //     coordinator's earliest-fact precedence (`projectSettle`) picks the
+    //     primary reason — no dimension-priority table needed.
+    const progressStart = this.runStore.get(run.id);
+    const progressSnapshot = progressStart.guardrailConfig
+      ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
+      : null;
+    const progressEnabled = progressSnapshot?.progress === true;
+    const progressConfigSource: 'default' | 'workspace' = this.getWorkspace?.(task.workspaceId)
+      ?.guardrailProgress
+      ? 'workspace'
+      : 'default';
+    const toolTimeoutMs =
+      progressEnabled && progressSnapshot ? toolTimeoutBudgetMs(progressSnapshot.toolTimeoutMinutes) : null;
+    let progressNudged = false;
+
+    // Trip the progress Guardrail to Escalation — shared by both the stall
+    // detector and the tool-timeout watchdog. Records structured evidence
+    // first, then settles through the coordinator by precedence (`guardrail-trip`
+    // → Escalation), exactly like the wall-clock watchdog above. `abort` kills a
+    // verifier/prompt in flight (the tool-timeout path fires from a timer that
+    // can race an in-flight turn); the boundary stall path passes it too and it
+    // is a harmless no-op when nothing is in flight.
+    const tripProgressGuardrail = (
+      now: RunRow,
+      evidence: { dimension: 'progress' | 'tool-timeout'; limitValue: number; observedValue: number; payload: unknown },
+      reason: string,
+    ) => {
+      this.guardrailEvents.append(now.id, {
+        dimension: evidence.dimension,
+        phase: now.phase ?? 'executing',
+        limitValue: evidence.limitValue,
+        observedValue: evidence.observedValue,
+        configSource: progressConfigSource,
+        payload: evidence.payload,
+      });
+      record('lifecycle', { event: 'guardrail-tripped', dimension: evidence.dimension, reason });
+      active.externallySettled = true;
+      this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+    };
+
+    // Tool-call liveness, fed from the ACP `session/update` stream (below). A
+    // `tool_call` opens an entry; a `tool_call_update` with a terminal status
+    // closes it. The watchdog trips on the OLDEST still-open call, so a burst of
+    // concurrent tools is bounded by the first to hang.
+    const outstandingTools = new Map<string, { startedAt: number; title: string | null }>();
+    const observeTool = (update: unknown) => {
+      if (!toolTimeoutMs) return; // guardrail off → don't even track
+      const u = update as {
+        sessionUpdate?: string;
+        toolCallId?: unknown;
+        title?: unknown;
+        kind?: unknown;
+        status?: unknown;
+      };
+      const id = typeof u?.toolCallId === 'string' ? u.toolCallId : null;
+      if (!id) return;
+      if (u.sessionUpdate === 'tool_call') {
+        const title = typeof u.title === 'string' ? u.title : typeof u.kind === 'string' ? u.kind : null;
+        outstandingTools.set(id, { startedAt: Date.now(), title });
+      } else if (u.sessionUpdate === 'tool_call_update' && (u.status === 'completed' || u.status === 'failed')) {
+        outstandingTools.delete(id);
+      }
+    };
+
+    let toolTimeoutTimer: ReturnType<typeof setInterval> | null = null;
+    const armToolTimeout = () => {
+      if (!toolTimeoutMs) return; // guardrail off (or no snapshot)
+      // Poll at a fraction of the bound (capped) so a hang is caught within a
+      // small fraction of the timeout without a per-tool timer.
+      const period = Math.max(1_000, Math.min(toolTimeoutMs, 30_000));
+      toolTimeoutTimer = setInterval(() => {
+        if (active.externallySettled) return;
+        const now = this.runStore.get(run.id);
+        if (now.state !== 'running') return;
+        // Only an execution phase counts (reliability-design Unit A) — the same
+        // phase scoping as the wall-clock budget.
+        if (!countsTowardExecutionBudget(now.phase ?? null)) return;
+        let oldest: { id: string; startedAt: number; title: string | null } | null = null;
+        for (const [id, t] of outstandingTools) {
+          if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
+        }
+        if (!oldest) return; // nothing outstanding right now
+        const trip = toolTimeoutTrip({
+          outstandingMs: Date.now() - oldest.startedAt,
+          limitMs: toolTimeoutMs,
+          toolCallId: oldest.id,
+          title: oldest.title,
+        });
+        if (!trip) return;
+        tripProgressGuardrail(
+          now,
+          {
+            dimension: 'tool-timeout',
+            limitValue: trip.limitMs,
+            observedValue: trip.observedMs,
+            payload: { toolCallId: trip.toolCallId, title: trip.title },
+          },
+          formatToolTimeoutReason(trip),
+        );
+        // Interrupt whatever is in flight so `driver.prompt()` unwinds and
+        // `driveOnce` returns through its `externallySettled` guards.
+        active.verifyAbort.abort();
+        this.kill(active);
+      }, period);
+      toolTimeoutTimer.unref?.();
+    };
+
+    // Evaluate the stall detector at a turn boundary (called from the drive loop
+    // below, where the agent is parked — never concurrent with an in-flight
+    // turn). First stall → one nudge via the steer channel; a stall that
+    // survives the nudge turn → trip → Escalate. Returns true when it tripped,
+    // so the caller breaks the loop to settle.
+    const checkProgressAtBoundary = (): boolean => {
+      // Off, already settled, or the agent has signalled finish/escalate — in
+      // the last case the Run is completing this turn, so a lingering pre-finish
+      // stall tail must not nudge or (worse) trip it: honour the finish.
+      if (!progressEnabled || active.externallySettled || active.agentFinished || active.escalateReason) return false;
+      const report = detectStall(toProgressEvents(this.runStore.listEvents(run.id)), { enabled: true });
+      if (!report) return false; // progressing, or a tool is outstanding (suspend guard)
+      if (!progressNudged) {
+        // One nudge, delivered as the next turn by the steer drain just below in
+        // the loop. `attempt` is untouched, so it never spends the continue
+        // budget (ADR-0018). Recorded so the redirect is visible in the stream.
+        progressNudged = true;
+        record('lifecycle', { event: 'progress-nudge', pattern: report.pattern });
+        active.steerQueue.push(PROGRESS_NUDGE_TEXT);
+        return false;
+      }
+      // Already nudged. Only trip once that nudge has actually been delivered
+      // (drained from the queue) and a turn has run — otherwise the same
+      // pre-nudge tail would trip before the agent ever saw the nudge.
+      if (active.steerQueue.length > 0) return false;
+      const now = this.runStore.get(run.id);
+      if (now.state !== 'running') return false;
+      tripProgressGuardrail(
+        now,
+        {
+          dimension: 'progress',
+          // A stall has no numeric bound the way wall-clock/tool-timeout do — its
+          // thresholds are internal to the detector and pattern-specific — so
+          // `limitValue` is 0 (a "no scalar limit" sentinel for this dimension)
+          // and the real evidence rides in `payload` (pattern + seqs + signatures).
+          limitValue: 0,
+          observedValue: report.count,
+          payload: { pattern: report.pattern, signatures: report.signatures, seqs: report.seqs },
+        },
+        formatProgressReason(report),
+      );
+      return true;
+    };
+
     try {
       // Harnesses with no reliable spawn-time pin (copilot) pin per
       // session instead — sent for every run, `auto` included, because an
@@ -1142,6 +1333,10 @@ export class Runner {
       this.tailer.start(run.id);
       // Arm the wall-clock Guardrail now the Run is genuinely executing.
       armGuardrail();
+      // Arm the hard tool-timeout watchdog alongside it (issue #131; a no-op
+      // when the progress Guardrail is off). The stall detector is evaluated at
+      // turn boundaries in the loop below, not on a timer.
+      armToolTimeout();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -1194,6 +1389,13 @@ export class Runner {
           escalating = active.escalateReason; // agent asked for a human → settle Escalated
           break;
         }
+        // Progress Guardrail (issue #131), evaluated here at the turn boundary —
+        // the agent is parked, so the check and its one nudge never run
+        // concurrently with an in-flight turn. First stall enqueues a single
+        // nudge (drained as the next turn just below); a stall that survives that
+        // nudge trips → Escalate, and we break to unwind through the
+        // `externallySettled` guards.
+        if (checkProgressAtBoundary()) break;
         // A queued operator steer takes the next turn — for native and afk Runs
         // alike — ahead of any continue nudge, without spending continue budget.
         const steer = active.steerQueue.shift();
@@ -1427,6 +1629,7 @@ export class Runner {
       // leaving every execution phase (parked in review, landing, or settled) —
       // and time past this point must not count against the execution budget.
       if (guardrailTimer) clearTimeout(guardrailTimer);
+      if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
       driver.fail(new Error('run finished'));
       driver.dispose();
       this.active.delete(run.id);

@@ -87,6 +87,25 @@ describe('projectSettle (issue #113 — settle coordinator projection)', () => {
     expect(projectSettle([...facts].reverse(), 2)).toEqual(first);
   });
 
+  it('two guardrail trips both fire → the earliest fact is the primary reason (issue #131)', () => {
+    // The hard tool-timeout and the wall-clock budget can both fire close
+    // together; each appends a `guardrail-trip` fact carrying its own reason
+    // (reliability-design Unit A: "precedence picks the primary"). They share
+    // the disposition kind, so `computeDisposition` ranks them equally and this
+    // earliest-seq rule is exactly the "coordinator precedence selects the
+    // primary reason" contract — no dimension-priority table needed.
+    const TOOL_TIMEOUT: SettleProjection = {
+      runState: 'failed',
+      taskAction: 'escalate',
+      reason: 'tool unresponsive: 20m',
+    };
+    const WALL_CLOCK: SettleProjection = { runState: 'failed', taskAction: 'escalate', reason: 'budget: 60m' };
+    const facts = [fact(1, 'guardrail-trip', TOOL_TIMEOUT), fact(2, 'guardrail-trip', WALL_CLOCK)];
+    expect(projectSettle(facts, 2)).toEqual(TOOL_TIMEOUT);
+    // Order-independent: still the earliest-seq (primary) reason, not the array head.
+    expect(projectSettle([...facts].reverse(), 2)).toEqual(TOOL_TIMEOUT);
+  });
+
   it('is idempotent — recomputing over the same facts + cutoff yields the same projection', () => {
     const facts = [
       fact(1, 'failed', FAILED),
