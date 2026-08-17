@@ -12,7 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
-import { Git } from '../execution/git.js';
+import { landBranch } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openDb, type Db } from '../db/index.js';
@@ -263,10 +263,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         effect: 'target-ref',
         idempotencyKey: `${baseBranch}<-${branch}`,
         expected: { baseBranch, branch },
+        // Land through the admin-worktree + CAS operation (issue #153), never a
+        // base-repo in-place `git merge` that desyncs a live checkout. Harmonic
+        // owns the base repo and `Git.ffOnly` serialises via the in-process
+        // repo lock (#121), so an exclusive clean lease over the target is held
+        // for the checked-out (worktree-mode base) path — `landBranch` still
+        // falls back to PR/manual if that checkout has uncommitted operator work.
         apply: async () => {
-          const result = await Git.merge(task.workingDir, baseBranch, branch);
-          if (!result.ok) return { ok: false, detail: result.detail };
-          return { ok: true, observed: { baseBranch, branch } };
+          const outcome = await landBranch({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true });
+          if (!outcome.ok) return { ok: false, detail: outcome.detail };
+          return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
       },
     ];
@@ -315,7 +321,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     landing,
     async (task, run) => {
       if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
-      return Git.merge(task.workingDir, run.baseBranch, run.branch);
+      const outcome = await landBranch({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, leaseHeld: true });
+      return outcome.ok ? { ok: true } : { ok: false, detail: outcome.detail };
     },
     landingEffectsFor,
   );

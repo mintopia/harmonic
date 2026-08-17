@@ -8,6 +8,7 @@ import type { TurnQueueStore } from './turn-queue-store.js';
 import { foldJournal, type LandingEffect, type ObservedState } from './landing.js';
 import { isMutating } from './turn-queue.js';
 import { Git } from '../execution/git.js';
+import { landBranch } from '../execution/branch-landing.js';
 
 /**
  * Unified crash recovery across facts/journal/queue (issue #117): one boot-time
@@ -95,8 +96,11 @@ export class CrashRecoveryCoordinator {
         'target-ref': async (_key, expected) => {
           const baseBranch = expected['baseBranch'] as string;
           const branch = expected['branch'] as string;
-          const result = await Git.merge(task.workingDir, baseBranch, branch);
-          return result.ok ? { ok: true, observed: { baseBranch, branch } } : { ok: false, detail: result.detail };
+          // Re-drive the land through the same admin-worktree + CAS operation as
+          // the live path (issue #153); idempotent, so a target already advanced
+          // by the pre-crash attempt is an "Already up to date" no-op here.
+          const outcome = await landBranch({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true });
+          return outcome.ok ? { ok: true, observed: { baseBranch, branch } } : { ok: false, detail: outcome.detail };
         },
       };
       await this.landing.reconcileLanding(run, observed, executors);

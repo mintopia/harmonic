@@ -301,4 +301,90 @@ export const Git = {
       return false;
     }
   },
+
+  /**
+   * The absolute path of the worktree that currently has `branch` checked out,
+   * or `null` when no worktree does (issue #153). Landing must never update a
+   * target ref out from under a live index/worktree via a plumbing `update-ref`
+   * (reliability-design Unit D): this is how a landing tells "the target is
+   * checked out — land coherently in place under a lease" from "nobody has it
+   * out — a CAS ref-update is safe". Parses `worktree list --porcelain`, whose
+   * per-worktree records pair a `worktree <path>` line with a `branch
+   * refs/heads/<name>` line (absent on a detached worktree, which is why an
+   * admin/verification worktree is never mistaken for the live target).
+   */
+  async branchCheckedOutAt(dir: string, branch: string): Promise<string | null> {
+    const out = await git(dir, 'worktree', 'list', '--porcelain');
+    let path: string | null = null;
+    for (const line of out.split('\n')) {
+      if (line.startsWith('worktree ')) path = line.slice('worktree '.length);
+      else if (line === `branch refs/heads/${branch}` && path) return path;
+    }
+    return null;
+  },
+
+  /**
+   * Compare-and-swap the branch ref `refs/heads/<branch>` from `expectedOld` to
+   * `newOid` (issue #153) — git's own `update-ref <ref> <new> <old>` atomic CAS,
+   * the reliability-design Unit D "expected-old-OID CAS". Returns `{ ok:false }`
+   * (never throws) when the ref no longer points at `expectedOld` — a hand-merge
+   * or another landing that advanced the target in between is rejected instead
+   * of being silently overwritten. Only ever touches the ref, never a checkout,
+   * so it is used exclusively on a target that no worktree has checked out.
+   */
+  async casUpdateRef(dir: string, branch: string, newOid: string, expectedOld: string): Promise<{ ok: boolean; detail?: string }> {
+    try {
+      await git(dir, 'update-ref', `refs/heads/${branch}`, newOid, expectedOld);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
+    }
+  },
+
+  /**
+   * Merge `branch` into the worktree at `worktreeDir`'s currently checked-out
+   * (or detached) HEAD, returning `{ ok:false }` with git's output on conflict
+   * after aborting (issue #153). Unlike {@link merge} this neither takes the
+   * base-repo lock nor checks out a base branch — the caller has already placed
+   * a **dedicated admin worktree** at the expected base OID, so this only writes
+   * objects + that admin worktree's own index. `--no-edit` matches {@link merge}
+   * / ADR-0002; a fast-forward-able branch fast-forwards, otherwise a merge
+   * commit is created — either way HEAD ends at a descendant of the base.
+   */
+  async mergeNoEdit(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
+    try {
+      await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+      return { ok: true };
+    } catch (err) {
+      const detail = err instanceof GitError ? err.message : String(err);
+      try {
+        await git(worktreeDir, 'merge', '--abort');
+      } catch {
+        // No merge in progress (e.g. it failed before starting).
+      }
+      return { ok: false, detail };
+    }
+  },
+
+  /**
+   * Fast-forward the checkout at `dir` to `oid` (`merge --ff-only`), under the
+   * base-repo lock (issue #153) — the **coherent checkout/reset** a checked-out
+   * target lands through (reliability-design Unit D), advancing the branch ref
+   * and the working tree together rather than a desyncing plumbing ref-update.
+   * `--ff-only` is itself a compare-and-swap: it refuses (→ `{ ok:false }`,
+   * never throws) unless the current tip is an ancestor of `oid`, so a target
+   * that moved since the admin-worktree merge was computed fails safely instead
+   * of being force-reset over. No merge state is left behind on refusal, so no
+   * abort is needed.
+   */
+  async ffOnly(dir: string, oid: string): Promise<{ ok: boolean; detail?: string }> {
+    return withRepoLock(dir, async () => {
+      try {
+        await git(dir, 'merge', '--ff-only', oid);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
+      }
+    });
+  },
 };
