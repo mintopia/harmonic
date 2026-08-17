@@ -513,6 +513,9 @@ export function TaskDetail({
   // tabindex below), then Left/Right/Home/End move between tabs. Selection
   // follows focus (automatic activation) — switching a tab only toggles a
   // `hidden` panel, so there's no cost that would justify manual activation.
+  // The current index is read from `tab` state (not `document.activeElement`
+  // like ProcessTree's tree nav) precisely because activation is automatic:
+  // focus and `tab` stay in lockstep, so state is the simpler source of truth.
   const onTablistKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const next = nextTabIndex(e.key, tabs.indexOf(tab), tabs.length);
     if (next === null) return;
@@ -636,6 +639,8 @@ export function TaskDetail({
         <div
           ref={scrollRef}
           tabIndex={0}
+          role="group"
+          aria-labelledby={`task-tab-${tab}`}
           onScroll={(e) => {
             const el = e.currentTarget;
             stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
