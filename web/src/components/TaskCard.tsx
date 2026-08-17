@@ -1,5 +1,6 @@
 import type { Drive, Task } from '../types';
 import { card, chip } from '../ui';
+import { runningReadout, type RunningReadout } from '../board-model';
 import { cardBranch, cardDiffstat } from './cardBranch';
 import { TaskActions } from './TaskActions';
 
@@ -31,11 +32,28 @@ function TitleButton({ task, onOpen, className = '' }: { task: Task; onOpen: (ta
   return (
     <button
       type="button"
-      className={`line-clamp-3 w-full cursor-pointer whitespace-pre-wrap text-left text-title font-semibold text-ink ${className}`}
+      className={`line-clamp-3 cursor-pointer whitespace-pre-wrap text-left text-title font-semibold text-ink ${className}`}
       onClick={() => onOpen(task)}
     >
       {task.prompt}
     </button>
+  );
+}
+
+/** Amber "work in flight" pulse before a running card's title — motion-safe only, so reduced motion drops the animation (issue #100). */
+function RunningPulse() {
+  return <span aria-hidden="true" className="mt-1.5 size-[7px] shrink-0 rounded-full bg-running-dot motion-safe:animate-pulse" />;
+}
+
+/** The running card's quiet live line: elapsed · N tools, tabular figures, ticked by the Board's once-a-second `now` (issue #100). */
+function RunningLine({ readout }: { readout: RunningReadout }) {
+  return (
+    <div className="mb-2 flex items-center gap-1.5 text-small tabular-nums text-muted">
+      <span className="sr-only">Running, </span>
+      <span>{readout.elapsed}</span>
+      <span aria-hidden="true">·</span>
+      <span>{readout.tools} {readout.tools === 1 ? 'tool' : 'tools'}</span>
+    </div>
   );
 }
 
@@ -80,7 +98,7 @@ function DriveBadge({ drive }: { drive: Drive }) {
 
 /** The wayfinder role, grafted from prototype A (issue #34): a badge row (drive
  * + type + escalation) above the title, and the parent Map named below it. */
-function MirroredCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
+function MirroredCard({ task, onOpen, readout }: { task: Task; onOpen: (task: Task) => void; readout: RunningReadout | null }) {
   return (
     <>
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
@@ -88,23 +106,30 @@ function MirroredCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => vo
         <span className={`${chip} bg-raised text-muted`}>{typeTagLabel(task)}</span>
         {task.escalated && <span className={`${chip} bg-running-tint text-running`}>escalated</span>}
       </div>
-      <TitleButton task={task} onOpen={onOpen} className="mb-2.5" />
+      <div className="mb-2.5 flex items-start gap-2">
+        {readout && <RunningPulse />}
+        <TitleButton task={task} onOpen={onOpen} className="min-w-0 flex-1" />
+      </div>
       <div className="mb-2 flex items-center gap-1.5 text-small text-muted">
         <MapGlyph />
         <span className="min-w-0 truncate text-ink">{task.mapTitle ?? '—'}</span>
         {task.trackerRef != null && <span className="ml-auto shrink-0 text-faint">#{task.trackerRef}</span>}
       </div>
+      {readout && <RunningLine readout={readout} />}
     </>
   );
 }
 
 /** The native card — unchanged: hero prompt, one faint meta line, priority. */
-function NativeCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void }) {
+function NativeCard({ task, onOpen, readout }: { task: Task; onOpen: (task: Task) => void; readout: RunningReadout | null }) {
   const branch = cardBranch(task);
   const diffstat = cardDiffstat(task);
   return (
     <>
-      <TitleButton task={task} onOpen={onOpen} className="mb-2" />
+      <div className="mb-2 flex items-start gap-2">
+        {readout && <RunningPulse />}
+        <TitleButton task={task} onOpen={onOpen} className="min-w-0 flex-1" />
+      </div>
       <div className="mb-2 flex items-center gap-2">
         <span className="min-w-0 truncate text-small text-muted">{metaLine(task)}</span>
         {/* Priority is typographic, not chromatic (DESIGN.md § Colors);
@@ -120,6 +145,7 @@ function NativeCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void
           <span className="shrink-0 text-label font-semibold uppercase text-fail">on failed</span>
         )}
       </div>
+      {readout && <RunningLine readout={readout} />}
       {/* Branch is genuine code (the Mono Is Code Rule), so it stays mono even
           on this sans-first card; the diffstat is a figure, so it's sans with
           tabular-nums — no green/red (that would spend a state colour on a
@@ -141,6 +167,8 @@ function NativeCard({ task, onOpen }: { task: Task; onOpen: (task: Task) => void
 
 export function TaskCard({
   task,
+  now = Date.now(),
+  liveTools,
   onEdit,
   onOpen,
   onChanged,
@@ -150,6 +178,8 @@ export function TaskCard({
   onDragEnd,
 }: {
   task: Task;
+  now?: number;
+  liveTools?: number | null;
   onEdit: (task: Task) => void;
   onOpen: (task: Task) => void;
   onChanged: () => void;
@@ -158,6 +188,7 @@ export function TaskCard({
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
 }) {
+  const readout = runningReadout(task, now, liveTools);
   return (
     <article
       draggable={draggable}
@@ -168,9 +199,9 @@ export function TaskCard({
       } ${dragging ? 'opacity-50' : ''}`}
     >
       {task.origin === 'mirrored' ? (
-        <MirroredCard task={task} onOpen={onOpen} />
+        <MirroredCard task={task} onOpen={onOpen} readout={readout} />
       ) : (
-        <NativeCard task={task} onOpen={onOpen} />
+        <NativeCard task={task} onOpen={onOpen} readout={readout} />
       )}
       <TaskActions task={task} variant="card" onEdit={onEdit} onChanged={onChanged} />
     </article>

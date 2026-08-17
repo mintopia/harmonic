@@ -3,6 +3,7 @@ import type { Task, TaskState } from '../types';
 import { boardColumns, canDrag, dropAction, type DropAction } from '../board-model';
 import { api } from '../api';
 import { toastError } from '../toast';
+import { subscribe } from '../ws';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
 import { btnPrimary, btnQuiet, displayTitle, laneBorder, laneDot, stateCountPill, touchTargetInline } from '../ui';
@@ -191,6 +192,31 @@ export function Board({
     refs.current.get(target.state)?.focus();
   }, [peeked]);
 
+  // Running cards' elapsed figure ticks live off `runStartedAt` — a once-a-second
+  // `now`, only running while a card actually needs it (issue #100).
+  const hasRunning = tasks.some((t) => t.state === 'running');
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasRunning) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [hasRunning]);
+
+  // Running cards' tool count ticks live off the same `run_usage` firehose the
+  // Activity view merges (ADR 0010), keyed by runId so a card can look up its
+  // own running run's freshest count; the server's `toolCount` snapshot is
+  // only the value before the first firehose event lands (issue #100).
+  const [liveTools, setLiveTools] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const unsub = subscribe((msg) => {
+      if (msg.type === 'run_usage') {
+        const total = Object.values(msg.usage.toolCalls ?? {}).reduce((a, b) => a + b, 0);
+        setLiveTools((cur) => ({ ...cur, [msg.runId]: total }));
+      }
+    });
+    return unsub;
+  }, []);
+
   if (loading) return <BoardSkeleton />;
 
   if (tasks.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
@@ -249,6 +275,8 @@ export function Board({
                 <TaskCard
                   key={task.id}
                   task={task}
+                  now={now}
+                  liveTools={task.runId != null ? liveTools[task.runId] : undefined}
                   onEdit={onEdit}
                   onOpen={onOpen}
                   onChanged={onChanged}

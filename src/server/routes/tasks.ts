@@ -96,6 +96,12 @@ const taskSchema = taskWithDepsSchema
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     /** The latest run's diffstat, snapshotted at settle; null until awaiting-review or in direct mode. */
     stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
+    /** The running run's `startedAt`; null unless the Task is running (issue #100). */
+    runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
+    /** Total tool-call count of the running run; null unless the Task is running (issue #100). */
+    toolCount: z.number().nullable().meta({ example: 12 }),
+    /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
+    runId: z.number().nullable().meta({ example: 41 }),
   })
   .meta({ id: 'Task' });
 

@@ -7,6 +7,7 @@ import { toastError } from '../toast';
 import { btnQuietDestructive, card, chip, displayTitle, labelType, selectField, touchOverlay, touchTarget, touchTargetInline } from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
+import { fmtElapsed } from '../board-model';
 import {
   activitySections,
   activitySummary,
@@ -80,16 +81,6 @@ function Empty() {
       <span aria-hidden="true">—</span>
     </span>
   );
-}
-
-function fmtElapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${sec}s`;
-  return `${sec}s`;
 }
 
 /** The state layer for a row: an amber pulse for a running Run (the locked "work

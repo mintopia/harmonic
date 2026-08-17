@@ -1095,6 +1095,39 @@
               }
             ],
             "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+          },
+          "runStartedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032020000
+          },
+          "toolCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 41
           }
         },
         "required": [
@@ -1127,7 +1160,10 @@
           "url",
           "mapTitle",
           "branch",
-          "stat"
+          "stat",
+          "runStartedAt",
+          "toolCount",
+          "runId"
         ]
       },
       "RunInput": {
@@ -3136,6 +3172,39 @@
               }
             ],
             "example": " src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)"
+          },
+          "runStartedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032020000
+          },
+          "toolCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 41
           }
         },
         "required": [
@@ -3168,7 +3237,10 @@
           "url",
           "mapTitle",
           "branch",
-          "stat"
+          "stat",
+          "runStartedAt",
+          "toolCount",
+          "runId"
         ],
         "additionalProperties": false
       },

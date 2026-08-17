@@ -46,6 +46,9 @@ const task = (
   mapTitle: null,
   branch: null,
   stat: null,
+  runStartedAt: null,
+  toolCount: null,
+  runId: null,
   ...extra,
 });
 

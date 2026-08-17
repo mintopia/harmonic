@@ -49,12 +49,19 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
   branch: string | null;
   /** The latest run's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
   stat: string | null;
+  /** The running run's `startedAt`; null unless the Task is running — the board card's live elapsed figure (issue #100). */
+  runStartedAt: number | null;
+  /** Total tool-call count of the running run; null unless the Task is running — the board card's "· N tools" (issue #100). */
+  toolCount: number | null;
+  /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
+  runId: number | null;
 };
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
   const runs = ctx.runs.listForTask(task.id);
   const usages = runs.map((run) => parseUsage(run.usage));
+  const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
   return {
     ...task,
     workspaceId: atRestWorkspaceId(task.workspaceId),
@@ -63,7 +70,17 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
+    runStartedAt: running?.startedAt ?? null,
+    toolCount: running ? runningToolCount(running) : null,
+    runId: running?.id ?? null,
   };
+}
+
+/** Total tool calls of a running run, from its freshest live snapshot (falls back to the persisted usage) — the board card's "· N tools" (issue #100). */
+function runningToolCount(run: RunRow): number {
+  const usage = run.liveUsage ? (JSON.parse(run.liveUsage) as RunUsageSnapshot).usage : parseUsage(run.usage);
+  if (!usage) return 0;
+  return Object.values(usage.toolCalls ?? {}).reduce((a, b) => a + b, 0);
 }
 
 /** Cost of an arbitrary set of runs against the live price table. */

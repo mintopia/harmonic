@@ -134,6 +134,12 @@ export interface Task {
   branch: string | null;
   /** The latest run's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
   stat: string | null;
+  /** The running run's `startedAt`; null unless the Task is running (issue #100). */
+  runStartedAt: number | null;
+  /** Total tool-call count of the running run; null unless the Task is running (issue #100). */
+  toolCount: number | null;
+  /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
+  runId: number | null;
 }
 
 export interface Run {

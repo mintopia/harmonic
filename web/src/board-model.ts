@@ -80,3 +80,23 @@ export function dropAction(from: TaskState, to: TaskState): DropAction | null {
 export function canDrag(from: TaskState): boolean {
   return TASK_STATES.some((to) => dropAction(from, to) !== null);
 }
+
+/** Elapsed as "1h 2m" / "3m 4s" / "5s" — the board card's live figure, matching the Activity view (issue #100). */
+export function fmtElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+/** The board card's running readout: elapsed + tool count (issue #100). */
+export type RunningReadout = { elapsed: string; tools: number };
+
+/** The board card's running readout (issue #100): elapsed since the run started plus its tool count, or null when the Task isn't a live run. `now` is the client's once-a-second tick. `liveTools`, when given, overrides the server-snapshotted `task.toolCount` with the `run_usage` firehose's freshest count for this run. */
+export function runningReadout(task: Task, now: number, liveTools?: number | null): RunningReadout | null {
+  if (task.state !== 'running' || task.runStartedAt == null) return null;
+  return { elapsed: fmtElapsed(Math.max(0, now - task.runStartedAt)), tools: liveTools ?? task.toolCount ?? 0 };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACTIVE_STATES, TERMINAL_STATES, boardColumns, canDrag, dropAction } from '../web/src/board-model.js';
+import { ACTIVE_STATES, TERMINAL_STATES, boardColumns, canDrag, dropAction, fmtElapsed, runningReadout } from '../web/src/board-model.js';
 import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
 
 const task = (id: number, state: TaskState, createdAt: number, priority: Task['priority'] = 'normal'): Task => ({
@@ -33,6 +33,9 @@ const task = (id: number, state: TaskState, createdAt: number, priority: Task['p
   mapTitle: null,
   branch: null,
   stat: null,
+  runStartedAt: null,
+  toolCount: null,
+  runId: null,
 });
 
 describe('board column model', () => {
@@ -128,5 +131,57 @@ describe('drag-and-drop transitions (issue #58)', () => {
     for (const state of TASK_STATES) {
       expect(canDrag(state)).toBe(state !== 'completed' && state !== 'awaiting-review');
     }
+  });
+});
+
+describe('fmtElapsed (issue #100)', () => {
+  it('renders sub-minute durations in seconds, rounding down', () => {
+    expect(fmtElapsed(500)).toBe('0s');
+    expect(fmtElapsed(5_000)).toBe('5s');
+  });
+
+  it('renders sub-hour durations as minutes + seconds', () => {
+    expect(fmtElapsed(65_000)).toBe('1m 5s');
+  });
+
+  it('renders durations of an hour or more as hours + minutes', () => {
+    expect(fmtElapsed(3_725_000)).toBe('1h 2m');
+  });
+});
+
+describe('runningReadout (issue #100)', () => {
+  it('reads elapsed + tool count off a running task', () => {
+    const t = { ...task(1, 'running', 100), runStartedAt: 1_000, toolCount: 7 };
+    expect(runningReadout(t, 6_000)).toEqual({ elapsed: '5s', tools: 7 });
+  });
+
+  it('is null for a non-running task', () => {
+    const t = { ...task(1, 'ready', 100), runStartedAt: 1_000, toolCount: 7 };
+    expect(runningReadout(t, 6_000)).toBeNull();
+  });
+
+  it('is null for a running task with no runStartedAt', () => {
+    const t = { ...task(1, 'running', 100), runStartedAt: null, toolCount: 7 };
+    expect(runningReadout(t, 6_000)).toBeNull();
+  });
+
+  it('clamps a negative elapsed (now before runStartedAt) to "0s"', () => {
+    const t = { ...task(1, 'running', 100), runStartedAt: 10_000, toolCount: 0 };
+    expect(runningReadout(t, 1_000)).toEqual({ elapsed: '0s', tools: 0 });
+  });
+
+  it('defaults a null toolCount on a running task to 0', () => {
+    const t = { ...task(1, 'running', 100), runStartedAt: 1_000, toolCount: null };
+    expect(runningReadout(t, 2_000)).toEqual({ elapsed: '1s', tools: 0 });
+  });
+
+  it('a liveTools argument overrides the task.toolCount snapshot (the run_usage firehose)', () => {
+    const t = { ...task(1, 'running', 100), runStartedAt: 1_000, toolCount: 3 };
+    expect(runningReadout(t, 2_000, 7)).toEqual({ elapsed: '1s', tools: 7 });
+  });
+
+  it('falls back to task.toolCount when liveTools is undefined (no firehose event yet)', () => {
+    const t = { ...task(1, 'running', 100), runStartedAt: 1_000, toolCount: 3 };
+    expect(runningReadout(t, 2_000, undefined)).toEqual({ elapsed: '1s', tools: 3 });
   });
 });
