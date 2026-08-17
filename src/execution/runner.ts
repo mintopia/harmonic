@@ -13,6 +13,10 @@ import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
 import { AcpDriver } from '../acp/driver.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
+import { RunFactStore } from '../domain/run-facts.js';
+import { projectSettle, type CoordinatorFact, type SettleProjection, type SettleTaskAction } from '../domain/run-coordinator.js';
+import { computeDisposition } from '../domain/run-disposition.js';
+import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails } from '../domain/setting-override.js';
 import { resolvePrices } from './pricing.js';
@@ -125,12 +129,18 @@ interface ActiveRun {
  */
 export class Runner {
   private active = new Map<number, ActiveRun>(); // by run id
+  /** Set once {@link shutdown} kills the harnesses on process/server close, so a
+   * drive loop reacting to its SIGKILLed harness leaves the Run `running` for
+   * boot reconciliation to record as interrupted, rather than settling it a
+   * spurious `failed` (issue #113). */
+  private shuttingDown = false;
 
   private readonly events: RunnerEvents;
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
+  private readonly runFacts: RunFactStore;
   private readonly tailer: LiveUsageTailer;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
@@ -148,6 +158,7 @@ export class Runner {
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
+    this.runFacts = new RunFactStore(this.db);
     this.tailer = new LiveUsageTailer(
       {
         sample: (runId) => this.sampleSnapshot(runId),
@@ -249,10 +260,18 @@ export class Runner {
   cancelForTask(taskId: number): void {
     for (const active of this.active.values()) {
       if (active.taskId === taskId) {
-        this.runStore.finish(active.runId, 'cancelled');
-        this.releaseLease(active.runId);
+        const run = this.runStore.get(active.runId);
+        const task = this.taskService.get(taskId);
+        // operator-cancel outranks every other disposition (§0.3): a harness
+        // exit the SIGKILL triggers can still append its own fact, but the
+        // coordinator keeps the Run `cancelled`. The Task was already cancelled
+        // by the caller, so the projection leaves it untouched (taskAction none).
+        this.coordinateSettle(task, run, 'operator-cancel', {
+          runState: 'cancelled',
+          taskAction: 'none',
+          reason: run.reason ?? null,
+        });
         this.kill(active);
-        this.events.onRunFinished?.(this.runStore.get(active.runId));
       }
     }
   }
@@ -268,10 +287,17 @@ export class Runner {
   completeForTask(taskId: number): void {
     for (const active of this.active.values()) {
       if (active.taskId === taskId) {
-        this.runStore.finish(active.runId, 'completed', { reason: null });
-        this.releaseLease(active.runId);
+        const run = this.runStore.get(active.runId);
+        const task = this.taskService.get(taskId);
+        // The operator forced completion; the Task is already `completed`, so
+        // the projection leaves it untouched (taskAction none). The post-SIGKILL
+        // harness-exit fact loses to this agent-finish, keeping the Run completed.
+        this.coordinateSettle(task, run, 'agent-finish/unresolved', {
+          runState: 'completed',
+          taskAction: 'none',
+          reason: null,
+        });
         this.kill(active);
-        this.events.onRunFinished?.(this.runStore.get(active.runId));
       }
     }
   }
@@ -308,14 +334,17 @@ export class Runner {
       active.externallySettled = true;
       // Flush the final usage snapshot before the log's cwd (worktree) is torn down.
       this.tailer.stop(active.runId);
-      const finished = this.runStore.finish(active.runId, 'completed', { reason: null });
-      this.releaseLease(active.runId);
-      // Only settle a still-running Task — a racing cancel/escalate wins.
-      if (this.taskService.get(taskId).state === 'running') {
-        this.taskService.setState(taskId, 'completed');
-      }
+      const run = this.runStore.get(active.runId);
+      const task = this.taskService.get(taskId);
+      // The ticket is closed (ADR-0011): settle the parked agent's Run complete.
+      // taskAction 'completed' only lands a still-running Task — a racing
+      // cancel/escalate that already moved it wins.
+      this.coordinateSettle(task, run, 'agent-finish/unresolved', {
+        runState: 'completed',
+        taskAction: 'completed',
+        reason: null,
+      });
       this.kill(active); // stop the parked agent; drive() finalizes the worktree + keys
-      this.events.onRunFinished?.(finished);
       return true;
     }
     // No agent is working this Task. Settle it done anyway (the ticket is closed;
@@ -413,6 +442,7 @@ export class Runner {
 
   /** Kill every active harness (process shutdown). */
   shutdown(): void {
+    this.shuttingDown = true;
     for (const active of this.active.values()) {
       this.tailer.stop(active.runId);
       this.kill(active);
@@ -714,7 +744,13 @@ export class Runner {
           // Clean exit but the agent never closed the ticket — not success.
           // Treat as a failure: Auto-Retry within cap, else Escalate.
           record('lifecycle', { event: 'unresolved', reason: 'ticket left open' });
-          this.settleFailedOrRetry(task, run, 'run ended without resolving the ticket (left open)', patch);
+          this.settleFailedOrRetry(
+            task,
+            run,
+            'run ended without resolving the ticket (left open)',
+            patch,
+            'agent-finish/unresolved',
+          );
         } else {
           this.settleAutoCompleted(task, run, patch);
         }
@@ -734,6 +770,10 @@ export class Runner {
       // The poll may have stopped a parked agent on a closed ticket; that Run is
       // already settled completed, so don't re-settle it as failed.
       if (active.externallySettled) return;
+      // Process/server shutdown SIGKILLed the harness — this is not a run
+      // failure. Leave the Run `running` so boot reconciliation settles it
+      // interrupted (process-death), not a spurious "harness exited" failure.
+      if (this.shuttingDown) return;
       const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
       this.noteModelMismatch(task, usage, record);
       const patch = { usage: usage ? JSON.stringify(usage) : null };
@@ -742,7 +782,7 @@ export class Runner {
         this.settleEscalated(task, run, escalating, patch);
       } else if (autoDriven) {
         // Error failure: Auto-Retry within cap, else Escalate (issue #33).
-        this.settleFailedOrRetry(task, run, reason, patch);
+        this.settleFailedOrRetry(task, run, reason, patch, 'failed');
       } else {
         this.settle(task, run, 'failed', reason, patch);
       }
@@ -859,6 +899,103 @@ export class Runner {
     }
   }
 
+  /**
+   * The single settle authority (issue #113, reliability-design §0.3). Every
+   * way a Run ends funnels here: the signal is appended as an immutable
+   * `run_fact` carrying the concrete projection it intends, then the
+   * coordinator replays the **winning** fact's projection by fixed precedence
+   * ({@link projectSettle}) — so a cancel arriving close to an agent-finish
+   * settles the Run `cancelled`, decided by precedence rather than by whoever
+   * wrote the Run row first. Run/Task terminal state is thereby a projection of
+   * `run_facts`, reconstructable from the log alone.
+   *
+   * Settles once under the close-together race: a lower-or-equal-precedence
+   * straggler arriving after the winning disposition already landed recomputes
+   * the same winner and no-ops (the Run is already in the winning terminal
+   * state); a higher-precedence signal arriving late overrides the Run row to
+   * the new winner. `patch` decoration (usage/stat/stopReason) is recorded
+   * regardless of who wins, so no live-usage snapshot is lost.
+   */
+  private coordinateSettle(
+    task: TaskRow,
+    run: RunRow,
+    type: RunFactType,
+    projection: SettleProjection,
+    patch: Partial<RunRow> = {},
+  ): void {
+    // The winning disposition BEFORE this signal — so we can tell whether this
+    // signal actually changes the coordinator's decision.
+    const priorFacts = this.coordinatorFacts(run.id);
+    const priorDisposition = priorFacts.length
+      ? computeDisposition(priorFacts, priorFacts[priorFacts.length - 1]!.seq)
+      : null;
+
+    this.runFacts.append(run.id, type, { ...projection });
+
+    const facts = this.coordinatorFacts(run.id);
+    // Phase-less (#113): the whole log decides — the cutoff is its latest seq.
+    const cutoff = facts[facts.length - 1]!.seq;
+    const disposition = computeDisposition(facts, cutoff);
+    const winner = disposition === null ? null : projectSettle(facts, cutoff);
+    if (!winner) return; // unreachable — we just appended a fact
+
+    const before = this.runStore.get(run.id);
+    // Idempotency keys on the winning DISPOSITION, not the Run state: a
+    // lower-or-equal-precedence straggler leaves the winner unchanged and
+    // no-ops (settle exactly once), while a higher-precedence signal arriving
+    // late overrides — even when it maps to the same Run state but a different
+    // Task action (e.g. escalate after a bare failure).
+    if (before.state !== 'running' && disposition === priorDisposition) return;
+
+    // `patch` (usage/stat/stopReason) rides with the winning terminal write,
+    // matching today's semantics — a losing straggler never decorates the row
+    // another disposition won.
+    this.runStore.update(run.id, {
+      ...patch,
+      state: winner.runState,
+      reason: winner.reason,
+      finishedAt: before.finishedAt ?? Date.now(),
+    });
+    this.releaseLease(run.id);
+    this.applySettleTaskAction(task.id, winner.taskAction);
+    this.events.onRunFinished?.(this.runStore.get(run.id));
+  }
+
+  /** A Run's fact log decoded into the coordinator's projection-carrying shape. */
+  private coordinatorFacts(runId: number): CoordinatorFact[] {
+    return this.runFacts.list(runId).map((f) => ({
+      seq: f.seq,
+      type: f.type,
+      projection: JSON.parse(f.payload) as SettleProjection,
+    }));
+  }
+
+  /** Apply the winning fact's Task transition, preserving today's guard: `none`
+   * leaves the Task to its caller (operator cancel/complete already moved it),
+   * and every other action moves only a still-`running` Task — a racing
+   * cancel/escalate that already transitioned it wins. */
+  private applySettleTaskAction(taskId: number, action: SettleTaskAction): void {
+    if (action === 'none') return;
+    if (this.taskService.get(taskId).state !== 'running') return;
+    switch (action) {
+      case 'awaiting-review':
+        this.taskService.setState(taskId, 'awaiting-review');
+        break;
+      case 'completed':
+        this.taskService.setState(taskId, 'completed');
+        break;
+      case 'failed':
+        this.taskService.setState(taskId, 'failed');
+        break;
+      case 'ready':
+        this.taskService.setState(taskId, 'ready');
+        break;
+      case 'escalate':
+        this.taskService.escalate(taskId);
+        break;
+    }
+  }
+
   private settle(
     task: TaskRow,
     run: RunRow,
@@ -866,19 +1003,14 @@ export class Runner {
     reason: string | null,
     patch: Partial<RunRow> = {},
   ): void {
-    // A run cancelled via cancelForTask stays cancelled; don't overwrite.
-    const finished = this.runStore.finish(run.id, state, { ...patch, reason });
-    this.releaseLease(run.id);
-    // Only settle the task if it is still running — a cancel that raced
-    // the harness's exit must win.
-    if (this.taskService.get(task.id).state === 'running') {
-      if (finished.state === 'completed') {
-        this.taskService.setState(task.id, 'awaiting-review');
-      } else if (finished.state === 'failed') {
-        this.taskService.setState(task.id, 'failed');
-      }
-    }
-    this.events.onRunFinished?.(finished);
+    // A native clean completion is the agent ending its turn (→ awaiting-review);
+    // a bare failure is the `failed` disposition (→ Task failed).
+    const projection: SettleProjection =
+      state === 'completed'
+        ? { runState: 'completed', taskAction: 'awaiting-review', reason }
+        : { runState: 'failed', taskAction: 'failed', reason };
+    const type: RunFactType = state === 'completed' ? 'agent-finish/unresolved' : 'failed';
+    this.coordinateSettle(task, run, type, projection, patch);
   }
 
   /**
@@ -889,38 +1021,41 @@ export class Runner {
    * racing cancel wins.
    */
   private settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
-    const finished = this.runStore.finish(run.id, 'completed', { ...patch, reason: null });
-    this.releaseLease(run.id);
-    if (this.taskService.get(task.id).state === 'running') {
-      this.taskService.setState(task.id, 'completed');
-    }
-    this.events.onRunFinished?.(finished);
+    this.coordinateSettle(
+      task,
+      run,
+      'agent-finish/unresolved',
+      { runState: 'completed', taskAction: 'completed', reason: null },
+      patch,
+    );
   }
 
   /**
    * A failed afk mirrored Run (issue #33): Auto-Retry re-queues the Task to
    * ready (the Auto-Runner spawns a fresh Run) while within the cap; exhausting
-   * it Escalates to a human — never a silent retry beyond the cap.
+   * it Escalates to a human — never a silent retry beyond the cap. `type`
+   * distinguishes a clean-but-unresolved exit (`agent-finish/unresolved`) from
+   * an error failure (`failed`) in the fact log; the Task outcome is identical.
    */
-  private settleFailedOrRetry(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
+  private settleFailedOrRetry(
+    task: TaskRow,
+    run: RunRow,
+    reason: string,
+    patch: Partial<RunRow>,
+    type: RunFactType,
+  ): void {
     const decision = this.autoDrive!.onFailed(task, this.runStore.get(run.id));
-    const finished = this.runStore.finish(run.id, 'failed', { ...patch, reason });
-    this.releaseLease(run.id);
-    if (this.taskService.get(task.id).state === 'running') {
-      if (decision === 'retry') this.taskService.setState(task.id, 'ready');
-      else this.taskService.escalate(task.id);
-    }
-    this.events.onRunFinished?.(finished);
+    const taskAction: SettleTaskAction = decision === 'retry' ? 'ready' : 'escalate';
+    this.coordinateSettle(task, run, type, { runState: 'failed', taskAction, reason }, patch);
   }
 
   /** Stop an afk Run and hand the Task back to a human (issue #33): Run failed, Task ready + escalated + drive hitl. */
   private settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
-    const finished = this.runStore.finish(run.id, 'failed', { ...patch, reason: `escalated to human: ${reason}` });
-    this.releaseLease(run.id);
-    if (this.taskService.get(task.id).state === 'running') {
-      this.taskService.escalate(task.id);
-    }
-    this.events.onRunFinished?.(finished);
+    this.coordinateSettle(task, run, 'escalate', {
+      runState: 'failed',
+      taskAction: 'escalate',
+      reason: `escalated to human: ${reason}`,
+    }, patch);
   }
 
   /** Release the Work Context lease this Run holds, on any terminal

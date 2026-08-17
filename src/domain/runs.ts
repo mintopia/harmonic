@@ -2,6 +2,7 @@ import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import { RunFactStore } from './run-facts.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import type { PriceTable } from '../execution/pricing.js';
 
@@ -152,8 +153,16 @@ export class RunStore {
    * possibly dirty working directory.
    */
   markInterrupted(): RunRow[] {
+    const facts = new RunFactStore(this.db);
     const orphans = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
     for (const run of orphans) {
+      // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
+      // failed/interrupted terminal stays reconstructable from the log alone.
+      facts.append(run.id, 'process-death', {
+        runState: 'failed',
+        taskAction: 'failed',
+        reason: 'interrupted',
+      });
       this.update(run.id, { state: 'failed', reason: 'interrupted', finishedAt: Date.now() });
     }
     return orphans;

@@ -81,4 +81,22 @@ describe('RunFactStore (issue #112)', () => {
     const log = facts.list(runId);
     expect(computeDisposition(log, log.length)).toBe('escalate');
   });
+
+  it('boot crash recovery records a process-death fact — the orphan terminal is reconstructable from the log (issue #113)', () => {
+    const runStore = new RunStore(db);
+    const orphans = runStore.markInterrupted(); // runId + otherRunId are still `running`
+    expect(orphans.map((r) => r.id).sort()).toEqual([runId, otherRunId].sort());
+
+    // The Run row is failed/interrupted…
+    expect(runStore.get(runId).state).toBe('failed');
+    // …and that terminal is reconstructable from run_facts alone.
+    const log = facts.list(runId);
+    expect(log.map((f) => f.type)).toEqual(['process-death']);
+    expect(JSON.parse(log[0]!.payload)).toEqual({
+      runState: 'failed',
+      taskAction: 'failed',
+      reason: 'interrupted',
+    });
+    expect(computeDisposition(log, log.length)).toBe('process-death');
+  });
 });
