@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 describe('run-scoped key restrictions', () => {
@@ -53,8 +56,13 @@ describe('run-scoped key restrictions', () => {
   });
 
   it('keeps the review gate human unless agent-review is enabled', async () => {
-    // A finished task to review.
-    const done = await server.api('POST', '/api/tasks', { prompt: 'review target' });
+    // A finished task to review, on its own workingDir — the beforeAll's
+    // scoped-key run hangs forever on the default one, holding its Work
+    // Context lease (issue #119) for the whole describe block.
+    const done = await server.api('POST', '/api/tasks', {
+      prompt: 'review target',
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-scoped-')),
+    });
     await server.api('POST', `/api/tasks/${done.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${done.body.id}`)).body.state === 'awaiting-review');
 

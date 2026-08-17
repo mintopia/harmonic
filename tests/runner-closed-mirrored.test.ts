@@ -6,6 +6,7 @@ import { openDb, type Db } from '../src/db/index.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
+import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
 import { allWorkspaces } from './helpers.js';
 
@@ -25,7 +26,7 @@ describe('Runner.completeClosedMirrored — no agent working the Task', () => {
     db = openDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runs = new RunStore(db);
-    runner = new Runner(runs, tasks, () => defaultConfig());
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig());
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

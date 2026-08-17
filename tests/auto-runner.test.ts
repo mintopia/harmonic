@@ -59,9 +59,22 @@ describe('auto-runner', () => {
 
   it('never exceeds maxConcurrentRuns and pulls the next task when a slot frees', async () => {
     await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 2 } });
-    const t1 = await server.api('POST', '/api/tasks', { prompt: slowScenario(150) });
-    const t2 = await server.api('POST', '/api/tasks', { prompt: slowScenario(150) });
-    const t3 = await server.api('POST', '/api/tasks', { prompt: slowScenario(150) });
+    // Distinct workingDirs: direct-mode Tasks sharing one physical checkout
+    // contend for the same Work Context lease (issue #119) and would
+    // serialize below what this test is exercising (the slot ceiling, not
+    // directory contention).
+    const t1 = await server.api('POST', '/api/tasks', {
+      prompt: slowScenario(150),
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-')),
+    });
+    const t2 = await server.api('POST', '/api/tasks', {
+      prompt: slowScenario(150),
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-')),
+    });
+    const t3 = await server.api('POST', '/api/tasks', {
+      prompt: slowScenario(150),
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-')),
+    });
 
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
@@ -127,8 +140,17 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
   const defaultWorkspaceId = async () => (await server.api('GET', '/api/workspaces')).body.workspaces[0].id;
   const createWorkspace = async (name: string) =>
     (await server.api('POST', '/api/workspaces', { name, workingDir: secondDir })).body.id;
+  // Each Task gets its own workingDir: direct mode's Work Context lease
+  // (issue #119) serializes Tasks sharing one physical checkout, and these
+  // tests exercise the concurrency *slot* ceiling/cap, not directory
+  // contention — sharing a workspace's default dir would silently cap
+  // concurrency at 1 regardless of maxConcurrentRuns.
   const makeTask = (workspaceId: number, ms: number) =>
-    server.api('POST', '/api/tasks', { prompt: slowScenario(ms), workspaceId });
+    server.api('POST', '/api/tasks', {
+      prompt: slowScenario(ms),
+      workspaceId,
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar2-')),
+    });
 
   /**
    * Sample running Tasks until `done()` (all Tasks settled), returning peak

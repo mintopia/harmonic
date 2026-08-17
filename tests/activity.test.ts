@@ -57,16 +57,23 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     await server.close();
   });
 
-  /** Start a run that emits one tool call then hangs — stays in `Runner.active`. */
-  async function startHangingRun(): Promise<number> {
+  /**
+   * Start a run that emits one tool call then hangs — stays in `Runner.active`
+   * (and never settles, so never releases its Work Context lease). Each call
+   * gets its own workingDir by default so independent tests' hanging runs
+   * don't contend for the same direct-mode lease (issue #119) — pass `dir`
+   * explicitly only when the test needs the pre-written transcript under
+   * `workDir`'s slug.
+   */
+  async function startHangingRun(dir: string = mkdtempSync(join(tmpdir(), 'harmonic-activity-work-'))): Promise<{ taskId: number; runId: number }> {
     const scenario = JSON.stringify({
       updates: [{ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Read', kind: 'read', status: 'pending' }],
       delayMs: 20,
       exit: 'hang',
     });
-    const created = await server.api('POST', '/api/tasks', { prompt: scenario, workingDir: workDir, isolationMode: 'direct' });
+    const created = await server.api('POST', '/api/tasks', { prompt: scenario, workingDir: dir, isolationMode: 'direct' });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    return started.body.id;
+    return { taskId: created.body.id, runId: started.body.id };
   }
 
   it('returns an empty processes array when nothing is running', async () => {
@@ -76,7 +83,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   });
 
   it('lists a live Run with its Usage snapshot, Process Tree, and derived Cost', async () => {
-    const runId = await startHangingRun();
+    const { runId } = await startHangingRun(workDir); // the dir with the pre-written transcript
 
     const proc = await waitFor(async () => {
       const { body } = await server.api('GET', '/api/activity');
@@ -107,7 +114,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
 
   it('includes a warm Conversation as a chat for an operator; a read key sees Runs only', async () => {
     // A live run so the read-key result is non-empty (Runs are in the read set).
-    const runId = await startHangingRun();
+    const { runId } = await startHangingRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', '/api/activity');
       return (body.processes as any[]).some((p) => p.type === 'run' && p.runId === runId) || undefined;

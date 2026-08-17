@@ -140,6 +140,30 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
+  it('two worktree Runs on the same base repo both proceed — distinct {path,branch} keys admit both (issue #119)', async () => {
+    const repo = makeRepo();
+    // Same base repo, both worktree mode: each Run gets its own worktree path
+    // (`run-<runId>`) and branch (`harmonic/task-<id>-run-<attempt>`), so the
+    // Work Context lease key is distinct per Run — worktree mode is genuinely
+    // concurrent-safe here, unlike direct mode's single shared checkout
+    // (ADR-0022's deliberate asymmetry).
+    const [a, b] = await Promise.all([
+      runWorktreeTask(repo, { 'a.txt': 'A\n' }),
+      runWorktreeTask(repo, { 'b.txt': 'B\n' }),
+    ]);
+
+    const runA = (await server.api('GET', `/api/runs/${a.runId}`)).body;
+    const runB = (await server.api('GET', `/api/runs/${b.runId}`)).body;
+    expect(runA.state).toBe('completed');
+    expect(runB.state).toBe('completed');
+    expect(runA.branch).not.toBe(runB.branch);
+
+    const taskA = (await server.api('GET', `/api/tasks/${a.taskId}`)).body;
+    const taskB = (await server.api('GET', `/api/tasks/${b.taskId}`)).body;
+    expect(taskA.state).toBe('awaiting-review');
+    expect(taskB.state).toBe('awaiting-review');
+  });
+
   it('fails the run cleanly when the working directory is not a git repo', async () => {
     const notARepo = mkdtempSync(join(tmpdir(), 'harmonic-plain-'));
     const created = await server.api('POST', '/api/tasks', {

@@ -20,6 +20,7 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
+import { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
@@ -151,6 +152,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (event, task) => notifier.notify(event, task),
   );
   const runs = new RunStore(db);
+  const leases = new WorkContextLeaseStore(db);
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
   const auth = new AuthService(db);
@@ -174,8 +176,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
   });
   // Crash recovery before anything can execute: orphaned runs are failed
-  // as "interrupted" (never silently re-run).
-  runs.markInterrupted();
+  // as "interrupted" (never silently re-run). Each orphan's Work Context
+  // lease is released too — a crash can't wedge a context until the boot
+  // reconciliation sweep (#123) lands.
+  for (const orphan of runs.markInterrupted()) leases.releaseByOwner(orphan.id);
   // A fresh process is executing nothing, so any Task still `running` was
   // orphaned by the restart — fail it loudly (re-queueable, with feedback).
   // This is a superset of "fail the interrupted runs' tasks": it also catches a
@@ -202,7 +206,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => configStore.get(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
   );
-  const runner = new Runner(runs, tasks, () => configStore.get(), {
+  const runner = new Runner(runs, tasks, leases, db, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunFinished: (run) => bus.emit('run_changed', run),

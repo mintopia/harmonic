@@ -12,10 +12,13 @@ import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
 import { AcpDriver } from '../acp/driver.js';
 import { DomainError } from '../domain/errors.js';
-import type { RunStore, PersistedRunEvent } from '../domain/runs.js';
+import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails } from '../domain/setting-override.js';
 import { resolvePrices } from './pricing.js';
+import { workContextKey } from '../domain/work-context-key.js';
+import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
+import type { Db } from '../db/index.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
@@ -135,6 +138,8 @@ export class Runner {
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
+    private readonly leaseStore: WorkContextLeaseStore,
+    private readonly db: Db,
     private readonly getConfig: () => AppConfig,
     options: RunnerOptions = {},
   ) {
@@ -208,12 +213,36 @@ export class Runner {
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
     const ws = this.getWorkspace?.(task.workspaceId) ?? { guardrailBudget: null, guardrailProgress: null };
-    const run = this.runStore.create(task.id, {
+    const snapshot: RunGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
+    };
+    // Claim the Work Context lease transactionally with the Run row: the
+    // unique-key CAS (#118) rejects a second afk Run into an already-owned
+    // context, and a rejected claim rolls back the run row so no orphan is
+    // left. Enforced HERE, the shared funnel, so REST / MCP / Auto-Runner /
+    // a second process are all blocked identically — not only pickNext.
+    const run = this.db.transaction(() => {
+      const created = this.runStore.create(task.id, snapshot);
+      this.leaseStore.acquire(this.workContextKeyFor(task, created), created.id, 'running');
+      return created;
     });
     void this.drive(task, run, harness).catch(() => {});
     return run;
+  }
+
+  /** The Work Context lease key for this Run, matching prepareWorkspace's
+   * worktree path/branch exactly so the claimed key and the actual checkout agree. */
+  private workContextKeyFor(task: TaskRow, run: RunRow): string {
+    if (task.isolationMode === 'worktree') {
+      return workContextKey({
+        isolationMode: 'worktree',
+        workingDir: task.workingDir,
+        worktreePath: join(this.worktreesDir, `run-${run.id}`),
+        branch: `harmonic/task-${task.id}-run-${run.attempt}`,
+      });
+    }
+    return workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
   }
 
   /** Kill the harness of a task's active run (task cancellation). */
@@ -221,6 +250,7 @@ export class Runner {
     for (const active of this.active.values()) {
       if (active.taskId === taskId) {
         this.runStore.finish(active.runId, 'cancelled');
+        this.releaseLease(active.runId);
         this.kill(active);
         this.events.onRunFinished?.(this.runStore.get(active.runId));
       }
@@ -239,6 +269,7 @@ export class Runner {
     for (const active of this.active.values()) {
       if (active.taskId === taskId) {
         this.runStore.finish(active.runId, 'completed', { reason: null });
+        this.releaseLease(active.runId);
         this.kill(active);
         this.events.onRunFinished?.(this.runStore.get(active.runId));
       }
@@ -278,6 +309,7 @@ export class Runner {
       // Flush the final usage snapshot before the log's cwd (worktree) is torn down.
       this.tailer.stop(active.runId);
       const finished = this.runStore.finish(active.runId, 'completed', { reason: null });
+      this.releaseLease(active.runId);
       // Only settle a still-running Task — a racing cancel/escalate wins.
       if (this.taskService.get(taskId).state === 'running') {
         this.taskService.setState(taskId, 'completed');
@@ -836,6 +868,7 @@ export class Runner {
   ): void {
     // A run cancelled via cancelForTask stays cancelled; don't overwrite.
     const finished = this.runStore.finish(run.id, state, { ...patch, reason });
+    this.releaseLease(run.id);
     // Only settle the task if it is still running — a cancel that raced
     // the harness's exit must win.
     if (this.taskService.get(task.id).state === 'running') {
@@ -857,6 +890,7 @@ export class Runner {
    */
   private settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
     const finished = this.runStore.finish(run.id, 'completed', { ...patch, reason: null });
+    this.releaseLease(run.id);
     if (this.taskService.get(task.id).state === 'running') {
       this.taskService.setState(task.id, 'completed');
     }
@@ -871,6 +905,7 @@ export class Runner {
   private settleFailedOrRetry(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
     const decision = this.autoDrive!.onFailed(task, this.runStore.get(run.id));
     const finished = this.runStore.finish(run.id, 'failed', { ...patch, reason });
+    this.releaseLease(run.id);
     if (this.taskService.get(task.id).state === 'running') {
       if (decision === 'retry') this.taskService.setState(task.id, 'ready');
       else this.taskService.escalate(task.id);
@@ -881,10 +916,28 @@ export class Runner {
   /** Stop an afk Run and hand the Task back to a human (issue #33): Run failed, Task ready + escalated + drive hitl. */
   private settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
     const finished = this.runStore.finish(run.id, 'failed', { ...patch, reason: `escalated to human: ${reason}` });
+    this.releaseLease(run.id);
     if (this.taskService.get(task.id).state === 'running') {
       this.taskService.escalate(task.id);
     }
     this.events.onRunFinished?.(finished);
+  }
+
+  /** Release the Work Context lease this Run holds, on any terminal
+   * disposition. Idempotent and best-effort — a lease-release hiccup must
+   * never crash settle. Keyed by owner Run id so it needs no key recompute.
+   *
+   * NOTE (seam for #114): the lease is released when the RUN row reaches a
+   * terminal state. A native Run that completes into `awaiting-review`
+   * releases here; fully holding the context across the review window is the
+   * phase-machine refinement (#114). This ticket lands against today's Run
+   * states (running|completed|failed|cancelled). */
+  private releaseLease(runId: number): void {
+    try {
+      this.leaseStore.releaseByOwner(runId);
+    } catch {
+      // best-effort; boot reconciliation (#123) is the backstop
+    }
   }
 
   private kill(active: ActiveRun): void {

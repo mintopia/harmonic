@@ -3,6 +3,9 @@ import { createServer, type Server } from 'node:http';
 import { createHmac } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { SMTPServer } from 'smtp-server';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 interface Captured {
@@ -170,9 +173,18 @@ describe('notification channels', () => {
       events: [],
     });
 
-    const task = await server.api('POST', '/api/tasks', { prompt: 'special' });
+    // Distinct workingDirs: run both Tasks concurrently without one blocking
+    // the other on the direct-mode Work Context lease (issue #119) — the
+    // default (shared) workingDir would serialize them here.
+    const task = await server.api('POST', '/api/tasks', {
+      prompt: 'special',
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-notify-')),
+    });
     await server.api('POST', `/api/tasks/${task.body.id}/channels`, { channelId: channel.body.id });
-    const other = await server.api('POST', '/api/tasks', { prompt: 'ordinary' });
+    const other = await server.api('POST', '/api/tasks', {
+      prompt: 'ordinary',
+      workingDir: mkdtempSync(join(tmpdir(), 'harmonic-notify-')),
+    });
 
     await server.api('POST', `/api/tasks/${task.body.id}/run`);
     await server.api('POST', `/api/tasks/${other.body.id}/run`);

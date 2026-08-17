@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 const scenario = (s: object) => JSON.stringify(s);
@@ -283,6 +286,76 @@ describe('run execution over ACP (direct mode)', () => {
   it('run rejects tasks that are not ready', async () => {
     const draft = await server.api('POST', '/api/tasks', { prompt: 'p', state: 'draft' });
     expect((await server.api('POST', `/api/tasks/${draft.body.id}/run`)).status).toBe(409);
+  });
+});
+
+describe('Work Context lease (issue #119)', () => {
+  let server: TestServer;
+  const workingDirA = mkdtempSync(join(tmpdir(), 'harmonic-lease-a-'));
+  const workingDirC = mkdtempSync(join(tmpdir(), 'harmonic-lease-c-'));
+  let taskAId: number;
+  let taskBId: number;
+  let runAId: number;
+
+  beforeAll(async () => {
+    server = await startServer(stubHarness());
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('blocks a second Run into an already-held context (409), leaving the Task ready with no run rows', async () => {
+    const createdA = await server.api('POST', '/api/tasks', {
+      prompt: scenario({ exit: 'hang' }),
+      workingDir: workingDirA,
+    });
+    expect(createdA.status).toBe(201);
+    taskAId = createdA.body.id;
+    const startedA = await server.api('POST', `/api/tasks/${taskAId}/run`);
+    expect(startedA.status).toBe(201);
+    runAId = startedA.body.id;
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskAId}`)).body.state === 'running');
+
+    // Task B collides on the exact same workingDir (direct-mode keys ignore
+    // branch, so the two are contending for the same physical occupancy).
+    const createdB = await server.api('POST', '/api/tasks', {
+      prompt: scenario({ exit: 'hang' }),
+      workingDir: workingDirA,
+    });
+    expect(createdB.status).toBe(201);
+    taskBId = createdB.body.id;
+    const startedB = await server.api('POST', `/api/tasks/${taskBId}/run`);
+    expect(startedB.status).toBe(409);
+
+    // Not stranded running, and the rolled-back transaction left no run row.
+    const taskB = await server.api('GET', `/api/tasks/${taskBId}`);
+    expect(taskB.body.state).toBe('ready');
+    const runsB = await server.api('GET', `/api/tasks/${taskBId}/runs`);
+    expect(runsB.body.runs).toHaveLength(0);
+  });
+
+  it('does not block a different Work Context while A still holds its lease (control)', async () => {
+    const createdC = await server.api('POST', '/api/tasks', {
+      prompt: scenario({ exit: 'hang' }),
+      workingDir: workingDirC,
+    });
+    expect(createdC.status).toBe(201);
+    const startedC = await server.api('POST', `/api/tasks/${createdC.body.id}/run`);
+    expect(startedC.status).toBe(201);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${createdC.body.id}`)).body.state === 'running');
+    // Left running; the harness process dies with the server on afterAll.
+  });
+
+  it('admits the blocked Task once the holder settles and releases its lease', async () => {
+    const cancelled = await server.api('POST', `/api/tasks/${taskAId}/cancel`);
+    expect(cancelled.status).toBe(200);
+    await waitFor(async () => {
+      const run = await server.api('GET', `/api/runs/${runAId}`);
+      return run.body.state === 'cancelled';
+    });
+
+    const startedB = await server.api('POST', `/api/tasks/${taskBId}/run`);
+    expect(startedB.status).toBe(201);
   });
 });
 

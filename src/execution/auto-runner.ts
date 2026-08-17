@@ -103,7 +103,13 @@ export class AutoRunner {
    */
   private async startPicked(task: TaskRow, skip: Set<number>): Promise<void> {
     if (task.origin !== 'mirrored' || !this.mirror) {
-      this.runner.start(task.id);
+      try {
+        this.runner.start(task.id);
+      } catch {
+        // Work Context busy (or another start failure): leave the Task ready and
+        // skip it this cycle; a later poke retries once the occupant settles.
+        skip.add(task.id);
+      }
       return;
     }
     this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write

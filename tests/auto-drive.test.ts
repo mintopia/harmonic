@@ -6,6 +6,7 @@ import { openDb, type Db } from '../src/db/index.js';
 import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
+import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive, buildDrivePrompt, skillFor, splitTitleBody } from '../src/execution/auto-drive.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
@@ -312,7 +313,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter, okGit);
-    runner = new Runner(runs, tasks, () => cfg, { autoDrive: drive });
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => cfg, { autoDrive: drive });
   }
 
   const continueEvents = (runId: number) =>
