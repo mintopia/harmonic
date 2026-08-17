@@ -86,7 +86,13 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
-    agentReview: z.boolean().optional().meta({ example: false }),
+    agentReview: z
+      .boolean()
+      .optional()
+      .meta({ example: false })
+      .describe(
+        'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.',
+      ),
   })
   .partial()
   .meta({ id: 'ConfigPatch' });

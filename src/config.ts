@@ -237,11 +237,6 @@ export const appConfigSchema = z.object({
    */
   taskPrompt: z.string().default(DEFAULT_TASK_PROMPT).meta({ example: DEFAULT_TASK_PROMPT }),
   /**
-   * When true, Accept/Reject tools are exposed over MCP — agents can land
-   * branches unattended (ADR-0002). Deliberate opt-in; default off.
-   */
-  agentReview: z.boolean().default(false).meta({ example: false }),
-  /**
    * End a Conversation with no Turn for this many minutes (issue 15); its
    * transcript survives read-only. 0 disables the idle timeout. Fractional
    * values are allowed.
@@ -421,7 +416,6 @@ export function defaultConfig(): AppConfig {
       continueAttempts: 1,
     },
     taskPrompt: DEFAULT_TASK_PROMPT,
-    agentReview: false,
     conversationIdleTimeoutMinutes: 30,
     verification: {
       command: null,
@@ -446,6 +440,24 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
     return out;
   };
   return appConfigSchema.parse(merge(base, overrides));
+}
+
+/** A stored/patched config that may still carry the retired `agentReview` flag (#140). */
+export type LegacyConfig = DeepPartial<AppConfig> & { agentReview?: boolean };
+
+/**
+ * Fold the retired `agentReview` flag (ADR-0021) into the verification config.
+ * A `agentReview: true` maps to `verification.autoAccept: true` — the verifier's
+ * pass now IS the accept. The legacy key is ALWAYS dropped so it never lingers in
+ * stored config nor re-exposes the removed accept/reject surface. An explicit
+ * `verification.autoAccept` already present in the same object wins (not overridden).
+ */
+export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
+  const { agentReview, ...rest } = raw;
+  if (agentReview !== true) return rest;
+  const verification = { ...rest.verification };
+  if (verification.autoAccept === undefined) verification.autoAccept = true;
+  return { ...rest, verification };
 }
 
 export function defaultDataDir(): string {

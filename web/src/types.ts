@@ -426,5 +426,4 @@ export interface AppConfig {
   };
   /** The Task Prompt template for native Runs, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
-  agentReview: boolean;
 }

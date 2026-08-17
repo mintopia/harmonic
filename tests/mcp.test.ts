@@ -157,7 +157,7 @@ describe('mcp server & scoped keys', () => {
     await client.close();
   });
 
-  it('hides accept/reject behind the agent-review flag (default off)', async () => {
+  it('never exposes accept/reject over MCP (#140, ADR-0021: retired agentReview flag)', async () => {
     const client = await mcpClient(server, token);
     const tools = (await client.listTools()).tools.map((t) => t.name);
     expect(tools).toContain('create_task');
@@ -165,21 +165,18 @@ describe('mcp server & scoped keys', () => {
     expect(tools).not.toContain('reject_task');
     await client.close();
 
+    // A legacy PATCH still carrying the retired flag is migrated (folded into
+    // verification.autoAccept) rather than re-exposing the MCP tools.
     await server.api('PATCH', '/api/config', { agentReview: true });
-    const enabled = await mcpClient(server, token);
-    const enabledTools = (await enabled.listTools()).tools.map((t) => t.name);
-    expect(enabledTools).toContain('accept_task');
-    expect(enabledTools).toContain('reject_task');
+    const stillHidden = await mcpClient(server, token);
+    const stillHiddenTools = (await stillHidden.listTools()).tools.map((t) => t.name);
+    expect(stillHiddenTools).not.toContain('accept_task');
+    expect(stillHiddenTools).not.toContain('reject_task');
+    await stillHidden.close();
 
-    // And they work: run something to awaiting-review, accept over MCP.
-    const task = await server.api('POST', '/api/tasks', { prompt: 'review me' });
-    await server.api('POST', `/api/tasks/${task.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${task.body.id}`)).body.state === 'awaiting-review');
-    const accepted = parse(await enabled.callTool({ name: 'accept_task', arguments: { taskId: task.body.id } }));
-    expect(accepted.state).toBe('completed');
-    await enabled.close();
-
-    await server.api('PATCH', '/api/config', { agentReview: false });
+    const config = (await server.api('GET', '/api/config')).body;
+    expect(config.verification.autoAccept).toBe(true);
+    expect(config.agentReview).toBeUndefined();
   });
 
   it('end-to-end: a run schedules a dependent follow-up task through its injected key', async () => {

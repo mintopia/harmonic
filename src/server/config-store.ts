@@ -5,8 +5,10 @@ import {
   appConfigSchema,
   defaultConfig,
   mergeConfig,
+  migrateLegacyConfig,
   type AppConfig,
   type DeepPartial,
+  type LegacyConfig,
 } from '../config.js';
 
 const CONFIG_KEY = 'config';
@@ -27,8 +29,10 @@ export class ConfigStore {
     // Overlay stored config on the current defaults rather than parse it bare:
     // a config saved before a field existed (e.g. `drive`) is missing it, and
     // a bare parse would throw on boot. Merging fills new fields from defaults.
+    // The stored value may still carry the retired `agentReview` flag (#140,
+    // ADR-0021) — migrate it before merging so it never lingers.
     const base = stored
-      ? mergeConfig(defaultConfig(), JSON.parse(stored.value) as DeepPartial<AppConfig>)
+      ? mergeConfig(defaultConfig(), migrateLegacyConfig(JSON.parse(stored.value) as LegacyConfig))
       : defaultConfig();
     this.current = mergeConfig(base, overrides);
     this.persist();
@@ -39,12 +43,17 @@ export class ConfigStore {
   }
 
   update(patch: DeepPartial<AppConfig>): AppConfig {
-    this.current = mergeConfig(this.current, patch);
+    this.current = mergeConfig(this.current, migrateLegacyConfig(patch as LegacyConfig));
     this.persist();
     return this.current;
   }
 
   replace(config: AppConfig): AppConfig {
+    // No `migrateLegacyConfig` here: `PUT /config` validates the body against
+    // `appConfigSchema` (routes/config.ts), which no longer declares the retired
+    // `agentReview` flag (#140) and strips unknown keys — so a full-replace never
+    // carries the legacy flag to migrate. The fold lives where it can still be
+    // observed: the boot load (existing stored config) and the PATCH passthrough.
     this.current = appConfigSchema.parse(config);
     this.persist();
     return this.current;

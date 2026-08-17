@@ -140,9 +140,11 @@ describe('openapi spec', () => {
     expect(doc.paths['/api/tasks/{id}/run'].post.description).toContain('Reachable with a run-scoped Run Key');
     expect(doc.paths['/api/runs/{id}'].get.description).toContain('Reachable with a run-scoped Run Key');
 
-    // Accept/reject: gated on the agentReview config flag, not flatly denied or allowed.
-    expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('agentReview');
-    expect(doc.paths['/api/tasks/{id}/reject'].post.description).toContain('agentReview');
+    // Accept/reject: human-only, always (#140, ADR-0021 retired the agentReview flag).
+    expect(doc.paths['/api/tasks/{id}/accept'].post.description).toContain('Human-only');
+    expect(doc.paths['/api/tasks/{id}/reject'].post.description).toContain('Human-only');
+    expect(doc.paths['/api/tasks/{id}/accept'].post.description).not.toContain('agentReview');
+    expect(doc.paths['/api/tasks/{id}/reject'].post.description).not.toContain('agentReview');
 
     // Operator-only: config, channels (including the per-task channel overrides), stats, keys.
     expect(doc.paths['/api/config'].get.description).toContain('Operator only');

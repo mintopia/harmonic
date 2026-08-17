@@ -197,35 +197,5 @@ export function buildMcpServer(ctx: AppContext): McpServer {
     }),
   );
 
-  if (ctx.configStore.get().agentReview) {
-    server.registerTool(
-      'accept_task',
-      {
-        description:
-          'Accept an awaiting-review Task: completes it (and merges its branch in worktree mode). Available because the agent-review flag is enabled.',
-        inputSchema: taskId,
-      },
-      async ({ taskId }) => {
-        try {
-          return json(ctx.tasks.withDeps(await ctx.review.accept(taskId)));
-        } catch (err) {
-          if (err instanceof DomainError) {
-            return { content: [{ type: 'text' as const, text: `Error (${err.code}): ${err.message}` }], isError: true };
-          }
-          throw err;
-        }
-      },
-    );
-
-    server.registerTool(
-      'reject_task',
-      {
-        description: 'Reject an awaiting-review Task with feedback: fails it. Available because the agent-review flag is enabled.',
-        inputSchema: { ...taskId, feedback: z.string().optional() },
-      },
-      wrap(({ taskId, feedback }) => ctx.tasks.withDeps(ctx.review.reject(taskId, feedback))),
-    );
-  }
-
   return server;
 }

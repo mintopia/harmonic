@@ -78,11 +78,13 @@ const PUBLIC_API_PATHS = new Set([
 /**
  * What an ephemeral scoped key (a Run Key or a Conversation Key) may reach:
  * the agent surface from issue 13 — task CRUD, dependencies, queue/cancel,
- * runs and events, and MCP (which gates its own tool list). Accept/Reject
- * stay human unless the agent-review flag is on (ADR-0002). Everything else
- * — key management, config, channels, Conversations — is operator-only.
+ * runs and events, and MCP (which gates its own tool list). Accept/Reject are
+ * always human-only (#140, ADR-0021 retired the agent-review flag: a
+ * verifier's pass is now the accept, never a scoped key's own call).
+ * Everything else — key management, config, channels, Conversations — is
+ * operator-only.
  */
-function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
+function scopedKeyAllowed(path: string): boolean {
   if (path.startsWith('/mcp')) return true;
   // Force-complete is a manual operator override (kills a running agent mid-work,
   // skips the review gate) with no agent-facing use — agents signal via finish_task.
@@ -90,7 +92,8 @@ function scopedKeyAllowed(path: string, agentReview: boolean): boolean {
   // Steering redirects a running agent — a manual operator override; an agent
   // does not steer itself (it drives its own turn).
   if (/^\/api\/tasks\/\d+\/steer$/.test(path)) return false;
-  if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return agentReview;
+  // Accept/reject are human-only, always — never reachable by a run-scoped key.
+  if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
   if (path.startsWith('/api/runs')) return true;
@@ -407,9 +410,10 @@ endpoint, so it has no entry in this spec's paths). It authenticates the
 same way as the REST API — a bearer token, either an operator API key or
 the Run Key Harmonic injects into a spawned harness — and exposes the
 agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
-runs and events; Accept/Reject tools appear only when the \`agentReview\`
-config flag is on). A run-scoped Run Key may call \`/mcp\` regardless of
-the REST restrictions noted per endpoint below.
+runs and events). Accept/Reject are human-only and are never exposed as
+MCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped
+Run Key may call \`/mcp\` regardless of the REST restrictions noted per
+endpoint below.
 
 ## WebSocket
 
@@ -491,7 +495,7 @@ not resolved yet.`;
       scope === 'full' ||
       (scope === 'read'
         ? readScopeAllowed(path, req.method)
-        : scopedKeyAllowed(path, configStore.get().agentReview));
+        : scopedKeyAllowed(path));
 
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
     if (bearer) {

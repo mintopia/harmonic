@@ -437,16 +437,6 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </SettingsSection>
 
         <SettingsSection
-          title="Agent review"
-          description="Whether agents may pass their own work through the review gate."
-        >
-          <Switch checked={local.agentReview} onChange={(agentReview) => setLocal({ ...local, agentReview })}>
-            Agents may accept or reject their own runs
-          </Switch>
-          <FieldError message={fieldErrors['agentReview']} />
-        </SettingsSection>
-
-        <SettingsSection
           title="Harnesses"
           description="The agent CLIs Harmonic drives over ACP — command, environment, and models."
         >

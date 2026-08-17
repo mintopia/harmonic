@@ -10,7 +10,7 @@ Design settled via `/grill-with-docs`. Domain: [CONTEXT.md](../../CONTEXT.md)
   and its own Tracker poll loop.
 - **Per-Workspace config:** Task defaults, Auto-Runner (`enabled` + `maxConcurrentRuns`),
   Tracker (`enabled` + `pollIntervalSeconds`), Drive (`prompt`/`mergeFate`/`autoRetry`),
-  `agentReview`.
+  Verification (`autoAccept`, per ADR-0021 — a passing verifier's auto-accept).
 - **Global config:** Harnesses, model prices, operator password, Notification
   Channels, `modelInfo`, `conversationIdleTimeoutMinutes`, **Machine Ceiling**.
 - **Concurrency:** each Workspace fills to its own cap; total never exceeds the

@@ -471,7 +471,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Accept an awaiting-review task, completing it (and merging its branch in worktree mode). Human-only by default; reachable with a run-scoped Run Key only when the agentReview config flag is enabled.',
+          'Accept an awaiting-review task, completing it (and merging its branch in worktree mode). Human-only.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -488,7 +488,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an awaiting-review task with optional feedback, failing it. Human-only by default; reachable with a run-scoped Run Key only when the agentReview config flag is enabled.',
+          'Reject an awaiting-review task with optional feedback, failing it. Human-only.',
         params: idParamsSchema,
         body: rejectInputSchema,
         response: {

@@ -47,7 +47,7 @@ describe('run-scoped key restrictions', () => {
   it('denies the operator surface: keys, config, channels', async () => {
     expect(await asAgent('GET', '/api/keys')).toBe(403);
     expect(await asAgent('POST', '/api/keys', { name: 'escalate' })).toBe(403);
-    expect(await asAgent('PATCH', '/api/config', { agentReview: true })).toBe(403);
+    expect(await asAgent('PATCH', '/api/config', { autoRunner: { enabled: true } })).toBe(403);
     expect(await asAgent('PUT', '/api/config', {})).toBe(403);
     expect(await asAgent('GET', '/api/channels')).toBe(403);
     // Force-complete is an operator override, not part of the agent surface
@@ -55,7 +55,7 @@ describe('run-scoped key restrictions', () => {
     expect(await asAgent('POST', '/api/tasks/1/complete')).toBe(403);
   });
 
-  it('keeps the review gate human unless agent-review is enabled', async () => {
+  it('keeps the review gate human-only, always (#140, ADR-0021: retired agentReview flag)', async () => {
     // A finished task to review, on its own workingDir — the beforeAll's
     // scoped-key run hangs forever on the default one, holding its Work
     // Context lease (issue #119) for the whole describe block.
@@ -69,9 +69,11 @@ describe('run-scoped key restrictions', () => {
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/reject`, { feedback: 'x' })).toBe(403);
 
+    // Even a legacy PATCH still carrying the retired flag doesn't reopen the
+    // scoped-key surface — it's migrated into verification.autoAccept, which
+    // has no bearing on the scoped-key gate.
     await server.api('PATCH', '/api/config', { agentReview: true });
-    expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(200);
-    await server.api('PATCH', '/api/config', { agentReview: false });
+    expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
   });
 
 });
@@ -114,7 +116,7 @@ describe('read-scoped key (issue #35)', () => {
     expect(await asRead('PATCH', '/api/tasks/1', { prompt: 'edit' })).toBe(403);
     expect(await asRead('GET', '/api/keys')).toBe(403);
     expect(await asRead('POST', '/api/keys', { name: 'escalate' })).toBe(403);
-    expect(await asRead('PATCH', '/api/config', { agentReview: true })).toBe(403);
+    expect(await asRead('PATCH', '/api/config', { autoRunner: { enabled: true } })).toBe(403);
     expect(await asRead('GET', '/api/channels')).toBe(403);
     expect(await asRead('GET', '/api/tasks/1/channels')).toBe(403); // per-task channels are operator config
   });
