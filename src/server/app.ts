@@ -214,6 +214,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (runId) => auth.deleteKeysForRun(runId),
     },
     autoDrive,
+    getWorkspace: (id) => {
+      if (id == null) return undefined;
+      try {
+        return workspaces.get(id);
+      } catch {
+        return undefined;
+      }
+    },
   });
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.

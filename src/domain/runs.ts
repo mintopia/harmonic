@@ -2,10 +2,19 @@ import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import type { ResolvedGuardrails } from './setting-override.js';
+import type { PriceTable } from '../execution/pricing.js';
 
 export interface RunEventInput {
   type: 'session_update' | 'permission_request' | 'lifecycle';
   payload: unknown;
+}
+
+/** The Guardrail state a Run captures at start (issue #126): the effective
+ * config and price table, frozen so a later change can't retroactively trip it. */
+export interface RunGuardrailSnapshot {
+  guardrailConfig: ResolvedGuardrails;
+  priceTable: PriceTable;
 }
 
 export interface PersistedRunEvent {
@@ -20,7 +29,7 @@ export interface PersistedRunEvent {
 export class RunStore {
   constructor(private readonly db: Db) {}
 
-  create(taskId: number): RunRow {
+  create(taskId: number, snapshot?: RunGuardrailSnapshot): RunRow {
     const attempt =
       (this.db
         .select({ n: sql<number>`coalesce(max(${runs.attempt}), 0)` })
@@ -29,7 +38,14 @@ export class RunStore {
         .get()?.n ?? 0) + 1;
     return this.db
       .insert(runs)
-      .values({ taskId, attempt, state: 'running', startedAt: Date.now() })
+      .values({
+        taskId,
+        attempt,
+        state: 'running',
+        startedAt: Date.now(),
+        guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
+        priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
+      })
       .returning()
       .get();
   }
@@ -152,5 +168,10 @@ export function serializeRun(run: RunRow): Record<string, unknown> {
   // liveUsage is the Activity view's snapshot (streamed as `run_usage`), not
   // part of the agent-facing run shape.
   const { liveUsage: _liveUsage, ...rest } = run;
-  return { ...rest, usage: run.usage ? JSON.parse(run.usage) : null };
+  return {
+    ...rest,
+    usage: run.usage ? JSON.parse(run.usage) : null,
+    guardrailConfig: run.guardrailConfig ? JSON.parse(run.guardrailConfig) : null,
+    priceTable: run.priceTable ? JSON.parse(run.priceTable) : null,
+  };
 }

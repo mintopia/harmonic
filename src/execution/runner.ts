@@ -9,11 +9,13 @@ import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { TaskRow, RunRow } from '../db/schema.js';
+import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
 import { AcpDriver } from '../acp/driver.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent } from '../domain/runs.js';
 import type { TaskService } from '../domain/tasks.js';
+import { resolveGuardrails } from '../domain/setting-override.js';
+import { resolvePrices } from './pricing.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
@@ -46,6 +48,9 @@ export interface RunnerOptions {
   autoDrive?: AutoDrive;
   /** Push/persist cadence for the live-usage tailer; defaults to ~1s/~10s. */
   tailerCadence?: TailerCadence;
+  /** Resolves a Task's Workspace row for the Guardrail snapshot (issue #126);
+   * absent → the snapshot resolves against global defaults only. */
+  getWorkspace?: (workspaceId: number | null) => Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'> | undefined;
 }
 
 interface Workspace {
@@ -122,6 +127,7 @@ export class Runner {
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
+  private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly tailer: LiveUsageTailer;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
@@ -136,6 +142,7 @@ export class Runner {
     this.worktreesDir = options.worktreesDir ?? join(tmpdir(), 'harmonic-worktrees');
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
+    this.getWorkspace = options.getWorkspace;
     this.tailer = new LiveUsageTailer(
       {
         sample: (runId) => this.sampleSnapshot(runId),
@@ -195,12 +202,16 @@ export class Runner {
     return this.beginRun(task);
   }
 
-  /** Validate the harness, create the run row, and drive it. Shared by start / launchClaimed. */
+  /** Validate the harness, snapshot Guardrails, create the run row, and drive it. Shared by start / launchClaimed. */
   private beginRun(task: TaskRow): RunRow {
     const config = this.getConfig();
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
-    const run = this.runStore.create(task.id);
+    const ws = this.getWorkspace?.(task.workspaceId) ?? { guardrailBudget: null, guardrailProgress: null };
+    const run = this.runStore.create(task.id, {
+      guardrailConfig: resolveGuardrails(ws, config),
+      priceTable: resolvePrices(config.prices),
+    });
     void this.drive(task, run, harness).catch(() => {});
     return run;
   }

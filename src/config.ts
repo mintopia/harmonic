@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { resolvePrices, isModelPriced } from './execution/pricing.js';
 
 export const HARNESS_IDS = ['claude', 'codex', 'copilot'] as const;
 export type HarnessId = (typeof HARNESS_IDS)[number];
@@ -121,6 +122,24 @@ export const verificationCriticSchema = z.object({
 });
 export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
 
+/**
+ * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound
+ * per afk Run plus optional token and cost caps. Wall-clock is never null — it
+ * always guards; tokens and cost are opt-in (null = unset). Config surface only
+ * in #126: nothing is enforced yet. The effective config is snapshotted onto a
+ * Run at start (`RunStore.create`) so a later limit change can't retroactively
+ * change whether that Run would trip.
+ */
+export const budgetGuardrailSchema = z.object({
+  /** Mandatory wall-clock bound in minutes, scoped to execution/validation/verification. */
+  wallClockMinutes: z.number().positive().default(60).meta({ example: 60 }),
+  /** Optional cumulative token cap; null = no token limit. */
+  tokens: z.number().int().positive().nullable().default(null).meta({ example: 2000000 }),
+  /** Optional cost cap in USD; null = no cost limit. Falls back to `tokens` where a model is unpriced. */
+  costUsd: z.number().positive().nullable().default(null).meta({ example: 10 }),
+});
+export type BudgetGuardrail = z.infer<typeof budgetGuardrailSchema>;
+
 export const appConfigSchema = z.object({
   /**
    * Operator-chosen display name for this instance (issue: instance rename).
@@ -239,6 +258,21 @@ export const appConfigSchema = z.object({
       critic: verificationCriticSchema.nullable().default(null),
     })
     .prefault({}),
+  /**
+   * Global-default Guardrail config (issue #108/#126, ADR-0019): the budget
+   * Guardrail (mandatory wall-clock, optional tokens/cost) and the progress
+   * (stall/loop) detector toggle, off by default until trace-validated. Resolve
+   * as a global default with a per-Workspace override (`resolveGuardrails`,
+   * domain/setting-override.ts); per-Task deferred. Config only in #126 — no
+   * Guardrail is enforced yet; the effective config + price table are snapshotted
+   * onto a Run at start so a mid-Run change never retroactively trips it.
+   */
+  guardrails: z
+    .object({
+      budget: budgetGuardrailSchema.prefault({}),
+      progress: z.boolean().default(false),
+    })
+    .prefault({}),
 }).superRefine((config, ctx) => {
   // A harness's defaultModel must be one of its models (when any are
   // listed) — the Settings UI offers a select over `models`, and a stray
@@ -262,6 +296,32 @@ export const appConfigSchema = z.object({
       path: ['chat', 'model'],
       message: `chat model must be one of the ${config.chat.harness} harness's models`,
     });
+  }
+  // A cost cap you can't measure is a lie: if a cost budget is set with no token
+  // fallback, every model a Run could pick must be priced — otherwise a Run on an
+  // unpriced model has no enforceable spend bound (ADR-0019). Reject at config time
+  // rather than accept-then-silently-ignore. A token fallback, or no cost cap, makes
+  // any model fine.
+  const budget = config.guardrails.budget;
+  if (budget.costUsd != null && budget.tokens == null) {
+    const prices = resolvePrices(config.prices);
+    const configured = new Set<string>();
+    for (const harness of Object.values(config.harnesses)) {
+      for (const m of harness.models) configured.add(m);
+      configured.add(harness.defaultModel);
+    }
+    // The agent critic (#132) is another model a Run bills against — the budget is
+    // phase-scoped over verifying too (ADR-0019) — so its model must be priced on
+    // the same footing as a harness model.
+    if (config.verification.critic) configured.add(config.verification.critic.model);
+    const unpriced = [...configured].filter((m) => !isModelPriced(m, prices));
+    if (unpriced.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['guardrails', 'budget', 'costUsd'],
+        message: `a cost cap with no token fallback requires every configured model to be priced; unpriced: ${unpriced.join(', ')}`,
+      });
+    }
   }
 });
 
@@ -358,6 +418,10 @@ export function defaultConfig(): AppConfig {
     verification: {
       command: null,
       critic: null,
+    },
+    guardrails: {
+      budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
+      progress: false,
     },
   };
 }

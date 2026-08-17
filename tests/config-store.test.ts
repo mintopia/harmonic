@@ -58,4 +58,14 @@ describe('ConfigStore', () => {
     expect(cleared.verification.command).toBeNull();
     expect(cleared.verification.critic).toBeNull(); // untouched, still its default
   });
+
+  it('boots an existing config saved before guardrails existed, filling it from defaults (issue #126)', () => {
+    // An install that predates #126: the stored config has no `guardrails` key.
+    const legacy: any = { ...defaultConfig() };
+    delete legacy.guardrails;
+    db.insert(settings).values({ key: 'config', value: JSON.stringify(legacy) }).run();
+
+    const store = new ConfigStore(db);
+    expect(store.get().guardrails).toEqual(defaultConfig().guardrails);
+  });
 });

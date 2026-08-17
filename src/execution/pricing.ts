@@ -72,6 +72,11 @@ function priceFor(model: string, prices: PriceTable): ModelPrice | undefined {
   return prices[model] ?? prices[model.replace(/-\d{8}$/, '')];
 }
 
+/** Whether a model resolves to an effective price (dated-suffix aware, like Cost). */
+export function isModelPriced(model: string, prices: PriceTable): boolean {
+  return priceFor(model, prices) !== undefined;
+}
+
 function priceUsage(usage: ModelUsage, price: ModelPrice): number {
   return (
     (usage.inputTokens * price.input +

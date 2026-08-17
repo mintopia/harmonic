@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
-import { verificationCommandSchema } from '../src/config.js';
+import { verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
 
 /**
  * Per-workspace setting overrides on the Workspace API (ADR-0012, issue #64).
@@ -39,6 +39,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.autoRunnerEnabled).toBeNull();
     expect(ws.verificationCommand).toBeNull();
     expect(ws.verificationCritic).toBeNull();
+    expect(ws.guardrailBudget).toBeNull();
+    expect(ws.guardrailProgress).toBeNull();
   });
 
   it('sets explicit overrides', () => {
@@ -136,5 +138,35 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const renamed = workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
     expect(JSON.parse(renamed.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] }); // untouched
+  });
+
+  it('sets explicit guardrail overrides (issue #126)', () => {
+    const ws = workspaces.list()[0]!;
+    const updated = workspaces.update(ws.id, {
+      guardrailBudget: budgetGuardrailSchema.parse({ wallClockMinutes: 120 }),
+      guardrailProgress: true,
+    });
+    // The stored JSON is a superset of what was sent (schema defaults filled in) — toMatchObject, not toEqual.
+    expect(JSON.parse(updated.guardrailBudget!)).toMatchObject({ wallClockMinutes: 120 });
+    expect(updated.guardrailProgress).toBe(true);
+  });
+
+  it('clears guardrail overrides back to inherit with null (issue #126)', () => {
+    const ws = workspaces.list()[0]!;
+    workspaces.update(ws.id, {
+      guardrailBudget: budgetGuardrailSchema.parse({ wallClockMinutes: 120 }),
+      guardrailProgress: true,
+    });
+    const cleared = workspaces.update(ws.id, { guardrailBudget: null, guardrailProgress: null });
+    expect(cleared.guardrailBudget).toBeNull();
+    expect(cleared.guardrailProgress).toBeNull();
+  });
+
+  it('keeps a false guardrailProgress override distinct from inherit (null) (issue #126)', () => {
+    const ws = workspaces.list()[0]!;
+    const off = workspaces.update(ws.id, { guardrailProgress: false });
+    expect(off.guardrailProgress).toBe(false); // an explicit "off", not inherit
+    const untouched = workspaces.update(ws.id, { name: ws.name });
+    expect(untouched.guardrailProgress).toBe(false);
   });
 });

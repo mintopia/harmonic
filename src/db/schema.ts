@@ -74,6 +74,13 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace critic-verifier override (issue #132): JSON of
    * `verificationCriticSchema`, or null to inherit `config.verification.critic`. */
   verificationCritic: text('verification_critic'),
+  /** Per-Workspace budget-Guardrail override (issue #126, ADR-0019): JSON of
+   * `budgetGuardrailSchema`, or null to inherit `config.guardrails.budget`.
+   * Resolved by `resolveGuardrails` (setting-override.ts). */
+  guardrailBudget: text('guardrail_budget'),
+  /** Per-Workspace progress-detector toggle override (issue #126); null inherits
+   * `config.guardrails.progress`. */
+  guardrailProgress: integer('guardrail_progress', { mode: 'boolean' }),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
@@ -187,6 +194,13 @@ export const runs = sqliteTable('runs', {
    * current-activity line + Process Tree), overwritten on a coarse ~10s
    * cadence and on finish (ADR 0010). Cost is not stored — derived on read. */
   liveUsage: text('live_usage'),
+  /** JSON: the effective Guardrail config (`ResolvedGuardrails`) snapshotted at
+   * Run start (issue #126, ADR-0019); null for pre-feature Runs. A later config
+   * change never alters this — the Run trips against what it captured. */
+  guardrailConfig: text('guardrail_config'),
+  /** JSON: the effective price table (`PriceTable`) snapshotted at Run start, so
+   * a mid-Run price edit can't retroactively change a cost trip (issue #126). */
+  priceTable: text('price_table'),
   /** Review decision on this run: 'accepted' | 'rejected' | null. */
   review: text('review'),
   reviewFeedback: text('review_feedback'),

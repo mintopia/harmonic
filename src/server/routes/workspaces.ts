@@ -5,7 +5,7 @@ import type { App } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
-import { verificationCommandSchema, verificationCriticSchema } from '../../config.js';
+import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 
@@ -50,6 +50,8 @@ const workspaceSchema = z
     // shape it PATCHes. null ⇒ inherit `config.verification.{command,critic}`.
     verificationCommand: verificationCommandSchema.nullable().meta({ example: null }),
     verificationCritic: verificationCriticSchema.nullable().meta({ example: null }),
+    guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
+    guardrailProgress: z.boolean().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -76,6 +78,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     ...ws,
     verificationCommand: ws.verificationCommand ? JSON.parse(ws.verificationCommand) : null,
     verificationCritic: ws.verificationCritic ? JSON.parse(ws.verificationCritic) : null,
+    guardrailBudget: ws.guardrailBudget ? JSON.parse(ws.guardrailBudget) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
 

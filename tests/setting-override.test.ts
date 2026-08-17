@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolve, resolveCap, resolveVerifiers } from '../src/domain/setting-override.js';
+import { resolve, resolveCap, resolveVerifiers, resolveGuardrails } from '../src/domain/setting-override.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   describe('resolve', () => {
@@ -77,6 +77,37 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       );
       expect(resolved.critic).toEqual(override);
       expect(resolved.command).toEqual(globalCommand); // command still inherits its own global
+    });
+  });
+
+  describe('resolveGuardrails (issue #126, ADR-0019)', () => {
+    const config = {
+      guardrails: {
+        budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
+        progress: true,
+      },
+    };
+
+    it('inherits the global budget + progress when both Workspace columns are null', () => {
+      const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: null }, config as any);
+      expect(resolved.budget).toEqual(config.guardrails.budget);
+      expect(resolved.progress).toBe(true);
+    });
+
+    it('uses a Workspace budget override (stored JSON) over the global default, progress still inherits', () => {
+      const override = { wallClockMinutes: 30, tokens: 500000, costUsd: 5 };
+      const resolved = resolveGuardrails(
+        { guardrailBudget: JSON.stringify(override), guardrailProgress: null },
+        config as any,
+      );
+      expect(resolved.budget).toEqual(override);
+      expect(resolved.progress).toBe(true); // still inherits its own global
+    });
+
+    it('uses a Workspace progress override, keeping an explicit false distinct from inherit; budget still inherits', () => {
+      const resolved = resolveGuardrails({ guardrailBudget: null, guardrailProgress: false }, config as any);
+      expect(resolved.progress).toBe(false); // an explicit "off", not inherit
+      expect(resolved.budget).toEqual(config.guardrails.budget); // budget still inherits its own global
     });
   });
 });

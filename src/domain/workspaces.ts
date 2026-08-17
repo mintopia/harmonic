@@ -15,7 +15,7 @@ import {
   type WorkspaceRow,
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
-import { verificationCommandSchema, verificationCriticSchema } from '../config.js';
+import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
@@ -49,6 +49,10 @@ export const workspaceOverridesSchema = z.object({
   verificationCommand: verificationCommandSchema.nullable().optional(),
   /** Critic-verifier override (issue #132); null inherits `config.verification.critic`. */
   verificationCritic: verificationCriticSchema.nullable().optional(),
+  /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */
+  guardrailBudget: budgetGuardrailSchema.nullable().optional(),
+  /** Progress-detector toggle override (issue #126); null inherits `config.guardrails.progress`. */
+  guardrailProgress: z.boolean().nullable().optional(),
 });
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
@@ -146,6 +150,8 @@ export class WorkspaceService {
         autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
         verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
         verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
+        guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
+        guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
         updatedAt: Date.now(),
       })
       .where(eq(workspaces.id, id))

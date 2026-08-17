@@ -1,5 +1,5 @@
 import type { WorkspaceRow } from '../db/schema.js';
-import type { AppConfig, VerificationCommand, VerificationCritic } from '../config.js';
+import type { AppConfig, VerificationCommand, VerificationCritic, BudgetGuardrail } from '../config.js';
 
 /**
  * Setting Overrides (ADR-0012, issue #59). An overridable setting resolves as
@@ -57,4 +57,33 @@ export function resolveVerifiers(
 /** Parse a stored verifier override column; an unset/empty column means inherit (null). */
 function parseVerifier<T>(stored: string | null | undefined): T | null {
   return stored ? (JSON.parse(stored) as T) : null;
+}
+
+/** A Workspace's effective Guardrail config: the budget bounds and progress toggle. */
+export type ResolvedGuardrails = {
+  budget: BudgetGuardrail;
+  progress: boolean;
+};
+
+/**
+ * Resolve a Workspace's effective Guardrail config (issue #126, ADR-0019). Each
+ * member is its own key: a Workspace's stored budget JSON or progress toggle
+ * overrides the global default, `null` (or an unset column) inherits it — the
+ * same `workspace ?? global` rule as every scalar override. This only resolves
+ * config; nothing is enforced (#126). The Runner snapshots the result onto the
+ * Run at start so a later config change can't retroactively change a trip.
+ */
+export function resolveGuardrails(
+  ws: Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'>,
+  config: Pick<AppConfig, 'guardrails'>,
+): ResolvedGuardrails {
+  return {
+    budget: resolve(parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
+    progress: resolve(ws.guardrailProgress, config.guardrails.progress),
+  };
+}
+
+/** Parse a stored budget override column; an unset/empty column means inherit (null). */
+function parseGuardrailBudget(stored: string | null | undefined): BudgetGuardrail | null {
+  return stored ? (JSON.parse(stored) as BudgetGuardrail) : null;
 }
