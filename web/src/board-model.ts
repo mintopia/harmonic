@@ -21,11 +21,21 @@ export interface BoardColumn {
   tasks: Task[];
 }
 
-// Cards stack in the order the scheduler will process them (issue: board
-// ordering): highest priority first, then lowest id first as a stable
-// tiebreak. Mirrors the server's priority rank in src/domain/tasks.ts.
 const PRIORITY_RANK: Record<Task['priority'], number> = { high: 0, normal: 1, low: 2 };
 
+// Queue columns (draft/blocked/ready) stack in the order the scheduler will
+// reach them (issue: board ordering): highest priority first, then oldest
+// created first so the longest-waiting task of a priority sits on top; id
+// ascending is the final stable tiebreak. Mirrors the server's
+// priority-then-createdAt sort in src/domain/tasks.ts.
+const QUEUE_STATES: readonly TaskState[] = ['draft', 'blocked', 'ready'];
+
+function byQueueOrder(a: Task, b: Task): number {
+  return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.createdAt - b.createdAt || a.id - b.id;
+}
+
+// Running / awaiting-review are in-flight, not a waiting queue: highest priority
+// first, then lowest id as a stable tiebreak.
 function byProcessingOrder(a: Task, b: Task): number {
   return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id - b.id;
 }
@@ -40,10 +50,11 @@ function byRecencyDesc(a: Task, b: Task): number {
 export function boardColumns(tasks: Task[]): BoardColumn[] {
   return TASK_STATES.map((state) => {
     const terminal = (TERMINAL_STATES as readonly TaskState[]).includes(state);
+    const compare = terminal ? byRecencyDesc : QUEUE_STATES.includes(state) ? byQueueOrder : byProcessingOrder;
     return {
       state,
       terminal,
-      tasks: tasks.filter((t) => t.state === state).sort(terminal ? byRecencyDesc : byProcessingOrder),
+      tasks: tasks.filter((t) => t.state === state).sort(compare),
     };
   });
 }

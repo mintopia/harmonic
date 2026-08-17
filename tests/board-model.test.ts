@@ -80,8 +80,8 @@ describe('board column model', () => {
     expect(completed.tasks.map((t) => t.id)).toEqual([3, 2, 4, 1]);
   });
 
-  it('orders each column by the scheduler processing order: priority then id ascending', () => {
-    // Insertion order is deliberately scrambled and createdAt is irrelevant to the sort.
+  it('orders each column by priority, then id ascending when createdAt ties', () => {
+    // Insertion order is deliberately scrambled; equal createdAt falls through to id.
     const columns = boardColumns([
       task(5, 'ready', 100, 'low'),
       task(2, 'ready', 100, 'high'),
@@ -92,6 +92,32 @@ describe('board column model', () => {
     const ready = columns.find((c) => c.state === 'ready')!;
     // high (id asc) → normal (id asc) → low
     expect(ready.tasks.map((t) => t.id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('breaks priority ties by oldest-created first in the queue columns (ready/blocked/draft)', () => {
+    for (const state of ['ready', 'blocked', 'draft'] as const) {
+      const columns = boardColumns([
+        task(1, state, 300, 'high'), // newer high
+        task(2, state, 100, 'high'), // oldest high → top
+        task(3, state, 200, 'normal'),
+        task(4, state, 100, 'normal'), // oldest normal
+      ]);
+      const column = columns.find((c) => c.state === state)!;
+      // high (oldest first) → normal (oldest first)
+      expect(column.tasks.map((t) => t.id)).toEqual([2, 1, 4, 3]);
+    }
+  });
+
+  it('keeps running / awaiting-review on id order, ignoring createdAt (in-flight, not a queue)', () => {
+    for (const state of ['running', 'awaiting-review'] as const) {
+      const columns = boardColumns([
+        task(1, state, 300, 'high'),
+        task(2, state, 100, 'high'),
+      ]);
+      const column = columns.find((c) => c.state === state)!;
+      // Equal priority → lowest id first regardless of createdAt.
+      expect(column.tasks.map((t) => t.id)).toEqual([1, 2]);
+    }
   });
 });
 
