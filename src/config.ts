@@ -125,10 +125,10 @@ export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
 /**
  * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound
  * per afk Run plus optional token and cost caps. Wall-clock is never null — it
- * always guards; tokens and cost are opt-in (null = unset). Config surface only
- * in #126: nothing is enforced yet. The effective config is snapshotted onto a
- * Run at start (`RunStore.create`) so a later limit change can't retroactively
- * change whether that Run would trip.
+ * always guards; tokens and cost are opt-in (null = unset). All three are
+ * enforced live off the Usage tailer (wall-clock #127, token/cost #128). The
+ * effective config is snapshotted onto a Run at start (`RunStore.create`) so a
+ * later limit change can't retroactively change whether that Run would trip.
  */
 export const budgetGuardrailSchema = z.object({
   /** Mandatory wall-clock bound in minutes, scoped to execution/validation/verification. */
@@ -274,9 +274,10 @@ export const appConfigSchema = z.object({
    * Guardrail (mandatory wall-clock, optional tokens/cost) and the progress
    * (stall/loop) detector toggle, off by default until trace-validated. Resolve
    * as a global default with a per-Workspace override (`resolveGuardrails`,
-   * domain/setting-override.ts); per-Task deferred. Config only in #126 — no
-   * Guardrail is enforced yet; the effective config + price table are snapshotted
-   * onto a Run at start so a mid-Run change never retroactively trips it.
+   * domain/setting-override.ts); per-Task deferred. Enforced live: wall-clock
+   * (#127), progress + tool-timeout (#131), and token/cost spend (#128). The
+   * effective config + price table are snapshotted onto a Run at start so a
+   * mid-Run change never retroactively trips it.
    *
    * `toolTimeoutMinutes` (issue #131) is a hard backstop paired with the
    * progress detector, not an override of it: the stall detector suspends

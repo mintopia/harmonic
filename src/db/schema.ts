@@ -684,9 +684,12 @@ export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
  * `'tool-timeout'` (issue #131) now have emitters too — the stall/loop
  * detector (`domain/guardrail-progress.ts`, `domain/stall-detector.ts`) and
  * its hard tool-timeout backstop (`domain/guardrail-tool-timeout.ts`)
- * respectively. `'tokens'` and `'cost'` still only hold their slot for the
- * sibling budget dimensions already named in `budgetGuardrailSchema`
- * (setting-override.ts) but not yet wired to an emitter.
+ * respectively. `'tokens'` and `'cost'` are the sibling budget dimensions
+ * (`budgetGuardrailSchema`), enforced live off the Usage tailer by the
+ * Runner's spend-guard poll (issue #128; `domain/guardrail-budget.ts`
+ * `spendTrip`). Cost `limit_value`/`observed_value` are stored in micro-USD
+ * (USD × 1e6) to keep the integer columns lossless; the human USD floats ride
+ * in `payload`.
  */
 export const GUARDRAIL_DIMENSIONS = ['wall-clock', 'tokens', 'cost', 'progress', 'tool-timeout'] as const;
 export type GuardrailDimension = (typeof GUARDRAIL_DIMENSIONS)[number];

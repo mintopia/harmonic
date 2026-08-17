@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, writeCopilotUsageDb, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
+import { totalTokensOf } from '../src/execution/usage.js';
+import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
 
 describe('usage collection retry (log-flush race)', () => {
   const input = (logRoot: string, cwd: string) => ({
@@ -390,5 +392,42 @@ describe('usage collection and statistics', () => {
     expect(empty.body.runCount).toBe(0);
     expect(empty.body.totals).toBeNull();
     expect(empty.body.series).toEqual([]);
+  });
+});
+
+// The token count the live spend Guardrail (#128) reads each poll — pinned at
+// the usage seam so its telemetry-null-vs-zero distinction can't regress.
+describe('totalTokensOf (issue #128 spend-guard token reading)', () => {
+  const mu = (n: number): ModelUsage => ({
+    inputTokens: n,
+    outputTokens: n,
+    cacheReadTokens: n,
+    cacheWriteTokens: n,
+  });
+  const usage = (over: Partial<RunUsage>): RunUsage => ({
+    models: {},
+    totals: null,
+    toolCalls: {},
+    source: 'session-log',
+    ...over,
+  });
+
+  it('prefers the reported aggregate totalTokens when present', () => {
+    const u = usage({
+      totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 4242 },
+    });
+    expect(totalTokensOf(u)).toBe(4242);
+  });
+
+  it('sums the four token classes across the per-model split when no aggregate is reported', () => {
+    // two models × (10+10+10+10) = 80
+    const u = usage({ models: { a: mu(10), b: mu(10) } });
+    expect(totalTokensOf(u)).toBe(80);
+  });
+
+  it('is null when there is no telemetry at all — distinct from a real zero reading', () => {
+    expect(totalTokensOf(usage({}))).toBeNull();
+    // A genuine all-zero model IS measurable (0), never null.
+    expect(totalTokensOf(usage({ models: { a: mu(0) } }))).toBe(0);
   });
 });

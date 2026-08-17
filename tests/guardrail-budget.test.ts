@@ -3,6 +3,8 @@ import {
   EXECUTION_BUDGET_PHASES,
   countsTowardExecutionBudget,
   formatBudgetReason,
+  formatUnmeasurableReason,
+  spendTrip,
   wallClockBudgetMs,
   wallClockTrip,
 } from '../src/domain/guardrail-budget.js';
@@ -118,5 +120,239 @@ describe('formatBudgetReason (issue #127, ADR-0019)', () => {
 
   it('renders a sub-second duration in raw milliseconds', () => {
     expect(formatBudgetReason({ dimension: 'wall-clock', limitMs: 500 })).toBe('budget: 500ms');
+  });
+
+  it('renders a token budget in millions', () => {
+    expect(formatBudgetReason({ dimension: 'tokens', limitTokens: 2_000_000 })).toBe('budget: 2M tokens');
+  });
+
+  it('renders a small token budget as a raw count', () => {
+    expect(formatBudgetReason({ dimension: 'tokens', limitTokens: 500 })).toBe('budget: 500 tokens');
+  });
+
+  it('renders a cost budget as whole dollars', () => {
+    expect(formatBudgetReason({ dimension: 'cost', limitUsd: 10 })).toBe('budget: $10');
+  });
+
+  it('renders a cost budget with cents', () => {
+    expect(formatBudgetReason({ dimension: 'cost', limitUsd: 10.5 })).toBe('budget: $10.5');
+  });
+});
+
+describe('formatUnmeasurableReason (issue #128)', () => {
+  it('renders the tokens dimension', () => {
+    expect(formatUnmeasurableReason('tokens')).toBe('budget: tokens unmeasurable');
+  });
+
+  it('renders the cost dimension', () => {
+    expect(formatUnmeasurableReason('cost')).toBe('budget: cost unmeasurable');
+  });
+});
+
+describe('spendTrip (issue #128, the token/cost spend decision)', () => {
+  const executionPhases = ['executing', 'validating', 'verifying'] as const;
+  const nonExecutionPhases = ['review', 'landing', 'terminal'] as const;
+
+  describe('token cap only', () => {
+    const budget = { tokens: 1_000, costUsd: null };
+
+    it('trips exactly at the boundary (observedTokens === limit)', () => {
+      for (const phase of executionPhases) {
+        expect(
+          spendTrip({ phase, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
+        ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_000 } });
+      }
+    });
+
+    it('trips over the boundary', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: 1_500, observedUsd: null, costIncomplete: false }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
+    });
+
+    it('does not trip below the boundary', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: 999, observedUsd: null, costIncomplete: false }),
+      ).toEqual({ kind: 'ok' });
+    });
+
+    it('is unmeasurable when observedTokens is null', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
+      ).toEqual({ kind: 'unmeasurable', dimension: 'tokens' });
+    });
+
+    it('null phase (pre-phase) is governed like an execution phase', () => {
+      expect(
+        spendTrip({ phase: null, budget, observedTokens: 1_000, observedUsd: null, costIncomplete: false }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_000 } });
+    });
+  });
+
+  describe('cost cap only, fully priced', () => {
+    const budget = { tokens: null, costUsd: 10 };
+
+    it('trips when the priced spend is over the cap', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 15, costIncomplete: false }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } });
+    });
+
+    it('trips exactly at the boundary (observedUsd === limit)', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 10, costIncomplete: false }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 10 } });
+    });
+
+    it('does not trip when the priced spend is under the cap', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 5, costIncomplete: false }),
+      ).toEqual({ kind: 'ok' });
+    });
+  });
+
+  describe('cost cap, priced floor over cap but costIncomplete', () => {
+    const budget = { tokens: null, costUsd: 10 };
+
+    it('still trips on cost — a floor over the cap is trustworthy regardless of incompleteness', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: 500, observedUsd: 15, costIncomplete: true }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'cost', limitUsd: 10, observedUsd: 15 } });
+    });
+  });
+
+  describe('cost cap unpriced/incomplete under cap, with a token fallback configured', () => {
+    const budgetWithTokens = { tokens: 1_000, costUsd: 10 };
+
+    it('observedUsd null falls back to the token budget and trips over', () => {
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget: budgetWithTokens,
+          observedTokens: 1_500,
+          observedUsd: null,
+          costIncomplete: false,
+        }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
+    });
+
+    it('observedUsd null falls back to the token budget and stays ok when under', () => {
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget: budgetWithTokens,
+          observedTokens: 500,
+          observedUsd: null,
+          costIncomplete: false,
+        }),
+      ).toEqual({ kind: 'ok' });
+    });
+
+    it('costIncomplete with a floor under the cap falls back to the token budget and trips over', () => {
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget: budgetWithTokens,
+          observedTokens: 1_500,
+          observedUsd: 5,
+          costIncomplete: true,
+        }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
+    });
+
+    it('costIncomplete with a floor under the cap falls back to the token budget and stays ok when under', () => {
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget: budgetWithTokens,
+          observedTokens: 500,
+          observedUsd: 5,
+          costIncomplete: true,
+        }),
+      ).toEqual({ kind: 'ok' });
+    });
+
+    it('falls back to the token budget and is unmeasurable when observedTokens is also null', () => {
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget: budgetWithTokens,
+          observedTokens: null,
+          observedUsd: null,
+          costIncomplete: false,
+        }),
+      ).toEqual({ kind: 'unmeasurable', dimension: 'tokens' });
+    });
+  });
+
+  describe('cost cap unpriced, with NO token fallback configured', () => {
+    const budget = { tokens: null, costUsd: 10 };
+
+    it('is unmeasurable on cost when observedUsd is null', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: null, costIncomplete: false }),
+      ).toEqual({ kind: 'unmeasurable', dimension: 'cost' });
+    });
+
+    it('is unmeasurable on cost when costIncomplete is true, even with a floor under the cap', () => {
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: null, observedUsd: 2, costIncomplete: true }),
+      ).toEqual({ kind: 'unmeasurable', dimension: 'cost' });
+    });
+  });
+
+  describe('both caps set: cost fully priced under cap, tokens over cap', () => {
+    it('falls through to the independent token cap and trips', () => {
+      const budget = { tokens: 1_000, costUsd: 10 };
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget,
+          observedTokens: 1_500,
+          observedUsd: 5,
+          costIncomplete: false,
+        }),
+      ).toEqual({ kind: 'trip', trip: { dimension: 'tokens', limitTokens: 1_000, observedTokens: 1_500 } });
+    });
+
+    it('falls through to the independent token cap and stays ok when both are under', () => {
+      const budget = { tokens: 1_000, costUsd: 10 };
+      expect(
+        spendTrip({
+          phase: 'executing',
+          budget,
+          observedTokens: 500,
+          observedUsd: 5,
+          costIncomplete: false,
+        }),
+      ).toEqual({ kind: 'ok' });
+    });
+  });
+
+  describe('non-execution phases never trip, no matter how far over budget', () => {
+    const budget = { tokens: 1_000, costUsd: 10 };
+
+    for (const phase of nonExecutionPhases) {
+      it(`${phase} -> ok even with everything massively over cap`, () => {
+        expect(
+          spendTrip({
+            phase,
+            budget,
+            observedTokens: 1_000_000,
+            observedUsd: 1_000,
+            costIncomplete: false,
+          }),
+        ).toEqual({ kind: 'ok' });
+      });
+    }
+  });
+
+  describe('no caps configured', () => {
+    it('is always ok regardless of observed usage', () => {
+      const budget = { tokens: null, costUsd: null };
+      expect(
+        spendTrip({ phase: 'executing', budget, observedTokens: 1_000_000, observedUsd: 1_000, costIncomplete: true }),
+      ).toEqual({ kind: 'ok' });
+    });
   });
 });

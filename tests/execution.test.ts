@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { guardrailEvents } from '../src/db/schema.js';
+import type { DeepPartial, AppConfig } from '../src/config.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
@@ -504,6 +505,210 @@ describe('wall-clock guardrail (issue #127)', () => {
       expect(event).toMatchObject({ dimension: 'wall-clock', configSource: 'default' });
       expect(['executing', 'validating', 'verifying']).toContain(event.phase);
       expect(event.observedValue).toBeGreaterThanOrEqual(event.limitValue);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe('token/cost budget guardrail (issue #128)', () => {
+  /**
+   * Boot a server whose stub harness "logs" the given per-model token usage
+   * (`serverWithLoggedUsage`'s recipe, tests/cost.test.ts) under a Run
+   * configured with a token/cost budget and a fast spend-guardrail poll —
+   * the Runner-seam integration harness for the live spend-guard poll.
+   */
+  const serverWithSpendGuardrail = async (opts: {
+    workDir: string;
+    models: Record<string, number>; // model -> input_tokens
+    guardrails: { budget: { wallClockMinutes?: number; tokens?: number | null; costUsd?: number | null } };
+    prices?: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>;
+    pollMs?: number;
+    graceMs?: number;
+  }): Promise<TestServer> => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-spend-logs-'));
+    const overrides = stubHarness() as DeepPartial<AppConfig> & {
+      harnesses: { claude: Record<string, unknown> };
+      guardrails?: unknown;
+      prices?: unknown;
+    };
+    overrides.harnesses.claude.sessionLogDir = logRoot;
+    overrides.harnesses.claude.env = { STUB_SESSION_ID: 'fixed-session' };
+    overrides.guardrails = { budget: { wallClockMinutes: 60, ...opts.guardrails.budget } };
+    if (opts.prices) overrides.prices = opts.prices;
+
+    const slug = opts.workDir.replace(/[^a-zA-Z0-9]/g, '-');
+    mkdirSync(join(logRoot, slug), { recursive: true });
+    const lines = Object.entries(opts.models).map(([model, inputTokens], i) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: `msg-${model}-${i}`,
+          model,
+          usage: { input_tokens: inputTokens, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        },
+      }),
+    );
+    writeFileSync(join(logRoot, slug, 'fixed-session.jsonl'), lines.join('\n'));
+
+    return startServer(overrides, {
+      runnerTuning: { spendGuardrail: { pollMs: opts.pollMs ?? 50, graceMs: opts.graceMs ?? 300 } },
+    });
+  };
+
+  /** Run a hanging afk-less scenario to Escalation and return the settled Task/Run. */
+  const runToEscalation = async (server: TestServer, workDir: string) => {
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: scenario({ exit: 'hang' }),
+      workingDir: workDir,
+    });
+    expect(created.status).toBe(201);
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    expect(started.status).toBe(201);
+    const taskId = created.body.id;
+    const runId = started.body.id;
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.escalated ? body : undefined;
+    });
+    expect(task.escalated).toBe(true);
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    return { taskId, runId, task, run };
+  };
+
+  it('trips an over-cap token budget to Escalation, with dimension "tokens" on the guardrail_events row', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-spend-work-'));
+    const server = await serverWithSpendGuardrail({
+      workDir,
+      models: { 'stub-model': 10_000 }, // well over the 1,000-token cap below
+      guardrails: { budget: { tokens: 1_000 } },
+    });
+    try {
+      const { runId, run } = await runToEscalation(server, workDir);
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/^budget:/);
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
+      expect(trip).toBeTruthy();
+      expect(trip.payload.dimension).toBe('tokens');
+
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ dimension: 'tokens', configSource: 'default' });
+      expect(rows[0]!.observedValue).toBeGreaterThanOrEqual(rows[0]!.limitValue);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('trips an over-cap cost budget (priced model) to Escalation, with dimension "cost" on the guardrail_events row', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-spend-work-'));
+    // $1/Mtok input-only price: 2,000,000 input tokens -> $2 observed, over a $1 cap.
+    const server = await serverWithSpendGuardrail({
+      workDir,
+      models: { 'stub-model': 2_000_000 },
+      guardrails: { budget: { costUsd: 1 } },
+      // A cost cap with no token fallback requires every harness-configured
+      // model to be priced (config validation, ADR-0019) — including the
+      // default config's other harnesses, whose only unpriced entry is
+      // copilot's 'auto' router. Price it too so the config accepts a pure
+      // cost cap; it's never actually used by this test's stub Run.
+      prices: {
+        'stub-model': { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        auto: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    });
+    try {
+      const { runId, run } = await runToEscalation(server, workDir);
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/^budget:/);
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
+      expect(trip).toBeTruthy();
+      expect(trip.payload.dimension).toBe('cost');
+
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ dimension: 'cost', configSource: 'default' });
+      // Stored in micro-dollars (integer columns): $2 observed >= $1 limit.
+      expect(rows[0]!.observedValue).toBeGreaterThanOrEqual(rows[0]!.limitValue);
+      expect(rows[0]!.limitValue).toBe(1_000_000);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('falls back to enforcing the token cap when the cost cap is on an unpriced model — not a silent no-op', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-spend-work-'));
+    // 'stub-model' is left unpriced (no `prices` override): the cost cap can
+    // never be measured for it, so `spendTrip` falls back to the token cap.
+    const server = await serverWithSpendGuardrail({
+      workDir,
+      models: { 'stub-model': 10_000 }, // well over the 1,000-token fallback cap
+      guardrails: { budget: { costUsd: 5, tokens: 1_000 } },
+    });
+    try {
+      const { runId, run } = await runToEscalation(server, workDir);
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/^budget:/);
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
+      expect(trip).toBeTruthy();
+      expect(trip.payload.dimension).toBe('tokens');
+
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ dimension: 'tokens', configSource: 'default' });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('Escalates a configured spend cap that stays unmeasurable past the grace window', async () => {
+    // No session log is ever written for this Run's session id, so the live
+    // snapshot never yields token telemetry — the configured token cap can
+    // never be measured, and the grace window (300ms) elapses while the
+    // harness hangs, so the guard Escalates rather than silently no-op'ing.
+    const server = await startServer(
+      { ...stubHarness(), guardrails: { budget: { wallClockMinutes: 60, tokens: 1_000 } } },
+      { runnerTuning: { spendGuardrail: { pollMs: 50, graceMs: 300 } } },
+    );
+    try {
+      const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
+      expect(created.status).toBe(201);
+      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+      expect(started.status).toBe(201);
+      const taskId = created.body.id;
+      const runId = started.body.id;
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.escalated ? body : undefined;
+      });
+      expect(task.escalated).toBe(true);
+
+      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/unmeasurable/);
+
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
+      expect(trip).toBeTruthy();
+      expect(trip.payload.dimension).toBe('tokens');
+
+      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.dimension).toBe('tokens');
+      expect(JSON.parse(rows[0]!.payload)).toMatchObject({ unmeasurable: true });
     } finally {
       await server.close();
     }

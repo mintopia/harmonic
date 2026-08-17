@@ -110,13 +110,19 @@ export interface TestServer {
 
 export async function startServer(
   configOverrides?: DeepPartial<AppConfig>,
-  opts: { dataDir?: string; password?: string } = {},
+  opts: {
+    dataDir?: string;
+    password?: string;
+    /** Test-only Runner cadence overrides (issue #128), forwarded to `buildApp`. */
+    runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
+  } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
   const app = await buildApp({
     dataDir,
     configOverrides,
     password: opts.password ?? TEST_PASSWORD,
+    runnerTuning: opts.runnerTuning,
   });
   // A test server must never operate on the developer's real checkout: the
   // Default Workspace seeds its workingDir from process.cwd(), and direct-mode

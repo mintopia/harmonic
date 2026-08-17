@@ -64,6 +64,8 @@ export interface AppOptions {
   configOverrides?: DeepPartial<AppConfig> | undefined;
   /** Set/update the operator password at boot; an empty string clears it (ungated). Undefined leaves it untouched. */
   password?: string | undefined;
+  /** Test-only Runner cadence overrides (issue #128); absent uses production defaults. */
+  runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -276,6 +278,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
     worktreesDir: join(opts.dataDir, 'worktrees'),
+    spendGuardrail: opts.runnerTuning?.spendGuardrail,
     keys: {
       mint: (runId) => auth.createKey(`run-${runId}`, { scope: 'run', runId }).token,
       revoke: (runId) => auth.deleteKeysForRun(runId),

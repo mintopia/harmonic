@@ -249,6 +249,23 @@ function sumModels(models: Record<string, ModelUsage>): RunUsage['totals'] {
 }
 
 /**
+ * The cumulative token count for a run's Usage, the way a live spend guard
+ * reads it (issue #128): the reported aggregate `totals.totalTokens` when a
+ * source provided one, else the sum of the four token classes across the
+ * per-model split, else `null` — no telemetry at all, which the spend
+ * Guardrail treats as unmeasurable rather than as zero.
+ */
+export function totalTokensOf(usage: RunUsage): number | null {
+  if (typeof usage.totals?.totalTokens === 'number') return usage.totals.totalTokens;
+  const models = Object.values(usage.models);
+  if (models.length === 0) return null;
+  return models.reduce(
+    (sum, mu) => sum + mu.inputTokens + mu.outputTokens + mu.cacheReadTokens + mu.cacheWriteTokens,
+    0,
+  );
+}
+
+/**
  * Run-end collection races the harness's final session-log flush: the
  * log file exists from session start, but the last assistant usage
  * lines can land milliseconds after the prompt result. When the file

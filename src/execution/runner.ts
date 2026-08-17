@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Git } from './git.js';
 import { snapshotCandidate } from './candidate.js';
 import { adapterFor } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, type RunUsage, type RunUsageSnapshot } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, totalTokensOf, type RunUsage, type RunUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -28,7 +28,10 @@ import {
   wallClockBudgetMs,
   wallClockTrip,
   formatBudgetReason,
+  formatUnmeasurableReason,
   countsTowardExecutionBudget,
+  spendTrip,
+  toMicroUsd,
 } from '../domain/guardrail-budget.js';
 import { detectStall } from '../domain/stall-detector.js';
 import { toProgressEvents, formatProgressReason } from '../domain/guardrail-progress.js';
@@ -40,7 +43,7 @@ import {
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import { resolvePrices } from './pricing.js';
+import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import type { Db } from '../db/index.js';
@@ -94,6 +97,8 @@ export interface RunnerOptions {
   autoDrive?: AutoDrive;
   /** Push/persist cadence for the live-usage tailer; defaults to ~1s/~10s. */
   tailerCadence?: TailerCadence;
+  /** Spend-Guardrail poll + unmeasurable-grace cadence (issue #128); defaults to ~1s poll / 60s grace. */
+  spendGuardrail?: { pollMs?: number; graceMs?: number } | undefined;
   /** Resolves a Task's Workspace row for the Guardrail snapshot (issue #126);
    * absent → the snapshot resolves against global defaults only. */
   getWorkspace?: (
@@ -258,6 +263,13 @@ export class Runner {
    * so the winning disposition is decided by precedence, once. */
   private readonly settleCoordinator: RunSettleCoordinator;
   private readonly tailer: LiveUsageTailer;
+  /** Spend-Guardrail (issue #128) poll cadence in ms; how often the live token/
+   * cost usage snapshot is checked against a Run's frozen budget. */
+  private readonly spendPollMs: number;
+  /** Spend-Guardrail (issue #128) grace window in ms: how long a configured
+   * spend cap may go unmeasurable before it Escalates rather than silently
+   * degrading to wall-clock-only enforcement. */
+  private readonly spendGraceMs: number;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -275,6 +287,8 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.autoAcceptLand = options.autoAcceptLand;
+    this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
+    this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.runFacts = new RunFactStore(this.db);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     this.guardrailEvents = new GuardrailEventStore(this.db);
@@ -1145,6 +1159,112 @@ export class Runner {
       guardrailTimer.unref?.();
     };
 
+    // Token/cost budget Guardrail poll (issue #128, ADR-0019, reliability-design
+    // Unit A), extending the wall-clock watchdog's two other `BudgetGuardrail`
+    // dimensions. Unlike wall-clock (a single deadline known up front), spend
+    // accrues continuously and can only be read from the live-usage snapshot, so
+    // this is a poll (like `armToolTimeout`'s hard-tool-timeout watchdog) rather
+    // than a one-shot timer. Armed only when a spend cap is actually configured
+    // (a Run with neither `tokens` nor `costUsd` set never even starts the
+    // interval — wall-clock alone still guards it). Records the same
+    // `guardrail_events` row + `guardrail-trip` run_fact + coordinator-settle
+    // path as every other Guardrail dimension.
+    let spendTimer: ReturnType<typeof setInterval> | null = null;
+    const tripSpend = (
+      now: RunRow,
+      event: {
+        dimension: 'tokens' | 'cost';
+        phase: RunPhase;
+        limitValue: number;
+        observedValue: number;
+        configSource: 'default' | 'workspace';
+        payload?: unknown;
+      },
+      reason: string,
+    ) => {
+      this.guardrailEvents.append(now.id, event);
+      record('lifecycle', { event: 'guardrail-tripped', dimension: event.dimension, reason });
+      active.externallySettled = true;
+      this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+      active.verifyAbort.abort();
+      this.kill(active);
+      if (spendTimer) {
+        clearInterval(spendTimer);
+        spendTimer = null;
+      }
+    };
+    const armSpendGuardrail = () => {
+      const started = this.runStore.get(run.id);
+      const budget = started.guardrailConfig
+        ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
+        : null;
+      if (!budget) return; // no snapshot (legacy Run) → no spend guard
+      if (budget.tokens == null && budget.costUsd == null) return; // no spend caps configured
+      const priceTable: PriceTable = started.priceTable ? (JSON.parse(started.priceTable) as PriceTable) : {};
+      // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
+      const ws = this.getWorkspace?.(task.workspaceId);
+      const configSource: 'default' | 'workspace' = ws?.guardrailBudget ? 'workspace' : 'default';
+      let unmeasurableSince: number | null = null;
+      spendTimer = setInterval(() => {
+        if (active.externallySettled) return;
+        const now = this.runStore.get(run.id);
+        if (now.state !== 'running') return;
+        const snap = this.sampleSnapshot(run.id);
+        const observedTokens = snap ? totalTokensOf(snap.usage) : null;
+        const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
+        const observedUsd = cost?.totalUsd ?? null;
+        const costIncomplete = cost?.incomplete ?? true;
+        const outcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
+        if (outcome.kind === 'ok') {
+          unmeasurableSince = null;
+          return;
+        }
+        if (outcome.kind === 'unmeasurable') {
+          if (unmeasurableSince == null) unmeasurableSince = Date.now();
+          if (Date.now() - unmeasurableSince < this.spendGraceMs) return;
+          const reason = formatUnmeasurableReason(outcome.dimension);
+          const limitValue =
+            outcome.dimension === 'tokens' ? (budget.tokens ?? 0) : toMicroUsd(budget.costUsd ?? 0);
+          tripSpend(
+            now,
+            {
+              dimension: outcome.dimension,
+              phase: now.phase ?? 'executing',
+              limitValue,
+              observedValue: 0,
+              configSource,
+              payload: { unmeasurable: true, graceMs: this.spendGraceMs },
+            },
+            reason,
+          );
+          return;
+        }
+        // outcome.kind === 'trip'
+        unmeasurableSince = null;
+        const trip = outcome.trip;
+        const event =
+          trip.dimension === 'tokens'
+            ? {
+                dimension: 'tokens' as const,
+                phase: now.phase ?? ('executing' as RunPhase),
+                limitValue: trip.limitTokens,
+                observedValue: trip.observedTokens,
+                configSource,
+              }
+            : {
+                dimension: 'cost' as const,
+                phase: now.phase ?? ('executing' as RunPhase),
+                limitValue: toMicroUsd(trip.limitUsd),
+                observedValue: toMicroUsd(trip.observedUsd),
+                configSource,
+                payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd },
+              };
+        const reason = formatBudgetReason(trip);
+        tripSpend(now, event, reason);
+      }, this.spendPollMs);
+      spendTimer.unref?.();
+    };
+
     // Progress Guardrail (issue #131, ADR-0019, reliability-design Unit A). Two
     // paired mechanisms, both OFF unless `guardrails.progress` was enabled in
     // the Run's immutable start snapshot (issue #126):
@@ -1337,6 +1457,9 @@ export class Runner {
       // when the progress Guardrail is off). The stall detector is evaluated at
       // turn boundaries in the loop below, not on a timer.
       armToolTimeout();
+      // Arm the token/cost spend Guardrail poll (issue #128; a no-op when
+      // neither `tokens` nor `costUsd` is configured on the Run's frozen budget).
+      armSpendGuardrail();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -1630,6 +1753,7 @@ export class Runner {
       // and time past this point must not count against the execution budget.
       if (guardrailTimer) clearTimeout(guardrailTimer);
       if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
+      if (spendTimer) clearInterval(spendTimer);
       driver.fail(new Error('run finished'));
       driver.dispose();
       this.active.delete(run.id);
