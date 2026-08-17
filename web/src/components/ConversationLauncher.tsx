@@ -239,13 +239,18 @@ function PermissionPrompt({
 
   // The Harness is blocked on the operator, so when this prompt appears focus
   // moves to its first choice (issue #96): a screen-reader or keyboard user
-  // lands on the decision without hunting the panel for it. Keyed per
-  // reqId-mounted instance, this runs once on appear and never yanks focus
-  // back mid-decision.
+  // lands on the decision without hunting the panel for it. In the same pass
+  // an assertive live region is filled — empty at first render, populated a
+  // tick later — because an `aria-live` node inserted with its text already
+  // present isn't reliably announced; only a change observed *after* the node
+  // is in the tree is. Keyed per reqId-mounted instance, this runs once on
+  // appear and never yanks focus back mid-decision.
   const firstOptionRef = useRef<HTMLButtonElement>(null);
+  const [announcement, setAnnouncement] = useState('');
   useEffect(() => {
     firstOptionRef.current?.focus();
-  }, []);
+    setAnnouncement(`Permission request: ${title}. This turn is paused until you respond.`);
+  }, [title]);
 
   const choose = async (key: string, optionId: string, remember?: boolean) => {
     if (busyKey) return;
@@ -261,13 +266,15 @@ function PermissionPrompt({
     <div
       role="group"
       aria-label={`Permission request: ${title}`}
-      // The Harness is genuinely blocked on a human, so this interrupts the
-      // screen reader assertively the moment it mounts rather than waiting its
-      // turn behind the polite transcript announcer (issue #96).
-      aria-live="assertive"
-      aria-atomic="true"
       className="border-t border-hairline bg-running-tint px-4 py-3"
     >
+      {/* The Harness is genuinely blocked on a human, so this interrupts the
+          screen reader assertively — ahead of the polite transcript announcer.
+          Populated after mount (see effect above) so the announcement reliably
+          fires; visually hidden since the amber band already carries it. */}
+      <div role="alert" className="sr-only">
+        {announcement}
+      </div>
       {/* The ask is the one prominent element (DESIGN.md § Conversation): the
           Harness is genuinely blocked on the operator, so "Waiting for your
           decision" leads in the Title role — never the quietest line — and the
@@ -996,7 +1003,6 @@ export function ConversationLauncher({
               container above stays a plain region so streaming prose isn't
               re-read; only this sibling speaks the transitions. */}
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
-
 
           {/* Pending prompts sit outside the scrollable transcript so a
               paused Turn stays visible without hunting for it — the panel

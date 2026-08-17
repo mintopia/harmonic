@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { StreamItem } from './event-stream-model.js';
+import { isInterrupted, type StreamItem } from './event-stream-model.js';
 
 /**
  * What a polite live region should read out as a transcript streams — issue
@@ -38,12 +38,12 @@ const TERMINAL_TOOL_STATUS = new Set(['completed', 'failed']);
 /** The one line worth speaking for a lifecycle event, or null for the
  * bookkeeping (mode_set, steer_*, continue, …) the transcript itself drops. */
 function lifecycleText(payload: unknown): string | null {
-  const p = payload as { event?: string; stopReason?: string } | null | undefined;
+  const p = payload as { event?: string } | null | undefined;
   switch (p?.event) {
     case 'finished':
-      // A Stop/Interrupt lands as a `finished` with a cancelled stop reason —
-      // the same carve-out EventStream's "Interrupted" line makes.
-      return p.stopReason === 'cancelled' ? 'Turn interrupted' : 'Turn finished';
+      // A Stop/Interrupt is a `finished` carrying a cancelled stop reason —
+      // the shared carve-out EventStream's "Interrupted" line also makes.
+      return isInterrupted(payload) ? 'Turn interrupted' : 'Turn finished';
     case 'error':
       return 'Turn ended with an error';
     case 'idle_timeout':

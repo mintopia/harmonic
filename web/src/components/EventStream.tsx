@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { coalesceEvents, type StreamEvent, type ToolCallView } from '../event-stream-model';
+import { coalesceEvents, isInterrupted, type StreamEvent, type ToolCallView } from '../event-stream-model';
 import { chip, labelType, toolChip } from '../ui';
 
 // ACP tool kinds → the short word on the chip. Anything unknown or absent
@@ -94,11 +94,7 @@ function renderEventLine(event: StreamEvent): ReactNode {
   // A resolved permission is already implied by the tool row that ran after it
   // (and was surfaced live as its own prompt) — no echo line in the transcript.
   if (event.type === 'permission_request') return null;
-  if (
-    event.type === 'lifecycle' &&
-    event.payload.event === 'finished' &&
-    event.payload.stopReason === 'cancelled'
-  ) {
+  if (event.type === 'lifecycle' && isInterrupted(event.payload)) {
     // The one lifecycle line worth keeping: it confirms the operator's own
     // Stop/Interrupt landed. A normal turn end is silent.
     return <div className="text-muted">Interrupted</div>;
