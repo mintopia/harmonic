@@ -133,6 +133,13 @@ const runSchema = z
     /** Worktree mode: the run's branch and the branch it was cut from. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
     baseBranch: z.string().nullable().meta({ example: 'main' }),
+    /** The frozen verification candidate (issue #134): the `commit-tree` OID
+     * captured in `validating` and the private Harmonic ref it is pinned to,
+     * built without moving the target branch. Null when no candidate was
+     * produced (pre-feature, escalated before `validating`, or a dirty
+     * direct-mode context). */
+    candidateOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
+    candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
     usage: runUsageSchema.nullable(),
     /** 'accepted' | 'rejected' | null (domain/review.ts); stored as plain text. */
     review: z.string().nullable().meta({ example: null }),

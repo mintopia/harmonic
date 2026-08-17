@@ -222,6 +222,18 @@ export const runs = sqliteTable('runs', {
    * null in direct mode or before settle. The card and Task detail both read
    * this so they can never disagree (issue #36). */
   stat: text('stat'),
+  /**
+   * The frozen candidate commit OID a Run is verified against (issue #134,
+   * reliability-design Unit B): built with `commit-tree` in `validating` and
+   * pinned to `candidateRef`, capturing the agent's work *without moving the
+   * target branch*. Null when no candidate was produced — a pre-feature Run, an
+   * escalated Run that never reached `validating`, or a dirty direct-mode
+   * context whose work is deliberately not snapshotted. */
+  candidateOid: text('candidate_oid'),
+  /** The private Harmonic ref (`refs/harmonic/candidate/run-<id>`) the
+   * candidate is pinned to, from which it is rematerialized for verification or
+   * a later corrective turn. Null whenever `candidateOid` is. */
+  candidateRef: text('candidate_ref'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
   /** JSON: latest live-usage snapshot (rolled-up Usage + context fill +

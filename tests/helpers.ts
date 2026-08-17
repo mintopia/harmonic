@@ -118,6 +118,13 @@ export async function startServer(
     configOverrides,
     password: opts.password ?? TEST_PASSWORD,
   });
+  // A test server must never operate on the developer's real checkout: the
+  // Default Workspace seeds its workingDir from process.cwd(), and direct-mode
+  // Runs now snapshot a verification candidate against it (issue #134). Point
+  // it at an isolated, non-git temp dir so tests that don't set an explicit
+  // workingDir stay hermetic (worktree tests pass their own repo per task).
+  const workspaceDir = mkdtempSync(join(tmpdir(), 'harmonic-workdir-'));
+  app.ctx.db.update(workspaces).set({ workingDir: workspaceDir }).run();
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -158,6 +165,7 @@ export async function startServer(
     close: async () => {
       await app.close();
       rmSync(dataDir, { recursive: true, force: true });
+      rmSync(workspaceDir, { recursive: true, force: true });
     },
   };
 }

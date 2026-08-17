@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
+import { snapshotCandidate } from './candidate.js';
 import { adapterFor } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, type RunUsage, type RunUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
@@ -77,6 +78,14 @@ interface Workspace {
   cwd: string;
   env: Record<string, string>;
   worktree?: { repoDir: string; path: string };
+  /** The validated base the candidate snapshot is parented on (issue #134):
+   * the base branch (worktree mode) or the start `HEAD` OID (direct mode).
+   * Unset when the working dir is not a git repo, so no candidate is built. */
+  baseRev?: string;
+  /** Whether a direct-mode context was already dirty at Run start — captured
+   * before the agent touches it, so a dirty/concurrently-editable context is
+   * not snapshotted (its pre-existing edits would otherwise be swept in). */
+  startDirty?: boolean;
 }
 
 interface ActiveRun {
@@ -506,7 +515,20 @@ export class Runner {
    * working directory's current branch.
    */
   private async prepareWorkspace(task: TaskRow, run: RunRow): Promise<Workspace> {
-    if (task.isolationMode !== 'worktree') return { cwd: task.workingDir, env: {} };
+    if (task.isolationMode !== 'worktree') {
+      const workspace: Workspace = { cwd: task.workingDir, env: {} };
+      // Capture the validated base + dirty-state now, before the agent edits
+      // anything, so the candidate snapshot (issue #134) can parent on the
+      // start commit and skip a context that was already dirty. Best-effort:
+      // a non-git working dir simply yields no candidate.
+      try {
+        workspace.baseRev = await Git.revParse(task.workingDir, 'HEAD');
+        workspace.startDirty = await Git.isDirty(task.workingDir);
+      } catch {
+        // Not a git repo (or no commits) — leave baseRev unset; no candidate.
+      }
+      return workspace;
+    }
 
     const baseBranch = await Git.currentBranch(task.workingDir);
     const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
@@ -514,7 +536,63 @@ export class Runner {
     mkdirSync(this.worktreesDir, { recursive: true });
     await Git.addWorktree(task.workingDir, path, branch);
     this.runStore.update(run.id, { branch, baseBranch });
-    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path } };
+    // A fresh worktree is clean by construction; the base branch is the
+    // validated base the candidate is parented on.
+    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
+  }
+
+  /**
+   * Freeze the agent's work into a verification candidate (issue #134): a
+   * `commit-tree` snapshot pinned to a private Harmonic ref that never moves
+   * the target branch, proven safe by checking it out in a disposable detached
+   * worktree with before/after fingerprints. Runs in `validating`, while the
+   * leased workspace still exists (before `finalizeWorkspace` tears a worktree
+   * down). No verifier consumes the candidate yet — this is the frozen tree +
+   * the safety proof only. A snapshot failure is recorded, not fatal: the phase
+   * machine still advances (nothing downstream depends on the candidate yet).
+   */
+  private async runCandidateSnapshot(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Workspace,
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): Promise<void> {
+    if (!workspace.baseRev) return; // no git base captured → nothing to snapshot
+    const repoDir = workspace.worktree?.repoDir ?? task.workingDir;
+    // Keyed on the globally-unique run id. The ref persists after the Run: the
+    // candidate is rematerialized from it for verification, a corrective turn,
+    // or a review-reject continuation. Its cleanup is owned by the later
+    // verify/landing + Session-retirement units (reliability-design Unit B/C),
+    // not this substrate ticket — nothing here deletes it.
+    const ref = `refs/harmonic/candidate/run-${run.id}`;
+    try {
+      // Inside the try so an mkdir failure (ENOSPC/EACCES) is recorded like any
+      // other snapshot failure, honouring the non-fatal contract above rather
+      // than propagating out and failing the whole Run.
+      mkdirSync(this.worktreesDir, { recursive: true });
+      const result = await snapshotCandidate({
+        repoDir,
+        workspaceDir: workspace.cwd,
+        baseRev: workspace.baseRev,
+        ref,
+        message: `harmonic: candidate task ${task.id} run ${run.attempt}`,
+        isolationMode: task.isolationMode,
+        startDirty: workspace.startDirty ?? false,
+        worktreePath: join(this.worktreesDir, `verify-${run.id}`),
+      });
+      if (result.status === 'skipped') {
+        record('lifecycle', { event: 'candidate', status: 'skipped', reason: result.reason });
+        return;
+      }
+      this.runStore.update(run.id, { candidateOid: result.oid, candidateRef: result.ref });
+      record('lifecycle', { event: 'candidate', status: 'created', oid: result.oid, mutated: result.mutated });
+    } catch (err) {
+      record('lifecycle', {
+        event: 'candidate',
+        status: 'error',
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -776,6 +854,16 @@ export class Runner {
       }
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
+      // Enter `validating` and freeze the verification candidate there, while
+      // the leased workspace still exists — finalize() tears a worktree down.
+      // The phase is persisted *before* the git work so `runs.phase` reads
+      // `validating` for its duration; the branch-specific advance below then
+      // continues from `validating` to `verifying`/`review`. Skipped for an
+      // escalating Run, which never reaches `verifying` (#134).
+      if (!escalating) {
+        advancePhase('validating', autoDriven ? 'auto' : 'human');
+        await this.runCandidateSnapshot(task, run, workspace, record);
+      }
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
       this.noteModelMismatch(task, usage, record);

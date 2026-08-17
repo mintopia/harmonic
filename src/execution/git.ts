@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { withRepoLock } from './repo-lock.js';
 
@@ -15,8 +18,21 @@ export class GitError extends Error {
 }
 
 async function git(cwd: string, ...args: string[]): Promise<string> {
+  return gitEnv(cwd, {}, ...args);
+}
+
+/**
+ * Like `git`, but with extra environment variables — the one primitive that
+ * needs this is a private `GIT_INDEX_FILE`, so a `read-tree`/`add`/`write-tree`
+ * snapshot stages into a throwaway index instead of the workspace's real one
+ * (the agent's staging and the operator's checkout are never touched).
+ */
+async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[]): Promise<string> {
   try {
-    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], { maxBuffer: 10 * 1024 * 1024 });
+    const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
+      maxBuffer: 10 * 1024 * 1024,
+      env: { ...process.env, ...env },
+    });
     return stdout.trim();
   } catch (err: any) {
     // Conflict explanations land on stdout, other failures on stderr.
@@ -31,6 +47,60 @@ const IDENTITY = ['-c', 'user.name=Harmonic', '-c', 'user.email=harmonic@localho
 
 export const Git = {
   currentBranch: (dir: string) => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD'),
+
+  /** Resolve a revision to its object id (e.g. a branch tip, `HEAD`). */
+  revParse: (dir: string, rev: string) => git(dir, 'rev-parse', rev),
+
+  /** Whether the working tree at `dir` has uncommitted changes (tracked,
+   * staged, or untracked). Empty `git status --porcelain` output → clean. */
+  async isDirty(dir: string): Promise<boolean> {
+    return (await git(dir, 'status', '--porcelain')).length > 0;
+  },
+
+  /**
+   * Capture the full working-tree content of `workspaceDir` (tracked, staged,
+   * untracked, and deletions) as a git tree object, relative to `baseRev`, and
+   * return its OID. Uses a private throwaway `GIT_INDEX_FILE` seeded from
+   * `baseRev` then `add -A`, so neither the workspace's real index nor its
+   * checkout is disturbed — the snapshot is hermetic. The tree's blobs/subtrees
+   * are written into the shared object store, so they are reachable by a later
+   * `commit-tree` in the base repo.
+   */
+  async writeWorkspaceTree(workspaceDir: string, baseRev: string): Promise<string> {
+    const indexDir = mkdtempSync(join(tmpdir(), 'harmonic-idx-'));
+    const env = { GIT_INDEX_FILE: join(indexDir, 'index') };
+    try {
+      await gitEnv(workspaceDir, env, 'read-tree', baseRev);
+      await gitEnv(workspaceDir, env, 'add', '-A');
+      return await gitEnv(workspaceDir, env, 'write-tree');
+    } finally {
+      rmSync(indexDir, { recursive: true, force: true });
+    }
+  },
+
+  /** Create a commit object from a tree + single parent under the fixed
+   * Harmonic identity, returning its OID. Writes only an object — moves no
+   * ref, touches no branch or checkout. */
+  commitTree: (dir: string, treeOid: string, parentOid: string, message: string) =>
+    git(dir, ...IDENTITY, 'commit-tree', treeOid, '-p', parentOid, '-m', message),
+
+  /**
+   * Create `ref` pointing at `oid`, failing if it already exists — the CAS
+   * from empty (`''` old-value = "must not exist"). This is how a candidate is
+   * pinned to a private Harmonic ref without ever moving, or racing, the live
+   * target branch.
+   */
+  createRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid, ''),
+
+  /** Every ref with its object id, one per line — the ref half of a
+   * verification fingerprint (a verifier can mutate shared refs via the common
+   * git dir, not just tracked files). */
+  forEachRef: (dir: string) => git(dir, 'for-each-ref', '--format=%(objectname) %(refname)'),
+
+  /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
+   * created or moved, so a verifier sees a stable tree it cannot land. */
+  addDetachedWorktree: (dir: string, worktreePath: string, oid: string) =>
+    withRepoLock(dir, () => git(dir, 'worktree', 'add', '--detach', worktreePath, oid)),
 
   clone: async (repo: string, dest: string): Promise<void> => {
     await execFileAsync('git', ['clone', repo, dest], { maxBuffer: 10 * 1024 * 1024 });
