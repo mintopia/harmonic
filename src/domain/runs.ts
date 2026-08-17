@@ -189,11 +189,20 @@ export class RunStore {
    * NOT returned. Their Work Context lease was already released at review entry
    * (#114 releases it there; holding it across review awaits #122), so there is
    * nothing for the caller to release either.
+   *
+   * A Run mid-landing (`phase:'landing'`) is excluded the same way, but for a
+   * different reason (issue #117): unlike `review`, `landing` is NOT a parked
+   * phase (it does have a live process while running) — a crash there really
+   * did orphan it. It's excluded from this blind fail because a landing may
+   * already have applied an irreversible effect (a merge, say) before it died,
+   * and this sweep has no way to tell — `CrashRecoveryCoordinator`
+   * (domain/crash-recovery.ts) reconciles it against its landing journal
+   * instead, ahead of this sweep running.
    */
   markInterrupted(): RunRow[] {
     const facts = new RunFactStore(this.db);
     const running = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
-    const orphans = running.filter((run) => !isParkedPhase(run.phase));
+    const orphans = running.filter((run) => !isParkedPhase(run.phase) && run.phase !== 'landing');
     for (const run of orphans) {
       // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
       // failed/interrupted terminal stays reconstructable from the log alone.
@@ -221,6 +230,22 @@ export class RunStore {
       .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.reviewDeadline)))
       .all()
       .filter((run) => run.reviewDeadline != null && run.reviewDeadline <= now);
+  }
+
+  /**
+   * Runs mid-landing when a crash interrupted the process (issue #117):
+   * `state:'running', phase:'landing'` — excluded from {@link markInterrupted}'s
+   * blind orphan-fail because a landing may already have applied an
+   * irreversible effect (see that method's doc comment). The boot-time
+   * `CrashRecoveryCoordinator` (domain/crash-recovery.ts) is the sole caller:
+   * it reconciles each of these against its landing journal instead.
+   */
+  listLandingOrphans(): RunRow[] {
+    return this.db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.state, 'running'), eq(runs.phase, 'landing')))
+      .all();
   }
 }
 

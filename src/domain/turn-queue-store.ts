@@ -154,6 +154,23 @@ export class TurnQueueStore {
     if (row === undefined) throw new Error(`turn ${id} not in expected state for cancel`);
     return row;
   }
+
+  /**
+   * Every turn not yet at a terminal outcome — `status IN ('queued', 'claimed',
+   * 'in_flight')` — across every Session, in `seq` order. The boot-time
+   * crash-recovery sweep's input (issue #117, `CrashRecoveryCoordinator`): a
+   * fresh process has no live harness for any of these, so each one needs a
+   * boot decision (cancel the not-yet-dispatched ones; resolve whatever is
+   * still `in_flight`).
+   */
+  listUnsettled(): TurnQueueRow[] {
+    return this.db
+      .select()
+      .from(turnQueue)
+      .where(inArray(turnQueue.status, ['queued', 'claimed', 'in_flight']))
+      .orderBy(asc(turnQueue.seq))
+      .all();
+  }
 }
 
 /**

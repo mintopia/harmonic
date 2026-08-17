@@ -82,4 +82,21 @@ export const Git = {
   /** Diffstat of what the run's branch adds over the merge base. */
   diffStat: (dir: string, baseBranch: string, branch: string) =>
     git(dir, 'diff', '--stat', `${baseBranch}...${branch}`),
+
+  /**
+   * Whether `branch` is already merged into `baseBranch` — i.e. `git
+   * merge-base --is-ancestor <branch> <baseBranch>` exits 0. Used by
+   * crash-recovery (issue #117) to ask the world "is this landing's branch
+   * already merged into its base?" without re-running the merge. Never
+   * throws: any non-zero exit (including "not an ancestor") resolves
+   * `false`.
+   */
+  async isAncestor(dir: string, baseBranch: string, branch: string): Promise<boolean> {
+    try {
+      await git(dir, 'merge-base', '--is-ancestor', branch, baseBranch);
+      return true;
+    } catch {
+      return false;
+    }
+  },
 };
