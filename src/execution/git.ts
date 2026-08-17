@@ -154,6 +154,18 @@ export const Git = {
     git(dir, 'diff', '--stat', `${baseBranch}...${branch}`),
 
   /**
+   * The full unified diff `oid` adds over `base` — the untrusted content a
+   * Verification unit (issue #136, ADR-0021) hands to a command or the agent
+   * critic. Computed straight from the object store (`base..oid`, not the
+   * three-dot merge-base form `diffStat` uses): the critic reviews a frozen
+   * candidate against the exact commit it was built on, not a symmetric
+   * comparison, so a `base` that has since moved doesn't change what the
+   * candidate is judged against. Works against any two revisions reachable
+   * in `dir`'s object store — no checkout required.
+   */
+  diffRange: (dir: string, base: string, oid: string) => git(dir, 'diff', `${base}..${oid}`),
+
+  /**
    * Whether `branch` is already merged into `baseBranch` — i.e. `git
    * merge-base --is-ancestor <branch> <baseBranch>` exits 0. Used by
    * crash-recovery (issue #117) to ask the world "is this landing's branch

@@ -598,3 +598,74 @@ export const turnQueue = sqliteTable('turn_queue', {
 ]);
 
 export type TurnQueueRow = typeof turnQueue.$inferSelect;
+
+/**
+ * The Verification mechanisms that write to `verification_attempts` (issue
+ * #136, ADR-0021, reliability-design Unit B). Only `'critic'` has an emitter
+ * today (`verification/critic.ts`); `'command'` is reserved for the sibling
+ * argv-verifier ticket (#132's `verificationCommandSchema` is config-only so
+ * far) so both mechanisms share one attempt log and one row shape rather than
+ * forking the table later.
+ */
+export const VERIFICATION_MECHANISMS = ['critic', 'command'] as const;
+export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
+
+/**
+ * The persisted record of one Verification attempt against a Run's frozen
+ * candidate OID (issue #136, ADR-0021, reliability-design Unit B). Mirrors
+ * `run_facts`'s discipline exactly: append-only, `seq` assigned by the store
+ * as `max(seq)+1`, and the `(run_id, seq)` unique index is the same
+ * monotonicity guarantee — two attempts can never share a seq within a Run,
+ * so the log has a single total order and a cross-process race that computed
+ * the same seq is rejected loudly rather than corrupting it.
+ *
+ * `inputOid` is recorded per-row (not just implied by the Run's
+ * `candidateOid` column) because a Run can be re-verified against more than
+ * one candidate over its lifetime — a self-heal turn re-enters `validating`
+ * and produces a fresh candidate (reliability-design Unit B), and the attempt
+ * log is how a later reader tells which candidate each verdict actually
+ * judged. `output` stores the verifier's raw output (the critic's agent
+ * text); the caller caps it before it reaches here (`critic.ts`'s
+ * `DIFF_CHAR_CAP`-driven truncation is the model for that) so an unbounded or
+ * adversarial transcript can't grow the row without limit. `phase` defaults
+ * to `'verifying'` — the only phase a Verification attempt runs in today —
+ * kept as its own column rather than inferred from the Run row so the record
+ * is self-describing even if the Run has since moved on.
+ *
+ * This table is substrate only, same as `run_facts` was at #112: nothing
+ * reads it into a live decision yet (`domain/verification-attempts.ts`'s
+ * `VerificationAttemptStore` is append+list only). The integration ticket
+ * that calls `runCritic` from the `verifying` phase is what starts writing
+ * here for real.
+ */
+export const verificationAttempts = sqliteTable('verification_attempts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id')
+    .notNull()
+    .references(() => runs.id),
+  /** Monotonic per-Run sequence (1-based); same discipline as `run_facts.seq`. */
+  seq: integer('seq').notNull(),
+  ts: integer('ts').notNull(),
+  /** 'critic' today; 'command' reserved for the sibling verifier ticket. */
+  mechanism: text('mechanism').$type<VerificationMechanism>().notNull(),
+  /** The candidate OID this attempt verified (see the class doc — a Run may
+   * be re-verified against more than one candidate across self-heal turns). */
+  inputOid: text('input_oid').notNull(),
+  /** 'pass' | 'fail' | 'inconclusive' (`verification/critic-schema.ts`'s `Verdict`). */
+  verdict: text('verdict').notNull(),
+  summary: text('summary').notNull(),
+  /** Raw verifier output (the critic's agent text), capped by the caller. */
+  output: text('output').notNull(),
+  /** The Run phase this attempt ran in; every attempt today runs in `verifying`. */
+  phase: text('phase').$type<RunPhase>().notNull().default('verifying'),
+  /** Whether the verifier mutated the disposable checkout it ran against
+   * (`execution/candidate.ts`'s fingerprint bracket) — 0/1. A `true` here
+   * forces the critic's verdict to `inconclusive` regardless of what it
+   * reported (`verification/critic.ts`'s fail-safe rule); this column is the
+   * persisted trace of that override having fired. */
+  mutated: integer('mutated', { mode: 'boolean' }).notNull().default(false),
+}, (t) => [
+  uniqueIndex('verification_attempts_run_seq_unique').on(t.runId, t.seq),
+]);
+
+export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
