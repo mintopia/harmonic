@@ -285,3 +285,34 @@ describe('work_context_leases table (issue #118, ADR-0022)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 });
+
+describe('run_facts table (issue #112)', () => {
+  it('exists at head with a (run_id, seq) unique index that rejects a duplicate seq for the same Run', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-run-facts-migrate-'));
+    const db = openDb(dataDir);
+
+    const task = db.insert(schema.tasks).values({
+      prompt: 'seed',
+      workingDir: '/tmp/p',
+      state: 'ready',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }).returning().get();
+    const run = db.insert(schema.runs).values({ taskId: task.id, attempt: 1, state: 'running', startedAt: Date.now() }).returning().get();
+
+    // Raw better-sqlite3 against the same file, exercising the migrated unique
+    // index directly rather than through the store.
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    const insert = sqlite.prepare(
+      `insert into run_facts (run_id, seq, ts, type, payload) values (?, ?, ?, 'failed', '{}')`,
+    );
+    const now = Date.now();
+    insert.run(run.id, 1, now);
+    // A second fact at seq 1 for the same Run is rejected; a different seq is fine.
+    expect(() => insert.run(run.id, 1, now)).toThrow(/UNIQUE constraint failed/);
+    expect(() => insert.run(run.id, 2, now)).not.toThrow();
+
+    sqlite.close();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+});

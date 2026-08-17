@@ -394,3 +394,53 @@ export const workContextLeases = sqliteTable('work_context_leases', {
 ]);
 
 export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
+
+/**
+ * The ending-signal fact types the coordinator understands **today** (issue
+ * #112, reliability-design §0.3). Every way a Run can end is recorded as a
+ * `run_fact`; this is the set that has an emitter now. Later spine units append
+ * their own kinds (branch-violation, verify-fail, guardrail-trip) without
+ * touching the coordinator contract — the column is free `text`, and the single
+ * place a new kind is *ranked* is `DISPOSITION_PRECEDENCE`
+ * (domain/run-disposition.ts). So this list is a convenience type, not a closed
+ * constraint: the store never rejects an unknown `type`.
+ */
+export const RUN_FACT_TYPES = [
+  'operator-cancel',
+  'escalate',
+  'agent-finish/unresolved',
+  'failed',
+  'process-death',
+] as const;
+export type RunFactType = (typeof RUN_FACT_TYPES)[number];
+
+/**
+ * The append-only fact log at the heart of the coordination spine (issue #112,
+ * reliability-design §0.1/§0.3). Every ending signal a Run emits is one
+ * immutable row with a per-Run monotonic `seq`; the ordered log is the sole
+ * input (with a cutoff) to `computeDisposition`. Task lifecycle states are a
+ * projection of these facts, never the source of coordination truth.
+ *
+ * The unique index on `(run_id, seq)` is the monotonicity guarantee: two facts
+ * can never share a seq within a Run, so the log has a single total order. The
+ * store assigns `seq` as `max(seq)+1`; the index is what makes that safe under a
+ * cross-process race — a second append computing the same seq is rejected rather
+ * than silently corrupting the order.
+ */
+export const runFacts = sqliteTable('run_facts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id')
+    .notNull()
+    .references(() => runs.id),
+  /** Monotonic per-Run sequence (1-based); the fact log's total order. */
+  seq: integer('seq').notNull(),
+  ts: integer('ts').notNull(),
+  /** The ending-signal kind; open for extension (see `RUN_FACT_TYPES`). */
+  type: text('type').$type<RunFactType>().notNull(),
+  /** JSON payload — signal-specific detail (reason, exit code, …); `'{}'` when none. */
+  payload: text('payload').notNull().default('{}'),
+}, (t) => [
+  uniqueIndex('run_facts_run_seq_unique').on(t.runId, t.seq),
+]);
+
+export type RunFactRow = typeof runFacts.$inferSelect;
