@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { withRepoLock } from './repo-lock.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -37,11 +38,15 @@ export const Git = {
 
   pull: (dir: string) => git(dir, 'pull', '--ff-only'),
 
+  // worktree create/remove and merge (below) mutate the shared base repo;
+  // each runs under a short base-repo lock so concurrent worktree Runs can't
+  // corrupt it mid-mutation (issue #121). The lock is scoped to `dir` (the
+  // base repo), so Runs on distinct checkouts still parallelise.
   addWorktree: (dir: string, worktreePath: string, newBranch: string) =>
-    git(dir, 'worktree', 'add', '-b', newBranch, worktreePath),
+    withRepoLock(dir, () => git(dir, 'worktree', 'add', '-b', newBranch, worktreePath)),
 
   removeWorktree: (dir: string, worktreePath: string) =>
-    git(dir, 'worktree', 'remove', '--force', worktreePath),
+    withRepoLock(dir, () => git(dir, 'worktree', 'remove', '--force', worktreePath)),
 
   /** Snapshot everything in the worktree onto its branch; no-op when clean. */
   async commitAll(worktreePath: string, message: string): Promise<void> {
@@ -56,20 +61,22 @@ export const Git = {
    * the merge is aborted and { ok: false } returned with git's output.
    */
   async merge(dir: string, baseBranch: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
-    const current = await Git.currentBranch(dir);
-    if (current !== baseBranch) await git(dir, 'checkout', baseBranch);
-    try {
-      await git(dir, ...IDENTITY, 'merge', '--no-edit', branch);
-      return { ok: true };
-    } catch (err) {
-      const detail = err instanceof GitError ? err.message : String(err);
+    return withRepoLock(dir, async () => {
+      const current = await Git.currentBranch(dir);
+      if (current !== baseBranch) await git(dir, 'checkout', baseBranch);
       try {
-        await git(dir, 'merge', '--abort');
-      } catch {
-        // No merge in progress (e.g. the merge failed before starting).
+        await git(dir, ...IDENTITY, 'merge', '--no-edit', branch);
+        return { ok: true };
+      } catch (err) {
+        const detail = err instanceof GitError ? err.message : String(err);
+        try {
+          await git(dir, 'merge', '--abort');
+        } catch {
+          // No merge in progress (e.g. the merge failed before starting).
+        }
+        return { ok: false, detail };
       }
-      return { ok: false, detail };
-    }
+    });
   },
 
   /** Diffstat of what the run's branch adds over the merge base. */

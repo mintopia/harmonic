@@ -114,6 +114,32 @@ describe('worktree isolation mode', () => {
     expect(diff.body.stat).toContain('feature.txt');
   });
 
+  it('serialises concurrent worktree Runs on one base repo without corrupting it (issue #121)', async () => {
+    const repo = makeRepo();
+    // Launch several worktree Runs against the same base repo at once. Their
+    // create/remove windows mutate the shared base repo; the repo-operation
+    // lock must serialise them so none is left half-mutated.
+    const results = await Promise.all([
+      runWorktreeTask(repo, { 'a.txt': 'A\n' }),
+      runWorktreeTask(repo, { 'b.txt': 'B\n' }),
+      runWorktreeTask(repo, { 'c.txt': 'C\n' }),
+    ]);
+
+    // Every Run produced its own branch carrying its own file — no create
+    // clobbered another mid-mutation.
+    for (const { taskId, runId } of results) {
+      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      expect(run.branch).toBe(`harmonic/task-${taskId}-run-1`);
+      expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
+    }
+    expect(git(repo, 'show', `${(await server.api('GET', `/api/runs/${results[0].runId}`)).body.branch}:a.txt`)).toBe('A');
+
+    // The base repo is intact: no leftover worktrees, clean tree, still on main.
+    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+  });
+
   it('fails the run cleanly when the working directory is not a git repo', async () => {
     const notARepo = mkdtempSync(join(tmpdir(), 'harmonic-plain-'));
     const created = await server.api('POST', '/api/tasks', {
