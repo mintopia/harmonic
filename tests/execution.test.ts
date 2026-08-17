@@ -48,8 +48,16 @@ describe('run execution over ACP (direct mode)', () => {
 
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.status).toBe(200);
-    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', stopReason: 'end_turn' });
-    expect(run.body.finishedAt).toBeGreaterThan(0);
+    // A native Run parks non-terminal in `phase:'review'` at agent-finish — it
+    // holds `state:'running'` until the human accepts/rejects it (issue #114).
+    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'running', phase: 'review', stopReason: 'end_turn' });
+    expect(run.body.finishedAt).toBeNull();
+    // Agent-finish took it executing → validating → verifying → review, never
+    // jumping straight to a terminal phase.
+    const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+      .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
+      .map((e: any) => e.payload.phase);
+    expect(phaseEvents).toEqual(['validating', 'verifying', 'review']);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -64,6 +72,67 @@ describe('run execution over ACP (direct mode)', () => {
     expect(events.body.events.map((e: any) => e.seq)).toEqual(
       [...events.body.events.map((e: any) => e.seq)].sort((a: number, b: number) => a - b),
     );
+  });
+
+  it('accepting a review-parked native Run lands it terminal — completed exactly once (issue #114)', async () => {
+    const { taskId, runId } = await createAndRun({
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],
+      stopReason: 'end_turn',
+    });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+
+    // Parked non-terminal in `review`, holding no terminal disposition yet.
+    const parked = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(parked.state).toBe('running');
+    expect(parked.phase).toBe('review');
+    expect(parked.finishedAt).toBeNull();
+
+    // Accept lands it: Run → completed (phase terminal), Task → completed.
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.state).toBe('completed');
+    const landed = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(landed.state).toBe('completed');
+    expect(landed.phase).toBe('terminal');
+    expect(landed.review).toBe('accepted');
+    expect(landed.finishedAt).toBeGreaterThan(0);
+
+    // The full phase path is reconstructable from the persisted event log:
+    // executing → validating → verifying → review (drive loop) then landing on
+    // Accept (§0.2: landing happens after Accept). `terminal` is the coordinator's
+    // row write, not a drive-loop phase event.
+    const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+      .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
+      .map((e: any) => e.payload.phase);
+    expect(phases).toEqual(['validating', 'verifying', 'review', 'landing']);
+    // A second accept refuses — the Task is terminal.
+    expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
+  });
+
+  it('rejecting a review-parked native Run fails it terminal (issue #114)', async () => {
+    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'nope' });
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.state).toBe('failed');
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.state).toBe('failed');
+    expect(run.phase).toBe('terminal');
+    expect(run.review).toBe('rejected');
+  });
+
+  it('cancelling an awaiting-review Task settles its review-parked Run cancelled (issue #114)', async () => {
+    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    expect((await server.api('GET', `/api/runs/${runId}`)).body.state).toBe('running');
+
+    const cancelled = await server.api('POST', `/api/tasks/${taskId}/cancel`);
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.state).toBe('cancelled');
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.state).toBe('cancelled');
+    expect(run.phase).toBe('terminal');
   });
 
   it('records each attempt as a distinct run and history survives retries', async () => {

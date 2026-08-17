@@ -589,6 +589,9 @@ export function TaskDetail({
             >
               Run {run.attempt}
               <span className={`ml-2 ${stateChip(run.state)}`}>{run.state}</span>
+              {run.phase && run.phase !== 'terminal' && (
+                <span className="ml-2 text-xs text-muted">{run.phase}</span>
+              )}
             </button>
           ))}
         </div>

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
 import { TASK_STATES, RUN_STATES, TASK_ORIGINS, WORKFLOWS, WAYFINDER_TYPES, DRIVES } from '../../db/schema.js';
+import { RUN_PHASES } from '../../domain/run-phases.js';
 import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
@@ -114,6 +115,13 @@ const runSchema = z
     taskId: z.number().meta({ example: 4821 }),
     attempt: z.number().meta({ example: 1 }),
     state: z.enum(RUN_STATES).meta({ example: 'completed' }),
+    /** The Run's position in the phase machine (issue #114): executing →
+     * validating → verifying → [review] → landing → terminal. Null on
+     * pre-feature Runs. A native Run is `state:'running'`, `phase:'review'`
+     * while parked at the human gate. */
+    phase: z.enum(RUN_PHASES).nullable().meta({ example: 'review' }),
+    /** Review-SLA deadline (epoch ms) while parked in `review`; null otherwise. */
+    reviewDeadline: z.number().nullable().meta({ example: null }),
     /** Failure reason: 'interrupted', an error message, or null. */
     reason: z.string().nullable().meta({ example: null }),
     /** ACP stopReason from the session/prompt result. */

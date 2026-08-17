@@ -34,10 +34,27 @@ describe('computeDisposition (issue #112)', () => {
       'branch-violation',
       'verify-fail',
       'guardrail-trip',
+      'review-sla-expiry',
       'agent-finish/unresolved',
       'failed',
       'process-death',
     ]);
+  });
+
+  describe('review-sla-expiry (issue #114) sits above agent-finish, below the deliberate signals', () => {
+    it('resolves a parked Run whose only prior signal would be agent-finish', () => {
+      // A native Run parks in `review` with no disposition fact yet; the SLA
+      // sweep appends `review-sla-expiry`, which must be able to settle it.
+      expect(computeDisposition([fact(1, 'review-sla-expiry')], 1)).toBe('review-sla-expiry');
+    });
+    it('outranks a bare agent-finish/unresolved and a failure', () => {
+      expect(computeDisposition([fact(1, 'agent-finish/unresolved'), fact(2, 'review-sla-expiry')], 2)).toBe('review-sla-expiry');
+      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'failed')], 2)).toBe('review-sla-expiry');
+    });
+    it('loses to an operator cancel, an escalate, or a guardrail trip', () => {
+      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'operator-cancel')], 2)).toBe('operator-cancel');
+      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'guardrail-trip')], 2)).toBe('guardrail-trip');
+    });
   });
 
   describe('precedence: for every adjacent pair, the higher-precedence fact wins when both are present', () => {

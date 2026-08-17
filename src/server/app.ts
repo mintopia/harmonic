@@ -25,6 +25,8 @@ import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { ReviewService } from '../domain/review.js';
+import { RunSettleCoordinator } from '../domain/run-settle.js';
+import { RunFactStore } from '../domain/run-facts.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -230,11 +232,21 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
   runner.backfillUsage();
-  // Accepting a worktree-mode task merges the run's branch (ADR-0002).
-  const review = new ReviewService(runs, tasks, async (task, run) => {
+  // Accepting a worktree-mode task merges the run's branch (ADR-0002). The
+  // review gate lands/fails a Run parked in `phase:'review'` through the shared
+  // settle coordinator (issue #114), so accept/reject/SLA-expiry are race-safe
+  // against a concurrent operator cancel.
+  const reviewSettle = new RunSettleCoordinator(runs, tasks, leases, new RunFactStore(db), (run) =>
+    bus.emit('run_changed', run),
+  );
+  const review = new ReviewService(runs, tasks, reviewSettle, async (task, run) => {
     if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
     return Git.merge(task.workingDir, run.baseBranch, run.branch);
   });
+  // Review-SLA sweep at boot (issue #114): a Run left parked in `review` past its
+  // deadline by a previous instance is settled to a terminal disposition now, so
+  // an abandoned review never wedges its Work Context lease across a restart.
+  review.sweepExpiredReviews();
   // The advisory-assignment coordinator (issue #32) is per-Workspace (issue
   // #45); the Auto-Runner routes a mirrored Task's pick filter + claim step to
   // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
@@ -265,10 +277,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // The boot-time poke happens in the onListen hook below, after the MCP
   // endpoint is known — so even the first auto-started run gets its
   // scoped key + endpoint injected.
-  // queue.idle: the last active run drained and nothing is waiting.
+  // queue.idle: the last actively-executing run drained and nothing is waiting.
+  // A native Run parking in `phase:'review'` (issue #114) is done executing even
+  // though it stays `state:'running'`, so that run_changed also counts as a
+  // drain — matching the pre-phase-machine behaviour where a native Run left
+  // `running` at agent-finish. `countRunning()` already excludes review-parked.
   bus.on('run_changed', (run) => {
     if (
-      run.state !== 'running' &&
+      (run.state !== 'running' || run.phase === 'review') &&
       runs.countRunning() === 0 &&
       tasks.list({ state: 'ready' }).length === 0
     ) {

@@ -46,6 +46,15 @@ references the prior work.
 _Avoid_: execution, attempt, session (a Run runs *against* a Session; they are
 not the same — see Session)
 
+**Phase**:
+Where a Run sits in its lifecycle: `executing → validating → verifying →
+[review] → landing → terminal`, persisted on the Run and branching once — a
+human-gated native Run passes through **review**, a mirrored / auto-accept Run
+skips it. Distinct from the Run's *state* (the terminal RunState): a native Run
+is `state:'running'` while **parked** in `phase:'review'` awaiting the human
+gate. Agent-finish begins **validating**, it does not settle the Run.
+_Avoid_: stage, step, status (a Phase is not the Run's terminal state)
+
 **Run Event**:
 One ACP `session/update` (message chunk, thought, tool call, plan update)
 persisted against a Run; the source of truth for observability.

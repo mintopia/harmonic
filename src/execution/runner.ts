@@ -14,8 +14,9 @@ import { AcpDriver } from '../acp/driver.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
-import { projectSettle, type CoordinatorFact, type SettleProjection, type SettleTaskAction } from '../domain/run-coordinator.js';
-import { computeDisposition } from '../domain/run-disposition.js';
+import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
+import { RunSettleCoordinator } from '../domain/run-settle.js';
+import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails } from '../domain/setting-override.js';
@@ -32,6 +33,17 @@ const STDERR_TAIL_CAP = 8000;
  * (asks only on risky tools) first, then 'bypassPermissions' (no callback) for
  * harnesses without 'auto'. Set via session/set_mode after the handshake. */
 const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
+
+/**
+ * Default review SLA (issue #114): how long a native Run may sit parked in
+ * `phase:'review'` awaiting a human accept/reject before the review-SLA sweep
+ * settles it to a terminal disposition. The coordination spine ships no
+ * operator-facing config (reliability-design §0, "the spine is infrastructure";
+ * a per-Workspace review SLA is Unit A's setting), so the deadline is this
+ * internal default until that lands. Seven days: long enough that a real review
+ * queue never trips it, short enough that an abandoned review can't wedge a Work
+ * Context lease forever. */
+const REVIEW_SLA_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
@@ -141,6 +153,10 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly runFacts: RunFactStore;
+  /** The shared terminal-disposition coordinator (issue #113/#114): every Run
+   * settle — drive-loop, operator cancel/complete, review-parked — funnels here
+   * so the winning disposition is decided by precedence, once. */
+  private readonly settleCoordinator: RunSettleCoordinator;
   private readonly tailer: LiveUsageTailer;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
@@ -159,6 +175,13 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.runFacts = new RunFactStore(this.db);
+    this.settleCoordinator = new RunSettleCoordinator(
+      this.runStore,
+      this.taskService,
+      this.leaseStore,
+      this.runFacts,
+      (run) => this.events.onRunFinished?.(run),
+    );
     this.tailer = new LiveUsageTailer(
       {
         sample: (runId) => this.sampleSnapshot(runId),
@@ -256,24 +279,14 @@ export class Runner {
     return workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
   }
 
-  /** Kill the harness of a task's active run (task cancellation). */
+  /** Kill the harness of a task's active run (task cancellation).
+   *
+   * operator-cancel outranks every other disposition (§0.3): a harness exit the
+   * SIGKILL triggers can still append its own fact, but the coordinator keeps the
+   * Run `cancelled`. The Task was already cancelled by the caller, so the
+   * projection leaves it untouched (taskAction none). */
   cancelForTask(taskId: number): void {
-    for (const active of this.active.values()) {
-      if (active.taskId === taskId) {
-        const run = this.runStore.get(active.runId);
-        const task = this.taskService.get(taskId);
-        // operator-cancel outranks every other disposition (§0.3): a harness
-        // exit the SIGKILL triggers can still append its own fact, but the
-        // coordinator keeps the Run `cancelled`. The Task was already cancelled
-        // by the caller, so the projection leaves it untouched (taskAction none).
-        this.coordinateSettle(task, run, 'operator-cancel', {
-          runState: 'cancelled',
-          taskAction: 'none',
-          reason: run.reason ?? null,
-        });
-        this.kill(active);
-      }
-    }
+    this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
   }
 
   /**
@@ -282,24 +295,34 @@ export class Runner {
    * but settles the Run `completed`: SIGKILL even mid-turn, and drive()'s catch
    * no-ops (finish is idempotent, and its settle only fires while the task is
    * still `running`). Unlike {@link completeClosedMirrored} this does not wait
-   * for the agent to park — the operator asked for it to stop now.
+   * for the agent to park — the operator asked for it to stop now. The Task is
+   * already `completed`, so the projection leaves it untouched (taskAction none);
+   * the post-SIGKILL harness-exit fact loses to this agent-finish.
    */
   completeForTask(taskId: number): void {
+    this.settleTaskRun(taskId, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'none', reason: null });
+  }
+
+  /**
+   * Settle a task's Run through the coordinator with `type`/`projection`, whether
+   * it is the live harness in `active` (SIGKILLed here) or a Run parked in
+   * `phase:'review'` with no live process (issue #114). Shared by operator cancel
+   * and force-complete, which differ only in the disposition they record. A
+   * review-parked Run is still `running` and holds no live harness, so settling
+   * it releases its lease and prevents an operator action on an awaiting-review
+   * Task from wedging the Work Context.
+   */
+  private settleTaskRun(taskId: number, type: RunFactType, projection: SettleProjection): void {
+    let handled = false;
     for (const active of this.active.values()) {
-      if (active.taskId === taskId) {
-        const run = this.runStore.get(active.runId);
-        const task = this.taskService.get(taskId);
-        // The operator forced completion; the Task is already `completed`, so
-        // the projection leaves it untouched (taskAction none). The post-SIGKILL
-        // harness-exit fact loses to this agent-finish, keeping the Run completed.
-        this.coordinateSettle(task, run, 'agent-finish/unresolved', {
-          runState: 'completed',
-          taskAction: 'none',
-          reason: null,
-        });
-        this.kill(active);
-      }
+      if (active.taskId !== taskId) continue;
+      handled = true;
+      this.coordinateSettle(this.taskService.get(taskId), this.runStore.get(active.runId), type, projection);
+      this.kill(active);
     }
+    if (handled) return;
+    const parked = this.runStore.listForTask(taskId).find((r) => r.state === 'running');
+    if (parked) this.coordinateSettle(this.taskService.get(taskId), parked, type, projection);
   }
 
   /**
@@ -506,6 +529,20 @@ export class Runner {
         if (line) active.activity = line;
       }
       this.events.onRunEvent?.(event);
+    };
+
+    // Advance the Run through the phase machine (issue #114) up to and including
+    // `to`, following `gate` at the verifying branch. Each intermediate phase is
+    // persisted on the Run row (`runs.phase`, the current-phase pointer surfaced
+    // on the API + card) and recorded as a lifecycle event, so the *sequence* of
+    // phases the Run passed through survives a restart and is reconstructable
+    // from the event log — never inferred from Task columns.
+    const advancePhase = (to: RunPhase, gate: ReviewGate) => {
+      const from = this.runStore.get(run.id).phase ?? 'executing';
+      for (const phase of phasePath(from, to, gate)) {
+        this.runStore.update(run.id, { phase });
+        record('lifecycle', { event: 'phase', phase });
+      }
     };
 
     // Set when an afk mirrored Run blocks on a human prompt: the Run stops and
@@ -736,6 +773,10 @@ export class Runner {
         record('lifecycle', { event: 'escalated', reason: escalating });
         this.settleEscalated(task, run, escalating, patch);
       } else if (autoDriven) {
+        // Agent-finish begins validation — it does not settle the Run (#114).
+        // A mirrored Run has no human gate, so it runs the auto branch:
+        // executing → validating → verifying → landing → terminal.
+        advancePhase('verifying', 'auto');
         const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
         if (outcome === 'escalate') {
           record('lifecycle', { event: 'escalated', reason: 'merge conflict' });
@@ -752,12 +793,20 @@ export class Runner {
             'agent-finish/unresolved',
           );
         } else {
+          // The Merge Fate landed in onCompleted → record `landing`, then settle
+          // terminal (the coordinator marks the Run `phase:'terminal'`).
+          advancePhase('landing', 'auto');
           this.settleAutoCompleted(task, run, patch);
         }
       } else {
-        // Snapshot the diffstat once, here, so the board card can show it
-        // without an N+1 git spawn per refresh (issue #36).
-        this.settle(task, run, 'completed', null, { ...patch, stat: await this.diffstatFor(task, run.id) });
+        // A native Run is human-gated: agent-finish moves it executing →
+        // validating → verifying → review, where it PARKS — non-terminal,
+        // holding its Work Context lease — until the human accepts (lands) or
+        // rejects it, or its review SLA lapses (#114). It does NOT settle here.
+        advancePhase('review', 'human');
+        // Snapshot the diffstat once, here, so the awaiting-review board card can
+        // show it without an N+1 git spawn per refresh (issue #36).
+        this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
       }
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
@@ -900,21 +949,11 @@ export class Runner {
   }
 
   /**
-   * The single settle authority (issue #113, reliability-design §0.3). Every
-   * way a Run ends funnels here: the signal is appended as an immutable
-   * `run_fact` carrying the concrete projection it intends, then the
-   * coordinator replays the **winning** fact's projection by fixed precedence
-   * ({@link projectSettle}) — so a cancel arriving close to an agent-finish
-   * settles the Run `cancelled`, decided by precedence rather than by whoever
-   * wrote the Run row first. Run/Task terminal state is thereby a projection of
-   * `run_facts`, reconstructable from the log alone.
-   *
-   * Settles once under the close-together race: a lower-or-equal-precedence
-   * straggler arriving after the winning disposition already landed recomputes
-   * the same winner and no-ops (the Run is already in the winning terminal
-   * state); a higher-precedence signal arriving late overrides the Run row to
-   * the new winner. `patch` decoration (usage/stat/stopReason) is recorded
-   * regardless of who wins, so no live-usage snapshot is lost.
+   * The Runner's settle entry point (issue #113/#114): delegate to the shared
+   * {@link RunSettleCoordinator}, which appends the ending-signal `run_fact` and
+   * replays the winning disposition by fixed precedence. Extracted so the review
+   * gate and the review-SLA sweep settle Runs through the *same* coordinator,
+   * with identical race-safety, rather than racing the Runner around the Run row.
    */
   private coordinateSettle(
     task: TaskRow,
@@ -923,77 +962,40 @@ export class Runner {
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
   ): void {
-    // The winning disposition BEFORE this signal — so we can tell whether this
-    // signal actually changes the coordinator's decision.
-    const priorFacts = this.coordinatorFacts(run.id);
-    const priorDisposition = priorFacts.length
-      ? computeDisposition(priorFacts, priorFacts[priorFacts.length - 1]!.seq)
-      : null;
-
-    this.runFacts.append(run.id, type, { ...projection });
-
-    const facts = this.coordinatorFacts(run.id);
-    // Phase-less (#113): the whole log decides — the cutoff is its latest seq.
-    const cutoff = facts[facts.length - 1]!.seq;
-    const disposition = computeDisposition(facts, cutoff);
-    const winner = disposition === null ? null : projectSettle(facts, cutoff);
-    if (!winner) return; // unreachable — we just appended a fact
-
-    const before = this.runStore.get(run.id);
-    // Idempotency keys on the winning DISPOSITION, not the Run state: a
-    // lower-or-equal-precedence straggler leaves the winner unchanged and
-    // no-ops (settle exactly once), while a higher-precedence signal arriving
-    // late overrides — even when it maps to the same Run state but a different
-    // Task action (e.g. escalate after a bare failure).
-    if (before.state !== 'running' && disposition === priorDisposition) return;
-
-    // `patch` (usage/stat/stopReason) rides with the winning terminal write,
-    // matching today's semantics — a losing straggler never decorates the row
-    // another disposition won.
-    this.runStore.update(run.id, {
-      ...patch,
-      state: winner.runState,
-      reason: winner.reason,
-      finishedAt: before.finishedAt ?? Date.now(),
-    });
-    this.releaseLease(run.id);
-    this.applySettleTaskAction(task.id, winner.taskAction);
-    this.events.onRunFinished?.(this.runStore.get(run.id));
+    this.settleCoordinator.settle(task, run, type, projection, patch);
   }
 
-  /** A Run's fact log decoded into the coordinator's projection-carrying shape. */
-  private coordinatorFacts(runId: number): CoordinatorFact[] {
-    return this.runFacts.list(runId).map((f) => ({
-      seq: f.seq,
-      type: f.type,
-      projection: JSON.parse(f.payload) as SettleProjection,
-    }));
-  }
-
-  /** Apply the winning fact's Task transition, preserving today's guard: `none`
-   * leaves the Task to its caller (operator cancel/complete already moved it),
-   * and every other action moves only a still-`running` Task — a racing
-   * cancel/escalate that already transitioned it wins. */
-  private applySettleTaskAction(taskId: number, action: SettleTaskAction): void {
-    if (action === 'none') return;
-    if (this.taskService.get(taskId).state !== 'running') return;
-    switch (action) {
-      case 'awaiting-review':
-        this.taskService.setState(taskId, 'awaiting-review');
-        break;
-      case 'completed':
-        this.taskService.setState(taskId, 'completed');
-        break;
-      case 'failed':
-        this.taskService.setState(taskId, 'failed');
-        break;
-      case 'ready':
-        this.taskService.setState(taskId, 'ready');
-        break;
-      case 'escalate':
-        this.taskService.escalate(taskId);
-        break;
+  /**
+   * Park a human-gated native Run in `phase:'review'` (issue #114). Unlike a
+   * settle, this leaves the Run **non-terminal** (`state:'running'`): the result
+   * is verified-but-not-yet-landed, and only the human accept (landing), a
+   * reject, an operator cancel, or a review-SLA expiry moves it terminal. The
+   * Task moves to `awaiting-review` (the human gate), and a review-SLA deadline
+   * is stamped so an abandoned review is eventually swept out.
+   *
+   * The Work Context lease is released here, at review entry — matching today's
+   * seam (the lease released at agent-finish before this ticket). Holding the
+   * lease across the whole review window is a deliberate follow-up: it needs the
+   * phase-specific lease TTLs + heartbeat of #122 (which builds on this phase
+   * machine), not the plain release-at-terminal the spine ships today, and
+   * blanket-holding it without a TTL would wedge a direct-mode Work Context
+   * behind an abandoned review. `patch` carries the run's usage/stopReason/
+   * diffstat decoration. Only a still-running Task is moved — a racing cancel
+   * that already transitioned it wins.
+   */
+  private parkForReview(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
+    this.runStore.update(run.id, { ...patch, phase: 'review', reviewDeadline: Date.now() + REVIEW_SLA_MS });
+    try {
+      this.leaseStore.releaseByOwner(run.id);
+    } catch {
+      // best-effort; boot reconciliation is the backstop
     }
+    if (this.taskService.get(task.id).state === 'running') {
+      this.taskService.setState(task.id, 'awaiting-review');
+    }
+    // Push the updated Run (phase/stat) to the board; the Task transition already
+    // emitted its own change event.
+    this.events.onRunFinished?.(this.runStore.get(run.id));
   }
 
   private settle(
@@ -1056,23 +1058,6 @@ export class Runner {
       taskAction: 'escalate',
       reason: `escalated to human: ${reason}`,
     }, patch);
-  }
-
-  /** Release the Work Context lease this Run holds, on any terminal
-   * disposition. Idempotent and best-effort — a lease-release hiccup must
-   * never crash settle. Keyed by owner Run id so it needs no key recompute.
-   *
-   * NOTE (seam for #114): the lease is released when the RUN row reaches a
-   * terminal state. A native Run that completes into `awaiting-review`
-   * releases here; fully holding the context across the review window is the
-   * phase-machine refinement (#114). This ticket lands against today's Run
-   * states (running|completed|failed|cancelled). */
-  private releaseLease(runId: number): void {
-    try {
-      this.leaseStore.releaseByOwner(runId);
-    } catch {
-      // best-effort; boot reconciliation (#123) is the backstop
-    }
   }
 
   private kill(active: ActiveRun): void {

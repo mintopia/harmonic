@@ -147,6 +147,10 @@ export interface Run {
   taskId: number;
   attempt: number;
   state: 'running' | 'completed' | 'failed' | 'cancelled';
+  /** Phase within the Run lifecycle; a native Run is `state:'running'`,
+   * `phase:'review'` while parked at the human gate. `null` for pre-feature
+   * Runs (issue #114). */
+  phase: 'executing' | 'validating' | 'verifying' | 'review' | 'landing' | 'terminal' | null;
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;
@@ -165,6 +169,7 @@ export interface Run {
   review: 'accepted' | 'rejected' | null;
   reviewFeedback: string | null;
   reviewedAt: number | null;
+  reviewDeadline: number | null;
   startedAt: number;
   finishedAt: number | null;
 }

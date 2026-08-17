@@ -1191,6 +1191,36 @@
             ],
             "example": "completed"
           },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "executing",
+                  "validating",
+                  "verifying",
+                  "review",
+                  "landing",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "review"
+          },
+          "reviewDeadline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "reason": {
             "anyOf": [
               {
@@ -1331,6 +1361,8 @@
           "taskId",
           "attempt",
           "state",
+          "phase",
+          "reviewDeadline",
           "reason",
           "stopReason",
           "sessionId",
@@ -1647,6 +1679,63 @@
             ],
             "example": null
           },
+          "guardrailBudget": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "wallClockMinutes": {
+                    "default": 60,
+                    "example": 60,
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "tokens": {
+                    "default": null,
+                    "example": 2000000,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "costUsd": {
+                    "default": null,
+                    "example": 10,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "guardrailProgress": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -1673,6 +1762,8 @@
           "autoRunnerEnabled",
           "verificationCommand",
           "verificationCritic",
+          "guardrailBudget",
+          "guardrailProgress",
           "createdAt",
           "updatedAt"
         ]
@@ -3353,6 +3444,36 @@
             ],
             "example": "completed"
           },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "executing",
+                  "validating",
+                  "verifying",
+                  "review",
+                  "landing",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "review"
+          },
+          "reviewDeadline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "reason": {
             "anyOf": [
               {
@@ -3493,6 +3614,8 @@
           "taskId",
           "attempt",
           "state",
+          "phase",
+          "reviewDeadline",
           "reason",
           "stopReason",
           "sessionId",
@@ -3817,6 +3940,69 @@
             ],
             "example": null
           },
+          "guardrailBudget": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "wallClockMinutes": {
+                    "default": 60,
+                    "example": 60,
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "tokens": {
+                    "default": null,
+                    "example": 2000000,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "costUsd": {
+                    "default": null,
+                    "example": 10,
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "wallClockMinutes",
+                  "tokens",
+                  "costUsd"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "guardrailProgress": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -3843,6 +4029,8 @@
           "autoRunnerEnabled",
           "verificationCommand",
           "verificationCritic",
+          "guardrailBudget",
+          "guardrailProgress",
           "createdAt",
           "updatedAt"
         ],
@@ -6345,6 +6533,61 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "guardrailBudget": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "wallClockMinutes": {
+                            "default": 60,
+                            "example": 60,
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          "tokens": {
+                            "default": null,
+                            "example": 2000000,
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "costUsd": {
+                            "default": null,
+                            "example": 10,
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guardrailProgress": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               }
@@ -7828,6 +8071,64 @@
                         "critic"
                       ],
                       "additionalProperties": false
+                    },
+                    "guardrails": {
+                      "type": "object",
+                      "properties": {
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "wallClockMinutes": {
+                              "default": 60,
+                              "example": 60,
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "tokens": {
+                              "default": null,
+                              "example": 2000000,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "costUsd": {
+                              "default": null,
+                              "example": 10,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "wallClockMinutes",
+                            "tokens",
+                            "costUsd"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "progress": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "budget",
+                        "progress"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -7842,7 +8143,8 @@
                     "taskPrompt",
                     "agentReview",
                     "conversationIdleTimeoutMinutes",
-                    "verification"
+                    "verification",
+                    "guardrails"
                   ],
                   "additionalProperties": false,
                   "description": "The stored configuration in full: harnesses, price overrides, defaults, auto-runner settings, and flags."
@@ -8293,6 +8595,64 @@
                         "critic"
                       ],
                       "additionalProperties": false
+                    },
+                    "guardrails": {
+                      "type": "object",
+                      "properties": {
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "wallClockMinutes": {
+                              "default": 60,
+                              "example": 60,
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "tokens": {
+                              "default": null,
+                              "example": 2000000,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "costUsd": {
+                              "default": null,
+                              "example": 10,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "wallClockMinutes",
+                            "tokens",
+                            "costUsd"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "progress": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "budget",
+                        "progress"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -8307,7 +8667,8 @@
                     "taskPrompt",
                     "agentReview",
                     "conversationIdleTimeoutMinutes",
-                    "verification"
+                    "verification",
+                    "guardrails"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored once the patch was merged onto it."
@@ -8713,6 +9074,55 @@
                             "type": "null"
                           }
                         ]
+                      }
+                    }
+                  },
+                  "guardrails": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "budget": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "wallClockMinutes": {
+                            "default": 60,
+                            "example": 60,
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          "tokens": {
+                            "default": null,
+                            "example": 2000000,
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "costUsd": {
+                            "default": null,
+                            "example": 10,
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "progress": {
+                        "default": false,
+                        "type": "boolean"
                       }
                     }
                   }
@@ -9153,6 +9563,64 @@
                         "critic"
                       ],
                       "additionalProperties": false
+                    },
+                    "guardrails": {
+                      "type": "object",
+                      "properties": {
+                        "budget": {
+                          "type": "object",
+                          "properties": {
+                            "wallClockMinutes": {
+                              "default": 60,
+                              "example": 60,
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            },
+                            "tokens": {
+                              "default": null,
+                              "example": 2000000,
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "costUsd": {
+                              "default": null,
+                              "example": 10,
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "wallClockMinutes",
+                            "tokens",
+                            "costUsd"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "progress": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "budget",
+                        "progress"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -9167,7 +9635,8 @@
                     "taskPrompt",
                     "agentReview",
                     "conversationIdleTimeoutMinutes",
-                    "verification"
+                    "verification",
+                    "guardrails"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored after the replace, with omitted optional fields filled from the schema's defaults."

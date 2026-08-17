@@ -1,8 +1,9 @@
-import { and, asc, eq, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { RunFactStore } from './run-facts.js';
+import { isParkedPhase } from './run-phases.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import type { PriceTable } from '../execution/pricing.js';
 
@@ -43,6 +44,9 @@ export class RunStore {
         taskId,
         attempt,
         state: 'running',
+        // A Run enters the phase machine at `executing` the moment it is created
+        // (issue #114); the drive loop advances it from here.
+        phase: 'executing',
         startedAt: Date.now(),
         guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
         priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
@@ -98,12 +102,23 @@ export class RunStore {
       .map(deserializeEvent);
   }
 
+  /**
+   * Actively-executing Run count, for the Auto-Runner's Machine-Ceiling
+   * concurrency cap (ADR-0012). A Run parked in `phase:'review'` is
+   * `state:'running'` but has no live harness (issue #114), so it consumes no
+   * machine resources and is excluded here — otherwise a queue of native Runs
+   * awaiting review would throttle the ceiling for no reason (and it restores
+   * the pre-phase-machine count, when a native Run left `running` at
+   * agent-finish). `phase IS NULL` (a pre-feature running Run) still counts.
+   */
+  private readonly notReviewParked = or(isNull(runs.phase), ne(runs.phase, 'review'));
+
   countRunning(): number {
     return (
       this.db
         .select({ n: sql<number>`count(*)` })
         .from(runs)
-        .where(eq(runs.state, 'running'))
+        .where(and(eq(runs.state, 'running'), this.notReviewParked))
         .get()?.n ?? 0
     );
   }
@@ -111,16 +126,17 @@ export class RunStore {
   /**
    * Running-Run count per owning Workspace, for the Auto-Runner's per-Workspace
    * concurrency cap (ADR-0012, issue #60). Runs carry no Workspace column, so
-   * the count joins through the Task; the same running-Run source as
-   * {@link countRunning}, so the per-Workspace tallies and the Machine-Ceiling
-   * total can never disagree. Workspaces with no running Run are absent (read as 0).
+   * the count joins through the Task; the same actively-executing-Run source as
+   * {@link countRunning} (review-parked Runs excluded), so the per-Workspace
+   * tallies and the Machine-Ceiling total can never disagree. Workspaces with no
+   * running Run are absent (read as 0).
    */
   countRunningByWorkspace(): Map<number, number> {
     const rows = this.db
       .select({ workspaceId: tasks.workspaceId, n: sql<number>`count(*)` })
       .from(runs)
       .innerJoin(tasks, eq(runs.taskId, tasks.id))
-      .where(eq(runs.state, 'running'))
+      .where(and(eq(runs.state, 'running'), this.notReviewParked))
       .groupBy(tasks.workspaceId)
       .all();
     const counts = new Map<number, number>();
@@ -132,6 +148,13 @@ export class RunStore {
    * Finished runs that never got a per-model usage split — their run-end
    * collection raced the harness's session-log flush. Candidates for the
    * boot-time backfill.
+   *
+   * "Finished" here means the harness process is gone, not that the Run row is
+   * terminal: a native Run parked in `phase:'review'` is `state:'running'` yet
+   * its harness has exited and its session log is complete on disk (issue #114),
+   * so it is just as backfillable as a settled run. The filter therefore admits
+   * any Run that is not terminal-`running`-mid-execution — i.e. non-running rows
+   * plus review-parked ones.
    */
   listUsageBackfillCandidates(): RunRow[] {
     return this.db
@@ -139,6 +162,13 @@ export class RunStore {
       .from(runs)
       .where(and(ne(runs.state, 'running'), isNotNull(runs.sessionId)))
       .all()
+      .concat(
+        this.db
+          .select()
+          .from(runs)
+          .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.sessionId)))
+          .all(),
+      )
       .filter((run) => {
         if (!run.usage) return true;
         const models = (JSON.parse(run.usage) as { models?: Record<string, unknown> }).models;
@@ -151,10 +181,19 @@ export class RunStore {
    * by a restart. Fail it (reason "interrupted") and return it so the
    * caller can fail its task (and notify) — never silently re-run on a
    * possibly dirty working directory.
+   *
+   * A Run parked in `phase:'review'` is the exception (issue #114): that phase
+   * is *defined* by having no live process — it awaits the human accept/reject
+   * gate — so a restart did not orphan it. Such Runs are left untouched (they
+   * survive the restart still parked, their Task still `awaiting-review`) and are
+   * NOT returned. Their Work Context lease was already released at review entry
+   * (#114 releases it there; holding it across review awaits #122), so there is
+   * nothing for the caller to release either.
    */
   markInterrupted(): RunRow[] {
     const facts = new RunFactStore(this.db);
-    const orphans = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
+    const running = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
+    const orphans = running.filter((run) => !isParkedPhase(run.phase));
     for (const run of orphans) {
       // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
       // failed/interrupted terminal stays reconstructable from the log alone.
@@ -163,9 +202,25 @@ export class RunStore {
         taskAction: 'failed',
         reason: 'interrupted',
       });
-      this.update(run.id, { state: 'failed', reason: 'interrupted', finishedAt: Date.now() });
+      this.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
     }
     return orphans;
+  }
+
+  /**
+   * Runs parked in `phase:'review'` whose review SLA has lapsed as of `now`
+   * (issue #114, reliability-design round-5 #4): still `running`, in `review`,
+   * with a `reviewDeadline` at or before `now`. The review-SLA sweep settles
+   * each to a terminal disposition via the coordinator (a `review-sla-expiry`
+   * `run_fact`). A null `reviewDeadline` never expires.
+   */
+  listReviewParkedOverdue(now: number): RunRow[] {
+    return this.db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.reviewDeadline)))
+      .all()
+      .filter((run) => run.reviewDeadline != null && run.reviewDeadline <= now);
   }
 }
 

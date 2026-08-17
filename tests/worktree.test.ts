@@ -154,8 +154,12 @@ describe('worktree isolation mode', () => {
 
     const runA = (await server.api('GET', `/api/runs/${a.runId}`)).body;
     const runB = (await server.api('GET', `/api/runs/${b.runId}`)).body;
-    expect(runA.state).toBe('completed');
-    expect(runB.state).toBe('completed');
+    // A native Run parks non-terminal in `phase:'review'` awaiting the human
+    // gate — it is not `completed` until Accept lands it (issue #114).
+    expect(runA.state).toBe('running');
+    expect(runB.state).toBe('running');
+    expect(runA.phase).toBe('review');
+    expect(runB.phase).toBe('review');
     expect(runA.branch).not.toBe(runB.branch);
 
     const taskA = (await server.api('GET', `/api/tasks/${a.taskId}`)).body;

@@ -1,4 +1,8 @@
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+// Type-only import (erased at compile) so the db layer can brand `runs.phase`
+// with the phase-machine enum without a runtime db→domain import cycle
+// (domain/run-facts.ts already imports this schema).
+import type { RunPhase } from '../domain/run-phases.js';
 
 /** Tracker mirroring (issue #30). A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -171,6 +175,25 @@ export const runs = sqliteTable('runs', {
     .references(() => tasks.id),
   attempt: integer('attempt').notNull(),
   state: text('state').$type<RunState>().notNull(),
+  /**
+   * The Run's position in the phase machine (issue #114, reliability-design
+   * §0.2): `executing → validating → verifying → [review] → landing → terminal`,
+   * with human-gated native Runs passing through `review` before `landing` and
+   * mirrored / auto-accept Runs skipping it. Persisted so the phase survives a
+   * restart and is reconstructable from the Run row alone (never inferred from
+   * Task columns); surfaced on the Run API + card. Null on pre-feature Runs.
+   * Distinct from `state`: `state` is the execution/terminal RunState, `phase`
+   * is *where in its lifecycle* the Run is — a native Run is `state:'running'`
+   * while parked in `phase:'review'` awaiting the human accept/reject gate.
+   */
+  phase: text('phase').$type<RunPhase>(),
+  /**
+   * Review-SLA deadline (epoch ms) for a Run parked in `phase:'review'`: the
+   * point past which an un-reviewed Run is swept to a terminal disposition via
+   * a `review-sla-expiry` run_fact (issue #114, reliability-design round-5 #4).
+   * Set on entering `review`; null otherwise and on pre-feature Runs.
+   */
+  reviewDeadline: integer('review_deadline'),
   /** Failure reason: 'interrupted', an error message, or null. */
   reason: text('reason'),
   /** ACP stopReason from the session/prompt result. */
@@ -408,6 +431,7 @@ export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
 export const RUN_FACT_TYPES = [
   'operator-cancel',
   'escalate',
+  'review-sla-expiry',
   'agent-finish/unresolved',
   'failed',
   'process-death',

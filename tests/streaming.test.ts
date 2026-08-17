@@ -43,8 +43,11 @@ describe('live run event streaming and replay', () => {
     const taskMidRun = await server.api('GET', `/api/tasks/${created.body.id}`);
     expect(taskMidRun.body.state).toBe('running');
 
+    // A native Run parks non-terminal in `phase:'review'` at agent-finish
+    // (issue #114) — it stays `state:'running'`, so "done executing" is the
+    // run_changed that carries the review phase, not a non-running state.
     await waitFor(async () =>
-      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.state !== 'running'),
+      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.phase === 'review'),
     );
 
     const streamed = ws.messages
