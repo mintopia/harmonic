@@ -21,7 +21,10 @@ import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails } from '../domain/setting-override.js';
+import { resolveGuardrails, resolveVerifiers } from '../domain/setting-override.js';
+import { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
+import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import { resolvePrices } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
@@ -71,7 +74,14 @@ export interface RunnerOptions {
   tailerCadence?: TailerCadence;
   /** Resolves a Task's Workspace row for the Guardrail snapshot (issue #126);
    * absent → the snapshot resolves against global defaults only. */
-  getWorkspace?: (workspaceId: number | null) => Pick<WorkspaceRow, 'guardrailBudget' | 'guardrailProgress'> | undefined;
+  getWorkspace?: (
+    workspaceId: number | null,
+  ) =>
+    | Pick<
+        WorkspaceRow,
+        'guardrailBudget' | 'guardrailProgress' | 'verificationCommand' | 'verificationCritic'
+      >
+    | undefined;
 }
 
 interface Workspace {
@@ -142,6 +152,13 @@ interface ActiveRun {
    * only once and every later steer falls straight through to boundary queueing.
    */
   steerSupported?: boolean;
+  /**
+   * Cancels an in-flight command verifier (issue #135). Verification runs in
+   * `verifying` after the builder harness is gone, so a process/server shutdown
+   * ({@link Runner.shutdown}) aborts this to kill the verifier's child promptly
+   * rather than wait out its (up to 10-minute) timeout.
+   */
+  verifyAbort: AbortController;
 }
 
 /**
@@ -163,6 +180,9 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly runFacts: RunFactStore;
+  /** The Verification attempt log (issue #135/#136): every command/critic
+   * verifier invocation against a Run's frozen candidate is appended here. */
+  private readonly verificationAttempts: VerificationAttemptStore;
   /** The shared terminal-disposition coordinator (issue #113/#114): every Run
    * settle — drive-loop, operator cancel/complete, review-parked — funnels here
    * so the winning disposition is decided by precedence, once. */
@@ -185,6 +205,7 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.runFacts = new RunFactStore(this.db);
+    this.verificationAttempts = new VerificationAttemptStore(this.db);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
     // that path can reach a Run parked in `review`/`landing` while a
@@ -488,6 +509,7 @@ export class Runner {
     this.shuttingDown = true;
     for (const active of this.active.values()) {
       this.tailer.stop(active.runId);
+      active.verifyAbort.abort();
       this.kill(active);
     }
     this.active.clear();
@@ -593,6 +615,87 @@ export class Runner {
         reason: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  /**
+   * Run the configured verifiers against the Run's frozen candidate and fold
+   * their verdicts into a single Verification decision (issue #135, ADR-0021,
+   * reliability-design Unit B). Runs in `verifying`, after `finalize()` has
+   * torn the leased workspace down — verification reads the *persisted*
+   * candidate ref (`refs/harmonic/candidate/run-<id>`) in the base repo, never
+   * the workspace, exactly as the sibling critic would.
+   *
+   * Today only the command verifier (#135) is wired; the critic (#136,
+   * `runCritic`) plugs in as a second verdict feeding the same `combineVerdicts`
+   * when its integration ticket lands. With no verifier configured the verdict
+   * set is empty and `combineVerdicts` returns `proceed`, so a Run behaves
+   * exactly as it did before this gate existed.
+   *
+   * Each completed attempt is persisted (`VerificationAttemptStore`) before its
+   * verdict drives the settle, giving a durable per-attempt audit record. A Run
+   * that crashes *mid-verify* is `state:'running'`, so crash recovery (#117)
+   * sweeps it to `interrupted` — it is never blindly re-run; marking a partial
+   * attempt `inconclusive` and idempotent-replay are deferred (reliability-design
+   * Unit B, "replay only if the verifier is declared idempotent"). This never
+   * throws for a verdict — a missing command, spawn error, timeout, or absent
+   * candidate all resolve to `inconclusive`, which the combination treats as
+   * fail-safe (Escalate).
+   */
+  private async runVerification(
+    task: TaskRow,
+    run: RunRow,
+    signal: AbortSignal,
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): Promise<VerificationDecision> {
+    const ws = this.getWorkspace?.(task.workspaceId);
+    const { command } = resolveVerifiers(
+      ws ?? { verificationCommand: null, verificationCritic: null },
+      this.getConfig(),
+    );
+
+    const verdicts: VerifierVerdict[] = [];
+
+    if (command) {
+      const oid = this.runStore.get(run.id).candidateOid;
+      if (!oid) {
+        // The verifier is configured but there is no candidate to run against —
+        // the snapshot was skipped (dirty direct context) or failed (#134). We
+        // cannot characterize work we never froze, so this is infra doubt →
+        // inconclusive → Escalate, not a silent pass.
+        this.verificationAttempts.append(run.id, {
+          mechanism: 'command',
+          inputOid: '',
+          verdict: 'inconclusive',
+          summary: 'no candidate snapshot to verify',
+          output: '',
+          mutated: false,
+        });
+        record('lifecycle', { event: 'verification', mechanism: 'command', verdict: 'inconclusive' });
+        verdicts.push({ verifier: 'command', verdict: 'inconclusive' });
+      } else {
+        mkdirSync(this.worktreesDir, { recursive: true });
+        const attempt = await runCommandVerifier({
+          // The base repo owns the candidate ref/objects (`prepareWorkspace`
+          // pins `worktree.repoDir = task.workingDir`); the leased worktree is
+          // already gone by now.
+          repoDir: task.workingDir,
+          candidateOid: oid,
+          worktreePath: join(this.worktreesDir, `cmdverify-${run.id}`),
+          command,
+          signal,
+        });
+        this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
+        record('lifecycle', {
+          event: 'verification',
+          mechanism: 'command',
+          verdict: attempt.verdict,
+          summary: attempt.summary,
+        });
+        verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
+      }
+    }
+
+    return combineVerdicts(verdicts);
   }
 
   /**
@@ -746,6 +849,7 @@ export class Runner {
       idle: false,
       externallySettled: false,
       steerable: true,
+      verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
 
@@ -871,41 +975,71 @@ export class Runner {
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         this.settleEscalated(task, run, escalating, patch);
-      } else if (autoDriven) {
-        // Agent-finish begins validation — it does not settle the Run (#114).
-        // A mirrored Run has no human gate, so it runs the auto branch:
-        // executing → validating → verifying → landing → terminal.
-        advancePhase('verifying', 'auto');
-        const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
-        if (outcome === 'escalate') {
-          record('lifecycle', { event: 'escalated', reason: 'merge conflict' });
-          this.settleEscalated(task, run, 'merge conflict', patch);
-        } else if (outcome === 'unresolved') {
-          // Clean exit but the agent never closed the ticket — not success.
-          // Treat as a failure: Auto-Retry within cap, else Escalate.
-          record('lifecycle', { event: 'unresolved', reason: 'ticket left open' });
-          this.settleFailedOrRetry(
-            task,
-            run,
-            'run ended without resolving the ticket (left open)',
-            patch,
-            'agent-finish/unresolved',
-          );
-        } else {
-          // The Merge Fate landed in onCompleted → record `landing`, then settle
-          // terminal (the coordinator marks the Run `phase:'terminal'`).
-          advancePhase('landing', 'auto');
-          this.settleAutoCompleted(task, run, patch);
-        }
       } else {
-        // A native Run is human-gated: agent-finish moves it executing →
-        // validating → verifying → review, where it PARKS — non-terminal,
-        // holding its Work Context lease — until the human accepts (lands) or
-        // rejects it, or its review SLA lapses (#114). It does NOT settle here.
-        advancePhase('review', 'human');
-        // Snapshot the diffstat once, here, so the awaiting-review board card can
-        // show it without an N+1 git spawn per refresh (issue #36).
-        this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
+        // Verification gate (issue #135, ADR-0021, reliability-design Unit B):
+        // agent-finish begins validation — it does not settle the Run (#114).
+        // Enter `verifying` and run the configured verifiers against the frozen
+        // candidate. A pass lets the Run proceed toward landing (afk) / review
+        // (native); a fail or inconclusive Escalates and never lands. Self-heal
+        // on an actionable fail arrives in a later ticket — for now every
+        // non-`proceed` outcome hands the Task to a human, which is what
+        // "broken work never lands unattended" means at this stage.
+        advancePhase('verifying', autoDriven ? 'auto' : 'human');
+        const decision = await this.runVerification(task, run, active.verifyAbort.signal, record);
+        // Verification can take up to the command's timeout (minutes). Re-check
+        // the two ways the Run may have been settled out from under us during
+        // that window before acting on the verdict:
+        // - Process/server shutdown aborted the verifier (→ inconclusive here).
+        //   That is not a run failure: leave the Run `running` for boot
+        //   reconciliation to record interrupted, exactly as the catch block
+        //   below does for a SIGKILLed harness — don't Escalate on shutdown timing.
+        if (this.shuttingDown) return;
+        // - The poll settled a closed ticket, or an operator cancelled: the Run
+        //   is already terminal, so settling again (or parking) would finish it
+        //   twice / un-terminal it. Drop the harness and stop.
+        if (active.externallySettled) {
+          await finalize();
+          return;
+        }
+        if (decision.outcome !== 'proceed') {
+          const reason = `verification ${decision.outcome}: ${decision.reason}`;
+          record('lifecycle', { event: 'escalated', reason });
+          this.settleEscalated(task, run, reason, patch);
+        } else if (autoDriven) {
+          // A mirrored Run has no human gate, so it runs the auto branch:
+          // executing → validating → verifying → landing → terminal.
+          const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
+          if (outcome === 'escalate') {
+            record('lifecycle', { event: 'escalated', reason: 'merge conflict' });
+            this.settleEscalated(task, run, 'merge conflict', patch);
+          } else if (outcome === 'unresolved') {
+            // Clean exit but the agent never closed the ticket — not success.
+            // Treat as a failure: Auto-Retry within cap, else Escalate.
+            record('lifecycle', { event: 'unresolved', reason: 'ticket left open' });
+            this.settleFailedOrRetry(
+              task,
+              run,
+              'run ended without resolving the ticket (left open)',
+              patch,
+              'agent-finish/unresolved',
+            );
+          } else {
+            // The Merge Fate landed in onCompleted → record `landing`, then settle
+            // terminal (the coordinator marks the Run `phase:'terminal'`).
+            advancePhase('landing', 'auto');
+            this.settleAutoCompleted(task, run, patch);
+          }
+        } else {
+          // A native Run is human-gated: a passing verification moves it
+          // executing → validating → verifying → review, where it PARKS —
+          // non-terminal, holding its Work Context lease — until the human
+          // accepts (lands) or rejects it, or its review SLA lapses (#114). It
+          // does NOT settle here.
+          advancePhase('review', 'human');
+          // Snapshot the diffstat once, here, so the awaiting-review board card can
+          // show it without an N+1 git spawn per refresh (issue #36).
+          this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
+        }
       }
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);

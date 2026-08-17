@@ -113,7 +113,24 @@ Runs in `verifying` against a **frozen candidate OID**:
 - Verification runs in a **detached temporary worktree checked out at the candidate
   OID** (command and critic both see a stable tree).
 - **Command**: argv-based, explicit cwd/env, timeout, output cap, cancellation;
-  exit-code→verdict mapping; infra failure → inconclusive.
+  exit-code→verdict mapping; infra failure → inconclusive. Built in #135
+  (`src/verification/command-verifier.ts`), wired into the Runner's `verifying`
+  phase; each attempt is persisted to the verification-attempt log at the frozen
+  candidate OID before its verdict is combined. Exit-code → verdict table
+  (`exitCodeToVerdict`, enforced):
+  | command result | verdict |
+  |---|---|
+  | exit code 0 | pass |
+  | exit code non-zero (1–255) | fail |
+  | spawn error (missing command / EACCES) | inconclusive |
+  | timeout (killed after `timeoutSeconds`) | inconclusive |
+  | cancelled (AbortSignal, e.g. shutdown) | inconclusive |
+  | killed by signal / no exit code | inconclusive |
+  | candidate checkout failure (bad OID, git/FS) | inconclusive |
+  Unlike the critic, a command is *expected* to write to its disposable
+  detached checkout (a build/test writes artifacts), so the before/after
+  fingerprint `mutated` flag is recorded for audit but never overrides the
+  verdict — the detached, disposable, removed-after worktree is the containment.
 - **Critic**: read-only, no mutating tools/creds, bound to the OID; structured
   schema-validated verdict; malformed/missing → inconclusive; injection
   containment (trusted system prompt + delimited untrusted content + no tools/creds
