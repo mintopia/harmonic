@@ -92,6 +92,15 @@ export const Git = {
    */
   createRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid, ''),
 
+  /**
+   * Set `ref` to `oid` unconditionally (no old-value CAS). Used to overwrite a
+   * Run's candidate ref when a self-heal turn re-snapshots (issue #137): the
+   * ref already exists from the first turn, so the create-only {@link createRef}
+   * would fail — the candidate must move to the healed tree the re-verify runs
+   * against, or the heal would verify the stale, still-failing candidate.
+   */
+  setRef: (dir: string, ref: string, oid: string) => git(dir, 'update-ref', ref, oid),
+
   /** Every ref with its object id, one per line — the ref half of a
    * verification fingerprint (a verifier can mutate shared refs via the common
    * git dir, not just tracked files). */
@@ -114,6 +123,16 @@ export const Git = {
   // base repo), so Runs on distinct checkouts still parallelise.
   addWorktree: (dir: string, worktreePath: string, newBranch: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'add', '-b', newBranch, worktreePath)),
+
+  /**
+   * Add a worktree that checks out an EXISTING branch (no `-b`). A self-heal
+   * turn (issue #137) resumes the Run's prior work on its
+   * `harmonic/task-<id>-run-<attempt>` branch, which already exists from the
+   * first turn's finalize commit — {@link addWorktree}'s create-only `-b` form
+   * would fail on it.
+   */
+  addWorktreeCheckout: (dir: string, worktreePath: string, branch: string) =>
+    withRepoLock(dir, () => git(dir, 'worktree', 'add', worktreePath, branch)),
 
   removeWorktree: (dir: string, worktreePath: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'remove', '--force', worktreePath)),

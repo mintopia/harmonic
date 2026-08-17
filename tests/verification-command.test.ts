@@ -50,6 +50,11 @@ describe('command verifier end-to-end (issue #135)', () => {
     const ws = server.app.ctx.workspaces.list()[0]!;
     workspaceId = ws.id;
     server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    // This file exercises the #135 verify GATE in isolation: a fail Escalates
+    // directly. Self-heal (#137) is on by default (maxSelfHeals: 1) and would
+    // turn a fail into heal→re-verify→escalate (two attempts); disable it here so
+    // these assertions stay a clean gate test. Self-heal has its own file.
+    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
   });
   afterAll(async () => {
     await server.close();

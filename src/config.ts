@@ -259,6 +259,14 @@ export const appConfigSchema = z.object({
        * passing native Run still parks for human review. No verifier configured →
        * always review, regardless of this flag (nothing verified to auto-accept). */
       autoAccept: z.boolean().default(false),
+      /** Bounded self-heal (issue #137, ADR-0021, reliability-design Unit B):
+       * how many corrective builder turns an **actionable** verification fail
+       * may trigger before the Run Escalates. Each heal routes back into the
+       * builder Session as a mutating turn through the per-Session turn queue,
+       * re-enters `validating`, and reruns the FULL verifier suite. An
+       * inconclusive verdict never heals (it Escalates with its cause); `0`
+       * disables self-heal, so an actionable fail Escalates immediately. */
+      maxSelfHeals: z.number().int().min(0).default(1),
     })
     .prefault({}),
   /**
@@ -421,6 +429,7 @@ export function defaultConfig(): AppConfig {
       command: null,
       critic: null,
       autoAccept: false,
+      maxSelfHeals: 1,
     },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },

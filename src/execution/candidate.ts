@@ -37,6 +37,12 @@ export interface BuildCandidateArgs {
   ref: string;
   /** Commit message for the candidate. */
   message: string;
+  /** Overwrite `ref` if it already exists instead of the create-only CAS. A
+   * self-heal turn (issue #137) re-snapshots against the SAME
+   * `refs/harmonic/candidate/run-<id>` ref, which the first turn already
+   * created; without this the create-only pin fails and the heal would verify
+   * the stale candidate. Absent/false on a Run's first snapshot. */
+  force?: boolean;
 }
 
 /**
@@ -54,7 +60,11 @@ export async function buildCandidate(args: BuildCandidateArgs): Promise<string> 
   const parent = await Git.revParse(args.repoDir, args.baseRev);
   const tree = await Git.writeWorkspaceTree(args.workspaceDir, parent);
   const oid = await Git.commitTree(args.repoDir, tree, parent, args.message);
-  await Git.createRef(args.repoDir, args.ref, oid);
+  if (args.force) {
+    await Git.setRef(args.repoDir, args.ref, oid);
+  } else {
+    await Git.createRef(args.repoDir, args.ref, oid);
+  }
   return oid;
 }
 

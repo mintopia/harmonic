@@ -44,7 +44,7 @@ describe('ConfigStore', () => {
 
     const store = new ConfigStore(db);
     // Default resolution yields "no verifiers" — an existing Run's outcome is unchanged.
-    expect(store.get().verification).toEqual({ command: null, critic: null, autoAccept: false });
+    expect(store.get().verification).toEqual({ command: null, critic: null, autoAccept: false, maxSelfHeals: 1 });
   });
 
   it('clears a configured verifier back to null via PATCH without crashing on the null override (issue #132)', () => {

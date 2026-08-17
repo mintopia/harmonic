@@ -63,7 +63,15 @@ async function handlePrompt(msg) {
   // scenario still parses.
   const rawText = msg.params.prompt[0].text;
   const stubTaskId = Number(rawText.match(/taskId=(\d+)/)?.[1] ?? 0) || null;
-  const jsonText = rawText.split('\n\n## You are running unattended')[0];
+  // The JSON scenario is the head of the prompt; strip the two markdown sections
+  // Harmonic may append after it — the auto-drive "## You are running
+  // unattended" reminder, and a self-heal turn's "## Verification failed"
+  // corrective feedback (issue #137). These are stripped specifically (not any
+  // "## " header) so a re-attempt's "## Feedback from the previous attempt"
+  // still leaves the prompt non-JSON, preserving the echo-scenario fallback.
+  const jsonText = rawText
+    .split('\n\n## You are running unattended')[0]
+    .split('\n\n## Verification failed')[0];
   let scenario;
   try {
     scenario = JSON.parse(jsonText);
@@ -78,6 +86,18 @@ async function handlePrompt(msg) {
         },
       ],
     };
+  }
+  // Self-heal turns (issue #137): each heal re-drives the SAME builder in a
+  // FRESH harness process, so a per-process counter can't tell turn 1 from
+  // turn 2. Instead the corrective prompt carries "self-heal <n>" (1-based);
+  // a scenario may script a distinct turn per heal via `turns: [t0, t1, ...]`,
+  // indexed by that number (turn 0 = the first, un-healed turn). Stateless and
+  // cross-process. Absent `turns`, behaviour is unchanged.
+  if (Array.isArray(scenario.turns)) {
+    const healAttempt = Number(rawText.match(/self-heal (\d+)/)?.[1] ?? 0);
+    const { turns, ...base } = scenario;
+    const idx = Math.min(healAttempt, turns.length - 1);
+    scenario = { ...base, ...(turns[idx] ?? {}) };
   }
   promptInFlight = true;
   const delayMs = scenario.delayMs ?? 5;
