@@ -29,10 +29,25 @@ export function isTerminalState(state: TaskState): boolean {
  * (completed / failed / cancelled) Tasks only once the operator reveals them.
  * Order is preserved so the caller's sort (and elk's model-order tiebreak)
  * stays stable.
+ *
+ * Exception — a terminal Task that *still blocks* an active Task is kept even
+ * when terminal Tasks are hidden. The domain unblocks a Task only when every
+ * dependency is `completed` (tasks.ts `hasUnmet`), so a `failed` / `cancelled`
+ * blocker keeps its dependent `blocked`. Hiding it would drop the blocking edge
+ * (graphEdges needs both endpoints present) and make a genuinely-blocked Task
+ * read as unblocked — the board and graph would disagree. A `completed` blocker
+ * is satisfied, so it stays hidden.
  */
 export function visibleTasks(tasks: Task[], showTerminal: boolean): Task[] {
   if (showTerminal) return tasks;
-  return tasks.filter((t) => !isTerminalState(t.state));
+  const stillBlocking = new Set<number>();
+  for (const t of tasks) {
+    if (isTerminalState(t.state)) continue; // only an active dependent can be waiting on a blocker
+    for (const dep of t.dependsOn) stillBlocking.add(dep);
+  }
+  return tasks.filter(
+    (t) => !isTerminalState(t.state) || (t.state !== 'completed' && stillBlocking.has(t.id)),
+  );
 }
 
 /**

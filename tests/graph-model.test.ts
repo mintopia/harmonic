@@ -67,6 +67,24 @@ describe('terminal-state visibility', () => {
     expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([1, 4]);
   });
 
+  it('keeps a failed/cancelled blocker that still gates an active Task, but hides a satisfied one', () => {
+    // 1 (cancelled) still blocks 2 → kept so the block is visible; 3 (completed)
+    // is satisfied → stays hidden. Matches the domain: unblock only on `completed`.
+    const tasks = [
+      task(1, 'cancelled'),
+      task(2, 'blocked', { dependsOn: [1] }),
+      task(3, 'completed'),
+      task(4, 'ready', { dependsOn: [3] }),
+    ];
+    expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([1, 2, 4]);
+  });
+
+  it('hides a terminal Task that blocks nothing active', () => {
+    // 1 (cancelled) only blocks a terminal dependent, so it explains no live block.
+    const tasks = [task(1, 'cancelled'), task(2, 'completed', { dependsOn: [1] })];
+    expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([]);
+  });
+
   it('reveals terminal Tasks when the toggle is on, preserving order', () => {
     const tasks = [task(1, 'running'), task(2, 'completed'), task(4, 'ready')];
     expect(visibleTasks(tasks, true).map((t) => t.id)).toEqual([1, 2, 4]);
@@ -92,6 +110,14 @@ describe('dependency edges', () => {
     const all = [task(1, 'completed'), task(2, 'ready', { dependsOn: [1] })];
     const visible = visibleTasks(all, false);
     expect(graphEdges(visible)).toEqual([]);
+  });
+
+  it('keeps the blocking edge from a cancelled/failed blocker to an active blocked Task', () => {
+    // Regression: a cancelled blocker keeps its dependent `blocked` (domain), so the
+    // graph must still draw the edge rather than hiding the blocker and reading unblocked.
+    const all = [task(1, 'cancelled'), task(2, 'blocked', { dependsOn: [1] })];
+    const visible = visibleTasks(all, false);
+    expect(graphEdges(visible)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
   });
 
   it('ignores self-references and de-duplicates', () => {
