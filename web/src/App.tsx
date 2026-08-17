@@ -428,6 +428,12 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden rail:flex-row">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-md focus:bg-surface focus:px-4 focus:font-medium focus:text-ink focus:shadow-card"
+      >
+        Skip to content
+      </a>
       {/* The sidebar: navigation lives here; above the working view is status only. */}
       <aside
         className={`shrink-0 border-b border-hairline bg-shell rail:flex rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
@@ -546,7 +552,7 @@ export function App() {
             itself to the header's bottom edge (see toast.tsx). */}
         <Toaster />
 
-        {error && <div className="mx-6 mt-4 rounded-lg bg-fail-tint px-4 py-2 text-fail">{error}</div>}
+        {error && <div role="alert" className="mx-6 mt-4 rounded-lg bg-fail-tint px-4 py-2 text-fail">{error}</div>}
 
         {showRunHint && (
           <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
@@ -589,7 +595,7 @@ export function App() {
             rail, drops below the drawer under 900px, and wraps to two rows
             under ~520px (63 → 121 → 165px measured). */}
         <div className="relative min-h-0 flex-1">
-          <main className="h-full min-w-0 overflow-y-auto px-6 py-5">
+          <main id="main-content" tabIndex={-1} className="h-full min-w-0 overflow-y-auto px-6 py-5">
             {showWorkspaceEmptyState ? (
               <EmptyState
                 title="No workspace open"

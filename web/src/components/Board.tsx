@@ -75,7 +75,7 @@ function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
       </div>
 
       <div className="mx-auto mt-12 max-w-xl text-center">
-        <h2 className={displayTitle}>Run your first agent</h2>
+        <h1 className={displayTitle}>Run your first agent</h1>
         <p className="mx-auto mt-2 max-w-md text-muted">
           Harmonic queues a task, runs an agent on it unattended, and holds the result at a review
           gate until you accept the merge.
@@ -207,6 +207,7 @@ export function Board({
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
+      <h1 className="sr-only">Board</h1>
       {columns.map(({ state, terminal, tasks: column }) => {
         if (terminal && !peeked.has(state)) return null;
         const drop = dropProps(state);

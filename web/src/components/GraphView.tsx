@@ -205,6 +205,7 @@ export function GraphView({
 
   return (
     <div className="flex h-full flex-col">
+      <h1 className="sr-only">Dependency graph</h1>
       {/* Toolbar: the anchor count, and the terminal-reveal toggle. */}
       <div className="mb-4 flex flex-wrap items-baseline gap-3">
         <span className="flex items-baseline gap-1.5">

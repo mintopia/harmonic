@@ -90,7 +90,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className={displayTitle}>Usage &amp; statistics</h2>
+        <h1 className={displayTitle}>Usage &amp; statistics</h1>
         <div className="flex-1" />
         <div className="flex gap-0.5 rounded-md bg-raised p-0.5" role="group" aria-label="Time range">
           {Object.keys(RANGES).map((r) => (
@@ -136,13 +136,13 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
           {filled.length >= 2 && (
             <section className={`${card} mb-4 p-5`}>
-              <h3 className="mb-3 text-title font-semibold">Cost per day</h3>
+              <h2 className="mb-3 text-title font-semibold">Cost per day</h2>
               <CostChart series={filled} />
             </section>
           )}
 
           <section className={`${card} mb-4 p-5`}>
-            <h3 className="mb-3 text-title font-semibold">Run states</h3>
+            <h2 className="mb-3 text-title font-semibold">Run states</h2>
             <div className="flex flex-wrap gap-2">
               {orderedRunStates(stats.runsByState).map(({ state, count }) => (
                 <span
@@ -157,7 +157,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
           <div className="grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
-              <h3 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h3>
+              <h2 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h2>
               {Object.keys(stats.models).length === 0 && <p className="text-muted">No per-model data in range.</p>}
               {Object.keys(stats.models).length > 0 && (
                 <table className="w-full text-left">
@@ -192,7 +192,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </section>
 
             <section className={`${card} p-5`}>
-              <h3 className="mb-3 text-title font-semibold">Tool calls</h3>
+              <h2 className="mb-3 text-title font-semibold">Tool calls</h2>
               {Object.keys(stats.toolCalls).length === 0 && <p className="text-muted">No tool calls in range.</p>}
               {Object.keys(stats.toolCalls).length > 0 && (
                 <table className="w-full text-left">

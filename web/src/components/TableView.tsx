@@ -71,6 +71,7 @@ export function TableView({
 
   const sortHeader = (key: SortKey, label: string, align?: 'right', extra = '') => (
     <th
+      scope="col"
       aria-sort={sortBy === key ? (order === 'asc' ? 'ascending' : 'descending') : undefined}
       className={`py-2 ${align === 'right' ? 'text-right' : ''} ${extra}`}
     >
@@ -91,6 +92,7 @@ export function TableView({
 
   return (
     <div>
+      <h1 className="sr-only">Tasks</h1>
       <div className="mb-4 flex flex-wrap items-baseline gap-2">
         {/* The view's anchor figure: how many tasks the filters (including
             search, issue #104) select. */}
@@ -160,13 +162,14 @@ export function TableView({
           </div>
         )}
         <table className="w-full text-left">
+          <caption className="sr-only">Tasks</caption>
           <thead className={tableHead}>
             <tr>
-              <th className="py-2.5 pr-3">#</th>
-              <th>Prompt</th>
-              <th>State</th>
-              <th>Harness</th>
-              <th>Model</th>
+              <th scope="col" className="py-2.5 pr-3">#</th>
+              <th scope="col">Prompt</th>
+              <th scope="col">State</th>
+              <th scope="col">Harness</th>
+              <th scope="col">Model</th>
               {sortHeader('priority', 'Priority')}
               {sortHeader('cost', 'Cost', 'right')}
               {sortHeader('createdAt', 'Created', undefined, 'pl-4')}

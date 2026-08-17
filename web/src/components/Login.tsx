@@ -41,7 +41,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
           onChange={(e) => setPassword(e.target.value)}
           className={`${field} mb-3`}
         />
-        {error && <p className="mb-3 text-fail">{error}</p>}
+        {error && <p role="alert" className="mb-3 text-fail">{error}</p>}
         <button type="submit" disabled={busy || !password} className={`${btnPrimary} w-full`}>
           Log in
         </button>

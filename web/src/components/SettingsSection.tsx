@@ -18,7 +18,7 @@ export function SettingsSection({
 }) {
   return (
     <section className={`${card} max-w-3xl p-5`}>
-      <h3 className="text-title font-semibold">{title}</h3>
+      <h2 className="text-title font-semibold">{title}</h2>
       <p className="mb-4 mt-0.5 text-muted">{description}</p>
       {children}
     </section>

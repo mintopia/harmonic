@@ -347,7 +347,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   return (
     <div>
       <div className="max-w-3xl">
-        <h2 className={displayTitle}>Settings</h2>
+        <h1 className={displayTitle}>Settings</h1>
         <p className="mt-1 text-muted">
           Defaults, harnesses, and how the runner behaves. Config sections save together; notifications and
           security apply immediately.

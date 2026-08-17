@@ -34,6 +34,19 @@ function moreIdle(a: ProcessStatus, b: ProcessStatus): ProcessStatus {
   return RANK[a]! >= RANK[b]! ? a : b;
 }
 
+/** Human text equivalent of a node's live status — the sr-only readout the
+ * Process Tree row announces so status isn't carried by colour alone. */
+export function statusLabel(status: ProcessStatus): string {
+  switch (status) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'idle';
+    case 'hidden':
+      return 'hidden';
+  }
+}
+
 /** A node's own total token footprint (input + output + both cache sides) — the
  * same sum `usageTotalTokens` falls back to, but for a single node's `usage`. */
 export function nodeTokens(node: ProcessNode): number {
@@ -104,6 +117,10 @@ export interface FlatNode {
   guides: boolean[];
   /** Is this node the last visible child of its parent? (elbow └ vs ├). */
   isLast: boolean;
+  /** 1-based position among the node's *visible* siblings (aria-posinset). */
+  posInSet: number;
+  /** Count of the node's *visible* siblings (aria-setsize). */
+  setSize: number;
 }
 
 /**
@@ -119,15 +136,15 @@ export function flattenTree(tree: ProcessTree, activity: NodeActivityMap, now: n
   const statusOf = (n: ProcessNode) => nodeStatus(n, activity, now);
   const visible = (n: ProcessNode): boolean => n.depth === 0 || statusOf(n) !== 'hidden' || n.children.some(visible);
 
-  const walk = (node: ProcessNode, guides: boolean[], isLast: boolean) => {
-    rows.push({ node, status: statusOf(node), depth: node.depth, guides, isLast });
+  const walk = (node: ProcessNode, guides: boolean[], isLast: boolean, posInSet: number, setSize: number) => {
+    rows.push({ node, status: statusOf(node), depth: node.depth, guides, isLast, posInSet, setSize });
     const kids = node.children.filter(visible);
     // The root draws no connector column of its own, so it contributes no guide;
     // every deeper node hands its children an extra "do I continue?" spine flag.
     const childGuides = node.depth === 0 ? guides : [...guides, !isLast];
-    kids.forEach((child, i) => walk(child, childGuides, i === kids.length - 1));
+    kids.forEach((child, i) => walk(child, childGuides, i === kids.length - 1, i + 1, kids.length));
   };
-  walk(tree, [], true);
+  walk(tree, [], true, 1, 1);
   return rows;
 }
 

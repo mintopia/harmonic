@@ -4,6 +4,7 @@ import {
   frameEvents,
   nodeStatus,
   nodeTokens,
+  statusLabel,
   trackNodeActivity,
   HIDDEN_AFTER_MS,
   INACTIVE_AFTER_MS,
@@ -121,6 +122,16 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
     expect(byId.x!.guides).toEqual([true]);
     // A depth-1 node draws only an elbow, no ancestor spine.
     expect(byId.a!.guides).toEqual([]);
+
+    // aria-posinset/aria-setsize: 1-based position and count among *visible* siblings.
+    expect(byId.root!.posInSet).toBe(1);
+    expect(byId.root!.setSize).toBe(1);
+    expect(byId.a!.posInSet).toBe(1);
+    expect(byId.a!.setSize).toBe(2);
+    expect(byId.b!.posInSet).toBe(2);
+    expect(byId.b!.setSize).toBe(2);
+    expect(byId.x!.posInSet).toBe(1);
+    expect(byId.x!.setSize).toBe(1);
   });
 
   it('prunes a hidden leaf but keeps a hidden node that still spines to a visible child', () => {
@@ -155,6 +166,14 @@ describe('flattenTree — rows, connectors, and hidden pruning', () => {
     const tree = node({ id: 'root', status: 'hidden' });
     const rows = flattenTree(tree, trackNodeActivity(NO_NODE_ACTIVITY, tree, 0), HIDDEN_AFTER_MS * 10);
     expect(rows.map((r) => r.node.id)).toEqual(['root']);
+  });
+});
+
+describe('statusLabel — the sr-only text equivalent of a node\'s status', () => {
+  it('spells out each status as its announced word', () => {
+    expect(statusLabel('active')).toBe('active');
+    expect(statusLabel('inactive')).toBe('idle');
+    expect(statusLabel('hidden')).toBe('hidden');
   });
 });
 

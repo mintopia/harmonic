@@ -1,6 +1,7 @@
+import { useRef, type KeyboardEvent } from 'react';
 import type { ProcessNode, ProcessStatus } from '../types';
 import { chip } from '../ui';
-import { flattenTree, nodeTokens, type FlatNode, type NodeActivityMap } from '../process-tree-model';
+import { flattenTree, nodeTokens, statusLabel, type FlatNode, type NodeActivityMap } from '../process-tree-model';
 
 /** Compact figures ("18.2k") — the same treatment the rest of Activity uses. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
@@ -44,7 +45,7 @@ function StatusDot({ status }: { status: ProcessStatus }) {
   const active = status === 'active';
   return (
     <span
-      aria-label={status}
+      aria-hidden="true"
       className={`size-[6px] shrink-0 rounded-full ${active ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
     />
   );
@@ -59,18 +60,25 @@ function nodeContext(node: ProcessNode): string {
 function TreeRow({
   flat,
   selected,
+  tabbable,
   onSelect,
 }: {
   flat: FlatNode;
   selected: boolean;
+  tabbable: boolean;
   onSelect: (id: string) => void;
 }) {
-  const { node, status, guides, isLast, depth } = flat;
+  const { node, status, guides, isLast, depth, posInSet, setSize } = flat;
   const idle = status !== 'active';
   return (
     <button
       onClick={() => onSelect(node.id)}
-      aria-pressed={selected}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
+      aria-selected={selected}
+      tabIndex={tabbable ? 0 : -1}
       className={`flex min-h-11 w-full items-stretch gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
         selected ? 'bg-accent-tint' : 'hover:bg-raised'
       }`}
@@ -78,6 +86,7 @@ function TreeRow({
       <Connectors guides={guides} isLast={isLast} depth={depth} />
       <span className="flex min-w-0 flex-1 items-center gap-2 self-center">
         <StatusDot status={status} />
+        <span className="sr-only">{statusLabel(status)}</span>
         <span className={`truncate font-medium ${idle ? 'text-muted' : 'text-ink'}`} title={node.name}>
           {depth === 0 ? 'root' : node.name}
         </span>
@@ -115,10 +124,48 @@ export function ProcessTree({
   onSelect: (id: string) => void;
 }) {
   const rows = flattenTree(tree, activity, now);
+  const treeRef = useRef<HTMLDivElement>(null);
+  // Roving tabindex: exactly one row sits in the Tab order (the selected one,
+  // or the first), so Tab moves into and out of the whole tree as a single
+  // stop; Up/Down/Home/End move focus between rows — the WAI-ARIA tree
+  // keyboard model, without which role="tree" would mislead assistive tech.
+  const activeIndex = Math.max(0, rows.findIndex((r) => r.node.id === selectedId));
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const items = treeRef.current
+      ? Array.from(treeRef.current.querySelectorAll<HTMLButtonElement>('[role="treeitem"]'))
+      : [];
+    if (items.length === 0) return;
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number;
+    switch (e.key) {
+      case 'ArrowDown':
+        next = current < 0 ? 0 : Math.min(current + 1, items.length - 1);
+        break;
+      case 'ArrowUp':
+        next = current < 0 ? 0 : Math.max(current - 1, 0);
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = items.length - 1;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    items[next]?.focus();
+  };
   return (
-    <div className="space-y-0.5">
-      {rows.map((flat) => (
-        <TreeRow key={flat.node.id} flat={flat} selected={flat.node.id === selectedId} onSelect={onSelect} />
+    <div ref={treeRef} role="tree" aria-label="Process tree" className="space-y-0.5" onKeyDown={onKeyDown}>
+      {rows.map((flat, i) => (
+        <TreeRow
+          key={flat.node.id}
+          flat={flat}
+          selected={flat.node.id === selectedId}
+          tabbable={i === activeIndex}
+          onSelect={onSelect}
+        />
       ))}
     </div>
   );

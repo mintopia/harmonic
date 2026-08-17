@@ -81,13 +81,13 @@ export function ApiPage() {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        <h2 className={displayTitle}>API</h2>
+        <h1 className={displayTitle}>API</h1>
       </div>
 
       {/* Section cards on the canvas — the same grammar as Settings. */}
       <div className="flex flex-col gap-4">
       <section className={`${card} p-5`}>
-        <h3 className="mb-3 text-title font-semibold">Connection</h3>
+        <h2 className="mb-3 text-title font-semibold">Connection</h2>
         <div className="flex flex-col gap-2">
           <ConnectionRow label="Base URL" value={origin} />
           <ConnectionRow label="MCP endpoint" value={mcpUrl} />
@@ -113,7 +113,7 @@ export function ApiPage() {
       </section>
 
       <section className={`${card} p-5`}>
-        <h3 className="mb-3 text-title font-semibold">API keys</h3>
+        <h2 className="mb-3 text-title font-semibold">API keys</h2>
 
         <div className="mb-4 flex gap-2">
           <input

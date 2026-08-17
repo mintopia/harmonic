@@ -421,7 +421,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   if (processes === null) {
     return (
       <div>
-        <h2 className={`${displayTitle} mb-5`}>Activity</h2>
+        <h1 className={`${displayTitle} mb-5`}>Activity</h1>
         <div className={`${card} p-4`}>
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-14 animate-pulse border-t border-hairline first:border-t-0 motion-reduce:animate-none" />
@@ -445,7 +445,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   return (
     <div>
       <div className="mb-5 flex items-baseline gap-3">
-        <h2 className={displayTitle}>Activity</h2>
+        <h1 className={displayTitle}>Activity</h1>
         <span className={`${labelType} text-muted`}>every live process, all Workspaces</span>
       </div>
 

@@ -113,7 +113,7 @@ export function WorkspaceSettingsPage({
   return (
     <div>
       <div className="max-w-3xl">
-        <h2 className={displayTitle}>Workspace</h2>
+        <h1 className={displayTitle}>Workspace</h1>
         <p className="mt-1 text-muted">
           Settings for <span className="font-semibold text-ink">{pristine.name}</span> — its identity and its
           overrides of the global defaults. Overridable fields inherit the default until you turn an override on.
