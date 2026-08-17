@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -55,6 +56,75 @@ export const Git = {
    * staged, or untracked). Empty `git status --porcelain` output → clean. */
   async isDirty(dir: string): Promise<boolean> {
     return (await git(dir, 'status', '--porcelain')).length > 0;
+  },
+
+  /**
+   * The symbolic branch HEAD points at, or `null` on a detached HEAD. Unlike
+   * {@link currentBranch} (`--abbrev-ref`, which returns the literal `HEAD` when
+   * detached), this never mis-reports a detached HEAD as a branch named "HEAD"
+   * — issue #149 requires `HEAD` never be recorded as an ordinary branch.
+   * `symbolic-ref -q` exits non-zero (→ GitError) when HEAD is detached.
+   */
+  async symbolicBranch(dir: string): Promise<string | null> {
+    try {
+      return await git(dir, 'symbolic-ref', '--short', '-q', 'HEAD');
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * A stable fingerprint of the working tree's dirty state — the sha256 of the
+   * porcelain status. A clean tree yields a fixed constant; any tracked, staged,
+   * or untracked change moves it. Recorded at admission (issue #149) as the
+   * clean baseline a later branch-contract check compares against.
+   */
+  async statusFingerprint(dir: string): Promise<string> {
+    const status = await git(dir, 'status', '--porcelain');
+    return createHash('sha256').update(status).digest('hex');
+  },
+
+  /** The absolute repo root (`--show-toplevel`) — the canonical identity of the
+   * repo a direct Run runs against (issue #149). Throws when `dir` is not a git
+   * repo, so the caller can treat a non-git context as having no start-state. */
+  toplevel: (dir: string) => git(dir, 'rev-parse', '--show-toplevel'),
+
+  /** The `origin` remote URL, or null when no origin is configured. */
+  async originUrl(dir: string): Promise<string | null> {
+    try {
+      return await git(dir, 'remote', 'get-url', 'origin');
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Whether the repo at `dir` declares git submodules — either a tracked gitlink
+   * (mode `160000` in the index) or a `.gitmodules` file. Either makes the
+   * working tree carry recursive git state Harmonic does not track or attribute
+   * (issue #149), so an afk direct Run on such a context is rejected.
+   */
+  async hasSubmodules(dir: string): Promise<boolean> {
+    const staged = await git(dir, 'ls-files', '--stage');
+    if (staged.split('\n').some((line) => line.startsWith('160000'))) return true;
+    return existsSync(join(dir, '.gitmodules'));
+  },
+
+  /**
+   * Whether the working tree at `dir` contains a nested git repository — an
+   * independent repo checked out inside the tree (not a submodule). git does not
+   * recurse into it, so it appears to the outer repo as a single untracked
+   * directory whose own `.git` is the tell. Bounded to fully-untracked top-level
+   * directory entries (`--directory` collapses them), so this stays cheap on a
+   * large tree (issue #149).
+   */
+  async hasNestedRepos(dir: string): Promise<boolean> {
+    const untracked = await git(dir, 'ls-files', '--others', '--exclude-standard', '--directory');
+    for (const entry of untracked.split('\n')) {
+      if (!entry.endsWith('/')) continue; // only a directory can hide a repo
+      if (existsSync(join(dir, entry, '.git'))) return true;
+    }
+    return false;
   },
 
   /**

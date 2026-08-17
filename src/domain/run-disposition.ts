@@ -58,14 +58,20 @@ export type Disposition = (typeof DISPOSITION_PRECEDENCE)[number];
  * Run's monotonic log (`seq`) and its kind (`type`). A persisted `RunFactRow`
  * satisfies this structurally, so callers pass the store's rows directly; the
  * function itself stays free of any database type.
+ *
+ * `type` is a free `string`, not `Disposition`: the fact-type set is open for
+ * extension (schema `RUN_FACT_TYPES`), and some facts — e.g. `run-start-state`
+ * (issue #149) — are recorded on the same log but are *not* terminal
+ * dispositions. `computeDisposition` sinks any unranked kind to the bottom, so a
+ * non-disposition fact can never decide the outcome.
  */
 export interface DispositionFact {
   seq: number;
-  type: Disposition;
+  type: string;
 }
 
 /** Precedence rank of each disposition — lower wins. Built once from the table. */
-const RANK: ReadonlyMap<Disposition, number> = new Map(
+const RANK: ReadonlyMap<string, number> = new Map(
   DISPOSITION_PRECEDENCE.map((disposition, index) => [disposition, index]),
 );
 
@@ -98,7 +104,9 @@ export function computeDisposition(facts: readonly DispositionFact[], cutoff: nu
     const rank = RANK.get(fact.type) ?? Number.POSITIVE_INFINITY;
     if (rank < bestRank) {
       bestRank = rank;
-      winner = fact.type;
+      // A finite rank means `fact.type` is a key of RANK, i.e. a Disposition;
+      // the cast recovers that (the input `type` is a free string).
+      winner = fact.type as Disposition;
     }
   }
   return winner;

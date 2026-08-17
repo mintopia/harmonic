@@ -23,7 +23,7 @@ export type MergeFate = (typeof MERGE_FATES)[number];
  */
 export const DEFAULT_DRIVE_PROMPT = `{skill}
 
-You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call \`finish_task\`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.
+You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call \`finish_task\`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.
 
 ## {title}
 

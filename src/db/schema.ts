@@ -456,6 +456,14 @@ export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
  * the phase-scoped wall-clock Guardrail) — its structured evidence lives in
  * the separate `guardrail_events` log (see below); this fact type is the
  * disposition-facing signal that a trip happened.
+ *
+ * `run-start-state` (issue #149, reliability-design Unit D) is the one **non-
+ * ending** fact in this set: it records an afk direct Run's admitted start-state
+ * (repo identity, start branch, start commit OID, worktree path, dirty
+ * fingerprint) for the later branch-contract check. It is deliberately absent
+ * from `DISPOSITION_PRECEDENCE`, so `computeDisposition` sinks it to the bottom
+ * (rank ∞) — a start-state fact can never be mistaken for a terminal
+ * disposition, and a Run that has only recorded its start is still "not ended".
  */
 export const RUN_FACT_TYPES = [
   'operator-cancel',
@@ -465,6 +473,7 @@ export const RUN_FACT_TYPES = [
   'failed',
   'process-death',
   'guardrail-trip',
+  'run-start-state',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 

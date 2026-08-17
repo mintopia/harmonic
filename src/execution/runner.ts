@@ -46,6 +46,11 @@ import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from
 import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
+import {
+  evaluateAdmission,
+  AdmissionRejected,
+  type StartStateProbe,
+} from '../domain/run-start-state.js';
 import type { Db } from '../db/index.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
@@ -624,6 +629,49 @@ export class Runner {
   private async prepareWorkspace(task: TaskRow, run: RunRow, resume = false): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
       const workspace: Workspace = { cwd: task.workingDir, env: {} };
+
+      // Harmonic owns branching (issue #149, reliability-design Unit D, ADR-0023).
+      // For an afk **direct** Run, admission records the exact start-state as a
+      // `run-start-state` fact and rejects a context Harmonic cannot safely
+      // track — dirty, submodules/nested repos, or a detached HEAD. A native
+      // (operator-driven) Run keeps the pre-existing best-effort capture below;
+      // a self-heal turn (`resume`) re-enters an already-admitted context that
+      // is dirty with the Run's own prior work, so it is never re-gated.
+      const afk = this.autoDrive?.handles(task) ?? false;
+      if (afk && !resume) {
+        let probe: StartStateProbe | null;
+        try {
+          probe = await this.probeStartState(task.workingDir);
+        } catch {
+          // Not a git repo (or no commits): the branch contract does not apply,
+          // so there is no start-state to record and nothing to reject.
+          probe = null;
+        }
+        if (probe) {
+          // No operator landing-branch surface exists yet, so a detached HEAD is
+          // always rejected here; `evaluateAdmission`'s landing-branch arm is the
+          // forward seam a later operator-input unit wires (reliability-design
+          // Unit D — "detached HEAD is rejected or requires an operator-selected
+          // landing branch").
+          const gate = evaluateAdmission(probe);
+          if (!gate.ok) {
+            // Routed to `settleEscalated` (operator-legible) by driveOnce's
+            // catch, not a generic execution `failed`.
+            throw new AdmissionRejected(gate.reason);
+          }
+          this.runFacts.append(
+            run.id,
+            'run-start-state',
+            // Spread into a fresh object literal to satisfy the store's
+            // `Record<string, unknown>` payload — the same idiom as run-settle.ts.
+            { ...gate.startState },
+          );
+          workspace.baseRev = probe.headOid;
+          workspace.startDirty = false; // admission guarantees a clean context
+        }
+        return workspace;
+      }
+
       // Capture the validated base + dirty-state now, before the agent edits
       // anything, so the candidate snapshot (issue #134) can parent on the
       // start commit and skip a context that was already dirty. Best-effort:
@@ -664,6 +712,36 @@ export class Runner {
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
+  }
+
+  /**
+   * Gather the git facts the admission gate (issue #149) needs, before the
+   * agent touches anything — the Runner's git-I/O half of the otherwise-pure
+   * {@link evaluateAdmission}. `branch` comes from `symbolic-ref` (null on a
+   * detached HEAD, never the literal `HEAD`). Throws (via `Git.toplevel` /
+   * `revParse`) when `dir` is not a git repo, so the caller treats a non-git
+   * context as having no start-state to record or reject.
+   */
+  private async probeStartState(dir: string): Promise<StartStateProbe> {
+    const [root, remote] = await Promise.all([Git.toplevel(dir), Git.originUrl(dir)]);
+    const [headOid, branch, dirty, dirtyFingerprint, submodules, nestedRepos] = await Promise.all([
+      Git.revParse(dir, 'HEAD'),
+      Git.symbolicBranch(dir),
+      Git.isDirty(dir),
+      Git.statusFingerprint(dir),
+      Git.hasSubmodules(dir),
+      Git.hasNestedRepos(dir),
+    ]);
+    return {
+      repoIdentity: { root, remote },
+      headOid,
+      branch,
+      dirty,
+      dirtyFingerprint,
+      submodules,
+      nestedRepos,
+      worktreePath: dir,
+    };
   }
 
   /**
@@ -1022,7 +1100,14 @@ export class Runner {
       } catch {
         // Best-effort; the startup sweep is the backstop.
       }
-      this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
+      if (err instanceof AdmissionRejected) {
+        // Admission gate (issue #149): a context Harmonic cannot safely own is
+        // handed to a human with the operator-legible reason, not settled as a
+        // generic execution failure.
+        this.settleEscalated(task, run, err.reason, {});
+      } else {
+        this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
+      }
       return { kind: 'terminal' };
     }
 

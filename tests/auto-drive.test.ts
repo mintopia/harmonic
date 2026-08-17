@@ -10,6 +10,7 @@ import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive, buildDrivePrompt, skillFor, splitTitleBody } from '../src/execution/auto-drive.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
+import { workspaces } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
 import { allWorkspaces } from './helpers.js';
 
@@ -282,6 +283,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
 
 describe('Runner auto-drive settle (issue #33)', () => {
   let dir: string;
+  let workDir: string;
   let db: Db;
   let tasks: TaskService;
   let runs: RunStore;
@@ -304,10 +306,19 @@ describe('Runner auto-drive settle (issue #33)', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     db = openDb(dir);
+    // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
+    // Harmonic repo during a test run. The afk-direct admission gate (issue
+    // #149) rejects a dirty git context, which is irrelevant to these
+    // settle-logic tests. Point the workspace at an isolated non-git directory
+    // where the branch contract does not apply, so the gate skips and each Run
+    // exercises its intended settle path.
+    workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
+    db.update(workspaces).set({ workingDir: workDir }).run();
   });
   afterEach(() => {
     runner.shutdown();
     rmSync(dir, { recursive: true, force: true });
+    rmSync(workDir, { recursive: true, force: true });
   });
 
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
