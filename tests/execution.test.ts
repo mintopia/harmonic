@@ -2,7 +2,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { guardrailEvents } from '../src/db/schema.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
@@ -446,5 +448,64 @@ describe('crash recovery', () => {
     expect(run.body.reason).toBe('interrupted');
 
     await reopened.close();
+  });
+});
+
+describe('wall-clock guardrail (issue #127)', () => {
+  it('trips an over-budget run to Escalation via the coordinator, with a budget reason derived from a guardrail_events row', async () => {
+    // A tiny mandatory wall-clock budget plus a harness that never ends its
+    // turn: the phase-scoped execution clock runs out mid-`executing` and the
+    // watchdog trips the Run to Escalation (afk→hitl, ticket flagged) through
+    // the terminal-disposition coordinator — never a direct settle, never a new
+    // terminal state (reliability-design §0.3 / Unit A, ADR-0019).
+    const server = await startServer({
+      ...stubHarness(),
+      guardrails: { budget: { wallClockMinutes: 0.01 } }, // 600ms execution budget
+    });
+    try {
+      const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
+      expect(created.status).toBe(201);
+      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+      expect(started.status).toBe(201);
+      const taskId = created.body.id;
+      const runId = started.body.id;
+
+      // The trip Escalates: the Task is flagged and handed back to a human.
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.escalated ? body : undefined;
+      });
+      expect(task.escalated).toBe(true);
+
+      // The Run settled to a terminal disposition (never a new state) with the
+      // budget reason on the card — the reason derives from the trip evidence.
+      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/^budget:/);
+
+      // The trip is recorded on the timeline for observability.
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      const trip = events.find(
+        (e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped',
+      );
+      expect(trip).toBeTruthy();
+      expect(trip.payload.dimension).toBe('wall-clock');
+
+      // The structured guardrail_events row the card reason derives from is
+      // persisted, in the execution phase, with observed ≥ the configured limit.
+      const rows = server.app.ctx.db
+        .select()
+        .from(guardrailEvents)
+        .where(eq(guardrailEvents.runId, runId))
+        .all();
+      expect(rows).toHaveLength(1);
+      const event = rows[0]!;
+      expect(event).toMatchObject({ dimension: 'wall-clock', configSource: 'default' });
+      expect(['executing', 'validating', 'verifying']).toContain(event.phase);
+      expect(event.observedValue).toBeGreaterThanOrEqual(event.limitValue);
+    } finally {
+      await server.close();
+    }
   });
 });

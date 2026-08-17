@@ -448,11 +448,14 @@ export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
  * The ending-signal fact types the coordinator understands **today** (issue
  * #112, reliability-design §0.3). Every way a Run can end is recorded as a
  * `run_fact`; this is the set that has an emitter now. Later spine units append
- * their own kinds (branch-violation, verify-fail, guardrail-trip) without
- * touching the coordinator contract — the column is free `text`, and the single
- * place a new kind is *ranked* is `DISPOSITION_PRECEDENCE`
- * (domain/run-disposition.ts). So this list is a convenience type, not a closed
- * constraint: the store never rejects an unknown `type`.
+ * their own kinds (branch-violation, verify-fail) without touching the
+ * coordinator contract — the column is free `text`, and the single place a new
+ * kind is *ranked* is `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So
+ * this list is a convenience type, not a closed constraint: the store never
+ * rejects an unknown `type`. `guardrail-trip` now has an emitter (issue #127,
+ * the phase-scoped wall-clock Guardrail) — its structured evidence lives in
+ * the separate `guardrail_events` log (see below); this fact type is the
+ * disposition-facing signal that a trip happened.
  */
 export const RUN_FACT_TYPES = [
   'operator-cancel',
@@ -461,6 +464,7 @@ export const RUN_FACT_TYPES = [
   'agent-finish/unresolved',
   'failed',
   'process-death',
+  'guardrail-trip',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 
@@ -672,3 +676,72 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
 ]);
 
 export type VerificationAttemptRow = typeof verificationAttempts.$inferSelect;
+
+/**
+ * The Guardrail budget dimensions this table has a slot for (issue #127,
+ * ADR-0019, reliability-design Unit A). Only `'wall-clock'` has an emitter
+ * today — the phase-scoped wall-clock Guardrail that trips a Run to
+ * Escalation; `'tokens'` and `'cost'` hold their slot for the sibling budget
+ * dimensions already named in `budgetGuardrailSchema` (setting-override.ts)
+ * but not yet wired to an emitter.
+ */
+export const GUARDRAIL_DIMENSIONS = ['wall-clock', 'tokens', 'cost'] as const;
+export type GuardrailDimension = (typeof GUARDRAIL_DIMENSIONS)[number];
+
+/** Where a Guardrail's configured limit resolved from, at the moment it
+ * tripped — mirrors the override chain (`resolveGuardrails`,
+ * setting-override.ts) collapsed to the two tiers that matter for evidence:
+ * a Workspace override, or the global default. */
+export const GUARDRAIL_CONFIG_SOURCES = ['default', 'workspace'] as const;
+export type GuardrailConfigSource = (typeof GUARDRAIL_CONFIG_SOURCES)[number];
+
+/**
+ * The structured Guardrail-trip observability log (issue #127, ADR-0019,
+ * reliability-design Unit A line 104): every time a Guardrail's configured
+ * budget is crossed, one immutable row records what tripped, in which phase,
+ * against what bound, and where that bound resolved from — the evidence a
+ * later Escalation card's reason derives from. Mirrors `verificationAttempts`
+ * / `runFacts`'s discipline exactly: append-only, `seq` assigned by the store
+ * as `max(seq)+1` (1-based, per-Run monotonic), and the `(run_id, seq)`
+ * unique index is the same cross-process integrity backstop — two trips can
+ * never share a seq within a Run, so the log has a single total order and a
+ * racing duplicate `seq` is rejected loudly rather than corrupting it.
+ *
+ * This table is substrate only, same as `run_facts` was at #112 and
+ * `verification_attempts` was at #136: nothing here decides anything. It does
+ * not itself move a Run to Escalation — the pure trip-detection logic and the
+ * Runner wiring that calls `append` and emits the corresponding
+ * `guardrail-trip` run_fact are out of scope here (issue #127's logic/wiring
+ * halves). `dimension` only ever observes `'wall-clock'` today; `phase` is
+ * recorded per-row (not inferred from the Run) so the trip is self-describing
+ * proof it was observed inside an execution phase, even after the Run has
+ * since moved on. `limitValue`/`observedValue` share the dimension's unit
+ * (milliseconds for wall-clock). `payload` is free-form JSON for any extra
+ * evidence a future dimension's emitter wants to attach, defaulting to `'{}'`
+ * when there is none.
+ */
+export const guardrailEvents = sqliteTable('guardrail_events', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id')
+    .notNull()
+    .references(() => runs.id),
+  /** Monotonic per-Run sequence (1-based); same discipline as `run_facts.seq`. */
+  seq: integer('seq').notNull(),
+  ts: integer('ts').notNull(),
+  /** The budget dimension that tripped; only 'wall-clock' has an emitter today (#127). */
+  dimension: text('dimension').$type<GuardrailDimension>().notNull(),
+  /** The Run phase the trip was observed in — proof the trip happened inside an execution phase. */
+  phase: text('phase').$type<RunPhase>().notNull(),
+  /** The configured bound that was crossed, in the dimension's unit (ms for wall-clock). */
+  limitValue: integer('limit_value').notNull(),
+  /** The observed value at trip, same unit as `limitValue`. */
+  observedValue: integer('observed_value').notNull(),
+  /** Where the limit resolved from: the global default, or a Workspace override. */
+  configSource: text('config_source').$type<GuardrailConfigSource>().notNull(),
+  /** JSON payload — any extra evidence; `'{}'` when none. */
+  payload: text('payload').notNull().default('{}'),
+}, (t) => [
+  uniqueIndex('guardrail_events_run_seq_unique').on(t.runId, t.seq),
+]);
+
+export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;

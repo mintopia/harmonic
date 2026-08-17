@@ -218,6 +218,13 @@
       "when": 1786994076989,
       "tag": "0030_verification_auto_accept",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1786999492531,
+      "tag": "0031_guardrail_events",
+      "breakpoints": true
     }
   ]
 }

@@ -21,8 +21,10 @@ import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers } from '../domain/setting-override.js';
+import { resolveGuardrails, resolveVerifiers, type ResolvedGuardrails } from '../domain/setting-override.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
+import { GuardrailEventStore } from '../domain/guardrail-events.js';
+import { wallClockBudgetMs, wallClockTrip, formatBudgetReason } from '../domain/guardrail-budget.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
@@ -224,6 +226,10 @@ export class Runner {
   /** The Verification attempt log (issue #135/#136): every command/critic
    * verifier invocation against a Run's frozen candidate is appended here. */
   private readonly verificationAttempts: VerificationAttemptStore;
+  /** The structured Guardrail-trip observability log (issue #127, ADR-0019):
+   * every wall-clock (later token/cost) trip is appended here, and the amber
+   * Escalation card reason derives from it. */
+  private readonly guardrailEvents: GuardrailEventStore;
   /** The per-Session turn queue (issue #116): a bounded self-heal (issue #137)
    * records its corrective turn here, single-flight per Session, before the
    * builder re-drives it. */
@@ -252,6 +258,7 @@ export class Runner {
     this.autoAcceptLand = options.autoAcceptLand;
     this.runFacts = new RunFactStore(this.db);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
+    this.guardrailEvents = new GuardrailEventStore(this.db);
     this.turnQueue = new TurnQueueStore(this.db);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
@@ -1053,6 +1060,69 @@ export class Runner {
     };
     this.active.set(run.id, active);
 
+    // Wall-clock Guardrail watchdog (issue #127, ADR-0019). Armed once the
+    // session is live (below) for the Run's *remaining* execution budget; a
+    // one-shot timer because the execution phases (`executing/validating/
+    // verifying`) are a contiguous prefix of the Run — it can only fire while
+    // this `driveOnce` is running, and the `finally` clears it the instant the
+    // Run parks in `review`, lands, or settles. That is exactly the phase
+    // scoping: time a Run spends parked awaiting a human (review SLA) or in a
+    // non-interruptible land never counts, because the watchdog isn't armed
+    // then. On fire it appends a structured `guardrail_events` row and settles
+    // the Run through the coordinator by precedence — `guardrail-trip` →
+    // Escalation (afk→hitl), never a direct settle, never a new terminal state.
+    let guardrailTimer: ReturnType<typeof setTimeout> | null = null;
+    const armGuardrail = () => {
+      const started = this.runStore.get(run.id);
+      const budget = started.guardrailConfig
+        ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
+        : null;
+      if (!budget) return; // no snapshot (legacy Run) → no wall-clock guard
+      // Resolve the limit's provenance now — at (or within milliseconds of) the
+      // Run-start snapshot instant — and capture it, rather than looking it up
+      // when the timer fires. The enforced limit is the immutable snapshot's
+      // (issue #126); a live workspace lookup at fire time (possibly long after)
+      // could attribute the snapshotted limit to a since-changed override.
+      const ws = this.getWorkspace?.(task.workspaceId);
+      const configSource = ws?.guardrailBudget ? 'workspace' : 'default';
+      const remaining = Math.max(0, wallClockBudgetMs(budget) - (Date.now() - started.startedAt));
+      guardrailTimer = setTimeout(() => {
+        guardrailTimer = null;
+        if (active.externallySettled) return; // already ended some other way
+        const now = this.runStore.get(run.id);
+        if (now.state !== 'running') return; // settled/terminal — nothing to trip
+        // Phase-scoped (issue #127, reliability-design Unit A): a trip only
+        // counts when observed inside an execution phase. `now - startedAt` is
+        // the execution clock precisely because the counted phases are a
+        // contiguous prefix — this watchdog is armed only within `driveOnce`,
+        // which the Run leaves for `review`/`landing` by *returning*, and the
+        // `finally` clears the timer at that point. If the timer nonetheless
+        // fires mid-`review`/`landing`, `wallClockTrip` returns null (that phase
+        // does not count) and the Run is left alone.
+        const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, phase: now.phase ?? null, budget });
+        if (!trip) return; // fired in a non-counted phase, or not actually over budget
+        // Structured evidence first — the card reason derives from this row.
+        this.guardrailEvents.append(now.id, {
+          dimension: trip.dimension,
+          phase: now.phase ?? 'executing',
+          limitValue: trip.limitMs,
+          observedValue: trip.observedMs,
+          configSource,
+        });
+        const reason = formatBudgetReason(trip);
+        record('lifecycle', { event: 'guardrail-tripped', dimension: trip.dimension, reason });
+        // Claim the settle so the drive loop's own settle path (unwinding from
+        // the killed harness) no-ops instead of finishing the Run twice.
+        active.externallySettled = true;
+        this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+        // Interrupt whatever is in flight so `driver.prompt()` / the verifier
+        // unwinds and `driveOnce` returns through its `externallySettled` guards.
+        active.verifyAbort.abort();
+        this.kill(active);
+      }, remaining);
+      guardrailTimer.unref?.();
+    };
+
     try {
       // Harnesses with no reliable spawn-time pin (copilot) pin per
       // session instead — sent for every run, `auto` included, because an
@@ -1070,6 +1140,8 @@ export class Runner {
 
       // The session id is persisted; start tailing its native log (ADR 0010).
       this.tailer.start(run.id);
+      // Arm the wall-clock Guardrail now the Run is genuinely executing.
+      armGuardrail();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -1351,6 +1423,10 @@ export class Runner {
       // error (only an actionable verification fail heals).
       return { kind: 'terminal' };
     } finally {
+      // Disarm the wall-clock watchdog: `driveOnce` is returning, so the Run is
+      // leaving every execution phase (parked in review, landing, or settled) —
+      // and time past this point must not count against the execution budget.
+      if (guardrailTimer) clearTimeout(guardrailTimer);
       driver.fail(new Error('run finished'));
       driver.dispose();
       this.active.delete(run.id);
