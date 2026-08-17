@@ -190,12 +190,28 @@ function PermissionPrompt({
   };
 
   return (
-    <div role="group" aria-label={`Permission request: ${title}`} className="border-t border-hairline bg-raised px-4 py-3">
-      <div className="mb-1.5 flex items-center gap-2">
+    <div
+      role="group"
+      aria-label={`Permission request: ${title}`}
+      className="border-t border-hairline bg-running-tint px-4 py-3"
+    >
+      {/* The ask is the one prominent element (DESIGN.md § Conversation): the
+          Harness is genuinely blocked on the operator, so "Waiting for your
+          decision" leads in the Title role — never the quietest line — and the
+          band takes Running amber's tint. Amber's locked meaning is "work in
+          flight" (the Signal Rule); a paused Turn waiting on a decision is
+          exactly that — work stopped, now the operator's — the same carve-out
+          escalatedChip makes. That sets the band apart from the neutral Raised
+          cold-cache and ended notices sharing the dock. The tool metadata
+          (chip + title) drops to the muted context register beneath it. */}
+      <p className="text-title font-semibold text-ink">Waiting for your decision</p>
+      <div className="mt-1.5 flex items-center gap-2">
         <span className={toolChip}>permission</span>
-        <span className="font-medium text-ink">{title}</span>
+        <span title={title} className="min-w-0 truncate text-muted">
+          {title}
+        </span>
       </div>
-      <p className="mb-2.5 text-muted">Waiting for your decision — this turn is paused until you respond.</p>
+      <p className="mb-2.5 mt-1 text-small text-muted">This turn is paused until you respond.</p>
       <div className="flex flex-wrap items-center gap-2">
         {pending.request.options.map((option) => (
           <button

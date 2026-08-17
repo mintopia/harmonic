@@ -86,6 +86,15 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['tool', 'tool', 'tool-tint'],
   // awaiting-review and active-nav render accent text on the accent tint.
   ['accent', 'accent', 'accent-tint'],
+  // The permission band (issue #97) takes the Running amber tint as its ground
+  // — the harness is blocked, "work in flight, now yours" — and carries its
+  // copy in the neutral text roles on top of it: the prominent "Waiting for
+  // your decision" headline in ink, the tool metadata + paused note in muted
+  // (the informational floor). Both must hold AA on the amber tint so a future
+  // tint nudge can't silently drown the one prompt that means the operator is
+  // being asked to act.
+  ['permission-band headline', 'ink', 'running-tint'],
+  ['permission-band meta', 'muted', 'running-tint'],
 ];
 
 const TEXT_FLOOR = 4.5;
