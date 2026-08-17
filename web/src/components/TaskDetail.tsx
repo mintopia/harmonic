@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { api } from '../api';
+import { nextTabIndex } from '../tablist-model';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
 import { EmptyState } from './EmptyState';
@@ -480,6 +481,7 @@ export function TaskDetail({
   // while the operator is already at the bottom, so we never yank them up
   // mid-read. `stickToBottom` is tracked by the container's onScroll below.
   const scrollRef = useRef<HTMLDivElement>(null);
+  const tablistRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   useEffect(() => {
     const el = scrollRef.current;
@@ -506,6 +508,20 @@ export function TaskDetail({
   }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
 
   const tabs: Tab[] = ['description', 'prompt', 'output', 'changes', 'details'];
+
+  // WAI-ARIA tablist keyboard nav: Tab reaches the tablist as one stop (roving
+  // tabindex below), then Left/Right/Home/End move between tabs. Selection
+  // follows focus (automatic activation) — switching a tab only toggles a
+  // `hidden` panel, so there's no cost that would justify manual activation.
+  const onTablistKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const next = nextTabIndex(e.key, tabs.indexOf(tab), tabs.length);
+    if (next === null) return;
+    const target = tabs[next];
+    if (target === undefined) return;
+    e.preventDefault();
+    setTab(target);
+    tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  };
 
   // Surface why a Task failed or Escalated up top — the reason lives on the
   // latest Run and was otherwise buried in the Details tab's meta line, so an
@@ -574,7 +590,13 @@ export function TaskDetail({
           ))}
         </div>
 
-        <div role="tablist" className="flex gap-1 border-b border-hairline px-4">
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="Task detail"
+          onKeyDown={onTablistKeyDown}
+          className="flex gap-1 border-b border-hairline px-4"
+        >
           {tabs.map((t) => {
             // Flag when Details holds review context (why a prior run was
             // rejected, or the feedback seeding this re-attempt) so a
@@ -606,13 +628,19 @@ export function TaskDetail({
         {/* Panels stay mounted (toggled with `hidden`) so switching tabs
             never discards in-progress state — notably a dependency edit
             held in the Dependencies component. */}
+        {/* tabIndex=0 puts the scroll body in the Tab order so a keyboard
+            operator can scroll a long panel (e.g. Output) with the arrow /
+            Page keys even when its content holds nothing else focusable —
+            without it the review text below was simply unreadable by keyboard
+            (issue #95). */}
         <div
           ref={scrollRef}
+          tabIndex={0}
           onScroll={(e) => {
             const el = e.currentTarget;
             stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           }}
-          className="flex-1 overflow-y-auto p-4"
+          className="flex-1 overflow-y-auto p-4 focus:outline-none focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
         >
           <div role="tabpanel" id="task-panel-description" aria-labelledby="task-tab-description" hidden={tab !== 'description'}>
             <DescriptionTab task={task} />
