@@ -1,5 +1,5 @@
 import type { Drive, Task } from '../types';
-import { card, chip } from '../ui';
+import { card, chip, escalatedChip } from '../ui';
 import { runningReadout, type RunningReadout } from '../board-model';
 import { cardBranch, cardDiffstat } from './cardBranch';
 import { TaskActions } from './TaskActions';
@@ -104,7 +104,7 @@ function MirroredCard({ task, onOpen, readout }: { task: Task; onOpen: (task: Ta
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         {task.drive && <DriveBadge drive={task.drive} />}
         <span className={`${chip} bg-raised text-muted`}>{typeTagLabel(task)}</span>
-        {task.escalated && <span className={`${chip} bg-running-tint text-running`}>escalated</span>}
+        {task.escalated && <span className={escalatedChip}>escalated</span>}
       </div>
       <div className="mb-2.5 flex items-start gap-2">
         {readout && <RunningPulse />}

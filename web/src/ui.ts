@@ -112,6 +112,15 @@ export const card = 'rounded-lg bg-surface shadow-card';
  * and the token's 0.05em tracking (DESIGN.md § 6: "Small (11px, weight 600)"). */
 export const chip = 'rounded-full px-2 py-0.5 text-label font-semibold uppercase';
 
+/** The mirrored Task's `escalated` tag — the one sanctioned non-state use of a
+ * state colour (DESIGN.md § Signal Rule, mirrored-card carve-out, issue #34): an
+ * afk→hitl escalation reuses Running amber's tint/ink because "work in flight,
+ * now yours" is the closest existing meaning. One shared string so the tag can't
+ * fork registers between surfaces (issue #99): the Board card and the Activity
+ * row render the identical amber chip. `escalated` is a boolean flag, not a
+ * `TaskState`, so it sits outside `STATE_CHIP_STYLES`. */
+export const escalatedChip = `${chip} bg-running-tint text-running`;
+
 /** Tool call / permission chip — harness metadata, Tooling cyan (the Signal
  * Rule). Shared by EventStream's tool-call lines and the permission
  * prompt (issue #11). */

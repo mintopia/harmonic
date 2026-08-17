@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { PermissionRule } from '../types';
 import { btnQuietDestructive, toolChip } from '../ui';
+import { EmptyState } from './EmptyState';
 import { PathTail } from './PathTail';
 
 /**
@@ -22,9 +23,9 @@ export function PermissionRules() {
 
   if (rules.length === 0) {
     return (
-      <p className="text-muted">
-        No rules yet — click "Always allow" on a permission prompt in a Conversation to add one.
-      </p>
+      <EmptyState title="No rules yet" className="my-8">
+        Click "Always allow" on a permission prompt in a Conversation to add one.
+      </EmptyState>
     );
   }
 

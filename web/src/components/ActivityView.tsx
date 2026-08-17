@@ -4,7 +4,7 @@ import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
 import { subscribe } from '../ws';
 import { toastError } from '../toast';
-import { btnQuietDestructive, card, chip, displayTitle, labelType, selectField, touchOverlay, touchTarget, touchTargetInline } from '../ui';
+import { btnQuietDestructive, card, chip, displayTitle, escalatedChip, labelType, selectField, touchOverlay, touchTarget, touchTargetInline } from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
 import { fmtElapsed } from '../board-model';
@@ -283,7 +283,7 @@ function ProcessRow({
           <ExpandToggle expandable={expandable} expanded={expanded} onToggle={onToggleExpand} />
           <StateDot process={process} />
           <span className={`${chip} bg-raised text-muted`}>{process.type === 'run' ? 'Run' : 'Chat'}</span>
-          {process.escalated && <span className={`${chip} bg-accent-tint text-accent`}>escalated</span>}
+          {process.escalated && <span className={escalatedChip}>escalated</span>}
           <span className="truncate font-medium text-ink" title={process.title}>
             {process.title}
           </span>

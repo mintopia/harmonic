@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { buildApiReference, describeType, endpointAnchor, filterApiReference } from '../openapi-reference';
 import type { ApiReferenceEndpoint, ApiReferenceGroup, SchemaNode } from '../openapi-reference';
 import { card, chip, labelType, searchField, sectionTitle, touchOverlay } from '../ui';
+import { EmptyState } from './EmptyState';
 
 /** Disclosure chevron, private to this file — mirrors Icon.tsx's stroke
  * vocabulary (16 viewBox, 1.5 stroke, currentColor) without adding to the
@@ -467,7 +468,11 @@ export function ApiReference() {
       </h3>
       {error && <p className="text-fail">Failed to load the API reference ({error}).</p>}
       {!error && !groups && <p className="text-muted">Loading reference…</p>}
-      {groups && groups.length === 0 && <p className="text-muted">No endpoints documented.</p>}
+      {groups && groups.length === 0 && (
+        <EmptyState title="No endpoints documented" className="my-8">
+          Nothing has been added to the API reference yet.
+        </EmptyState>
+      )}
       {groups && groups.length > 0 && (
         <input
           aria-label="Filter endpoints"
@@ -479,7 +484,9 @@ export function ApiReference() {
         />
       )}
       {filteredGroups && filteredGroups.length === 0 && endpointCount > 0 && (
-        <p className="text-muted">No endpoints match “{query}”.</p>
+        <EmptyState title="No matches" className="my-8">
+          No endpoints match “{query}”.
+        </EmptyState>
       )}
       {filteredGroups?.map((group) => (
         <div className="mb-6 last:mb-0" key={group.name}>

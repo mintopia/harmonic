@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Channel } from '../types';
 import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
+import { EmptyState } from './EmptyState';
 
 const EVENTS = [
   'task.created',
@@ -98,10 +99,9 @@ export function ChannelsSection() {
       )}
 
       {channelList.length === 0 && !adding && (
-        <p className="text-body text-muted">
-          No channels yet — add Discord, Slack, a webhook, or SMTP email to get notified when a run
-          needs review.
-        </p>
+        <EmptyState title="No channels yet" className="my-8">
+          Add Discord, Slack, a webhook, or SMTP email to get notified when a run needs review.
+        </EmptyState>
       )}
 
       {adding ? (

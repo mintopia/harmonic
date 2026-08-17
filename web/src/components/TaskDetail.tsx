@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost, formatCostByModel } from '../cost';
 import type { Cost, Run, RunEvent, Task } from '../types';
+import { EmptyState } from './EmptyState';
 import { EventStream } from './EventStream';
 import { coalesceEvents } from '../event-stream-model';
 import { Markdown } from './Markdown';
@@ -22,6 +23,16 @@ type DiffState =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'ready'; stat: string | null };
+
+/** Shared by OutputTab/PromptTab/ChangesTab: same copy, same placement, for
+ * the one case they all share — no run selected yet. */
+function NoRunsYet() {
+  return (
+    <EmptyState title="No runs yet" className="py-8">
+      This task hasn't run yet.
+    </EmptyState>
+  );
+}
 
 function Dependencies({ task }: { task: Task }) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -238,7 +249,7 @@ function DescriptionTab({ task }: { task: Task }) {
 }
 
 function OutputTab({ run, events }: { run: Run | undefined; events: RunEvent[] }) {
-  if (!run) return <p className="text-muted">No runs yet.</p>;
+  if (!run) return <NoRunsYet />;
   return (
     <div>
       <EventStream events={events} />
@@ -304,7 +315,7 @@ function SteerBox({ taskId }: { taskId: number }) {
  * the filled Drive Prompt), so it reflects what actually went out even if the
  * template has since changed. */
 function PromptTab({ run }: { run: Run | undefined }) {
-  if (!run) return <p className="text-muted">No runs yet.</p>;
+  if (!run) return <NoRunsYet />;
   if (!run.prompt) {
     return (
       <p className="text-muted">
@@ -343,7 +354,7 @@ function OutputSummary({ events }: { events: RunEvent[] }) {
 }
 
 function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
-  if (!run) return <p className="text-muted">No runs yet.</p>;
+  if (!run) return <NoRunsYet />;
   if (!run.branch) return <p className="text-muted">Ran in direct mode — no branch or diff.</p>;
   return (
     <div className="space-y-2">

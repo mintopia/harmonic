@@ -498,7 +498,7 @@ export function App() {
             <span className="flex items-center gap-2 text-muted">
               <span
                 aria-hidden="true"
-                className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running' : 'bg-faint'}`}
+                className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot' : 'bg-faint'}`}
               />
               <span>
                 <span className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>

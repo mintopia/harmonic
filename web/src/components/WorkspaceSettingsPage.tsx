@@ -203,7 +203,7 @@ export function WorkspaceSettingsPage({
             </div>
             <div>
               <InheritField
-                label="Max concurrent runs"
+                label="Concurrency cap"
                 htmlFor="workspace-max-runs"
                 value={local.maxConcurrentRuns}
                 inherited={config.autoRunner.maxConcurrentRuns}

@@ -18,6 +18,7 @@ import {
 } from '../ui';
 import { toastError } from '../toast';
 import { fetchTasks, filterBySearch, paginate, TABLE_PAGE_SIZE } from '../table-model';
+import { EmptyState } from './EmptyState';
 
 export function TableView({
   workspaceId,
@@ -224,25 +225,28 @@ export function TableView({
             ))}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-10 text-center">
+                <td colSpan={8}>
                   {state || harness || priority || search ? (
-                    <>
-                      <p className="text-muted">No tasks match these filters.</p>
-                      <button
-                        className={`${btnQuiet} mt-2`}
-                        onClick={() =>
-                          onFiltersChange({ ...filters, state: '', harness: '', priority: '', search: '' })
-                        }
-                      >
-                        Clear filters
-                      </button>
-                    </>
+                    <EmptyState
+                      title="No matches"
+                      className="my-8"
+                      action={
+                        <button
+                          className={btnQuiet}
+                          onClick={() =>
+                            onFiltersChange({ ...filters, state: '', harness: '', priority: '', search: '' })
+                          }
+                        >
+                          Clear filters
+                        </button>
+                      }
+                    >
+                      No tasks match these filters.
+                    </EmptyState>
                   ) : (
-                    <p className="text-muted">
-                      No tasks yet. Create one on the{' '}
-                      <span className="font-semibold text-ink">Board</span> — every task shows up here
-                      once it exists.
-                    </p>
+                    <EmptyState title="No tasks yet" className="my-8">
+                      Create one on the Board to get started.
+                    </EmptyState>
                   )}
                 </td>
               </tr>
