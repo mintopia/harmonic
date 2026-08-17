@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, Workspace } from '../types';
-import { btnGhost, btnQuietDestructive, displayTitle, field, selectField } from '../ui';
+import { btnDestructive, btnGhost, displayTitle, field, selectField } from '../ui';
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
@@ -444,9 +444,13 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
 }
 
 /**
- * Naming Modal confirm for delete (issue #64 acceptance). The confirm is
- * disabled up front when a Task is running; the server's 409 is the backstop,
- * surfaced inline if it fires anyway (e.g. a Task started between load and here).
+ * Naming Modal confirm for delete (issue #64 acceptance, hardened in #98). The
+ * operator must type the Workspace's exact name to arm the delete — a real
+ * gate on the app's most destructive action, not a single labelled click — and
+ * the confirm carries the solid-fail destructive weight (btnDestructive) that
+ * loudness deserves. The confirm is also disabled up front when a Task is
+ * running; the server's 409 is the backstop, surfaced inline if it fires anyway
+ * (e.g. a Task started between load and here).
  */
 function DeleteWorkspaceDialog({
   workspace,
@@ -461,8 +465,15 @@ function DeleteWorkspaceDialog({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
+
+  // Type-the-name gate: the delete arms only once the operator reproduces the
+  // Workspace's exact name (trimmed, so trailing whitespace isn't a trap).
+  const nameMatches = typed.trim() === workspace.name;
+  const canDelete = nameMatches && !blockedByRunningTask && !busy;
 
   const confirm = async () => {
+    if (!canDelete) return;
     setBusy(true);
     setError(null);
     try {
@@ -483,6 +494,25 @@ function DeleteWorkspaceDialog({
           Delete <span className="font-semibold text-ink">{workspace.name}</span> and everything on its board —
           its Tasks, Runs, and Conversations. This cannot be undone.
         </p>
+        <label htmlFor="delete-workspace-name" className="mt-4 block text-small text-muted">
+          Type <span className="font-semibold text-ink">{workspace.name}</span> to confirm.
+        </label>
+        <input
+          id="delete-workspace-name"
+          autoFocus
+          autoComplete="off"
+          className={`${field} mt-1.5`}
+          value={typed}
+          placeholder={workspace.name}
+          disabled={busy}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              confirm();
+            }
+          }}
+        />
         {blockedByRunningTask && (
           <p className="mt-3 text-fail">A Task is running here. Stop it before deleting this Workspace.</p>
         )}
@@ -491,12 +521,7 @@ function DeleteWorkspaceDialog({
           <button type="button" className={btnGhost} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button
-            type="button"
-            className={`${btnQuietDestructive} px-3.5 py-2`}
-            onClick={confirm}
-            disabled={busy || blockedByRunningTask}
-          >
+          <button type="button" className={btnDestructive} onClick={confirm} disabled={!canDelete}>
             {busy ? 'Deleting…' : `Delete ${workspace.name}`}
           </button>
         </div>

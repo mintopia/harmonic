@@ -2,10 +2,16 @@ import { useSyncExternalStore } from 'react';
 import { Icon } from './components/Icon';
 
 /**
- * The designed error surface: failed operations announce in a top-right
- * stack of fail-tinted cards, not a native alert() that breaks the register
- * (DESIGN.md § Elevation — the fail vocabulary). A module-level store (like
- * ws.ts) so any handler can call toastError() without threading context.
+ * The designed notice surface: operations announce in a top-right stack of
+ * cards, not a native alert() that breaks the register (DESIGN.md § Elevation).
+ * Two kinds share the stack — `error`, fail-tinted, for a rejected operation;
+ * `success`, a quiet neutral acknowledgement, for a completed gate action
+ * (accept/reject/cancel — issue #98) that would otherwise leave nothing on
+ * screen to say it worked. Success stays neutral, not accept-green: green means
+ * a *completed* state in this palette, and an acknowledgement is not a state
+ * (the same reasoning that keeps the review gate's Accept off state colour).
+ * A module-level store (like ws.ts) so any handler can call it without
+ * threading context.
  *
  * App mounts this directly under the <header>, and the stack hangs off a
  * zero-height anchor rather than a `fixed` offset: the header wraps (and so
@@ -16,7 +22,8 @@ import { Icon } from './components/Icon';
  * scrolling away; the shell now pins the header and scrolls only the working
  * view (App.tsx), so there is nothing left to stick to.
  */
-type Toast = { id: number; message: string };
+type ToastKind = 'error' | 'success';
+type Toast = { id: number; message: string; kind: ToastKind };
 
 let toasts: Toast[] = [];
 const listeners = new Set<() => void>();
@@ -31,14 +38,24 @@ export function dismissToast(id: number) {
   emit();
 }
 
+function push(message: string, kind: ToastKind) {
+  const id = ++seq;
+  toasts = [...toasts, { id, message, kind }];
+  emit();
+  setTimeout(() => dismissToast(id), 6000);
+}
+
 /** Surface a rejected operation. Auto-dismisses after 6s; the operator can
  * also close it. Accepts unknown so promise catch handlers pass errors raw. */
 export function toastError(e: unknown) {
-  const message = e instanceof Error ? e.message : String(e);
-  const id = ++seq;
-  toasts = [...toasts, { id, message }];
-  emit();
-  setTimeout(() => dismissToast(id), 6000);
+  push(e instanceof Error ? e.message : String(e), 'error');
+}
+
+/** Acknowledge a completed gate action (accept/reject/cancel — issue #98):
+ * a short, neutral notice naming what happened, so a successful destructive
+ * or irreversible action never lands silently. Auto-dismisses after 6s. */
+export function toastSuccess(message: string) {
+  push(message, 'success');
 }
 
 /** Mounted once by App. */
@@ -61,21 +78,32 @@ export function Toaster() {
           under the sidebar — worse than the overlap. There the toast simply
           wins on z-index for its ~6s, as it always did on short viewports. */}
       <div className="absolute right-4 top-4 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 transition-[right] duration-150 ease-out motion-reduce:transition-none min-[1080px]:group-has-[[data-dock=docked]]/shell:right-[27.5rem]">
-        {items.map((t) => (
-          <div
-            key={t.id}
-            className="pointer-events-auto flex items-start gap-2.5 rounded-lg bg-fail-tint px-3.5 py-2.5 text-fail shadow-bar motion-safe:animate-[toast-in_150ms_var(--ease-out-quint)]"
-          >
-            <span className="min-w-0 flex-1 break-words">{t.message}</span>
-            <button
-              aria-label="Dismiss"
-              className="shrink-0 rounded-md p-0.5 text-fail transition-opacity duration-150 hover:opacity-70"
-              onClick={() => dismissToast(t.id)}
+        {items.map((t) => {
+          // Error keeps the fail vocabulary; success is a quiet neutral card
+          // (raised fill, ink text) with a check — an acknowledgement, not a
+          // state colour (issue #98).
+          const success = t.kind === 'success';
+          return (
+            <div
+              key={t.id}
+              className={`pointer-events-auto flex items-start gap-2.5 rounded-lg px-3.5 py-2.5 shadow-bar motion-safe:animate-[toast-in_150ms_var(--ease-out-quint)] ${
+                success ? 'bg-raised text-ink' : 'bg-fail-tint text-fail'
+              }`}
             >
-              <Icon name="close" />
-            </button>
-          </div>
-        ))}
+              {success && <Icon name="check" className="mt-0.5 shrink-0 text-muted" />}
+              <span className="min-w-0 flex-1 break-words">{t.message}</span>
+              <button
+                aria-label="Dismiss"
+                className={`shrink-0 rounded-md p-0.5 transition-opacity duration-150 hover:opacity-70 ${
+                  success ? 'text-muted' : 'text-fail'
+                }`}
+                onClick={() => dismissToast(t.id)}
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

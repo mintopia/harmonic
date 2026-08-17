@@ -58,11 +58,14 @@ export function boardColumns(tasks: Task[]): BoardColumn[] {
 export type DropAction = 'promote' | 'requeue' | 'uncancel' | 'cancel';
 
 // Cancel by drag only where DESIGN.md § Buttons ("Cancel is not a gate action")
-// lets the interface offer it: a Task that has produced nothing to judge
-// (draft/blocked/ready) or is still producing it (running). awaiting-review is
-// a gate — its cancel lives inside Reject, never as a peer action — so a drop
-// there snaps back. The API stays permissive; the interface simply doesn't.
-const CANCEL_BY_DRAG: readonly TaskState[] = ['draft', 'blocked', 'ready', 'running'];
+// lets the interface offer it: a Task that has produced nothing to judge —
+// draft/blocked/ready. A *running* Task is deliberately excluded (issue #98):
+// a drag has no armed confirm, and a stray drop must never SIGKILL a working
+// agent. Cancelling a run is the armed two-step Cancel button on the card /
+// detail, not a drag. awaiting-review is a gate — its cancel lives inside
+// Reject, never as a peer action — so a drop there snaps back too. The API
+// stays permissive; the interface simply doesn't offer the unguarded path.
+const CANCEL_BY_DRAG: readonly TaskState[] = ['draft', 'blocked', 'ready'];
 
 export function dropAction(from: TaskState, to: TaskState): DropAction | null {
   if (from === to) return null;

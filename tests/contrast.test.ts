@@ -118,6 +118,13 @@ describe('Aurora palette meets WCAG AA in both themes (issue #87)', () => {
         }
       }
 
+      // The solid-fail destructive button (btnDestructive — workspace delete
+      // confirm, issue #98) carries its label on the fail fill; it must clear
+      // the text floor in both themes.
+      it(`on-fail label on the fail fill ≥ ${TEXT_FLOOR}:1`, () => {
+        expect(contrast(hex(t, 'on-fail'), hex(t, 'fail'))).toBeGreaterThanOrEqual(TEXT_FLOOR);
+      });
+
       it(`Switch off-track: knob vs track ≥ ${UI_FLOOR}:1`, () => {
         expect(contrast(WHITE, hex(t, 'switch-off'))).toBeGreaterThanOrEqual(UI_FLOOR);
       });

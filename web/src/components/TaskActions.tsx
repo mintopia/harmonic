@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { Task } from '../types';
 import { taskActions, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject, sectionTitle } from '../ui';
-import { toastError } from '../toast';
+import { toastError, toastSuccess } from '../toast';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
 import { useArmedConfirm } from './useArmedConfirm';
@@ -64,12 +64,24 @@ export function TaskActions({
 
   const secondary = variant === 'card' ? btnQuiet : btnGhost;
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, toastError);
+  // A gate action (accept/cancel) that acknowledges itself on success — a
+  // confirmation toast naming what happened, so an irreversible click never
+  // lands silently (issue #98). Reject is acknowledged in RejectDialog.
+  const actDone = (fn: () => Promise<unknown>, done: string) => () =>
+    fn().then(() => {
+      toastSuccess(done);
+      onChanged();
+    }, toastError);
 
   const button = (action: TaskAction) => {
     switch (action) {
       case 'accept':
         return (
-          <button key={action} className={btnAccept} onClick={act(() => api.acceptTask(task.id))}>
+          <button
+            key={action}
+            className={btnAccept}
+            onClick={actDone(() => api.acceptTask(task.id), `Task #${task.id} accepted — merging`)}
+          >
             Accept
           </button>
         );
@@ -107,7 +119,11 @@ export function TaskActions({
         return <CompleteButton key={action} className={secondary} onConfirm={act(() => api.completeTask(task.id))} />;
       case 'cancel':
         return (
-          <CancelButton key={action} className={btnQuietDestructive} onConfirm={act(() => api.cancelTask(task.id))} />
+          <CancelButton
+            key={action}
+            className={btnQuietDestructive}
+            onConfirm={actDone(() => api.cancelTask(task.id), `Task #${task.id} cancelled`)}
+          />
         );
       case 'uncancel':
         return (

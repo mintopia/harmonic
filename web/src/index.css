@@ -41,6 +41,7 @@
   --hm-fail: #b9354b; /* failed / rejected / destructive */
   --hm-fail-dot: #f0576e;
   --hm-fail-tint: #fde3e8;
+  --hm-on-fail: #ffffff; /* label on a solid-fail destructive button (issue #98) */
   --hm-blocked: #64687e; /* slate — waiting on a dependency */
   --hm-blocked-tint: #edeef3;
   --hm-tool: #0c7486; /* tooling metadata: cyan */
@@ -87,6 +88,7 @@
   --hm-fail: #fb7185;
   --hm-fail-dot: #fb7185;
   --hm-fail-tint: #3a1720;
+  --hm-on-fail: #0e1016; /* label on a solid-fail destructive button (issue #98) */
   --hm-blocked: #8a90a6;
   --hm-blocked-tint: #22262f;
   --hm-tool: #38bdf8;
@@ -130,6 +132,7 @@
     --hm-fail: #fb7185;
     --hm-fail-dot: #fb7185;
     --hm-fail-tint: #3a1720;
+    --hm-on-fail: #0e1016; /* label on a solid-fail destructive button (issue #98) */
     --hm-blocked: #8a90a6;
     --hm-blocked-tint: #22262f;
     --hm-tool: #38bdf8;
@@ -170,6 +173,7 @@
   --color-fail: var(--hm-fail);
   --color-fail-dot: var(--hm-fail-dot);
   --color-fail-tint: var(--hm-fail-tint);
+  --color-on-fail: var(--hm-on-fail);
   --color-blocked: var(--hm-blocked);
   --color-blocked-tint: var(--hm-blocked-tint);
   --color-tool: var(--hm-tool);

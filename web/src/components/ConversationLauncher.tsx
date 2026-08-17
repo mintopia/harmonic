@@ -31,6 +31,7 @@ import {
 } from '../conversation-attention-model';
 import { conversationDisplayTitle, removeConversationById, upsertConversation } from '../conversation-list-model';
 import { formatCost } from '../cost';
+import { ArmedButton } from './ArmedButton';
 import { ConversationList } from './ConversationList';
 import { EventStream } from './EventStream';
 import { ModelCombobox } from './ModelCombobox';
@@ -407,8 +408,9 @@ function Composer({
  * (inline-editable — the rename affordance is available for any real
  * Conversation, ended ones included, since renaming is metadata, not a
  * Turn), the expand/collapse toggle, End (active only), Delete (quiet
- * destructive, per DESIGN.md — no confirm gate, matching Channels.tsx's own
- * delete), and Close. A second, Data-role line carries the id/state/
+ * destructive, now behind the shared two-step armed confirm — issue #98, so a
+ * conversation is never deleted on a single bare click), and Close. A second,
+ * Data-role line carries the id/state/
  * harness/model/Working Directory that used to sit in the composer's locked
  * banner — now shown here so it survives even when the composer itself
  * doesn't render (an ended Conversation has none at all).
@@ -514,9 +516,13 @@ function ConversationHeader({
           </button>
         )}
         {conversation && (
-          <button className={`${touchTargetInline} ${btnQuietDestructive}`} onClick={onDelete}>
-            Delete
-          </button>
+          <ArmedButton
+            label="Delete"
+            armedLabel="Delete?"
+            ariaLabel="Delete conversation"
+            className={`${touchTargetInline} ${btnQuietDestructive}`}
+            onConfirm={onDelete}
+          />
         )}
         <button aria-label="Close conversation panel" className={`${touchTarget} ${btnQuiet}`} onClick={onClose}>
           <Icon name="close" />

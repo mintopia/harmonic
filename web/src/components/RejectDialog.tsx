@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { api } from '../api';
+import { toastSuccess } from '../toast';
 import { Modal } from './Modal';
 import { btnGhost, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 
@@ -48,6 +49,8 @@ export function RejectDialog({
         rejected.current = true;
       }
       if (retry) await api.reattempt(taskId, fb);
+      // Acknowledge the completed gate action naming its outcome (issue #98).
+      toastSuccess(retry ? `Task #${taskId} rejected — re-attempt created` : `Task #${taskId} rejected — marked failed`);
       onDone();
     } catch (e) {
       setBusy(false);

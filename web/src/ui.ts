@@ -40,6 +40,15 @@ export const touchOverlay = 'absolute left-1/2 top-1/2 size-11 -translate-x-1/2 
 export const btnQuietDestructive =
   'font-medium text-muted transition-colors duration-150 hover:text-fail disabled:opacity-50 disabled:hover:text-muted';
 
+/** Solid-fail destructive — the loud end of the destructive scale, the filled
+ * counterpart of btnQuietDestructive. Reserved for the confirm inside a
+ * deliberate guard (a type-the-name modal), where the action is irreversible
+ * and the operator has already committed to it: the delete of a Workspace and
+ * everything on its board (issue #98). Not for casual/quiet destructive links —
+ * those stay quiet-destructive so the loud red never becomes ambient. */
+export const btnDestructive =
+  'inline-flex min-h-11 items-center justify-center rounded-md bg-fail px-3.5 py-2 font-semibold text-on-fail shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-50';
+
 /** Review-gate actions (DESIGN.md § 6 Buttons) — the product's core promise,
  * so this is the one place a second cobalt primary is sanctioned alongside the
  * view's own ("One per view (plus the review gate's Accept)"). Accept is that

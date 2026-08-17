@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
 import { boardColumns, canDrag, dropAction, type DropAction } from '../board-model';
 import { api } from '../api';
-import { toastError } from '../toast';
+import { toastError, toastSuccess } from '../toast';
 import { subscribe } from '../ws';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
@@ -137,7 +137,13 @@ export function Board({
       uncancel: api.uncancelTask,
       cancel: api.cancelTask,
     };
-    call[action](id).then(onChanged, toastError);
+    call[action](id).then(() => {
+      // Cancel is the one gate action reachable by drag; acknowledge it so the
+      // drop-to-cancel never lands silently (issue #98). The requeue verbs move
+      // a card between visible columns, which is its own confirmation.
+      if (action === 'cancel') toastSuccess(`Task #${id} cancelled`);
+      onChanged();
+    }, toastError);
   };
 
   // Drop-target wiring for a column. Only preventDefault (which arms the drop)

@@ -4,6 +4,7 @@ import { formatTokens } from '../conversation-telemetry-model';
 import { formatCost } from '../cost';
 import type { Conversation } from '../types';
 import { btnPrimary, btnQuiet, btnQuietDestructive, conversationStateChip, panelTitle, touchTarget } from '../ui';
+import { ArmedButton } from './ArmedButton';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 
@@ -14,7 +15,9 @@ import { Icon } from './Icon';
  * view's telemetry strip reads, at list density. Per DESIGN.md's Mono Is Code
  * Rule the line is sans; only the working-dir path stays mono. The clickable
  * row and the Delete button are siblings (not nested interactive elements),
- * the row staying keyboard-operable. The accent dot mirrors TaskDetail's
+ * the row staying keyboard-operable. Delete is the shared two-step armed
+ * confirm and sits visible (not hover-revealed) so it is never a bare click on
+ * a hover-only affordance (issue #98). The accent dot mirrors TaskDetail's
  * tab-flag treatment: a live "something changed here" cue, not a state color.
  */
 function ConversationRow({
@@ -65,14 +68,13 @@ function ConversationRow({
           {cost ? ` · ${cost}` : ''}
         </div>
       </div>
-      <button
-        type="button"
-        aria-label={`Delete conversation ${title}`}
-        className={`${btnQuietDestructive} shrink-0 opacity-0 focus-visible:opacity-100 group-hover:opacity-100`}
-        onClick={onDelete}
-      >
-        Delete
-      </button>
+      <ArmedButton
+        label="Delete"
+        armedLabel="Delete?"
+        ariaLabel={`Delete conversation ${title}`}
+        className={`${btnQuietDestructive} shrink-0`}
+        onConfirm={onDelete}
+      />
     </li>
   );
 }

@@ -3,7 +3,7 @@ import { api } from '../api';
 import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
 import { subscribe } from '../ws';
-import { toastError } from '../toast';
+import { toastError, toastSuccess } from '../toast';
 import { btnQuietDestructive, card, chip, displayTitle, escalatedChip, labelType, selectField, touchOverlay, touchTarget, touchTargetInline } from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
@@ -161,9 +161,12 @@ function StopButton({ onConfirm, demoted }: { onConfirm: () => void; demoted: bo
  * resolving action leads for a blocked/escalated row (Grant/Deny a pending
  * permission, or Un-escalate an escalated Run — handing it back to autonomous
  * drive), with Stop demoted beside it; an ordinary row leads with Stop and its
- * ticket deep-link. Stop is always the armed two-step. Failures toast; success rides
- * the WS/poll that already keeps the fleet live (a permission answer clears its
- * own pending locally too, since it has no fleet-level WS echo here).
+ * ticket deep-link. Stop is always the armed two-step. Failures toast; a
+ * completed run-cancel also toasts an acknowledgement naming the Task (issue
+ * #98) — otherwise its only success signal is the row leaving the live fleet.
+ * Ending a Conversation and answering a permission stay silent-on-success: both
+ * visibly change the row/pending state (the permission answer clears its own
+ * pending locally too, since it has no fleet-level WS echo here).
  */
 function RowActions({
   process,
@@ -181,7 +184,13 @@ function RowActions({
 
   const stopConfirm = () => {
     if (!stop) return;
-    fail(stop.kind === 'run' ? api.cancelTask(stop.taskId) : api.endConversation(stop.conversationId));
+    if (stop.kind === 'run') {
+      // Acknowledge the cancel naming what it hit (issue #98); success otherwise
+      // only shows as the row leaving the live fleet.
+      api.cancelTask(stop.taskId).then(() => toastSuccess(`Task #${stop.taskId} cancelled`), toastError);
+    } else {
+      fail(api.endConversation(stop.conversationId));
+    }
   };
 
   const answer = (p: PendingPermission, optionId: string) =>

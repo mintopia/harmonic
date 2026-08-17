@@ -103,10 +103,16 @@ describe('drag-and-drop transitions (issue #58)', () => {
   });
 
   it('cancels a card dropped on Cancelled only where DESIGN.md offers cancel', () => {
-    // draft/blocked/ready/running — produced nothing to judge, or still producing.
-    for (const from of ['draft', 'blocked', 'ready', 'running'] as const) {
+    // draft/blocked/ready — produced nothing to judge yet.
+    for (const from of ['draft', 'blocked', 'ready'] as const) {
       expect(dropAction(from, 'cancelled')).toBe('cancel');
     }
+  });
+
+  it('snaps back a running card dropped on Cancelled (no unguarded drag-kill — issue #98)', () => {
+    // A drag has no armed confirm; a running Task is cancelled via the armed
+    // two-step Cancel button, never a stray drop that SIGKILLs the agent.
+    expect(dropAction('running', 'cancelled')).toBeNull();
   });
 
   it('snaps back awaiting-review dropped on Cancelled (cancel is not a gate action)', () => {
@@ -126,10 +132,13 @@ describe('drag-and-drop transitions (issue #58)', () => {
     expect(dropAction('running', 'ready')).toBeNull();
   });
 
-  it('makes every card draggable except completed and awaiting-review', () => {
-    // awaiting-review is a button-only gate (accept/reject); it has no drag move.
+  it('makes every card draggable except completed, awaiting-review and running', () => {
+    // awaiting-review is a button-only gate (accept/reject); running has no
+    // drag move left now its unguarded drag-cancel is gone (issue #98);
+    // completed has no move at all.
+    const noDragMove: readonly TaskState[] = ['completed', 'awaiting-review', 'running'];
     for (const state of TASK_STATES) {
-      expect(canDrag(state)).toBe(state !== 'completed' && state !== 'awaiting-review');
+      expect(canDrag(state)).toBe(!noDragMove.includes(state));
     }
   });
 });
