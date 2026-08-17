@@ -125,6 +125,19 @@ describe('mirrorScan upsert', () => {
     expect(tasks.list().some((t) => t.trackerRef === 3)).toBe(false);
   });
 
+  it('an Epic parent mirrors as hitl — a container is never auto-run', () => {
+    // #200 carries ready-for-agent (would seed afk), but it has a child (#201),
+    // so it is an Epic → forced hitl so the Auto-Runner never runs the container.
+    const results = mscan([
+      ticket({ number: 200, labels: ['ready-for-agent'] }),
+      ticket({ number: 201, parent: 200, labels: ['ready-for-agent'] }),
+    ]);
+    const epic = results.find((t) => t.trackerRef === 200)!;
+    const child = results.find((t) => t.trackerRef === 201)!;
+    expect(epic.drive).toBe('hitl'); // Epic → not auto-run despite ready-for-agent
+    expect(child.drive).toBe('afk'); // leaf child still afk
+  });
+
   it('an Epic parent is never a blocker: a child "Blocked by" its parent gets no edge', () => {
     // #106 is an Epic (it has children #107/#108). #108 declares "Blocked by #106",
     // but Epics contain their children, they do not block them → no edge, so #108
