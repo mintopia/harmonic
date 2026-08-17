@@ -6,6 +6,7 @@ import { withDetachedWorktree } from '../execution/candidate.js';
 import { Git } from '../execution/git.js';
 import { buildCriticPrompt, newNonce } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
+import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 
 /**
  * The agent critic (issue #136, ADR-0021, reliability-design Unit B): a
@@ -326,4 +327,26 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
   }
 
   return { verifier: 'critic', verdict, summary, output, mutated: proof.mutated, inputOid: args.candidateOid };
+}
+
+/**
+ * Map a {@link CriticAttempt} to the shape {@link VerificationAttemptInput}
+ * that `VerificationAttemptStore.append` persists (issue #136 AC: "Attempt
+ * persisted; verdict feeds the combination function"). The critic's
+ * `verifier: 'critic'` tag is the store's `mechanism`; every other field maps
+ * straight across. This is the one place the critic's in-memory result crosses
+ * into the persisted log — kept as a named, tested function (rather than an
+ * inline object literal at the future call site) so the integration ticket
+ * that wires `runCritic` into the `verifying` phase persists through a path
+ * this ticket already proves end-to-end (`tests/critic.test.ts`).
+ */
+export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemptInput {
+  return {
+    mechanism: attempt.verifier,
+    inputOid: attempt.inputOid,
+    verdict: attempt.verdict,
+    summary: attempt.summary,
+    output: attempt.output,
+    mutated: attempt.mutated,
+  };
 }

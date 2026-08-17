@@ -7,12 +7,18 @@ import { buildCandidate } from '../src/execution/candidate.js';
 import {
   runCritic,
   createAcpCriticDrive,
+  criticAttemptToInput,
   type CriticHarnessDrive,
   type CriticDriveRequest,
 } from '../src/verification/critic.js';
-import type { HarnessConfig } from '../src/config.js';
+import { defaultConfig, type HarnessConfig } from '../src/config.js';
 import { combineVerdicts } from '../web/src/verification-model.js';
 import type { VerifierVerdict } from '../web/src/verification-model.js';
+import { openDb } from '../src/db/index.js';
+import { TaskService } from '../src/domain/tasks.js';
+import { RunStore } from '../src/domain/runs.js';
+import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
+import { allWorkspaces } from './helpers.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -244,6 +250,54 @@ describe('runCritic (issue #136)', () => {
       const verifierVerdict: VerifierVerdict = { verifier: attempt.verifier, verdict: attempt.verdict };
       expect(combineVerdicts([verifierVerdict])).toEqual({ outcome: c.outcome, reason: expect.any(String) });
     }
+  });
+
+  it('AC5 end-to-end: a runCritic attempt persists to the store and the read-back row feeds combineVerdicts', async () => {
+    // Proves the two halves of "Attempt persisted; verdict feeds the
+    // combination function" join up on a REAL runCritic result, not two
+    // isolated fixtures: runCritic -> criticAttemptToInput -> store.append ->
+    // list -> map row to a VerifierVerdict -> combineVerdicts. The glue under
+    // test is `criticAttemptToInput` mapping `verifier:'critic'` to the store's
+    // `mechanism` (the field the integration ticket will persist through).
+    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-persist');
+    const drive: CriticHarnessDrive = {
+      run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
+    };
+    const attempt = await runCritic({
+      repoDir: repo,
+      candidateOid: oid,
+      baseRev: baseOid,
+      worktreePath: freshWorktreePath('harmonic-critic-wt-persist-'),
+      critic: { prompt: 'Review the diff.', model: 'stub-model' },
+      harness: FAKE_HARNESS,
+      harnessId: 'claude',
+      drive,
+    });
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-persist-db-'));
+    tmpDirs.push(dbDir);
+    const db = openDb(dbDir);
+    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const runStore = new RunStore(db);
+    const store = new VerificationAttemptStore(db);
+    const runId = runStore.create(tasks.create({ prompt: 'verify me', state: 'ready' }).id).id;
+
+    store.append(runId, criticAttemptToInput(attempt));
+
+    const [row, ...rest] = store.list(runId);
+    expect(rest).toHaveLength(0);
+    expect(row).toMatchObject({
+      mechanism: 'critic',
+      verdict: 'fail',
+      summary: 'the diff drops a null check',
+      inputOid: oid,
+      phase: 'verifying',
+      mutated: false,
+    });
+
+    // The persisted row — not the in-memory attempt — feeds the combiner.
+    const verifierVerdict: VerifierVerdict = { verifier: row!.mechanism, verdict: row!.verdict as VerifierVerdict['verdict'] };
+    expect(combineVerdicts([verifierVerdict])).toEqual({ outcome: 'block', reason: expect.any(String) });
   });
 });
 
