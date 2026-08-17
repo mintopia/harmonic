@@ -93,6 +93,34 @@ export const modelInfoSchema = z.object({
   cacheTtlSeconds: z.number().int().positive().optional().meta({ example: 300 }),
 });
 
+/**
+ * A command verifier (issue #132, ADR-0021): an argv-based check (a Workspace's
+ * test/lint) run against a frozen candidate in a disposable checkout. Only the
+ * config surface exists in #132 — nothing executes yet.
+ */
+export const verificationCommandSchema = z.object({
+  /** The executable to spawn (argv[0]); args are passed separately, never a shell string. */
+  command: z.string().min(1).meta({ example: 'npm' }),
+  args: z.array(z.string()).default([]).meta({ example: ['test'] }),
+  /** Working directory, relative to the checkout root; omitted runs at the root. */
+  cwd: z.string().optional().meta({ example: 'packages/api' }),
+  env: z.record(z.string(), z.string()).default({}).meta({ example: { CI: '1' } }),
+  /** Hard timeout in seconds; a command that overruns is killed and reads inconclusive. */
+  timeoutSeconds: z.number().int().positive().default(600).meta({ example: 600 }),
+});
+export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
+
+/**
+ * An agent critic verifier (issue #132, ADR-0021): a read-only reviewer Harness
+ * with its own prompt and model that judges the candidate diff. Config surface
+ * only in #132 — no critic runs yet.
+ */
+export const verificationCriticSchema = z.object({
+  prompt: z.string().min(1).meta({ example: 'Review the diff for correctness against the ticket.' }),
+  model: z.string().min(1).meta({ example: 'claude-opus-5' }),
+});
+export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
+
 export const appConfigSchema = z.object({
   /**
    * Operator-chosen display name for this instance (issue: instance rename).
@@ -198,6 +226,19 @@ export const appConfigSchema = z.object({
    * values are allowed.
    */
   conversationIdleTimeoutMinutes: z.number().nonnegative().default(30).meta({ example: 30 }),
+  /**
+   * Global-default Verification config (issue #109/#132, ADR-0021): the command
+   * verifier and the agent critic, each nullable and defaulting to null — nothing
+   * configured — so the resolved verifier set is empty and a Run behaves exactly
+   * as it does today. Per-Workspace overrides resolve per-key over these defaults
+   * (`resolveVerifiers`, domain/setting-override.ts). No verifier executes yet (#132).
+   */
+  verification: z
+    .object({
+      command: verificationCommandSchema.nullable().default(null),
+      critic: verificationCriticSchema.nullable().default(null),
+    })
+    .prefault({}),
 }).superRefine((config, ctx) => {
   // A harness's defaultModel must be one of its models (when any are
   // listed) — the Settings UI offers a select over `models`, and a stray
@@ -314,6 +355,10 @@ export function defaultConfig(): AppConfig {
     taskPrompt: DEFAULT_TASK_PROMPT,
     agentReview: false,
     conversationIdleTimeoutMinutes: 30,
+    verification: {
+      command: null,
+      critic: null,
+    },
   };
 }
 
@@ -321,6 +366,7 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
   if (!overrides) return base;
   const merge = (a: any, b: any): any => {
     if (b === undefined) return a;
+    if (b === null || typeof b !== 'object' || Array.isArray(b)) return b;
     if (a === null || typeof a !== 'object' || Array.isArray(a)) return b;
     const out: any = { ...a };
     for (const key of Object.keys(b)) out[key] = merge(a[key], b[key]);

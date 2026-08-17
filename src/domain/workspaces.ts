@@ -15,6 +15,7 @@ import {
   type WorkspaceRow,
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import { verificationCommandSchema, verificationCriticSchema } from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
@@ -44,6 +45,10 @@ export const workspaceOverridesSchema = z.object({
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  /** Command-verifier override (issue #132); null inherits `config.verification.command`. */
+  verificationCommand: verificationCommandSchema.nullable().optional(),
+  /** Critic-verifier override (issue #132); null inherits `config.verification.critic`. */
+  verificationCritic: verificationCriticSchema.nullable().optional(),
 });
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
@@ -120,6 +125,10 @@ export class WorkspaceService {
     // wrongly treat a clear as a keep. `patch` keeps a field only when it is
     // genuinely absent, letting a null through as an explicit inherit.
     const patch = <T>(next: T | null | undefined, kept: T | null): T | null => (next === undefined ? kept : next);
+    // Verifier overrides are object-valued but stored as JSON text: undefined keeps
+    // the current column, null clears to inherit, an object is serialised.
+    const patchJson = <T>(next: T | null | undefined, kept: string | null): string | null =>
+      next === undefined ? kept : next === null ? null : JSON.stringify(next);
     return this.db
       .update(workspaces)
       .set({
@@ -135,6 +144,8 @@ export class WorkspaceService {
         priority: patch(input.priority, current.priority),
         maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
         autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
+        verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
+        verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
         updatedAt: Date.now(),
       })
       .where(eq(workspaces.id, id))

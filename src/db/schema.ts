@@ -67,6 +67,13 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace Auto-Runner enable; null inherits the global default. Gated
    * by the global master switch — a Task runs only if `master ∧ resolved`. */
   autoRunnerEnabled: integer('auto_runner_enabled', { mode: 'boolean' }),
+  /** Per-Workspace command-verifier override (issue #132, ADR-0021): JSON of
+   * `verificationCommandSchema`, or null to inherit `config.verification.command`.
+   * Resolved per-key at read time by `resolveVerifiers` (setting-override.ts). */
+  verificationCommand: text('verification_command'),
+  /** Per-Workspace critic-verifier override (issue #132): JSON of
+   * `verificationCriticSchema`, or null to inherit `config.verification.critic`. */
+  verificationCritic: text('verification_critic'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

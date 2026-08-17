@@ -5,6 +5,7 @@ import type { App } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
+import { verificationCommandSchema, verificationCriticSchema } from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 
@@ -44,6 +45,11 @@ const workspaceSchema = z
     priority: z.string().nullable().meta({ example: null }),
     maxConcurrentRuns: z.number().nullable().meta({ example: null }),
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
+    // Verification verifier overrides (issue #132): the raw JSON columns parsed
+    // back into their object shape, so a client reads a set override the same
+    // shape it PATCHes. null ⇒ inherit `config.verification.{command,critic}`.
+    verificationCommand: verificationCommandSchema.nullable().meta({ example: null }),
+    verificationCritic: verificationCriticSchema.nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
   })
@@ -63,9 +69,13 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         ? { ok: true, label: r.label, code: null, reason: null }
         : { ok: false, label: null, code: r.code, reason: r.reason };
 
-  /** A Workspace row plus its live Resolved Tracker, as every workspace endpoint returns it. */
+  /** A Workspace row plus its live Resolved Tracker, as every workspace endpoint returns it.
+   * The two verifier overrides are stored as JSON text; parse them back so the
+   * response carries the same object shape a client PATCHes (issue #132). */
   const serialize = (ws: WorkspaceRow) => ({
     ...ws,
+    verificationCommand: ws.verificationCommand ? JSON.parse(ws.verificationCommand) : null,
+    verificationCritic: ws.verificationCritic ? JSON.parse(ws.verificationCritic) : null,
     resolvedTracker: serializeResolvedTracker(ctx.trackerManager.resolvedTracker(ws.id)),
   });
 

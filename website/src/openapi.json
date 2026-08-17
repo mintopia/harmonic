@@ -1565,6 +1565,88 @@
             ],
             "example": null
           },
+          "verificationCommand": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "npm"
+                  },
+                  "args": {
+                    "default": [],
+                    "example": [
+                      "test"
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "cwd": {
+                    "example": "packages/api",
+                    "type": "string"
+                  },
+                  "env": {
+                    "default": {},
+                    "example": {
+                      "CI": "1"
+                    },
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "timeoutSeconds": {
+                    "default": 600,
+                    "example": 600,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "command"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "verificationCritic": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Review the diff for correctness against the ticket."
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "claude-opus-5"
+                  }
+                },
+                "required": [
+                  "prompt",
+                  "model"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -1589,6 +1671,8 @@
           "priority",
           "maxConcurrentRuns",
           "autoRunnerEnabled",
+          "verificationCommand",
+          "verificationCritic",
           "createdAt",
           "updatedAt"
         ]
@@ -3646,6 +3730,93 @@
             ],
             "example": null
           },
+          "verificationCommand": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "npm"
+                  },
+                  "args": {
+                    "default": [],
+                    "example": [
+                      "test"
+                    ],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "cwd": {
+                    "example": "packages/api",
+                    "type": "string"
+                  },
+                  "env": {
+                    "default": {},
+                    "example": {
+                      "CI": "1"
+                    },
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "timeoutSeconds": {
+                    "default": 600,
+                    "example": 600,
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "command",
+                  "args",
+                  "env",
+                  "timeoutSeconds"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "verificationCritic": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Review the diff for correctness against the ticket."
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "claude-opus-5"
+                  }
+                },
+                "required": [
+                  "prompt",
+                  "model"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "number",
             "example": 1784030400000
@@ -3670,6 +3841,8 @@
           "priority",
           "maxConcurrentRuns",
           "autoRunnerEnabled",
+          "verificationCommand",
+          "verificationCritic",
           "createdAt",
           "updatedAt"
         ],
@@ -6092,6 +6265,86 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "verificationCommand": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "command": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "npm"
+                          },
+                          "args": {
+                            "default": [],
+                            "example": [
+                              "test"
+                            ],
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "cwd": {
+                            "example": "packages/api",
+                            "type": "string"
+                          },
+                          "env": {
+                            "default": {},
+                            "example": {
+                              "CI": "1"
+                            },
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "timeoutSeconds": {
+                            "default": 600,
+                            "example": 600,
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "command"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "verificationCritic": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "prompt": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "Review the diff for correctness against the ticket."
+                          },
+                          "model": {
+                            "type": "string",
+                            "minLength": 1,
+                            "example": "claude-opus-5"
+                          }
+                        },
+                        "required": [
+                          "prompt",
+                          "model"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               }
@@ -7478,6 +7731,103 @@
                       "example": 30,
                       "type": "number",
                       "minimum": 0
+                    },
+                    "verification": {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "command": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "npm"
+                                },
+                                "args": {
+                                  "default": [],
+                                  "example": [
+                                    "test"
+                                  ],
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "cwd": {
+                                  "example": "packages/api",
+                                  "type": "string"
+                                },
+                                "env": {
+                                  "default": {},
+                                  "example": {
+                                    "CI": "1"
+                                  },
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                "timeoutSeconds": {
+                                  "default": 600,
+                                  "example": 600,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "command",
+                                "args",
+                                "env",
+                                "timeoutSeconds"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "critic": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "prompt": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "Review the diff for correctness against the ticket."
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "claude-opus-5"
+                                }
+                              },
+                              "required": [
+                                "prompt",
+                                "model"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "critic"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -7491,7 +7841,8 @@
                     "drive",
                     "taskPrompt",
                     "agentReview",
-                    "conversationIdleTimeoutMinutes"
+                    "conversationIdleTimeoutMinutes",
+                    "verification"
                   ],
                   "additionalProperties": false,
                   "description": "The stored configuration in full: harnesses, price overrides, defaults, auto-runner settings, and flags."
@@ -7845,6 +8196,103 @@
                       "example": 30,
                       "type": "number",
                       "minimum": 0
+                    },
+                    "verification": {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "command": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "npm"
+                                },
+                                "args": {
+                                  "default": [],
+                                  "example": [
+                                    "test"
+                                  ],
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "cwd": {
+                                  "example": "packages/api",
+                                  "type": "string"
+                                },
+                                "env": {
+                                  "default": {},
+                                  "example": {
+                                    "CI": "1"
+                                  },
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                "timeoutSeconds": {
+                                  "default": 600,
+                                  "example": 600,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "command",
+                                "args",
+                                "env",
+                                "timeoutSeconds"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "critic": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "prompt": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "Review the diff for correctness against the ticket."
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "claude-opus-5"
+                                }
+                              },
+                              "required": [
+                                "prompt",
+                                "model"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "critic"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -7858,7 +8306,8 @@
                     "drive",
                     "taskPrompt",
                     "agentReview",
-                    "conversationIdleTimeoutMinutes"
+                    "conversationIdleTimeoutMinutes",
+                    "verification"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored once the patch was merged onto it."
@@ -8178,6 +8627,94 @@
                     "example": 30,
                     "type": "number",
                     "minimum": 0
+                  },
+                  "verification": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "command": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "npm"
+                              },
+                              "args": {
+                                "default": [],
+                                "example": [
+                                  "test"
+                                ],
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "cwd": {
+                                "example": "packages/api",
+                                "type": "string"
+                              },
+                              "env": {
+                                "default": {},
+                                "example": {
+                                  "CI": "1"
+                                },
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              },
+                              "timeoutSeconds": {
+                                "default": 600,
+                                "example": 600,
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "command"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "critic": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "prompt": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "Review the diff for correctness against the ticket."
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude-opus-5"
+                              }
+                            },
+                            "required": [
+                              "prompt",
+                              "model"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
                   }
                 },
                 "required": [
@@ -8519,6 +9056,103 @@
                       "example": 30,
                       "type": "number",
                       "minimum": 0
+                    },
+                    "verification": {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "command": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "npm"
+                                },
+                                "args": {
+                                  "default": [],
+                                  "example": [
+                                    "test"
+                                  ],
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "cwd": {
+                                  "example": "packages/api",
+                                  "type": "string"
+                                },
+                                "env": {
+                                  "default": {},
+                                  "example": {
+                                    "CI": "1"
+                                  },
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "type": "string"
+                                  }
+                                },
+                                "timeoutSeconds": {
+                                  "default": 600,
+                                  "example": 600,
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "command",
+                                "args",
+                                "env",
+                                "timeoutSeconds"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "critic": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "prompt": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "Review the diff for correctness against the ticket."
+                                },
+                                "model": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "example": "claude-opus-5"
+                                }
+                              },
+                              "required": [
+                                "prompt",
+                                "model"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "critic"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -8532,7 +9166,8 @@
                     "drive",
                     "taskPrompt",
                     "agentReview",
-                    "conversationIdleTimeoutMinutes"
+                    "conversationIdleTimeoutMinutes",
+                    "verification"
                   ],
                   "additionalProperties": false,
                   "description": "The whole configuration as stored after the replace, with omitted optional fields filled from the schema's defaults."

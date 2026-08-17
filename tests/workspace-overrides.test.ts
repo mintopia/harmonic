@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
+import { verificationCommandSchema } from '../src/config.js';
 
 /**
  * Per-workspace setting overrides on the Workspace API (ADR-0012, issue #64).
@@ -36,6 +37,8 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.priority).toBeNull();
     expect(ws.maxConcurrentRuns).toBeNull();
     expect(ws.autoRunnerEnabled).toBeNull();
+    expect(ws.verificationCommand).toBeNull();
+    expect(ws.verificationCritic).toBeNull();
   });
 
   it('sets explicit overrides', () => {
@@ -101,5 +104,37 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(off.autoRunnerEnabled).toBe(false); // an explicit "off", not inherit
     const untouched = workspaces.update(ws.id, { name: ws.name });
     expect(untouched.autoRunnerEnabled).toBe(false);
+  });
+
+  it('sets explicit verifier overrides, stored as JSON (issue #132)', () => {
+    const ws = workspaces.list()[0]!;
+    // .parse fills in the schema's own defaults (env: {}, timeoutSeconds: 600) —
+    // the same shape the PATCH route hands the service after body validation.
+    const updated = workspaces.update(ws.id, {
+      verificationCommand: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }),
+      verificationCritic: { prompt: 'review', model: 'claude-opus-5' },
+    });
+    // The stored JSON is a superset of what was sent — toMatchObject, not toEqual.
+    expect(JSON.parse(updated.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] });
+    expect(JSON.parse(updated.verificationCritic!)).toMatchObject({ prompt: 'review', model: 'claude-opus-5' });
+  });
+
+  it('clears verifier overrides back to inherit with null (issue #132)', () => {
+    const ws = workspaces.list()[0]!;
+    workspaces.update(ws.id, {
+      verificationCommand: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }),
+      verificationCritic: { prompt: 'review', model: 'claude-opus-5' },
+    });
+    const cleared = workspaces.update(ws.id, { verificationCommand: null, verificationCritic: null });
+    expect(cleared.verificationCommand).toBeNull();
+    expect(cleared.verificationCritic).toBeNull();
+  });
+
+  it('leaves an omitted verifier override untouched (issue #132)', () => {
+    const ws = workspaces.list()[0]!;
+    workspaces.update(ws.id, { verificationCommand: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }) });
+    const renamed = workspaces.update(ws.id, { name: 'Renamed' });
+    expect(renamed.name).toBe('Renamed');
+    expect(JSON.parse(renamed.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] }); // untouched
   });
 });

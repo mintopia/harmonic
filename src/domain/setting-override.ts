@@ -1,3 +1,6 @@
+import type { WorkspaceRow } from '../db/schema.js';
+import type { AppConfig, VerificationCommand, VerificationCritic } from '../config.js';
+
 /**
  * Setting Overrides (ADR-0012, issue #59). An overridable setting resolves as
  * `Workspace value ?? global default`: a Workspace stores `null` to mean
@@ -24,4 +27,34 @@ export function resolve<T>(workspaceVal: T | null | undefined, globalDefault: T)
  */
 export function resolveCap(workspaceCap: number | null | undefined, machineCeiling: number): number {
   return Math.min(resolve(workspaceCap, machineCeiling), machineCeiling);
+}
+
+/** A Workspace's effective Verification verifiers, each null when unconfigured. */
+export type ResolvedVerifiers = {
+  command: VerificationCommand | null;
+  critic: VerificationCritic | null;
+};
+
+/**
+ * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021).
+ * Each verifier is its own key: a Workspace's stored JSON overrides the global
+ * default, `null` (or an unset column) inherits it — the same `workspace ?? global`
+ * rule as every scalar override, applied per verifier. With nothing configured
+ * (global default null and no Workspace override) both resolve to null: an empty
+ * verifier set, so a Run behaves exactly as it does today. No verifier executes
+ * here — this only resolves the config.
+ */
+export function resolveVerifiers(
+  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
+  config: Pick<AppConfig, 'verification'>,
+): ResolvedVerifiers {
+  return {
+    command: resolve(parseVerifier<VerificationCommand>(ws.verificationCommand), config.verification.command),
+    critic: resolve(parseVerifier<VerificationCritic>(ws.verificationCritic), config.verification.critic),
+  };
+}
+
+/** Parse a stored verifier override column; an unset/empty column means inherit (null). */
+function parseVerifier<T>(stored: string | null | undefined): T | null {
+  return stored ? (JSON.parse(stored) as T) : null;
 }
