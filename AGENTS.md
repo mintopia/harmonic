@@ -7,9 +7,11 @@ See `CONTEXT.md` for the domain glossary.
 ## House Rules
 
 Use subagents for tasks.
+Use multiple subagents in parallel working as a team, with agent messaging to co-ordinate.
 Subagents must use an appropriate model, defaults:
 
  - Explore and Coding: Sonnet
+ - Codebase Mapping: jcodemunch MCP and Sonnet
  - Reasoning and Planning: Opus
  - Trivial, Documentation: Haiku
 
