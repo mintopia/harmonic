@@ -27,6 +27,8 @@ import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { ReviewService } from '../domain/review.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { RunFactStore } from '../domain/run-facts.js';
+import { LandingJournalStore } from '../domain/landing-journal.js';
+import { LandingCoordinator, type LandingEffectExec } from '../domain/landing-coordinator.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -235,14 +237,53 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Accepting a worktree-mode task merges the run's branch (ADR-0002). The
   // review gate lands/fails a Run parked in `phase:'review'` through the shared
   // settle coordinator (issue #114), so accept/reject/SLA-expiry are race-safe
-  // against a concurrent operator cancel.
-  const reviewSettle = new RunSettleCoordinator(runs, tasks, leases, new RunFactStore(db), (run) =>
-    bus.emit('run_changed', run),
+  // against a concurrent operator cancel. The `LandingJournalStore` is fed into
+  // both `reviewSettle` (its optional PONC-clamp dependency) and `landing` (issue
+  // #115): once Accept's journaled landing freezes its PONC, a cancel/guardrail
+  // signal racing in through this same `reviewSettle` instance can no longer win.
+  const landingJournal = new LandingJournalStore(db);
+  const reviewSettle = new RunSettleCoordinator(
+    runs,
+    tasks,
+    leases,
+    new RunFactStore(db),
+    (run) => bus.emit('run_changed', run),
+    landingJournal,
   );
-  const review = new ReviewService(runs, tasks, reviewSettle, async (task, run) => {
-    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
-    return Git.merge(task.workingDir, run.baseBranch, run.branch);
-  });
+  const landing = new LandingCoordinator(runs, new RunFactStore(db), landingJournal, reviewSettle);
+  const review = new ReviewService(
+    runs,
+    tasks,
+    reviewSettle,
+    landing,
+    async (task, run) => {
+      if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
+      return Git.merge(task.workingDir, run.baseBranch, run.branch);
+    },
+    // The one live landing effect today (issue #115): a worktree Task's merge,
+    // journaled as `target-ref`. Idempotency identity is the base/run branch
+    // pair — stable for the Run's whole lifetime and known before the merge
+    // ever runs, so `recordIntent` doesn't need to wait on a Git call. Empty
+    // for a non-worktree Task — "no effects -> straight land" preserves the
+    // pre-#115 no-op `acceptHook` default exactly.
+    (task, run): LandingEffectExec[] => {
+      if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return [];
+      const baseBranch = run.baseBranch;
+      const branch = run.branch;
+      return [
+        {
+          effect: 'target-ref',
+          idempotencyKey: `${baseBranch}<-${branch}`,
+          expected: { baseBranch, branch },
+          apply: async () => {
+            const result = await Git.merge(task.workingDir, baseBranch, branch);
+            if (!result.ok) return { ok: false, detail: result.detail };
+            return { ok: true, observed: { baseBranch, branch } };
+          },
+        },
+      ];
+    },
+  );
   // Review-SLA sweep at boot (issue #114): a Run left parked in `review` past its
   // deadline by a previous instance is settled to a terminal disposition now, so
   // an abandoned review never wedges its Work Context lease across a restart.

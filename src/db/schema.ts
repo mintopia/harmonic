@@ -8,6 +8,12 @@ import type { RunPhase } from '../domain/run-phases.js';
 // cancel-reason columns without a runtime db→domain import cycle
 // (domain/turn-queue-store.ts already imports this schema).
 import type { TurnStatus, TurnPurpose, TurnCancelReason } from '../domain/turn-queue.js';
+// Type-only import, same reasoning: brands `landing_journal`'s kind/effect
+// columns without a runtime db→domain import cycle (domain/landing.ts already
+// imports nothing from this schema — it is deliberately DB-free — but the
+// canonical `LandingEffect`/`LandingJournalKind` enums still live there so
+// the pure module stays the single source of truth for them).
+import type { LandingEffect, LandingJournalKind } from '../domain/landing.js';
 
 /** Tracker mirroring (issue #30). A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -473,6 +479,59 @@ export const runFacts = sqliteTable('run_facts', {
 ]);
 
 export type RunFactRow = typeof runFacts.$inferSelect;
+
+/**
+ * The journaled non-interruptible landing log (issue #115, reliability-design
+ * §0.3, Unit D). Landing is the set of irreversible side effects a Run's
+ * completion triggers once accepted — merging a worktree branch, opening a
+ * PR, closing a tracker ticket (`LandingEffect`, domain/landing.ts) — and
+ * this table is the append-only record of that process, mirroring
+ * `run_facts`'s discipline exactly (same `(run_id, seq)` unique index, same
+ * "only ever appended, never updated" rule) so a landing can be replayed and
+ * reconciled from the log alone after a crash.
+ *
+ * Three row kinds (`kind`), written in this order per landing:
+ *   - `ponc` — written once, before the first irreversible effect: freezes
+ *     `run_facts`'s cutoff at the seq the land disposition fact just took
+ *     (`payload.cutoffSeq`), so `RunSettleCoordinator.settle` (run-settle.ts)
+ *     can exclude any cancel/guardrail fact that races in after this point
+ *     from ever winning. `effect`/`idempotency_key` are null for this kind —
+ *     a PONC is about the Run's disposition, not any one effect.
+ *   - `intent` — "about to attempt `effect` identified by
+ *     `idempotency_key`", `payload.expected` carries whatever a later
+ *     `observed` check needs.
+ *   - `result` — the outcome of that attempt, `payload.ok`
+ *     (+ `payload.observed`/`payload.detail`). An effect counts as **applied**
+ *     iff a `result` row with `ok:true` exists for its key
+ *     (`foldJournal`/`reconcile`, domain/landing.ts).
+ *
+ * `idempotency_key` is what makes reconciliation crash-safe: a process that
+ * dies between `intent` and `result` leaves the effect ambiguous, and
+ * `reconcile` resolves it by checking whether the world already shows that
+ * key applied (`'adopt'`, no re-apply) rather than blindly retrying
+ * (`'apply'`) and risking a duplicate merge/PR/ticket-close.
+ */
+export const landingJournal = sqliteTable('landing_journal', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  runId: integer('run_id')
+    .notNull()
+    .references(() => runs.id),
+  /** Monotonic per-Run sequence (1-based); same discipline as `run_facts.seq`. */
+  seq: integer('seq').notNull(),
+  ts: integer('ts').notNull(),
+  /** 'ponc' | 'intent' | 'result'. */
+  kind: text('kind').$type<LandingJournalKind>().notNull(),
+  /** 'target-ref' | 'open-pr' | 'ticket-close'; null for 'ponc'. */
+  effect: text('effect').$type<LandingEffect>(),
+  /** The effect's identity for idempotency/reconciliation; null for 'ponc'. */
+  idempotencyKey: text('idempotency_key'),
+  /** JSON payload — kind-specific detail (cutoffSeq / expected / ok+observed+detail). */
+  payload: text('payload').notNull().default('{}'),
+}, (t) => [
+  uniqueIndex('landing_journal_run_seq_unique').on(t.runId, t.seq),
+]);
+
+export type LandingJournalRow = typeof landingJournal.$inferSelect;
 
 /**
  * The Session turn queue's persisted substrate (issue #116, reliability-design

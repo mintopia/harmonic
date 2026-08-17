@@ -3,6 +3,7 @@ import { DomainError } from './errors.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { RunSettleCoordinator } from './run-settle.js';
+import type { LandingCoordinator, LandingEffectExec } from './landing-coordinator.js';
 
 export interface AcceptOutcome {
   /** When false, the merge conflicted: the task stays awaiting-review. */
@@ -13,9 +14,20 @@ export interface AcceptOutcome {
 export type AcceptHook = (task: TaskRow, run: RunRow) => Promise<AcceptOutcome>;
 
 /**
+ * The landing side effects Accept must apply for this Task/Run, built
+ * synchronously from what's already known about them (issue #115) — e.g. a
+ * worktree Task's merge, identified for idempotency by its base/run branch
+ * pair (stable for the Run's whole lifetime, known before the merge ever
+ * runs). Empty for a non-worktree Task: "no effects -> straight land"
+ * (`LandingCoordinator.land` with `effects: []` just settles terminal).
+ */
+export type LandingEffectsHook = (task: TaskRow, run: RunRow) => LandingEffectExec[];
+
+/**
  * The human review gate. Accept lands the run (and, in worktree mode, merges the
- * run's branch — via the accept hook, per ADR-0002) and completes the task;
- * Reject fails it with the reviewer's feedback stored on the run.
+ * run's branch — via the journaled `LandingCoordinator`, per ADR-0002 and issue
+ * #115) and completes the task; Reject fails it with the reviewer's feedback
+ * stored on the run.
  *
  * With the phase machine (issue #114) a native Run does NOT settle at
  * agent-finish: it parks **non-terminal** in `phase:'review'` while its Task sits
@@ -23,17 +35,25 @@ export type AcceptHook = (task: TaskRow, run: RunRow) => Promise<AcceptOutcome>;
  * holding it across the review window awaits #122's phase-specific lease TTLs).
  * Accept/reject are therefore the second settle authority — they land or fail
  * that parked Run, and they do it through the shared {@link RunSettleCoordinator}
- * so the terminal disposition is race-safe against a concurrent operator cancel
- * (which outranks both). A pre-#114 Run that was already settled `completed` at
- * agent-finish (state !== 'running') keeps its old direct-transition path — the
- * coordinator would idempotently no-op such a Run, so its Task would never move.
+ * (Accept via {@link LandingCoordinator}, which owns the journaled non-
+ * interruptible landing operation — PONC-freezes the disposition before its
+ * first irreversible effect, then settles through the same coordinator) so the
+ * terminal disposition is race-safe against a concurrent operator cancel (which
+ * outranks both, UNLESS it arrives after the PONC — see landing.ts's module doc
+ * comment). A pre-#114 Run that was already settled `completed` at agent-finish
+ * (state !== 'running') keeps its old direct-transition path via `acceptHook` —
+ * it has already terminaled, so there is no live disposition race left for the
+ * journal/PONC to protect, and the coordinator would idempotently no-op such a
+ * Run anyway, so its Task would never move.
  */
 export class ReviewService {
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
     private readonly settle: RunSettleCoordinator,
+    private readonly landing: LandingCoordinator,
     private readonly acceptHook: AcceptHook = async () => ({ ok: true }),
+    private readonly landingEffects: LandingEffectsHook = () => [],
   ) {}
 
   private reviewable(taskId: number): { task: TaskRow; run: RunRow } {
@@ -48,33 +68,39 @@ export class ReviewService {
 
   async accept(taskId: number): Promise<TaskRow> {
     const { task, run } = this.reviewable(taskId);
+    if (run.state === 'running') {
+      // #114-era parked Run: land it through the journaled, PONC-guarded
+      // coordinator (issue #115). `land` itself records the `review →
+      // landing` phase transition (§0.2: "landing happens after Accept"),
+      // journals/applies each effect (the worktree merge, if any) in order,
+      // and — only once every effect succeeds — settles `completed` through
+      // the shared `RunSettleCoordinator`, with the review decoration riding
+      // that winning write exactly as it did before #115.
+      const outcome = await this.landing.land(
+        task,
+        run,
+        { runState: 'completed', taskAction: 'completed', reason: null },
+        this.landingEffects(task, run),
+        { review: 'accepted', reviewedAt: Date.now(), reviewDeadline: null },
+      );
+      if (!outcome.ok) {
+        // Merge conflict (or any other effect failure): surface it and leave
+        // the task in awaiting-review — identical to the pre-#115 behaviour,
+        // now driven by the effect loop instead of a single accept hook call.
+        this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
+        throw new DomainError('conflict', outcome.detail ?? 'merge conflict on accept');
+      }
+      return this.taskService.get(taskId);
+    }
+    // Legacy Run already settled `completed` at agent-finish (pre-#114): the
+    // accept hook (the merge) IS the landing, run directly — no live
+    // disposition race is left for the journal/PONC to protect (see class
+    // doc comment).
     const outcome = await this.acceptHook(task, run);
     if (!outcome.ok) {
-      // Merge conflict: surface it and leave the task in awaiting-review.
       this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
       throw new DomainError('conflict', outcome.detail ?? 'merge conflict on accept');
     }
-    if (run.state === 'running') {
-      // #114-era parked Run. The accept hook (the merge) IS the landing, so record
-      // the `review → landing` transition now (§0.2: "landing happens after
-      // Accept") — persisted + reconstructable like every other phase — before
-      // the coordinator settles it terminal.
-      this.runStore.update(run.id, { phase: 'landing' });
-      this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'landing' } });
-      // Settle it `completed` through the coordinator (Run completed, phase →
-      // terminal, lease released, Task → completed), with the review decoration
-      // riding the winning write so a straggler cancel that already won leaves it
-      // untouched.
-      this.settle.settle(
-        task,
-        run,
-        'agent-finish/unresolved',
-        { runState: 'completed', taskAction: 'completed', reason: null },
-        { review: 'accepted', reviewedAt: Date.now(), reviewDeadline: null },
-      );
-      return this.taskService.get(taskId);
-    }
-    // Legacy Run already settled `completed` at agent-finish (pre-#114).
     this.runStore.update(run.id, { review: 'accepted', reviewedAt: Date.now() });
     return this.taskService.setState(taskId, 'completed');
   }

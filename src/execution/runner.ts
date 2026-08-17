@@ -14,6 +14,7 @@ import { AcpDriver } from '../acp/driver.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
+import { LandingJournalStore } from '../domain/landing-journal.js';
 import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
@@ -175,12 +176,22 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.runFacts = new RunFactStore(this.db);
+    // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
+    // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
+    // that path can reach a Run parked in `review`/`landing` while a
+    // `LandingCoordinator.land()` is mid-flight. Feeding the same append-only
+    // `landing_journal` (keyed on `this.db`, so it reads the very PONC the
+    // review-side coordinator wrote) makes this coordinator honour the Point Of
+    // No Cancel too: a cancel racing in after the PONC is clamped out and the
+    // land stands — without this, that cancel would win here and "un-land" an
+    // already-merged Run (the bug reliability-design §0.3 exists to prevent).
     this.settleCoordinator = new RunSettleCoordinator(
       this.runStore,
       this.taskService,
       this.leaseStore,
       this.runFacts,
       (run) => this.events.onRunFinished?.(run),
+      new LandingJournalStore(this.db),
     );
     this.tailer = new LiveUsageTailer(
       {

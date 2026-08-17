@@ -3,6 +3,7 @@ import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunFactStore } from './run-facts.js';
+import type { LandingJournalStore } from './landing-journal.js';
 import { computeDisposition } from './run-disposition.js';
 import { projectSettle, type CoordinatorFact, type SettleProjection, type SettleTaskAction } from './run-coordinator.js';
 
@@ -24,6 +25,17 @@ import { projectSettle, type CoordinatorFact, type SettleProjection, type Settle
  * the coordinator to a shared, dependency-injected class lets both drive it with
  * identical race-safety, instead of the review path racing the Runner around the
  * Run row.
+ *
+ * `landingJournal` is a **third** settle-adjacent concern layered on top by
+ * issue #115: the journaled non-interruptible landing's Point Of No Cancel
+ * (PONC, see domain/landing.ts's module doc comment). Once a landing has
+ * written its PONC, a cancel/guardrail-trip fact that races in afterward must
+ * never be allowed to flip the winning disposition away from the land that's
+ * already underway (or, worse, retroactively "unland" an effect that already
+ * fired). The dependency is **optional** — every existing call site and test
+ * that constructs this coordinator without it keeps behaving exactly as
+ * before #115 shipped: `poncCutoffFor` degrades to "no clamp" when
+ * `landingJournal` is undefined.
  */
 export class RunSettleCoordinator {
   constructor(
@@ -32,6 +44,7 @@ export class RunSettleCoordinator {
     private readonly leaseStore: WorkContextLeaseStore,
     private readonly runFacts: RunFactStore,
     private readonly onRunFinished?: (run: RunRow) => void,
+    private readonly landingJournal?: LandingJournalStore,
   ) {}
 
   /**
@@ -54,20 +67,33 @@ export class RunSettleCoordinator {
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
   ): void {
+    // The PONC freeze (issue #115, reliability-design §0.3): if a landing has
+    // already frozen this Run's disposition cutoff, no fact appended after it
+    // — including the very signal this call is settling — can move the
+    // decision past that point. Read once per call so both the prior and
+    // post-append cutoffs below clamp against the same value.
+    const poncCutoffSeq = this.landingJournal?.ponc(run.id) ?? null;
+
     // The winning disposition BEFORE this signal — so we can tell whether this
     // signal actually changes the coordinator's decision.
     const priorFacts = this.coordinatorFacts(run.id);
     const priorDisposition = priorFacts.length
-      ? computeDisposition(priorFacts, priorFacts[priorFacts.length - 1]!.seq)
+      ? computeDisposition(priorFacts, this.clampCutoff(priorFacts[priorFacts.length - 1]!.seq, poncCutoffSeq))
       : null;
 
     this.runFacts.append(run.id, type, { ...projection });
 
     const facts = this.coordinatorFacts(run.id);
-    // The cutoff is the log's latest seq: a Run only appends a disposition fact
-    // at a settle decision point, so "the whole log decides" holds even with the
-    // phase machine (phases are recorded separately, not as disposition facts).
-    const cutoff = facts[facts.length - 1]!.seq;
+    // The cutoff is the log's latest seq — clamped to the PONC when one is
+    // frozen (issue #115): a Run only appends a disposition fact at a settle
+    // decision point, so "the whole log decides, up to the freeze" holds even
+    // with the phase machine (phases are recorded separately, not as
+    // disposition facts). A fact landing after the PONC (`seq > poncCutoffSeq`)
+    // — e.g. a cancel racing in mid-landing — stays in the log for the record
+    // but this clamp is exactly what keeps it from ever being decisive: the
+    // land that already started stands, and the operator sees "landed," not
+    // "cancelled."
+    const cutoff = this.clampCutoff(facts[facts.length - 1]!.seq, poncCutoffSeq);
     const disposition = computeDisposition(facts, cutoff);
     const winner = disposition === null ? null : projectSettle(facts, cutoff);
     if (!winner) return; // unreachable — we just appended a fact
@@ -94,6 +120,13 @@ export class RunSettleCoordinator {
     this.releaseLease(run.id);
     this.applySettleTaskAction(task.id, winner.taskAction);
     this.onRunFinished?.(this.runStore.get(run.id));
+  }
+
+  /** `min(latestSeq, poncCutoffSeq)`, or `latestSeq` unclamped when
+   * `poncCutoffSeq` is `null` (no PONC frozen yet, or `landingJournal` was
+   * never injected — the #115 back-compat path). */
+  private clampCutoff(latestSeq: number, poncCutoffSeq: number | null): number {
+    return poncCutoffSeq === null ? latestSeq : Math.min(latestSeq, poncCutoffSeq);
   }
 
   /** A Run's fact log decoded into the coordinator's projection-carrying shape. */
