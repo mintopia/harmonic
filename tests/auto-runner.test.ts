@@ -33,11 +33,16 @@ describe('auto-runner', () => {
   });
 
   it('starts ready tasks in priority-then-FIFO order, one at a time by default', async () => {
+    // Distinct workingDirs: these afk Tasks each reach awaiting-review and sit
+    // there unaccepted, so a shared direct-mode Work Context would keep the
+    // House Rule (issue #120) holding the context and block every Task after the
+    // first — this test exercises priority/FIFO *ordering*, not context contention.
+    const dir = () => mkdtempSync(join(tmpdir(), 'harmonic-ar-ord-'));
     // Created in this order; priorities chosen so creation order alone is wrong.
-    const low = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'low' });
-    const high = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'high' });
-    const normal1 = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'normal' });
-    const normal2 = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'normal' });
+    const low = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'low', workingDir: dir() });
+    const high = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'high', workingDir: dir() });
+    const normal1 = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'normal', workingDir: dir() });
+    const normal2 = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), priority: 'normal', workingDir: dir() });
 
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
@@ -99,6 +104,39 @@ describe('auto-runner', () => {
 
     await server.api('POST', `/api/tasks/${task.body.id}/run`);
     await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
+  });
+
+  it('holds the Work Context House Rule: a second afk Task waits on a busy direct context through running AND awaiting-review, then starts once it frees (issue #120)', async () => {
+    // Ceiling 2 so the slot cap has room — what holds the second Task back is the
+    // House Rule, not the Machine Ceiling.
+    await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 2 } });
+    // Both omit workingDir ⇒ they share the default Workspace checkout, i.e. one
+    // direct-mode Work Context (and a real git repo, so accept can land).
+    const first = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
+    const second = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
+
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+
+    // First (lower id) wins the pick; the second is held ready while the context runs.
+    await waitFor(async () => (await state(first.body.id)) === 'running');
+    expect(await state(second.body.id)).toBe('ready');
+
+    // First settles to awaiting-review — the hard lease (#119) is released at this
+    // seam, but the House Rule still holds the context on Task state, so the
+    // second does not slip in on top of the unreviewed work.
+    await waitFor(async () => (await state(first.body.id)) === 'awaiting-review');
+    // Give the run-finished poke a window to (wrongly) start the second, then assert it didn't.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await state(second.body.id)).toBe('ready');
+
+    // Accept the first → its Work Context frees (the Task leaves awaiting-review
+    // for completed). The next scheduler pass admits the second: the predicate no
+    // longer sees an occupant. (Accept itself doesn't poke; a config nudge stands
+    // in for the next natural poke — waking a freed context is the anti-starvation
+    // ticket's job, not this one.)
+    expect((await server.api('POST', `/api/tasks/${first.body.id}/accept`)).status).toBe(200);
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+    await waitFor(async () => (await state(second.body.id)) === 'awaiting-review');
   });
 
   it('picks up newly ready tasks (e.g. unblocked dependents) without prodding', async () => {

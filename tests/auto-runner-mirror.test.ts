@@ -30,7 +30,15 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    // Worktree default so these Tasks are exempt from the Work Context House Rule
+    // (issue #120): mirrored Tasks all inherit the one Workspace workingDir, and
+    // in direct mode that shared context would serialize them — this test is about
+    // the mirrored *pick predicate* (foreign/yield/claim), not context occupancy.
+    tasks = new TaskService(
+      db,
+      () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
+      allWorkspaces(db),
+    );
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -92,5 +100,120 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     // The yielded Task is handed back to the frontier, not stranded running.
     expect(tasks.get(yielded.id).state).toBe('ready');
+  });
+});
+
+/**
+ * The Work Context House Rule pick predicate (ADR-0022, issue #120): the
+ * Auto-Runner skips a ready afk Task whose direct-mode Work Context is already
+ * occupied by a running or awaiting-review afk Run, leaving it `ready` with a
+ * legible skip-reason. The hard lease (#119) stays the authoritative gate; this
+ * predicate exists to avoid pick churn and produce a diagnosable queue. It reads
+ * occupancy from Task state (not the lease store) because the lease is released
+ * the moment a Run settles into awaiting-review (seam for #114).
+ */
+describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR-0022)', () => {
+  let dir: string;
+  let db: Db;
+  let tasks: TaskService;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-hr-'));
+    db = openDb(dir);
+    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  // A ceiling well above the task count, so the two-level cap never masks the
+  // context predicate under test.
+  const build = () => {
+    const started: number[] = [];
+    const runner = {
+      start: (id: number) => {
+        started.push(id);
+        tasks.setState(id, 'running'); // native path flips inside the runner
+      },
+      launchClaimed: (id: number) => started.push(id),
+    } as unknown as Runner;
+    const runStore = {
+      countRunning: () => started.length,
+      countRunningByWorkspace: () => new Map<number, number>(),
+    } as unknown as RunStore;
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
+    const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(db), undefined);
+    return { ar, started };
+  };
+
+  const freshDir = () => mkdtempSync(join(tmpdir(), 'harmonic-hr-ctx-'));
+  const directTask = (workingDir: string, prompt: string) =>
+    tasks.create({ prompt, workingDir, isolationMode: 'direct' });
+
+  it('skips a ready afk Task whose direct Work Context holds a running afk Run; admits a distinct-context Task, with a reason naming the occupant', async () => {
+    const busy = freshDir();
+    const occupant = directTask(busy, 'occupant');
+    tasks.setState(occupant.id, 'running');
+    const blocked = directTask(busy, 'same context'); // shares the occupied dir
+    const free = directTask(freshDir(), 'other context'); // distinct dir → admits
+
+    const { ar, started } = build();
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(free.id));
+
+    expect(started).not.toContain(blocked.id);
+    expect(tasks.get(blocked.id).state).toBe('ready'); // stays on the frontier
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${occupant.id} (running)`);
+    expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
+  });
+
+  it('still skips when the occupying Run sits in awaiting-review — the lease is gone but the work is not', async () => {
+    const busy = freshDir();
+    const reviewing = directTask(busy, 'awaiting review');
+    tasks.setState(reviewing.id, 'awaiting-review'); // hard lease already released here
+    const blocked = directTask(busy, 'same context');
+    const free = directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
+
+    const { ar, started } = build();
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(free.id));
+
+    expect(started).not.toContain(blocked.id);
+    expect(tasks.get(blocked.id).state).toBe('ready');
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${reviewing.id} (awaiting-review)`);
+  });
+
+  it('exempts worktree-mode Tasks — a unique key per Run means they parallelize even off a shared base dir', async () => {
+    const shared = freshDir();
+    const occupant = tasks.create({ prompt: 'wt occupant', workingDir: shared, isolationMode: 'worktree' });
+    tasks.setState(occupant.id, 'running');
+    const candidate = tasks.create({ prompt: 'wt candidate', workingDir: shared, isolationMode: 'worktree' });
+
+    const { ar, started } = build();
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(candidate.id));
+    expect(ar.skipReasonFor(candidate.id)).toBeUndefined();
+  });
+
+  it('leaves priority-then-FIFO ordering intact among the other ready Tasks while one is context-blocked', async () => {
+    const busy = freshDir();
+    const occupant = directTask(busy, 'occupant');
+    tasks.setState(occupant.id, 'running');
+    // A high-priority Task sharing the occupied context: it must be skipped
+    // despite its priority, and skipping it must not perturb the others' order.
+    const blocked = tasks.create({ prompt: 'blocked high', workingDir: busy, isolationMode: 'direct', priority: 'high' });
+    // Distinct contexts, mixed priorities + a same-priority pair for the FIFO tiebreak.
+    const low = tasks.create({ prompt: 'low', workingDir: freshDir(), isolationMode: 'direct', priority: 'low' });
+    const high = tasks.create({ prompt: 'high', workingDir: freshDir(), isolationMode: 'direct', priority: 'high' });
+    const normalFirst = tasks.create({ prompt: 'normal 1', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
+    const normalSecond = tasks.create({ prompt: 'normal 2', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
+
+    const { ar, started } = build();
+    ar.poke();
+    await vi.waitFor(() => expect(started).toHaveLength(4));
+
+    // High, then FIFO within normal, then low — the context-blocked high-priority
+    // Task is simply absent, not reordering anything.
+    expect(started).toEqual([high.id, normalFirst.id, normalSecond.id, low.id]);
+    expect(started).not.toContain(blocked.id);
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${occupant.id} (running)`);
   });
 });
