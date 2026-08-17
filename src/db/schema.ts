@@ -1,8 +1,13 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 // Type-only import (erased at compile) so the db layer can brand `runs.phase`
 // with the phase-machine enum without a runtime db→domain import cycle
 // (domain/run-facts.ts already imports this schema).
 import type { RunPhase } from '../domain/run-phases.js';
+// Type-only import, same reasoning: brands `turn_queue`'s status/purpose/
+// cancel-reason columns without a runtime db→domain import cycle
+// (domain/turn-queue-store.ts already imports this schema).
+import type { TurnStatus, TurnPurpose, TurnCancelReason } from '../domain/turn-queue.js';
 
 /** Tracker mirroring (issue #30). A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -468,3 +473,57 @@ export const runFacts = sqliteTable('run_facts', {
 ]);
 
 export type RunFactRow = typeof runFacts.$inferSelect;
+
+/**
+ * The Session turn queue's persisted substrate (issue #116, reliability-design
+ * §0.4): every turn a producer (`initial`, `continue`, `steer`, `self-heal`,
+ * `re-merge`, `crash-recovery`) enqueues onto a Session's queue, in per-Session
+ * FIFO order. The pure `planTurnQueue` (domain/turn-queue.ts) is the sole
+ * decision of which pending row to dispatch and which to cancel; this table
+ * only stores what it decides over and the outcome.
+ *
+ * Two indexes carry the queue's integrity guarantees:
+ *
+ *   - `turn_queue_session_seq_unique` on `(session_id, seq)` — the same
+ *     monotonicity guarantee as `run_facts_run_seq_unique`: two turns can
+ *     never share a seq within a Session, so the queue has a single total
+ *     FIFO order.
+ *   - `turn_queue_single_flight` — a **partial** unique index on `session_id`
+ *     scoped to `status = 'in_flight'` — is the DB-level backstop for the
+ *     planner's single-flight rule (`planTurnQueue`'s AC1): a second
+ *     concurrent `markInFlight` for the same Session is rejected loudly by a
+ *     raw UNIQUE violation rather than silently letting two turns race onto
+ *     the same live harness process. Because the index only covers rows
+ *     currently `in_flight`, a Session can freely accumulate any number of
+ *     `queued`/`claimed`/settled rows — only ever one `in_flight` at a time.
+ */
+export const turnQueue = sqliteTable('turn_queue', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: text('session_id').notNull(),
+  runId: integer('run_id')
+    .notNull()
+    .references(() => runs.id),
+  /** Monotonic per-Session sequence (1-based); the queue's FIFO order. */
+  seq: integer('seq').notNull(),
+  status: text('status').$type<TurnStatus>().notNull(),
+  purpose: text('purpose').$type<TurnPurpose>().notNull(),
+  // Precondition bindings this turn was enqueued against — validated by
+  // `planTurnQueue` only if present. Null on a turn that carries no such
+  // binding (e.g. a read-only turn omits the workspace fields entirely).
+  expectedPhase: text('expected_phase').$type<RunPhase>(),
+  expectedGeneration: integer('expected_generation'),
+  expectedWorkspaceOid: text('expected_workspace_oid'),
+  expectedFingerprint: text('expected_fingerprint'),
+  idempotencyKey: text('idempotency_key'),
+  /** Set only when `status = 'cancelled'`; the precedence-first reason from `TURN_CANCEL_PRECEDENCE`. */
+  cancelReason: text('cancel_reason').$type<TurnCancelReason>(),
+  enqueuedAt: integer('enqueued_at').notNull(),
+  claimedAt: integer('claimed_at'),
+  sentAt: integer('sent_at'),
+  settledAt: integer('settled_at'),
+}, (t) => [
+  uniqueIndex('turn_queue_session_seq_unique').on(t.sessionId, t.seq),
+  uniqueIndex('turn_queue_single_flight').on(t.sessionId).where(sql`${t.status} = 'in_flight'`),
+]);
+
+export type TurnQueueRow = typeof turnQueue.$inferSelect;
