@@ -73,6 +73,7 @@ export function localMarkdownAdapter(dir: string, opts: { identity?: string } = 
     async claim() {},
     async release() {},
     async close() {},
+    async reopen() {},
 
     async whoami() {
       if (identity !== undefined) return identity;

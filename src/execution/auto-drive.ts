@@ -73,9 +73,10 @@ export class AutoDrive {
    */
   continuePrompt(task: TaskRow): string {
     return (
-      `Your previous turn ended but this Task is not finished — the tracker ticket is ` +
-      `still open and you have not called \`finish_task\`. Do not wait idly for background ` +
-      `work; pick the work back up and drive it to completion now.\n\n${this.unattendedReminder(task)}`
+      `Your previous turn ended but this Task is not finished — you have not called ` +
+      `\`finish_task\`. Do not wait idly for background work; pick the work back up and drive ` +
+      `it to completion now. When it is done, call \`finish_task\` — do not close the tracker ` +
+      `ticket yourself; Harmonic closes it after verification.\n\n${this.unattendedReminder(task)}`
     );
   }
 
@@ -90,51 +91,111 @@ export class AutoDrive {
   }
 
   /**
-   * A clean harness exit is not success. The success signal is the
-   * agent-via-skill having **closed the ticket** — the skills are the source of
-   * truth (ADR 0011). So:
+   * Land a passing afk Run's work per its Merge Fate — the close-after-verify
+   * model (issue #139, ADR-0021, reliability-design Unit B). The
+   * execution-complete signal is the agent's `finish_task` (the Runner's
+   * `agentFinished` gate), **not** the agent closing the ticket: under this
+   * model Harmonic itself owns the close, and only after verify + land. So this
+   * never gates on the ticket state — it lands, then closes where the fate says:
    *
-   * - **'unresolved'** — the run ended without error but left the ticket open
-   *   (e.g. the agent gave up on a missing dependency). The Runner routes this
-   *   into the failure path (Auto-Retry within cap, then Escalate); the branch
-   *   is **not** merged, so half-done work never lands.
-   * - **'escalate'** — an auto-merge conflict or an open-PR that can't be created.
-   * - **'completed'** — the agent resolved the ticket; the branch is settled by
-   *   Merge Fate. open-PR is the exception: it intentionally leaves the ticket
-   *   open (the PR's own merge closes it), so its success is a created PR.
+   * - **auto-merge** — merge the branch into its base, then Harmonic closes the
+   *   ticket. A merge conflict Escalates (nothing lands); a merge that lands but
+   *   whose close fails Escalates too (a human finishes the close, the work is
+   *   safe). Direct mode (no branch) has nothing to merge but still closes — the
+   *   work is already in place.
+   * - **open-PR** — open a PR and leave the ticket **open**: creating a PR is not
+   *   landing, so the PR's own merge closes the issue later. A PR that can't be
+   *   created Escalates. A tracker with no PR support degrades to artifact.
+   * - **artifact** (incl. research) — leave the branch and the ticket untouched;
+   *   no merge, no close.
+   *
+   * Returns `'completed'` once the fate has landed, or `'escalate'` when it
+   * could not be applied. Unlike the pre-#139 model there is no `'unresolved'`
+   * outcome here — a Run with no `finish_task` signal never reaches this method
+   * (the Runner routes it to the failure path before verification).
    */
-  async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate' | 'unresolved'> {
+  async onCompleted(task: TaskRow, run: RunRow): Promise<'completed' | 'escalate'> {
     const worktree = task.isolationMode === 'worktree' && !!run.branch && !!run.baseBranch;
     const fate = this.mergeFate(task);
 
-    if (worktree && fate === 'open-PR') {
-      const adapter = await this.resolveAdapter(task.workingDir);
-      if (adapter.openPR) {
-        const { title } = splitTitleBody(task.prompt);
-        try {
-          await adapter.openPR({
-            branch: run.branch!,
-            baseBranch: run.baseBranch!,
-            title,
-            body: `Auto-driven by Harmonic for #${task.trackerRef}.`,
-          });
-        } catch {
-          return 'escalate'; // PR creation failed — don't strand the work
+    if (fate === 'open-PR') {
+      if (worktree) {
+        const adapter = await this.resolveAdapter(task.workingDir);
+        if (adapter.openPR) {
+          const { title } = splitTitleBody(task.prompt);
+          try {
+            await adapter.openPR({
+              branch: run.branch!,
+              baseBranch: run.baseBranch!,
+              title,
+              body: `Auto-driven by Harmonic for #${task.trackerRef}.`,
+            });
+          } catch {
+            return 'escalate'; // PR creation failed — don't strand the work
+          }
+          return 'completed'; // the PR is the review surface; the issue stays open
         }
-        return 'completed'; // the PR is the review surface; it closes the issue
       }
-      // No PR capability: degrade to artifact — fall through to the resolved gate.
+      // Direct mode, or a tracker with no PR concept: degrade to artifact —
+      // leave the branch and the ticket as they are.
+      return 'completed';
     }
 
-    // The gate: did the agent actually resolve the ticket?
-    if (!(await this.isResolved(task))) return 'unresolved';
-
-    if (worktree && fate === 'auto-merge') {
-      const merge = await this.git.merge(task.workingDir, run.baseBranch!, run.branch!);
-      if (!merge.ok) return 'escalate';
+    if (fate === 'auto-merge') {
+      if (worktree) {
+        const merge = await this.git.merge(task.workingDir, run.baseBranch!, run.branch!);
+        if (!merge.ok) return 'escalate';
+      }
+      // Merged (or direct/in-place): Harmonic owns the close (issue #139).
+      return (await this.closeTicket(task)) ? 'completed' : 'escalate';
     }
-    // artifact / direct: nothing to merge; the agent already closed the ticket.
+
+    // artifact (incl. research): leave the branch and the ticket untouched.
     return 'completed';
+  }
+
+  /**
+   * Close the Task's ticket as the final auto-merge landing step (issue #139) —
+   * Harmonic, not the agent, owns the close, and only reaches here after verify
+   * + a successful land. Returns whether the close was issued; a read/write
+   * failure (or no tracker ref) returns false so the Runner Escalates rather
+   * than reporting a completion whose close never landed.
+   */
+  private async closeTicket(task: TaskRow): Promise<boolean> {
+    if (task.trackerRef == null) return true; // native/direct with no ticket — nothing to close
+    try {
+      const adapter = await this.resolveAdapter(task.workingDir);
+      const { title } = splitTitleBody(task.prompt);
+      await adapter.close(
+        { number: task.trackerRef, title, state: 'open' },
+        `Completed and landed by Harmonic (task #${task.id}).`,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Re-open a Task's ticket that was closed before Harmonic landed it (issue
+   * #139): under the close-after-verify model only Harmonic closes a ticket, so
+   * a close it did not make (agent-via-skill, or an operator) is premature —
+   * revert it so a closed ticket never stands in for verified, landed work.
+   * Best-effort: returns whether the reopen was issued.
+   */
+  async reopenTicket(task: TaskRow): Promise<boolean> {
+    if (task.trackerRef == null) return false;
+    try {
+      const adapter = await this.resolveAdapter(task.workingDir);
+      const { title } = splitTitleBody(task.prompt);
+      await adapter.reopen(
+        { number: task.trackerRef, title, state: 'closed' },
+        `Reopened by Harmonic: the ticket was closed before verification and landing completed (task #${task.id}).`,
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -144,22 +205,5 @@ export class AutoDrive {
    */
   onFailed(_task: TaskRow, run: RunRow): 'retry' | 'escalate' {
     return run.attempt > this.getConfig().drive.autoRetry ? 'escalate' : 'retry';
-  }
-
-  /**
-   * The success signal: the agent-via-skill closed the ticket. A run that can't
-   * be confirmed closed (read error, or no tracker ref) counts as unresolved —
-   * false-completing is worse than an extra retry/escalation.
-   */
-  async isResolved(task: TaskRow): Promise<boolean> {
-    if (task.trackerRef == null) return false;
-    try {
-      const adapter = await this.resolveAdapter(task.workingDir);
-      const { title } = splitTitleBody(task.prompt);
-      const ticket = await adapter.readTicket({ number: task.trackerRef, title, state: 'open' });
-      return ticket.state === 'closed';
-    } catch {
-      return false;
-    }
   }
 }

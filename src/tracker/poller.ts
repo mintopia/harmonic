@@ -39,8 +39,10 @@ export class TrackerPoller {
     private readonly onResolved: (r: ResolvedTracker) => void = () => {},
     /**
      * A mirrored Task whose ticket has closed in the tracker but which is still
-     * `running` on the board. The board-refresh backstop: the Runner stops the
-     * parked agent and settles the Task done. No-op by default (native-only server).
+     * `running` on the board. Under the close-after-verify model (issue #139)
+     * only Harmonic closes a ticket, and only after verify + land, so a close
+     * seen while the Task still runs is premature: the Runner stops the parked
+     * agent, reopens the ticket, and Escalates. No-op by default (native-only server).
      */
     private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
   ) {}
@@ -70,8 +72,10 @@ export class TrackerPoller {
     const mirrored = mirrorScan(this.tasks, tickets, this.workspaceId);
     this.onMirrored();
     // Backstop: upsertMirrored never moves a Task off `running` (nothing
-    // interrupts a live Run), so a ticket a human closed mid-run leaves the Task
-    // stuck running with a parked agent. Hand those to the Runner to stop + settle.
+    // interrupts a live Run), so a ticket closed mid-run (agent-via-skill or an
+    // operator) leaves the Task stuck running with a parked agent. Under the
+    // close-after-verify model (#139) that close is premature — hand those to the
+    // Runner to stop the agent, reopen the ticket, and Escalate.
     const closedRefs = new Set(tickets.filter((t) => t.state === 'closed').map((t) => t.number));
     for (const task of mirrored) {
       if (task.state === 'running' && task.trackerRef != null && closedRefs.has(task.trackerRef)) {

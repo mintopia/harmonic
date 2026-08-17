@@ -123,14 +123,14 @@ interface ActiveRun {
   steerQueue: string[];
   /**
    * True while the agent has *ended its turn and is parked* between continue
-   * prompts — not mid-tool-call. The board-refresh backstop
-   * ({@link Runner.completeClosedMirrored}) only stops an agent that has ended
+   * prompts — not mid-tool-call. The premature-closure backstop
+   * ({@link Runner.reopenClosedMirrored}) only stops an agent that has ended
    * its turn, so it never SIGKILLs one mid-work. False during a prompt turn and
    * once the Run leaves the continue loop to settle.
    */
   idle: boolean;
   /**
-   * Latched by {@link Runner.completeClosedMirrored} when the poll settles this
+   * Latched by {@link Runner.reopenClosedMirrored} when the poll settles this
    * Run out from under {@link Runner.drive}. `drive` checks it after each await
    * and skips its own settle so the Run isn't finished twice.
    */
@@ -335,7 +335,7 @@ export class Runner {
    * already `completed` by the time we get here). Mirrors {@link cancelForTask}
    * but settles the Run `completed`: SIGKILL even mid-turn, and drive()'s catch
    * no-ops (finish is idempotent, and its settle only fires while the task is
-   * still `running`). Unlike {@link completeClosedMirrored} this does not wait
+   * still `running`). Unlike {@link reopenClosedMirrored} this does not wait
    * for the agent to park — the operator asked for it to stop now. The Task is
    * already `completed`, so the projection leaves it untouched (taskAction none);
    * the post-SIGKILL harness-exit fact loses to this agent-finish.
@@ -367,56 +367,54 @@ export class Runner {
   }
 
   /**
-   * Board-refresh backstop. A mirrored Task's tracker ticket has closed while the
-   * Task is still `running` and its agent is parked between turns (it ended a turn
-   * without finishing). The continue loop's own {@link AutoDrive.isResolved} check
-   * reads a single ticket and can lag the poll's authoritative scan, so a parked
-   * agent would keep burning continue budget against an already-done ticket. When
-   * the poll sees the close, stop the agent and settle the Task `completed` — the
-   * same terminal state {@link settleAutoCompleted} reaches, consistent with
-   * ADR-0011 (the ticket *is* closed).
+   * Premature-closure backstop (issue #139). A mirrored Task's tracker ticket
+   * has closed while the Task is still `running` — but under the
+   * close-after-verify model Harmonic itself is the only thing that closes a
+   * ticket, and only after verify + land, by which point the Task is already
+   * terminal (never `running`). So a close observed here is **premature** — the
+   * agent-via-skill or an operator closed it — and a closed ticket must never
+   * stand in for verified, landed work. Revert it: reopen the ticket and
+   * Escalate the Task to a human. (This supersedes the pre-#139 ADR-0011
+   * behaviour, where a closed ticket *was* the completion signal and this
+   * settled the Task `completed`.)
    *
    * When an agent *is* attached, no-op unless its turn has ended (`idle`): a
-   * mid-turn agent is left to finish (its own loop or the next poll settles it),
-   * never SIGKILLed mid-tool-call. Fully synchronous, so it runs atomically
-   * against {@link drive}'s await points; `drive` then sees `externallySettled`
-   * and skips its own settle.
+   * mid-turn agent is left to finish, never SIGKILLed mid-tool-call. Crucially
+   * the `!idle` guard also covers a Run that is **mid-landing** (post-loop,
+   * `idle` cleared) — so Harmonic's own auto-merge close is never mistaken for a
+   * premature one and reverted out from under a landing in flight. Otherwise:
+   * stop the parked agent, reopen the ticket, and settle the Run Escalated.
+   * Runs atomically against {@link drive}'s await points up to the reopen; the
+   * `externallySettled` latch it sets makes `drive` skip its own settle.
    *
-   * When *no* agent is attached — the Task is still `running` on the board but no
-   * Run is driving it (a Run that ended without settling, or a pick that flipped
-   * the Task running against a since-closed ticket) — there is nothing to stop, so
-   * settle the Task `completed` directly. Guarded on there being no live Run row:
-   * between a Run's ready→running flip (the pick's lock) or its spawn and its
-   * {@link ActiveRun} landing in {@link active}, the Task is momentarily `running`
-   * with no active Run — a live Run is imminent, so leave it to that Run (or the
-   * next poll) rather than settle out from under it. Returns whether it acted.
+   * When *no* agent is attached — the Task is `running` on the board but no Run
+   * is driving it — reopen the ticket and Escalate the Task directly. Guarded on
+   * there being no live Run row (a Run mid-spawn is imminent; leave it). Returns
+   * whether it acted.
    */
-  completeClosedMirrored(taskId: number): boolean {
+  async reopenClosedMirrored(taskId: number): Promise<boolean> {
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
-      if (active.externallySettled || !active.idle) return false; // mid-turn or already settling
+      if (active.externallySettled || !active.idle) return false; // mid-turn / mid-landing / already settling
       active.externallySettled = true;
       // Flush the final usage snapshot before the log's cwd (worktree) is torn down.
       this.tailer.stop(active.runId);
       const run = this.runStore.get(active.runId);
       const task = this.taskService.get(taskId);
-      // The ticket is closed (ADR-0011): settle the parked agent's Run complete.
-      // taskAction 'completed' only lands a still-running Task — a racing
-      // cancel/escalate that already moved it wins.
-      this.coordinateSettle(task, run, 'agent-finish/unresolved', {
-        runState: 'completed',
-        taskAction: 'completed',
-        reason: null,
-      });
+      // Revert the premature close, then hand the Task to a human (#139).
+      await this.autoDrive?.reopenTicket(task);
+      this.settleEscalated(task, run, 'ticket closed before verification and landing (reopened)', {});
       this.kill(active); // stop the parked agent; drive() finalizes the worktree + keys
       return true;
     }
-    // No agent is working this Task. Settle it done anyway (the ticket is closed;
-    // ADR-0011) — but only a still-running Task with no live Run in flight, so we
-    // never race a Run that is mid-spawn (its ActiveRun not yet registered).
+    // No agent is working this Task. Only act on a still-running Task with no
+    // live Run in flight, so we never race a Run that is mid-spawn (its
+    // ActiveRun not yet registered).
     if (this.taskService.get(taskId).state !== 'running') return false;
     if (this.runStore.listForTask(taskId).some((r) => r.state === 'running')) return false;
-    this.taskService.setState(taskId, 'completed');
+    // Reopen the premature close, then Escalate the orphaned Task directly (#139).
+    await this.autoDrive?.reopenTicket(this.taskService.get(taskId));
+    this.taskService.escalate(taskId);
     return true;
   }
 
@@ -904,11 +902,11 @@ export class Runner {
       // recorded as lifecycle events, not folded into this initial prompt.
       this.runStore.update(run.id, { prompt: promptText });
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
-      active.idle = true; // turn ended → parked; the backstop may settle a closed ticket here
+      active.idle = true; // turn ended → parked; the backstop may Escalate a prematurely-closed ticket here
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
       // continue nudges, so operator steers never eat into the continue budget.
       for (let attempt = 1; !escalating; ) {
-        if (active.externallySettled) break; // the poll settled a closed ticket while parked
+        if (active.externallySettled) break; // the poll Escalated a prematurely-closed ticket while parked
         if (active.escalateReason) {
           escalating = active.escalateReason; // agent asked for a human → settle Escalated
           break;
@@ -924,8 +922,7 @@ export class Runner {
           continue; // re-check: more steers, then the agent's own finish/continue state
         }
         if (!autoDriven) break; // native Run with nothing queued → settle the single turn
-        if (active.agentFinished) break; // explicit finish signal
-        if (await this.autoDrive!.isResolved(task)) break; // ticket closed
+        if (active.agentFinished) break; // explicit finish signal — the execution-complete signal (#139)
         if (attempt > this.autoDrive!.continueAttempts()) break; // budget spent → unresolved
         record('lifecycle', { event: 'continue', attempt });
         promptText = this.autoDrive!.continuePrompt(task);
@@ -958,13 +955,21 @@ export class Runner {
       }
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
+      // An afk Run that ended without the `finish_task` signal — its continue
+      // budget spent, or a single turn that never finished — has no
+      // execution-complete signal (#139), so there is nothing to verify or land:
+      // route it to the failure path (Auto-Retry, then Escalate) without
+      // freezing a candidate, verifying, or closing the ticket. A native Run
+      // always verifies its single ended turn.
+      const afkUnresolved = autoDriven && !escalating && !active.agentFinished;
       // Enter `validating` and freeze the verification candidate there, while
       // the leased workspace still exists — finalize() tears a worktree down.
       // The phase is persisted *before* the git work so `runs.phase` reads
       // `validating` for its duration; the branch-specific advance below then
       // continues from `validating` to `verifying`/`review`. Skipped for an
-      // escalating Run, which never reaches `verifying` (#134).
-      if (!escalating) {
+      // escalating Run (never reaches `verifying`, #134) and for an
+      // afkUnresolved Run (no completion to verify).
+      if (!escalating && !afkUnresolved) {
         advancePhase('validating', autoDriven ? 'auto' : 'human');
         await this.runCandidateSnapshot(task, run, workspace, record);
       }
@@ -975,6 +980,19 @@ export class Runner {
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         this.settleEscalated(task, run, escalating, patch);
+      } else if (afkUnresolved) {
+        // Clean turn(s) ended but the agent never signalled `finish_task` — not
+        // success. Treat as a failure: Auto-Retry within cap, else Escalate. The
+        // branch is never merged and the ticket is never closed, so half-done
+        // work never lands (#139).
+        record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal' });
+        this.settleFailedOrRetry(
+          task,
+          run,
+          'run ended without an execution-complete (finish_task) signal',
+          patch,
+          'agent-finish/unresolved',
+        );
       } else {
         // Verification gate (issue #135, ADR-0021, reliability-design Unit B):
         // agent-finish begins validation — it does not settle the Run (#114).
@@ -994,9 +1012,9 @@ export class Runner {
         //   reconciliation to record interrupted, exactly as the catch block
         //   below does for a SIGKILLed harness — don't Escalate on shutdown timing.
         if (this.shuttingDown) return;
-        // - The poll settled a closed ticket, or an operator cancelled: the Run
-        //   is already terminal, so settling again (or parking) would finish it
-        //   twice / un-terminal it. Drop the harness and stop.
+        // - The poll Escalated a prematurely-closed ticket, or an operator
+        //   cancelled: the Run is already terminal, so settling again (or
+        //   parking) would finish it twice / un-terminal it. Drop the harness and stop.
         if (active.externallySettled) {
           await finalize();
           return;
@@ -1007,22 +1025,16 @@ export class Runner {
           this.settleEscalated(task, run, reason, patch);
         } else if (autoDriven) {
           // A mirrored Run has no human gate, so it runs the auto branch:
-          // executing → validating → verifying → landing → terminal.
+          // executing → validating → verifying → landing → terminal. The Merge
+          // Fate lands the work *and* (for auto-merge) closes the ticket in
+          // onCompleted — Harmonic owns the close, only after verify + land
+          // (#139). A fate that can't be applied (merge conflict, PR that can't
+          // be created, ticket close that fails) Escalates; the ticket is not
+          // closed.
           const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
           if (outcome === 'escalate') {
-            record('lifecycle', { event: 'escalated', reason: 'merge conflict' });
-            this.settleEscalated(task, run, 'merge conflict', patch);
-          } else if (outcome === 'unresolved') {
-            // Clean exit but the agent never closed the ticket — not success.
-            // Treat as a failure: Auto-Retry within cap, else Escalate.
-            record('lifecycle', { event: 'unresolved', reason: 'ticket left open' });
-            this.settleFailedOrRetry(
-              task,
-              run,
-              'run ended without resolving the ticket (left open)',
-              patch,
-              'agent-finish/unresolved',
-            );
+            record('lifecycle', { event: 'escalated', reason: 'landing failed' });
+            this.settleEscalated(task, run, 'landing failed', patch);
           } else {
             // The Merge Fate landed in onCompleted → record `landing`, then settle
             // terminal (the coordinator marks the Run `phase:'terminal'`).
@@ -1049,8 +1061,8 @@ export class Runner {
       const tail = stderrTail.trim();
       const reason = tail ? `${base}\n\nharness stderr:\n${tail}` : base;
       await finalize();
-      // The poll may have stopped a parked agent on a closed ticket; that Run is
-      // already settled completed, so don't re-settle it as failed.
+      // The poll may have stopped a parked agent on a prematurely-closed ticket;
+      // that Run is already settled Escalated, so don't re-settle it as failed.
       if (active.externallySettled) return;
       // Process/server shutdown SIGKILLed the harness — this is not a run
       // failure. Leave the Run `running` so boot reconciliation settles it

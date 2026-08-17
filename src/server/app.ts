@@ -317,9 +317,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     undefined,
     () => autoRunner.poke(),
     undefined,
-    // Board-refresh backstop (ADR-0011): a ticket closed while its mirrored Task
-    // was still running with a parked agent — stop the agent and settle it done.
-    (taskId) => runner.completeClosedMirrored(taskId),
+    // Premature-closure backstop (issue #139): a ticket closed while its
+    // mirrored Task was still running — under the close-after-verify model only
+    // Harmonic closes a ticket (after verify + land), so this is premature. Stop
+    // the agent, reopen the ticket, and Escalate.
+    (taskId) => {
+      void runner.reopenClosedMirrored(taskId);
+    },
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   bus.on('task_changed', (task) => {

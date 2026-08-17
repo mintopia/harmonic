@@ -65,6 +65,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         release: async () => {},
         whoami: async () => 'me',
         close: async () => {},
+        reopen: async () => {},
       };
     };
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), resolveAdapter);

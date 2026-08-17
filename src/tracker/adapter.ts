@@ -85,8 +85,21 @@ export interface TrackerAdapter {
   release(ticket: Ticket): Promise<void>;
   /** Harmonic's own login on this tracker (the assignee `claim` places), for the foreign-assignee filter. */
   whoami(): Promise<string>;
-  /** The review-gate Accept: comment, then close. */
-  close(ticket: Ticket, comment: string): Promise<void>;
+  /**
+   * Close the ticket with a comment — the landing step Harmonic runs itself
+   * after verify + land (issue #139). Only the ticket's portable identity
+   * ({@link TicketRef}) is needed, so a caller that has just a Task's ref
+   * (never a full scanned {@link Ticket}) can close without a round-trip read.
+   */
+  close(ticket: TicketRef, comment: string): Promise<void>;
+  /**
+   * Re-open a ticket that was closed prematurely with a comment (issue #139):
+   * under the close-after-verify model Harmonic — not the agent — owns the
+   * close, so a close it did not make (agent-via-skill, or an operator) is
+   * reverted and the Task Escalated. A tracker with no reopen concept
+   * (read-only local-markdown) no-ops.
+   */
+  reopen(ticket: TicketRef, comment: string): Promise<void>;
   /**
    * Open a PR from a Run's worktree branch — the open-PR Merge Fate (issue
    * #33). Optional: a tracker with no PR concept omits it, and auto-drive

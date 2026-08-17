@@ -198,11 +198,18 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
       return (await ensureMe()).username;
     },
 
-    async close(ticket: Ticket, comment: string) {
+    async close(ticket: TicketRef, comment: string) {
       if (comment) {
         await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
       }
       await api(`${proj}/issues/${ticket.number}?state_event=close`, 'PUT');
+    },
+
+    async reopen(ticket: TicketRef, comment: string) {
+      if (comment) {
+        await api(`${proj}/issues/${ticket.number}/notes?body=${encodeURIComponent(comment)}`, 'POST');
+      }
+      await api(`${proj}/issues/${ticket.number}?state_event=reopen`, 'PUT');
     },
   };
 }

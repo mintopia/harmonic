@@ -56,6 +56,7 @@ function fakeAdapter(opts: { claimThrows?: boolean } = {}) {
     },
     whoami: async () => 'me',
     close: async () => {},
+    reopen: async () => {},
   };
   return { adapter, calls, setRead: (t: Ticket) => (readResult = t) };
 }

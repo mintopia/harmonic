@@ -139,6 +139,17 @@ describe('mirrorScan upsert', () => {
     expect(results.map((t) => t.state)).toEqual(['completed', 'ready']);
   });
 
+  it('a running Task whose own ticket closes stays running — never mirror-completed (issue #139)', () => {
+    // Under the close-after-verify model a mid-run close is premature (only
+    // Harmonic closes a ticket, after verify + land). mirrorScan must NOT settle
+    // it completed — it leaves the Task running for the premature-closure backstop
+    // (Runner.reopenClosedMirrored) to reopen + Escalate.
+    const [task] = mscan([ticket({ number: 8, labels: ['ready-for-agent'] })]);
+    tasks.setState(task!.id, 'running');
+    const [after] = mscan([ticket({ number: 8, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })]);
+    expect(after!.state).toBe('running');
+  });
+
   it('reconcile never interrupts a running Run (nothing cascades)', () => {
     const [, dependent] = mscan([
       ticket({ number: 1 }),

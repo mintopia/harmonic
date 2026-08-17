@@ -41,6 +41,7 @@ function stubAdapter(tickets: Ticket[]) {
     release: async () => {},
     whoami: async () => 'harmonic-bot',
     close: async () => {},
+    reopen: async () => {},
   };
   return { adapter, scans: () => scans };
 }

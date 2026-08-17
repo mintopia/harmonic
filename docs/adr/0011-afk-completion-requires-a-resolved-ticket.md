@@ -1,5 +1,15 @@
 # afk completion requires a resolved ticket
 
+**Status: superseded by [ADR-0021](0021-verification-gate-replaces-agent-review.md) (implemented in #139).**
+Under the close-after-verify model, `finish_task` — not the agent closing the
+ticket — is the execution-complete signal; Harmonic runs verification, lands per
+Merge Fate, and **closes the ticket itself** (auto-merge: merge then close;
+open-PR: leave open; artifact: leave open). A ticket closed before Harmonic lands
+is **premature**: it is reopened and the Task Escalated, and it no longer stands
+in for a completed Run. The `isResolved` gate and the ticket-close-as-signal
+described below are gone; the *unresolved* failure path survives, but its trigger
+is a missing `finish_task` signal, not an open ticket.
+
 An afk mirrored Run is treated as **successful only when the agent-via-skill has
 closed its tracker ticket**. A Run that ends without error but leaves the ticket
 open is *unresolved*: it is routed into the failure path (Auto-Retry within the

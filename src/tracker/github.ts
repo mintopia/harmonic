@@ -151,8 +151,14 @@ export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): Trac
       return (login ??= (await run(['api', 'user', '--jq', '.login'], repoRoot)).trim());
     },
 
-    async close(ticket: Ticket, comment: string) {
+    async close(ticket: TicketRef, comment: string) {
       const args = ['issue', 'close', String(ticket.number)];
+      if (comment) args.push('--comment', comment);
+      await run(args, repoRoot);
+    },
+
+    async reopen(ticket: TicketRef, comment: string) {
+      const args = ['issue', 'reopen', String(ticket.number)];
       if (comment) args.push('--comment', comment);
       await run(args, repoRoot);
     },

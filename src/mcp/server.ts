@@ -169,9 +169,11 @@ export function buildMcpServer(ctx: AppContext): McpServer {
     'finish_task',
     {
       description:
-        'Signal that this Task is finished so Harmonic stops re-prompting you to continue. ' +
-        'Call only when the work is genuinely complete and you have closed the tracker ticket. ' +
-        'Ending your turn without this leaves the run looking parked, and Harmonic will prompt you to continue.',
+        'Signal that this Task is finished (the execution-complete signal) so Harmonic stops re-prompting ' +
+        'you to continue. Call only when the work is genuinely complete. Do NOT close the tracker ticket ' +
+        'yourself — Harmonic verifies the work and then closes the ticket itself; a ticket you close before ' +
+        'that is reopened and the Task escalated. Ending your turn without this leaves the run looking ' +
+        'parked, and Harmonic will prompt you to continue.',
       inputSchema: { ...taskId, summary: z.string().optional().describe('Optional note on what was finished') },
     },
     wrap(({ taskId }) => {

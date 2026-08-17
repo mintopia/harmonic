@@ -4,76 +4,138 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
 import { defaultConfig } from '../src/config.js';
-import { TaskService } from '../src/domain/tasks.js';
+import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
+import { AutoDrive } from '../src/execution/auto-drive.js';
+import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { allWorkspaces } from './helpers.js';
 
-// The board-refresh backstop with *no agent attached* (issue: a mirrored Task
-// left `running` on the board while its ticket has closed, but nothing is
-// driving it). completeClosedMirrored must still settle it done — the agent-less
-// counterpart of the parked-agent path, which is exercised via a live harness.
-describe('Runner.completeClosedMirrored — no agent working the Task', () => {
+// The premature-closure backstop with *no agent attached* (issue #139): a
+// mirrored Task left `running` on the board while its ticket was closed in the
+// tracker — but under the close-after-verify model only Harmonic closes a
+// ticket, and only after verify + land (by which point the Task is terminal, not
+// running). So a close seen here is premature: reopenClosedMirrored must reopen
+// the ticket and Escalate the Task, never settle it done. (The agent-attached
+// path is exercised via a live harness in auto-drive.test.ts.)
+
+const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
+  trackerRef: ref,
+  prompt: `ticket ${ref}\n\nbody`,
+  workflow: 'implement',
+  wayfinderType: null,
+  drive: 'afk',
+  mapRef: null,
+  closed: false,
+  ...over,
+});
+
+/** A tracker adapter that records the tickets it was asked to reopen. */
+function reopenSpy() {
+  const reopened: number[] = [];
+  const adapter: TrackerAdapter = {
+    name: 'fake',
+    scan: async () => [],
+    readTicket: async (ref): Promise<Ticket> => ({
+      number: ref.number,
+      title: ref.title,
+      state: 'closed',
+      body: '',
+      createdAt: '',
+      closedAt: null,
+      labels: [],
+      assignees: [],
+      parent: null,
+      blockedBy: [],
+      blocking: [],
+      comments: [],
+      isMap: false,
+      url: `https://x/${ref.number}`,
+    }),
+    claim: async () => {},
+    release: async () => {},
+    whoami: async () => 'me',
+    close: async () => {},
+    reopen: async (t) => {
+      reopened.push(t.number);
+    },
+  };
+  return { adapter, reopened };
+}
+
+describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   let dir: string;
   let db: Db;
   let tasks: TaskService;
   let runs: RunStore;
   let runner: Runner;
+  let reopened: number[];
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-ccm-'));
     db = openDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runs = new RunStore(db);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig());
+    const spy = reopenSpy();
+    reopened = spy.reopened;
+    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => spy.adapter);
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig(), { autoDrive: drive });
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('settles a still-running Task with no Run in flight', () => {
-    const task = tasks.create({ prompt: 'stuck', state: 'ready' });
+  it('reopens the ticket and Escalates a still-running Task with no Run in flight', async () => {
+    const task = tasks.upsertMirrored(mirrored(7));
     tasks.setState(task.id, 'running'); // flipped running, but nothing is driving it
 
-    expect(runner.completeClosedMirrored(task.id)).toBe(true);
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect(await runner.reopenClosedMirrored(task.id)).toBe(true);
+    const settled = tasks.get(task.id);
+    expect(settled.escalated).toBe(true); // handed to a human, NOT completed
+    expect(settled.drive).toBe('hitl');
+    expect(settled.state).not.toBe('completed');
+    expect(reopened).toEqual([7]); // the premature close was reverted
   });
 
-  it('unblocks dependents when it settles, like any completion', () => {
-    const blocker = tasks.create({ prompt: 'blocker', state: 'ready' });
+  it('does NOT complete — a premature close never unblocks dependents', async () => {
+    const blocker = tasks.upsertMirrored(mirrored(1));
     const dependent = tasks.create({ prompt: 'dependent', state: 'ready' });
     tasks.addDependency(dependent.id, blocker.id);
     expect(tasks.get(dependent.id).state).toBe('blocked');
     tasks.setState(blocker.id, 'running');
 
-    runner.completeClosedMirrored(blocker.id);
-    expect(tasks.get(dependent.id).state).toBe('ready');
+    await runner.reopenClosedMirrored(blocker.id);
+    // The blocker was Escalated, not completed, so the dependent stays blocked.
+    expect(tasks.get(dependent.id).state).toBe('blocked');
   });
 
-  it('leaves a Task with a live Run row alone (a Run is mid-spawn)', () => {
-    const task = tasks.create({ prompt: 'launching', state: 'ready' });
+  it('leaves a Task with a live Run row alone (a Run is mid-spawn)', async () => {
+    const task = tasks.upsertMirrored(mirrored(5));
     tasks.setState(task.id, 'running');
     runs.create(task.id); // Run row exists (state running); its ActiveRun not yet registered
 
-    expect(runner.completeClosedMirrored(task.id)).toBe(false);
+    expect(await runner.reopenClosedMirrored(task.id)).toBe(false);
     expect(tasks.get(task.id).state).toBe('running');
+    expect(reopened).toEqual([]);
   });
 
-  it('settles once the in-flight Run row has finished without settling the Task', () => {
-    const task = tasks.create({ prompt: 'orphaned', state: 'ready' });
+  it('reopens + Escalates once the in-flight Run row has finished without settling', async () => {
+    const task = tasks.upsertMirrored(mirrored(9));
     tasks.setState(task.id, 'running');
     const run = runs.create(task.id);
     runs.finish(run.id, 'failed'); // Run ended but the Task was left running
 
-    expect(runner.completeClosedMirrored(task.id)).toBe(true);
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect(await runner.reopenClosedMirrored(task.id)).toBe(true);
+    expect(tasks.get(task.id).escalated).toBe(true);
+    expect(reopened).toEqual([9]);
   });
 
-  it('is a no-op on a Task that is no longer running', () => {
-    const task = tasks.create({ prompt: 'done', state: 'ready' });
+  it('is a no-op on a Task that is no longer running', async () => {
+    const task = tasks.upsertMirrored(mirrored(3));
     tasks.setState(task.id, 'running');
     tasks.setState(task.id, 'completed'); // a racing settle won
 
-    expect(runner.completeClosedMirrored(task.id)).toBe(false);
+    expect(await runner.reopenClosedMirrored(task.id)).toBe(false);
     expect(tasks.get(task.id).state).toBe('completed');
+    expect(reopened).toEqual([]);
   });
 });

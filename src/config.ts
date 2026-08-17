@@ -23,7 +23,7 @@ export type MergeFate = (typeof MERGE_FATES)[number];
  */
 export const DEFAULT_DRIVE_PROMPT = `{skill}
 
-You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did and close it, following the repo's issue-tracker doc for the exact \`gh\` mechanics.
+You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call \`finish_task\`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.
 
 ## {title}
 
@@ -42,7 +42,7 @@ export const UNATTENDED_REMINDER = `## You are running unattended
 You are Harmonic Task #{taskId} and no human is watching this turn. Ending your turn does not hand back to a person — Harmonic treats it as a checkpoint and will prompt you to continue only a limited number of times. Do not stop to idle-wait for background work (CI, a watcher) or for input; that wastes those attempts. Instead:
 
 - Keep working until the task is genuinely finished.
-- When it is finished (ticket closed as above), call the \`finish_task\` tool with taskId={taskId} so Harmonic stops re-prompting you.
+- When it is finished, call the \`finish_task\` tool with taskId={taskId} so Harmonic stops re-prompting you. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; closing it early gets it reopened and the task escalated.
 - If you are blocked on a decision or need input only a human can give, call the \`escalate_task\` tool with taskId={taskId} and a reason — do not guess and do not idle-wait.`;
 
 /**
@@ -213,9 +213,11 @@ export const appConfigSchema = z.object({
    * completed worktree Run's branch (research Tasks are always artifacts);
    * `autoRetry` is how many times a failed afk Run is silently re-queued
    * before it Escalates to a human. `continueAttempts` is how many times a
-   * Run that ended its turn without an explicit finish/escalate signal (and
-   * with the ticket still open) is re-prompted to continue before the Run is
-   * treated as unresolved — 0 keeps the old single-turn behaviour.
+   * Run that ended its turn without an explicit finish/escalate signal is
+   * re-prompted to continue before the Run is treated as unresolved — 0 keeps
+   * the old single-turn behaviour. `finish_task` (not the agent closing the
+   * ticket) is the execution-complete signal: Harmonic verifies, lands per
+   * `mergeFate`, and closes the ticket itself (issue #139).
    */
   drive: z
     .object({
