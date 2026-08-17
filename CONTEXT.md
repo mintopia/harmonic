@@ -95,12 +95,33 @@ re-poll upserts it. Never enters *draft* — a tracker issue is already
 authored — and never enters *awaiting-review* (see Drive).
 _Avoid_: imported task, synced issue
 
+**Epic**:
+A parent tracker issue that groups typed child tickets — the derived unit a
+batch of related work shares. Two kinds: a **Map** (wayfinding children) and a
+**Spec** (implementation children); both are Epics, differing only in what they
+contain. **Derived, never authored** — Harmonic reads whatever parent/child
+structure the tracker holds (native sub-issues, or a body task-list / `Part of
+#<n>` line) and copes; setting the tickets up is the operator's or an agent's
+job. Not a Task and not a stored entity — a query-time roll-up over the polled
+tracker. The **leaf-most** Epic — the immediate parent of implementation Tasks —
+is the unit its children are scheduled and landed as a group by.
+_Avoid_: effort, project, batch, tranche, convoy
+
 **Map**:
-The mirror of a `wayfinder:map` issue: a **derived** grouping of the mirrored
-Tasks that share its `mapRef`. Not a Task (no prompt, Run, or review) and not
-a stored entity (it holds no Harmonic-native state) — a query-time roll-up
-over the polled tracker. Reuses wayfinder's own term.
-_Avoid_: effort, epic, project
+A kind of Epic: the mirror of a `wayfinder:map` issue, whose children are
+wayfinding tickets (see Wayfinder Type). Charts a course via the wayfinder
+skill; identified by its `wayfinder:map` label. Its members are the mirrored
+Tasks that share its `mapRef`.
+_Avoid_: effort, project (a Map is one *kind* of Epic, not a synonym for Epic)
+
+**Spec**:
+A kind of Epic produced by `/to-spec`: a parent ticket with a spec-shaped body
+(problem / solution / acceptance) whose children are implementation Tasks.
+Unlike a Map it carries **no label of its own** — it is identified structurally,
+by having children and a spec body, not by a marker. Specs can nest (a spine
+Spec whose children are themselves Specs); the leaf-most one owns the
+implementation Tasks.
+_Avoid_: epic (a Spec is one kind of Epic), story, ticket
 
 **mapRef**:
 On a mirrored Task, the tracker ref of the parent Map issue; absent on native
