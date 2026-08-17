@@ -125,6 +125,45 @@ describe('mirrorScan upsert', () => {
     expect(tasks.list().some((t) => t.trackerRef === 3)).toBe(false);
   });
 
+  it('an Epic parent is never a blocker: a child "Blocked by" its parent gets no edge', () => {
+    // #106 is an Epic (it has children #107/#108). #108 declares "Blocked by #106",
+    // but Epics contain their children, they do not block them → no edge, so #108
+    // stays ready rather than blocked behind its own parent.
+    const results = mscan([
+      ticket({ number: 106, labels: ['epic'] }),
+      ticket({ number: 107, parent: 106, labels: ['ready-for-agent'] }),
+      ticket({
+        number: 108,
+        parent: 106,
+        labels: ['ready-for-agent'],
+        blockedBy: [{ number: 106, title: 'spine', state: 'open' }],
+      }),
+    ]);
+    const child = results.find((t) => t.trackerRef === 108)!;
+    expect(tasks.dependsOn(child.id)).toEqual([]); // Epic blocker skipped
+    expect(child.state).toBe('ready'); // not blocked by its parent
+  });
+
+  it('a stale Epic→child blocking edge is removed on the next poll', () => {
+    // Simulate an edge that pre-dates the rule: mirror 108 with #106 as a *non-parent*
+    // blocker first (edge created), then re-poll once #106 has a child (now an Epic).
+    mscan([
+      ticket({ number: 106 }),
+      ticket({ number: 108, blockedBy: [{ number: 106, title: 'spine', state: 'open' }] }),
+    ]);
+    const before = tasks.list().find((t) => t.trackerRef === 108)!;
+    expect(tasks.dependsOn(before.id)).toHaveLength(1); // edge exists (106 not yet an Epic)
+
+    const results = mscan([
+      ticket({ number: 106 }),
+      ticket({ number: 107, parent: 106 }), // #106 is now an Epic (has a child)
+      ticket({ number: 108, blockedBy: [{ number: 106, title: 'spine', state: 'open' }] }),
+    ]);
+    const child = results.find((t) => t.trackerRef === 108)!;
+    expect(tasks.dependsOn(child.id)).toEqual([]); // reconcile removed the stale edge
+    expect(child.state).toBe('ready');
+  });
+
   it('close-blocker → blocker completed → dependent unblocks to ready', () => {
     // First poll: blocker open → dependent blocked.
     mscan([

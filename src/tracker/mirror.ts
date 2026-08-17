@@ -52,8 +52,15 @@ export function mirrorScan(tasks: TaskService, tickets: Ticket[], workspaceId: n
   const issues = tickets.filter((t) => !t.isMap);
   const rows = issues.map((t) => tasks.upsertMirrored(toMirrorInput(t), workspaceId));
   const idByRef = new Map(rows.map((r) => [r.trackerRef!, r.id]));
+  // Epics contain their children, they do not block them. An Epic is any ticket
+  // with children — a Map or a Spec — identified structurally as the parent of
+  // some ticket in this scan. A `Blocked by: #<epic>` edge is therefore never
+  // projected (and a re-poll removes any that pre-date this rule, since
+  // reconcileMirroredDeps deletes edges not in the desired set).
+  const epicRefs = new Set(tickets.map((t) => t.parent).filter((p): p is number => p != null));
   issues.forEach((t, i) => {
     const blockerIds = t.blockedBy
+      .filter((b) => !epicRefs.has(b.number))
       .map((b) => idByRef.get(b.number))
       .filter((id): id is number => id !== undefined);
     tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
