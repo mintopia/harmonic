@@ -81,6 +81,46 @@ export class WorkContextLeaseStore {
       .get();
   }
 
+  /**
+   * Claim `key` for `ownerRunId`, transferring it instead of conflicting when
+   * the current holder is a predecessor `sharesLineOfWork` recognizes as the
+   * same line of work (issue #124, reliability-design §0.5): a successor Run
+   * (retry / reject-continue / crash-resume / self-heal) beginning into a Work
+   * Context still held by its own predecessor inherits the lease rather than
+   * throwing a conflict.
+   *
+   * `key` is never momentarily unowned nor doubly-owned across the handoff:
+   * `transfer` is a single UPDATE re-pointing `ownerRunId` (the row, and its
+   * `id`, are unchanged), and `acquire` is a single INSERT guarded by the
+   * unique-key CAS — exactly one of the two runs, never both, ever holds the
+   * row. The predecessor's release is subsumed by the transfer; there is no
+   * separate free.
+   *
+   * When the predicate returns false — an unrelated holder — this falls
+   * through to `acquire`, which still hits the unique-key CAS and throws
+   * `DomainError('conflict')` exactly as before; nothing about the conflict
+   * path changes.
+   *
+   * `sharesLineOfWork` keeps this store ignorant of runs/chains/sessions: the
+   * caller (the Runner's begin-transaction, where both the new owner and the
+   * candidate predecessor are already resolved) decides what "same line of
+   * work" means and passes the answer in as a predicate over the existing
+   * owner's Run id.
+   */
+  acquireOrTransfer(
+    key: string,
+    ownerRunId: number,
+    phase: string,
+    sharesLineOfWork: (existingOwnerRunId: number) => boolean,
+  ): WorkContextLeaseRow {
+    const existing = this.getByKey(key);
+    if (existing && sharesLineOfWork(existing.ownerRunId)) {
+      const moved = this.transfer(existing.ownerRunId, ownerRunId);
+      if (moved) return moved;
+    }
+    return this.acquire(key, ownerRunId, phase);
+  }
+
   /** Bumps the liveness heartbeat on `key`'s lease, if one exists. */
   heartbeat(key: string, now: number = Date.now()): void {
     this.db.update(workContextLeases).set({ heartbeat: now }).where(eq(workContextLeases.key, key)).run();

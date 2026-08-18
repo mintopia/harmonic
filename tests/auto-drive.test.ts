@@ -7,6 +7,9 @@ import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/confi
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
+import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
+import { workContextKey } from '../src/domain/work-context-key.js';
+import { DomainError } from '../src/domain/errors.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive, buildDrivePrompt, skillFor, splitTitleBody } from '../src/execution/auto-drive.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
@@ -478,5 +481,69 @@ describe('Runner auto-drive settle (issue #33)', () => {
     build(config());
     expect(runner.markAgentFinished(999)).toBe(false);
     expect(runner.markEscalate(999, 'need input')).toBe(false);
+  });
+
+  describe('acquireOrTransfer at the begin-transaction funnel (issue #124)', () => {
+    // Seed a failed predecessor Run that still holds the direct-mode Work
+    // Context lease for the workspace's `workDir` — the retained-lease handoff
+    // state a successor begins into. Minted directly against the stores (not by
+    // driving the predecessor async) so the test is deterministic. The chain is
+    // fresh per call; whether a later successor SHARES it is decided by
+    // resolveForTask from `taskId`, not here.
+    function seedPredecessorLease(taskId: number): { predecessorId: number; key: string; leaseStore: WorkContextLeaseStore } {
+      const leaseStore = new WorkContextLeaseStore(db);
+      const chainId = new ExecutionChainStore(db).create();
+      const predecessor = runs.create(taskId, undefined, chainId);
+      runs.update(predecessor.id, { state: 'failed' });
+      const key = workContextKey({ isolationMode: 'direct', workingDir: workDir });
+      leaseStore.acquire(key, predecessor.id, 'running');
+      return { predecessorId: predecessor.id, key, leaseStore };
+    }
+
+    it('transfers a direct-mode lease to a successor sharing the Execution Chain, instead of conflicting', () => {
+      build(config());
+      const task = tasks.upsertMirrored(mirroredAfk(7));
+      const { predecessorId, key, leaseStore } = seedPredecessorLease(task.id);
+
+      // The predecessor holds the lease on this Task's own chain, so the
+      // successor's beginRun resolves the SAME Execution Chain (resolveForTask
+      // branch 1: this Task's latest chained Run), so sharesLineOfWork is true
+      // and the funnel transfers the lease instead of throwing conflict. The
+      // claim commits inside beginRun's transaction synchronously, before the
+      // async drive starts, so this asserts right after start returns rather
+      // than waiting on the drive.
+      expect(() => startMirrored(task.id)).not.toThrow();
+
+      const successor = runs.listForTask(task.id).at(-1)!;
+      expect(successor.id).not.toBe(predecessorId);
+      expect(leaseStore.getByKey(key)).toMatchObject({ ownerRunId: successor.id });
+      expect(leaseStore.getByOwner(predecessorId)).toBeUndefined();
+    });
+
+    it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', () => {
+      build(config());
+      const otherTask = tasks.upsertMirrored(mirroredAfk(8));
+      const target = tasks.upsertMirrored(mirroredAfk(9));
+
+      // A predecessor Run on a DIFFERENT, unrelated Task (no reattempt link),
+      // holding the SAME direct-mode key (same workspace workingDir).
+      const { predecessorId, key, leaseStore } = seedPredecessorLease(otherTask.id);
+
+      // `target` has no chained Run of its own and no reattempt ancestry, so
+      // resolveForTask mints it a fresh chain (branch 3) — different from the
+      // predecessor's. sharesLineOfWork is false, so the funnel falls through
+      // to acquire, which still hits the unique-key CAS.
+      tasks.setState(target.id, 'running');
+      let caught: unknown;
+      try {
+        runner.launchClaimed(target.id);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      expect((caught as DomainError).code).toBe('conflict');
+
+      expect(leaseStore.getByKey(key)).toMatchObject({ ownerRunId: predecessorId });
+    });
   });
 });

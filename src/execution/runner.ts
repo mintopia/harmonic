@@ -477,11 +477,36 @@ export class Runner {
       // identity and the Run row commit together.
       const chainId = this.chainStore.resolveForTask(task);
       const created = this.runStore.create(task.id, snapshot, chainId);
-      this.leaseStore.acquire(this.workContextKeyFor(task, created), created.id, 'running');
+      // A same-line-of-work predecessor's retained lease is handed off
+      // transactionally rather than conflicting (issue #124): if `created`
+      // continues the Execution Chain of whoever currently holds this Work
+      // Context key, acquireOrTransfer re-points the lease instead of
+      // throwing; an unrelated holder still hits the unique-key CAS.
+      this.leaseStore.acquireOrTransfer(
+        this.workContextKeyFor(task, created),
+        created.id,
+        'running',
+        (existingOwnerRunId) => this.sharesLineOfWork(existingOwnerRunId, created),
+      );
       return created;
     });
     void this.drive(task, run, harness).catch(() => {});
     return run;
+  }
+
+  /** Whether the Run currently holding a Work Context is a predecessor that
+   * `successor` continues — a retry / reject continuation sharing the same
+   * Session, so the builder worktree keeps exactly one owner across the
+   * handover (issue #124, reliability-design §0.5). Today the lineage is read
+   * from the Execution Chain (#129) — the durable line-of-work identity
+   * threaded across retry / reject-continue / resume — because a successor's
+   * `sessionRowId` is not yet known at claim time; #110 will bind this to the
+   * Session row once a successor carries its predecessor's `sessionRowId`
+   * forward. */
+  private sharesLineOfWork(existingOwnerRunId: number, successor: RunRow): boolean {
+    if (successor.chainId == null) return false;
+    const owner = this.runStore.get(existingOwnerRunId);
+    return owner?.chainId != null && owner.chainId === successor.chainId;
   }
 
   /** The Work Context lease key for this Run, matching prepareWorkspace's

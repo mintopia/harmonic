@@ -95,4 +95,45 @@ describe('WorkContextLeaseStore (issue #118)', () => {
     expect(updated!.heartbeat).toBe(now);
     expect(updated!.heartbeat).toBeGreaterThan(originalHeartbeat);
   });
+
+  describe('acquireOrTransfer (issue #124)', () => {
+    it('transfers a held lease to a successor sharing the line of work', async () => {
+      const original = leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+
+      await new Promise((r) => setTimeout(r, 5));
+      const moved = leases.acquireOrTransfer('direct:/tmp/repo', otherRunId, 'running', () => true);
+
+      expect(moved.ownerRunId).toBe(otherRunId);
+      expect(moved.id).toBe(original.id);
+      expect(moved.key).toBe('direct:/tmp/repo');
+      expect(moved.heartbeat).toBeGreaterThan(original.heartbeat);
+
+      expect(leases.getByKey('direct:/tmp/repo')).toMatchObject({ id: original.id, ownerRunId: otherRunId });
+      expect(leases.getByOwner(ownerRunId)).toBeUndefined();
+      expect(leases.getByOwner(otherRunId)).toMatchObject({ id: original.id, key: 'direct:/tmp/repo' });
+    });
+
+    it('rejects an unrelated successor (predicate false) — does not inherit', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+
+      let caught: unknown;
+      try {
+        leases.acquireOrTransfer('direct:/tmp/repo', otherRunId, 'running', () => false);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      expect((caught as DomainError).code).toBe('conflict');
+
+      expect(leases.getByKey('direct:/tmp/repo')).toMatchObject({ ownerRunId });
+    });
+
+    it('acquires fresh when the key is unheld', () => {
+      const lease = leases.acquireOrTransfer('direct:/tmp/other-repo', otherRunId, 'running', () => true);
+
+      expect(lease.ownerRunId).toBe(otherRunId);
+      expect(lease.key).toBe('direct:/tmp/other-repo');
+      expect(leases.getByKey('direct:/tmp/other-repo')).toMatchObject({ ownerRunId: otherRunId });
+    });
+  });
 });
