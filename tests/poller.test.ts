@@ -194,4 +194,70 @@ describe('TrackerPoller.poll', () => {
     expect(closed).toEqual([]);
     expect(tasks.list()[0]!.state).toBe('completed');
   });
+
+  it('runs epic integration between mirroring and the poke (issue #159)', async () => {
+    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
+    let pokes = 0;
+    const calls: Array<{ tickets: number[]; mirrored: Array<number | null>; pokesAtCall: number }> = [];
+    const epics = {
+      reconcile: async (tickets: Ticket[], mirrored: { trackerRef: number | null }[]) => {
+        calls.push({
+          tickets: tickets.map((t) => t.number),
+          mirrored: mirrored.map((m) => m.trackerRef),
+          pokesAtCall: pokes,
+        });
+      },
+    };
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => adapter,
+      () => pokes++,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      epics,
+    );
+
+    await poller.poll();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.tickets).toContain(42);
+    expect(calls[0]!.mirrored).toContain(42);
+    expect(calls[0]!.pokesAtCall).toBe(0); // reconcile ran before the poke
+    expect(pokes).toBe(1);
+  });
+
+  it('swallows an epic integration failure: logs it, still pokes, never wedges the poll (issue #159)', async () => {
+    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
+    let pokes = 0;
+    const errors: string[] = [];
+    const epics = {
+      reconcile: async () => {
+        throw new Error('git boom');
+      },
+    };
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => adapter,
+      () => pokes++,
+      (m) => errors.push(m),
+      undefined,
+      undefined,
+      undefined,
+      epics,
+    );
+
+    await expect(poller.poll()).resolves.toBeUndefined();
+
+    expect(pokes).toBe(1); // mirroring already committed; the poke still fires
+    expect(tasks.list()).toHaveLength(1);
+    expect(errors.some((e) => e.includes('epic integration'))).toBe(true);
+  });
 });

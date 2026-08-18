@@ -579,6 +579,30 @@ export class TaskService {
     return task;
   }
 
+  /**
+   * Point a not-yet-spawned Task at a base branch (issue #159). The
+   * Epic-integration coordinator calls this to retarget a ready member's
+   * `baseBranch` onto its Epic's integration branch before the Auto-Runner
+   * spawns the worktree Run, so the Run forks from — and later lands onto — the
+   * integration branch (`resolveBaseBranch` reads this column, issue #157).
+   * Idempotent: a no-op that returns the current row when the value is unchanged,
+   * so a re-poll never churns `updatedAt` or fires a spurious change. Unlike
+   * {@link update} this is an internal, state-agnostic setter — the caller is
+   * responsible for only retargeting pre-spawn Tasks (a spawned Run's base is
+   * already resolved and frozen).
+   */
+  setBaseBranch(id: number, baseBranch: string | null): TaskRow {
+    const raw = this.getRaw(id);
+    if (raw.baseBranch === baseBranch) return this.resolve(raw);
+    const row = this.db
+      .update(tasks)
+      .set({ baseBranch, updatedAt: Date.now() })
+      .where(eq(tasks.id, id))
+      .returning()
+      .get()!;
+    return this.changed(row);
+  }
+
   // ---- Dependencies ----
 
   dependsOn(taskId: number): number[] {

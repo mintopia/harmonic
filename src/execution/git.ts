@@ -218,6 +218,40 @@ export const Git = {
 
   pull: (dir: string) => git(dir, 'pull', '--ff-only'),
 
+  /**
+   * Whether local branch `name` exists (issue #159). Never throws:
+   * `show-ref --verify --quiet` exits non-zero when the ref is absent, which is
+   * a legitimate "no such branch" answer, not an error — so an Epic integration
+   * branch's create/reuse decision reads as a plain boolean.
+   */
+  async branchExists(dir: string, name: string): Promise<boolean> {
+    try {
+      await git(dir, 'show-ref', '--verify', '--quiet', `refs/heads/${name}`);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Create local branch `name` at `startPoint` WITHOUT checking it out — a bare
+   * ref in the shared base repo (issue #159: the Harmonic-owned Epic integration
+   * branch, ADR-0023/0024). Member worktrees then fork from it via
+   * {@link addWorktree}'s `startPoint`. Fails if the branch already exists;
+   * callers guard with {@link branchExists} for idempotent create/reuse. Takes
+   * the base-repo lock like the other base-repo mutations below.
+   */
+  createBranch: (dir: string, name: string, startPoint: string) =>
+    withRepoLock(dir, () => git(dir, 'branch', name, startPoint)),
+
+  /**
+   * Delete local branch `name` (`-D`, force) — retiring an Epic integration
+   * branch once its Epic has landed (issue #159, the retire half of the
+   * Harmonic-owned lifecycle). Under the base-repo lock.
+   */
+  deleteBranch: (dir: string, name: string) =>
+    withRepoLock(dir, () => git(dir, 'branch', '-D', name)),
+
   // worktree create/remove and merge (below) mutate the shared base repo;
   // each runs under a short base-repo lock so concurrent worktree Runs can't
   // corrupt it mid-mutation (issue #121). The lock is scoped to `dir` (the

@@ -415,7 +415,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     recheckAndClaim: async (task) =>
       (await trackerManagerRef?.coordinatorFor(task.workspaceId)?.recheckAndClaim(task)) ?? 'spawn',
   };
-  const autoRunner = new AutoRunner(tasks, runs, runner, () => configStore.get(), () => workspaces.list(), mirror);
+  const autoRunner = new AutoRunner(
+    tasks,
+    runs,
+    runner,
+    () => configStore.get(),
+    () => workspaces.list(),
+    mirror,
+    // Parallel-Epic pick gate (issue #159): route to the Task's own Workspace
+    // poll loop, which owns its per-Epic integration-branch coordinator. No live
+    // loop ⇒ not gated, so a native-only / tracking-off Workspace is unaffected.
+    (task) => trackerManagerRef?.awaitsEpicBase(task) ?? false,
+  );
   // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
   // poll pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
   const trackerManager = new TrackerPollerManager(

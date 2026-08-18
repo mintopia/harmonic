@@ -1,4 +1,5 @@
 import type { TaskService } from '../domain/tasks.js';
+import type { TaskRow } from '../db/schema.js';
 import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
@@ -7,6 +8,16 @@ import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
 export interface MirrorSync {
   observe(adapter: TrackerAdapter, scan: Ticket[]): Promise<void>;
   reconcile(): Promise<void>;
+}
+
+/**
+ * The per-Epic integration-branch reconcile (issue #159), run each poll between
+ * mirroring and the downstream poke so a ready member's `baseBranch` is set
+ * before the Auto-Runner can pick it. Structurally implemented by the
+ * {@link EpicIntegrationCoordinator} in the execution layer.
+ */
+export interface EpicIntegrationSync {
+  reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void>;
 }
 
 /**
@@ -45,6 +56,15 @@ export class TrackerPoller {
      * agent, reopens the ticket, and Escalates. No-op by default (native-only server).
      */
     private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
+    /**
+     * The Epic integration-branch reconcile (issue #159). Runs after mirroring
+     * and before the poke so a ready Epic member's `baseBranch` points at its
+     * integration branch before the Auto-Runner spawns its worktree Run. Absent
+     * ⇒ no Epic integration (today's per-Run behaviour). Its failure is logged,
+     * not fatal: mirroring already committed, and an un-set base degrades to the
+     * current-branch fallback rather than wedging the poll.
+     */
+    private readonly epics?: EpicIntegrationSync,
   ) {}
 
   /**
@@ -70,6 +90,16 @@ export class TrackerPoller {
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter, tickets);
     const mirrored = mirrorScan(this.tasks, tickets, this.workspaceId);
+    // Set each ready Epic member's base branch before the poke (issue #159), so
+    // the Auto-Runner forks its worktree Run from the Epic's integration branch.
+    // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
+    if (this.epics) {
+      try {
+        await this.epics.reconcile(tickets, mirrored);
+      } catch (err) {
+        this.onError(`epic integration reconcile failed: ${String(err)}`);
+      }
+    }
     this.onMirrored();
     // Backstop: upsertMirrored never moves a Task off `running` (nothing
     // interrupts a live Run), so a ticket closed mid-run (agent-via-skill or an

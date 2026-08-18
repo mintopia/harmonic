@@ -108,6 +108,15 @@ export class AutoRunner {
     private readonly getConfig: () => AppConfig,
     private readonly getWorkspaces: () => WorkspaceRow[],
     private readonly mirror?: MirrorClaim,
+    /**
+     * Pick gate for parallel-Epic members (issue #159): true while a ready
+     * mirrored Task is an Epic member whose integration-branch `baseBranch` has
+     * not yet been set by the poll's reconcile. Skips it — without this, the
+     * mirror insert's `ready` poke could spawn the member before its base is
+     * resolved, forking it from the working dir's branch instead of `epic/<ref>`.
+     * Absent (native-only server / no live poll loop) ⇒ never gated.
+     */
+    private readonly awaitsEpicBase?: (task: TaskRow) => boolean,
   ) {}
 
   /**
@@ -238,6 +247,11 @@ export class AutoRunner {
       .filter((t) => {
         if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
         if (this.mirror?.foreignAssignee(t)) return false;
+        // Parallel-Epic pick gate (issue #159): a ready Epic member isn't
+        // spawnable until this poll's reconcile has cut its integration branch
+        // and set its base. Transient (the reconcile sets it within the same
+        // poll and re-pokes), so it isn't recorded as a wait-clock skip.
+        if (this.awaitsEpicBase?.(t)) return false;
         const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
         // Master is on (fill returned early otherwise), so an inheriting
         // Workspace (null) is enabled; only an explicit `false` opts out.

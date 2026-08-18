@@ -1,14 +1,17 @@
-import type { WorkspaceRow } from '../db/schema.js';
+import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import type { DerivedMap } from './mirror.js';
+import { EpicIntegrationCoordinator } from '../execution/epic-integration.js';
 
 interface Entry {
   poller: TrackerPoller;
   mirror: MirrorCoordinator;
+  /** This Workspace's per-Epic integration-branch coordinator (issue #159) — the pick gate routes to it. */
+  epics: EpicIntegrationCoordinator;
   /** `${workingDir}|${intervalMs}` — a change here means tear down and rebuild. */
   sig: string;
 }
@@ -83,6 +86,10 @@ export class TrackerPollerManager {
   /** Build and start a poll loop for a Workspace (its tracker already resolved). */
   private startLoop(ws: WorkspaceRow): void {
     const mirror = new MirrorCoordinator(this.tasks, ws.id);
+    // Harmonic-owned per-Epic integration branches for this Workspace (issue
+    // #159): cut in its Working Directory, one per derived Epic with a ready
+    // member, and each ready member's base branch pointed at it before the poke.
+    const epics = new EpicIntegrationCoordinator(this.tasks, ws.workingDir);
     const poller = new TrackerPoller(
       this.tasks,
       ws.id,
@@ -94,9 +101,20 @@ export class TrackerPollerManager {
       mirror,
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
       this.onClosedWhileRunning,
+      epics,
     );
-    this.entries.set(ws.id, { poller, mirror, sig: sigOf(ws) });
+    this.entries.set(ws.id, { poller, mirror, epics, sig: sigOf(ws) });
     poller.start();
+  }
+
+  /**
+   * Whether a mirrored Task is a ready Epic member still awaiting its
+   * integration-branch base (issue #159) — the Auto-Runner's pick gate. Routed
+   * to the Task's own Workspace coordinator; no live loop ⇒ not gated (false),
+   * so a Workspace without tracking keeps today's per-Run behaviour.
+   */
+  awaitsEpicBase(task: TaskRow): boolean {
+    return this.entryFor(task.workspaceId)?.epics.awaitsBase(task) ?? false;
   }
 
   /** The last-resolved tracker for a Workspace, or null when tracking is off / not yet resolved (issue #83). */

@@ -104,6 +104,76 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 });
 
 /**
+ * The parallel-Epic base pick gate (issue #159): the Auto-Runner skips a ready
+ * mirrored Epic member whose integration-branch base has not yet been set by the
+ * poll's reconcile, leaving it `ready` on the frontier. Without this, the mirror
+ * insert's `ready` poke could spawn the member before its base is resolved,
+ * forking it from the working dir's branch instead of `epic/<ref>`.
+ */
+describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
+  let dir: string;
+  let db: Db;
+  let tasks: TaskService;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-epic-'));
+    db = openDb(dir);
+    // Worktree default so these mirrored Tasks are exempt from the Work Context
+    // House Rule (issue #120) — this test is about the Epic base gate alone.
+    tasks = new TaskService(
+      db,
+      () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
+      allWorkspaces(db),
+    );
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const build = (awaitsEpicBase: (t: { id: number }) => boolean) => {
+    const started: number[] = [];
+    const runner = {
+      start: (id: number) => {
+        started.push(id);
+        tasks.setState(id, 'running');
+      },
+      launchClaimed: (id: number) => started.push(id),
+    } as unknown as Runner;
+    const runStore = {
+      countRunning: () => started.length,
+      countRunningByWorkspace: () => new Map<number, number>(),
+    } as unknown as RunStore;
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
+    const ar = new AutoRunner(
+      tasks,
+      runStore,
+      runner,
+      () => config,
+      allWorkspaces(db),
+      undefined,
+      (t) => awaitsEpicBase(t),
+    );
+    return { ar, started };
+  };
+
+  it('skips a base-pending Epic member, admits a non-gated Task, and picks it once the gate opens', async () => {
+    const gated = tasks.upsertMirrored(mirroredAfk(11)); // Epic member, base pending
+    const free = tasks.upsertMirrored(mirroredAfk(99)); // not an Epic member
+    const pending = new Set<number>([gated.id]);
+
+    const { ar, started } = build((t) => pending.has(t.id));
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(free.id));
+
+    expect(started).not.toContain(gated.id);
+    expect(tasks.get(gated.id).state).toBe('ready'); // held on the frontier, not spawned unbased
+
+    // The reconcile sets its base → the gate opens → the next pass picks it.
+    pending.delete(gated.id);
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(gated.id));
+  });
+});
+
+/**
  * The Work Context House Rule pick predicate (ADR-0022, issue #120): the
  * Auto-Runner skips a ready afk Task whose direct-mode Work Context is already
  * occupied by a running or awaiting-review afk Run, leaving it `ready` with a
