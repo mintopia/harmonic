@@ -9,7 +9,7 @@ import type { SpendOutcome } from '../src/domain/guardrail-budget.js';
 
 describe('sumPriorSpend (issue #129, the carried-forward floor)', () => {
   it('empty chain folds to a zero floor', () => {
-    expect(sumPriorSpend([])).toEqual({ tokens: 0, usd: 0, costIncomplete: false });
+    expect(sumPriorSpend([])).toEqual({ tokens: 0, usd: 0, costIncomplete: false, tokensIncomplete: false });
   });
 
   it('sums multiple fully-measured members', () => {
@@ -17,17 +17,31 @@ describe('sumPriorSpend (issue #129, the carried-forward floor)', () => {
       { tokens: 1_000, usd: 1, costIncomplete: false },
       { tokens: 2_000, usd: 2, costIncomplete: false },
     ];
-    expect(sumPriorSpend(members)).toEqual({ tokens: 3_000, usd: 3, costIncomplete: false });
+    expect(sumPriorSpend(members)).toEqual({
+      tokens: 3_000,
+      usd: 3,
+      costIncomplete: false,
+      tokensIncomplete: false,
+    });
   });
 
-  it('a null-token member contributes 0 to the token sum, not poisoning it to null', () => {
+  it('a null-token member contributes 0 to the token floor but flags tokensIncomplete', () => {
     const members: ChainSpend[] = [
       { tokens: null, usd: 1, costIncomplete: false },
       { tokens: 2_000, usd: 2, costIncomplete: false },
     ];
-    // A null-token member does not, by itself, mark the sum costIncomplete —
-    // that's a strictly usd-driven signal (see the costIncomplete tests below).
-    expect(sumPriorSpend(members)).toEqual({ tokens: 2_000, usd: 3, costIncomplete: false });
+    // The floor stays a definite lower bound (2_000, not null), but the
+    // never-recorded member marks it possibly-short via tokensIncomplete so
+    // chainObserved won't trust it as a definite "under budget" (issue #129:
+    // a crashed predecessor's unrecorded spend must not silently reset the
+    // token counter). A null token is NOT a cost signal, so costIncomplete
+    // stays false — that's strictly usd-driven.
+    expect(sumPriorSpend(members)).toEqual({
+      tokens: 2_000,
+      usd: 3,
+      costIncomplete: false,
+      tokensIncomplete: true,
+    });
   });
 
   it('costIncomplete propagates from a member with null usd', () => {
@@ -59,7 +73,7 @@ describe('sumPriorSpend (issue #129, the carried-forward floor)', () => {
 });
 
 describe('chainObserved (issue #129, folding the live poll onto the prior floor)', () => {
-  const prior = { tokens: 5_000, usd: 5, costIncomplete: false };
+  const prior = { tokens: 5_000, usd: 5, costIncomplete: false, tokensIncomplete: false };
 
   it('measured live spend adds to the prior floor for both tokens and usd', () => {
     const live: ChainSpend = { tokens: 1_000, usd: 1, costIncomplete: false };
@@ -82,13 +96,27 @@ describe('chainObserved (issue #129, folding the live poll onto the prior floor)
   });
 
   it('costIncomplete ORs live and prior: live false, prior true', () => {
-    const incompletePrior = { tokens: 5_000, usd: 5, costIncomplete: true };
+    const incompletePrior = { tokens: 5_000, usd: 5, costIncomplete: true, tokensIncomplete: false };
     const live: ChainSpend = { tokens: 1_000, usd: 1, costIncomplete: false };
     expect(chainObserved(incompletePrior, live).costIncomplete).toBe(true);
   });
 
+  it('a tokensIncomplete prior floor makes the chain tokens unmeasurable even when live is measured (issue #129 bypass fix)', () => {
+    // A crashed predecessor whose usage never persisted leaves an under-counted
+    // token floor. Rather than fold it into a concrete sum that could read
+    // "under budget" while the true total is over, chainObserved reports the
+    // token dimension as null (unmeasurable) → the Runner's grace-then-Escalate
+    // path — an honest "can't confirm under budget", not a silent counter reset.
+    const incompleteTokenPrior = { tokens: 4_000, usd: 4, costIncomplete: false, tokensIncomplete: true };
+    const live: ChainSpend = { tokens: 1_000, usd: 1, costIncomplete: false };
+    const observed = chainObserved(incompleteTokenPrior, live);
+    expect(observed.tokens).toBeNull();
+    // The cost dimension is unaffected — it has its own incompleteness channel.
+    expect(observed.usd).toBe(5);
+  });
+
   it('an empty (zero) prior floor degrades to exactly the live spend', () => {
-    const zeroPrior = { tokens: 0, usd: 0, costIncomplete: false };
+    const zeroPrior = { tokens: 0, usd: 0, costIncomplete: false, tokensIncomplete: false };
     const live: ChainSpend = { tokens: 1_000, usd: 1, costIncomplete: false };
     expect(chainObserved(zeroPrior, live)).toEqual(live);
   });
