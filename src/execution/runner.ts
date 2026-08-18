@@ -58,6 +58,8 @@ import {
   type StartStateProbe,
   type RunStartState,
 } from '../domain/run-start-state.js';
+import { classifyBranchOutcome, type BranchContractObservation, type BranchClassification } from '../domain/branch-recovery.js';
+import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
 import type { Db } from '../db/index.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
@@ -158,6 +160,14 @@ interface Workspace {
    * sweep the agent's changes — already frozen in the candidate). Unset for
    * worktree mode, native direct Runs, and non-git contexts. */
   directIsolation?: { startBranch: string; startCommit: string };
+  /**
+   * Set when the `validating` branch-contract check (issue #151) found an
+   * ambiguous git outcome and Escalated. Tells `finalizeWorkspace` to **retain**
+   * the worktree/refs as-is (skip the direct-mode checkout restore / worktree
+   * teardown) so the operator has the evidence to disposition the violation —
+   * reliability-design Unit D "worktree/refs retained until operator disposition".
+   */
+  retainForBranchViolation?: boolean;
 }
 
 interface ActiveRun {
@@ -674,12 +684,19 @@ export class Runner {
             // catch, not a generic execution `failed`.
             throw new AdmissionRejected(gate.reason);
           }
+          // Snapshot the contract-relevant refs now (issue #151) — the "before"
+          // side of the `validating` branch-contract diff. Best-effort: a repo
+          // with no refs yet yields `{}`, and a read failure just omits the
+          // snapshot, leaving the later check to skip rather than false-fire.
+          const refsAtStart = await Git.forEachRef(task.workingDir)
+            .then(parseRefLines)
+            .catch(() => undefined);
           this.runFacts.append(
             run.id,
             'run-start-state',
             // Spread into a fresh object literal to satisfy the store's
             // `Record<string, unknown>` payload — the same idiom as run-settle.ts.
-            { ...gate.startState },
+            { ...gate.startState, ...(refsAtStart ? { refsAtStart } : {}) },
           );
           workspace.baseRev = probe.headOid;
           workspace.startDirty = false; // admission guarantees a clean context
@@ -960,6 +977,15 @@ export class Runner {
    * artifact and the operator's checkout is coherent again.
    */
   private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
+    if (workspace.retainForBranchViolation) {
+      // Branch-contract violation (issue #151): the git state IS the evidence.
+      // Retain the worktree/refs exactly as the agent left them — do not restore
+      // the direct-mode checkout or tear the worktree down — until an operator
+      // dispositions the escalation (reliability-design Unit D). The harness is
+      // still killed and the tailer stopped by the `finalize()` closure; only the
+      // git teardown is skipped here.
+      return;
+    }
     if (workspace.directIsolation) {
       // Direct-mode execution isolation (issue #152): the Run executed on a
       // detached HEAD so its commits never moved the live target branch. Undo
@@ -997,6 +1023,66 @@ export class Runner {
       await restoreLiveCheckout(task.workingDir, isolation.startBranch);
     } catch {
       // Non-fatal: recorded start-state + owned-ref tracking are the backstop.
+    }
+  }
+
+  /**
+   * Classify an afk **direct** Run's git outcome against the branch contract in
+   * `validating` (issue #151, reliability-design Unit D). Gathers the observation
+   * the pure {@link classifyBranchOutcome} (issue #150) needs — the recorded
+   * start-state (issue #149) for the "before" side, live git reads for the
+   * "after" side — and returns it alongside the classification, or `null` when
+   * the check does not apply (worktree mode, a native direct Run, or a pre-#151
+   * Run with no recorded ref snapshot). The caller reads the observation for the
+   * structured branch-violation report, so it is never looked up twice.
+   *
+   * Pins the private direct ref (issue #152; idempotent — `finalizeWorkspace`
+   * pins it again on the clean path) so a normal detached HEAD sits on a ref
+   * Harmonic can name (the classifier's R3/R5) rather than reading as an unknown
+   * commit. It never restores or tears down the checkout — that stays
+   * `finalizeWorkspace`'s job, so a violation's evidence survives. Best-effort:
+   * any git read failure returns `null` (skip) rather than fabricating a
+   * violation; `Git.isAncestor` already resolves a missing ref to `false` (a real
+   * divergence signal) without throwing.
+   */
+  private async classifyBranchContract(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Workspace,
+  ): Promise<{ observation: BranchContractObservation; verdict: BranchClassification } | null> {
+    const start = this.startStateOf(run.id);
+    if (!workspace.directIsolation || !start || !start.refsAtStart) return null;
+    const dir = task.workingDir;
+    try {
+      // Pin the agent's commit chain onto the private owned ref now, so a normal
+      // detached HEAD is explained by an owned ref tip; idempotent.
+      await captureDirectHead(dir, run.id);
+      const [refLines, headCommit, headBranch] = await Promise.all([
+        Git.forEachRef(dir),
+        Git.revParse(dir, 'HEAD'),
+        Git.symbolicBranch(dir),
+      ]);
+      const intendedBranch = start.startBranch;
+      const [intendedContainsStart, intendedContainsHead] = await Promise.all([
+        Git.isAncestor(dir, intendedBranch, start.startCommit),
+        Git.isAncestor(dir, intendedBranch, headCommit),
+      ]);
+      const observation: BranchContractObservation = {
+        runId: run.id,
+        intendedBranch,
+        startCommit: start.startCommit,
+        expectedWorktreePath: start.worktreePath,
+        headBranch,
+        headCommit,
+        worktreePath: dir,
+        refDeltas: diffRefs(start.refsAtStart, parseRefLines(refLines)),
+        reachability: { intendedContainsStart, intendedContainsHead },
+      };
+      return { observation, verdict: classifyBranchOutcome(observation) };
+    } catch {
+      // A git read failed — treat as not-applicable rather than manufacturing a
+      // violation; the boot sweep + owned-ref tracking are the backstop.
+      return null;
     }
   }
 
@@ -1774,6 +1860,36 @@ export class Runner {
       if (!escalating && !afkUnresolved) {
         advancePhase('validating', autoDriven ? 'auto' : 'human');
         await this.runCandidateSnapshot(task, run, workspace, record, healCtx !== undefined);
+        // Branch-contract enforcement (issue #151, reliability-design Unit D):
+        // still in `validating`, before any checkout restore / worktree teardown,
+        // classify the Run's git outcome against the recorded start-state (#149)
+        // with the pure #150 classifier. An **ambiguous** outcome — a stray
+        // branch, a switched/unknown HEAD, a moved target ref — is a contract
+        // break Harmonic must not silently verify or land: emit the structured
+        // branch-violation fact, retain the refs as evidence, and Escalate. A
+        // clean/recoverable outcome (the expected direct-mode detached-HEAD
+        // footprint) proceeds; its deterministic restore is `finalize()`'s job.
+        const branch = await this.classifyBranchContract(task, run, workspace);
+        if (branch && branch.verdict.outcome === 'ambiguous') {
+          const { observation } = branch;
+          const verdict = branch.verdict;
+          this.runFacts.append(run.id, 'branch-violation', {
+            outcome: verdict.outcome,
+            reason: verdict.reason,
+            detail: verdict.detail,
+            deltas: verdict.deltas,
+            intendedBranch: observation.intendedBranch,
+            headBranch: observation.headBranch,
+            headCommit: observation.headCommit,
+          });
+          record('lifecycle', { event: 'branch-violation', reason: verdict.reason, detail: verdict.detail });
+          // Retain the worktree/refs for operator disposition (finalizeWorkspace
+          // skips its teardown while this is set) and route through the shared
+          // escalation tail below — finalize → usage → settleEscalated — rather
+          // than re-implementing it here.
+          workspace.retainForBranchViolation = true;
+          escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
+        }
       }
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);

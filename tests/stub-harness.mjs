@@ -24,6 +24,7 @@
 // "method not found" error), exercising Harmonic's boundary-queue fallback.
 import { createInterface } from 'node:readline';
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 
 // Startup-crash mode: emulate a harness (codex-acp, issue 22) that dies
@@ -108,6 +109,18 @@ async function handlePrompt(msg) {
     const path = resolve(process.cwd(), rel);
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content);
+  }
+
+  // Simulate an agent running raw git in its working directory (issue #151
+  // branch-contract tests): each entry is an argv array run as `git -C <cwd>
+  // ...argv`, e.g. `["checkout","-b","stray"]`. Best-effort — a failing command
+  // is swallowed and the test asserts against the resulting git state.
+  for (const argv of scenario.gitExec ?? []) {
+    try {
+      execFileSync('git', ['-C', process.cwd(), ...argv], { stdio: 'ignore' });
+    } catch {
+      // ignore; the resulting repo state is what the test checks
+    }
   }
 
   for (const update of scenario.updates ?? []) {

@@ -70,6 +70,16 @@ export interface RunStartState {
    * landing branch.
    */
   landingBranch?: string;
+  /**
+   * The contract-relevant ref snapshot (local branches + Harmonic-owned refs)
+   * captured at Run start, keyed full-ref-name → OID (issue #151). The "before"
+   * side of the `validating` branch-contract diff: comparing it against the refs
+   * at settle surfaces any stray branch the agent created or target ref it moved.
+   * Recorded by the Runner (git I/O), so `evaluateAdmission` stays pure and this
+   * is absent from a plain admission fixture; a Run without it (a pre-#151 Run)
+   * simply skips the branch-contract check.
+   */
+  refsAtStart?: Record<string, string>;
 }
 
 export type AdmissionResult =

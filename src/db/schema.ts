@@ -457,6 +457,12 @@ export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
  * the separate `guardrail_events` log (see below); this fact type is the
  * disposition-facing signal that a trip happened.
  *
+ * `branch-violation` (issue #151, reliability-design Unit D) now has an emitter
+ * too: the `validating`-phase branch-contract check (`classifyBranchOutcome`,
+ * issue #150). On an ambiguous git outcome the Runner appends this fact carrying
+ * the structured branch-violation report and Escalates. It holds the precedence
+ * slot already reserved in `DISPOSITION_PRECEDENCE` (just below `escalate`).
+ *
  * `run-start-state` (issue #149, reliability-design Unit D) is the one **non-
  * ending** fact in this set: it records an afk direct Run's admitted start-state
  * (repo identity, start branch, start commit OID, worktree path, dirty
@@ -468,6 +474,7 @@ export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
 export const RUN_FACT_TYPES = [
   'operator-cancel',
   'escalate',
+  'branch-violation',
   'review-sla-expiry',
   'agent-finish/unresolved',
   'failed',
