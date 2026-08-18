@@ -55,6 +55,24 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     }
   };
 
+  /** Same as {@link wrap}, for a tool whose handler is async (issue #161's
+   * `force_land_epic` is the first — every existing tool is synchronous). */
+  const wrapAsync = <A, R>(fn: (args: A) => Promise<R>) => {
+    return async (args: A) => {
+      try {
+        return json(await fn(args));
+      } catch (err) {
+        if (err instanceof DomainError) {
+          return {
+            content: [{ type: 'text' as const, text: `Error (${err.code}): ${err.message}` }],
+            isError: true,
+          };
+        }
+        throw err;
+      }
+    };
+  };
+
   server.registerTool(
     'create_task',
     {
@@ -258,6 +276,33 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       ctx.leases.forceRelease(key);
       ctx.autoRunner.poke();
       return { ok: true };
+    }),
+  );
+
+  server.registerTool(
+    'force_land_epic',
+    {
+      description:
+        "Operator only. Force-land an Epic's ready subset: merge whatever is folded into its integration branch " +
+        'into the default branch now, bypassing the all-members-completed gate — but not Verification, which ' +
+        'still gates the merge (a failing whole-Epic Verification still escalates rather than landing). Returns ' +
+        'the land attempt outcome, or a forbidden/not-found domain error when tracking is off for the Workspace.',
+      inputSchema: {
+        workspaceId: z.number().int().positive().describe('The owning Workspace id'),
+        epicRef: z.number().int().positive().describe("The Epic's tracker ref"),
+      },
+    },
+    wrapAsync(async ({ workspaceId, epicRef }) => {
+      requireOperator();
+      ctx.workspaces.get(workspaceId); // 404s an unknown Workspace before touching the tracker
+      const outcome = await ctx.trackerManager.forceLandEpic(workspaceId, epicRef);
+      if (!outcome) {
+        throw new DomainError(
+          'conflict',
+          `no active whole-Epic land coordinator for workspace ${workspaceId} (tracking is off or the loop has not started)`,
+        );
+      }
+      return outcome;
     }),
   );
 

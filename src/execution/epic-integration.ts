@@ -1,6 +1,7 @@
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { deriveEpics } from '../domain/epic-derivation.js';
+import type { MemberLandState } from '../domain/epic-land.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { Git } from './git.js';
 
@@ -30,6 +31,35 @@ export interface EpicGit {
  * re-attempt's carried-forward base at worst.
  */
 const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'blocked', 'ready']);
+
+/**
+ * The whole-Epic land trigger (issue #161) the reconcile fires per derived Epic
+ * each poll. A structural interface, not the concrete {@link EpicLandCoordinator}
+ * import, so this module and the coordinator (which imports
+ * {@link integrationBranchName} from here) don't form a cycle. `submit` is a
+ * *level* trigger: harmless to call every poll — it no-ops until every member is
+ * `completed`, and after a successful land the retired branch makes it a `noop`.
+ */
+export interface EpicLandTrigger {
+  submit(target: { ref: number; members: MemberLandState[] }, opts?: { force?: boolean }): Promise<unknown>;
+}
+
+/**
+ * Reduce a member's mirrored Task to its land state for the whole-Epic land
+ * decision (issue #161): `completed` once it has landed onto the integration
+ * branch (Task state `completed`); `blocked` when it cannot land (escalated to a
+ * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
+ * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
+ */
+export function reduceMemberState(task: TaskRow | undefined): MemberLandState {
+  if (!task) return 'pending';
+  // `completed` wins over the `escalated` flag deliberately: a member that
+  // reached `completed` landed its work onto the integration branch, so a stale
+  // escalated flag from an earlier attempt must not hold the whole Epic back.
+  if (task.state === 'completed') return 'completed';
+  if (task.escalated || task.state === 'failed' || task.state === 'cancelled') return 'blocked';
+  return 'pending';
+}
 
 /**
  * The per-Epic integration-branch lifecycle, owned by Harmonic (issue #159,
@@ -69,7 +99,24 @@ export class EpicIntegrationCoordinator {
     private readonly workingDir: string,
     private readonly git: EpicGit = Git,
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
+    /**
+     * The whole-Epic land trigger (issue #161). Absent ⇒ no automatic land (the
+     * base-set half of the lifecycle runs unchanged, #159). When present, each
+     * poll offers every derived Epic for a land attempt — a level trigger that
+     * no-ops until every member is `completed` and the integrated whole Verifies.
+     * Usually attached after construction via {@link attachLandTrigger} so its
+     * `retire` callback can close over this same coordinator's retire method
+     * without a construction cycle.
+     */
+    private epicLand?: EpicLandTrigger,
   ) {}
+
+  /** Attach (or replace) the whole-Epic land trigger after construction (issue
+   * #161). The manager builds the land coordinator with a `retire` bound to this
+   * instance's {@link retireIntegrationBranch}, then wires it back in here. */
+  attachLandTrigger(trigger: EpicLandTrigger): void {
+    this.epicLand = trigger;
+  }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
     const epics = deriveEpics(tickets);
@@ -78,7 +125,11 @@ export class EpicIntegrationCoordinator {
     // Publish the gate set before any await so a racing pick already sees these
     // refs as base-pending (their `baseBranch` is still null until below).
     this.readyMemberRefs = readyRefs;
-    if (readyRefs.size === 0) return;
+    // Nothing to base and no land trigger ⇒ no work this poll (preserves #159's
+    // no-op when the whole-Epic land isn't wired). With a land trigger present we
+    // must run even with an empty ready frontier: an Epic whose members are all
+    // `completed` has no ready members yet still needs its land attempt.
+    if (readyRefs.size === 0 && this.epicLand === undefined) return;
 
     const byRef = new Map<number, TaskRow>();
     for (const task of mirrored) {
@@ -93,24 +144,42 @@ export class EpicIntegrationCoordinator {
     if (defaultBranch === null) return;
 
     for (const epic of epics) {
-      if (epic.ready.length === 0) continue;
-      const branch = integrationBranchName(epic.ref);
-      try {
-        await this.ensureIntegrationBranch(branch, defaultBranch);
-        for (const memberRef of epic.ready) {
-          const task = byRef.get(memberRef);
-          if (!task) continue;
-          // Re-read live state: the snapshot predates this poll's picks, so a
-          // member the Auto-Runner already spawned reads `running` here even if
-          // the snapshot said `ready` — its base is frozen, leave it.
-          const live = this.tasks.get(task.id);
-          if (PRE_SPAWN.has(live.state) && live.baseBranch !== branch) {
-            this.tasks.setBaseBranch(live.id, branch);
+      // Base-set half (#159): cut/reuse the integration branch and point each
+      // ready member at it. Only Epics with a ready frontier need this.
+      if (epic.ready.length > 0) {
+        const branch = integrationBranchName(epic.ref);
+        try {
+          await this.ensureIntegrationBranch(branch, defaultBranch);
+          for (const memberRef of epic.ready) {
+            const task = byRef.get(memberRef);
+            if (!task) continue;
+            // Re-read live state: the snapshot predates this poll's picks, so a
+            // member the Auto-Runner already spawned reads `running` here even if
+            // the snapshot said `ready` — its base is frozen, leave it.
+            const live = this.tasks.get(task.id);
+            if (PRE_SPAWN.has(live.state) && live.baseBranch !== branch) {
+              this.tasks.setBaseBranch(live.id, branch);
+            }
           }
+        } catch (err) {
+          // One Epic's git hiccup must not starve its siblings' base assignment.
+          this.onError(`epic ${epic.ref} integration branch reconcile failed: ${String(err)}`);
         }
-      } catch (err) {
-        // One Epic's git hiccup must not starve its siblings' base assignment.
-        this.onError(`epic ${epic.ref} integration branch reconcile failed: ${String(err)}`);
+      }
+
+      // Land half (#161): offer the Epic for a whole-Epic land. Fire-and-forget —
+      // a whole-Epic Verification can take minutes and must not stall the poll
+      // loop; the coordinator's own in-flight guard prevents a redundant second
+      // attempt while one is running. Its outcome (land/escalate/wait) is the
+      // coordinator's to surface; here only an unexpected throw is logged.
+      if (this.epicLand) {
+        const members = epic.members.map((ref) => {
+          const task = byRef.get(ref);
+          return reduceMemberState(task ? this.tasks.get(task.id) : undefined);
+        });
+        void this.epicLand
+          .submit({ ref: epic.ref, members })
+          .catch((err) => this.onError(`epic ${epic.ref} whole-Epic land attempt failed: ${String(err)}`));
       }
     }
   }

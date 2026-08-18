@@ -44,6 +44,7 @@ import type { MirrorClaim } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
 import { leaseRoutes } from './routes/leases.js';
+import { epicRoutes } from './routes/epics.js';
 import { mapRoutes } from './routes/maps.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { conversationRoutes } from './routes/conversations.js';
@@ -107,6 +108,12 @@ function scopedKeyAllowed(path: string): boolean {
   // and falls through to the default `false`, same as an unrecognized path; this
   // early return exists only to document the decision alongside its siblings.
   if (path === '/api/leases' || path.startsWith('/api/leases/')) return false;
+  // The whole-Epic force-land (issue #161) is a manual operator override, same
+  // footing as lease supersede/unlock — an agent never force-lands an Epic on
+  // its own initiative. This path matches no rule below and falls through to
+  // the default `false`; this early return exists only to document the
+  // decision alongside its siblings.
+  if (/^\/api\/workspaces\/\d+\/epics\/\d+\/force-land$/.test(path)) return false;
   // Accept/reject are human-only, always — never reachable by a run-scoped key.
   if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
@@ -442,6 +449,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (taskId) => {
       void runner.reopenClosedMirrored(taskId);
     },
+    // Resolve each Workspace's Verification verifiers for the whole-Epic land
+    // (issue #161): read per poll so a config change follows without a rebuild.
+    () => configStore.get(),
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   bus.on('task_changed', (task) => {
@@ -669,6 +679,7 @@ not resolved yet.`;
   await app.register(channelRoutes, { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
   await app.register(leaseRoutes, { prefix: '/api' });
+  await app.register(epicRoutes, { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
