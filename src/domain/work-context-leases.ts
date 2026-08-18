@@ -21,8 +21,10 @@ function isUniqueViolation(err: unknown): boolean {
  * already-held (or suspect) key rather than racing a select-then-insert.
  *
  * Scope is deliberately narrow: this is the persisted substrate only. Nothing
- * here calls into the Runner, enforces TTLs (#122), or reconciles a `suspect`
- * lease (#123) — those are separate tickets.
+ * here calls into the Runner or enforces TTLs (#122). The boot reconciliation
+ * that flips a dead owner's lease to `suspect` or releases a provably-clean one
+ * (#123) lives in `CrashRecoveryCoordinator`; it drives the `listAll` /
+ * `markSuspect` / `release` primitives here.
  */
 export class WorkContextLeaseStore {
   constructor(private readonly db: Db) {}
@@ -132,5 +134,23 @@ export class WorkContextLeaseStore {
 
   getByOwner(ownerRunId: number): WorkContextLeaseRow | undefined {
     return this.db.select().from(workContextLeases).where(eq(workContextLeases.ownerRunId, ownerRunId)).get();
+  }
+
+  /** Every lease row currently persisted — the boot reconciliation sweep
+   * (#123) reads this to reconcile leases a crash left behind. */
+  listAll(): WorkContextLeaseRow[] {
+    return this.db.select().from(workContextLeases).all();
+  }
+
+  /**
+   * Flip `key`'s lease to `suspect` (#123): a dead owner's claim that could not
+   * be proven safe to free (dirty context / detached HEAD / retained worktree).
+   * A suspect lease still holds the key — the unique index is on `key` alone, so
+   * it keeps blocking new acquires — and stays owned and diagnosable until
+   * operator disposition; it is never auto-released. A no-op if `key` holds
+   * nothing.
+   */
+  markSuspect(key: string): void {
+    this.db.update(workContextLeases).set({ state: 'suspect' }).where(eq(workContextLeases.key, key)).run();
   }
 }

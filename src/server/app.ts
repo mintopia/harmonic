@@ -233,7 +233,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // may already have applied an irreversible effect), the turn queue's
   // pending/in-flight rows are cancelled/resolved, and only then does the
   // generic orphan sweep fail whatever is still `running` — "interrupted",
-  // never silently re-run. Each orphan's Work Context lease is released too.
+  // never silently re-run. Finally, every Work Context lease a crash left
+  // behind is reconciled (issue #123): released if its context is provably
+  // clean, else flipped to `suspect` — never left silently held by a dead owner.
   const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, leases, reviewSettle, landing, landingJournal, new TurnQueueStore(db));
   await crashRecovery.reconcile();
   // A fresh process is executing nothing, so any Task still `running` was

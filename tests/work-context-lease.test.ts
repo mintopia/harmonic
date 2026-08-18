@@ -136,4 +136,45 @@ describe('WorkContextLeaseStore (issue #118)', () => {
       expect(leases.getByKey('direct:/tmp/other-repo')).toMatchObject({ ownerRunId: otherRunId });
     });
   });
+
+  describe('listAll / markSuspect (issue #123)', () => {
+    it('listAll returns every seeded lease row', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+      leases.acquire('direct:/tmp/other-repo', otherRunId, 'running');
+
+      const all = leases.listAll();
+      expect(all).toHaveLength(2);
+      expect(all.map((l) => l.key).sort()).toEqual(['direct:/tmp/other-repo', 'direct:/tmp/repo']);
+    });
+
+    it('markSuspect flips state to suspect and leaves the row in place', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+
+      leases.markSuspect('direct:/tmp/repo');
+
+      const lease = leases.getByKey('direct:/tmp/repo');
+      expect(lease).toBeDefined();
+      expect(lease?.state).toBe('suspect');
+      expect(lease?.ownerRunId).toBe(ownerRunId);
+    });
+
+    it('a suspect lease still blocks a fresh acquire on the same key', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+      leases.markSuspect('direct:/tmp/repo');
+
+      let caught: unknown;
+      try {
+        leases.acquire('direct:/tmp/repo', otherRunId, 'running');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      expect((caught as DomainError).code).toBe('conflict');
+    });
+
+    it('markSuspect is a no-op when the key holds nothing', () => {
+      expect(() => leases.markSuspect('direct:/tmp/nothing-here')).not.toThrow();
+      expect(leases.getByKey('direct:/tmp/nothing-here')).toBeUndefined();
+    });
+  });
 });

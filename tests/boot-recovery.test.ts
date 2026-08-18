@@ -1,7 +1,27 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { workContextKey } from '../src/domain/work-context-key.js';
+
+const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
+
+/** A throwaway git repo on branch main with one committed README, mirroring
+ * crash-recovery.test.ts's `makeRepo` — a real, clean, on-branch context for
+ * the direct-mode lease reconciliation tests (issue #123). */
+function makeRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'harmonic-boot-recovery-repo-'));
+  execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
+  git(dir, 'config', 'user.name', 'Test');
+  git(dir, 'config', 'user.email', 'test@example.com');
+  writeFileSync(join(dir, 'README.md'), '# repo\n');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-m', 'init');
+  return dir;
+}
 
 /**
  * Boot crash-recovery: a fresh process executes nothing, so any Task left
@@ -351,5 +371,84 @@ describe('boot crash-recovery', () => {
     sqlite.close();
     expect(escalateFacts.n).toBe(1);
     expect(turn.status).toBe('failed'); // reconciled, not left in flight or replayed
+  });
+
+  it('reconciles a Work Context lease a dead owner left behind at boot: released when provably clean, suspect when dirty (issue #123)', async () => {
+    const repo = makeRepo();
+    try {
+      server = await startServer(stubHarness());
+      const created = await server.api('POST', '/api/tasks', {
+        prompt: JSON.stringify({ stopReason: 'end_turn' }),
+        workingDir: repo,
+        isolationMode: 'direct',
+      });
+      const taskId = created.body.id as number;
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+      const runId = started.body.id as number;
+      const dataDir = server.dataDir;
+      const key = workContextKey({ isolationMode: 'direct', workingDir: repo });
+
+      // Simulate the crash: the process died mid-flight — the Run is left
+      // `running` in a generic (non-parked, non-landing) phase, and its Work
+      // Context lease was never released (a Run that settled cleanly would have
+      // released it itself).
+      await server.app.close();
+      let sqlite = new Database(join(dataDir, 'harmonic.db'));
+      sqlite.prepare("UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?").run(runId);
+      sqlite.prepare("UPDATE tasks SET state = 'running' WHERE id = ?").run(taskId);
+      sqlite
+        .prepare(
+          `INSERT INTO work_context_leases (key, phase, owner_run_id, heartbeat, expiry, state, acquired_at)
+           VALUES (?, 'running', ?, ?, NULL, 'held', ?)`,
+        )
+        .run(key, runId, Date.now(), Date.now());
+      sqlite.close();
+
+      server = await startServer(stubHarness(), { dataDir });
+
+      // `repo` is clean and on branch `main` — provably safe to free.
+      let check = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+      const row = check.prepare('SELECT state FROM work_context_leases WHERE key = ?').get(key);
+      check.close();
+      expect(row).toBeUndefined();
+
+      // A second dead-owner lease, this time over a dirty working tree, flips
+      // to `suspect` instead of being released.
+      writeFileSync(join(repo, 'untracked.txt'), 'agent leftovers');
+      const created2 = await server.api('POST', '/api/tasks', {
+        prompt: JSON.stringify({ stopReason: 'end_turn' }),
+        workingDir: repo,
+        isolationMode: 'direct',
+      });
+      const taskId2 = created2.body.id as number;
+      const started2 = await server.api('POST', `/api/tasks/${taskId2}/run`);
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId2}`)).body.state === 'awaiting-review');
+      const runId2 = started2.body.id as number;
+
+      await server.app.close();
+      sqlite = new Database(join(dataDir, 'harmonic.db'));
+      sqlite.prepare("UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?").run(runId2);
+      sqlite.prepare("UPDATE tasks SET state = 'running' WHERE id = ?").run(taskId2);
+      sqlite
+        .prepare(
+          `INSERT INTO work_context_leases (key, phase, owner_run_id, heartbeat, expiry, state, acquired_at)
+           VALUES (?, 'running', ?, ?, NULL, 'held', ?)`,
+        )
+        .run(key, runId2, Date.now(), Date.now());
+      sqlite.close();
+
+      server = await startServer(stubHarness(), { dataDir });
+
+      check = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+      const suspectRow = check.prepare('SELECT state FROM work_context_leases WHERE key = ?').get(key) as
+        | { state: string }
+        | undefined;
+      check.close();
+      expect(suspectRow).toBeTruthy();
+      expect(suspectRow?.state).toBe('suspect');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
