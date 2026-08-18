@@ -600,6 +600,7 @@ export const RUN_FACT_TYPES = [
   'run-start-state',
   'session-resumed',
   'resume-entry',
+  'session-continuation',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 

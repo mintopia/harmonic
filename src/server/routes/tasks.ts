@@ -131,6 +131,10 @@ const runSchema = z
     /** ACP stopReason from the session/prompt result. */
     stopReason: z.string().nullable().meta({ example: 'end_turn' }),
     sessionId: z.string().nullable().meta({ example: 'a3f2c1d0-8b4e-4c1a-9f7d-2e6b5a0c3d91' }),
+    /** The durable Harmonic Session (issue #141) this Run bound to on dispatch;
+     * a retry/reject continuation (issue #147) inherits its predecessor's, so two
+     * Runs sharing a `sessionRowId` continued the same ACP conversation. */
+    sessionRowId: z.number().nullable().meta({ example: 42 }),
     /** The exact prompt text sent to the harness for this Run; null for
      * pre-feature Runs and until the prompt turn is sent. */
     prompt: z.string().nullable().meta({ example: 'Fix the rate-limiting bug in src/api.ts' }),

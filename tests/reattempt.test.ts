@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startServer, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 describe('linked re-attempts', () => {
   let server: TestServer;
@@ -93,5 +93,41 @@ describe('linked re-attempts', () => {
   it('404s for a missing task', async () => {
     const res = await server.api('POST', '/api/tasks/999999/reattempt', { feedback: 'x' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('linked re-attempts continue in the same Session (issue #147)', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer(stubHarness());
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('a reattempt of a rejected task reloads the ORIGINAL task’s Session', async () => {
+    const original = (await server.api('POST', '/api/tasks', { prompt: 'do the thing' })).body;
+    await server.api('POST', `/api/tasks/${original.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${original.id}`)).body.state === 'awaiting-review');
+    const origRun = (await server.api('GET', `/api/tasks/${original.id}/runs`)).body.runs[0];
+    expect(origRun.sessionRowId).not.toBeNull();
+    expect(origRun.sessionId).not.toBeNull();
+
+    // Reject → the original reaches a terminal (failed) state so it can be re-attempted.
+    await server.api('POST', `/api/tasks/${original.id}/reject`, { feedback: 'try again' });
+
+    const reattempt = (await server.api('POST', `/api/tasks/${original.id}/reattempt`, { feedback: 'try again' })).body;
+    const started = await server.api('POST', `/api/tasks/${reattempt.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${reattempt.id}`)).body.state === 'awaiting-review');
+
+    const run2 = (await server.api('GET', `/api/tasks/${reattempt.id}/runs`)).body.runs.find(
+      (r: { id: number }) => r.id === started.body.id,
+    );
+    // The re-attempt is a NEW Task (linked via reattemptOf), yet its Run reloads
+    // the original Task's Session (session/load) — the fix continues the same
+    // conversation across the re-attempt boundary, not a cold restart.
+    expect(run2.sessionRowId).toBe(origRun.sessionRowId);
+    expect(run2.sessionId).toBe(origRun.sessionId);
   });
 });

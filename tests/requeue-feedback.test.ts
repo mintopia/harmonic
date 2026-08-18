@@ -27,6 +27,16 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
+/**
+ * The requeue half of retry continuation (issue #147): this suite drives
+ * `TaskService` directly with no Runner/ACP, so it verifies how a requeue places
+ * the operator's feedback (baked into a native prompt vs carried in the column)
+ * — the input a continuation Run then runs. It has no dispatch and therefore no
+ * Session to observe; the assertion that the requeued fix continues in the SAME
+ * Session (session/load, not a cold session/new) lives in the dispatching sibling
+ * `review.test.ts` ("a rejected task requeued and re-run continues in the SAME
+ * Session"). The two together cover the requeue-continuation acceptance criterion.
+ */
 describe('requeue feedback — origin-aware placement', () => {
   let dir: string;
   let db: Db;

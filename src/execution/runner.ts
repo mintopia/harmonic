@@ -16,9 +16,16 @@ import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
-import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
+import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
 import { SessionStore } from '../domain/sessions.js';
+import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '../domain/session-resume.js';
+import {
+  planSessionContinuation,
+  sessionWarmthFacts,
+  type ContinuationTrigger,
+} from '../domain/session-continuation.js';
+import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
@@ -497,8 +504,14 @@ export class Runner {
       );
       return created;
     });
-    void this.drive(task, run, harness).catch(() => {});
-    return run;
+    // Retry & reject continuation (issue #147): if this Run continues a prior
+    // rejected, Session-bound Run, bind it to that same Session so dispatch
+    // reloads the conversation (`session/load`) instead of a cold `session/new`.
+    // Done outside the claim transaction (like `drive`), so a continuation that
+    // can't bind still dispatches fresh — never blocked.
+    const bound = this.bindContinuationIfEligible(task, run);
+    void this.drive(task, bound, harness).catch(() => {});
+    return bound;
   }
 
   /** Whether the Run currently holding a Work Context is a predecessor that
@@ -514,6 +527,97 @@ export class Runner {
     if (successor.chainId == null) return false;
     const owner = this.runStore.get(existingOwnerRunId);
     return owner?.chainId != null && owner.chainId === successor.chainId;
+  }
+
+  /**
+   * Resolve the Session a retry/reject continuation should reload (issue #147).
+   * The follow-up Run continues the line of work of a prior Run a human
+   * rejected: for a requeue it is the same Task; for a reattempt (a new Task
+   * linked via `reattemptOf`) it is the ORIGINAL Task. Returns the most-recent
+   * such prior Run, its durable Session, and the continuation trigger — or null
+   * when there is nothing to continue (a fresh Task, no Session-bound rejected
+   * prior, or a retired-and-swept Session). Only `human-reject` has a live
+   * producer today: the verify/self-heal path re-drives the *same* Run and
+   * automatic-retry has no trigger, so both stay latent in the seam.
+   */
+  private resolveContinuationSource(
+    task: TaskRow,
+  ): { prior: RunRow; session: SessionRow; trigger: ContinuationTrigger } | null {
+    const sourceTaskId = task.reattemptOf ?? task.id;
+    const priors = this.runStore.listForTask(sourceTaskId); // ordered by attempt asc
+    for (let i = priors.length - 1; i >= 0; i--) {
+      const prior = priors[i]!;
+      if (prior.sessionRowId === null) continue;
+      if (prior.review !== 'rejected' || prior.reviewedAt === null) continue;
+      try {
+        const session = this.sessionStore.get(prior.sessionRowId);
+        return { prior, session, trigger: 'human-reject' };
+      } catch {
+        continue; // the Session row is gone (retired + swept) — dispatch fresh
+      }
+    }
+    return null;
+  }
+
+  /**
+   * If `run` continues a prior rejected Session-bound Run, bind it to that
+   * Session so dispatch reloads the conversation (issue #147). Composes the pure
+   * seams — `assessResumeEligibility` (#142: is the Session reloadable into this
+   * environment?), `planSessionContinuation` (#147: how the trigger continues),
+   * `SessionStore.reactivate` (#148: un-idle a retained Session). Eligible → the
+   * Run inherits the prior `sessionRowId`/harness session id (dispatch then takes
+   * the `session/load` branch and `recordDispatch` upserts the same row, so
+   * `sessionRowId` stays stable); incompatible → the Run is returned unchanged
+   * for a fresh `session/new`. The operator's requeue/reattempt IS the
+   * "continue full" choice, so `offer-choice` resolves to the same-Session
+   * option (its cost estimate is recorded for the audit trail). Best-effort and
+   * total: any failure falls through to a cold dispatch, never blocking the Run.
+   */
+  private bindContinuationIfEligible(task: TaskRow, run: RunRow): RunRow {
+    try {
+      const src = this.resolveContinuationSource(task);
+      if (!src) return run;
+      const env: ResumeEnvironment = {
+        harness: src.session.harness,
+        adapterVersion: adapterVersion(task.harness),
+        model: task.model,
+        // The Session's own recorded permission mode is the only mode known
+        // pre-handshake; `AcpDriver.load` + the post-handshake setMode do the
+        // authoritative live re-verification. Conservative on purpose.
+        availablePermissionModes: src.session.permissionMode ? [src.session.permissionMode] : [],
+        cwd: repoKey(task.workingDir),
+      };
+      const stored = { ...sessionFacts(src.session), cwd: repoKey(src.session.cwd) };
+      if (!assessResumeEligibility(stored, env).eligible) return run;
+
+      const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session), Date.now());
+      const estimate = plan.mode === 'offer-choice' ? plan.continueFull.estimate : null;
+
+      const bound = this.runStore.update(run.id, {
+        sessionRowId: src.session.id,
+        sessionId: src.session.harnessSessionId,
+      });
+      try {
+        this.sessionStore.reactivate(src.session.id, Date.now());
+      } catch {
+        /* best-effort; reactivate is a no-op unless the Session is idle */
+      }
+      this.runFacts.append(
+        run.id,
+        'session-continuation',
+        {
+          fromRunId: src.prior.id,
+          sessionRowId: src.session.id,
+          harnessSessionId: src.session.harnessSessionId,
+          trigger: src.trigger,
+          estimate,
+        },
+        Date.now(),
+      );
+      return bound;
+    } catch {
+      return run; // never let a continuation attempt block a dispatch
+    }
   }
 
   /** The Work Context lease key for this Run, matching prepareWorkspace's
@@ -2216,49 +2320,72 @@ export class Runner {
       // unpinned session inherits the operator's persisted model choice
       // (issue 25). A rejected pin fails the run like any other request.
       const modelId = adapterFor(task.harness).sessionModelId?.(task.model);
-      await driver.handshake({
-        cwd: workspace.cwd,
-        mcpServers,
-        modelId,
-        // Unit C (#141): snapshot what the harness advertised at `initialize`
-        // (protocol/agent capabilities incl. `loadSession`) — previously
-        // discarded — so the durable Session below can record it.
-        onInitialize: (result) => {
-          sessionInit = result;
-        },
-        // Persist the id before the optional model pin, so a failed pin
-        // still leaves a session for usage backfill.
-        onSessionCreated: (sessionId) => {
-          this.runStore.update(run.id, { sessionId });
-          // Unit C (#141): persist the durable Session alongside the Run — its
-          // harness/model/cwd identity, credential-free MCP templates (secrets
-          // stripped, never stored), and the captured `initialize` capability
-          // snapshot — the moment the harness session id is known, so it
-          // survives even if the model pin or permission-mode set then fails.
-          // Best-effort: this is written *alongside* the Run, so a Session
-          // persistence hiccup must never fail a dispatch that would otherwise
-          // proceed (AC: in-flight Run behaviour unchanged) — same discipline as
-          // the live-usage tailer's persist. Nothing reads the Session for
-          // coordination yet; a later dispatch/turn re-records it.
-          try {
-            const session = this.sessionStore.recordDispatch({
-              harness: task.harness,
-              harnessSessionId: sessionId,
-              model: task.model,
-              cwd: workspace.cwd,
-              workspaceId: task.workspaceId,
-              mcpTemplates: mcpServers,
-              capabilities: sessionInit,
-              adapterVersion: adapterVersion(task.harness),
-              now: Date.now(),
-            });
-            sessionRowId = session.id;
-            this.runStore.update(run.id, { sessionRowId: session.id });
-          } catch {
-            /* best-effort; the Session is additive, the Run proceeds regardless */
-          }
-        },
-      });
+      // Persist the harness session id + the durable Session (Unit C #141) the
+      // moment the id is known — shared by the fresh `session/new` and the
+      // reload (`session/load`, #147) paths so persistence is identical. It
+      // records the harness/model/cwd identity, credential-free MCP templates
+      // (secrets stripped, never stored) and the captured `initialize`
+      // capability snapshot; on a reload it upserts the SAME row (keyed on
+      // harness session id), keeping `run.sessionRowId` stable. Best-effort:
+      // written *alongside* the Run, so a Session persistence hiccup never fails
+      // a dispatch that would otherwise proceed (AC: in-flight Run unchanged).
+      const persistSession = (harnessSessionId: string) => {
+        this.runStore.update(run.id, { sessionId: harnessSessionId });
+        try {
+          const session = this.sessionStore.recordDispatch({
+            harness: task.harness,
+            harnessSessionId,
+            model: task.model,
+            cwd: workspace.cwd,
+            workspaceId: task.workspaceId,
+            mcpTemplates: mcpServers,
+            capabilities: sessionInit,
+            adapterVersion: adapterVersion(task.harness),
+            now: Date.now(),
+          });
+          sessionRowId = session.id;
+          this.runStore.update(run.id, { sessionRowId: session.id });
+        } catch {
+          /* best-effort; the Session is additive, the Run proceeds regardless */
+        }
+      };
+      // Snapshot the harness's `initialize` capabilities (incl. `loadSession`)
+      // for the durable Session; shared by both dispatch paths.
+      const onInitialize = (result: AcpInitializeResult) => {
+        sessionInit = result;
+      };
+      // Retry & reject continuation (issue #147): a first (non-corrective) turn
+      // on a Run pre-bound to a prior Session (`bindContinuationIfEligible`)
+      // reloads that conversation via `session/load` instead of a cold
+      // `session/new`, so the agent still remembers what it tried and the
+      // feedback it got. A corrective turn (self-heal #137 / re-merge #155)
+      // re-drives the SAME live process and must NOT reload — it carries its
+      // correction as prompt text below — so it always takes the fresh
+      // handshake. On any load incompatibility Harmonic fails forward to a fresh
+      // Session rather than leaving the Run session-less.
+      const continueSessionId = healCtx === undefined && remergeCtx === undefined ? run.sessionId : null;
+      if (continueSessionId) {
+        const outcome = await driver.load({
+          sessionId: continueSessionId,
+          cwd: workspace.cwd,
+          mcpServers,
+          modelId,
+          // The permission mode is re-established by the autoDriven setMode block
+          // below (identically to the session/new path), so it is not re-verified
+          // here — matching how a fresh dispatch establishes it after handshake.
+          onInitialize,
+        });
+        if (outcome.loaded) {
+          record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
+          persistSession(continueSessionId);
+        } else {
+          // Fail forward to a fresh Session — never leave the Run session-less.
+          record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
+          await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: persistSession });
+        }
+      } else {
+        await driver.handshake({ cwd: workspace.cwd, mcpServers, modelId, onInitialize, onSessionCreated: persistSession });
+      }
 
       // The session id is persisted; start tailing its native log (ADR 0010).
       this.tailer.start(run.id);

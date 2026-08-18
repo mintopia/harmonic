@@ -70,6 +70,30 @@ describe('review: accept / reject (direct mode)', () => {
     expect(echo.payload.content.text).toContain('not good enough');
   });
 
+  it('a rejected task requeued and re-run continues in the SAME Session (issue #147)', async () => {
+    const taskId = await runToAwaitingReview('continue me');
+    const run1 = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
+    // The first attempt bound a durable Session on dispatch.
+    expect(run1.sessionRowId).not.toBeNull();
+    expect(run1.sessionId).not.toBeNull();
+
+    await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'not yet' });
+    await server.api('POST', `/api/tasks/${taskId}/requeue`, { feedback: 'not yet' });
+    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+
+    const run2 = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.find(
+      (r: { id: number }) => r.id === started.body.id,
+    );
+    // The retry reloaded run1's Session via session/load rather than opening a
+    // cold session/new: the same durable Session row AND the same harness
+    // session id (the stub only yields the same session id through session/load —
+    // its session/new returns a fresh one). This is the #147 payoff: the fix
+    // continues in the same conversation.
+    expect(run2.sessionRowId).toBe(run1.sessionRowId);
+    expect(run2.sessionId).toBe(run1.sessionId);
+  });
+
   it('accept and reject are only available on awaiting-review tasks', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'p' });
     expect((await server.api('POST', `/api/tasks/${created.body.id}/accept`)).status).toBe(409);
