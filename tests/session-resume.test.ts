@@ -185,6 +185,8 @@ describe('assessResumeEligibility (issue #142)', () => {
         retireReason: null,
         retireDeadline: null,
         retiredAt: null,
+        resumeIncompatibilityReason: null,
+        resumeIncompatibilityDetail: null,
         createdAt: 0,
         updatedAt: 0,
       } satisfies SessionRow;

@@ -248,6 +248,34 @@ describe('Sessions (issue #141)', () => {
       });
     });
 
+    describe('recordResumeIncompatibility (issue #145 AC5)', () => {
+      it('a freshly-recorded Session has no resume incompatibility recorded', () => {
+        const created = store.recordDispatch(baseInput());
+        expect(created.resumeIncompatibilityReason).toBeNull();
+        expect(created.resumeIncompatibilityDetail).toBeNull();
+      });
+
+      it('persists the reason and detail on the original Session, touching updatedAt', () => {
+        const created = store.recordDispatch(baseInput());
+        const later = now + 5000;
+        const updated = store.recordResumeIncompatibility(
+          created.id,
+          'adapter-version-mismatch',
+          'stored adapter claude@1 != current claude@2',
+          later,
+        );
+        expect(updated.resumeIncompatibilityReason).toBe('adapter-version-mismatch');
+        expect(updated.resumeIncompatibilityDetail).toBe('stored adapter claude@1 != current claude@2');
+        expect(updated.updatedAt).toBe(later);
+        expect(updated.id).toBe(created.id);
+
+        const reread = store.get(created.id);
+        expect(reread.resumeIncompatibilityReason).toBe('adapter-version-mismatch');
+        expect(reread.resumeIncompatibilityDetail).toBe('stored adapter claude@1 != current claude@2');
+        expect(reread.updatedAt).toBe(later);
+      });
+    });
+
     describe('get', () => {
       it('returns the row for a known id', () => {
         const created = store.recordDispatch(baseInput());

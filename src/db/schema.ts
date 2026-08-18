@@ -976,6 +976,15 @@ export const sessions = sqliteTable(
      * the reason its retention deadline *will* retire it under. Null while
      * `active`. The operator-legible record of which retirement deadline fired. */
     retireReason: text('retire_reason').$type<SessionRetireReason>(),
+    /** The machine-usable reason a `session/load` resume was declined on this
+     * Session (a `ResumeIncompatibilityReason` from session-resume.ts or an
+     * `AcpLoadIncompatibility` from acp/driver.ts) — issue #145 AC5. Persisted
+     * as a plain string, not `$type`-constrained, to avoid a schema→domain
+     * import cycle. Null until a reload actually declines. */
+    resumeIncompatibilityReason: text('resume_incompatibility_reason'),
+    /** The human-legible detail accompanying {@link resumeIncompatibilityReason}
+     * — issue #145 AC5. Null until a reload actually declines. */
+    resumeIncompatibilityDetail: text('resume_incompatibility_detail'),
     /** Epoch ms at which an `idle` Session's retention window lapses and the sweep
      * retires it (issue #148) — the reject-continuation / retention-TTL deadline.
      * Null while `active` or already `retired`; a null on an `idle` Session means

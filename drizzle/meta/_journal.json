@@ -267,6 +267,13 @@
       "when": 1787046588197,
       "tag": "0037_odd_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1787050613148,
+      "tag": "0038_peaceful_king_cobra",
+      "breakpoints": true
     }
   ]
 }

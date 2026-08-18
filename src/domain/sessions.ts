@@ -210,6 +210,19 @@ export class SessionStore {
       .get()!;
   }
 
+  /** Record, on the ORIGINAL (dead) Session, why a `session/load` reload was
+   * declined and a fresh summarized-Session was minted in its place (issue
+   * #145 AC5). The caller passes a Session id it already resolved, so the row
+   * always exists. */
+  recordResumeIncompatibility(id: number, reason: string, detail: string, now: number): SessionRow {
+    return this.db
+      .update(sessions)
+      .set({ resumeIncompatibilityReason: reason, resumeIncompatibilityDetail: detail, updatedAt: now })
+      .where(eq(sessions.id, id))
+      .returning()
+      .get()!;
+  }
+
   get(id: number): SessionRow {
     const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
     if (!row) throw new DomainError('not_found', `session ${id} not found`);
