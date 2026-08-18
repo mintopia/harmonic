@@ -3,7 +3,7 @@
   "info": {
     "title": "@mintopia/harmonic",
     "version": "1.0.0",
-    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Run Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nruns and events; Accept/Reject tools appear only when the `agentReview`\nconfig flag is on). A run-scoped Run Key may call `/mcp` regardless of\nthe REST restrictions noted per endpoint below.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every run event, run state change, task state change, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'run_event' | 'run_changed' | 'run_usage' |\n'task_changed' | 'conversation_event' | 'conversation_changed' |\n'permission_request', ... }`, using the same Task/Run/Conversation shapes\nserved over REST. `run_usage` is a live-usage snapshot for a running Run\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Run tails its native log.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `run_changed`, `run_event`, and `run_usage` — with the\nConversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nruns, maps, and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Runs only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
+    "description": "Queue, run, and review autonomous coding-agent tasks over ACP\n\n## MCP\n\n`POST /mcp` is a stateless streamable-HTTP MCP server (not a REST\nendpoint, so it has no entry in this spec's paths). It authenticates the\nsame way as the REST API — a bearer token, either an operator API key or\nthe Run Key Harmonic injects into a spawned harness — and exposes the\nagent task surface as MCP tools (task CRUD, dependencies, queue/cancel,\nruns and events). Accept/Reject are human-only and are never exposed as\nMCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped\nRun Key may call `/mcp` regardless of the REST restrictions noted per\nendpoint below. Work Context lease diagnostics/supersede/unlock\n(`list_leases`, `supersede_lease`, `unlock_lease`, issue #125) are\noperator-only tools, the same footing as Accept/Reject: a Run Key can call\n`/mcp` but gets a `forbidden` error from these three specifically — only\nan operator API key (`scope: 'full'`) or an authenticated session may call\nthem.\n\n## WebSocket\n\n`GET /api/ws` is a single firehose WebSocket (also outside this spec's\npaths): every run event, run state change, task state change, and\nConversation event/change is broadcast to every connected client as JSON\nmessages of the form `{ type: 'run_event' | 'run_changed' | 'run_usage' |\n'task_changed' | 'conversation_event' | 'conversation_changed' |\n'permission_request', ... }`, using the same Task/Run/Conversation shapes\nserved over REST. `run_usage` is a live-usage snapshot for a running Run\n(tokens, context fill, derived Cost, current-activity line, and Process\nTree), pushed about once a second while the Run tails its native log.\n`permission_request` announces a Harness blocked on an\noperator permission decision in a Conversation (ADR-0007), answered via\n`POST /conversations/:id/permissions/:reqId`. Authenticate by passing the\nsession token or an API key as `?token=` (WebSocket clients cannot set an\nAuthorization header). A `read`-scoped key gets a filtered firehose — only\n`task_changed`, `run_changed`, `run_event`, and `run_usage` — with the\nConversation and permission traffic dropped.\n\n## Read scope\n\nA `read`-scoped API key (created via `POST /api/keys` with\n`{ \"scope\": \"read\" }`) is a viz-client credential: it may `GET` tasks,\nruns, maps, and the instance-wide Activity snapshot (`/api/activity`,\nfiltered to Runs only for a read key), and open the WebSocket (filtered as\nabove). Every mutation and the whole operator surface (keys, config,\nchannels, Conversations) is blocked. There is no `map_changed` event — a\nclient re-fetches `/maps` on reconnect or when it sees a `mapRef` it has\nnot resolved yet."
   },
   "components": {
     "securitySchemes": {
@@ -544,6 +544,17 @@
             "type": "string",
             "example": "worktree"
           },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "integration/epic-42"
+          },
           "priority": {
             "type": "string",
             "example": "normal"
@@ -772,6 +783,7 @@
           "model",
           "workingDir",
           "isolationMode",
+          "baseBranch",
           "priority",
           "state",
           "reattemptOf",
@@ -822,6 +834,17 @@
           "isolationMode": {
             "type": "string",
             "example": "worktree"
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "integration/epic-42"
           },
           "priority": {
             "type": "string",
@@ -1138,6 +1161,7 @@
           "model",
           "workingDir",
           "isolationMode",
+          "baseBranch",
           "priority",
           "state",
           "reattemptOf",
@@ -1400,6 +1424,152 @@
           "startedAt",
           "finishedAt",
           "cost"
+        ]
+      },
+      "LeaseDiagnosticInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "direct:/home/dev/harmonic"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "held",
+              "suspect"
+            ],
+            "example": "suspect"
+          },
+          "phase": {
+            "type": "string",
+            "example": "executing"
+          },
+          "ownerRunId": {
+            "type": "number",
+            "example": 4821
+          },
+          "ownerTaskId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 512
+          },
+          "ownerTaskTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Add the Activity rail view"
+          },
+          "ownerTaskState": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "running"
+          },
+          "acquiredAt": {
+            "type": "number",
+            "example": 1784032260000
+          },
+          "heartbeat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032320000
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032440000
+          },
+          "longestWaitMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 45000
+          },
+          "waitingTaskCount": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "key",
+          "state",
+          "phase",
+          "ownerRunId",
+          "ownerTaskId",
+          "ownerTaskTitle",
+          "ownerTaskState",
+          "acquiredAt",
+          "heartbeat",
+          "expiry",
+          "longestWaitMs",
+          "waitingTaskCount"
+        ]
+      },
+      "LeaseSupersedeBodyInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "example": "direct:/home/dev/harmonic"
+          },
+          "runId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 4821
+          }
+        },
+        "required": [
+          "key",
+          "runId"
+        ]
+      },
+      "LeaseUnlockBodyInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "example": "direct:/home/dev/harmonic"
+          }
+        },
+        "required": [
+          "key"
         ]
       },
       "MapInput": {
@@ -2169,6 +2339,7 @@
           },
           "agentReview": {
             "example": false,
+            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.",
             "type": "boolean"
           }
         }
@@ -2817,6 +2988,17 @@
             "type": "string",
             "example": "worktree"
           },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "integration/epic-42"
+          },
           "priority": {
             "type": "string",
             "example": "normal"
@@ -3046,6 +3228,7 @@
           "model",
           "workingDir",
           "isolationMode",
+          "baseBranch",
           "priority",
           "state",
           "reattemptOf",
@@ -3097,6 +3280,17 @@
           "isolationMode": {
             "type": "string",
             "example": "worktree"
+          },
+          "baseBranch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "integration/epic-42"
           },
           "priority": {
             "type": "string",
@@ -3414,6 +3608,7 @@
           "model",
           "workingDir",
           "isolationMode",
+          "baseBranch",
           "priority",
           "state",
           "reattemptOf",
@@ -3677,6 +3872,155 @@
           "startedAt",
           "finishedAt",
           "cost"
+        ],
+        "additionalProperties": false
+      },
+      "LeaseDiagnostic": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "direct:/home/dev/harmonic"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "held",
+              "suspect"
+            ],
+            "example": "suspect"
+          },
+          "phase": {
+            "type": "string",
+            "example": "executing"
+          },
+          "ownerRunId": {
+            "type": "number",
+            "example": 4821
+          },
+          "ownerTaskId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 512
+          },
+          "ownerTaskTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "Add the Activity rail view"
+          },
+          "ownerTaskState": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "running"
+          },
+          "acquiredAt": {
+            "type": "number",
+            "example": 1784032260000
+          },
+          "heartbeat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032320000
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 1784032440000
+          },
+          "longestWaitMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 45000
+          },
+          "waitingTaskCount": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "key",
+          "state",
+          "phase",
+          "ownerRunId",
+          "ownerTaskId",
+          "ownerTaskTitle",
+          "ownerTaskState",
+          "acquiredAt",
+          "heartbeat",
+          "expiry",
+          "longestWaitMs",
+          "waitingTaskCount"
+        ],
+        "additionalProperties": false
+      },
+      "LeaseSupersedeBody": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "example": "direct:/home/dev/harmonic"
+          },
+          "runId": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "example": 4821
+          }
+        },
+        "required": [
+          "key",
+          "runId"
+        ],
+        "additionalProperties": false
+      },
+      "LeaseUnlockBody": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "example": "direct:/home/dev/harmonic"
+          }
+        },
+        "required": [
+          "key"
         ],
         "additionalProperties": false
       },
@@ -4469,6 +4813,7 @@
           },
           "agentReview": {
             "example": false,
+            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.",
             "type": "boolean"
           }
         },
@@ -4669,6 +5014,11 @@
                       "exclusiveMinimum": 0,
                       "maximum": 9007199254740991
                     }
+                  },
+                  "baseBranch": {
+                    "example": "integration/epic-42",
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -4937,6 +5287,18 @@
                           "normal",
                           "low"
                         ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "baseBranch": {
+                    "anyOf": [
+                      {
+                        "example": "integration/epic-42",
+                        "type": "string",
+                        "minLength": 1
                       },
                       {
                         "type": "null"
@@ -5551,7 +5913,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Accept an awaiting-review task, completing it (and merging its branch in worktree mode). Human-only by default; reachable with a run-scoped Run Key only when the agentReview config flag is enabled.",
+        "description": "Accept an awaiting-review task, completing it (and merging its branch in worktree mode). Human-only.",
         "parameters": [
           {
             "schema": {
@@ -5594,7 +5956,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Reject an awaiting-review task with optional feedback, failing it. Human-only by default; reachable with a run-scoped Run Key only when the agentReview config flag is enabled.",
+        "description": "Reject an awaiting-review task with optional feedback, failing it. Human-only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -7981,8 +8343,8 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -8022,11 +8384,6 @@
                       "default": "{prompt}",
                       "example": "{prompt}",
                       "type": "string"
-                    },
-                    "agentReview": {
-                      "default": false,
-                      "example": false,
-                      "type": "boolean"
                     },
                     "conversationIdleTimeoutMinutes": {
                       "default": 30,
@@ -8127,12 +8484,19 @@
                         "autoAccept": {
                           "default": false,
                           "type": "boolean"
+                        },
+                        "maxSelfHeals": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": [
                         "command",
                         "critic",
-                        "autoAccept"
+                        "autoAccept",
+                        "maxSelfHeals"
                       ],
                       "additionalProperties": false
                     },
@@ -8186,11 +8550,17 @@
                         "progress": {
                           "default": false,
                           "type": "boolean"
+                        },
+                        "toolTimeoutMinutes": {
+                          "default": 20,
+                          "type": "number",
+                          "exclusiveMinimum": 0
                         }
                       },
                       "required": [
                         "budget",
-                        "progress"
+                        "progress",
+                        "toolTimeoutMinutes"
                       ],
                       "additionalProperties": false
                     }
@@ -8205,7 +8575,6 @@
                     "autoRunner",
                     "drive",
                     "taskPrompt",
-                    "agentReview",
                     "conversationIdleTimeoutMinutes",
                     "verification",
                     "guardrails"
@@ -8510,8 +8879,8 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -8551,11 +8920,6 @@
                       "default": "{prompt}",
                       "example": "{prompt}",
                       "type": "string"
-                    },
-                    "agentReview": {
-                      "default": false,
-                      "example": false,
-                      "type": "boolean"
                     },
                     "conversationIdleTimeoutMinutes": {
                       "default": 30,
@@ -8656,12 +9020,19 @@
                         "autoAccept": {
                           "default": false,
                           "type": "boolean"
+                        },
+                        "maxSelfHeals": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": [
                         "command",
                         "critic",
-                        "autoAccept"
+                        "autoAccept",
+                        "maxSelfHeals"
                       ],
                       "additionalProperties": false
                     },
@@ -8715,11 +9086,17 @@
                         "progress": {
                           "default": false,
                           "type": "boolean"
+                        },
+                        "toolTimeoutMinutes": {
+                          "default": 20,
+                          "type": "number",
+                          "exclusiveMinimum": 0
                         }
                       },
                       "required": [
                         "budget",
-                        "progress"
+                        "progress",
+                        "toolTimeoutMinutes"
                       ],
                       "additionalProperties": false
                     }
@@ -8734,7 +9111,6 @@
                     "autoRunner",
                     "drive",
                     "taskPrompt",
-                    "agentReview",
                     "conversationIdleTimeoutMinutes",
                     "verification",
                     "guardrails"
@@ -9012,8 +9388,8 @@
                     "type": "object",
                     "properties": {
                       "prompt": {
-                        "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
-                        "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                        "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                        "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
                         "type": "string"
                       },
                       "mergeFate": {
@@ -9046,11 +9422,6 @@
                     "default": "{prompt}",
                     "example": "{prompt}",
                     "type": "string"
-                  },
-                  "agentReview": {
-                    "default": false,
-                    "example": false,
-                    "type": "boolean"
                   },
                   "conversationIdleTimeoutMinutes": {
                     "default": 30,
@@ -9147,6 +9518,12 @@
                       "autoAccept": {
                         "default": false,
                         "type": "boolean"
+                      },
+                      "maxSelfHeals": {
+                        "default": 1,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
                       }
                     }
                   },
@@ -9196,6 +9573,11 @@
                       "progress": {
                         "default": false,
                         "type": "boolean"
+                      },
+                      "toolTimeoutMinutes": {
+                        "default": 20,
+                        "type": "number",
+                        "exclusiveMinimum": 0
                       }
                     }
                   }
@@ -9487,8 +9869,8 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -9528,11 +9910,6 @@
                       "default": "{prompt}",
                       "example": "{prompt}",
                       "type": "string"
-                    },
-                    "agentReview": {
-                      "default": false,
-                      "example": false,
-                      "type": "boolean"
                     },
                     "conversationIdleTimeoutMinutes": {
                       "default": 30,
@@ -9633,12 +10010,19 @@
                         "autoAccept": {
                           "default": false,
                           "type": "boolean"
+                        },
+                        "maxSelfHeals": {
+                          "default": 1,
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
                         }
                       },
                       "required": [
                         "command",
                         "critic",
-                        "autoAccept"
+                        "autoAccept",
+                        "maxSelfHeals"
                       ],
                       "additionalProperties": false
                     },
@@ -9692,11 +10076,17 @@
                         "progress": {
                           "default": false,
                           "type": "boolean"
+                        },
+                        "toolTimeoutMinutes": {
+                          "default": 20,
+                          "type": "number",
+                          "exclusiveMinimum": 0
                         }
                       },
                       "required": [
                         "budget",
-                        "progress"
+                        "progress",
+                        "toolTimeoutMinutes"
                       ],
                       "additionalProperties": false
                     }
@@ -9711,7 +10101,6 @@
                     "autoRunner",
                     "drive",
                     "taskPrompt",
-                    "agentReview",
                     "conversationIdleTimeoutMinutes",
                     "verification",
                     "guardrails"
@@ -11095,6 +11484,143 @@
           },
           "404": {
             "description": "No such path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leases": {
+      "get": {
+        "tags": [
+          "Leases"
+        ],
+        "description": "List every Work Context lease with operator diagnostics: owner Run/Task, TTL state, and the ready Tasks queued behind it. Operator only.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every held or suspect lease, with its queue diagnostics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "leases": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LeaseDiagnostic"
+                      }
+                    }
+                  },
+                  "required": [
+                    "leases"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every held or suspect lease, with its queue diagnostics."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leases/supersede": {
+      "post": {
+        "tags": [
+          "Leases"
+        ],
+        "description": "Re-point a stuck lease to a Run the operator names, re-admitting it as held with a fresh TTL — the escape for a suspect lease reconciliation could not resolve on its own. Operator only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseSupersedeBodyInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lease now belongs to the named Run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No lease is held for that key, or no Run has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leases/unlock": {
+      "post": {
+        "tags": [
+          "Leases"
+        ],
+        "description": "Force-release a lease outright, freeing its key for a fresh acquire — use when no Run should inherit the stuck context. Operator only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseUnlockBodyInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lease was released; the key is free for a fresh acquire.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No lease is held for that key.",
             "content": {
               "application/json": {
                 "schema": {

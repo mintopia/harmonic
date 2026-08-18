@@ -41,6 +41,10 @@ const taskWithDepsSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     /** 'direct' | 'worktree' (config.ts ISOLATION_MODES); stored as plain text. */
     isolationMode: z.string().meta({ example: 'worktree' }),
+    /** Explicit base branch a worktree Run is cut from and lands back onto
+     * (issue #157, ADR-0024); null resolves at spawn to the working dir's
+     * current branch. */
+    baseBranch: z.string().nullable().meta({ example: 'integration/epic-42' }),
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string().meta({ example: 'normal' }),
     state: z.enum(TASK_STATES).meta({ example: 'awaiting-review' }),

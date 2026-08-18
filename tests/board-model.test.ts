@@ -11,6 +11,7 @@ const task = (id: number, state: TaskState, createdAt: number, priority: Task['p
   workingDir: '/tmp',
   isolationMode: 'direct',
   priority,
+  baseBranch: null,
   overrides: { harness: null, model: null, isolationMode: null, priority: null },
   state,
   reattemptOf: null,

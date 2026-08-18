@@ -24,6 +24,7 @@ const task = (
   workingDir: '/tmp',
   isolationMode: 'direct',
   priority: 'normal',
+  baseBranch: null,
   overrides: { harness: null, model: null, isolationMode: null, priority: null },
   state,
   reattemptOf: null,

@@ -740,9 +740,21 @@ export class Runner {
   }
 
   /**
+   * The branch a worktree Run is cut from and lands back onto (issue #157,
+   * ADR-0024): the Task's explicit `baseBranch`, or the working dir's current
+   * branch when unset — today's behaviour. Cutting from the resolved base
+   * (rather than the base repo's current HEAD) is what lets a Run fork off an
+   * arbitrary base — later, an Epic's shared integration branch — without the
+   * shared working dir having it checked out.
+   */
+  private async resolveBaseBranch(task: TaskRow): Promise<string> {
+    return task.baseBranch ?? (await Git.currentBranch(task.workingDir));
+  }
+
+  /**
    * Direct mode runs in place, unlocked. Worktree mode gets a temporary
    * git worktree on branch `harmonic/task-<id>-run-<n>` cut from the
-   * working directory's current branch.
+   * {@link resolveBaseBranch resolved base branch}.
    */
   private async prepareWorkspace(task: TaskRow, run: RunRow, resume = false): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
@@ -866,16 +878,18 @@ export class Runner {
       // first turn recorded, so the re-verify judges the full diff.
       const persisted = this.runStore.get(run.id);
       const branch = persisted.branch ?? `harmonic/task-${task.id}-run-${run.attempt}`;
-      const baseBranch = persisted.baseBranch ?? (await Git.currentBranch(task.workingDir));
+      // The base the first turn already validated against wins; otherwise a
+      // resumed Run resolves the same base a fresh one would (issue #157).
+      const baseBranch = persisted.baseBranch ?? (await this.resolveBaseBranch(task));
       if (!existsSync(path)) {
         await Git.addWorktreeCheckout(task.workingDir, path, branch);
       }
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
 
-    const baseBranch = await Git.currentBranch(task.workingDir);
+    const baseBranch = await this.resolveBaseBranch(task);
     const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
-    await Git.addWorktree(task.workingDir, path, branch);
+    await Git.addWorktree(task.workingDir, path, branch, baseBranch);
     this.runStore.update(run.id, { branch, baseBranch });
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.

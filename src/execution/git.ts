@@ -222,8 +222,15 @@ export const Git = {
   // each runs under a short base-repo lock so concurrent worktree Runs can't
   // corrupt it mid-mutation (issue #121). The lock is scoped to `dir` (the
   // base repo), so Runs on distinct checkouts still parallelise.
-  addWorktree: (dir: string, worktreePath: string, newBranch: string) =>
-    withRepoLock(dir, () => git(dir, 'worktree', 'add', '-b', newBranch, worktreePath)),
+  // `startPoint` (a commit-ish — usually the resolved base branch, issue #157)
+  // is where `newBranch` forks from. Omitted, git forks from the base repo's
+  // current HEAD, preserving today's behaviour. Passing an explicit base branch
+  // that is *not* checked out is fine: git reads it as a start-point and never
+  // moves or checks out the base repo's own HEAD.
+  addWorktree: (dir: string, worktreePath: string, newBranch: string, startPoint?: string) =>
+    withRepoLock(dir, () =>
+      git(dir, 'worktree', 'add', '-b', newBranch, worktreePath, ...(startPoint ? [startPoint] : [])),
+    ),
 
   /**
    * Add a worktree that checks out an EXISTING branch (no `-b`). A self-heal

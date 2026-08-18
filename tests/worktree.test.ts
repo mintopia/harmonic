@@ -30,11 +30,16 @@ describe('worktree isolation mode', () => {
     await server.close();
   });
 
-  async function runWorktreeTask(repo: string, files: Record<string, string>): Promise<{ taskId: number; runId: number }> {
+  async function runWorktreeTask(
+    repo: string,
+    files: Record<string, string>,
+    opts: { baseBranch?: string } = {},
+  ): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: files }),
       workingDir: repo,
       isolationMode: 'worktree',
+      ...(opts.baseBranch ? { baseBranch: opts.baseBranch } : {}),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(
@@ -77,6 +82,43 @@ describe('worktree isolation mode', () => {
     expect(accepted.status).toBe(200);
     expect(accepted.body.state).toBe('completed');
     expect(readFileSync(join(repo, 'feature.txt'), 'utf8')).toBe('merged\n');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+  });
+
+  it('a Task with an explicit baseBranch (issue #157, ADR-0024) forks from it, not the current branch, and lands back onto it', async () => {
+    const repo = makeRepo(); // current branch is main
+    // A second branch carrying a commit that never touches main — the tell
+    // for "did the worktree fork from feature-base, or from main (today's
+    // default)?"
+    git(repo, 'branch', 'feature-base');
+    git(repo, 'checkout', 'feature-base');
+    writeFileSync(join(repo, 'base-marker.txt'), 'from feature-base\n');
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'feature-base marker');
+    git(repo, 'checkout', 'main'); // main stays checked out and current throughout
+
+    const { taskId, runId } = await runWorktreeTask(
+      repo,
+      { 'feature.txt': 'made on feature-base\n' },
+      { baseBranch: 'feature-base' },
+    );
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.branch).toBe(`harmonic/task-${taskId}-run-1`);
+    // The explicit base is persisted on the run, not the resolved-from-current default.
+    expect(run.baseBranch).toBe('feature-base');
+    // Proof of the fork point: the run branch carries feature-base's marker
+    // commit, which never touched main.
+    expect(git(repo, 'show', `${run.branch}:base-marker.txt`)).toBe('from feature-base');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
+
+    // Accept lands the run onto feature-base — the recorded base — not main.
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.state).toBe('completed');
+    expect(git(repo, 'show', 'feature-base:feature.txt')).toBe('made on feature-base');
+    // main's checkout was never touched by either the fork or the landing.
+    expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 

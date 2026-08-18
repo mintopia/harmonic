@@ -88,6 +88,10 @@ export interface Task {
   model: string;
   workingDir: string;
   isolationMode: 'direct' | 'worktree';
+  /** Explicit base branch a worktree Run is cut from and lands back onto
+   * (issue #157, ADR-0024); null resolves at spawn to the working dir's
+   * current branch. */
+  baseBranch: string | null;
   priority: 'high' | 'normal' | 'low';
   /** The four defaults as stored: `null` ⇒ inherited (tracks the Workspace/
    * global default), a value ⇒ pinned to this Task. The editor seeds its

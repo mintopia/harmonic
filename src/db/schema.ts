@@ -145,6 +145,17 @@ export const tasks = sqliteTable('tasks', {
   escalated: integer('escalated', { mode: 'boolean' }).notNull().default(false),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
   mapRef: integer('map_ref'),
+  /**
+   * Explicit base branch a worktree Run is cut from and lands back onto
+   * (issue #157, ADR-0024). Null ⇒ resolves at spawn to the working dir's
+   * current branch — today's behaviour, unchanged. This is the *expand* half
+   * of an expand/contract that later lets an Epic point its members at a
+   * shared integration branch. Not an inheritable default (there is no
+   * Workspace/global "default branch" to inherit from — the fallback is a
+   * runtime `git` query, not a config value), so it stays a plain pass-through
+   * column read straight off `TaskRow`.
+   */
+  baseBranch: text('base_branch'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

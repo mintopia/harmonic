@@ -253,6 +253,13 @@
       "when": 1787036353480,
       "tag": "0035_complete_vance_astro",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1787038762592,
+      "tag": "0036_wide_blue_shield",
+      "breakpoints": true
     }
   ]
 }

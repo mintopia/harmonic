@@ -125,6 +125,72 @@ describe('task authoring', () => {
 });
 
 /**
+ * Per-Task explicit base branch (issue #157, ADR-0024): the branch a worktree
+ * Run is cut from and lands back onto. Plain and per-Task, unlike the four
+ * inheritable defaults — it never resolves against a Workspace/global value.
+ */
+describe('task baseBranch (issue #157)', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('create with baseBranch persists it onto the returned TaskRow', async () => {
+    const { status, body } = await server.api('POST', '/api/tasks', {
+      prompt: 'target an integration branch',
+      baseBranch: 'integration/x',
+    });
+    expect(status).toBe(201);
+    expect(body.baseBranch).toBe('integration/x');
+
+    const fetched = await server.api('GET', `/api/tasks/${body.id}`);
+    expect(fetched.body.baseBranch).toBe('integration/x');
+  });
+
+  it('create without baseBranch leaves it null — the working dir\'s current branch resolves at spawn', async () => {
+    const { status, body } = await server.api('POST', '/api/tasks', {
+      prompt: 'no explicit base',
+    });
+    expect(status).toBe(201);
+    expect(body.baseBranch).toBeNull();
+  });
+
+  it('update with baseBranch: null clears a previously-set value', async () => {
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: 'starts pinned',
+      baseBranch: 'integration/x',
+    });
+    expect(created.body.baseBranch).toBe('integration/x');
+
+    const cleared = await server.api('PATCH', `/api/tasks/${created.body.id}`, { baseBranch: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.baseBranch).toBeNull();
+  });
+
+  it('reattempt copies the original\'s baseBranch onto the new task', async () => {
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: 'will fail then be re-attempted',
+      baseBranch: 'integration/x',
+    });
+    await server.api('POST', `/api/tasks/${created.body.id}/cancel`);
+    // cancel is terminal (reattempt requires a finished task), matching the
+    // convention used elsewhere in this file for driving a task to terminal
+    // without running a real agent.
+    const cancelled = await server.api('GET', `/api/tasks/${created.body.id}`);
+    expect(cancelled.body.state).toBe('cancelled');
+
+    const reattempted = await server.api('POST', `/api/tasks/${created.body.id}/reattempt`, { feedback: 'try again' });
+    expect(reattempted.status).toBe(201);
+    expect(reattempted.body.baseBranch).toBe('integration/x');
+    expect(reattempted.body.reattemptOf).toBe(created.body.id);
+  });
+});
+
+/**
  * Per-Task default overrides that inherit at read time (ADR-0012): a Task that
  * never pinned a default follows its Workspace/global default as it changes,
  * and a blocked Task can be re-pointed while it waits.

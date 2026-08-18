@@ -33,6 +33,12 @@ export const createTaskInputSchema = z.object({
   priority: z.enum(PRIORITIES).optional().meta({ example: 'normal' }),
   state: z.enum(['draft', 'ready']).optional().meta({ example: 'ready' }),
   dependsOn: z.array(z.number().int().positive()).optional().meta({ example: [4818] }),
+  /** Explicit base branch a worktree Run is cut from and lands back onto
+   * (issue #157, ADR-0024). Omitted ⇒ resolves at spawn to the working dir's
+   * current branch (today's behaviour). Not an inheritable default — it is a
+   * plain per-Task target, so unlike the four overrides it never resolves
+   * against a Workspace/global value. */
+  baseBranch: z.string().min(1).optional().meta({ example: 'integration/epic-42' }),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
@@ -48,6 +54,10 @@ export const updateTaskInputSchema = createTaskInputSchema
     model: createTaskInputSchema.shape.model.nullable(),
     isolationMode: createTaskInputSchema.shape.isolationMode.nullable(),
     priority: createTaskInputSchema.shape.priority.nullable(),
+    // Nullable so an operator can clear an explicit base branch back to
+    // "inherit the current branch at spawn" (issue #157), same null-clears
+    // idiom as the four overrides above.
+    baseBranch: createTaskInputSchema.shape.baseBranch.nullable(),
   });
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
@@ -221,6 +231,7 @@ export class TaskService {
         model: input.model ?? null,
         isolationMode: input.isolationMode ?? null,
         priority: input.priority ?? null,
+        baseBranch: input.baseBranch ?? null,
         workingDir: input.workingDir ?? workspace.workingDir,
         state,
         createdAt: now,
@@ -453,6 +464,8 @@ export class TaskService {
         workingDir: original.workingDir,
         isolationMode: original.isolationMode,
         priority: original.priority,
+        // A re-attempt targets the same base branch as the original (issue #157).
+        baseBranch: original.baseBranch,
         state: this.hasUnmet(dependsOn) ? 'blocked' : 'ready',
         reattemptOf: originalId,
         feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
