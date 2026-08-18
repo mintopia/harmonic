@@ -10,6 +10,7 @@ import type { Ticket } from '../src/tracker/adapter.js';
 import {
   EpicIntegrationCoordinator,
   integrationBranchName,
+  parseIntegrationBranch,
   reduceMemberState,
   type EpicGit,
   type EpicLandTrigger,
@@ -71,6 +72,33 @@ class FakeGit implements EpicGit {
 describe('integrationBranchName', () => {
   it('names an Epic integration branch epic/<ref>', () => {
     expect(integrationBranchName(42)).toBe('epic/42');
+  });
+});
+
+describe('parseIntegrationBranch (issue #163)', () => {
+  it('recovers the Epic ref from an integration branch name — the exact inverse of integrationBranchName', () => {
+    expect(parseIntegrationBranch(integrationBranchName(42))).toBe(42);
+    expect(parseIntegrationBranch('epic/42')).toBe(42);
+    expect(parseIntegrationBranch('epic/0')).toBe(0);
+    expect(parseIntegrationBranch('epic/1000000')).toBe(1_000_000);
+  });
+
+  it('rejects anything that is not exactly epic/<digits>', () => {
+    expect(parseIntegrationBranch('main')).toBeNull();
+    expect(parseIntegrationBranch('epic/')).toBeNull();
+    expect(parseIntegrationBranch('epic/x')).toBeNull();
+    expect(parseIntegrationBranch('epic/1x')).toBeNull();
+    expect(parseIntegrationBranch('epic/-1')).toBeNull();
+    expect(parseIntegrationBranch('epic/1.5')).toBeNull();
+    expect(parseIntegrationBranch('feature/epic/1')).toBeNull();
+    expect(parseIntegrationBranch('epic/1/')).toBeNull();
+    expect(parseIntegrationBranch('Epic/1')).toBeNull(); // case-sensitive
+  });
+
+  it('treats null/undefined/empty as "not an integration branch", never throwing', () => {
+    expect(parseIntegrationBranch(null)).toBeNull();
+    expect(parseIntegrationBranch(undefined)).toBeNull();
+    expect(parseIntegrationBranch('')).toBeNull();
   });
 });
 

@@ -167,6 +167,18 @@ export class AutoDrive {
   }
 
   /**
+   * The auto-merge close step, split out so the merge-train landing path (issue
+   * #163) can reuse it: an Epic member's Run lands its branch onto the Epic
+   * integration branch through the {@link MergeTrainCoordinator} (rebase→ff)
+   * rather than {@link onCompleted}'s plain `git.merge`, but the close-after-land
+   * half is identical — Harmonic owns the close (#139), only after a successful
+   * land. Returns whether the close was issued (false ⇒ the caller Escalates).
+   */
+  async closeCompleted(task: TaskRow): Promise<boolean> {
+    return this.closeTicket(task);
+  }
+
+  /**
    * Close the Task's ticket as the final auto-merge landing step (issue #139) —
    * Harmonic, not the agent, owns the close, and only reaches here after verify
    * + a successful land. Returns whether the close was issued; a read/write

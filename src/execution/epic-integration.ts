@@ -15,6 +15,20 @@ export function integrationBranchName(epicRef: number): string {
   return `epic/${epicRef}`;
 }
 
+/**
+ * The inverse of {@link integrationBranchName}: the Epic ref a branch name
+ * encodes, or `null` when `name` is not an integration branch. The single
+ * source of truth for "is this base branch an Epic integration branch?" — the
+ * member-finish landing path (issue #163) uses it to tell an Epic member's Run
+ * (whose base is `epic/<ref>`) from an ordinary worktree Run, so the detection
+ * never drifts from the `epic/<ref>` format this module owns.
+ */
+export function parseIntegrationBranch(name: string | null | undefined): number | null {
+  if (!name) return null;
+  const m = /^epic\/(\d+)$/.exec(name);
+  return m ? Number(m[1]) : null;
+}
+
 /** The slice of {@link Git} the coordinator needs — real Git in prod, a fake in tests. */
 export interface EpicGit {
   /** The branch HEAD points at, or `null` on a detached HEAD (never the literal `HEAD`). */

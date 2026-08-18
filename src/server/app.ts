@@ -38,6 +38,7 @@ import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
 import { BootResumeCoordinator } from '../domain/boot-resume-coordinator.js';
 import { adapterVersion } from '../execution/harness/adapter.js';
 import { Runner } from '../execution/runner.js';
+import { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -371,12 +372,28 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       },
     ];
   };
+  // The single-writer merge train (issue #163): the ONE process-global
+  // coordinator every Epic member's Run lands through, so its in-memory per-Epic
+  // integration-branch FIFO chains and one-heal bound are shared across all
+  // members and all Workspaces. Its heal/escalate effects are Runner methods, so
+  // it is bound to the Runner via the same late-holder idiom `trackerManagerRef`
+  // uses below — the Runner and the coordinator are mutually referential, so one
+  // must be constructed with a forward reference to the other.
+  let runnerRef: Runner | undefined;
+  const mergeTrain = new MergeTrainCoordinator({
+    dispatchHeal: (member) => {
+      runnerRef!.enqueueReMergeForMember(member);
+      return Promise.resolve();
+    },
+    escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
+  });
   const runner = new Runner(runs, tasks, leases, db, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunFinished: (run) => bus.emit('run_changed', run),
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
+    mergeTrain,
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
@@ -411,6 +428,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         patch,
       ),
   });
+  // Close the forward reference the merge train's heal/escalate callbacks hold
+  // (issue #163) — exactly as `trackerManagerRef = trackerManager` does below.
+  runnerRef = runner;
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
   runner.backfillUsage();

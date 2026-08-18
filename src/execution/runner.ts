@@ -79,6 +79,8 @@ import {
 } from '../domain/branch-recovery.js';
 import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
 import { landBranch } from './branch-landing.js';
+import { parseIntegrationBranch } from './epic-integration.js';
+import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { Db } from '../db/index.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
@@ -170,6 +172,14 @@ export interface RunnerOptions {
    * (pre-#148 behaviour); the worktree teardown then falls back to
    * `finalizeWorkspace` for a Run with no Session. */
   sessionRetirement?: SessionRetirementHook;
+  /** The single-writer merge train (issue #163): the ONE process-global
+   * {@link MergeTrainCoordinator} an Epic member's Run lands through, in place of
+   * the direct auto-merge path. Absent → members fall back to the plain
+   * `AutoDrive.onCompleted` merge (pre-#163 behaviour). Its `dispatchHeal`/
+   * `escalate` are wired (in app.ts) to {@link Runner.enqueueReMergeForMember} /
+   * {@link Runner.settleEscalatedForMember}, so the coordinator must be shared
+   * with the Runner that owns those callbacks. */
+  mergeTrain?: MergeTrainCoordinator;
 }
 
 interface Workspace {
@@ -299,7 +309,12 @@ interface HealContext {
 interface ReMergeContext {
   reason: string;
   detail: string;
-  allowedTree: string;
+  /** The recorded-artifact tree the #155 allowed-set gate ({@link landReMerge})
+   * checks the corrective result against. Absent for a merge-train member's
+   * corrective turn (issue #163): that turn re-lands through
+   * {@link MergeTrainCoordinator.onHealComplete}, whose own rebase→ff is the
+   * gate, so no allowed-set tree is captured. */
+  allowedTree?: string;
 }
 
 /**
@@ -317,7 +332,14 @@ type TurnOutcome =
   // re-merge (issue #155): the turn deliberately did not settle, handing the
   // decision up to the {@link Runner.drive} loop to dispatch exactly ONE
   // corrective re-merge turn. `reason`/`detail` are the branch-contract violation.
-  | { kind: 'remerge-needed'; reason: string; detail: string };
+  | { kind: 'remerge-needed'; reason: string; detail: string }
+  // An Epic member's merge-train land hit a rebase conflict and the coordinator
+  // dispatched its one bounded corrective turn (issue #163): the turn deliberately
+  // did not settle, handing the decision up to {@link Runner.drive} to run exactly
+  // ONE corrective turn whose land re-enters the train via `onHealComplete`. The
+  // coordinator owns the one-heal-then-escalate bound (its `healAttempted` set);
+  // `detail` is the rebase conflict surfaced to that turn as feedback.
+  | { kind: 'merge-train-heal'; detail: string };
 
 export class Runner {
   private active = new Map<number, ActiveRun>(); // by run id
@@ -333,6 +355,15 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly autoAcceptLand: RunnerOptions['autoAcceptLand'];
+  /** The single-writer merge train an Epic member's Run lands through (issue
+   * #163); undefined on a server with no parallel-Epic execution. */
+  private readonly mergeTrain: MergeTrainCoordinator | undefined;
+  /** Bridges the merge train's out-of-band heal dispatch to the in-process
+   * `drive` loop (issue #163): {@link enqueueReMergeForMember} (bound to the
+   * coordinator's `dispatchHeal`) records the corrective turn's queue row here,
+   * keyed by runId, so `drive` can settle that exact row once it has run the
+   * turn. In-memory only — the queue row itself is the durable record. */
+  private readonly pendingMemberReMerge = new Map<number, number>();
   /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
@@ -391,6 +422,7 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.autoAcceptLand = options.autoAcceptLand;
+    this.mergeTrain = options.mergeTrain;
     this.criticDrive = options.criticDrive;
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
@@ -1521,6 +1553,15 @@ export class Runner {
     if (!start || !candidateOid) {
       return reject('no-candidate', 'the re-merge turn left no start-state or candidate to land');
     }
+    // `landReMerge` is only reached for the #155 fallback, whose `remergeCtx`
+    // always carries the recorded allowed-set tree; a merge-train member's
+    // corrective turn (issue #163, `allowedTree` absent) re-lands through the
+    // train's `onHealComplete` and never reaches here. Guard so the type is
+    // narrowed and the impossible case fails closed rather than landing blind.
+    const recordedCandidateTree = remergeCtx.allowedTree;
+    if (recordedCandidateTree === undefined) {
+      return reject('no-candidate', 'the re-merge turn recorded no allowed-set tree to land against');
+    }
     try {
       const [correctiveTree, candidateDescendsFromStart, intendedContainsStart] = await Promise.all([
         Git.revParse(dir, `${candidateOid}^{tree}`).catch(() => null),
@@ -1529,7 +1570,7 @@ export class Runner {
         Git.isAncestor(dir, start.startBranch, start.startCommit),
       ]);
       const judgment = evaluateReMergeResult({
-        recordedCandidateTree: remergeCtx.allowedTree,
+        recordedCandidateTree,
         correctiveCandidateTree: correctiveTree,
         candidateDescendsFromStart,
         intendedContainsStart,
@@ -1623,6 +1664,24 @@ export class Runner {
         inFlightTurn = null;
       }
       if (outcome.kind === 'terminal') return;
+      if (outcome.kind === 'merge-train-heal') {
+        // The merge train hit a rebase conflict on this Epic member's land and
+        // already dispatched its one bounded corrective turn (issue #163): its
+        // `dispatchHeal` → {@link enqueueReMergeForMember} recorded the queue row
+        // (stashed in `pendingMemberReMerge`). Run exactly that turn; its land
+        // re-enters the train via `onHealComplete`. Do NOT re-enqueue here — the
+        // coordinator already did. Charge `remerges` so drive's existing "no
+        // second mutating turn" guard also holds if this corrective turn's own
+        // verification fails (the coordinator's `healAttempted` bounds the land
+        // rebase; this bounds the turn). `allowedTree` is unused: the member's
+        // land re-lands through the train, not the #155 allowed-set gate.
+        remerges += 1;
+        remergeCtx = { reason: 'merge-train rebase conflict', detail: outcome.detail };
+        healCtx = undefined;
+        inFlightTurn = this.pendingMemberReMerge.get(run.id) ?? null;
+        this.pendingMemberReMerge.delete(run.id);
+        continue;
+      }
       if (outcome.kind === 'remerge-needed') {
         // Bounded agent re-merge fallback (issue #155): dispatch exactly ONE
         // corrective turn to consolidate the ambiguous branch outcome. A Run that
@@ -1780,6 +1839,64 @@ export class Runner {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * The merge train's `dispatchHeal` (issue #163), wired in app.ts: a member's
+   * rebase conflicted on its land, so record its one bounded corrective turn on
+   * the member's Session turn queue — the same `re-merge` row {@link drive}
+   * dispatches for the #155 fallback. MUST return on *enqueue*, not on the
+   * corrective turn's completion: the coordinator holds the integration branch's
+   * lock slot across this call, so awaiting the whole turn would stall other
+   * ready members on the same branch. The turn itself is run by the `drive`
+   * loop (this in-process loop is the dispatch; the row is the durable record),
+   * which reads the stashed row id back from {@link pendingMemberReMerge} to
+   * settle it once the corrective turn has run.
+   */
+  enqueueReMergeForMember(member: MergeTrainMember): void {
+    const run = this.runStore.get(member.runId);
+    const rowId = this.enqueueReMerge(run, `run-${member.runId}`);
+    if (rowId !== null) this.pendingMemberReMerge.set(member.runId, rowId);
+  }
+
+  /**
+   * The merge train's `escalate` (issue #163), wired in app.ts: a member could
+   * not land (branch missing, second rebase conflict, unexpected checkout, or a
+   * concurrent advance beat its CAS). Hand the Task back to a human exactly as
+   * any other afk escalation does — Run failed, Task ready + escalated. This is
+   * the SOLE settle authority on a merge-train escalate: `driveOnce` only records
+   * the `escalated` outcome and stops, so the Run is never settled twice.
+   */
+  settleEscalatedForMember(member: MergeTrainMember, reason: string): void {
+    const run = this.runStore.get(member.runId);
+    const task = this.taskService.get(member.taskId);
+    this.settleEscalated(task, run, reason, {});
+  }
+
+  /**
+   * The {@link MergeTrainMember} for a finishing Run when it is a parallel-Epic
+   * member that should land through the merge train (issue #163), or `null` when
+   * it is an ordinary Run that lands the direct way. A member is: a worktree Run
+   * (has a branch + retained worktree) whose base is an Epic integration branch
+   * (`epic/<ref>`), on a server with the train wired, and whose Merge Fate is
+   * `auto-merge` — `open-PR`/`artifact` deliberately never touch the integration
+   * branch, so they keep `onCompleted`'s behaviour.
+   */
+  private epicMemberFor(task: TaskRow, run: RunRow, workspace: Workspace): MergeTrainMember | null {
+    if (!this.mergeTrain) return null;
+    if (task.isolationMode !== 'worktree') return null;
+    if (!run.branch || !run.baseBranch) return null;
+    if (parseIntegrationBranch(run.baseBranch) === null) return null;
+    if (!workspace.worktree) return null;
+    if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return null;
+    return {
+      runId: run.id,
+      taskId: task.id,
+      repoDir: task.workingDir,
+      integrationBranch: run.baseBranch,
+      memberBranch: run.branch,
+      memberWorktreeDir: workspace.worktree.path,
+    };
   }
 
   /**
@@ -2786,6 +2903,49 @@ export class Runner {
           // pure allowed-set gate — the corrective candidate must reproduce the
           // recorded tree, descend from start, and the branch still contain start
           // — decides land-or-Escalate, with no second mutating turn.
+          // Parallel-Epic member land (issue #163): a worktree auto-merge Run
+          // whose base is an Epic integration branch (`epic/<ref>`) lands through
+          // the single-writer merge train — rebase onto the branch's current tip,
+          // ordered per integration branch, with a bounded conflict→heal→escalate
+          // — instead of `onCompleted`'s unordered plain merge. This is the one
+          // path where two members finishing at once land serially rather than
+          // the second one's non-fast-forward merge racing (or falling back).
+          const member = this.epicMemberFor(task, this.runStore.get(run.id), workspace);
+          if (member) {
+            const trainOutcome = remergeCtx
+              ? await this.mergeTrain!.onHealComplete(member)
+              : await this.mergeTrain!.submit(member);
+            if (trainOutcome.status === 'healing') {
+              // The coordinator dispatched its one bounded corrective turn (its
+              // `dispatchHeal` → enqueueReMergeForMember). Hand up to `drive` to
+              // run exactly that turn; its land re-enters via `onHealComplete`.
+              record('lifecycle', { event: 'merge-train-heal', integrationBranch: member.integrationBranch });
+              return {
+                kind: 'merge-train-heal',
+                detail:
+                  'Your branch no longer rebases cleanly onto the Epic integration branch ' +
+                  `(${member.integrationBranch}); reconcile with its latest tip and resolve the conflicts.`,
+              };
+            }
+            if (trainOutcome.status === 'escalated') {
+              // The coordinator's `escalate` callback (→ settleEscalatedForMember)
+              // already settled the Run; only record + stop here (no double-settle).
+              record('lifecycle', { event: 'escalated', reason: trainOutcome.reason });
+              return { kind: 'terminal' };
+            }
+            // landed | already-landed: the work is on the integration branch.
+            // Harmonic still owns the ticket close (#139) — the train replaced the
+            // merge, not the close.
+            if (!(await this.autoDrive!.closeCompleted(task))) {
+              record('lifecycle', { event: 'escalated', reason: 'ticket close failed after merge-train land' });
+              this.settleEscalated(task, run, 'ticket close failed after merge-train land', patch);
+            } else {
+              advancePhase('landing', 'auto');
+              this.settleAutoCompleted(task, run, patch);
+            }
+            return { kind: 'terminal' };
+          }
+
           const recovered = remergeCtx
             ? await this.landReMerge(task, run, remergeCtx, record)
             : await this.recoverAndLand(task, run, branchClass, record);
