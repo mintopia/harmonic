@@ -2070,20 +2070,28 @@ export class Runner {
           // stripped, never stored), and the captured `initialize` capability
           // snapshot — the moment the harness session id is known, so it
           // survives even if the model pin or permission-mode set then fails.
-          // Written *alongside* the Run: no in-flight Run behaviour changes.
-          const session = this.sessionStore.recordDispatch({
-            harness: task.harness,
-            harnessSessionId: sessionId,
-            model: task.model,
-            cwd: workspace.cwd,
-            workspaceId: task.workspaceId,
-            mcpTemplates: mcpServers,
-            capabilities: sessionInit,
-            adapterVersion: adapterVersion(task.harness),
-            now: Date.now(),
-          });
-          sessionRowId = session.id;
-          this.runStore.update(run.id, { sessionRowId: session.id });
+          // Best-effort: this is written *alongside* the Run, so a Session
+          // persistence hiccup must never fail a dispatch that would otherwise
+          // proceed (AC: in-flight Run behaviour unchanged) — same discipline as
+          // the live-usage tailer's persist. Nothing reads the Session for
+          // coordination yet; a later dispatch/turn re-records it.
+          try {
+            const session = this.sessionStore.recordDispatch({
+              harness: task.harness,
+              harnessSessionId: sessionId,
+              model: task.model,
+              cwd: workspace.cwd,
+              workspaceId: task.workspaceId,
+              mcpTemplates: mcpServers,
+              capabilities: sessionInit,
+              adapterVersion: adapterVersion(task.harness),
+              now: Date.now(),
+            });
+            sessionRowId = session.id;
+            this.runStore.update(run.id, { sessionRowId: session.id });
+          } catch {
+            /* best-effort; the Session is additive, the Run proceeds regardless */
+          }
         },
       });
 
@@ -2117,7 +2125,16 @@ export class Runner {
         record('lifecycle', { event: 'mode_set', mode });
         // Unit C (#141): the Session's permission mode is only resolved here,
         // after the handshake — record it onto the durable Session row.
-        if (sessionRowId !== undefined) this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
+        // Best-effort for the same reason as the Session write above. (Native
+        // Runs set no ACP mode, so their Session's permissionMode stays null —
+        // an accurate "Harmonic set no mode", not a missing capture.)
+        if (sessionRowId !== undefined) {
+          try {
+            this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
+          } catch {
+            /* best-effort; additive */
+          }
+        }
       }
 
       // Harmonic settles a Run when its prompt turn resolves. But an afk agent

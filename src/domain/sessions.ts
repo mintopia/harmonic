@@ -11,8 +11,29 @@ import { DomainError } from './errors.js';
  * a token could appear inline — so the credential-free template drops every one
  * of these defensively. Credentials are minted fresh at load/dispatch and
  * grafted back on; they are never persisted (issue #141 acceptance criterion).
+ *
+ * A deny-list is inherently a best-effort net: it errs toward over-stripping a
+ * broad set of known secret-bearing field names so a future harness's server
+ * shape can't quietly leak one. `key` is deliberately excluded — too generic a
+ * field name to blanket-drop — but its qualified forms (`apiKey`, `api_key`)
+ * are covered.
  */
-const CREDENTIAL_KEYS = new Set(['headers', 'env', 'token', 'authorization', 'apikey', 'api_key', 'bearer']);
+const CREDENTIAL_KEYS = new Set([
+  'headers',
+  'env',
+  'token',
+  'authorization',
+  'apikey',
+  'api_key',
+  'bearer',
+  'password',
+  'secret',
+  'secrets',
+  'credential',
+  'credentials',
+  'cookie',
+  'auth',
+]);
 
 /**
  * Strip every credential-bearing field from a `session/new` mcpServers list,
@@ -156,8 +177,8 @@ export class SessionStore {
   }
 
   /** Record the ACP permission mode once it is set on the Session (afk Runs set
-   * it after the handshake), touching `updatedAt`. No-op-safe: returns the
-   * unchanged row if the Session is gone. */
+   * it after the handshake), touching `updatedAt`. The caller passes the id of
+   * a Session it just recorded on the same dispatch, so the row always exists. */
   setPermissionMode(id: number, permissionMode: string, now: number): SessionRow {
     return this.db
       .update(sessions)

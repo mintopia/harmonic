@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { sessions } from '../src/db/schema.js';
 import { DomainError } from '../src/domain/errors.js';
 import {
   SessionStore,
@@ -274,6 +275,34 @@ describe('Sessions (issue #141)', () => {
       it('returns the row for a known (harness, harnessSessionId)', () => {
         const created = store.recordDispatch(baseInput());
         expect(store.getByHarnessSession('claude', 'sess-1')).toEqual(created);
+      });
+    });
+
+    describe('the (harness, harnessSessionId) unique index', () => {
+      it('rejects a raw duplicate insert — the DB backstops a racing double-record', () => {
+        store.recordDispatch(baseInput());
+        // A second row with the SAME natural key, bypassing recordDispatch's
+        // read-then-upsert, must be rejected by the schema's unique index.
+        expect(() =>
+          db
+            .insert(sessions)
+            .values({
+              harness: 'claude',
+              harnessSessionId: 'sess-1',
+              model: 'racing',
+              cwd: '/tmp/work',
+              status: 'active',
+              lastActiveAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .run(),
+        ).toThrow(/UNIQUE/i);
+      });
+
+      it('allows the same harnessSessionId under a different harness', () => {
+        store.recordDispatch(baseInput({ harness: 'claude' }));
+        expect(() => store.recordDispatch(baseInput({ harness: 'codex' }))).not.toThrow();
       });
     });
   });
