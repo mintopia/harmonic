@@ -91,6 +91,18 @@ export class AutoDrive {
   }
 
   /**
+   * The Merge Fate for a Task, exposed so the Runner can gate deterministic
+   * recovery landing (issue #154) on the **same** fate this class applies — a
+   * direct-mode Run only lands its reconstructed candidate onto the intended
+   * branch when the fate is `auto-merge`; `open-PR`/`artifact` leave the branch
+   * untouched (the work stays on the candidate/private ref). Single source of
+   * truth so recovery landing never diverges from `onCompleted`'s fate.
+   */
+  mergeFateFor(task: TaskRow): MergeFate {
+    return this.mergeFate(task);
+  }
+
+  /**
    * Land a passing afk Run's work per its Merge Fate — the close-after-verify
    * model (issue #139, ADR-0021, reliability-design Unit B). The
    * execution-complete signal is the agent's `finish_task` (the Runner's

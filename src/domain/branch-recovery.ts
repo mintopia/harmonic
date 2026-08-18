@@ -259,3 +259,65 @@ export function classifyBranchOutcome(obs: BranchContractObservation): BranchCla
     deltas: obs.refDeltas,
   };
 }
+
+/**
+ * A deterministic recovery the Runner can execute with **no agent turn** (issue
+ * #154, reliability-design Unit D). `landCommit` is the reconstructed landing
+ * candidate — the frozen candidate tree (#134), which is re-parented on the
+ * recorded start commit and captures the agent's work — and `baseBranch` is the
+ * recorded intended branch to advance. The invariant `landCommit` always carries
+ * is that it **descends from the recorded start commit**: recovery can never
+ * land work built on anything but the branch the Run started on.
+ */
+export interface RecoveryPlan {
+  /** The reconstructed candidate commit to land (a descendant of the start). */
+  landCommit: string;
+  /** The recorded intended branch the candidate is landed onto. */
+  baseBranch: string;
+  /** Which recoverable footprint this plan resolves — audit/evidence only. */
+  reason: RecoveryReason;
+}
+
+/**
+ * Decide whether a Run's git outcome can be **deterministically recovered and
+ * landed without an agent** (issue #154, reliability-design Unit D — "recovery:
+ * deterministic git recovery from recorded OIDs/ref-deltas when unambiguous").
+ * Pure, like {@link classifyBranchOutcome}: the Runner supplies the git-computed
+ * facts (`candidateOid`, `candidateDescendsFromStart`) and this applies the
+ * invariant.
+ *
+ * Returns a {@link RecoveryPlan} **iff** every guard holds:
+ *  - the classification is **recoverable** (a `clean` Run needs no recovery; an
+ *    `ambiguous` Run is never auto-recovered — it falls through to the #151
+ *    escalate / later #155 agent re-merge fallback, so this yields `null`);
+ *  - a frozen candidate exists (`candidateOid` non-null) — there is nothing to
+ *    reconstruct otherwise;
+ *  - the candidate **descends from the recorded start commit**
+ *    (`candidateDescendsFromStart`) — the core safety invariant: never land work
+ *    that is not built on the recorded start;
+ *  - the intended branch still **contains** that start
+ *    (`reachability.intendedContainsStart`) — a diverged branch (which the
+ *    classifier already sinks to `ambiguous`) is defended against here too.
+ *
+ * Any guard failing yields `null` — the caller then leaves the Run on its
+ * existing (escalate) fallback path rather than mutating a branch it cannot
+ * prove safe. Total and deterministic: the same inputs always yield the same
+ * plan.
+ */
+export function planDeterministicRecovery(input: {
+  classification: BranchClassification;
+  observation: BranchContractObservation;
+  candidateOid: string | null;
+  candidateDescendsFromStart: boolean;
+}): RecoveryPlan | null {
+  const { classification, observation, candidateOid, candidateDescendsFromStart } = input;
+  if (classification.outcome !== 'recoverable') return null;
+  if (!candidateOid) return null;
+  if (!candidateDescendsFromStart) return null;
+  if (!observation.reachability.intendedContainsStart) return null;
+  return {
+    landCommit: candidateOid,
+    baseBranch: observation.intendedBranch,
+    reason: classification.reason,
+  };
+}

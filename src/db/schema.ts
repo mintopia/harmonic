@@ -475,6 +475,7 @@ export const RUN_FACT_TYPES = [
   'operator-cancel',
   'escalate',
   'branch-violation',
+  'branch-recovery',
   'review-sla-expiry',
   'agent-finish/unresolved',
   'failed',

@@ -58,8 +58,14 @@ import {
   type StartStateProbe,
   type RunStartState,
 } from '../domain/run-start-state.js';
-import { classifyBranchOutcome, type BranchContractObservation, type BranchClassification } from '../domain/branch-recovery.js';
+import {
+  classifyBranchOutcome,
+  planDeterministicRecovery,
+  type BranchContractObservation,
+  type BranchClassification,
+} from '../domain/branch-recovery.js';
 import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
+import { landBranch } from './branch-landing.js';
 import type { Db } from '../db/index.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
@@ -1087,6 +1093,96 @@ export class Runner {
   }
 
   /**
+   * Deterministically recover and land a **recoverable** afk-direct Run's work
+   * with **no agent turn** (issue #154, reliability-design Unit D — recovery is
+   * *preferred* over any agent re-merge). A direct Run executed detached (#152),
+   * so its verified work lives only on the frozen candidate and the live
+   * intended branch never advanced; this reconstructs-and-lands that candidate.
+   *
+   * Returns:
+   *  - `'skip'` — recovery does not apply (no classification, a `clean`/`ambiguous`
+   *    outcome, a non-`auto-merge` Merge Fate, no candidate/start-state, or the
+   *    pure {@link planDeterministicRecovery} invariant did not hold). The Run
+   *    stays on its existing path (worktree merge in `onCompleted`, or the #151
+   *    escalate for ambiguous), unchanged.
+   *  - `'landed'` — the reconstructed candidate was landed onto the intended
+   *    branch; a `branch-recovery` fact records the deterministic land.
+   *  - `'escalate'` — the intended branch moved off the recorded start under us,
+   *    or the land itself failed; refuse to close over unlanded work.
+   *
+   * Runs *after* `finalize()` has restored the direct checkout to the intended
+   * branch (clean, at the recorded start), so `landBranch` (#153) takes the
+   * coherent in-place ff under the Run's exclusive lease — ref + working tree
+   * advance together. The start OID is re-verified before the mutation.
+   */
+  private async recoverAndLand(
+    task: TaskRow,
+    run: RunRow,
+    branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null,
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): Promise<'skip' | 'landed' | 'escalate'> {
+    if (!branchClass || branchClass.verdict.outcome !== 'recoverable') return 'skip';
+    // Only land when the fate is auto-merge — open-PR/artifact leave the branch
+    // untouched, so a recovery land would contradict the fate. Same source of
+    // truth `onCompleted` applies (issue #154).
+    if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return 'skip';
+    const start = this.startStateOf(run.id);
+    const candidateOid = this.runStore.get(run.id).candidateOid;
+    if (!start || !candidateOid) return 'skip';
+    const dir = task.workingDir;
+    try {
+      // The candidate must descend from the recorded start — the pure invariant.
+      // `isAncestor(dir, candidate, start)` asks "does the candidate contain start?"
+      const candidateDescendsFromStart = await Git.isAncestor(dir, candidateOid, start.startCommit);
+      const plan = planDeterministicRecovery({
+        classification: branchClass.verdict,
+        observation: branchClass.observation,
+        candidateOid,
+        candidateDescendsFromStart,
+      });
+      if (!plan) return 'skip'; // not deterministically recoverable → leave on the fallback path
+      // Re-verify the start OID before mutating (reliability-design Unit D): the
+      // intended branch must still be exactly where the Run started. A branch
+      // that advanced (a concurrent land) is not safe to ff over → Escalate.
+      const currentBase = await Git.revParse(dir, plan.baseBranch);
+      if (currentBase !== start.startCommit) {
+        record('lifecycle', {
+          event: 'recovery-landing-failed',
+          reason: `intended branch '${plan.baseBranch}' advanced from the recorded start commit`,
+        });
+        return 'escalate';
+      }
+      const outcome = await landBranch({
+        repoDir: dir,
+        baseBranch: plan.baseBranch,
+        branch: plan.landCommit,
+        leaseHeld: true,
+      });
+      if (!outcome.ok) {
+        record('lifecycle', { event: 'recovery-landing-failed', reason: outcome.detail });
+        return 'escalate';
+      }
+      this.runFacts.append(run.id, 'branch-recovery', {
+        reason: plan.reason,
+        baseBranch: plan.baseBranch,
+        landCommit: plan.landCommit,
+        mode: outcome.mode,
+        oid: outcome.oid,
+      });
+      record('lifecycle', { event: 'recovery-landed', reason: plan.reason, oid: outcome.oid, mode: outcome.mode });
+      return 'landed';
+    } catch (err) {
+      // A git fault mid-recovery: refuse to close over unlanded work → Escalate,
+      // which retains the candidate/refs for operator disposition.
+      record('lifecycle', {
+        event: 'recovery-landing-failed',
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      return 'escalate';
+    }
+  }
+
+  /**
    * Drive a Run to a terminal disposition, healing bounded actionable
    * verification failures along the way (issue #137, reliability-design Unit B).
    *
@@ -1850,6 +1946,11 @@ export class Runner {
       // freezing a candidate, verifying, or closing the ticket. A native Run
       // always verifies its single ended turn.
       const afkUnresolved = autoDriven && !escalating && !active.agentFinished;
+      // The `validating` branch-contract classification (issue #151), hoisted so
+      // the afk landing block below can reach it for deterministic recovery
+      // landing (issue #154). Null when the check does not apply (worktree mode,
+      // native direct, a pre-#151 Run) or was skipped (escalating/afkUnresolved).
+      let branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null = null;
       // Enter `validating` and freeze the verification candidate there, while
       // the leased workspace still exists — finalize() tears a worktree down.
       // The phase is persisted *before* the git work so `runs.phase` reads
@@ -1868,11 +1969,13 @@ export class Runner {
         // break Harmonic must not silently verify or land: emit the structured
         // branch-violation fact, retain the refs as evidence, and Escalate. A
         // clean/recoverable outcome (the expected direct-mode detached-HEAD
-        // footprint) proceeds; its deterministic restore is `finalize()`'s job.
-        const branch = await this.classifyBranchContract(task, run, workspace);
-        if (branch && branch.verdict.outcome === 'ambiguous') {
-          const { observation } = branch;
-          const verdict = branch.verdict;
+        // footprint) proceeds; its deterministic restore is `finalize()`'s job,
+        // and a recoverable afk auto-merge Run lands via {@link recoverAndLand}
+        // below (issue #154), so the classification is retained for that seam.
+        branchClass = await this.classifyBranchContract(task, run, workspace);
+        if (branchClass && branchClass.verdict.outcome === 'ambiguous') {
+          const { observation } = branchClass;
+          const verdict = branchClass.verdict;
           this.runFacts.append(run.id, 'branch-violation', {
             outcome: verdict.outcome,
             reason: verdict.reason,
@@ -1963,15 +2066,31 @@ export class Runner {
           // (#139). A fate that can't be applied (merge conflict, PR that can't
           // be created, ticket close that fails) Escalates; the ticket is not
           // closed.
-          const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
-          if (outcome === 'escalate') {
-            record('lifecycle', { event: 'escalated', reason: 'landing failed' });
-            this.settleEscalated(task, run, 'landing failed', patch);
+          //
+          // Deterministic recovery landing (issue #154, reliability-design Unit
+          // D): a direct-mode Run executed detached (#152), so its verified work
+          // lives only on the frozen candidate — the live intended branch never
+          // advanced. When the branch classifier says the outcome is
+          // **recoverable**, reconstruct-and-land that candidate here, WITHOUT an
+          // agent turn (deterministic recovery is preferred over any re-merge
+          // turn), before onCompleted closes the ticket. onCompleted's own
+          // auto-merge arm is a no-op for direct mode ("nothing to merge"), so it
+          // still owns the close on top of this land.
+          const recovered = await this.recoverAndLand(task, run, branchClass, record);
+          if (recovered === 'escalate') {
+            record('lifecycle', { event: 'escalated', reason: 'deterministic recovery landing failed' });
+            this.settleEscalated(task, run, 'deterministic recovery landing failed', patch);
           } else {
-            // The Merge Fate landed in onCompleted → record `landing`, then settle
-            // terminal (the coordinator marks the Run `phase:'terminal'`).
-            advancePhase('landing', 'auto');
-            this.settleAutoCompleted(task, run, patch);
+            const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
+            if (outcome === 'escalate') {
+              record('lifecycle', { event: 'escalated', reason: 'landing failed' });
+              this.settleEscalated(task, run, 'landing failed', patch);
+            } else {
+              // The Merge Fate landed in onCompleted → record `landing`, then settle
+              // terminal (the coordinator marks the Run `phase:'terminal'`).
+              advancePhase('landing', 'auto');
+              this.settleAutoCompleted(task, run, patch);
+            }
           }
         } else if (ran && autoAccept && this.autoAcceptLand) {
           // Native auto-accept (issue #138, ADR-0021): a verifier ran and

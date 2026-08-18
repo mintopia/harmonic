@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   BRANCH_OUTCOMES,
   classifyBranchOutcome,
+  planDeterministicRecovery,
+  type BranchClassification,
   type BranchContractObservation,
   type RefDelta,
 } from '../src/domain/branch-recovery.js';
@@ -207,5 +209,66 @@ describe('classifyBranchOutcome (issue #150, pure branch-contract classifier)', 
       if (v.outcome !== 'ambiguous') return;
       expect(v.reason).toBe('unattributed-ref-delta');
     });
+  });
+});
+
+describe('planDeterministicRecovery (issue #154, deterministic recovery decision)', () => {
+  /** The recoverable direct-mode footprint: HEAD detached on the owned candidate ref. */
+  const recoverable: BranchClassification = {
+    outcome: 'recoverable',
+    reason: 'head-detached-on-owned-ref',
+    detail: 'HEAD detached at candidate tip',
+    deltas: [ownedCandidate()],
+  };
+
+  const plan = (overrides: Parameters<typeof planDeterministicRecovery>[0] extends infer T ? Partial<T> : never = {}) =>
+    planDeterministicRecovery({
+      classification: recoverable,
+      observation: cleanObs({ headBranch: null, headCommit: B }),
+      candidateOid: B,
+      candidateDescendsFromStart: true,
+      ...overrides,
+    });
+
+  it('recoverable + candidate descending from start yields a plan landing the candidate on the intended branch', () => {
+    expect(plan()).toEqual({ landCommit: B, baseBranch: 'develop', reason: 'head-detached-on-owned-ref' });
+  });
+
+  it('is total and deterministic: same input yields the same plan', () => {
+    expect(plan()).toEqual(plan());
+  });
+
+  it('a clean outcome needs no recovery → null', () => {
+    expect(plan({ classification: { outcome: 'clean' } })).toBeNull();
+  });
+
+  it('an ambiguous outcome is never auto-recovered (falls through to the fallback) → null', () => {
+    const ambiguous: BranchClassification = {
+      outcome: 'ambiguous',
+      reason: 'unattributed-ref-delta',
+      detail: 'stray branch',
+      deltas: [{ ref: 'refs/heads/stray', from: null, to: B, attributedRunId: null }],
+    };
+    expect(plan({ classification: ambiguous })).toBeNull();
+  });
+
+  it('no frozen candidate → nothing to reconstruct → null', () => {
+    expect(plan({ candidateOid: null })).toBeNull();
+  });
+
+  it('a candidate that does NOT descend from the recorded start → null (core safety invariant)', () => {
+    expect(plan({ candidateDescendsFromStart: false })).toBeNull();
+  });
+
+  it('a diverged intended branch (start no longer contained) → null', () => {
+    expect(
+      plan({
+        observation: cleanObs({
+          headBranch: null,
+          headCommit: B,
+          reachability: { intendedContainsStart: false, intendedContainsHead: false },
+        }),
+      }),
+    ).toBeNull();
   });
 });
