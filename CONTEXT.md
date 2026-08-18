@@ -273,6 +273,12 @@ The warm window is a per-Harness **cost estimate** (Claude ~1 h on a subscriptio
 via `ENABLE_PROMPT_CACHING_1H`; others shorter), never a promise: Harmonic
 records `lastActiveAt` and an estimated warm-until, and frames reuse as
 full-context vs a condensed new Session by cost, not a hard TTL cutoff.
+A Session moves `active → idle → retiring → retired`, and **Session retirement
+is the sole owner of builder-worktree removal**: a worktree Session's checkout is
+retained through the human-rejection window (so a reject-and-continue lands in the
+same workspace) and removed only when the Session retires — on a successful land,
+a reject-continuation timeout, a review-abandonment SLA, an operator disposition,
+or a retention-TTL backstop — coordinated with the Work Context lease.
 _Avoid_: thread, chat (the interactive sibling is a Conversation)
 
 **Working Directory**:

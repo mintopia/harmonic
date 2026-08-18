@@ -26,6 +26,9 @@ import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
 import { ReviewService } from '../domain/review.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
+import { SessionStore } from '../domain/sessions.js';
+import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
+import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import { LandingCoordinator, type LandingEffectExec } from '../domain/landing-coordinator.js';
@@ -197,6 +200,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Built here, ahead of the crash-recovery sweep below (issue #117):
   // `CrashRecoveryCoordinator` needs this same `landing`/`landingJournal` pair
   // to reconcile a Run that died mid-landing.
+  // Session retirement (issue #148, reliability-design Unit C): the sole owner of
+  // builder-worktree removal. Its sync settle-hook is injected into every settle
+  // coordinator (the review-side one below and the Runner's own, via options) so
+  // every terminal disposition records its Session's retirement intent right
+  // after the lease releases; its async `drain` performs the actual worktree
+  // removal — at boot, and on every `run_changed` below (a settle emits one, so
+  // an accepted/cancelled Session's worktree is reclaimed promptly).
+  const sessionStore = new SessionStore(db);
+  const sessionRetirement = new SessionRetirementCoordinator(
+    sessionStore,
+    runs,
+    leases,
+    (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
+  );
   const landingJournal = new LandingJournalStore(db);
   const reviewSettle = new RunSettleCoordinator(
     runs,
@@ -205,6 +222,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     new RunFactStore(db),
     (run) => bus.emit('run_changed', run),
     landingJournal,
+    sessionRetirement,
   );
   const landing = new LandingCoordinator(runs, new RunFactStore(db), landingJournal, reviewSettle);
   // Crash recovery before anything can execute (issue #117): one sweep
@@ -285,6 +303,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
+    // The Runner's own settle coordinator drives most terminal dispositions
+    // (drive-loop, operator-cancel, auto-accept land); feed it the same
+    // retirement hook so those Sessions retire too (issue #148).
+    sessionRetirement,
     keys: {
       mint: (runId) => auth.createKey(`run-${runId}`, { scope: 'run', runId }).token,
       revoke: (runId) => auth.deleteKeysForRun(runId),
@@ -330,6 +352,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // deadline by a previous instance is settled to a terminal disposition now, so
   // an abandoned review never wedges its Work Context lease across a restart.
   review.sweepExpiredReviews();
+  // Session-retirement drain at boot (issue #148): reclaim any builder worktree
+  // owed removal by a Session left `retiring` (a crash mid-removal) or an `idle`
+  // Session whose retention deadline lapsed while the process was down. Runs
+  // after the review sweep so a just-settled review-SLA Session is included.
+  await sessionRetirement.drain();
   // The advisory-assignment coordinator (issue #32) is per-Workspace (issue
   // #45); the Auto-Runner routes a mirrored Task's pick filter + claim step to
   // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
@@ -361,6 +388,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     if (task.state === 'ready') autoRunner.poke();
   });
   bus.on('run_changed', () => autoRunner.poke());
+  // A settle emits `run_changed` right after it records a Session's retirement
+  // intent (issue #148); drain here so an accepted/cancelled/abandoned Session's
+  // builder worktree is reclaimed promptly, and any idle Session past its
+  // retention deadline is swept on the next run activity. Best-effort — a drain
+  // hiccup must never break the event fan-out.
+  bus.on('run_changed', () => {
+    void sessionRetirement.drain().catch(() => {});
+  });
   // The boot-time poke happens in the onListen hook below, after the MCP
   // endpoint is known — so even the first auto-started run gets its
   // scoped key + endpoint injected.

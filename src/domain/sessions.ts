@@ -1,8 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { sessions, type SessionRow } from '../db/schema.js';
+import { sessions, type SessionRow, type SessionRetireReason } from '../db/schema.js';
 import type { AcpInitializeResult } from '../acp/driver.js';
 import { DomainError } from './errors.js';
+import { canTransition, isRetentionElapsed } from './session-retirement.js';
 
 /**
  * Keys on an MCP server template that can carry a secret. `session/new`
@@ -202,5 +203,109 @@ export class SessionStore {
       .from(sessions)
       .where(and(eq(sessions.harness, harness), eq(sessions.harnessSessionId, harnessSessionId)))
       .get();
+  }
+
+  // --- Retirement (issue #148, reliability-design Unit C) ------------------
+  // Session retirement is the sole owner of builder-worktree removal. These
+  // methods move a Session through `active → idle → retiring → retired` and
+  // record the worktree it owns; `SessionRetirementCoordinator` drives them and
+  // performs the actual git removal. Transitions are guarded by
+  // {@link canTransition} and are idempotent no-ops when already satisfied, so
+  // the boot sweep is safe to run repeatedly.
+
+  /** Bind the builder worktree this Session owns (issue #148): the base repo it
+   * was carved from and its checkout path. Set when a **worktree-mode** Run's
+   * workspace is prepared, so retirement knows what to remove. Argument order
+   * matches `Git.removeWorktree`/`RemoveWorktree` (`repoDir`, then `worktreePath`)
+   * so a value never gets swapped across the bind→remove round trip. Idempotent. */
+  bindWorktree(id: number, worktreeRepoDir: string, worktreePath: string, now: number): SessionRow {
+    return this.db
+      .update(sessions)
+      .set({ worktreePath, worktreeRepoDir, updatedAt: now })
+      .where(eq(sessions.id, id))
+      .returning()
+      .get()!;
+  }
+
+  /** Move the Session to `idle` under a retention `deadline` (issue #148),
+   * carrying the `reason` the sweep will retire it under. No-op (returns the row
+   * unchanged) once the Session is already `retiring`/`retired` — a retirement
+   * decision, once made, is never walked back to a retained state. */
+  markIdle(id: number, retireDeadline: number, reason: SessionRetireReason, now: number): SessionRow {
+    const row = this.get(id);
+    if (!canTransition(row.status, 'idle')) return row;
+    return this.db
+      .update(sessions)
+      .set({ status: 'idle', retireDeadline, retireReason: reason, updatedAt: now })
+      .where(eq(sessions.id, id))
+      .returning()
+      .get()!;
+  }
+
+  /** Move the Session to `retiring` (issue #148) — worktree removal is now owed;
+   * a crash before `retired` leaves it here for the boot sweep to re-drive. Sets
+   * the `reason` it is retiring under. No-op once already `retiring`/`retired`. */
+  beginRetiring(id: number, reason: SessionRetireReason, now: number): SessionRow {
+    const row = this.get(id);
+    if (row.status === 'retiring' || row.status === 'retired') return row;
+    if (!canTransition(row.status, 'retiring')) return row;
+    return this.db
+      .update(sessions)
+      .set({ status: 'retiring', retireReason: reason, retireDeadline: null, updatedAt: now })
+      .where(eq(sessions.id, id))
+      .returning()
+      .get()!;
+  }
+
+  /** Move the Session to `retired` (issue #148) — its builder worktree has been
+   * removed. Terminal; a no-op once already `retired`. */
+  markRetired(id: number, now: number): SessionRow {
+    const row = this.get(id);
+    if (row.status === 'retired') return row;
+    if (!canTransition(row.status, 'retired')) return row;
+    return this.db
+      .update(sessions)
+      .set({ status: 'retired', retiredAt: now, updatedAt: now })
+      .where(eq(sessions.id, id))
+      .returning()
+      .get()!;
+  }
+
+  /** Reactivate an `idle` Session for a continuation Run reusing its retained
+   * worktree (issue #148), clearing the retention deadline. No-op if not idle.
+   * Substrate only: no production caller re-enters a retained workspace yet (the
+   * reject-continuation Run is a later ticket); the retention half of "lands in
+   * the same workspace" — the worktree surviving, bound to the Session — is what
+   * #148 delivers, and this is the transition that half will resume through. */
+  reactivate(id: number, now: number): SessionRow {
+    const row = this.get(id);
+    if (row.status !== 'idle') return row;
+    return this.db
+      .update(sessions)
+      .set({ status: 'active', retireDeadline: null, retireReason: null, updatedAt: now })
+      .where(eq(sessions.id, id))
+      .returning()
+      .get()!;
+  }
+
+  /** Every Session in `retiring` — worktree removal owed (issue #148). The drain
+   * removes each one's worktree and marks it `retired`; a crash mid-removal
+   * leaves it here for the next boot to re-drive. */
+  listRetiring(): SessionRow[] {
+    return this.db.select().from(sessions).where(eq(sessions.status, 'retiring')).all();
+  }
+
+  /** Every `idle` Session whose retention deadline has lapsed as of `now` (issue
+   * #148) — due to be swept into `retiring`. A null deadline never lapses. The
+   * SQL prefilter narrows to idle rows with a deadline; {@link isRetentionElapsed}
+   * is the single source of the lapse rule, so the query and predicate agree by
+   * call, not by copy. */
+  listRetentionDue(now: number): SessionRow[] {
+    return this.db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.status, 'idle'), isNotNull(sessions.retireDeadline)))
+      .all()
+      .filter((s) => isRetentionElapsed(s, now));
   }
 }

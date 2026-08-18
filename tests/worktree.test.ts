@@ -43,7 +43,7 @@ describe('worktree isolation mode', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  it('executes on its own branch in a temp worktree, removed afterwards with the branch kept', async () => {
+  it('executes on its own branch in a temp worktree RETAINED through review, removed at Session retirement (issue #148)', async () => {
     const repo = makeRepo();
     const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
 
@@ -56,7 +56,16 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'show', `${run.branch}:feature.txt`)).toBe('made by agent');
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
 
-    // The temporary worktree is gone — only the main checkout remains.
+    // Issue #148: the builder worktree is RETAINED through the human-rejection
+    // window — it survives alongside the main checkout while the task awaits
+    // review (a reject-and-continue would land in the same workspace).
+    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(2);
+
+    // Accepting lands the run + retires the Session, which is the sole owner of
+    // builder-worktree removal; the async retirement drain then reclaims it.
+    expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(200);
+    await waitFor(async () => git(repo, 'worktree', 'list').split('\n').length === 1);
+    // Only the main checkout remains — the retained worktree was removed at retirement.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
   });
 
@@ -134,8 +143,12 @@ describe('worktree isolation mode', () => {
     }
     expect(git(repo, 'show', `${(await server.api('GET', `/api/runs/${results[0].runId}`)).body.branch}:a.txt`)).toBe('A');
 
-    // The base repo is intact: no leftover worktrees, clean tree, still on main.
-    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
+    // The base repo is intact: a clean tree, still on main — the repo-op lock
+    // (issue #121) serialised the concurrent create windows without corruption.
+    // Issue #148: each Run's builder worktree is RETAINED (bound to its Session)
+    // while it awaits review, so the base repo has its main checkout plus the
+    // three retained builder worktrees — removed later at Session retirement.
+    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1 + results.length);
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });

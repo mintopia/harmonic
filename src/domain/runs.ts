@@ -65,6 +65,19 @@ export class RunStore {
     return this.db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(asc(runs.attempt)).all();
   }
 
+  /** Every Run bound to one durable Session (issue #148), oldest first — the
+   * Runs that share the Session's builder worktree across a retry / reject
+   * continuation. Session retirement uses this to check no live Run still leases
+   * the worktree before removing it. */
+  listForSession(sessionRowId: number): RunRow[] {
+    return this.db
+      .select()
+      .from(runs)
+      .where(eq(runs.sessionRowId, sessionRowId))
+      .orderBy(asc(runs.attempt))
+      .all();
+  }
+
   update(id: number, patch: Partial<RunRow>): RunRow {
     return this.db.update(runs).set(patch).where(eq(runs.id, id)).returning().get()!;
   }

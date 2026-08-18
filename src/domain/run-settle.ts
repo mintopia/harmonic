@@ -4,8 +4,10 @@ import type { TaskService } from './tasks.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunFactStore } from './run-facts.js';
 import type { LandingJournalStore } from './landing-journal.js';
-import { computeDisposition } from './run-disposition.js';
+import { computeDisposition, type Disposition } from './run-disposition.js';
 import { projectSettle, type CoordinatorFact, type SettleProjection, type SettleTaskAction } from './run-coordinator.js';
+import type { SessionRetirementHook } from './session-retirement-coordinator.js';
+import type { RetirementCause } from './session-retirement.js';
 
 /**
  * The single terminal-disposition coordinator (issue #113, generalised for the
@@ -45,6 +47,7 @@ export class RunSettleCoordinator {
     private readonly runFacts: RunFactStore,
     private readonly onRunFinished?: (run: RunRow) => void,
     private readonly landingJournal?: LandingJournalStore,
+    private readonly sessionRetirement?: SessionRetirementHook,
   ) {}
 
   /**
@@ -118,8 +121,41 @@ export class RunSettleCoordinator {
       finishedAt: before.finishedAt ?? Date.now(),
     });
     this.releaseLease(run.id);
+    // Session retirement (issue #148, reliability-design Unit C): the moment the
+    // lease is released, record the intent for this Run's Session — retire now
+    // (a land/abandon/cancel) or retain under a deadline (a reject / other
+    // ending). Ordered strictly *after* `releaseLease` so the worktree's owner is
+    // gone before its fate is decided (removal is coordinated with the lease).
+    // Sync + best-effort: it only marks the Session's status; the async worktree
+    // removal is a separate drain, and a hiccup must never crash settle.
+    const finished = this.runStore.get(run.id);
+    try {
+      this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner, patch));
+    } catch {
+      // best-effort; the boot/periodic drain reconciles from the Session row
+    }
     this.applySettleTaskAction(task.id, winner.taskAction);
-    this.onRunFinished?.(this.runStore.get(run.id));
+    this.onRunFinished?.(finished);
+  }
+
+  /**
+   * Map the winning disposition + review gate to the retirement cause a Session
+   * needs (issue #148): an operator cancel or an unreviewed review-SLA lapse
+   * retire immediately; a human reject retains for a continuation window; any
+   * `completed` Run landed (the phase machine only completes via landing); every
+   * other ending (generic fail, escalate, guardrail-trip, branch-violation,
+   * process-death) is retained under the retention-TTL backstop.
+   */
+  private retirementCause(
+    disposition: Disposition | null,
+    winner: SettleProjection,
+    patch: Partial<RunRow>,
+  ): RetirementCause {
+    if (disposition === 'operator-cancel') return 'operator-cancel';
+    if (disposition === 'review-sla-expiry') return 'review-sla';
+    if (patch.review === 'rejected') return 'rejected';
+    if (winner.runState === 'completed') return 'landed';
+    return 'other';
   }
 
   /** `min(latestSeq, poncCutoffSeq)`, or `latestSeq` unclamped when

@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git } from './git.js';
@@ -25,6 +25,7 @@ import { RunFactStore } from '../domain/run-facts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
+import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
@@ -146,6 +147,12 @@ export interface RunnerOptions {
     run: RunRow,
     patch: Partial<RunRow>,
   ) => Promise<{ ok: boolean; detail?: string | undefined }>;
+  /** Session retirement hook (issue #148): every terminal disposition the
+   * Runner's settle coordinator reaches records its Session's retirement intent
+   * here, right after the lease releases. Absent → Sessions are never retired
+   * (pre-#148 behaviour); the worktree teardown then falls back to
+   * `finalizeWorkspace` for a Run with no Session. */
+  sessionRetirement?: SessionRetirementHook;
 }
 
 interface Workspace {
@@ -377,6 +384,7 @@ export class Runner {
       this.runFacts,
       (run) => this.events.onRunFinished?.(run),
       new LandingJournalStore(this.db),
+      options.sessionRetirement,
     );
     this.tailer = new LiveUsageTailer(
       {
@@ -800,15 +808,21 @@ export class Runner {
     mkdirSync(this.worktreesDir, { recursive: true });
 
     if (resume) {
-      // Self-heal turn (issue #137): resume the Run's prior work. The first
-      // turn's `finalizeWorkspace` committed it onto `run.branch` and removed
-      // the checkout, so check that existing branch back out (never `-b`) at the
-      // same run-keyed path. The candidate is re-parented on the SAME validated
-      // base the first turn recorded, so the re-verify judges the full diff.
+      // Self-heal turn (issue #137): resume the Run's prior work in the SAME
+      // run-keyed worktree. Since issue #148 the first turn's `finalizeWorkspace`
+      // **retains** that worktree (with the run branch checked out and the work
+      // committed), so the continuation reuses it in place. Only re-add the
+      // checkout if the worktree is genuinely gone — a pre-#148 Run whose first
+      // turn removed it, or a crash/retirement that reclaimed it — because
+      // `addWorktreeCheckout` fails on an already-present path / already-checked-
+      // out branch. The candidate is re-parented on the SAME validated base the
+      // first turn recorded, so the re-verify judges the full diff.
       const persisted = this.runStore.get(run.id);
       const branch = persisted.branch ?? `harmonic/task-${task.id}-run-${run.attempt}`;
       const baseBranch = persisted.baseBranch ?? (await Git.currentBranch(task.workingDir));
-      await Git.addWorktreeCheckout(task.workingDir, path, branch);
+      if (!existsSync(path)) {
+        await Git.addWorktreeCheckout(task.workingDir, path, branch);
+      }
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
 
@@ -1010,9 +1024,11 @@ export class Runner {
    * Tear the leased workspace down before the task settles, per isolation mode:
    * a **direct** Run whose HEAD was detached (issue #152) has its live checkout
    * restored coherently; a **worktree** Run has its work snapshotted onto its
-   * branch and the worktree dropped, leaving the branch as the artifact. Runs
-   * before the task settles so an awaiting-review task always has a reviewable
-   * artifact and the operator's checkout is coherent again.
+   * branch and — since issue #148 — the worktree **retained** (bound to the Run's
+   * Session), not dropped, so the checkout survives the human-rejection window
+   * and Session retirement is the sole owner of its removal. Runs before the task
+   * settles so an awaiting-review task always has a reviewable artifact and the
+   * operator's checkout is coherent again.
    */
   private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
     if (workspace.retainForBranchViolation) {
@@ -1035,10 +1051,32 @@ export class Runner {
       return;
     }
     if (!workspace.worktree) return;
-    try {
-      await Git.commitAll(workspace.worktree.path, `harmonic: task ${task.id} run ${run.attempt}`);
-    } finally {
-      await Git.removeWorktree(workspace.worktree.repoDir, workspace.worktree.path).catch(() => {});
+    const { repoDir, path } = workspace.worktree;
+    // Commit the agent's work onto the run branch (the durable artifact landing
+    // merges) — best-effort, so a commit hiccup never blocks teardown.
+    await Git.commitAll(path, `harmonic: task ${task.id} run ${run.attempt}`).catch(() => {});
+    // Issue #148 (reliability-design Unit C): **retain** the builder worktree so
+    // its removal is owned solely by Session retirement — the checkout then
+    // survives the human-rejection window and a reject-and-continue lands in the
+    // same workspace. Retention requires a Session to own the removal, so bind
+    // the worktree to the Run's Session and retain **only if that bind succeeds**.
+    // If there is no Session (the best-effort dispatch write never landed) or the
+    // bind fails, retirement could never reclaim this worktree — so dispose of it
+    // now rather than leak it. This is the only builder-worktree removal outside
+    // retirement, and it fires solely for a worktree retirement structurally
+    // cannot own; the invariant "retained ⇔ bound ⇔ retirement owns removal" holds.
+    const sessionRowId = this.runStore.get(run.id).sessionRowId;
+    let retained = false;
+    if (sessionRowId != null) {
+      try {
+        this.sessionStore.bindWorktree(sessionRowId, repoDir, path, Date.now());
+        retained = true;
+      } catch {
+        retained = false; // ownership not established — fall through to dispose
+      }
+    }
+    if (!retained) {
+      await Git.removeWorktree(repoDir, path).catch(() => {});
     }
   }
 

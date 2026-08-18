@@ -58,6 +58,29 @@ export class WorkContextLeaseStore {
     this.db.delete(workContextLeases).where(eq(workContextLeases.ownerRunId, ownerRunId)).run();
   }
 
+  /**
+   * Transactionally transfer whatever `fromRunId` holds to `toRunId` (issue
+   * #148, reliability-design §0.5): re-points the lease's owner from one Run to
+   * the next continuation Run sharing the same Session (retry / reject
+   * continuation), so the builder worktree keeps exactly one owner across the
+   * handover — the worktree is never left ownerless (which would let retirement
+   * remove it out from under the continuation) nor doubly-claimed. A no-op if
+   * `fromRunId` holds nothing. Returns the transferred lease, or undefined.
+   *
+   * Substrate only: no production caller performs a continuation handover yet
+   * (the reject-continuation Run is a later ticket). Retirement's live lease
+   * coordination today is the passive gate in `SessionRetirementCoordinator.drain`
+   * — it never removes a worktree while any Run of the Session still holds a
+   * lease; this is the transactional primitive that gate is built to survive. */
+  transfer(fromRunId: number, toRunId: number, now: number = Date.now()): WorkContextLeaseRow | undefined {
+    return this.db
+      .update(workContextLeases)
+      .set({ ownerRunId: toRunId, heartbeat: now })
+      .where(eq(workContextLeases.ownerRunId, fromRunId))
+      .returning()
+      .get();
+  }
+
   /** Bumps the liveness heartbeat on `key`'s lease, if one exists. */
   heartbeat(key: string, now: number = Date.now()): void {
     this.db.update(workContextLeases).set({ heartbeat: now }).where(eq(workContextLeases.key, key)).run();

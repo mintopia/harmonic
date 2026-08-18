@@ -780,12 +780,34 @@ export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
 
 /**
  * A Session's lifecycle status (reliability-design Unit C): `active → idle →
- * retiring → retired`. Only `active` is written today — dispatch records a
- * Session `active`; the retirement transitions (which own builder-worktree
- * removal) land with resume, out of scope for the #141 foundation.
+ * retiring → retired`. **Session retirement is the sole owner of builder-worktree
+ * removal** (issue #148): a worktree Session's checkout is retained through the
+ * human-rejection window (so a reject-and-continue lands in the same workspace)
+ * and its builder worktree is removed **only** at retirement, coordinated with
+ * the Work Context lease. `active` — a live or review-parked Run owns it; `idle`
+ * — no live Run, retained under a `retireDeadline` (reject-continuation / warm
+ * reuse window); `retiring` — worktree removal in progress (crash-re-driven at
+ * boot); `retired` — worktree removed, terminal.
  */
 export const SESSION_STATUSES = ['active', 'idle', 'retiring', 'retired'] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
+
+/**
+ * Why a Session retired (issue #148), for the operator-legible record. Each is a
+ * distinct retirement deadline from reliability-design Unit C: `landed` (a
+ * successful land + terminal success), `reject-continuation-timeout` (the human
+ * rejected and no continuation arrived in time), `review-abandonment-sla` (the
+ * review SLA lapsed unreviewed), `operator-disposition` (cancel/operator action),
+ * `retention-ttl` (the backstop so no idle Session retains its worktree forever).
+ */
+export const SESSION_RETIRE_REASONS = [
+  'landed',
+  'reject-continuation-timeout',
+  'review-abandonment-sla',
+  'operator-disposition',
+  'retention-ttl',
+] as const;
+export type SessionRetireReason = (typeof SESSION_RETIRE_REASONS)[number];
 
 /**
  * A Session (issue #141, reliability-design Unit C): one ACP conversation with
@@ -844,6 +866,26 @@ export const sessions = sqliteTable(
      * Harness COST estimate (Claude ~1h), never a correctness TTL. Null when
      * the harness has no known warm window (never a fake zero). */
     estimatedWarmUntil: integer('estimated_warm_until'),
+    /** The builder worktree this Session owns (issue #148): its checkout path and
+     * the base repo it was carved from. Set when a **worktree-mode** Run binds
+     * its workspace to the Session; retirement (the sole owner of removal) reads
+     * these to tear the worktree down. Null for direct-mode / native / non-git
+     * Sessions, which own no builder worktree — retirement is then a pure status
+     * transition with nothing to remove. */
+    worktreePath: text('worktree_path'),
+    worktreeRepoDir: text('worktree_repo_dir'),
+    /** Why this Session retired ({@link SessionRetireReason}), or — while `idle` —
+     * the reason its retention deadline *will* retire it under. Null while
+     * `active`. The operator-legible record of which retirement deadline fired. */
+    retireReason: text('retire_reason').$type<SessionRetireReason>(),
+    /** Epoch ms at which an `idle` Session's retention window lapses and the sweep
+     * retires it (issue #148) — the reject-continuation / retention-TTL deadline.
+     * Null while `active` or already `retired`; a null on an `idle` Session means
+     * "retire only on an explicit operator disposition" (never auto-swept). */
+    retireDeadline: integer('retire_deadline'),
+    /** Epoch ms the Session reached `retired` (its worktree removed); null until
+     * then. */
+    retiredAt: integer('retired_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
