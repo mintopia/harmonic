@@ -63,6 +63,27 @@ function redact(value: unknown): unknown {
 }
 
 /**
+ * Re-attach freshly-minted credentials to the credential-free MCP templates a
+ * Session stored, producing the `session/load` mcpServers for a resume. The
+ * partial inverse of {@link stripMcpCredentials}: an HTTP MCP server (the
+ * `harmonic` server every harness registers over session/new — type `'http'`)
+ * gets its `Authorization: Bearer <RunKey>` header re-added from the FRESHLY
+ * minted `token`. The credential comes ONLY from `token` (a live mint), never
+ * from the stored template (which has none), so a revoked run-scoped key can
+ * never be reused on reload (issue #143 acceptance criterion). Non-http / non-
+ * object entries pass through unchanged; a non-array input yields `[]`.
+ */
+export function graftMcpCredentials(templates: unknown, token: string): unknown[] {
+  if (!Array.isArray(templates)) return [];
+  return templates.map((s) => {
+    if (s && typeof s === 'object' && !Array.isArray(s) && (s as { type?: unknown }).type === 'http') {
+      return { ...(s as Record<string, unknown>), headers: [{ name: 'Authorization', value: `Bearer ${token}` }] };
+    }
+    return s;
+  });
+}
+
+/**
  * Whether the harness advertised `session/load` support in its `initialize`
  * result (`agentCapabilities.loadSession === true`). Anything else — the flag
  * absent, false, or a legacy driver that surfaced no result — reads as

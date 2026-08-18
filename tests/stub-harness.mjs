@@ -38,6 +38,15 @@ if (process.env.STUB_STARTUP_STDERR) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
 
+// Session modes shape shared by session/new and session/load (both advertise
+// them the same way, and #143's load() re-verifies against whatever it gets
+// back from session/load). STUB_MODES (comma-separated) overrides, '' means
+// none — to test the fail-closed path.
+const stubModes = () => {
+  const ids = (process.env.STUB_MODES ?? 'default,auto,bypassPermissions').split(',').filter(Boolean);
+  return ids.length ? { currentModeId: ids[0], availableModes: ids.map((id) => ({ id, name: id })) } : undefined;
+};
+
 let nextOutId = 1000;
 const pendingOut = new Map();
 const request = (method, params) => {
@@ -49,6 +58,7 @@ const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 
 const sessionId = process.env.STUB_SESSION_ID ?? `stub-${process.pid}`;
 let sessionNewParams = null;
+let sessionLoadParams = null;
 let setModelParams = null;
 let setModeParams = null;
 // Set by a session/cancel notification; the in-flight prompt loop checks it
@@ -148,6 +158,16 @@ async function handlePrompt(msg) {
     notify('session/update', {
       sessionId: msg.params.sessionId,
       update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(sessionNewParams) } },
+    });
+  }
+
+  // Echo what (if anything) arrived over session/load, so a resume test can
+  // assert what actually reached the wire — the fresh mcpServers/creds, cwd,
+  // and additionalDirectories (issue #143).
+  if (scenario.echoSessionLoad) {
+    notify('session/update', {
+      sessionId: msg.params.sessionId,
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(sessionLoadParams) } },
     });
   }
 
@@ -297,8 +317,21 @@ rl.on('line', (line) => {
       // end-to-end. No test asserted the prior empty `agentCapabilities: {}`
       // shape (checked: only tests/sessions.test.ts references it, and those
       // call SessionStore/readLoadSessionCapability directly, bypassing this
-      // stub), so this is safe to change.
-      send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } });
+      // stub), so this is safe to change. Two env toggles let a #143 load()
+      // test simulate a harness that DOESN'T advertise one of the two load
+      // capabilities: STUB_NO_LOAD_SESSION flips loadSession to false;
+      // STUB_NO_ADDITIONAL_DIRS flips additionalDirectories to false.
+      send({
+        jsonrpc: '2.0',
+        id: msg.id,
+        result: {
+          protocolVersion: 1,
+          agentCapabilities: {
+            loadSession: !process.env.STUB_NO_LOAD_SESSION,
+            additionalDirectories: !process.env.STUB_NO_ADDITIONAL_DIRS,
+          },
+        },
+      });
       break;
     case 'session/new':
       sessionNewParams = msg.params;
@@ -309,11 +342,20 @@ rl.on('line', (line) => {
         break;
       }
       {
-        // Advertise session modes like Claude's ACP adapter; STUB_MODES (comma-
-        // separated) overrides, '' means none (to test the fail-closed path).
-        const ids = (process.env.STUB_MODES ?? 'default,auto,bypassPermissions').split(',').filter(Boolean);
-        const modes = ids.length ? { currentModeId: ids[0], availableModes: ids.map((id) => ({ id, name: id })) } : undefined;
+        const modes = stubModes();
         send({ jsonrpc: '2.0', id: msg.id, result: { sessionId, ...(modes ? { modes } : {}) } });
+      }
+      break;
+    case 'session/load':
+      // The #143 resume handshake: reload a stored Session's harness session
+      // id into this (fresh) process. Reply with the same modes shape
+      // session/new returns, so AcpDriver.load() can re-verify availableModes
+      // against the LIVE (possibly upgraded/downgraded) harness rather than
+      // trusting what the original dispatch saw.
+      sessionLoadParams = msg.params;
+      {
+        const modes = stubModes();
+        send({ jsonrpc: '2.0', id: msg.id, result: modes ? { modes } : {} });
       }
       break;
     case 'session/set_model':
