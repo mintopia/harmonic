@@ -222,6 +222,15 @@ export const runs = sqliteTable('runs', {
    * additive and changes no in-flight Run behaviour.
    */
   sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
+  /**
+   * The Execution Chain (issue #129) this Run belongs to — shared with the
+   * sibling Runs that continue the same line of work, so a cumulative spend
+   * budget is charged across the chain and a retry can't reset it. Null on
+   * pre-feature Runs. Established when a Run starts a new line of work and
+   * carried forward when a related Run reattaches (see beginRun / the chain
+   * resolver).
+   */
+  chainId: integer('chain_id').references((): AnySQLiteColumn => executionChains.id),
   /** The exact prompt text sent to the harness for this Run (native = filled
    * Task Prompt template + any feedback; mirrored = the filled Drive Prompt).
    * Persisted so Task detail's Prompt tab shows what actually went to the
@@ -266,6 +275,20 @@ export const runs = sqliteTable('runs', {
   startedAt: integer('started_at').notNull(),
   finishedAt: integer('finished_at'),
 });
+
+/**
+ * The Execution Chain (issue #129, reliability-design Unit A): a persisted
+ * identity threaded across every Run that continues one line of work —
+ * reattempt / mirrored retry / human-reject continue / crash-resume / every
+ * self-heal turn — so a cumulative token/cost budget is charged against the
+ * whole chain, not reset by each fresh Run. A retry therefore cannot reset the
+ * spend counter to bypass the ceiling. Per-Run budgets still apply alongside it.
+ */
+export const executionChains = sqliteTable('execution_chains', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  createdAt: integer('created_at').notNull(),
+});
+export type ExecutionChainRow = typeof executionChains.$inferSelect;
 
 export const runEvents = sqliteTable('run_events', {
   id: integer('id').primaryKey({ autoIncrement: true }),

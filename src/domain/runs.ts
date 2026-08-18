@@ -31,7 +31,7 @@ export interface PersistedRunEvent {
 export class RunStore {
   constructor(private readonly db: Db) {}
 
-  create(taskId: number, snapshot?: RunGuardrailSnapshot): RunRow {
+  create(taskId: number, snapshot?: RunGuardrailSnapshot, chainId?: number): RunRow {
     const attempt =
       (this.db
         .select({ n: sql<number>`coalesce(max(${runs.attempt}), 0)` })
@@ -50,6 +50,9 @@ export class RunStore {
         startedAt: Date.now(),
         guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
         priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
+        // The Execution Chain (issue #129) this Run joins; null on a caller
+        // that hasn't resolved one yet (pre-feature / not-yet-wired paths).
+        chainId: chainId ?? null,
       })
       .returning()
       .get();

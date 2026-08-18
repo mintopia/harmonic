@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { guardrailEvents } from '../src/db/schema.js';
+import { guardrailEvents, runs, executionChains } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
 const scenario = (s: object) => JSON.stringify(s);
@@ -709,6 +709,83 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.dimension).toBe('tokens');
       expect(JSON.parse(rows[0]!.payload)).toMatchObject({ unmeasurable: true });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('trips on the Execution Chain cumulative budget when a retry alone stays under the per-Run cap (issue #129)', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-chain-work-'));
+    // The live retry logs only 300 tokens — well under the 1,000-token cap on its
+    // own. A prior sibling Run on the SAME Execution Chain already spent 800, so
+    // the chain cumulative (1,100) is over the ceiling: the retry must trip on the
+    // CHAIN scope even though its own per-Run spend never would — the reset-and-
+    // bypass the Execution Chain exists to prevent (issue #129).
+    const server = await serverWithSpendGuardrail({
+      workDir,
+      models: { 'stub-model': 300 },
+      guardrails: { budget: { tokens: 1_000 } },
+      graceMs: 2_000, // tolerate a slow first usage read without escalating "unmeasurable"
+    });
+    try {
+      const db = server.app.ctx.db;
+      const created = await server.api('POST', '/api/tasks', {
+        prompt: scenario({ exit: 'hang' }),
+        workingDir: workDir,
+      });
+      expect(created.status).toBe(201);
+      const taskId = created.body.id;
+
+      // Seed a settled prior Run of this Task on a fresh chain that already spent
+      // 800 tokens — the cumulative the live retry inherits (branch 1 of
+      // `resolveForTask`: same-Task continuation) and adds its own 300 onto.
+      const chainId = db
+        .insert(executionChains)
+        .values({ createdAt: Date.now() })
+        .returning({ id: executionChains.id })
+        .get()!.id;
+      db.insert(runs)
+        .values({
+          taskId,
+          attempt: 1,
+          state: 'failed',
+          phase: 'terminal',
+          chainId,
+          usage: JSON.stringify({
+            models: { 'stub-model': { inputTokens: 800, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+            totals: { totalTokens: 800 },
+          }),
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+        })
+        .run();
+
+      const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+      expect(started.status).toBe(201);
+      const runId = started.body.id;
+
+      const task = await waitFor(async () => {
+        const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+        return body.escalated ? body : undefined;
+      });
+      expect(task.escalated).toBe(true);
+
+      const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+      expect(run.state).toBe('failed');
+      expect(run.phase).toBe('terminal');
+      expect(run.reason).toMatch(/^budget:/);
+      // The live Run inherited the seeded chain rather than minting a new one
+      // (read from the row directly — chainId is internal, not on the run API).
+      const liveRun = db.select().from(runs).where(eq(runs.id, runId)).get()!;
+      expect(liveRun.chainId).toBe(chainId);
+
+      const rows = db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.dimension).toBe('tokens');
+      // Cumulative 800 (prior) + 300 (live) = 1,100 ≥ the 1,000 cap.
+      expect(rows[0]!.observedValue).toBeGreaterThanOrEqual(1_000);
+      // The trip is attributed to the CHAIN scope, not the per-Run budget.
+      expect(JSON.parse(rows[0]!.payload).scope).toBe('chain');
     } finally {
       await server.close();
     }

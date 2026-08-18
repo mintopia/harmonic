@@ -41,6 +41,8 @@ import {
   spendTrip,
   toMicroUsd,
 } from '../domain/guardrail-budget.js';
+import { ExecutionChainStore } from '../domain/execution-chain-store.js';
+import { sumPriorSpend, chainObserved, combineSpendOutcomes, type ChainSpend } from '../domain/execution-chain.js';
 import { detectStall } from '../domain/stall-detector.js';
 import { toProgressEvents, formatProgressReason } from '../domain/guardrail-progress.js';
 import {
@@ -328,6 +330,12 @@ export class Runner {
    * records its corrective turn here, single-flight per Session, before the
    * builder re-drives it. */
   private readonly turnQueue: TurnQueueStore;
+  /** The Execution Chain store (issue #129, reliability-design Unit A): mints /
+   * resolves the persisted `execution_chains` identity a Run belongs to, so a
+   * cumulative token/cost budget is charged across every Run that continues one
+   * line of work (reattempt / mirrored retry / crash-resume / self-heal) and a
+   * retry cannot reset the counter to bypass the ceiling. */
+  private readonly chainStore: ExecutionChainStore;
   /** The durable Session store (issue #141, reliability-design Unit C): every
    * dispatch records a Session capturing the harness's `initialize`
    * capabilities alongside the Run, without changing Run behaviour. */
@@ -367,6 +375,7 @@ export class Runner {
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     this.guardrailEvents = new GuardrailEventStore(this.db);
     this.turnQueue = new TurnQueueStore(this.db);
+    this.chainStore = new ExecutionChainStore(this.db);
     this.sessionStore = new SessionStore(this.db);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
@@ -461,7 +470,13 @@ export class Runner {
     // left. Enforced HERE, the shared funnel, so REST / MCP / Auto-Runner /
     // a second process are all blocked identically — not only pickNext.
     const run = this.db.transaction(() => {
-      const created = this.runStore.create(task.id, snapshot);
+      // The Execution Chain this Run charges its cumulative budget against
+      // (issue #129): inherited from the line of work this Run continues (a
+      // same-Task new attempt, or a reattempt's linked Task), or a fresh chain
+      // when it starts a new line. Resolved inside the transaction so the chain
+      // identity and the Run row commit together.
+      const chainId = this.chainStore.resolveForTask(task);
+      const created = this.runStore.create(task.id, snapshot, chainId);
       this.leaseStore.acquire(this.workContextKeyFor(task, created), created.id, 'running');
       return created;
     });
@@ -1357,13 +1372,16 @@ export class Runner {
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
     // it — stable across heal turns even as each turn's ACP session id changes.
     const sessionKey = `run-${run.id}`;
-    // Charge the heal budget against the durable turn-queue substrate: seed from
-    // the self-heal turns already recorded for this Run, so the bound survives a
-    // crash-resume of the drive loop rather than being a purely in-memory count.
-    // Cumulative charging ACROSS Runs (reattempt / mirrored retry / crash-resume
-    // into a new Run) is the Execution Chain's job — deferred until the
-    // `execution_chains` table lands (reliability-design Unit B); a fresh Run
-    // starts with an empty budget.
+    // Charge the heal-COUNT budget against the durable turn-queue substrate: seed
+    // from the self-heal turns already recorded for this Run, so the bound
+    // survives a crash-resume of the drive loop rather than being a purely
+    // in-memory count. This heal count stays per-Run: a fresh Run re-earns its
+    // full `maxSelfHeals`. The token/cost SPEND those heal turns consume, by
+    // contrast, IS charged cumulatively across the whole Execution Chain (issue
+    // #129) — self-heal turns run inside this Run, so their usage is already in
+    // this Run's live snapshot, which the chain-cumulative spend poll folds onto
+    // the chain's prior floor. So spend can't be reset by a retry; the heal count
+    // deliberately can.
     let heals = this.turnQueue.listForSession(sessionKey).filter((t) => t.purpose === 'self-heal').length;
     // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
     // the count from the durable queue too, so the "at most one corrective
@@ -1853,6 +1871,31 @@ export class Runner {
       // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
       const ws = this.getWorkspace?.(task.workspaceId);
       const configSource: 'default' | 'workspace' = ws?.guardrailBudget ? 'workspace' : 'default';
+      // Prior cumulative spend of this Run's Execution Chain (issue #129): the
+      // token/cost already charged by the sibling Runs that continued the same
+      // line of work before this one (reattempt / mirrored retry / crash-resume).
+      // Summed once at arm time — those Runs are settled, so their frozen usage
+      // is immutable for the life of this poll — and each member is priced with
+      // ITS OWN frozen price table (issue #126), so a later price edit can't
+      // retroactively change what a past Run cost. A member with no recorded
+      // usage contributes a 0 floor (see `sumPriorSpend`); self-heal turns need
+      // no accounting here because they run inside this same Run.
+      const priorSpend = sumPriorSpend(
+        (started.chainId == null ? [] : this.chainStore.listForChain(started.chainId))
+          .filter((member) => member.id !== run.id)
+          .map((member): ChainSpend => {
+            const usage = member.usage ? (JSON.parse(member.usage) as RunUsage) : null;
+            const memberPrices: PriceTable = member.priceTable
+              ? (JSON.parse(member.priceTable) as PriceTable)
+              : {};
+            const memberCost = usage ? costOfUsages([usage], memberPrices) : null;
+            return {
+              tokens: usage ? totalTokensOf(usage) : null,
+              usd: memberCost?.totalUsd ?? null,
+              costIncomplete: memberCost?.incomplete ?? true,
+            };
+          }),
+      );
       let unmeasurableSince: number | null = null;
       spendTimer = setInterval(() => {
         if (active.externallySettled) return;
@@ -1863,7 +1906,24 @@ export class Runner {
         const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
         const observedUsd = cost?.totalUsd ?? null;
         const costIncomplete = cost?.incomplete ?? true;
-        const outcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
+        // Two spend checks against the SAME frozen caps (issue #129 acceptance:
+        // a trip fires when EITHER the per-Run or the chain budget is exceeded).
+        // The per-Run check is #128's unchanged behaviour; the chain check folds
+        // this Run's live usage onto the chain's prior floor, so a retry whose
+        // own usage is under the cap still trips once the cumulative crosses it —
+        // the reset-and-bypass this guard exists to prevent. `combineSpendOutcomes`
+        // prefers a per-Run trip (keeping #128's card evidence) and only reports
+        // the chain scope when the cumulative is what pushed it over.
+        const runOutcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
+        const chainSpend = chainObserved(priorSpend, { tokens: observedTokens, usd: observedUsd, costIncomplete });
+        const chainOutcome = spendTrip({
+          phase: now.phase ?? null,
+          budget,
+          observedTokens: chainSpend.tokens,
+          observedUsd: chainSpend.usd,
+          costIncomplete: chainSpend.costIncomplete,
+        });
+        const { outcome, scope } = combineSpendOutcomes(runOutcome, chainOutcome);
         if (outcome.kind === 'ok') {
           unmeasurableSince = null;
           return;
@@ -1882,7 +1942,7 @@ export class Runner {
               limitValue,
               observedValue: 0,
               configSource,
-              payload: { unmeasurable: true, graceMs: this.spendGraceMs },
+              payload: { unmeasurable: true, graceMs: this.spendGraceMs, scope },
             },
             reason,
           );
@@ -1899,6 +1959,7 @@ export class Runner {
                 limitValue: trip.limitTokens,
                 observedValue: trip.observedTokens,
                 configSource,
+                payload: { scope },
               }
             : {
                 dimension: 'cost' as const,
@@ -1906,7 +1967,7 @@ export class Runner {
                 limitValue: toMicroUsd(trip.limitUsd),
                 observedValue: toMicroUsd(trip.observedUsd),
                 configSource,
-                payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd },
+                payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd, scope },
               };
         const reason = formatBudgetReason(trip);
         tripSpend(now, event, reason);
