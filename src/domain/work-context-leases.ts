@@ -1,7 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull, lte } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { workContextLeases, type WorkContextLeaseRow } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import { DEFAULT_LEASE_TTL, leaseExpiryFor, type LeaseTtl } from './lease-ttl.js';
 
 /** Matches better-sqlite3's message for a violated UNIQUE constraint, as a
  * fallback when the driver's `.code` isn't populated (e.g. wrapped errors). */
@@ -20,11 +21,15 @@ function isUniqueViolation(err: unknown): boolean {
  * primitive — `acquire` relies on the database to reject a second row for an
  * already-held (or suspect) key rather than racing a select-then-insert.
  *
- * Scope is deliberately narrow: this is the persisted substrate only. Nothing
- * here calls into the Runner or enforces TTLs (#122). The boot reconciliation
- * that flips a dead owner's lease to `suspect` or releases a provably-clean one
- * (#123) lives in `CrashRecoveryCoordinator`; it drives the `listAll` /
- * `markSuspect` / `release` primitives here.
+ * Also owns the live TTL/heartbeat primitives (issue #122): `acquire` and
+ * `heartbeat` set a phase-scoped expiry (`lease-ttl.ts`), and `sweepExpired`
+ * flips a lapsed `held` lease to `suspect` — driven by the Runner's
+ * coordinator heartbeat and the app's periodic sweep, respectively. The boot
+ * reconciliation that flips a dead owner's lease to `suspect` or releases a
+ * provably-clean one (#123) lives separately in `CrashRecoveryCoordinator`; it
+ * drives the `listAll` / `markSuspect` / `release` primitives here and is the
+ * backstop for a lease that never got a live TTL (e.g. a spawn that died
+ * before its first heartbeat, or predates this machinery).
  */
 export class WorkContextLeaseStore {
   constructor(private readonly db: Db) {}
@@ -39,7 +44,18 @@ export class WorkContextLeaseStore {
     try {
       return this.db
         .insert(workContextLeases)
-        .values({ key, phase, ownerRunId, heartbeat: now, expiry: null, state: 'held', acquiredAt: now })
+        .values({
+          key,
+          phase,
+          ownerRunId,
+          heartbeat: now,
+          // TTL-bounded from birth (issue #122): a spawn that dies before its
+          // first heartbeat still has a non-null expiry, so the periodic sweep
+          // catches it rather than holding the key forever on a null expiry.
+          expiry: leaseExpiryFor(phase, now),
+          state: 'held',
+          acquiredAt: now,
+        })
         .returning()
         .get();
     } catch (err) {
@@ -123,9 +139,23 @@ export class WorkContextLeaseStore {
     return this.acquire(key, ownerRunId, phase);
   }
 
-  /** Bumps the liveness heartbeat on `key`'s lease, if one exists. */
-  heartbeat(key: string, now: number = Date.now()): void {
-    this.db.update(workContextLeases).set({ heartbeat: now }).where(eq(workContextLeases.key, key)).run();
+  /**
+   * Bumps the liveness heartbeat on `key`'s lease, if one exists (issue
+   * #122). Always sets `heartbeat: now`. When `phase` is provided, also
+   * updates `phase` and re-derives `expiry` from the phase-scoped TTL
+   * (`leaseExpiryFor`) — the coordinator-driven heartbeat passes the Run's
+   * current phase on every beat, so the budget tracks phase transitions
+   * (e.g. execution → review) without a separate call. Omitting `phase`
+   * keeps the pre-#122 behaviour: bump the timestamp only, expiry untouched
+   * — callers that don't yet know (or care about) TTL scoping are unaffected.
+   */
+  heartbeat(key: string, now: number = Date.now(), phase?: string, ttl: LeaseTtl = DEFAULT_LEASE_TTL): void {
+    const patch: Partial<typeof workContextLeases.$inferInsert> = { heartbeat: now };
+    if (phase !== undefined) {
+      patch.phase = phase;
+      patch.expiry = leaseExpiryFor(phase, now, ttl);
+    }
+    this.db.update(workContextLeases).set(patch).where(eq(workContextLeases.key, key)).run();
   }
 
   getByKey(key: string): WorkContextLeaseRow | undefined {
@@ -152,5 +182,41 @@ export class WorkContextLeaseStore {
    */
   markSuspect(key: string): void {
     this.db.update(workContextLeases).set({ state: 'suspect' }).where(eq(workContextLeases.key, key)).run();
+  }
+
+  /**
+   * Flip every `held` lease whose non-null `expiry` has lapsed (`<= now`) to
+   * `suspect` (issue #122 acceptance: a lapsed heartbeat transitions the
+   * lease held → suspect). Driven both by the Runner's coordinator heartbeat
+   * (indirectly — a genuinely alive Run keeps bumping `expiry` ahead of `now`)
+   * and by the app's periodic live sweep.
+   *
+   * Never releases — a suspect lease still holds the key (the unique index is
+   * on `key` alone), so it keeps blocking a fresh `acquire` exactly like
+   * `markSuspect`'s result does; only an explicit `release` (or later
+   * operator disposition) frees it. A `null`-expiry row (never heartbeated)
+   * and an already-`suspect` row are both left alone — this is a live sweep,
+   * not the boot reconciliation backstop (#123) that covers the null-expiry
+   * gap. Returns the swept rows in their post-flip `state: 'suspect'` shape.
+   */
+  sweepExpired(now: number = Date.now()): WorkContextLeaseRow[] {
+    return this.db
+      .update(workContextLeases)
+      .set({ state: 'suspect' })
+      .where(
+        and(
+          eq(workContextLeases.state, 'held'),
+          isNotNull(workContextLeases.expiry),
+          lte(workContextLeases.expiry, now),
+        ),
+      )
+      .returning()
+      .all();
+  }
+
+  /** Every lease currently `suspect` (issue #122): feeds boot reconciliation
+   * (#123) and operator diagnostics — the queryable surface for AC4. */
+  listSuspect(): WorkContextLeaseRow[] {
+    return this.db.select().from(workContextLeases).where(eq(workContextLeases.state, 'suspect')).all();
   }
 }

@@ -69,6 +69,9 @@ export interface AppOptions {
   password?: string | undefined;
   /** Test-only Runner cadence overrides (issue #128); absent uses production defaults. */
   runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
+  /** Work Context lease heartbeat/sweep cadence overrides (issue #122); absent
+   * uses production defaults (~30s heartbeat, ~60s sweep). */
+  leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -305,6 +308,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
+    leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
     // The Runner's own settle coordinator drives most terminal dispositions
     // (drive-loop, operator-cancel, auto-accept land); feed it the same
     // retirement hook so those Sessions retire too (issue #148).
@@ -359,6 +363,21 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Session whose retention deadline lapsed while the process was down. Runs
   // after the review sweep so a just-settled review-SLA Session is included.
   await sessionRetirement.drain();
+  // Live periodic Work Context lease sweep (issue #122): flips a lapsed `held`
+  // lease to `suspect` on a wall-clock cadence, independent of the Runner's own
+  // coordinator heartbeat — this complements, not replaces, the boot-only
+  // reconciliation (#123), which is the backstop for a lease that never got a
+  // live TTL (e.g. it predates this machinery, or its owner died before the
+  // first heartbeat). Best-effort: a sweep hiccup just means the next tick
+  // retries, never a reason to crash the process.
+  const leaseSweep = setInterval(() => {
+    try {
+      leases.sweepExpired();
+    } catch {
+      /* best-effort; next tick retries */
+    }
+  }, opts.leaseTuning?.sweepMs ?? 60_000);
+  leaseSweep.unref?.();
   // The advisory-assignment coordinator (issue #32) is per-Workspace (issue
   // #45); the Auto-Runner routes a mirrored Task's pick filter + claim step to
   // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
@@ -434,6 +453,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     trackerManager.stopAll();
     runner.shutdown();
     conversationDriver.shutdown();
+    clearInterval(leaseSweep);
   });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);

@@ -445,9 +445,11 @@ export type LeaseState = (typeof LEASE_STATES)[number];
  * persisted claim that a Run owns exclusive occupancy of a Work Context (a
  * canonical working-directory/branch identity, `workContextKey` in
  * domain/work-context-key.ts) for a phase of its lifecycle. `phase` is always
- * `'running'` today — the phase machine (#114) will widen it. `expiry` is
- * nullable until the TTL sweep lands (#122); `state` starts `'held'` and only
- * flips to `'suspect'` once reconciliation (#123) exists to clear it.
+ * `'running'` today — the phase machine (#114) will widen it. `expiry` is set
+ * from birth and re-derived on every phase-aware heartbeat by the live TTL
+ * sweep (#122, `domain/lease-ttl.ts`); `state` starts `'held'` and flips to
+ * `'suspect'` either when that live sweep lapses it or via boot reconciliation
+ * (#123).
  *
  * The unique index on `key` alone — not `(key, state)` — is deliberate and is
  * the compare-and-set acquire primitive: a `suspect` row still blocks a new
@@ -466,7 +468,9 @@ export const workContextLeases = sqliteTable('work_context_leases', {
     .notNull()
     .references(() => runs.id),
   heartbeat: integer('heartbeat').notNull(),
-  /** TTL deadline; null until the heartbeat/TTL sweep (#122) is built. */
+  /** TTL deadline (issue #122): set at acquire and re-derived on every
+   * phase-aware heartbeat (`domain/lease-ttl.ts`); nullable only for rows that
+   * predate the TTL machinery. */
   expiry: integer('expiry'),
   state: text('state').$type<LeaseState>().notNull(),
   acquiredAt: integer('acquired_at').notNull(),

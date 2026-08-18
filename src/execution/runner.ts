@@ -124,6 +124,8 @@ export interface RunnerOptions {
   tailerCadence?: TailerCadence;
   /** Spend-Guardrail poll + unmeasurable-grace cadence (issue #128); defaults to ~1s poll / 60s grace. */
   spendGuardrail?: { pollMs?: number; graceMs?: number } | undefined;
+  /** Work Context lease heartbeat cadence (issue #122); defaults to ~30s. */
+  leaseHeartbeat?: { intervalMs?: number } | undefined;
   /** Resolves a Task's Workspace row for the Guardrail snapshot (issue #126);
    * absent → the snapshot resolves against global defaults only. */
   getWorkspace?: (
@@ -352,6 +354,10 @@ export class Runner {
    * spend cap may go unmeasurable before it Escalates rather than silently
    * degrading to wall-clock-only enforcement. */
   private readonly spendGraceMs: number;
+  /** Work Context lease heartbeat (issue #122) cadence in ms: how often the
+   * coordinator-driven timer bumps the lease's liveness heartbeat + phase-scoped
+   * expiry, independent of agent/tool output. */
+  private readonly leaseHeartbeatMs: number;
   /** The MCP endpoint agents should call back to; set once the server listens. */
   mcpUrl: string | null = null;
 
@@ -371,6 +377,7 @@ export class Runner {
     this.autoAcceptLand = options.autoAcceptLand;
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
+    this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
     this.runFacts = new RunFactStore(this.db);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     this.guardrailEvents = new GuardrailEventStore(this.db);
@@ -2000,6 +2007,26 @@ export class Runner {
       spendTimer.unref?.();
     };
 
+    // Work Context lease heartbeat (issue #122): coordinator-driven, on a
+    // wall-clock timer independent of agent/tool output — a Run stuck in a
+    // long tool call still bumps its lease's liveness, so the lease never
+    // lapses while the Run is genuinely alive. Phase-specific TTL (`lease-ttl.ts`):
+    // the Run's current phase sets the expiry budget, so the review gate rides
+    // a far longer window than the execution phases.
+    let leaseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    const armLeaseHeartbeat = () => {
+      const key = this.workContextKeyFor(task, run);
+      const beat = () => {
+        if (active.externallySettled) return;
+        const now = this.runStore.get(run.id);
+        if (now.state !== 'running') return;
+        this.leaseStore.heartbeat(key, Date.now(), now.phase ?? 'executing');
+      };
+      beat(); // set expiry immediately, before the first interval tick
+      leaseHeartbeatTimer = setInterval(beat, this.leaseHeartbeatMs);
+      leaseHeartbeatTimer.unref?.();
+    };
+
     // Progress Guardrail (issue #131, ADR-0019, reliability-design Unit A). Two
     // paired mechanisms, both OFF unless `guardrails.progress` was enabled in
     // the Run's immutable start snapshot (issue #126):
@@ -2230,6 +2257,8 @@ export class Runner {
       // Arm the token/cost spend Guardrail poll (issue #128; a no-op when
       // neither `tokens` nor `costUsd` is configured on the Run's frozen budget).
       armSpendGuardrail();
+      // Arm the Work Context lease heartbeat (issue #122).
+      armLeaseHeartbeat();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -2656,6 +2685,7 @@ export class Runner {
       if (guardrailTimer) clearTimeout(guardrailTimer);
       if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
       if (spendTimer) clearInterval(spendTimer);
+      if (leaseHeartbeatTimer) clearInterval(leaseHeartbeatTimer);
       driver.fail(new Error('run finished'));
       driver.dispose();
       this.active.delete(run.id);

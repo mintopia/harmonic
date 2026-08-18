@@ -115,6 +115,8 @@ export async function startServer(
     password?: string;
     /** Test-only Runner cadence overrides (issue #128), forwarded to `buildApp`. */
     runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
+    /** Test-only Work Context lease heartbeat/sweep cadence overrides (issue #122), forwarded to `buildApp`. */
+    leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -123,6 +125,7 @@ export async function startServer(
     configOverrides,
     password: opts.password ?? TEST_PASSWORD,
     runnerTuning: opts.runnerTuning,
+    leaseTuning: opts.leaseTuning,
   });
   // A test server must never operate on the developer's real checkout: the
   // Default Workspace seeds its workingDir from process.cwd(), and direct-mode
