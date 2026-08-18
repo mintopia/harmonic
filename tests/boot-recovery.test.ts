@@ -451,4 +451,149 @@ describe('boot crash-recovery', () => {
       rmSync(repo, { recursive: true, force: true });
     }
   });
+
+  /**
+   * Seed a Run that a restart interrupted mid-execution while it was bound to a
+   * durable Session: run a native Task to `awaiting-review` (which persists the
+   * Session, issue #141), then rewrite it to a plain executing orphan
+   * (`state:'running'`, a non-parked phase) with its Session binding intact, as a
+   * crash between the ready→running flip and the review gate would leave it.
+   * Returns the dataDir, the interrupted Run id, the Task id, and the harness
+   * session id / Session row id the resume must reload against.
+   */
+  async function seedInterruptedSessionRun(): Promise<{
+    dataDir: string;
+    runId: number;
+    taskId: number;
+    harnessSessionId: string;
+    sessionRowId: number;
+  }> {
+    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    const dataDir = server.dataDir;
+    const runId = started.body.id as number;
+    const taskId = created.body.id as number;
+
+    await server.app.close();
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    const runRow = sqlite.prepare('SELECT session_id as sid, session_row_id as srid FROM runs WHERE id = ?').get(runId) as {
+      sid: string;
+      srid: number;
+    };
+    // Rewrite the parked (phase:'review') Run into a plain executing orphan so
+    // the boot orphan-fail sweep fails it `interrupted` — the resume input.
+    sqlite.prepare("UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?").run(runId);
+    sqlite.prepare("UPDATE tasks SET state = 'running' WHERE id = ?").run(taskId);
+    sqlite.close();
+    return { dataDir, runId, taskId, harnessSessionId: runRow.sid, sessionRowId: runRow.srid };
+  }
+
+  it('resumes an interrupted Session-bound Run as a NEW Run + a crash-recovery turn on the SAME Session (issue #146, AC1/AC2/AC5-compatible)', async () => {
+    server = await startServer(stubHarness());
+    const { dataDir, runId, taskId, harnessSessionId, sessionRowId } = await seedInterruptedSessionRun();
+
+    server = await startServer(stubHarness(), { dataDir });
+
+    const check = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+    // The interrupted Run was failed by the orphan sweep...
+    expect((check.prepare('SELECT state FROM runs WHERE id = ?').get(runId) as { state: string }).state).toBe('failed');
+    // ...and resumed as a NEW Run bound to the SAME Session.
+    const resumeRun = check
+      .prepare('SELECT id, session_id as sid, session_row_id as srid, prompt FROM runs WHERE task_id = ? AND id != ?')
+      .get(taskId, runId) as { id: number; sid: string; srid: number; prompt: string };
+    expect(resumeRun).toBeTruthy();
+    expect(resumeRun.srid).toBe(sessionRowId); // resume-same-Session
+    expect(resumeRun.sid).toBe(harnessSessionId);
+    expect(resumeRun.prompt).toContain('interrupted by a Harmonic restart');
+
+    // The re-entry goes through the per-Session turn queue (single-flight), never
+    // a direct driver call — one queued `crash-recovery` turn on the Session.
+    const turn = check
+      .prepare('SELECT run_id as runId, purpose, status FROM turn_queue WHERE session_id = ?')
+      .get(harnessSessionId) as { runId: number; purpose: string; status: string };
+    check.close();
+    expect(turn).toMatchObject({ runId: resumeRun.id, purpose: 'crash-recovery', status: 'queued' });
+  });
+
+  it('fails forward to a fresh summarized Session when the prior one is incompatible (issue #146, AC5-incompatible)', async () => {
+    server = await startServer(stubHarness());
+    const { dataDir, runId, taskId, harnessSessionId, sessionRowId } = await seedInterruptedSessionRun();
+
+    // Make the stored Session incompatible: it no longer advertises session/load,
+    // so the compatibility matrix forces a fresh (summarized) Session.
+    await server.app.close();
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    sqlite.prepare('UPDATE sessions SET supports_load_session = 0 WHERE id = ?').run(sessionRowId);
+    sqlite.close();
+
+    server = await startServer(stubHarness(), { dataDir });
+
+    const check = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+    const resumeRun = check
+      .prepare('SELECT id, session_row_id as srid, prompt FROM runs WHERE task_id = ? AND id != ?')
+      .get(taskId, runId) as { id: number; srid: number | null; prompt: string };
+    expect(resumeRun.srid).toBeNull(); // NOT the dead Session — fresh on dispatch
+    expect(resumeRun.prompt).toContain('# Resumed Session (Harmonic summary)');
+
+    // The incompatibility reason is persisted on the dead Session.
+    const deadSession = check
+      .prepare('SELECT resume_incompatibility_reason as reason FROM sessions WHERE id = ?')
+      .get(sessionRowId) as { reason: string };
+    expect(deadSession.reason).toBe('load-session-unsupported');
+
+    // No turn was left on the dead Session; the re-entry is on a fresh queue id.
+    expect(check.prepare('SELECT COUNT(*) as n FROM turn_queue WHERE session_id = ?').get(harnessSessionId)).toMatchObject({
+      n: 0,
+    });
+    const freshTurn = check
+      .prepare('SELECT purpose, status FROM turn_queue WHERE run_id = ?')
+      .get(resumeRun.id) as { purpose: string; status: string };
+    check.close();
+    expect(freshTurn).toMatchObject({ purpose: 'crash-recovery', status: 'queued' });
+  });
+
+  it('is idempotent across repeat boots — a second restart resumes nothing new (issue #146, AC3)', async () => {
+    server = await startServer(stubHarness());
+    const { dataDir, taskId, harnessSessionId } = await seedInterruptedSessionRun();
+
+    server = await startServer(stubHarness(), { dataDir });
+    // Snapshot after the first resume.
+    let check = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+    const runsAfterFirst = (check.prepare('SELECT COUNT(*) as n FROM runs WHERE task_id = ?').get(taskId) as { n: number }).n;
+    const turnsAfterFirst = (
+      check.prepare('SELECT COUNT(*) as n FROM turn_queue WHERE purpose = ?').get('crash-recovery') as { n: number }
+    ).n;
+    check.close();
+    expect(runsAfterFirst).toBe(2); // the interrupted Run + its one resume Run
+    expect(turnsAfterFirst).toBe(1);
+
+    // A second restart: the interrupted Run carries `session-resumed` and its
+    // resume Run carries `resume-entry`, so neither is resumed again; the pending
+    // crash-recovery turn survives (it is the resume re-entry, not a stale turn).
+    await server.app.close();
+    server = await startServer(stubHarness(), { dataDir });
+
+    check = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+    const runsAfterSecond = (check.prepare('SELECT COUNT(*) as n FROM runs WHERE task_id = ?').get(taskId) as { n: number }).n;
+    const turnsAfterSecond = (
+      check.prepare('SELECT COUNT(*) as n FROM turn_queue WHERE purpose = ?').get('crash-recovery') as { n: number }
+    ).n;
+    const survivingTurn = check
+      .prepare('SELECT status FROM turn_queue WHERE session_id = ?')
+      .get(harnessSessionId) as { status: string };
+    // The resume Run itself is NOT re-orphaned across the second boot: it is a
+    // resume re-entry parked awaiting dispatch, so it stays `running` and its
+    // Task stays `running` rather than regressing to `failed`.
+    const resumeRun = check
+      .prepare('SELECT state FROM runs WHERE task_id = ? ORDER BY id DESC LIMIT 1')
+      .get(taskId) as { state: string };
+    const taskState = (check.prepare('SELECT state FROM tasks WHERE id = ?').get(taskId) as { state: string }).state;
+    check.close();
+    expect(runsAfterSecond).toBe(runsAfterFirst); // no duplicate resume Run
+    expect(turnsAfterSecond).toBe(turnsAfterFirst); // no duplicate turn
+    expect(survivingTurn.status).toBe('queued'); // preserved, not cancelled
+    expect(resumeRun.state).toBe('running'); // parked awaiting dispatch, not re-orphaned
+    expect(taskState).toBe('running');
+  });
 });

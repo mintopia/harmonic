@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { runs, runEvents, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
+import { runs, runEvents, runFacts, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { RunFactStore } from './run-facts.js';
 import { isParkedPhase } from './run-phases.js';
@@ -230,7 +230,20 @@ export class RunStore {
   markInterrupted(): RunRow[] {
     const facts = new RunFactStore(this.db);
     const running = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
-    const orphans = running.filter((run) => !isParkedPhase(run.phase) && run.phase !== 'landing');
+    // A resume re-entry Run (issue #146) is parked awaiting its `crash-recovery`
+    // turn to be dispatched — "running, no live process, by design," exactly like
+    // a review-parked Run (`isParkedPhase`) but marked by a `resume-entry` fact
+    // rather than a phase (it has none of its own yet). Failing it here would
+    // destroy a coherent resume whose queued turn a later dispatch is meant to
+    // pick up, so it is excluded from the blind orphan-fail just as parked phases
+    // are. The boot resume sweep's `resume-entry` marker is the single source of
+    // this fact — see `BootResumeCoordinator`.
+    const resumeEntries = new Set(
+      this.db.select({ runId: runFacts.runId }).from(runFacts).where(eq(runFacts.type, 'resume-entry')).all().map((r) => r.runId),
+    );
+    const orphans = running.filter(
+      (run) => !isParkedPhase(run.phase) && run.phase !== 'landing' && !resumeEntries.has(run.id),
+    );
     for (const run of orphans) {
       // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
       // failed/interrupted terminal stays reconstructable from the log alone.
@@ -273,6 +286,29 @@ export class RunStore {
       .select()
       .from(runs)
       .where(and(eq(runs.state, 'running'), eq(runs.phase, 'landing')))
+      .all();
+  }
+
+  /**
+   * Runs a restart interrupted mid-execution that were bound to a durable
+   * Session (issue #146, reliability-design Unit C): `state:'failed'` with
+   * `reason:'interrupted'` — exactly what {@link markInterrupted} just wrote for a
+   * generic orphan — AND `sessionRowId IS NOT NULL`, so there is a conversation to
+   * resume rather than start cold. The boot-time `BootResumeCoordinator`
+   * (domain/boot-resume-coordinator.ts) is the sole caller: for each it creates a
+   * **new** Run + a new prompt turn on the (loaded or fail-forward) Session.
+   *
+   * Selection is intentionally broad — it re-selects a Run already resumed on a
+   * prior boot. The coordinator, not this query, enforces the once-only rule by
+   * skipping any Run carrying a `session-resumed`/`resume-entry` marker fact, so
+   * the durable idempotency ledger stays in one place (the fact log) rather than
+   * split between an SQL predicate and a fact check.
+   */
+  listResumableInterrupted(): RunRow[] {
+    return this.db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.state, 'failed'), eq(runs.reason, 'interrupted'), isNotNull(runs.sessionRowId)))
       .all();
   }
 }

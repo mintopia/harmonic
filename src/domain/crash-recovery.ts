@@ -6,7 +6,7 @@ import type { LandingCoordinator, LandingEffectExecutor } from './landing-coordi
 import type { LandingJournalStore } from './landing-journal.js';
 import type { TurnQueueStore } from './turn-queue-store.js';
 import { foldJournal, type LandingEffect, type ObservedState } from './landing.js';
-import { isMutating } from './turn-queue.js';
+import { isMutating, survivesRestart } from './turn-queue.js';
 import { Git } from '../execution/git.js';
 import { landBranch } from '../execution/branch-landing.js';
 
@@ -174,6 +174,14 @@ export class CrashRecoveryCoordinator {
   private async reconcileTurnQueue(now: number): Promise<void> {
     for (const row of this.turnQueue.listUnsettled()) {
       if (row.status === 'queued' || row.status === 'claimed') {
+        // A pending resume re-entry (`crash-recovery`, issue #146) is *meant* to
+        // survive a restart and be picked up by the next running process — the
+        // exact opposite of a stale pending turn. Leave it queued; cancelling it
+        // would silently drop a pending resume on any boot after the one that
+        // enqueued it. (An in_flight one still falls through below: it is
+        // non-mutating, so it just settles `failed`, never blocking single-flight
+        // on the next boot.)
+        if (survivesRestart(row.purpose)) continue;
         this.turnQueue.cancel(row.id, 'execution-closed', now);
         continue;
       }

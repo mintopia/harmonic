@@ -37,6 +37,24 @@ export function isMutating(purpose: TurnPurpose): boolean {
   return (MUTATING_PURPOSES as readonly TurnPurpose[]).includes(purpose);
 }
 
+/**
+ * The turn producers whose *pending* rows are meant to survive a process
+ * restart rather than be swept as stale — today just `crash-recovery`, the
+ * resume re-entry the boot resume sweep enqueues (issue #146). Unlike an
+ * ordinary pending turn (whose live harness is gone after a crash, so the
+ * crash-recovery queue sweep cancels it), a resume re-entry is enqueued
+ * *precisely so the next running process picks it up*; cancelling it would drop
+ * a pending resume. Kept as a named predicate alongside {@link isMutating} so a
+ * future restart-durable purpose is added here, not by editing the sweep.
+ */
+export const RESTART_SURVIVING_PURPOSES = ['crash-recovery'] as const;
+
+/** True iff a *pending* `purpose` turn must survive a restart rather than be
+ * cancelled by the crash-recovery queue sweep (`RESTART_SURVIVING_PURPOSES`). */
+export function survivesRestart(purpose: TurnPurpose): boolean {
+  return (RESTART_SURVIVING_PURPOSES as readonly TurnPurpose[]).includes(purpose);
+}
+
 /** A turn's lifecycle: queued → claimed → in_flight → done | failed, plus
  * `cancelled` when its precondition no longer holds before it ever dispatched. */
 export const TURN_STATUSES = ['queued', 'claimed', 'in_flight', 'done', 'failed', 'cancelled'] as const;

@@ -35,6 +35,8 @@ import { LandingCoordinator, type LandingEffectExec } from '../domain/landing-co
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
+import { BootResumeCoordinator } from '../domain/boot-resume-coordinator.js';
+import { adapterVersion } from '../execution/harness/adapter.js';
 import { Runner } from '../execution/runner.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -284,9 +286,36 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // its Run being created. No orphaned Run row exists for that one, so the run
   // sweep alone left it stuck `running` while its ticket stayed open — and the
   // poll never rescues it (upsertMirrored refuses to move a Task off `running`).
+  //
+  // Exception: a Task that still has a surviving `running` Run is not orphaned —
+  // that Run is a resume re-entry parked awaiting dispatch (issue #146, exempted
+  // from the run orphan-fail sweep above), so the Task is genuinely occupied and
+  // must stay `running`. Every non-resume running Run was already failed by the
+  // sweep, so this only ever spares a resume Task; a Task with no Run row (the
+  // mid-launch crash) has no running Run and is still failed.
   for (const orphan of tasks.list({ state: 'running' })) {
+    if (runs.listForTask(orphan.id).some((run) => run.state === 'running')) continue;
     tasks.setState(orphan.id, 'failed');
   }
+  // Resume: a restart-interrupted Run that was mid-conversation on a durable
+  // Session comes back as a NEW Run + a new prompt turn on the (reloaded or
+  // fail-forward) Session, rather than starting cold (issue #146, Unit C). Runs
+  // last — after the whole crash-recovery reconciliation and the orphan-fail
+  // sweeps above — so it acts only on a reconciled repository and re-drives the
+  // Task the fail sweep just failed. The environment a reload would target is
+  // resolved from the Session's capability axes: the adapter version recomputed
+  // fresh (so a harness/adapter upgrade across the restart is detected and forces
+  // a fresh Session), the model, and the live permission mode. The cwd axis is
+  // owned by the coordinator (it compares the Session's recorded work-context to
+  // the Task's current working directory). Whether the reload succeeds or the
+  // compatibility matrix forces a fresh summarized Session, the decision is
+  // idempotent across repeat boots.
+  new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(db), new RunFactStore(db), (session) => ({
+    harness: session.harness,
+    adapterVersion: adapterVersion(session.harness),
+    model: session.model,
+    availablePermissionModes: session.permissionMode ? [session.permissionMode] : [],
+  })).resume();
   // Run Keys of every non-running run die here — catches keys orphaned by
   // a crash or restart. Conversation Keys can never survive a restart (their
   // warm process is gone), so every one present at boot is orphaned (issue 16).

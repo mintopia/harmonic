@@ -577,6 +577,15 @@ export type WorkContextLeaseDispositionRow = typeof workContextLeaseDispositions
  * from `DISPOSITION_PRECEDENCE`, so `computeDisposition` sinks it to the bottom
  * (rank ∞) — a start-state fact can never be mistaken for a terminal
  * disposition, and a Run that has only recorded its start is still "not ended".
+ *
+ * `session-resumed` and `resume-entry` (issue #146, reliability-design Unit C)
+ * are the two boot-time crash-resume markers, both **non-ending** like
+ * `run-start-state` (absent from `DISPOSITION_PRECEDENCE`, so they never read as a
+ * terminal disposition). `session-resumed` is stamped on the interrupted Run that
+ * was resumed (recording the new Run it resumed into); `resume-entry` is stamped
+ * on that **new** Run (recording the interrupted Run it continues). Together they
+ * make the boot resume sweep idempotent: a Run carrying either marker is never
+ * itself resumed again on a later boot (`BootResumeCoordinator`).
  */
 export const RUN_FACT_TYPES = [
   'operator-cancel',
@@ -589,6 +598,8 @@ export const RUN_FACT_TYPES = [
   'process-death',
   'guardrail-trip',
   'run-start-state',
+  'session-resumed',
+  'resume-entry',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 
