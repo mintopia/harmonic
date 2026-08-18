@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  BudgetGuardrail,
   Channel,
   Conversation,
   ConversationEvent,
@@ -101,6 +102,8 @@ export const api = {
       priority?: 'high' | 'normal' | 'low' | null;
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
+      guardrailBudget?: BudgetGuardrail | null;
+      guardrailProgress?: boolean | null;
     },
   ) => request<Workspace>('PATCH', `/api/workspaces/${id}`, patch),
   // Deletes the Workspace and cascades its board; the server 204s (empty body,

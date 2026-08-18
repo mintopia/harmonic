@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, type TestServer } from './helpers.js';
+import { resolveGuardrails } from '../src/domain/setting-override.js';
 
 describe('Workspace CRUD (ADR-0008, issue #41)', () => {
   let server: TestServer;
@@ -153,6 +154,67 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(cleared.status).toBe(200);
     expect(cleared.body.verificationCommand).toBeNull();
     expect(cleared.body.verificationCritic).toMatchObject({ prompt: 'review the diff' }); // untouched
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('round-trips per-Workspace guardrail overrides and rejects an unmeasurable cost cap (issue #166)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-workspace-guardrail-'));
+    const created = await server.api('POST', '/api/workspaces', { name: 'Guarded', workingDir: dir });
+    expect(created.status).toBe(201);
+    // A fresh Workspace inherits both guardrails (null), not write-only holes.
+    expect(created.body.guardrailBudget).toBeNull();
+    expect(created.body.guardrailProgress).toBeNull();
+
+    // A budget with a token fallback is measurable on any model, so it's accepted.
+    const override = { wallClockMinutes: 30, tokens: 500000, costUsd: 5 };
+    const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      guardrailBudget: override,
+      guardrailProgress: false,
+    });
+    expect(set.status).toBe(200);
+    // Reads back as the same object shape it was PATCHed as, not the raw JSON string.
+    expect(set.body.guardrailBudget).toEqual(override);
+    expect(set.body.guardrailProgress).toBe(false); // an explicit "off", not inherit
+
+    const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
+    expect(fetched.body.guardrailBudget).toEqual(override);
+
+    // The resolved override is what a subsequent Run enforces (ADR-0019): the
+    // stored budget wins over the global default, progress's explicit false too.
+    const resolved = resolveGuardrails(
+      {
+        guardrailBudget: JSON.stringify(fetched.body.guardrailBudget),
+        guardrailProgress: fetched.body.guardrailProgress,
+      },
+      { guardrails: { budget: { wallClockMinutes: 60, tokens: null, costUsd: null }, progress: true } } as any,
+    );
+    expect(resolved.budget).toEqual(override);
+    expect(resolved.progress).toBe(false);
+
+    // A cost cap with no token fallback is rejected when a configured model is
+    // unpriced (the stub harness's model is), with a field-pathed message the
+    // settings form maps to the cost field.
+    const rejected = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      guardrailBudget: { wallClockMinutes: 60, tokens: null, costUsd: 10 },
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error.message).toContain('guardrailBudget.costUsd');
+    expect(rejected.body.error.message).toContain('unpriced:');
+    // The settings form's parseFieldErrors splits `path: message` pairs on '; ',
+    // so the message body must carry none — else the unpriced list is sliced off
+    // into a bogus field and the operator never sees which model is unpriced (#166).
+    expect(rejected.body.error.message).not.toContain('; ');
+    // The rejected write didn't clobber the prior valid override.
+    expect((await server.api('GET', `/api/workspaces/${created.body.id}`)).body.guardrailBudget).toEqual(override);
+
+    // null clears both back to inherit.
+    const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      guardrailBudget: null,
+      guardrailProgress: null,
+    });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.guardrailBudget).toBeNull();
+    expect(cleared.body.guardrailProgress).toBeNull();
     rmSync(dir, { recursive: true, force: true });
   });
 

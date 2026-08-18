@@ -32,6 +32,8 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   priority: null,
   maxConcurrentRuns: null,
   autoRunnerEnabled: null,
+  guardrailBudget: null,
+  guardrailProgress: null,
   createdAt: id,
   updatedAt: id,
 });

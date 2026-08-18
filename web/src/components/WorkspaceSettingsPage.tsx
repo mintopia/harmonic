@@ -5,6 +5,7 @@ import { btnDestructive, btnGhost, displayTitle, field, selectField } from '../u
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
+import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import { Switch } from './Switch';
 import { Modal } from './Modal';
 
@@ -82,6 +83,8 @@ export function WorkspaceSettingsPage({
         priority: local.priority,
         maxConcurrentRuns: local.maxConcurrentRuns,
         autoRunnerEnabled: local.autoRunnerEnabled,
+        guardrailBudget: local.guardrailBudget,
+        guardrailProgress: local.guardrailProgress,
       });
       setPristine(updated);
       setLocal(updated);
@@ -373,6 +376,91 @@ export function WorkspaceSettingsPage({
                 )}
               </InheritField>
               <FieldError message={fieldErrors['chatModel']} />
+            </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Run guardrails"
+          description="The budget caps and stall detector that trip a Run here to Escalation (ADR-0019). Each inherits the global default until overridden; wall-clock always guards, the token and cost caps are opt-in. tool-timeout is global-only and set on the global settings page."
+        >
+          <div className="flex flex-col gap-4 sm:max-w-md">
+            <div>
+              <InheritField
+                label="Budget"
+                value={local.guardrailBudget}
+                inherited={config.guardrails.budget}
+                format={summarizeBudget}
+                onChange={(guardrailBudget) => set('guardrailBudget', guardrailBudget)}
+              >
+                {({ value, onChange }) => (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-budget-wallclock">
+                        Wall-clock (minutes)
+                      </label>
+                      <input
+                        id="workspace-budget-wallclock"
+                        type="number"
+                        min={1}
+                        className={`${field} w-40 font-data`}
+                        value={value.wallClockMinutes}
+                        onChange={(e) => onChange(setBudgetField(value, 'wallClockMinutes', e.target.value))}
+                      />
+                      <FieldError message={fieldErrors['guardrailBudget.wallClockMinutes']} />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-budget-tokens">
+                        Token cap <span className="normal-case text-muted">(blank = no cap)</span>
+                      </label>
+                      <input
+                        id="workspace-budget-tokens"
+                        type="number"
+                        min={1}
+                        placeholder="No cap"
+                        className={`${field} w-40 font-data`}
+                        value={value.tokens ?? ''}
+                        onChange={(e) => onChange(setBudgetField(value, 'tokens', e.target.value))}
+                      />
+                      <FieldError message={fieldErrors['guardrailBudget.tokens']} />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-budget-cost">
+                        Cost cap (USD) <span className="normal-case text-muted">(blank = no cap)</span>
+                      </label>
+                      <input
+                        id="workspace-budget-cost"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="No cap"
+                        className={`${field} w-40 font-data`}
+                        value={value.costUsd ?? ''}
+                        onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
+                      />
+                      {/* A cost cap with no token fallback is rejected server-side
+                          when a configured model is unpriced (ADR-0019, #166). */}
+                      <FieldError message={fieldErrors['guardrailBudget.costUsd']} />
+                    </div>
+                  </div>
+                )}
+              </InheritField>
+            </div>
+            <div>
+              <InheritField
+                label="Progress detector"
+                value={local.guardrailProgress}
+                inherited={config.guardrails.progress}
+                format={(v) => (v ? 'On' : 'Off')}
+                onChange={(guardrailProgress) => set('guardrailProgress', guardrailProgress)}
+              >
+                {({ value, onChange }) => (
+                  <Switch checked={value} onChange={onChange}>
+                    Trip a stalled Run to Escalation
+                  </Switch>
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['guardrailProgress']} />
             </div>
           </div>
         </SettingsSection>

@@ -5,7 +5,13 @@ import type { App } from '../app.js';
 import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
-import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../../config.js';
+import {
+  verificationCommandSchema,
+  verificationCriticSchema,
+  budgetGuardrailSchema,
+  unpricedModelsForCostCap,
+  costCapMessage,
+} from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
 
@@ -154,6 +160,16 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
+      // The budget-override shape is schema-validated, but a cost cap with no
+      // token fallback is only invalid relative to the *config's* models/prices
+      // (issue #166) — the same rule the global config enforces (ADR-0019). The
+      // field-pathed message lets the settings form surface it inline.
+      if (req.body.guardrailBudget) {
+        const unpriced = unpricedModelsForCostCap(req.body.guardrailBudget, ctx.configStore.get());
+        if (unpriced.length > 0) {
+          throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
+        }
+      }
       const workspace = ctx.workspaces.update(req.params.id, req.body);
       await ctx.trackerManager.sync(); // toggling tracker / repointing the repo / changing the interval takes effect now
       return serialize(workspace);

@@ -72,8 +72,21 @@ export interface Workspace {
   priority: 'high' | 'normal' | 'low' | null;
   maxConcurrentRuns: number | null;
   autoRunnerEnabled: boolean | null;
+  /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
+   * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
+   * object shape it was PATCHed as. */
+  guardrailBudget: BudgetGuardrail | null;
+  guardrailProgress: boolean | null;
   createdAt: number;
   updatedAt: number;
+}
+
+/** The budget Guardrail (ADR-0019): a mandatory wall-clock bound per afk Run
+ * plus optional token and cost caps (`null` = that cap is off). */
+export interface BudgetGuardrail {
+  wallClockMinutes: number;
+  tokens: number | null;
+  costUsd: number | null;
 }
 
 export interface Task {
@@ -421,6 +434,10 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
+  /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
+   * toggle a Workspace inherits until it overrides them (issue #166).
+   * `toolTimeoutMinutes` is global-only (no per-Workspace override). */
+  guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
   /** How afk mirrored Tasks are driven (issue #33): the prompt template, branch fate, and retry cap. */
   drive: {
     /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. */

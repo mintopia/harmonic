@@ -140,6 +140,42 @@ export const budgetGuardrailSchema = z.object({
 });
 export type BudgetGuardrail = z.infer<typeof budgetGuardrailSchema>;
 
+/**
+ * The configured models a cost cap can't measure (issue #126, ADR-0019). A cost
+ * cap with no token fallback needs every model a Run could bill against to be
+ * priced — an unpriced model has no enforceable spend bound. Returns the empty
+ * set when the cap is measurable (no cost cap, a token fallback exists, or every
+ * model is priced). Shared by the global-config check and the per-Workspace
+ * budget-override check (issue #166) so both reject the same invalid combination.
+ */
+export function unpricedModelsForCostCap(
+  budget: Pick<BudgetGuardrail, 'costUsd' | 'tokens'>,
+  config: Pick<AppConfig, 'harnesses' | 'prices' | 'verification'>,
+): string[] {
+  if (budget.costUsd == null || budget.tokens != null) return [];
+  const prices = resolvePrices(config.prices);
+  const configured = new Set<string>();
+  for (const harness of Object.values(config.harnesses)) {
+    for (const m of harness.models) configured.add(m);
+    configured.add(harness.defaultModel);
+  }
+  // The agent critic (#132) is another model a Run bills against — the budget is
+  // phase-scoped over verifying too (ADR-0019) — so its model must be priced on
+  // the same footing as a harness model.
+  if (config.verification.critic) configured.add(config.verification.critic.model);
+  return [...configured].filter((m) => !isModelPriced(m, prices));
+}
+
+/**
+ * The field message for an unmeasurable cost cap. Deliberately free of `'; '` —
+ * both the API error handler and the settings form's `parseFieldErrors` split
+ * `path: message` pairs on that delimiter, so a `'; '` in the body would slice
+ * the unpriced-model list off into a bogus, unrendered field (issue #166).
+ */
+export function costCapMessage(unpriced: string[]): string {
+  return `a cost cap with no token fallback requires every configured model to be priced — unpriced: ${unpriced.join(', ')}`;
+}
+
 export const appConfigSchema = z.object({
   /**
    * Operator-chosen display name for this instance (issue: instance rename).
@@ -324,26 +360,13 @@ export const appConfigSchema = z.object({
   // unpriced model has no enforceable spend bound (ADR-0019). Reject at config time
   // rather than accept-then-silently-ignore. A token fallback, or no cost cap, makes
   // any model fine.
-  const budget = config.guardrails.budget;
-  if (budget.costUsd != null && budget.tokens == null) {
-    const prices = resolvePrices(config.prices);
-    const configured = new Set<string>();
-    for (const harness of Object.values(config.harnesses)) {
-      for (const m of harness.models) configured.add(m);
-      configured.add(harness.defaultModel);
-    }
-    // The agent critic (#132) is another model a Run bills against — the budget is
-    // phase-scoped over verifying too (ADR-0019) — so its model must be priced on
-    // the same footing as a harness model.
-    if (config.verification.critic) configured.add(config.verification.critic.model);
-    const unpriced = [...configured].filter((m) => !isModelPriced(m, prices));
-    if (unpriced.length > 0) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['guardrails', 'budget', 'costUsd'],
-        message: `a cost cap with no token fallback requires every configured model to be priced; unpriced: ${unpriced.join(', ')}`,
-      });
-    }
+  const unpriced = unpricedModelsForCostCap(config.guardrails.budget, config);
+  if (unpriced.length > 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['guardrails', 'budget', 'costUsd'],
+      message: costCapMessage(unpriced),
+    });
   }
 });
 
