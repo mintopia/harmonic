@@ -292,7 +292,13 @@ rl.on('line', (line) => {
   }
   switch (msg.method) {
     case 'initialize':
-      send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+      // Advertise session/load support (issue #141) like a modern ACP adapter,
+      // so tests can assert the durable Session's `supportsLoadSession` flag
+      // end-to-end. No test asserted the prior empty `agentCapabilities: {}`
+      // shape (checked: only tests/sessions.test.ts references it, and those
+      // call SessionStore/readLoadSessionCapability directly, bypassing this
+      // stub), so this is safe to change.
+      send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } });
       break;
     case 'session/new':
       sessionNewParams = msg.params;

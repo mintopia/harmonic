@@ -10,14 +10,15 @@ import {
   restoreLiveCheckout,
   rematerializeCandidate,
 } from './execution-isolation.js';
-import { adapterFor } from './harness/adapter.js';
+import { adapterFor, adapterVersion } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, totalTokensOf, type RunUsage, type RunUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow } from '../db/schema.js';
-import { AcpDriver } from '../acp/driver.js';
+import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
+import { SessionStore } from '../domain/sessions.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
@@ -320,6 +321,10 @@ export class Runner {
    * records its corrective turn here, single-flight per Session, before the
    * builder re-drives it. */
   private readonly turnQueue: TurnQueueStore;
+  /** The durable Session store (issue #141, reliability-design Unit C): every
+   * dispatch records a Session capturing the harness's `initialize`
+   * capabilities alongside the Run, without changing Run behaviour. */
+  private readonly sessionStore: SessionStore;
   /** The shared terminal-disposition coordinator (issue #113/#114): every Run
    * settle — drive-loop, operator cancel/complete, review-parked — funnels here
    * so the winning disposition is decided by precedence, once. */
@@ -355,6 +360,7 @@ export class Runner {
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     this.guardrailEvents = new GuardrailEventStore(this.db);
     this.turnQueue = new TurnQueueStore(this.db);
+    this.sessionStore = new SessionStore(this.db);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
     // that path can reach a Run parked in `review`/`landing` while a
@@ -1566,6 +1572,12 @@ export class Runner {
     let child: ChildProcess;
     let workspace: Workspace;
     let mcpServers: unknown[] = [];
+    // Unit C (#141): the harness's `initialize` capabilities, captured mid-
+    // handshake, and the durable Session row written once its `sessionId` is
+    // known — both filled by the handshake callbacks below and read after it
+    // to record the resolved permission mode.
+    let sessionInit: AcpInitializeResult | undefined;
+    let sessionRowId: number | undefined;
     // Tracked separately from `workspace` so the catch below can restore a
     // direct-mode detach (issue #152) even if the harness never spawns —
     // `finalize()` (which normally restores) is only wired after this try.
@@ -2043,9 +2055,36 @@ export class Runner {
         cwd: workspace.cwd,
         mcpServers,
         modelId,
+        // Unit C (#141): snapshot what the harness advertised at `initialize`
+        // (protocol/agent capabilities incl. `loadSession`) — previously
+        // discarded — so the durable Session below can record it.
+        onInitialize: (result) => {
+          sessionInit = result;
+        },
         // Persist the id before the optional model pin, so a failed pin
         // still leaves a session for usage backfill.
-        onSessionCreated: (sessionId) => this.runStore.update(run.id, { sessionId }),
+        onSessionCreated: (sessionId) => {
+          this.runStore.update(run.id, { sessionId });
+          // Unit C (#141): persist the durable Session alongside the Run — its
+          // harness/model/cwd identity, credential-free MCP templates (secrets
+          // stripped, never stored), and the captured `initialize` capability
+          // snapshot — the moment the harness session id is known, so it
+          // survives even if the model pin or permission-mode set then fails.
+          // Written *alongside* the Run: no in-flight Run behaviour changes.
+          const session = this.sessionStore.recordDispatch({
+            harness: task.harness,
+            harnessSessionId: sessionId,
+            model: task.model,
+            cwd: workspace.cwd,
+            workspaceId: task.workspaceId,
+            mcpTemplates: mcpServers,
+            capabilities: sessionInit,
+            adapterVersion: adapterVersion(task.harness),
+            now: Date.now(),
+          });
+          sessionRowId = session.id;
+          this.runStore.update(run.id, { sessionRowId: session.id });
+        },
       });
 
       // The session id is persisted; start tailing its native log (ADR 0010).
@@ -2076,6 +2115,9 @@ export class Runner {
         }
         await driver.setMode(mode);
         record('lifecycle', { event: 'mode_set', mode });
+        // Unit C (#141): the Session's permission mode is only resolved here,
+        // after the handshake — record it onto the durable Session row.
+        if (sessionRowId !== undefined) this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
       }
 
       // Harmonic settles a Run when its prompt turn resolves. But an afk agent

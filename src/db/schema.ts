@@ -213,6 +213,15 @@ export const runs = sqliteTable('runs', {
   /** ACP stopReason from the session/prompt result. */
   stopReason: text('stop_reason'),
   sessionId: text('session_id'),
+  /**
+   * The durable Session (issue #141, reliability-design Unit C) this Run is
+   * bound to — the Harmonic-generated `sessions.id`, set on dispatch alongside
+   * the ACP `sessionId` above once `session/new` returns. Null on pre-feature
+   * Runs and until the harness session is created. The Session is written
+   * *alongside* the Run, never in place of it, so this binding is purely
+   * additive and changes no in-flight Run behaviour.
+   */
+  sessionRowId: integer('session_row_id').references((): AnySQLiteColumn => sessions.id),
   /** The exact prompt text sent to the harness for this Run (native = filled
    * Task Prompt template + any feedback; mirrored = the filled Drive Prompt).
    * Persisted so Task detail's Prompt tab shows what actually went to the
@@ -768,3 +777,77 @@ export const guardrailEvents = sqliteTable('guardrail_events', {
 ]);
 
 export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
+
+/**
+ * A Session's lifecycle status (reliability-design Unit C): `active → idle →
+ * retiring → retired`. Only `active` is written today — dispatch records a
+ * Session `active`; the retirement transitions (which own builder-worktree
+ * removal) land with resume, out of scope for the #141 foundation.
+ */
+export const SESSION_STATUSES = ['active', 'idle', 'retiring', 'retired'] as const;
+export type SessionStatus = (typeof SESSION_STATUSES)[number];
+
+/**
+ * A Session (issue #141, reliability-design Unit C): one ACP conversation with
+ * a Harness, made a durable, first-class resource (CONTEXT.md "Session"). On
+ * every dispatch Harmonic persists one of these alongside the Run, capturing
+ * what the harness advertised at `initialize` (previously discarded) plus the
+ * dispatch identity. It is written *alongside* existing Task/Run state, never
+ * in place of it — the coordination spine's source of truth, of which Task
+ * lifecycle is a projection.
+ *
+ * No resume behaviour yet: this is the foundation the rest of Unit C builds on.
+ * Uniqueness is on `(harness, harnessSessionId)`; the PK is Harmonic-generated.
+ */
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** The Harness this Session runs against (claude/codex/copilot). */
+    harness: text('harness').notNull(),
+    /** The harness's own ACP session id (from `session/new`); the resume handle.
+     * Unique per harness — the natural key resume loads against. */
+    harnessSessionId: text('harness_session_id').notNull(),
+    model: text('model').notNull(),
+    /** The working directory / Work-Context identity the Session executes in —
+     * part of the resume compatibility key (same cwd ⇒ reloadable). */
+    cwd: text('cwd').notNull(),
+    /** The owning Workspace (ADR-0008); nullable at the SQL level for the same
+     * reason as `tasks.workspaceId`, set on every real dispatch. */
+    workspaceId: integer('workspace_id').references(() => workspaces.id),
+    /** JSON array: the **credential-free** MCP server templates for this
+     * Session — the `session/new` mcpServers shape with every secret (bearer
+     * tokens, auth headers, env) stripped. Credentials are never persisted;
+     * they are minted fresh at load/dispatch and grafted onto these templates. */
+    mcpTemplates: text('mcp_templates').notNull().default('[]'),
+    /** The ACP permission mode in effect for this Session (e.g. Claude's
+     * `auto`/`bypassPermissions` for afk Runs); null when none was set. */
+    permissionMode: text('permission_mode'),
+    /** JSON: the harness's `initialize` result verbatim — the capability
+     * advertisement (protocolVersion, agentCapabilities incl. `loadSession`,
+     * authMethods). `'{}'` when the harness advertised nothing / a legacy
+     * driver didn't surface it. */
+    capabilitySnapshot: text('capability_snapshot').notNull().default('{}'),
+    /** Denormalized from `capabilitySnapshot.agentCapabilities.loadSession`:
+     * whether this harness advertised `session/load` support at `initialize`.
+     * The resume-eligibility gate reads this without re-parsing the snapshot. */
+    supportsLoadSession: integer('supports_load_session', { mode: 'boolean' }).notNull().default(false),
+    /** The adapter/config version this Session was dispatched under (e.g.
+     * `claude@1`); part of the resume compatibility matrix — an incompatible
+     * version forces a fresh Session rather than a load. */
+    adapterVersion: text('adapter_version'),
+    status: text('status').$type<SessionStatus>().notNull().default('active'),
+    /** Epoch ms of the Session's last dispatch/prompt activity; the freshness
+     * signal reuse and retirement read. */
+    lastActiveAt: integer('last_active_at').notNull(),
+    /** Estimated epoch ms until the provider prompt-cache goes cold — a per-
+     * Harness COST estimate (Claude ~1h), never a correctness TTL. Null when
+     * the harness has no known warm window (never a fake zero). */
+    estimatedWarmUntil: integer('estimated_warm_until'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('sessions_harness_session_unique').on(t.harness, t.harnessSessionId)],
+);
+
+export type SessionRow = typeof sessions.$inferSelect;

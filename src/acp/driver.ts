@@ -13,11 +13,33 @@ export interface AcpDriverHandlers {
   onRequest: (method: string, params: unknown) => Promise<unknown>;
 }
 
+/**
+ * The harness's ACP `initialize` result — its capability advertisement. The
+ * fields Harmonic reads are optional and typed loosely because the set grows
+ * with the ACP spec and differs per harness; unknown keys are preserved so the
+ * whole object can be snapshotted (issue #141, reliability-design Unit C).
+ * `agentCapabilities.loadSession` is the `session/load` support flag resume
+ * eligibility keys on.
+ */
+export interface AcpInitializeResult {
+  protocolVersion?: number;
+  agentCapabilities?: { loadSession?: boolean; [key: string]: unknown };
+  authMethods?: unknown[];
+  [key: string]: unknown;
+}
+
 export interface AcpHandshake {
   cwd: string;
   mcpServers?: unknown[];
   /** ACP modelId to pin via session/set_model right after session/new; skipped when undefined. */
   modelId?: string | undefined;
+  /**
+   * Fired with the harness's `initialize` result — its advertised capabilities
+   * — before `session/new`, so a caller can snapshot what the harness supports
+   * (e.g. `session/load`) onto the durable Session (issue #141). Previously
+   * this result was discarded.
+   */
+  onInitialize?: (result: AcpInitializeResult) => void;
   /**
    * Fired with the new sessionId immediately after session/new, before the
    * optional model pin — so a caller can persist the id even if the pin
@@ -64,7 +86,10 @@ export class AcpDriver {
 
   /** initialize → session/new → optional session/set_model. Sets sessionId. */
   async handshake(opts: AcpHandshake): Promise<string> {
-    await this.race(this.connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }));
+    const initResult = (await this.race(
+      this.connection.request('initialize', { protocolVersion: 1, clientCapabilities: {} }),
+    )) as AcpInitializeResult;
+    opts.onInitialize?.(initResult);
     const session = (await this.race(
       this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
     )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };

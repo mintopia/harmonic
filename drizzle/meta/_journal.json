@@ -225,6 +225,13 @@
       "when": 1786999492531,
       "tag": "0031_guardrail_events",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1787017672867,
+      "tag": "0032_sessions",
+      "breakpoints": true
     }
   ]
 }

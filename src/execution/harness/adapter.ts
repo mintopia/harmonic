@@ -112,3 +112,20 @@ const adapters: Record<HarnessId, HarnessAdapter> = {
 export function adapterFor(harnessId: string): HarnessAdapter {
   return (adapters as Record<string, HarnessAdapter>)[harnessId] ?? unknownAdapter;
 }
+
+/**
+ * Monotonic version of the adapter layer's assumptions, bumped when a change to
+ * how harnesses are spawned/driven would make a mid-flight Session unsafe to
+ * resume. Recorded on every Session (issue #141) as the adapter half of the
+ * resume compatibility key; a Session whose stored `adapterVersion` differs
+ * from the current one is forced to a fresh Session rather than a `session/load`
+ * when resume lands. One global counter (a claude-only change conservatively
+ * invalidates all harnesses) — deliberately over-cautious for the foundation.
+ */
+export const ADAPTER_VERSION = 1;
+
+/** The `adapterVersion` string recorded on a Session: the harness id plus the
+ * adapter version, e.g. `claude@1`. */
+export function adapterVersion(harnessId: string): string {
+  return `${harnessId}@${ADAPTER_VERSION}`;
+}
