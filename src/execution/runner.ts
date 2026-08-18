@@ -61,6 +61,7 @@ import {
 import {
   classifyBranchOutcome,
   planDeterministicRecovery,
+  evaluateReMergeResult,
   type BranchContractObservation,
   type BranchClassification,
 } from '../domain/branch-recovery.js';
@@ -259,6 +260,24 @@ interface HealContext {
 }
 
 /**
+ * The corrective context threaded into a bounded agent re-merge turn (issue #155,
+ * reliability-design Unit D). When a Run's git outcome is *ambiguous* and
+ * deterministic recovery (#154) cannot safely land, Harmonic asks the agent — in
+ * exactly ONE corrective turn — to re-home its work cleanly; `reason`/`detail`
+ * surface the branch-contract violation as feedback. `allowedTree` is the tree of
+ * the pre-re-merge frozen candidate — the recorded artifact the corrective
+ * result must reproduce to be within the allowed set (judged by
+ * {@link evaluateReMergeResult}). Distinct from {@link HealContext}: a re-merge
+ * turn is bounded to one, never self-heals afterward, and lands only on an
+ * allowed-set match, else Escalates with no second mutating turn.
+ */
+interface ReMergeContext {
+  reason: string;
+  detail: string;
+  allowedTree: string;
+}
+
+/**
  * The outcome of one builder turn ({@link Runner.driveOnce}, issue #137).
  * `actionable-fail` — a `block` verdict — is the SOLE heal-eligible result: the
  * turn deliberately did not settle, handing the failure up to the heal loop.
@@ -266,7 +285,14 @@ interface HealContext {
  * error, operator-settled) is `terminal`: the Run was already settled or parked
  * inside the turn, and the loop stops.
  */
-type TurnOutcome = { kind: 'terminal' } | { kind: 'actionable-fail'; reason: string; output: string };
+type TurnOutcome =
+  | { kind: 'terminal' }
+  | { kind: 'actionable-fail'; reason: string; output: string }
+  // A first-turn ambiguous branch outcome that is eligible for a bounded agent
+  // re-merge (issue #155): the turn deliberately did not settle, handing the
+  // decision up to the {@link Runner.drive} loop to dispatch exactly ONE
+  // corrective re-merge turn. `reason`/`detail` are the branch-contract violation.
+  | { kind: 'remerge-needed'; reason: string; detail: string };
 
 export class Runner {
   private active = new Map<number, ActiveRun>(); // by run id
@@ -1183,6 +1209,91 @@ export class Runner {
   }
 
   /**
+   * Land the result of a bounded agent re-merge turn (issue #155,
+   * reliability-design Unit D — "agent re-merge is a bounded fallback only when
+   * deterministic recovery is ambiguous; success is defined as the corrective
+   * result matching an allowed commit-set / tree-diff derived from recorded
+   * artifacts — anything else Escalates, no second mutating turn").
+   *
+   * Runs on the CORRECTIVE turn (after its verification passed) in place of
+   * {@link recoverAndLand}: the corrective turn inherits whatever ref litter the
+   * first (ambiguous) turn left behind, so the branch *classifier* would
+   * spuriously re-flag a perfectly good result. Instead the decision is the pure
+   * {@link evaluateReMergeResult} allowed-set gate over git-computed facts — the
+   * corrective candidate's tree must reproduce the recorded artifact
+   * (`remergeCtx.allowedTree`), descend from the recorded start, and the intended
+   * branch must still contain that start. The start OID is re-verified before the
+   * mutation (identical to {@link recoverAndLand}), and the land is the same
+   * journaled, crash-idempotent `landBranch` (#153).
+   *
+   * Returns `'landed'` or `'escalate'` — never `'skip'`: a corrective turn must
+   * resolve to one or the other, with no further mutating turn.
+   */
+  private async landReMerge(
+    task: TaskRow,
+    run: RunRow,
+    remergeCtx: ReMergeContext,
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): Promise<'landed' | 'escalate'> {
+    const start = this.startStateOf(run.id);
+    const candidateOid = this.runStore.get(run.id).candidateOid;
+    const dir = task.workingDir;
+    const reject = (reason: string, detail: string): 'escalate' => {
+      this.runFacts.append(run.id, 'branch-violation', { via: 're-merge', reason, detail });
+      record('lifecycle', { event: 'branch-remerge-rejected', reason, detail });
+      return 'escalate';
+    };
+    if (!start || !candidateOid) {
+      return reject('no-candidate', 'the re-merge turn left no start-state or candidate to land');
+    }
+    try {
+      const [correctiveTree, candidateDescendsFromStart, intendedContainsStart] = await Promise.all([
+        Git.revParse(dir, `${candidateOid}^{tree}`).catch(() => null),
+        // `isAncestor(dir, candidate, start)` asks "does the candidate contain start?"
+        Git.isAncestor(dir, candidateOid, start.startCommit),
+        Git.isAncestor(dir, start.startBranch, start.startCommit),
+      ]);
+      const judgment = evaluateReMergeResult({
+        recordedCandidateTree: remergeCtx.allowedTree,
+        correctiveCandidateTree: correctiveTree,
+        candidateDescendsFromStart,
+        intendedContainsStart,
+      });
+      if (judgment.verdict === 'escalate') {
+        return reject(judgment.reason, judgment.detail);
+      }
+      // Re-verify the start OID before mutating (reliability-design Unit D): the
+      // intended branch must still be exactly where the Run started. A branch that
+      // advanced (a concurrent land) is not safe to ff over → Escalate.
+      const currentBase = await Git.revParse(dir, start.startBranch);
+      if (currentBase !== start.startCommit) {
+        return reject('branch-diverged', `intended branch '${start.startBranch}' advanced from the recorded start commit`);
+      }
+      const outcome = await landBranch({
+        repoDir: dir,
+        baseBranch: start.startBranch,
+        branch: candidateOid,
+        leaseHeld: true,
+      });
+      if (!outcome.ok) {
+        return reject('land-failed', outcome.detail);
+      }
+      this.runFacts.append(run.id, 'branch-recovery', {
+        via: 're-merge',
+        reason: 'agent-remerge',
+        baseBranch: start.startBranch,
+        landCommit: candidateOid,
+        mode: outcome.mode,
+        oid: outcome.oid,
+      });
+      record('lifecycle', { event: 'recovery-landed', reason: 'agent-remerge', oid: outcome.oid, mode: outcome.mode });
+      return 'landed';
+    } catch (err) {
+      return reject('land-failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /**
    * Drive a Run to a terminal disposition, healing bounded actionable
    * verification failures along the way (issue #137, reliability-design Unit B).
    *
@@ -1210,15 +1321,21 @@ export class Runner {
     // `execution_chains` table lands (reliability-design Unit B); a fresh Run
     // starts with an empty budget.
     let heals = this.turnQueue.listForSession(sessionKey).filter((t) => t.purpose === 'self-heal').length;
+    // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
+    // the count from the durable queue too, so the "at most one corrective
+    // re-merge, and no mutating turn after it" bound survives a crash-resume of
+    // this loop rather than being a purely in-memory flag.
+    let remerges = this.turnQueue.listForSession(sessionKey).filter((t) => t.purpose === 're-merge').length;
     let healCtx: HealContext | undefined;
-    // The turn_queue row id of the self-heal turn currently being driven, so it
+    let remergeCtx: ReMergeContext | undefined;
+    // The turn_queue row id of the corrective turn currently being driven, so it
     // is settled once its turn completes (kept single-flight: at most one).
     let inFlightTurn: number | null = null;
     for (;;) {
-      const outcome = await this.driveOnce(task, run, harness, healCtx);
+      const outcome = await this.driveOnce(task, run, harness, healCtx, remergeCtx);
       if (inFlightTurn !== null) {
-        // The heal turn we dispatched has run its course — settle its queue row
-        // regardless of the verdict; a further fail enqueues the next one.
+        // The corrective turn we dispatched has run its course — settle its queue
+        // row regardless of the verdict; a further fail enqueues the next one.
         try {
           this.turnQueue.settle(inFlightTurn, 'done');
         } catch {
@@ -1228,9 +1345,58 @@ export class Runner {
         inFlightTurn = null;
       }
       if (outcome.kind === 'terminal') return;
-      // Actionable fail. Heal if budget remains; otherwise the Run Escalates
-      // (exhaustion). `maxSelfHeals: 0` disables self-heal — a fail Escalates on
-      // the first turn, exactly as it did before this ticket.
+      if (outcome.kind === 'remerge-needed') {
+        // Bounded agent re-merge fallback (issue #155): dispatch exactly ONE
+        // corrective turn to consolidate the ambiguous branch outcome. A Run that
+        // has already spent its re-merge — or has no recorded candidate to derive
+        // the allowed set from — Escalates as #151 would have, rather than issuing
+        // a second mutating turn.
+        const escalateBranchViolation = () =>
+          this.settleEscalated(
+            task,
+            this.runStore.get(run.id),
+            `branch contract violated (${outcome.reason}): ${outcome.detail}`,
+            {},
+          );
+        // `driveOnce` only signals `remerge-needed` on the first ambiguous outcome,
+        // so this `remerges >= 1` guard is the durable backstop across a crash-resume.
+        if (remerges >= 1) {
+          escalateBranchViolation();
+          return;
+        }
+        // The allowed set is derived from the recorded artifact — the tree of the
+        // pre-re-merge frozen candidate, captured NOW before the corrective turn
+        // re-snapshots over it.
+        const allowedTree = await this.candidateTree(task, run);
+        if (allowedTree === null) {
+          escalateBranchViolation();
+          return;
+        }
+        remerges += 1;
+        remergeCtx = { reason: outcome.reason, detail: outcome.detail, allowedTree };
+        healCtx = undefined; // the corrective turn is a re-merge, not a heal
+        inFlightTurn = this.enqueueReMerge(run, sessionKey);
+        // The next `driveOnce(remergeCtx)` resets the phase pointer to
+        // `executing`, resumes the work, prompts the agent to re-home it cleanly,
+        // and re-enters `validating` — where the allowed-set gate lands or
+        // Escalates it.
+        continue;
+      }
+      // Actionable verification fail (issue #137). Once a re-merge has been spent,
+      // NO further mutating turn is issued (issue #155): a verification fail on
+      // the corrective re-merge turn Escalates rather than self-healing.
+      if (remerges >= 1) {
+        this.settleEscalated(
+          task,
+          this.runStore.get(run.id),
+          `verification failed on the corrective re-merge turn: ${outcome.reason}`,
+          {},
+        );
+        return;
+      }
+      // Heal if budget remains; otherwise the Run Escalates (exhaustion).
+      // `maxSelfHeals: 0` disables self-heal — a fail Escalates on the first turn,
+      // exactly as it did before this ticket.
       if (heals >= maxHeals) {
         const reason =
           heals === 0
@@ -1241,10 +1407,29 @@ export class Runner {
       }
       heals += 1;
       healCtx = { reason: outcome.reason, output: outcome.output, attempt: heals };
+      remergeCtx = undefined;
       inFlightTurn = this.enqueueSelfHeal(run, sessionKey, heals);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
       // reconstructable from the event log.
+    }
+  }
+
+  /**
+   * The tree OID of a Run's current frozen candidate, or `null` when there is no
+   * candidate or the object cannot be resolved. Used to capture the allowed set
+   * for a bounded agent re-merge (issue #155) — the recorded artifact the
+   * corrective turn must reproduce — before the corrective turn re-snapshots a
+   * fresh candidate over `runs.candidateOid`. Best-effort: a git fault yields
+   * `null`, which the caller treats as "cannot re-merge" and Escalates.
+   */
+  private async candidateTree(task: TaskRow, run: RunRow): Promise<string | null> {
+    const candidateOid = this.runStore.get(run.id).candidateOid;
+    if (!candidateOid) return null;
+    try {
+      return await Git.revParse(task.workingDir, `${candidateOid}^{tree}`);
+    } catch {
+      return null;
     }
   }
 
@@ -1284,6 +1469,42 @@ export class Runner {
   }
 
   /**
+   * Record the single bounded agent re-merge turn on the per-Session turn queue
+   * (issue #155): enqueue → claim → mark in-flight, exactly like
+   * {@link enqueueSelfHeal} but with `purpose: 're-merge'`. That purpose is
+   * `isMutating`, so the store enforces the `expectedWorkspaceOID` /
+   * `expectedFingerprint` binding, and — crucially for the crash requirement — a
+   * `re-merge` turn left `in_flight` by a crash is reconciled by
+   * `CrashRecoveryCoordinator` exactly as a `self-heal` is (escalate, never blind
+   * replay), for free via `isMutating`. Returns the row id to settle once the
+   * turn finishes, or `null` if the queue write failed (the corrective turn still
+   * runs — this in-process loop is the dispatch; the row is an audit record).
+   */
+  private enqueueReMerge(run: RunRow, sessionKey: string): number | null {
+    try {
+      const oid = this.runStore.get(run.id).candidateOid ?? '';
+      const now = Date.now();
+      const row = this.turnQueue.enqueue(
+        sessionKey,
+        run.id,
+        're-merge',
+        {
+          expectedPhase: 'validating',
+          expectedGeneration: run.attempt,
+          expectedWorkspaceOID: oid,
+          expectedFingerprint: oid,
+        },
+        now,
+      );
+      this.turnQueue.claim(row.id, now);
+      this.turnQueue.markInFlight(row.id, `re-merge-run-${run.id}`, now);
+      return row.id;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Drive ONE builder turn end to end and report its {@link TurnOutcome}. A
    * `healCtx` re-drives the Run as a self-heal turn (issue #137): it resumes the
    * prior work (`prepareWorkspace(resume)`), prompts the builder with the
@@ -1297,6 +1518,7 @@ export class Runner {
     run: RunRow,
     harness: HarnessConfig,
     healCtx?: HealContext,
+    remergeCtx?: ReMergeContext,
   ): Promise<TurnOutcome> {
     const record = (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => {
       const event = this.runStore.appendEvent(run.id, { type, payload });
@@ -1327,15 +1549,16 @@ export class Runner {
     let escalating: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
 
-    // A self-heal turn (issue #137) re-enters the pipeline at `validating`
-    // (§0.4). The phase machine is acyclic — it cannot step back from
-    // `verifying` on its own — so reset the pointer to `executing` and record
-    // the re-entry as a lifecycle event, exactly as `advancePhase` would, so the
-    // phase sequence stays reconstructable from the event log. This re-drives the
-    // SAME Run / Work Context lease / branch; the ACP transcript is not reloaded
-    // (`session/load` isn't built), so the prior failure is carried forward as
-    // the corrective prompt below rather than as conversation history.
-    if (healCtx) {
+    // A corrective turn — a self-heal (issue #137) or a bounded agent re-merge
+    // (issue #155) — re-enters the pipeline at `validating` (§0.4). The phase
+    // machine is acyclic — it cannot step back from `verifying` on its own — so
+    // reset the pointer to `executing` and record the re-entry as a lifecycle
+    // event, exactly as `advancePhase` would, so the phase sequence stays
+    // reconstructable from the event log. This re-drives the SAME Run / Work
+    // Context lease / branch; the ACP transcript is not reloaded (`session/load`
+    // isn't built), so the prior failure/violation is carried forward as the
+    // corrective prompt below rather than as conversation history.
+    if (healCtx || remergeCtx) {
       this.runStore.update(run.id, { phase: 'executing' });
       record('lifecycle', { event: 'phase', phase: 'executing' });
     }
@@ -1354,7 +1577,7 @@ export class Runner {
     let stderrTail = '';
     let stderrFlushed: Promise<void> = Promise.resolve();
     try {
-      workspace = await this.prepareWorkspace(task, run, healCtx !== undefined);
+      workspace = await this.prepareWorkspace(task, run, healCtx !== undefined || remergeCtx !== undefined);
       directIsolation = workspace.directIsolation;
       // Agents reach the MCP server with zero setup: a Run Key (its
       // lifetime follows the run's) plus the endpoint, in the environment
@@ -1872,6 +2095,20 @@ export class Runner {
           `${promptText}\n\n## Verification failed — fix required (self-heal ${healCtx.attempt})\n` +
           `Your previous attempt did not pass verification:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.`;
+      } else if (remergeCtx) {
+        // Bounded agent re-merge turn (issue #155): the previous turn left the
+        // repository in a branch state Harmonic cannot deterministically land.
+        // Ask the agent to re-home exactly the same work cleanly — Harmonic lands
+        // it — WITHOUT extra branches or new changes (the allowed-set gate rejects
+        // a divergent tree). Marked `agent re-merge 1` so the run is one bounded
+        // corrective turn.
+        const intended = this.startStateOf(run.id)?.startBranch ?? 'the branch the task started on';
+        promptText =
+          `${promptText}\n\n## Branch consolidation required (agent re-merge 1)\n` +
+          `Your previous turn left the repository in a branch state Harmonic cannot land: ${remergeCtx.detail}\n\n` +
+          `Re-home the work you already did as ordinary commits on top of \`${intended}\`. ` +
+          `Do not create or switch branches, and do not change any files beyond the work you already did — ` +
+          `only reproduce that same work cleanly. Then finish.`;
       }
       // Persist the exact text sent so Task detail can show it on every Run —
       // native or mirrored — without re-deriving a template that may since have
@@ -1951,6 +2188,11 @@ export class Runner {
       // landing (issue #154). Null when the check does not apply (worktree mode,
       // native direct, a pre-#151 Run) or was skipped (escalating/afkUnresolved).
       let branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null = null;
+      // Set when a first-turn ambiguous outcome is eligible for a bounded agent
+      // re-merge (issue #155): instead of Escalating in place (#151), hand the
+      // decision up to the `drive` loop, which dispatches exactly one corrective
+      // turn. Carries the branch-contract violation for the corrective prompt.
+      let remergeNeeded: { reason: string; detail: string } | null = null;
       // Enter `validating` and freeze the verification candidate there, while
       // the leased workspace still exists — finalize() tears a worktree down.
       // The phase is persisted *before* the git work so `runs.phase` reads
@@ -1960,38 +2202,62 @@ export class Runner {
       // afkUnresolved Run (no completion to verify).
       if (!escalating && !afkUnresolved) {
         advancePhase('validating', autoDriven ? 'auto' : 'human');
-        await this.runCandidateSnapshot(task, run, workspace, record, healCtx !== undefined);
+        await this.runCandidateSnapshot(
+          task,
+          run,
+          workspace,
+          record,
+          healCtx !== undefined || remergeCtx !== undefined,
+        );
         // Branch-contract enforcement (issue #151, reliability-design Unit D):
         // still in `validating`, before any checkout restore / worktree teardown,
         // classify the Run's git outcome against the recorded start-state (#149)
-        // with the pure #150 classifier. An **ambiguous** outcome — a stray
-        // branch, a switched/unknown HEAD, a moved target ref — is a contract
-        // break Harmonic must not silently verify or land: emit the structured
-        // branch-violation fact, retain the refs as evidence, and Escalate. A
-        // clean/recoverable outcome (the expected direct-mode detached-HEAD
-        // footprint) proceeds; its deterministic restore is `finalize()`'s job,
-        // and a recoverable afk auto-merge Run lands via {@link recoverAndLand}
-        // below (issue #154), so the classification is retained for that seam.
+        // with the pure #150 classifier. A clean/recoverable outcome (the expected
+        // direct-mode detached-HEAD footprint) proceeds; its deterministic restore
+        // is `finalize()`'s job, and a recoverable afk auto-merge Run lands via
+        // {@link recoverAndLand} below (issue #154), so the classification is
+        // retained for that seam.
         branchClass = await this.classifyBranchContract(task, run, workspace);
-        if (branchClass && branchClass.verdict.outcome === 'ambiguous') {
+        // On a CORRECTIVE re-merge turn (issue #155) the ambiguous verdict is NOT
+        // acted on here: the corrective turn inherits the first turn's ref litter,
+        // so the classifier would spuriously re-flag it. Its success is judged by
+        // the allowed-set gate in {@link landReMerge} after verification instead.
+        if (remergeCtx === undefined && branchClass && branchClass.verdict.outcome === 'ambiguous') {
           const { observation } = branchClass;
           const verdict = branchClass.verdict;
-          this.runFacts.append(run.id, 'branch-violation', {
-            outcome: verdict.outcome,
-            reason: verdict.reason,
-            detail: verdict.detail,
-            deltas: verdict.deltas,
-            intendedBranch: observation.intendedBranch,
-            headBranch: observation.headBranch,
-            headCommit: observation.headCommit,
-          });
-          record('lifecycle', { event: 'branch-violation', reason: verdict.reason, detail: verdict.detail });
-          // Retain the worktree/refs for operator disposition (finalizeWorkspace
-          // skips its teardown while this is set) and route through the shared
-          // escalation tail below — finalize → usage → settleEscalated — rather
-          // than re-implementing it here.
-          workspace.retainForBranchViolation = true;
-          escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
+          // A bounded agent re-merge (issue #155) is *preferred* over an immediate
+          // Escalate when the Run can support one: an afk-direct auto-merge Run
+          // with a recorded candidate to derive the allowed set from. Hand the
+          // decision up to `drive`, which dispatches exactly one corrective turn.
+          // Everything else Escalates in place, exactly as #151 did.
+          const remergeEligible =
+            autoDriven &&
+            !!workspace.directIsolation &&
+            this.autoDrive?.mergeFateFor(task) === 'auto-merge' &&
+            this.runStore.get(run.id).candidateOid != null;
+          if (remergeEligible) {
+            remergeNeeded = { reason: verdict.reason, detail: verdict.detail };
+          } else {
+            // An **ambiguous** outcome Harmonic cannot silently verify or land:
+            // emit the structured branch-violation fact, retain the refs as
+            // evidence, and Escalate through the shared tail below.
+            this.runFacts.append(run.id, 'branch-violation', {
+              outcome: verdict.outcome,
+              reason: verdict.reason,
+              detail: verdict.detail,
+              deltas: verdict.deltas,
+              intendedBranch: observation.intendedBranch,
+              headBranch: observation.headBranch,
+              headCommit: observation.headCommit,
+            });
+            record('lifecycle', { event: 'branch-violation', reason: verdict.reason, detail: verdict.detail });
+            // Retain the worktree/refs for operator disposition (finalizeWorkspace
+            // skips its teardown while this is set) and route through the shared
+            // escalation tail below — finalize → usage → settleEscalated — rather
+            // than re-implementing it here.
+            workspace.retainForBranchViolation = true;
+            escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
+          }
         }
       }
       await finalize();
@@ -2014,6 +2280,18 @@ export class Runner {
           patch,
           'agent-finish/unresolved',
         );
+      } else if (remergeNeeded) {
+        // First-turn ambiguous outcome eligible for a bounded agent re-merge
+        // (issue #155): do NOT settle. finalize() has already restored the direct
+        // checkout and swept this turn's work into the frozen candidate, so the
+        // corrective turn resumes from it. Hand the decision up to the `drive`
+        // loop, which dispatches exactly one corrective re-merge turn.
+        record('lifecycle', {
+          event: 'branch-remerge-needed',
+          reason: remergeNeeded.reason,
+          detail: remergeNeeded.detail,
+        });
+        return { kind: 'remerge-needed', reason: remergeNeeded.reason, detail: remergeNeeded.detail };
       } else {
         // Verification gate (issue #135, ADR-0021, reliability-design Unit B):
         // agent-finish begins validation — it does not settle the Run (#114).
@@ -2076,10 +2354,22 @@ export class Runner {
           // turn), before onCompleted closes the ticket. onCompleted's own
           // auto-merge arm is a no-op for direct mode ("nothing to merge"), so it
           // still owns the close on top of this land.
-          const recovered = await this.recoverAndLand(task, run, branchClass, record);
+          //
+          // On a CORRECTIVE re-merge turn (issue #155) the land goes through
+          // {@link landReMerge} instead: the deterministic classifier can't gate
+          // it (the corrective turn inherits the first turn's ref litter), so the
+          // pure allowed-set gate — the corrective candidate must reproduce the
+          // recorded tree, descend from start, and the branch still contain start
+          // — decides land-or-Escalate, with no second mutating turn.
+          const recovered = remergeCtx
+            ? await this.landReMerge(task, run, remergeCtx, record)
+            : await this.recoverAndLand(task, run, branchClass, record);
           if (recovered === 'escalate') {
-            record('lifecycle', { event: 'escalated', reason: 'deterministic recovery landing failed' });
-            this.settleEscalated(task, run, 'deterministic recovery landing failed', patch);
+            const reason = remergeCtx
+              ? 'agent re-merge did not resolve the branch ambiguity'
+              : 'deterministic recovery landing failed';
+            record('lifecycle', { event: 'escalated', reason });
+            this.settleEscalated(task, run, reason, patch);
           } else {
             const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
             if (outcome === 'escalate') {

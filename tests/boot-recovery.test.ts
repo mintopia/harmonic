@@ -310,4 +310,46 @@ describe('boot crash-recovery', () => {
     sqlite.close();
     expect(escalateFactsAgain.n).toBe(1);
   });
+
+  it('reconciles (never blindly replays) an in-flight bounded agent re-merge turn interrupted by restart (issue #155, AC4)', async () => {
+    server = await startServer(stubHarness());
+    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    const dataDir = server.dataDir;
+    const runId = started.body.id as number;
+    const taskId = created.body.id as number;
+
+    // Simulate the crash: a bounded re-merge corrective turn (issue #155) was in
+    // flight against this Run when the process died. `re-merge` `isMutating`, so
+    // crash recovery must escalate it — its workspace effect is unknown — rather
+    // than dispatching a second mutating turn (a blind replay).
+    await server.app.close();
+    let sqlite = new Database(join(dataDir, 'harmonic.db'));
+    sqlite.prepare("UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?").run(runId);
+    sqlite.prepare("UPDATE tasks SET state = 'running' WHERE id = ?").run(taskId);
+    sqlite
+      .prepare(
+        `INSERT INTO turn_queue (session_id, run_id, seq, status, purpose, expected_workspace_oid, expected_fingerprint, enqueued_at, sent_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(`run-${runId}`, runId, 1, 'in_flight', 're-merge', 'oid-1', 'fp-1', Date.now(), Date.now());
+    sqlite.close();
+
+    server = await startServer(stubHarness(), { dataDir });
+
+    const run = await server.api('GET', `/api/runs/${runId}`);
+    expect(run.body.state).toBe('failed');
+    expect(run.body.phase).toBe('terminal');
+    const task = await server.api('GET', `/api/tasks/${taskId}`);
+    expect(task.body.escalated).toBe(true);
+    expect(task.body.drive).toBe('hitl');
+
+    sqlite = new Database(join(dataDir, 'harmonic.db'), { readonly: true });
+    const escalateFacts = sqlite.prepare("SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'").get(runId) as { n: number };
+    const turn = sqlite.prepare('SELECT status FROM turn_queue WHERE run_id = ?').get(runId) as { status: string };
+    sqlite.close();
+    expect(escalateFacts.n).toBe(1);
+    expect(turn.status).toBe('failed'); // reconciled, not left in flight or replayed
+  });
 });

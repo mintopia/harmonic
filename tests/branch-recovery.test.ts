@@ -3,6 +3,7 @@ import {
   BRANCH_OUTCOMES,
   classifyBranchOutcome,
   planDeterministicRecovery,
+  evaluateReMergeResult,
   type BranchClassification,
   type BranchContractObservation,
   type RefDelta,
@@ -270,5 +271,67 @@ describe('planDeterministicRecovery (issue #154, deterministic recovery decision
         }),
       }),
     ).toBeNull();
+  });
+});
+
+describe('evaluateReMergeResult (issue #155, bounded agent re-merge success gate)', () => {
+  const TREE = 't'.repeat(40); // the recorded (allowed) candidate tree
+  const OTHER_TREE = 'u'.repeat(40); // a divergent tree
+
+  /** A within-allowed-set result: candidate reproduces the recorded tree on a
+   * clean, start-descended base, and the branch still contains the start. */
+  const allowed = {
+    recordedCandidateTree: TREE,
+    correctiveCandidateTree: TREE,
+    candidateDescendsFromStart: true,
+    intendedContainsStart: true,
+  };
+
+  it('lands when the corrective candidate matches the recorded tree, descends from start, and the branch still contains start', () => {
+    expect(evaluateReMergeResult(allowed)).toEqual({ verdict: 'land' });
+  });
+
+  it('escalates (no-candidate) when the corrective turn produced no candidate', () => {
+    const v = evaluateReMergeResult({ ...allowed, correctiveCandidateTree: null });
+    expect(v.verdict).toBe('escalate');
+    if (v.verdict !== 'escalate') return;
+    expect(v.reason).toBe('no-candidate');
+  });
+
+  it('escalates (branch-diverged) when the intended branch no longer contains the recorded start', () => {
+    const v = evaluateReMergeResult({ ...allowed, intendedContainsStart: false });
+    expect(v.verdict).toBe('escalate');
+    if (v.verdict !== 'escalate') return;
+    expect(v.reason).toBe('branch-diverged');
+  });
+
+  it('escalates (candidate-not-descendant) when the corrective candidate does not descend from the recorded start', () => {
+    const v = evaluateReMergeResult({ ...allowed, candidateDescendsFromStart: false });
+    expect(v.verdict).toBe('escalate');
+    if (v.verdict !== 'escalate') return;
+    expect(v.reason).toBe('candidate-not-descendant');
+  });
+
+  it('escalates (tree-diverged) when the corrective tree is outside the allowed set', () => {
+    // The agent introduced work beyond what it had already done — not allowed.
+    const v = evaluateReMergeResult({ ...allowed, correctiveCandidateTree: OTHER_TREE });
+    expect(v.verdict).toBe('escalate');
+    if (v.verdict !== 'escalate') return;
+    expect(v.reason).toBe('tree-diverged');
+  });
+
+  it('a divergence in reachability outranks a tree mismatch (safety first)', () => {
+    const v = evaluateReMergeResult({
+      ...allowed,
+      correctiveCandidateTree: OTHER_TREE,
+      intendedContainsStart: false,
+    });
+    expect(v.verdict).toBe('escalate');
+    if (v.verdict !== 'escalate') return;
+    expect(v.reason).toBe('branch-diverged');
+  });
+
+  it('is total and deterministic: same input yields the same judgment', () => {
+    expect(evaluateReMergeResult(allowed)).toEqual(evaluateReMergeResult(allowed));
   });
 });

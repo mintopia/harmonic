@@ -161,6 +161,13 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     const repo = makeRepo();
     const startOid = git(repo, 'rev-parse', 'HEAD');
 
+    // Under an `open-PR` fate the #155 bounded agent re-merge does not apply
+    // (it lands onto the target branch, an `auto-merge`-only path), so an
+    // ambiguous outcome falls straight through to the #151 escalate here rather
+    // than attempting a corrective turn. The auto-merge re-merge fallback is
+    // covered in branch-recovery-remerge.test.ts.
+    server.app.ctx.configStore.update({ drive: { mergeFate: 'open-PR' } });
+
     // The agent checks out a stray branch and commits — an unattributed ref
     // delta: ambiguous, never auto-recovered.
     const { taskId, runId } = launchAfkDirect(repo, {

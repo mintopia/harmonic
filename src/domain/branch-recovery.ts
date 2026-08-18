@@ -321,3 +321,107 @@ export function planDeterministicRecovery(input: {
     reason: classification.reason,
   };
 }
+
+/**
+ * Why a bounded agent re-merge (issue #155, reliability-design Unit D) did not
+ * resolve the ambiguity and must Escalate rather than land. The re-merge is the
+ * fallback *behind* {@link planDeterministicRecovery}: when a Run's git outcome
+ * is ambiguous, Harmonic asks the agent — in exactly **one** corrective turn — to
+ * consolidate its work back onto the intended branch, then judges the result
+ * against an allowed set derived from the recorded artifacts. Anything outside
+ * that set Escalates with **no second mutating turn**.
+ */
+export type ReMergeRejectReason =
+  /** The corrective turn produced no frozen candidate to compare or land — there
+   * is nothing to judge against the allowed set. */
+  | 'no-candidate'
+  /** The intended branch no longer contains the recorded start commit — it was
+   * rewritten or advanced off the base the Run started on (a concurrent land, a
+   * history rewrite). Landing the candidate could drop or false-conflict work, so
+   * the ambiguity the re-merge was meant to resolve is unresolvable → Escalate. */
+  | 'branch-diverged'
+  /** The corrective candidate does not descend from the recorded start commit —
+   * the core safety invariant (shared with {@link planDeterministicRecovery}):
+   * never land work that is not built on the recorded start. */
+  | 'candidate-not-descendant'
+  /** The corrective candidate's tree differs from the recorded artifact: the
+   * agent introduced work beyond what it had already done (the allowed set is
+   * *exactly* the recorded work, re-homed cleanly — not new changes). */
+  | 'tree-diverged';
+
+/**
+ * The verdict on a corrective re-merge turn: `land` when the result is within the
+ * allowed set, otherwise `escalate` with the precise reason.
+ */
+export type ReMergeJudgment =
+  | { verdict: 'land' }
+  | { verdict: 'escalate'; reason: ReMergeRejectReason; detail: string };
+
+/**
+ * Judge a bounded agent re-merge turn's result against the allowed set (issue
+ * #155, reliability-design Unit D — "success is defined as the corrective result
+ * matching an allowed commit-set / tree-diff derived from recorded artifacts;
+ * anything else Escalates, no second mutating turn").
+ *
+ * Pure, like {@link classifyBranchOutcome} / {@link planDeterministicRecovery}:
+ * the Runner supplies the git-computed facts and this applies the invariant. The
+ * **allowed set** is defined directly from the recorded artifacts — it does *not*
+ * re-run the branch classifier, because the corrective turn inherits whatever ref
+ * litter the first (ambiguous) turn left behind, which would spuriously re-flag a
+ * perfectly good result. Instead a corrective result lands **iff**:
+ *
+ *  - a corrective candidate exists (`correctiveCandidateTree` non-null);
+ *  - the intended branch still contains the recorded start
+ *    (`intendedContainsStart`) — not diverged/rewritten out from under us;
+ *  - the candidate **descends from the recorded start**
+ *    (`candidateDescendsFromStart`) — the same core safety invariant
+ *    {@link planDeterministicRecovery} enforces;
+ *  - the candidate's tree equals the recorded candidate tree
+ *    (`recordedCandidateTree`) — the agent only re-homed the exact work it had
+ *    already produced, introducing nothing new (the tree-diff allowed set).
+ *
+ * The recorded candidate tree is captured *before* the corrective turn (from the
+ * pre-re-merge frozen candidate), so a corrective turn that reproduces the same
+ * tree on a clean, start-descended base is landable regardless of any stray refs
+ * it or the first turn left lying around. Anything else Escalates — no second
+ * mutating turn. Total and deterministic: the same inputs always yield the same
+ * verdict.
+ */
+export function evaluateReMergeResult(input: {
+  recordedCandidateTree: string;
+  correctiveCandidateTree: string | null;
+  candidateDescendsFromStart: boolean;
+  intendedContainsStart: boolean;
+}): ReMergeJudgment {
+  const { recordedCandidateTree, correctiveCandidateTree, candidateDescendsFromStart, intendedContainsStart } =
+    input;
+  if (correctiveCandidateTree === null) {
+    return {
+      verdict: 'escalate',
+      reason: 'no-candidate',
+      detail: 'the re-merge turn produced no frozen candidate to judge or land',
+    };
+  }
+  if (!intendedContainsStart) {
+    return {
+      verdict: 'escalate',
+      reason: 'branch-diverged',
+      detail: 'the intended branch no longer contains the recorded start commit',
+    };
+  }
+  if (!candidateDescendsFromStart) {
+    return {
+      verdict: 'escalate',
+      reason: 'candidate-not-descendant',
+      detail: 'the re-merge candidate does not descend from the recorded start commit',
+    };
+  }
+  if (correctiveCandidateTree !== recordedCandidateTree) {
+    return {
+      verdict: 'escalate',
+      reason: 'tree-diverged',
+      detail: `re-merge result tree ${correctiveCandidateTree} is outside the allowed set (recorded ${recordedCandidateTree})`,
+    };
+  }
+  return { verdict: 'land' };
+}

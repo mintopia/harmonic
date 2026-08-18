@@ -95,6 +95,13 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     const repo = makeRepo();
     const startOid = git(repo, 'rev-parse', 'HEAD');
 
+    // Under an `open-PR` fate the #155 bounded agent re-merge does not apply (it
+    // lands onto the target branch, which only an `auto-merge` fate does), so an
+    // ambiguous outcome Escalates immediately here — exactly the #151 detection
+    // path this test pins. The auto-merge re-merge path is covered separately in
+    // branch-recovery-remerge.test.ts.
+    server.app.ctx.configStore.update({ drive: { mergeFate: 'open-PR' } });
+
     // The agent (detached at start by #152) checks out a stray branch and
     // commits onto it, then signals finish — a branch-contract violation
     // ("Harmonic owns branching") that must be caught in validating.
