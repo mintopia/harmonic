@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
+import { previewHumanRejectContinuation } from '../../domain/session-continuation.js';
 import {
   TASK_STATES,
   RUN_STATES,
@@ -24,10 +25,42 @@ import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSc
 const feedbackExample = 'The limiter is per-process; it needs to be shared across workers.';
 const requeueInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
 const reattemptInputSchema = z
-  .object({ feedback: z.string().optional().meta({ example: feedbackExample }) })
+  .object({
+    feedback: z.string().optional().meta({ example: feedbackExample }),
+    /** How the re-attempt continues the rejected Run's Session (issue #170):
+     * `'full'` (default) re-binds the warm Session and replays the whole
+     * conversation; `'condensed'` starts a fresh Session carrying only the
+     * feedback. Omit to keep the historical full-continuation behaviour. */
+    continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
+  })
   .nullish();
 const rejectInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
+/** The reject dialog's continuation preview (issue #170): what `planSessionContinuation`
+ * offers for this Task's live Session, so the operator sees the full-continuation
+ * cost estimate before choosing. `available: false` means there is nothing to
+ * continue (no Run ever bound a Session, or it has been retired), so the dialog
+ * shows only the plain re-attempt. */
+const continuationPreviewSchema = z.discriminatedUnion('available', [
+  z.object({ available: z.literal(false) }),
+  z.object({
+    available: z.literal(true),
+    continueFull: z.object({
+      session: z.literal('same'),
+      conversation: z.literal('full'),
+      estimate: z.object({
+        band: z.enum(['warm', 'cold', 'unknown']),
+        warm: z.boolean(),
+        warmthKnown: z.boolean(),
+        estimatedWarmUntil: z.number().nullable(),
+        msSinceActive: z.number(),
+        msUntilCold: z.number().nullable(),
+        note: z.string(),
+      }),
+    }),
+    startCondensed: z.object({ session: z.literal('new'), conversation: z.literal('condensed') }),
+  }),
+]);
 const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().meta({ example: 4818 }) });
 const steerInputSchema = z.object({
   text: z.string().min(1).meta({ example: 'Stop — check the existing tests before changing the limiter.' }),
@@ -60,6 +93,10 @@ const taskWithDepsSchema = z
     /** The original this task re-attempts, or null; feedback carries the reviewer's notes in full. */
     reattemptOf: z.number().nullable().meta({ example: null }),
     feedback: z.string().nullable().meta({ example: null }),
+    /** How a re-attempt continues the rejected Run's Session (issue #170): 'full'
+     * resumes the same Session, 'condensed' starts fresh; null on originals and
+     * pre-feature re-attempts (⇒ full). */
+    continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),
     // --- Tracker mirroring (issue #30). native Tasks carry origin + nulls/false. ---
     /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
     origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
@@ -491,7 +528,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) =>
-      reply.status(201).send(withDeps(ctx.tasks.reattempt(req.params.id, req.body?.feedback))),
+      reply.status(201).send(withDeps(ctx.tasks.reattempt(req.params.id, req.body?.feedback, req.body?.continuation))),
   );
 
   app.post(
@@ -563,6 +600,38 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => withDeps(ctx.review.reject(req.params.id, req.body?.feedback)),
+  );
+
+  app.get(
+    '/tasks/:id/continuation',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Preview the reject-time Session continuation choice (issue #170): if this task has a live Session, the full-continuation cost estimate (from planSessionContinuation) plus the condensed alternative the reject dialog offers. `available: false` when there is nothing to continue.',
+        params: idParamsSchema,
+        response: {
+          200: continuationPreviewSchema.describe('The continuation offer for this task, or `available: false`.'),
+          404: errorResponse('No task has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      ctx.tasks.get(req.params.id); // 404s an unknown id via DomainError
+      const plan = previewHumanRejectContinuation(
+        ctx.runs.listForTask(req.params.id),
+        (sessionRowId) => {
+          try {
+            return ctx.sessions.get(sessionRowId);
+          } catch {
+            return null; // Session retired + swept — nothing to continue
+          }
+        },
+        Date.now(),
+      );
+      if (!plan) return { available: false as const };
+      return { available: true as const, continueFull: plan.continueFull, startCondensed: plan.startCondensed };
+    },
   );
 
   app.post(

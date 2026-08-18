@@ -130,4 +130,45 @@ describe('linked re-attempts continue in the same Session (issue #147)', () => {
     expect(run2.sessionRowId).toBe(origRun.sessionRowId);
     expect(run2.sessionId).toBe(origRun.sessionId);
   });
+
+  it('a condensed re-attempt opts out of the bind and starts a FRESH Session (issue #170)', async () => {
+    const original = (await server.api('POST', '/api/tasks', { prompt: 'do the thing' })).body;
+    await server.api('POST', `/api/tasks/${original.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${original.id}`)).body.state === 'awaiting-review');
+    const origRun = (await server.api('GET', `/api/tasks/${original.id}/runs`)).body.runs[0];
+    expect(origRun.sessionRowId).not.toBeNull();
+
+    // Preview the continuation offer the reject dialog would show: a live Session
+    // is present, so the operator gets the full-vs-condensed choice.
+    const preview = (await server.api('GET', `/api/tasks/${original.id}/continuation`)).body;
+    expect(preview.available).toBe(true);
+    expect(preview.continueFull.estimate.note).toEqual(expect.any(String));
+    expect(preview.startCondensed).toEqual({ session: 'new', conversation: 'condensed' });
+
+    await server.api('POST', `/api/tasks/${original.id}/reject`, { feedback: 'try again' });
+
+    // The operator picks "start condensed" — the re-attempt records the choice.
+    const reattempt = (
+      await server.api('POST', `/api/tasks/${original.id}/reattempt`, {
+        feedback: 'try again',
+        continuation: 'condensed',
+      })
+    ).body;
+    const started = await server.api('POST', `/api/tasks/${reattempt.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${reattempt.id}`)).body.state === 'awaiting-review');
+
+    const run2 = (await server.api('GET', `/api/tasks/${reattempt.id}/runs`)).body.runs.find(
+      (r: { id: number }) => r.id === started.body.id,
+    );
+    // Condensed ⇒ a brand-new Session (session/new), NOT the original's — the
+    // feedback still rides the prompt, but the full conversation is not replayed.
+    expect(run2.sessionRowId).not.toBe(origRun.sessionRowId);
+    expect(run2.sessionId).not.toBe(origRun.sessionId);
+  });
+
+  it('GET /continuation reports available:false for a task that never bound a Session', async () => {
+    const t = (await server.api('POST', '/api/tasks', { prompt: 'no run yet' })).body;
+    const preview = (await server.api('GET', `/api/tasks/${t.id}/continuation`)).body;
+    expect(preview).toEqual({ available: false });
+  });
 });

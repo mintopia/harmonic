@@ -130,6 +130,16 @@ export const tasks = sqliteTable('tasks', {
   reattemptOf: integer('reattempt_of').references((): AnySQLiteColumn => tasks.id),
   /** Reviewer feedback that seeded this re-attempt, stored in full, separate from the prompt. */
   feedback: text('feedback'),
+  /**
+   * How a re-attempt continues the rejected Run's Session (issue #170). Null on
+   * originals and on re-attempts created before the operator was offered the
+   * choice ⇒ treated as `'full'` (the historical behaviour: re-bind the warm
+   * Session and replay the whole conversation). `'condensed'` opts out of that
+   * bind, so the re-attempt dispatches into a fresh Session carrying only the
+   * reviewer feedback in its prompt — cheaper, no full replay. Read by the
+   * Runner's `bindContinuationIfEligible`; the choice the operator makes in the
+   * reject dialog, wired to `planSessionContinuation`. */
+  continuationChoice: text('continuation_choice').$type<'full' | 'condensed'>(),
   // --- Tracker mirroring (issue #30). Null/default on native Tasks. ---
   /** native (authored here) | mirrored (1:1 projection of a tracker issue). */
   origin: text('origin').$type<TaskOrigin>().notNull().default('native'),

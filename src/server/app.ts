@@ -178,6 +178,7 @@ export interface AppContext {
   workspaces: WorkspaceService;
   tasks: TaskService;
   runs: RunStore;
+  sessions: SessionStore;
   leases: WorkContextLeaseStore;
   runner: Runner;
   conversations: ConversationStore;
@@ -544,7 +545,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, trackerManager, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

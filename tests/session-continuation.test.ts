@@ -4,11 +4,12 @@ import {
   estimateContinuationCost,
   isAutomatedTrigger,
   sessionWarmthFacts,
+  previewHumanRejectContinuation,
   CONTINUATION_TRIGGERS,
   AUTOMATED_CONTINUATION_TRIGGERS,
   type SessionWarmthFacts,
 } from '../src/domain/session-continuation.js';
-import type { SessionRow } from '../src/db/schema.js';
+import type { RunRow, SessionRow } from '../src/db/schema.js';
 
 /**
  * The pure retry/reject continuation decision (issue #147, reliability-design
@@ -172,5 +173,78 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
       updatedAt: 0,
     } satisfies SessionRow;
     expect(sessionWarmthFacts(row)).toEqual({ estimatedWarmUntil: 456, lastActiveAt: 123 });
+  });
+});
+
+/**
+ * The reject-dialog preview (issue #170): before the operator rejects, look at
+ * the Task's newest Session-bound Run and project the `human-reject` offer so the
+ * dialog can show "continue full (est. cost)" vs "start condensed". Pure — Runs +
+ * a `getSession` lookup + `now` in, a plan (or null) out.
+ */
+describe('previewHumanRejectContinuation (issue #170)', () => {
+  const HOUR = 60 * 60 * 1000;
+  const now = 10 * HOUR;
+  const session = (id: number, warmUntil: number | null): SessionRow =>
+    ({
+      id,
+      harness: 'claude',
+      harnessSessionId: `sess-${id}`,
+      model: 'claude-opus-4-8',
+      cwd: '/work/repo',
+      workspaceId: 1,
+      mcpTemplates: '[]',
+      permissionMode: 'auto',
+      capabilitySnapshot: '{}',
+      supportsLoadSession: true,
+      adapterVersion: 'claude@1',
+      status: 'active',
+      lastActiveAt: now - 60_000,
+      estimatedWarmUntil: warmUntil,
+      worktreePath: null,
+      worktreeRepoDir: null,
+      retireReason: null,
+      retireDeadline: null,
+      retiredAt: null,
+      resumeIncompatibilityReason: null,
+      resumeIncompatibilityDetail: null,
+      createdAt: 0,
+      updatedAt: 0,
+    }) satisfies SessionRow;
+  // The preview reads only `sessionRowId` off each Run; a localized cast keeps
+  // the fixture to the one field under test.
+  const run = (sessionRowId: number | null): RunRow => ({ sessionRowId }) as RunRow;
+
+  it('returns the offer-choice plan projected against the newest Session-bound Run', () => {
+    const store = new Map([[5, session(5, now + HOUR)]]);
+    const plan = previewHumanRejectContinuation([run(null), run(5)], (id) => store.get(id) ?? null, now);
+    expect(plan?.mode).toBe('offer-choice');
+    expect(plan?.continueFull.estimate.band).toBe('warm');
+    expect(plan?.startCondensed).toEqual({ session: 'new', conversation: 'condensed' });
+  });
+
+  it('walks back from the newest Run — the latest Session-bound Run wins', () => {
+    const store = new Map([
+      [1, session(1, now + HOUR)],
+      [2, session(2, now - HOUR)], // newer Run, cold Session
+    ]);
+    const plan = previewHumanRejectContinuation([run(1), run(2)], (id) => store.get(id) ?? null, now);
+    // The second (newer) Run's cold Session is the one previewed, not the first.
+    expect(plan?.continueFull.estimate.band).toBe('cold');
+  });
+
+  it('returns null when no Run ever bound a Session', () => {
+    expect(previewHumanRejectContinuation([run(null), run(null)], () => null, now)).toBeNull();
+  });
+
+  it('returns null when the newest Session was retired and swept (lookup misses)', () => {
+    // Run points at a Session id, but getSession returns null (row gone).
+    expect(previewHumanRejectContinuation([run(9)], () => null, now)).toBeNull();
+  });
+
+  it('skips a swept newer Session and falls back to an older live one', () => {
+    const store = new Map([[3, session(3, now + HOUR)]]); // id 8 absent (swept)
+    const plan = previewHumanRejectContinuation([run(3), run(8)], (id) => store.get(id) ?? null, now);
+    expect(plan?.continueFull.estimate.band).toBe('warm');
   });
 });

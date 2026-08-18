@@ -274,6 +274,13 @@
       "when": 1787050613148,
       "tag": "0038_peaceful_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1787074426964,
+      "tag": "0039_calm_lilandra",
+      "breakpoints": true
     }
   ]
 }

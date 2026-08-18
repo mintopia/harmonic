@@ -196,6 +196,14 @@ function RunMeta({ run }: { run: Run }) {
   if (run.stopReason) rows.push(['stop', run.stopReason]);
   rows.push(['started', new Date(run.startedAt).toLocaleTimeString()]);
   if (run.finishedAt) rows.push(['finished', new Date(run.finishedAt).toLocaleTimeString()]);
+  if (run.sessionId) {
+    rows.push([
+      'session',
+      <span className="font-mono text-small" title={run.sessionId}>
+        {run.sessionId}
+      </span>,
+    ]);
+  }
   if (totals) {
     rows.push([
       'tokens',

@@ -463,8 +463,14 @@ export class TaskService {
    * reviewer's feedback in full. The feedback is composed into the run
    * prompt at run time (see the runner), so the original prompt stays
    * pristine. The original task is left untouched.
+   *
+   * `continuation` (issue #170) records how the re-attempt should continue the
+   * rejected Run's Session: `'full'` (or omitted) re-binds the warm Session and
+   * replays the whole conversation — the historical default — while
+   * `'condensed'` opts out of that bind so the re-attempt starts in a fresh
+   * Session carrying only the feedback. Read later by the Runner.
    */
-  reattempt(originalId: number, feedback?: string): TaskRow {
+  reattempt(originalId: number, feedback?: string, continuation?: 'full' | 'condensed'): TaskRow {
     // Copy from the raw row so an inherited default (`null`) is re-attempted as
     // inherited, not frozen to the value it happened to resolve to today.
     const original = this.getRaw(originalId);
@@ -491,6 +497,7 @@ export class TaskService {
         state: this.hasUnmet(dependsOn) ? 'blocked' : 'ready',
         reattemptOf: originalId,
         feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
+        continuationChoice: continuation ?? null,
         createdAt: now,
         updatedAt: now,
       })

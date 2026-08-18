@@ -2,6 +2,7 @@ import type {
   AppConfig,
   BudgetGuardrail,
   Channel,
+  ContinuationPreview,
   Conversation,
   ConversationEvent,
   Cost,
@@ -146,9 +147,19 @@ export const api = {
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
-  /** Create a new task that re-attempts the original, carrying optional feedback. */
-  reattempt: (id: number, feedback?: string) =>
-    request<Task>('POST', `/api/tasks/${id}/reattempt`, feedback ? { feedback } : {}),
+  /** Create a new task that re-attempts the original, carrying optional feedback
+   * and, when the original has a live Session (issue #170), the operator's
+   * continuation choice: 'full' resumes the same Session/conversation, 'condensed'
+   * starts a new Session on a condensed conversation. Omitted = full (unchanged). */
+  reattempt: (id: number, feedback?: string, continuation?: 'full' | 'condensed') =>
+    request<Task>('POST', `/api/tasks/${id}/reattempt`, {
+      ...(feedback ? { feedback } : {}),
+      ...(continuation ? { continuation } : {}),
+    }),
+  // The re-attempt continuation preview (issue #170): whether the task has a
+  // live Session to continue, and if so the cost estimate for resuming it in
+  // full vs starting condensed. Feeds RejectDialog's re-attempt buttons.
+  continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
   // Hard-delete (issue #162, ADR-0025): cascades the Task's Runs/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast

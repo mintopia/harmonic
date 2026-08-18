@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { Modal } from './Modal';
-import { btnGhost, btnQuietDestructive, field, panelTitle, labelType } from '../ui';
+import { btnGhost, btnQuietDestructive, chip, field, panelTitle, labelType } from '../ui';
+import type { ContinuationPreview } from '../types';
 
 /**
  * The review gate's Reject path. Feedback is saved on the run either way; the
@@ -19,6 +20,12 @@ import { btnGhost, btnQuietDestructive, field, panelTitle, labelType } from '../
  *
  * No cobalt here — this dialog speaks in work states (ready / failed), not the
  * interface's voice.
+ *
+ * When the original task still has a live Session, the re-attempt choice
+ * (issue #170) splits into "continue full conversation" (resume the same
+ * Session, with an estimated warm/cold cost shown up front) or "start
+ * condensed" (a fresh Session on a condensed conversation) — a fetch failure
+ * on that preview silently falls back to the plain single re-attempt button.
  */
 export function RejectDialog({
   taskId,
@@ -32,14 +39,31 @@ export function RejectDialog({
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ContinuationPreview | null>(null);
   // Reject is one-shot: once it succeeds the task is 'failed' and can no longer
   // be reviewed, so if the follow-up re-attempt fails, a retry must skip reject.
   const rejected = useRef(false);
 
+  // A preview failure must never block rejecting — leave it null and fall back
+  // to the plain single re-attempt button.
+  useEffect(() => {
+    let live = true;
+    api
+      .continuationPreview(taskId)
+      .then((p) => {
+        if (live) setPreview(p);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [taskId]);
+
   // Both reject paths reject first (recording the feedback on the run and
   // failing the task); "retry" then spawns a new task linked to this one,
-  // carrying the feedback, instead of re-queuing in place.
-  const submit = (retry: boolean) => async () => {
+  // carrying the feedback and the continuation choice, instead of re-queuing
+  // in place.
+  const submit = (retry: boolean, continuation?: 'full' | 'condensed') => async () => {
     setBusy(true);
     setError(null);
     const fb = feedback.trim() || undefined;
@@ -48,16 +72,18 @@ export function RejectDialog({
         await api.rejectTask(taskId, fb);
         rejected.current = true;
       }
-      if (retry) await api.reattempt(taskId, fb);
+      if (retry) await api.reattempt(taskId, fb, continuation);
       // Acknowledge the completed gate action naming its outcome (issue #98).
-      toastSuccess(retry ? `Task #${taskId} rejected — re-attempt created` : `Task #${taskId} rejected — marked failed`);
+      const suffix = continuation ? ` (${continuation})` : '';
+      toastSuccess(
+        retry ? `Task #${taskId} rejected — re-attempt created${suffix}` : `Task #${taskId} rejected — marked failed`,
+      );
       onDone();
     } catch (e) {
       setBusy(false);
       setError(e instanceof Error ? e.message : String(e));
     }
   };
-
 
   return (
     <Modal label={`Reject task #${taskId}`} onClose={onClose} className="max-w-md">
@@ -80,6 +106,16 @@ export function RejectDialog({
           onChange={(e) => setFeedback(e.target.value)}
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
+        {preview?.available && (
+          <p className="mb-2 text-small">
+            <span
+              className={`${chip} mr-2 ${preview.continueFull.estimate.band === 'warm' ? 'bg-tool-tint text-tool' : 'bg-raised text-muted'}`}
+            >
+              {preview.continueFull.estimate.band}
+            </span>
+            <span className="text-muted">{preview.continueFull.estimate.note}</span>
+          </p>
+        )}
         {/* Dismissal is Modal's own X, so the footer carries only the two
             outcomes — nothing here competes with them for the eye. */}
         <div className="flex flex-wrap justify-end gap-2">
@@ -92,9 +128,20 @@ export function RejectDialog({
           <button type="button" onClick={submit(false)} disabled={busy} className={`${btnQuietDestructive} px-3 py-1.5`}>
             Mark failed
           </button>
-          <button type="button" onClick={submit(true)} disabled={busy} className={btnGhost}>
-            Create re-attempt
-          </button>
+          {preview?.available ? (
+            <>
+              <button type="button" onClick={submit(true, 'full')} disabled={busy} className={btnGhost}>
+                Continue full conversation
+              </button>
+              <button type="button" onClick={submit(true, 'condensed')} disabled={busy} className={btnGhost}>
+                Start condensed
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={submit(true)} disabled={busy} className={btnGhost}>
+              Create re-attempt
+            </button>
+          )}
         </div>
       </div>
     </Modal>

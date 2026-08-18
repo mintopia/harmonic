@@ -610,10 +610,13 @@ export class Runner {
    * Run inherits the prior `sessionRowId`/harness session id (dispatch then takes
    * the `session/load` branch and `recordDispatch` upserts the same row, so
    * `sessionRowId` stays stable); incompatible → the Run is returned unchanged
-   * for a fresh `session/new`. The operator's requeue/reattempt IS the
-   * "continue full" choice, so `offer-choice` resolves to the same-Session
-   * option (its cost estimate is recorded for the audit trail). Best-effort and
-   * total: any failure falls through to a cold dispatch, never blocking the Run.
+   * for a fresh `session/new`. `offer-choice` (a human reject) resolves to the
+   * same-Session "continue full" option UNLESS the operator explicitly picked
+   * `'condensed'` in the reject dialog (issue #170): a condensed re-attempt opts
+   * out of the bind so dispatch takes the fresh `session/new` branch, carrying
+   * only the reviewer feedback into its prompt — the estimate is recorded either
+   * way for the audit trail. Best-effort and total: any failure falls through to
+   * a cold dispatch, never blocking the Run.
    */
   private bindContinuationIfEligible(task: TaskRow, run: RunRow): RunRow {
     try {
@@ -634,6 +637,33 @@ export class Runner {
 
       const plan = planSessionContinuation(src.trigger, sessionWarmthFacts(src.session), Date.now());
       const estimate = plan.mode === 'offer-choice' ? plan.continueFull.estimate : null;
+      // Same `session-continuation` audit fact whether the bind happens or not —
+      // `choice`/`bound` are the only things that vary, so build it in one place.
+      const appendFact = (choice: 'condensed' | 'full' | 'silent', bound: boolean) =>
+        this.runFacts.append(
+          run.id,
+          'session-continuation',
+          {
+            fromRunId: src.prior.id,
+            sessionRowId: src.session.id,
+            harnessSessionId: src.session.harnessSessionId,
+            trigger: src.trigger,
+            choice,
+            bound,
+            estimate,
+          },
+          Date.now(),
+        );
+
+      // #170: an operator who picked "start condensed" in the reject dialog opts
+      // out of the same-Session bind — the re-attempt dispatches fresh (only the
+      // feedback rides its prompt). Record the declined continuation for the
+      // audit trail, then fall through to a cold dispatch. Only a human-reject
+      // `offer-choice` is condensable; automated `silent-continue` always binds.
+      if (plan.mode === 'offer-choice' && task.continuationChoice === 'condensed') {
+        appendFact('condensed', false);
+        return run;
+      }
 
       const bound = this.runStore.update(run.id, {
         sessionRowId: src.session.id,
@@ -644,18 +674,7 @@ export class Runner {
       } catch {
         /* best-effort; reactivate is a no-op unless the Session is idle */
       }
-      this.runFacts.append(
-        run.id,
-        'session-continuation',
-        {
-          fromRunId: src.prior.id,
-          sessionRowId: src.session.id,
-          harnessSessionId: src.session.harnessSessionId,
-          trigger: src.trigger,
-          estimate,
-        },
-        Date.now(),
-      );
+      appendFact(plan.mode === 'offer-choice' ? 'full' : 'silent', true);
       return bound;
     } catch {
       return run; // never let a continuation attempt block a dispatch

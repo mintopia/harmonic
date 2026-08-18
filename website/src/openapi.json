@@ -595,6 +595,21 @@
             ],
             "example": null
           },
+          "continuationChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "condensed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "origin": {
             "type": "string",
             "enum": [
@@ -788,6 +803,7 @@
           "state",
           "reattemptOf",
           "feedback",
+          "continuationChoice",
           "origin",
           "trackerRef",
           "workflow",
@@ -879,6 +895,21 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "continuationChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "condensed"
+                ]
               },
               {
                 "type": "null"
@@ -1177,6 +1208,7 @@
           "state",
           "reattemptOf",
           "feedback",
+          "continuationChoice",
           "origin",
           "trackerRef",
           "workflow",
@@ -3176,6 +3208,21 @@
             ],
             "example": null
           },
+          "continuationChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "condensed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
           "origin": {
             "type": "string",
             "enum": [
@@ -3370,6 +3417,7 @@
           "state",
           "reattemptOf",
           "feedback",
+          "continuationChoice",
           "origin",
           "trackerRef",
           "workflow",
@@ -3462,6 +3510,21 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          },
+          "continuationChoice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "full",
+                  "condensed"
+                ]
               },
               {
                 "type": "null"
@@ -3761,6 +3824,7 @@
           "state",
           "reattemptOf",
           "feedback",
+          "continuationChoice",
           "origin",
           "trackerRef",
           "workflow",
@@ -6088,6 +6152,14 @@
                       "feedback": {
                         "example": "The limiter is per-process; it needs to be shared across workers.",
                         "type": "string"
+                      },
+                      "continuation": {
+                        "example": "condensed",
+                        "type": "string",
+                        "enum": [
+                          "full",
+                          "condensed"
+                        ]
                       }
                     }
                   },
@@ -6352,6 +6424,183 @@
           },
           "409": {
             "description": "The task is not in a state this action can be applied to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/continuation": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Preview the reject-time Session continuation choice (issue #170): if this task has a live Session, the full-continuation cost estimate (from planSessionContinuation) plus the condensed alternative the reject dialog offers. `available: false` when there is nothing to continue.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The continuation offer for this task, or `available: false`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        }
+                      },
+                      "required": [
+                        "available"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        },
+                        "continueFull": {
+                          "type": "object",
+                          "properties": {
+                            "session": {
+                              "type": "string",
+                              "enum": [
+                                "same"
+                              ]
+                            },
+                            "conversation": {
+                              "type": "string",
+                              "enum": [
+                                "full"
+                              ]
+                            },
+                            "estimate": {
+                              "type": "object",
+                              "properties": {
+                                "band": {
+                                  "type": "string",
+                                  "enum": [
+                                    "warm",
+                                    "cold",
+                                    "unknown"
+                                  ]
+                                },
+                                "warm": {
+                                  "type": "boolean"
+                                },
+                                "warmthKnown": {
+                                  "type": "boolean"
+                                },
+                                "estimatedWarmUntil": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "msSinceActive": {
+                                  "type": "number"
+                                },
+                                "msUntilCold": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "note": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "band",
+                                "warm",
+                                "warmthKnown",
+                                "estimatedWarmUntil",
+                                "msSinceActive",
+                                "msUntilCold",
+                                "note"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "session",
+                            "conversation",
+                            "estimate"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "startCondensed": {
+                          "type": "object",
+                          "properties": {
+                            "session": {
+                              "type": "string",
+                              "enum": [
+                                "new"
+                              ]
+                            },
+                            "conversation": {
+                              "type": "string",
+                              "enum": [
+                                "condensed"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "session",
+                            "conversation"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "continueFull",
+                        "startCondensed"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "The continuation offer for this task, or `available: false`."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
             "content": {
               "application/json": {
                 "schema": {

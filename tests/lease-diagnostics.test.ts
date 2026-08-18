@@ -60,6 +60,7 @@ function task(overrides: Partial<TaskRow> & Pick<TaskRow, 'id'>): TaskRow {
     workspaceId: 1,
     reattemptOf: null,
     feedback: null,
+    continuationChoice: null,
     origin: 'native',
     trackerRef: null,
     workflow: null,

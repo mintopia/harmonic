@@ -246,6 +246,33 @@ export interface Run {
   finishedAt: number | null;
 }
 
+/** A Task's continuation preview (issue #170), as `GET
+ * /api/tasks/:id/continuation` serves it: whether the Task has a live Session
+ * to continue, and if so the two re-attempt paths on offer — resume the same
+ * Session/conversation in full, or start a new Session on a condensed
+ * conversation. `available:false` means there's no live Session (a plain
+ * re-attempt, unchanged). */
+export type ContinuationPreview =
+  | { available: false }
+  | {
+      available: true;
+      continueFull: {
+        session: 'same';
+        conversation: 'full';
+        estimate: {
+          band: 'warm' | 'cold' | 'unknown';
+          warm: boolean;
+          warmthKnown: boolean;
+          estimatedWarmUntil: number | null;
+          msSinceActive: number;
+          msUntilCold: number | null;
+          /** Human-legible cost sentence for the operator. */
+          note: string;
+        };
+      };
+      startCondensed: { session: 'new'; conversation: 'condensed' };
+    };
+
 export interface RunEvent {
   id: number;
   runId: number;

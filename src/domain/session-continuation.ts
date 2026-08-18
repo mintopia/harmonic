@@ -33,7 +33,7 @@
  * caller's; this file only decides.
  */
 
-import type { SessionRow } from '../db/schema.js';
+import type { RunRow, SessionRow } from '../db/schema.js';
 
 /**
  * What prompted the continuation. Two are **automated** (they reuse the Session
@@ -221,4 +221,35 @@ export function planSessionContinuation(
  */
 export function sessionWarmthFacts(row: SessionRow): SessionWarmthFacts {
   return { estimatedWarmUntil: row.estimatedWarmUntil, lastActiveAt: row.lastActiveAt };
+}
+
+/**
+ * Preview the human-reject continuation choice for a Task *before* the operator
+ * rejects it (issue #170), so the reject dialog can show "continue full (est.
+ * cost)" vs "start condensed". The runtime {@link Runner.resolveContinuationSource}
+ * only fires *after* a reject (it keys off `review === 'rejected'`); this looks
+ * one step earlier — at the newest Run that already holds a live Session — and
+ * projects the same `human-reject` plan against its warmth. Pure and total: the
+ * caller supplies the Task's Runs (newest last, as `listForTask` returns them),
+ * a `getSession` lookup that returns `null` when the row is gone, and `now`.
+ *
+ * Returns the `offer-choice` plan, or `null` when there is nothing to continue —
+ * no Run ever bound a Session, or the Session has since been retired and swept.
+ */
+export function previewHumanRejectContinuation(
+  runsForTask: readonly RunRow[],
+  getSession: (sessionRowId: number) => SessionRow | null,
+  now: number,
+): Extract<SessionContinuationPlan, { mode: 'offer-choice' }> | null {
+  for (let i = runsForTask.length - 1; i >= 0; i--) {
+    const run = runsForTask[i]!;
+    if (run.sessionRowId === null) continue;
+    const session = getSession(run.sessionRowId);
+    if (!session) continue;
+    const plan = planSessionContinuation('human-reject', sessionWarmthFacts(session), now);
+    // 'human-reject' is not automated, so this is always `offer-choice`; the
+    // cast documents that invariant for the return type.
+    return plan as Extract<SessionContinuationPlan, { mode: 'offer-choice' }>;
+  }
+  return null;
 }
