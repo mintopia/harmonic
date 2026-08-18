@@ -480,6 +480,42 @@ export const workContextLeases = sqliteTable('work_context_leases', {
 
 export type WorkContextLeaseRow = typeof workContextLeases.$inferSelect;
 
+/** Operator dispositions a Work Context lease can be given (issue #125,
+ * ADR-0022): `supersede` re-points a stuck (typically `suspect`) lease's
+ * ownership to a Run the operator names; `unlock` force-releases it outright,
+ * freeing the key for a fresh acquire. Both are manual escapes from a lease
+ * boot reconciliation (#123) or the live sweep (#122) could only flag, never
+ * resolve on its own. */
+export const LEASE_DISPOSITION_ACTIONS = ['supersede', 'unlock'] as const;
+export type LeaseDispositionAction = (typeof LEASE_DISPOSITION_ACTIONS)[number];
+
+/**
+ * The append-only operator-disposition audit log for Work Context leases
+ * (issue #125, ADR-0022): every `supersede`/`unlock` an operator issues is one
+ * immutable row, mirroring `run_facts`/`guardrail_events`'s discipline —
+ * written, never updated — so a lease's disposition history survives whatever
+ * happens to the lease row itself (a `supersede` mutates it in place; an
+ * `unlock` deletes it outright). No FK on `key` — a lease disposition
+ * legitimately outlives the lease row it acted on (an `unlock` deletes it,
+ * and a `key` can be re-acquired by an unrelated later Run), so this log is
+ * keyed by the plain string identity, not a foreign row.
+ */
+export const workContextLeaseDispositions = sqliteTable('work_context_lease_dispositions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** The Work Context key the disposition acted on (`workContextKey`). */
+  key: text('key').notNull(),
+  action: text('action').$type<LeaseDispositionAction>().notNull(),
+  /** The Run the lease was re-pointed to; null for `unlock` (there is no new owner). */
+  targetRunId: integer('target_run_id'),
+  /** The lease's owner immediately before this disposition, for the audit trail. */
+  previousOwnerRunId: integer('previous_owner_run_id'),
+  /** The lease's `state` immediately before this disposition. */
+  previousState: text('previous_state').$type<LeaseState>(),
+  at: integer('at').notNull(),
+});
+
+export type WorkContextLeaseDispositionRow = typeof workContextLeaseDispositions.$inferSelect;
+
 /**
  * The ending-signal fact types the coordinator understands **today** (issue
  * #112, reliability-design §0.3). Every way a Run can end is recorded as a

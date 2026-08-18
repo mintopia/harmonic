@@ -307,4 +307,96 @@ describe('WorkContextLeaseStore (issue #118)', () => {
       expect((caught as DomainError).code).toBe('conflict');
     });
   });
+
+  describe('supersede / forceRelease / listDispositions (issue #125)', () => {
+    it('supersede re-points a suspect lease to the named Run, re-admitting it as held with a fresh expiry', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+      leases.markSuspect('direct:/tmp/repo');
+
+      const before = Date.now();
+      const superseded = leases.supersede('direct:/tmp/repo', otherRunId);
+      const after = Date.now();
+
+      expect(superseded.ownerRunId).toBe(otherRunId);
+      expect(superseded.state).toBe('held');
+      expect(superseded.expiry!).toBeGreaterThanOrEqual(before + DEFAULT_LEASE_TTL.executionMs);
+      expect(superseded.expiry!).toBeLessThanOrEqual(after + DEFAULT_LEASE_TTL.executionMs);
+
+      expect(leases.getByKey('direct:/tmp/repo')).toMatchObject({ ownerRunId: otherRunId, state: 'held' });
+      expect(leases.getByOwner(otherRunId)).toMatchObject({ key: 'direct:/tmp/repo' });
+    });
+
+    it('supersede writes an audit disposition capturing the previous owner and state', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+      leases.markSuspect('direct:/tmp/repo');
+
+      leases.supersede('direct:/tmp/repo', otherRunId);
+
+      const dispositions = leases.listDispositions();
+      expect(dispositions).toHaveLength(1);
+      expect(dispositions[0]).toMatchObject({
+        key: 'direct:/tmp/repo',
+        action: 'supersede',
+        targetRunId: otherRunId,
+        previousOwnerRunId: ownerRunId,
+        previousState: 'suspect',
+      });
+    });
+
+    it('supersede on a key holding nothing throws DomainError(not_found)', () => {
+      let caught: unknown;
+      try {
+        leases.supersede('direct:/tmp/nothing-here', ownerRunId);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      expect((caught as DomainError).code).toBe('not_found');
+      expect(leases.listDispositions()).toHaveLength(0);
+    });
+
+    it('forceRelease deletes the lease, writes an audit disposition, and makes the key re-acquirable', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+      leases.markSuspect('direct:/tmp/repo');
+
+      leases.forceRelease('direct:/tmp/repo');
+
+      expect(leases.getByKey('direct:/tmp/repo')).toBeUndefined();
+      const dispositions = leases.listDispositions();
+      expect(dispositions).toHaveLength(1);
+      expect(dispositions[0]).toMatchObject({
+        key: 'direct:/tmp/repo',
+        action: 'unlock',
+        targetRunId: null,
+        previousOwnerRunId: ownerRunId,
+        previousState: 'suspect',
+      });
+
+      const reacquired = leases.acquire('direct:/tmp/repo', otherRunId, 'running');
+      expect(reacquired.ownerRunId).toBe(otherRunId);
+    });
+
+    it('forceRelease on a key holding nothing throws DomainError(not_found)', () => {
+      let caught: unknown;
+      try {
+        leases.forceRelease('direct:/tmp/nothing-here');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      expect((caught as DomainError).code).toBe('not_found');
+      expect(leases.listDispositions()).toHaveLength(0);
+    });
+
+    it('listDispositions is append-only and ordered oldest first, surviving both a supersede and a later unlock', () => {
+      leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
+      leases.supersede('direct:/tmp/repo', otherRunId);
+      leases.forceRelease('direct:/tmp/repo');
+
+      const dispositions = leases.listDispositions();
+      expect(dispositions.map((d) => d.action)).toEqual(['supersede', 'unlock']);
+      expect(dispositions[0]!.previousOwnerRunId).toBe(ownerRunId);
+      expect(dispositions[1]!.previousOwnerRunId).toBe(otherRunId);
+    });
+  });
 });

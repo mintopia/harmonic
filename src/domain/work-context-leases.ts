@@ -1,6 +1,11 @@
-import { and, eq, isNotNull, lte } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, lte } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { workContextLeases, type WorkContextLeaseRow } from '../db/schema.js';
+import {
+  workContextLeases,
+  workContextLeaseDispositions,
+  type WorkContextLeaseRow,
+  type WorkContextLeaseDispositionRow,
+} from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { DEFAULT_LEASE_TTL, leaseExpiryFor, type LeaseTtl } from './lease-ttl.js';
 
@@ -218,5 +223,80 @@ export class WorkContextLeaseStore {
    * (#123) and operator diagnostics — the queryable surface for AC4. */
   listSuspect(): WorkContextLeaseRow[] {
     return this.db.select().from(workContextLeases).where(eq(workContextLeases.state, 'suspect')).all();
+  }
+
+  /**
+   * Operator supersede (issue #125, ADR-0022): re-point `key`'s lease to
+   * `targetRunId`, re-admitting it as `held` with a fresh phase-scoped expiry
+   * — the manual escape for a `suspect` lease that boot reconciliation (#123)
+   * or the live sweep (#122) could only flag, never resolve, e.g. because the
+   * dead owner's context couldn't be proven clean. Throws
+   * `DomainError('not_found')` if `key` holds nothing — there is no lease to
+   * supersede. The row mutation and the audit append happen in one
+   * transaction, so a crash between them can never leave a superseded lease
+   * without its disposition record (or vice versa).
+   */
+  supersede(key: string, targetRunId: number, now: number = Date.now()): WorkContextLeaseRow {
+    const existing = this.getByKey(key);
+    if (!existing) throw new DomainError('not_found', `no Work Context lease held for key "${key}"`);
+    return this.db.transaction(() => {
+      const updated = this.db
+        .update(workContextLeases)
+        .set({
+          ownerRunId: targetRunId,
+          state: 'held',
+          heartbeat: now,
+          expiry: leaseExpiryFor(existing.phase, now),
+        })
+        .where(eq(workContextLeases.key, key))
+        .returning()
+        .get()!;
+      this.db
+        .insert(workContextLeaseDispositions)
+        .values({
+          key,
+          action: 'supersede',
+          targetRunId,
+          previousOwnerRunId: existing.ownerRunId,
+          previousState: existing.state,
+          at: now,
+        })
+        .run();
+      return updated;
+    });
+  }
+
+  /**
+   * Operator unlock (issue #125, ADR-0022): force-release `key`'s lease
+   * outright, freeing it for a fresh acquire — the manual escape when no Run
+   * should inherit the stuck context (contrast `supersede`, which hands it to
+   * a named Run). Throws `DomainError('not_found')` if `key` holds nothing.
+   * The delete and the audit append happen in one transaction, matching
+   * `supersede`'s atomicity guarantee.
+   */
+  forceRelease(key: string, now: number = Date.now()): void {
+    const existing = this.getByKey(key);
+    if (!existing) throw new DomainError('not_found', `no Work Context lease held for key "${key}"`);
+    this.db.transaction(() => {
+      this.db.delete(workContextLeases).where(eq(workContextLeases.key, key)).run();
+      this.db
+        .insert(workContextLeaseDispositions)
+        .values({
+          key,
+          action: 'unlock',
+          targetRunId: null,
+          previousOwnerRunId: existing.ownerRunId,
+          previousState: existing.state,
+          at: now,
+        })
+        .run();
+    });
+  }
+
+  /** The full operator-disposition audit log (issue #125), oldest first —
+   * every `supersede`/`unlock` ever issued, surviving whatever later happened
+   * to the lease row itself. */
+  listDispositions(): WorkContextLeaseDispositionRow[] {
+    return this.db.select().from(workContextLeaseDispositions).orderBy(asc(workContextLeaseDispositions.id)).all();
   }
 }

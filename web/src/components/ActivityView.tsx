@@ -1,13 +1,27 @@
 import { Fragment, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, type LeaseDiagnostic } from '../api';
 import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
 import { subscribe } from '../ws';
 import { toastError, toastSuccess } from '../toast';
-import { btnQuietDestructive, card, chip, displayTitle, escalatedChip, labelType, selectField, touchOverlay, touchTarget, touchTargetInline } from '../ui';
+import {
+  btnQuietDestructive,
+  card,
+  chip,
+  displayTitle,
+  escalatedChip,
+  field,
+  labelType,
+  sectionTitle,
+  selectField,
+  touchOverlay,
+  touchTarget,
+  touchTargetInline,
+} from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
 import { fmtElapsed } from '../board-model';
+import { leaseActions, type LeaseAction, type LeaseState } from '../lease-actions-model';
 import {
   activitySections,
   activitySummary,
@@ -342,6 +356,230 @@ function ProcessRow({
   );
 }
 
+/** One shared grid template for the leases table, on its own row of columns
+ * (issue #125): context key, state, owner, wait queue, then actions. */
+const LEASE_GRID = 'grid grid-cols-[minmax(0,1fr)_6rem_minmax(0,14rem)_10rem_auto] items-center gap-x-4 px-4';
+
+/** Abbreviate a long Work Context key (typically a filesystem path) to its
+ * first and last path segment, e.g. `/home/.../repo` — the full key is still
+ * available via the `title` attribute for anyone who needs it verbatim. */
+function abbreviateKey(key: string): string {
+  const MAX = 44;
+  if (key.length <= MAX) return key;
+  const parts = key.split('/').filter(Boolean);
+  if (parts.length <= 2) return `${key.slice(0, MAX - 1)}…`;
+  return `${key.startsWith('/') ? '/' : ''}${parts[0]}/…/${parts[parts.length - 1]}`;
+}
+
+/** Lease state chip (issue #125): `held` stays neutral (a live, heartbeating
+ * owner is unremarkable), `suspect` takes the fail register — the coordinator's
+ * heartbeat/TTL sweep already flagged the owner as possibly dead, which is
+ * closer to "broken" than to any in-progress state, so reusing Running's amber
+ * (reserved for "work in flight") or Blocked's slate (reserved for "waiting on
+ * a dependency") would misstate it. */
+const LEASE_STATE_STYLES: Record<LeaseState, string> = {
+  held: 'bg-raised text-muted',
+  suspect: 'bg-fail-tint text-fail',
+};
+
+function LeaseStateChip({ state }: { state: LeaseState }) {
+  return <span className={`${chip} ${LEASE_STATE_STYLES[state]}`}>{state}</span>;
+}
+
+/** Unlock, armed with the same two-step confirm as Stop/Cancel — it force-
+ * releases the lease with no successor, so no single misclick strips a live
+ * owner. */
+function UnlockButton({ onConfirm }: { onConfirm: () => void }) {
+  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+  return (
+    <button
+      ref={ref}
+      onClick={trigger}
+      className={`${touchTarget} text-small ${
+        armed ? 'font-semibold text-fail transition-colors duration-150' : btnQuietDestructive
+      }`}
+    >
+      {armed ? 'Unlock?' : 'Unlock'}
+    </button>
+  );
+}
+
+/** Supersede needs a target Run id (the pinned API contract's `runId`): a
+ * compact inline number field plus its own submit, since a candidate-Run
+ * picker isn't in the diagnostics payload. */
+function SupersedeControl({ onSupersede }: { onSupersede: (runId: number) => void }) {
+  const [runId, setRunId] = useState('');
+  const submit = () => {
+    const id = Number(runId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    onSupersede(id);
+    setRunId('');
+  };
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type="number"
+        min={1}
+        aria-label="Target run id"
+        placeholder="Run #"
+        value={runId}
+        onChange={(e) => setRunId(e.target.value)}
+        className={`${field} w-20 py-1 text-small`}
+      />
+      <button
+        onClick={submit}
+        disabled={runId.trim() === ''}
+        className={`${touchTarget} text-small font-medium text-muted transition-colors duration-150 hover:text-ink disabled:opacity-50 disabled:hover:text-muted`}
+      >
+        Supersede
+      </button>
+    </div>
+  );
+}
+
+/** One lease diagnostic row's operator actions, rendered from the shared
+ * `leaseActions()` map (mirroring TaskActions) so the buttons offered always
+ * track the pure model. */
+function LeaseRowActions({ lease, onChanged }: { lease: LeaseDiagnostic; onChanged: () => void }) {
+  const actions = leaseActions(lease.state);
+  const unlock = () =>
+    api
+      .unlockLease(lease.key)
+      .then(() => {
+        toastSuccess(`Lease ${lease.key} unlocked`);
+        onChanged();
+      }, toastError);
+  const supersede = (runId: number) =>
+    api
+      .supersedeLease(lease.key, runId)
+      .then(() => {
+        toastSuccess(`Lease ${lease.key} superseded to run #${runId}`);
+        onChanged();
+      }, toastError);
+
+  const button = (action: LeaseAction) => {
+    switch (action) {
+      case 'unlock':
+        return <UnlockButton key={action} onConfirm={unlock} />;
+      case 'supersede':
+        return <SupersedeControl key={action} onSupersede={supersede} />;
+    }
+  };
+
+  return (
+    <div role="cell" className="flex items-center justify-end gap-3">
+      {actions.map(button)}
+    </div>
+  );
+}
+
+function LeaseRow({ lease, onChanged }: { lease: LeaseDiagnostic; onChanged: () => void }) {
+  const waiting =
+    lease.waitingTaskCount > 0 ? (
+      <>
+        <span className="tabular-nums">{lease.waitingTaskCount}</span> waiting
+        {lease.longestWaitMs !== null && <span className="text-muted"> · {fmtElapsed(lease.longestWaitMs)} longest</span>}
+      </>
+    ) : (
+      <Empty />
+    );
+  return (
+    <div role="row" className={`${LEASE_GRID} border-t border-hairline py-3 transition-colors duration-150 hover:bg-raised`}>
+      <div role="cell" className="min-w-0">
+        <div className="truncate font-medium text-ink" title={lease.key}>
+          {abbreviateKey(lease.key)}
+        </div>
+        <div className="mt-0.5 truncate text-small text-muted">{lease.phase}</div>
+      </div>
+      <div role="cell">
+        <LeaseStateChip state={lease.state} />
+      </div>
+      <div role="cell" className="min-w-0">
+        <div className="truncate text-small text-ink">
+          {lease.ownerTaskId != null ? (
+            <>
+              #{lease.ownerTaskId} {lease.ownerTaskTitle}
+            </>
+          ) : (
+            <Empty />
+          )}
+        </div>
+        <div className="mt-0.5 truncate text-small text-muted">
+          Run #{lease.ownerRunId}
+          {lease.ownerTaskState ? ` · ${lease.ownerTaskState}` : ''}
+        </div>
+      </div>
+      <div role="cell" className="text-small text-muted">
+        {waiting}
+      </div>
+      <LeaseRowActions lease={lease} onChanged={onChanged} />
+    </div>
+  );
+}
+
+/**
+ * Work Context lease queue-diagnostics (issue #125): a quiet operator panel
+ * beneath the live fleet table that surfaces every held/suspect lease plus
+ * the ready-Task queue waiting behind it, with Supersede/Unlock controls.
+ * Polls on the same 5s cadence as the activity feed above; an action refetches
+ * immediately rather than waiting for the next tick, so the row it just acted
+ * on reflects the outcome right away.
+ */
+function LeasesPanel() {
+  const [leases, setLeases] = useState<LeaseDiagnostic[] | null>(null);
+
+  const load = () =>
+    api
+      .leases()
+      .then((body) => setLeases(body.leases))
+      .catch(() => {}); // read-only readout; a blip must never blank the panel
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadIfLive = () => {
+      if (!cancelled) load();
+    };
+    loadIfLive();
+    const poll = setInterval(loadIfLive, 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (leases === null) return null;
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-baseline gap-3">
+        <h2 className={sectionTitle}>Work Context leases</h2>
+        <span className={`${labelType} text-muted`}>held &amp; suspect contexts, operator controls</span>
+      </div>
+      {leases.length === 0 ? (
+        <p className="text-small text-muted">No held contexts.</p>
+      ) : (
+        <div role="table" aria-label="Work Context leases" className={`${card} overflow-x-auto`}>
+          <div role="rowgroup">
+            <div role="row" className={`${LEASE_GRID} py-2.5 ${labelType} text-muted`}>
+              <span role="columnheader">Context</span>
+              <span role="columnheader">State</span>
+              <span role="columnheader">Owner</span>
+              <span role="columnheader">Waiting</span>
+              <span role="columnheader" className="text-right">Actions</span>
+            </div>
+          </div>
+          <div role="rowgroup">
+            {leases.map((lease) => (
+              <LeaseRow key={lease.key} lease={lease} onChanged={load} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** One label/value figure in the summary strip. */
 function Stat({ label, value, tone = 'text-ink' }: { label: string; value: string; tone?: string }) {
   return (
@@ -581,6 +819,10 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
           )}
         </>
       )}
+
+      {/* Work Context lease queue-diagnostics (issue #125) — its own panel below
+          the live fleet, independent of whether any process is currently running. */}
+      <LeasesPanel />
     </div>
   );
 }

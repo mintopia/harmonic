@@ -1,10 +1,11 @@
-export type DomainErrorCode = 'not_found' | 'invalid_state' | 'validation' | 'conflict';
+export type DomainErrorCode = 'not_found' | 'invalid_state' | 'validation' | 'conflict' | 'forbidden';
 
 const HTTP_STATUS: Record<DomainErrorCode, number> = {
   not_found: 404,
   invalid_state: 409,
   conflict: 409,
   validation: 400,
+  forbidden: 403,
 };
 
 export class DomainError extends Error {

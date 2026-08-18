@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyCookie from '@fastify/cookie';
@@ -43,6 +43,7 @@ import { TrackerPollerManager } from '../tracker/manager.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
 import { DomainError } from '../domain/errors.js';
 import { taskRoutes } from './routes/tasks.js';
+import { leaseRoutes } from './routes/leases.js';
 import { mapRoutes } from './routes/maps.js';
 import { workspaceRoutes } from './routes/workspaces.js';
 import { conversationRoutes } from './routes/conversations.js';
@@ -100,6 +101,12 @@ function scopedKeyAllowed(path: string): boolean {
   // Steering redirects a running agent — a manual operator override; an agent
   // does not steer itself (it drives its own turn).
   if (/^\/api\/tasks\/\d+\/steer$/.test(path)) return false;
+  // Work Context lease supersede/unlock + diagnostics (issue #125) are a manual
+  // operator override, same footing as complete/steer — an agent never disposes
+  // of its own (or anyone else's) lease. `/api/leases*` matches no rule below
+  // and falls through to the default `false`, same as an unrecognized path; this
+  // early return exists only to document the decision alongside its siblings.
+  if (path === '/api/leases' || path.startsWith('/api/leases/')) return false;
   // Accept/reject are human-only, always — never reachable by a run-scoped key.
   if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
@@ -128,12 +135,33 @@ function readScopeAllowed(path: string, method: string): boolean {
   return false;
 }
 
+/**
+ * Whether a request carries an **operator** credential — a full-scope API key or
+ * an authenticated session — resolved in the same bearer → cookie → query-token
+ * order the auth hook authenticates in. Ungated mode (no operator password set)
+ * treats every caller as an operator, exactly as the auth hook skips entirely in
+ * that mode. The `/mcp` handler uses this to gate operator-only tools (issue
+ * #125): a Run Key is a valid MCP caller but is never an operator. Kept as one
+ * function so the operator determination lives in a single place rather than
+ * being re-derived per gate.
+ */
+function requestIsOperator(req: FastifyRequest, auth: AuthService): boolean {
+  if (!auth.hasPassword()) return true;
+  const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+  if (bearer) return auth.verifyKey(bearer)?.scope === 'full';
+  if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
+  const queryToken = (req.query as Record<string, string | undefined>)?.token;
+  if (queryToken) return auth.validateSession(queryToken) || auth.verifyKey(queryToken)?.scope === 'full';
+  return false;
+}
+
 export interface AppContext {
   db: Db;
   configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
   runs: RunStore;
+  leases: WorkContextLeaseStore;
   runner: Runner;
   conversations: ConversationStore;
   conversationDriver: ConversationDriver;
@@ -435,7 +463,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerManager, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -480,7 +508,12 @@ agent task surface as MCP tools (task CRUD, dependencies, queue/cancel,
 runs and events). Accept/Reject are human-only and are never exposed as
 MCP tools — a verifier's pass is the accept (#140, ADR-0021). A run-scoped
 Run Key may call \`/mcp\` regardless of the REST restrictions noted per
-endpoint below.
+endpoint below. Work Context lease diagnostics/supersede/unlock
+(\`list_leases\`, \`supersede_lease\`, \`unlock_lease\`, issue #125) are
+operator-only tools, the same footing as Accept/Reject: a Run Key can call
+\`/mcp\` but gets a \`forbidden\` error from these three specifically — only
+an operator API key (\`scope: 'full'\`) or an authenticated session may call
+them.
 
 ## WebSocket
 
@@ -624,6 +657,7 @@ not resolved yet.`;
   await app.register(activityRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });
+  await app.register(leaseRoutes, { prefix: '/api' });
   await app.register(openapiRoutes, { prefix: '/api' });
 
   // MCP: stateless streamable HTTP. A fresh server+transport per request
@@ -631,7 +665,12 @@ not resolved yet.`;
   // in the spec's info.description prose, not as a path (ADR-0005) — hidden
   // here the same way the openapi.json/yaml endpoints hide themselves.
   app.post('/mcp', { schema: { hide: true } }, async (req, reply) => {
-    const mcp = buildMcpServer(ctx);
+    // A Run Key is a valid MCP caller (scopedKeyAllowed always admits /mcp) but
+    // is never an operator, so the operator-only lease tools (issue #125) stay
+    // gated to a full-scope credential or an authenticated session — resolved by
+    // the same helper the notion is defined in.
+    const operator = requestIsOperator(req, auth);
+    const mcp = buildMcpServer(ctx, { operator });
     // `as any`: the SDK's option/transport types don't satisfy
     // exactOptionalPropertyTypes; sessionIdGenerator: undefined selects
     // stateless mode per its documentation.

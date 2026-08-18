@@ -216,4 +216,33 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     expect(started).not.toContain(blocked.id);
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${occupant.id} (running)`);
   });
+
+  it('waitingSince (issue #125): starts a clock on the first House-Rule-blocked pass and clears it once unblocked', async () => {
+    const busy = freshDir();
+    const occupant = directTask(busy, 'occupant');
+    tasks.setState(occupant.id, 'running');
+    const blocked = directTask(busy, 'same context');
+    const free = directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
+
+    const { ar, started } = build();
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(free.id));
+
+    expect(ar.skipReasonFor(blocked.id)).toBeDefined();
+    const startedWaiting = ar.waitingSince(blocked.id);
+    expect(startedWaiting).toBeDefined();
+    expect(ar.waitingSince(free.id)).toBeUndefined(); // never blocked → no clock
+
+    // A later pass while still blocked doesn't restart the clock.
+    ar.poke();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(ar.waitingSince(blocked.id)).toBe(startedWaiting);
+
+    // The occupant frees the context — a later pass admits `blocked`, and its
+    // clock is cleared (it's no longer in `contextSkipReasons`).
+    tasks.setState(occupant.id, 'completed');
+    ar.poke();
+    await vi.waitFor(() => expect(started).toContain(blocked.id));
+    expect(ar.waitingSince(blocked.id)).toBeUndefined();
+  });
 });

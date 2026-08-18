@@ -88,6 +88,19 @@ export class AutoRunner {
    */
   private readonly contextSkipReasons = new Map<number, string>();
 
+  /**
+   * Epoch ms a Task first started being House-Rule-skipped on a still-current
+   * streak, keyed by Task id (issue #125): the queue-diagnostics half of the
+   * lease operator surface reads this (via {@link waitingSince}) to report how
+   * long a blocked Task has been waiting on an occupied Work Context. Set the
+   * first time a pick pass skips a Task and left alone on every subsequent
+   * pass it's still skipped, so the clock reflects when the wait *began*, not
+   * the last time it was observed; pruned in the same pass to any Task no
+   * longer present in the freshly-rebuilt `contextSkipReasons` — the Task
+   * started (or its blocker cleared) and a later wait starts a fresh clock.
+   */
+  private readonly contextWaitingSince = new Map<number, number>();
+
   constructor(
     private readonly taskService: TaskService,
     private readonly runStore: RunStore,
@@ -104,6 +117,14 @@ export class AutoRunner {
    */
   skipReasonFor(taskId: number): string | undefined {
     return this.contextSkipReasons.get(taskId);
+  }
+
+  /** When `taskId` started its current House-Rule-blocked streak (issue
+   * #125), or `undefined` if it isn't currently blocked (or hasn't been seen).
+   * The lease queue-diagnostics surface's "how long has this been waiting"
+   * signal. */
+  waitingSince(taskId: number): number | undefined {
+    return this.contextWaitingSince.get(taskId);
   }
 
   poke(): void {
@@ -213,7 +234,7 @@ export class AutoRunner {
     const all = this.taskService.list();
     const occupied = occupiedDirectContexts(all);
     this.contextSkipReasons.clear();
-    return all
+    const picked = all
       .filter((t) => {
         if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
         if (this.mirror?.foreignAssignee(t)) return false;
@@ -231,6 +252,7 @@ export class AutoRunner {
             t.id,
             `Work Context held by task #${holder.id} (${holder.state})`,
           );
+          if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
           return false;
         }
         return true;
@@ -241,5 +263,12 @@ export class AutoRunner {
           a.createdAt - b.createdAt ||
           a.id - b.id,
       )[0];
+    // A Task no longer House-Rule-skipped this pass — started, or its
+    // blocker cleared — resets its wait clock rather than carrying a stale
+    // start time into a later, unrelated block.
+    for (const taskId of [...this.contextWaitingSince.keys()]) {
+      if (!this.contextSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
+    }
+    return picked;
   }
 }
