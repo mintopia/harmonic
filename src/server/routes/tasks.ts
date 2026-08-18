@@ -3,7 +3,16 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { createTaskInputSchema, updateTaskInputSchema, taskListQuerySchema } from '../../domain/tasks.js';
-import { TASK_STATES, RUN_STATES, TASK_ORIGINS, WORKFLOWS, WAYFINDER_TYPES, DRIVES } from '../../db/schema.js';
+import {
+  TASK_STATES,
+  RUN_STATES,
+  TASK_ORIGINS,
+  WORKFLOWS,
+  WAYFINDER_TYPES,
+  DRIVES,
+  GUARDRAIL_DIMENSIONS,
+  GUARDRAIL_CONFIG_SOURCES,
+} from '../../db/schema.js';
 import { RUN_PHASES } from '../../domain/run-phases.js';
 import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
@@ -107,6 +116,9 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
     runId: z.number().nullable().meta({ example: 41 }),
+    /** The transient House-Rule reason (ADR-0022, issue #120) this ready Task is
+     * being skipped for a held Work Context lease; null when not skipped (issue #171). */
+    skipReason: z.string().nullable().meta({ example: 'Work Context held by task #12 (running)' }),
   })
   .meta({ id: 'Task' });
 
@@ -175,6 +187,28 @@ const runEventSchema = z.object({
 });
 
 const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
+
+/** A Guardrail-trip event as the REST API serves it (`domain/guardrail-events.ts` `GuardrailEventRow`, issue #171). */
+const guardrailEventSchema = z.object({
+  id: z.number().meta({ example: 812 }),
+  runId: z.number().meta({ example: 9137 }),
+  seq: z.number().meta({ example: 1 }),
+  ts: z.number().meta({ example: 1784032140000 }),
+  /** The budget dimension that tripped. */
+  dimension: z.enum(GUARDRAIL_DIMENSIONS).meta({ example: 'wall-clock' }),
+  /** The Run phase the trip was observed in. */
+  phase: z.enum(RUN_PHASES).meta({ example: 'executing' }),
+  /** The configured bound that was crossed, in the dimension's unit (ms for wall-clock). */
+  limitValue: z.number().meta({ example: 3_600_000 }),
+  /** The observed value at trip, same unit as `limitValue`. */
+  observedValue: z.number().meta({ example: 3_650_000 }),
+  /** Where the limit resolved from: the global default, or a Workspace override. */
+  configSource: z.enum(GUARDRAIL_CONFIG_SOURCES).meta({ example: 'default' }),
+  /** Free-form JSON evidence attached at trip; `{}` when none. */
+  payload: z.unknown().meta({ example: {} }),
+});
+
+const guardrailEventsListResponseSchema = z.object({ guardrailEvents: z.array(guardrailEventSchema) });
 
 const usageResponseSchema = runUsageSchema.extend({
   cost: costSchema.nullable(),
@@ -590,6 +624,29 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => ({ events: ctx.runs.listEvents(req.params.id) }),
+  );
+
+  app.get(
+    '/runs/:id/guardrail-events',
+    {
+      schema: {
+        tags: ['Runs'],
+        description: "Replay a run's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
+        params: idParamsSchema,
+        response: {
+          200: guardrailEventsListResponseSchema.describe("The run's Guardrail-trip events in sequence order."),
+          404: errorResponse('No run has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      ctx.runs.get(req.params.id); // 404 on unknown run
+      return {
+        guardrailEvents: ctx.guardrailEvents
+          .list(req.params.id)
+          .map((r) => ({ ...r, payload: JSON.parse(r.payload) as unknown })),
+      };
+    },
   );
 
   app.get(

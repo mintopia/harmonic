@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { trackerDismissals } from '../src/db/schema.js';
-import { startServer, type TestServer } from './helpers.js';
+import { startServer, waitFor, type TestServer } from './helpers.js';
 
 describe('task authoring', () => {
   let server: TestServer;
@@ -25,6 +25,7 @@ describe('task authoring', () => {
       model: 'claude-sonnet-5',
       isolationMode: 'direct',
       priority: 'normal',
+      skipReason: null,
     });
     expect(typeof body.id).toBe('number');
     expect(typeof body.workingDir).toBe('string');
@@ -306,5 +307,43 @@ describe('task-default inheritance', () => {
     // Inherit resolves to the Workspace default set by the test above — proof
     // the cleared field tracks the Workspace, not a frozen global default.
     expect(cleared.body.model).toBe('ws-default-model');
+  });
+});
+
+/**
+ * `skipReason` (issue #171): the transient House-Rule reason (ADR-0022,
+ * issue #120) a ready Task's own API shape carries when the Auto-Runner's
+ * last pick pass skipped it for a held Work Context — surfaced directly on
+ * `taskToApi` (`AutoRunner.skipReasonFor`) rather than only through the
+ * separate lease-diagnostics surface (issue #125).
+ */
+describe('task skipReason (issue #171)', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('reports the House-Rule skip reason on a ready Task blocked by an occupied direct-mode Work Context', async () => {
+    const occupant = await server.api('POST', '/api/tasks', { prompt: 'occupant' });
+    server.app.ctx.tasks.setState(occupant.body.id, 'running');
+
+    const blocked = await server.api('POST', '/api/tasks', {
+      prompt: 'blocked, same context',
+      workingDir: occupant.body.workingDir,
+    });
+
+    // Enabling Auto-Runner pokes it; the fill pass skips `blocked` (context
+    // occupied, per the House Rule — #120), the same mechanics lease-routes.test.ts
+    // exercises for the diagnostics surface.
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true, maxConcurrentRuns: 1 } });
+    await waitFor(async () => server.app.ctx.autoRunner.skipReasonFor(blocked.body.id) ?? undefined);
+
+    const res = await server.api('GET', `/api/tasks/${blocked.body.id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.skipReason).toBe(`Work Context held by task #${occupant.body.id} (running)`);
   });
 });

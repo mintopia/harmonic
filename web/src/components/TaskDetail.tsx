@@ -2,10 +2,13 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNo
 import { api } from '../api';
 import { nextTabIndex } from '../tablist-model';
 import { formatCost, formatCostByModel } from '../cost';
-import type { Cost, Run, RunEvent, Task } from '../types';
+import type { Cost, GuardrailEvent, Run, RunEvent, Task } from '../types';
 import { EmptyState } from './EmptyState';
 import { EventStream } from './EventStream';
 import { coalesceEvents } from '../event-stream-model';
+import { phaseTimelineFromEvents } from '../phase-timeline-model';
+import { PhaseTimeline } from './PhaseTimeline';
+import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
@@ -226,6 +229,28 @@ function RunMeta({ run }: { run: Run }) {
   );
 }
 
+/** The selected run's Guardrail-trip log (issue #171), rendered distinctly
+ * from the run's other facts — each trip is a fail-tinted panel naming the
+ * dimension and the limit-vs-observed evidence, mirroring the escalation
+ * banner's fail vocabulary (`bg-fail-tint`/`text-fail`/`font-semibold`) so a
+ * Guardrail trip reads with the same weight as a failed run. */
+function GuardrailTrips({ events }: { events: GuardrailEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-2">
+      {events.map((event) => {
+        const { dimensionLabel, evidence } = describeGuardrailTrip(event);
+        return (
+          <div key={event.id} className="rounded-md bg-fail-tint px-3 py-2 text-small">
+            <span className="font-semibold text-fail">Guardrail tripped — {dimensionLabel}</span>
+            <div className="mt-0.5 text-ink">{evidence}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The task's description, on its own tab so the Output tab keeps the full
  * panel height (issue #34 follow-up). Mirrored prompts render as Markdown;
  * native prompts stay plain. */
@@ -424,6 +449,7 @@ export function TaskDetail({
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
   const [tab, setTab] = useState<Tab>('description');
   const [taskCost, setTaskCost] = useState<Cost | null>(null);
@@ -475,7 +501,29 @@ export function TaskDetail({
     };
   }, [selectedRunId]);
 
+  // Guardrail-trip log for the selected run (issue #171): REST replay, then a
+  // WS-triggered refetch (no per-trip firehose event, unlike run_event) —
+  // `run_changed` for this run is the signal something on it may have changed.
+  useEffect(() => {
+    if (selectedRunId === null) {
+      setGuardrailEvents([]);
+      return;
+    }
+    let live = true;
+    const load = () =>
+      api.runGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
+    load();
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'run_changed' && msg.run.id === selectedRunId) load();
+    });
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [selectedRunId]);
+
   const selectedRun = runs.find((r) => r.id === selectedRunId);
+  const phaseSteps = selectedRun ? phaseTimelineFromEvents(events, selectedRun.phase, selectedRun.state) : null;
 
   // Keep the Output panel pinned to the newest event as it streams — but only
   // while the operator is already at the bottom, so we never yank them up
@@ -555,6 +603,14 @@ export function TaskDetail({
                 of the corner it sits in. */}
             <div className="flex-1" />
           </div>
+          {/* Informational, not alarming (issue #171): a ready Task not
+              running yet because its Work Context lease is held elsewhere —
+              subtle so it never competes with the failed/escalated alert. */}
+          {task.skipReason && (
+            <div className="mt-1 text-small text-muted">
+              <span className={labelType}>Skipped</span> — {task.skipReason}
+            </div>
+          )}
           {/* The description moved to its own tab (below) so the Output tab
               keeps the full panel height — a header-mounted prompt starved it. */}
           {alert && (
@@ -568,6 +624,15 @@ export function TaskDetail({
               <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{alert.text}</div>
             </div>
           )}
+          {/* The phase timeline is the primary surface for "where is this run
+              in its lifecycle" (issue #171) — the per-run picker below keeps
+              only a quiet phase word for the non-selected runs. */}
+          {phaseSteps && (
+            <div className="mt-2">
+              <PhaseTimeline steps={phaseSteps} />
+            </div>
+          )}
+          <GuardrailTrips events={guardrailEvents} />
         </header>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2">

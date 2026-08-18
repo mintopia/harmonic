@@ -55,6 +55,10 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
+  /** The transient House-Rule reason (ADR-0022, issue #120) the Auto-Runner's
+   * last pick pass skipped this ready Task for — a held Work Context lease
+   * (`AutoRunner.skipReasonFor`); null when the Task wasn't skipped (issue #171). */
+  skipReason: string | null;
 };
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
@@ -73,6 +77,7 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
     runStartedAt: running?.startedAt ?? null,
     toolCount: running ? runningToolCount(running) : null,
     runId: running?.id ?? null,
+    skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
   };
 }
 

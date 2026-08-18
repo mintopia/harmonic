@@ -10,6 +10,34 @@ export const TASK_STATES = [
 ] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
+/** The Run phase machine (ADR reliability-design §0.2, issue #114/#171), in
+ * traversal order; mirrors the server's `RUN_PHASES` (`domain/run-phases.ts`). */
+export const RUN_PHASES = ['executing', 'validating', 'verifying', 'review', 'landing', 'terminal'] as const;
+export type RunPhase = (typeof RUN_PHASES)[number];
+
+/** A budget dimension a Guardrail can trip on (ADR-0019, issue #171); mirrors
+ * the server's `GUARDRAIL_DIMENSIONS` (`db/schema.ts`). */
+export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' | 'tool-timeout';
+
+/** One persisted Guardrail-trip event (issue #171), as `GET
+ * /api/runs/:id/guardrail-events` serves it — mirrors the server's
+ * `GuardrailEventRow` (`domain/guardrail-events.ts`). `limitValue`/
+ * `observedValue` are in the dimension's own unit (ms for wall-clock and
+ * tool-timeout, tokens for tokens, USD for cost, a sentinel 0/count for
+ * progress); `payload` carries dimension-specific evidence. */
+export interface GuardrailEvent {
+  id: number;
+  runId: number;
+  seq: number;
+  ts: number;
+  dimension: GuardrailDimension;
+  phase: RunPhase;
+  limitValue: number;
+  observedValue: number;
+  configSource: 'default' | 'workspace';
+  payload: unknown;
+}
+
 /** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
 export type Workflow = 'wayfinder' | 'implement';
@@ -180,6 +208,10 @@ export interface Task {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
+  /** Transient House-Rule reason a `ready` Task is being skipped for a held
+   * Work Context lease (issue #171, e.g. "Work Context held by task #12
+   * (running)"); null normally, including once the Task starts running. */
+  skipReason: string | null;
 }
 
 export interface Run {
@@ -190,7 +222,7 @@ export interface Run {
   /** Phase within the Run lifecycle; a native Run is `state:'running'`,
    * `phase:'review'` while parked at the human gate. `null` for pre-feature
    * Runs (issue #114). */
-  phase: 'executing' | 'validating' | 'verifying' | 'review' | 'landing' | 'terminal' | null;
+  phase: RunPhase | null;
   reason: string | null;
   stopReason: string | null;
   sessionId: string | null;

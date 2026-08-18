@@ -50,6 +50,7 @@ const task = (
   runStartedAt: null,
   toolCount: null,
   runId: null,
+  skipReason: null,
   ...extra,
 });
 

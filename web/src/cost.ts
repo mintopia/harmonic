@@ -1,4 +1,4 @@
-import type { Cost } from './types';
+import type { Cost } from './types.js';
 
 export const usd = (v: number) => (v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`);
 

@@ -30,6 +30,7 @@ import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
+import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import { LandingCoordinator, type LandingEffectExec } from '../domain/landing-coordinator.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
@@ -184,6 +185,7 @@ export interface AppContext {
   permissionRules: PermissionRuleStore;
   review: ReviewService;
   autoRunner: AutoRunner;
+  guardrailEvents: GuardrailEventStore;
   trackerManager: TrackerPollerManager;
   auth: AuthService;
   channels: ChannelService;
@@ -215,6 +217,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (id) => bus.emit('task_removed', { id }),
   );
   const runs = new RunStore(db);
+  const guardrailEvents = new GuardrailEventStore(db);
   const leases = new WorkContextLeaseStore(db);
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
@@ -541,7 +544,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   });
 
-  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, trackerManager, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

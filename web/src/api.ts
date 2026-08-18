@@ -6,6 +6,7 @@ import type {
   ConversationEvent,
   Cost,
   FsListing,
+  GuardrailEvent,
   PermissionRule,
   Run,
   RunEvent,
@@ -163,6 +164,10 @@ export const api = {
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
   runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
+  // Guardrail-trip event log for a Run (issue #171): the REST surface over
+  // `GuardrailEventStore.list`, mirroring `runEvents`'s shape and 404 behaviour.
+  runGuardrailEvents: (id: number) =>
+    request<{ guardrailEvents: GuardrailEvent[] }>('GET', `/api/runs/${id}/guardrail-events`),
   runDiff: (id: number) =>
     request<{ branch: string | null; baseBranch: string | null; stat: string | null }>(
       'GET',

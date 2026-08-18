@@ -124,6 +124,32 @@ function renderEventLine(event: StreamEvent): ReactNode {
       </div>
     );
   }
+  if (event.payload.event === 'progress-nudge') {
+    // The stall detector redirected the agent one turn before it would have
+    // tripped the Progress guardrail (issue #171). An operator aside like
+    // steer_delivered/steer_queued above — accent-tinted, labelled — but this
+    // one is the system's own nudge, not something the operator typed.
+    return (
+      <div className="rounded-md bg-accent-tint px-2 py-1 text-ink">
+        <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
+        <span>
+          Redirected before a guardrail trip
+          {event.payload.pattern ? ` — ${String(event.payload.pattern)}` : ''}
+        </span>
+      </div>
+    );
+  }
+  if (event.payload.event === 'guardrail-tripped') {
+    // A Guardrail actually tripped and settled the run (issue #171) — Failed
+    // rose like model_mismatch's Tooling cyan is to harness metadata, naming
+    // the dimension and the reason the trip already formatted server-side.
+    return (
+      <div className="text-fail">
+        guardrail tripped: <span className="font-medium">{String(event.payload.dimension)}</span>
+        {event.payload.reason ? ` — ${String(event.payload.reason)}` : ''}
+      </div>
+    );
+  }
   // Every other lifecycle/protocol event (turn started, finished, …) is noise.
   return null;
 }
