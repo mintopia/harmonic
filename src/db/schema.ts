@@ -4,6 +4,10 @@ import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQL
 // with the phase-machine enum without a runtime db→domain import cycle
 // (domain/run-facts.ts already imports this schema).
 import type { RunPhase } from '../domain/run-phases.js';
+// Type-only import (erased at compile), same db→domain-cycle-free reasoning as
+// `RunPhase` above: brands `verification_attempts.verdict` with the canonical
+// verdict enum so the column is literal-typed like `mechanism`/`phase`.
+import type { Verdict } from '../verification/critic-schema.js';
 // Type-only import, same reasoning: brands `turn_queue`'s status/purpose/
 // cancel-reason columns without a runtime db→domain import cycle
 // (domain/turn-queue-store.ts already imports this schema).
@@ -806,7 +810,7 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
    * be re-verified against more than one candidate across self-heal turns). */
   inputOid: text('input_oid').notNull(),
   /** 'pass' | 'fail' | 'inconclusive' (`verification/critic-schema.ts`'s `Verdict`). */
-  verdict: text('verdict').notNull(),
+  verdict: text('verdict').$type<Verdict>().notNull(),
   summary: text('summary').notNull(),
   /** Raw verifier output (the critic's agent text), capped by the caller. */
   output: text('output').notNull(),

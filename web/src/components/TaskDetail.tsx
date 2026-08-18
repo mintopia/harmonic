@@ -2,13 +2,14 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNo
 import { api } from '../api';
 import { nextTabIndex } from '../tablist-model';
 import { formatCost, formatCostByModel } from '../cost';
-import type { Cost, GuardrailEvent, Run, RunEvent, Task } from '../types';
+import type { Cost, GuardrailEvent, Run, RunEvent, Task, VerificationAttempt } from '../types';
 import { EmptyState } from './EmptyState';
 import { EventStream } from './EventStream';
 import { coalesceEvents } from '../event-stream-model';
 import { phaseTimelineFromEvents } from '../phase-timeline-model';
 import { PhaseTimeline } from './PhaseTimeline';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
+import { VerificationCard } from './VerificationCard';
 import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
@@ -414,7 +415,17 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
   );
 }
 
-function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunEvent[] }) {
+function DetailsTab({
+  task,
+  run,
+  events,
+  verificationAttempts,
+}: {
+  task: Task;
+  run: Run | undefined;
+  events: RunEvent[];
+  verificationAttempts: VerificationAttempt[];
+}) {
   return (
     <div className="flex flex-col">
       {run && (
@@ -423,6 +434,7 @@ function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; e
         </div>
       )}
       <OutputSummary events={events} />
+      <VerificationCard attempts={verificationAttempts} />
       {run?.reviewFeedback && (
         <div className="py-3">
           <div className={`${labelType} mb-1 text-muted`}>
@@ -458,6 +470,7 @@ export function TaskDetail({
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
+  const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
   const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
   const [tab, setTab] = useState<Tab>('description');
   const [taskCost, setTaskCost] = useState<Cost | null>(null);
@@ -520,6 +533,30 @@ export function TaskDetail({
     let live = true;
     const load = () =>
       api.runGuardrailEvents(selectedRunId).then(({ guardrailEvents }) => live && setGuardrailEvents(guardrailEvents));
+    load();
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'run_changed' && msg.run.id === selectedRunId) load();
+    });
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, [selectedRunId]);
+
+  // Verification-attempt log for the selected run (issue #169, part of #109):
+  // REST replay, then a WS-triggered refetch (no per-attempt firehose event,
+  // unlike run_event) — `run_changed` for this run is the signal something on
+  // it may have changed. Mirrors the guardrailEvents effect above exactly.
+  useEffect(() => {
+    if (selectedRunId === null) {
+      setVerificationAttempts([]);
+      return;
+    }
+    let live = true;
+    const load = () =>
+      api
+        .runVerificationAttempts(selectedRunId)
+        .then(({ verificationAttempts }) => live && setVerificationAttempts(verificationAttempts));
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'run_changed' && msg.run.id === selectedRunId) load();
@@ -736,7 +773,7 @@ export function TaskDetail({
             <ChangesTab run={selectedRun} diff={diff} />
           </div>
           <div role="tabpanel" id="task-panel-details" aria-labelledby="task-tab-details" hidden={tab !== 'details'}>
-            <DetailsTab task={task} run={selectedRun} events={events} />
+            <DetailsTab task={task} run={selectedRun} events={events} verificationAttempts={verificationAttempts} />
           </div>
         </div>
 

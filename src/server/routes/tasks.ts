@@ -13,6 +13,7 @@ import {
   DRIVES,
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
+  VERIFICATION_MECHANISMS,
 } from '../../db/schema.js';
 import { RUN_PHASES } from '../../domain/run-phases.js';
 import { Git } from '../../execution/git.js';
@@ -246,6 +247,30 @@ const guardrailEventSchema = z.object({
 });
 
 const guardrailEventsListResponseSchema = z.object({ guardrailEvents: z.array(guardrailEventSchema) });
+
+/** One persisted verification attempt as the REST API serves it (`domain/verification-attempts.ts` `VerificationAttemptRow`, issue #169, part of #109). */
+const verificationAttemptSchema = z.object({
+  id: z.number().meta({ example: 4210 }),
+  runId: z.number().meta({ example: 9137 }),
+  seq: z.number().meta({ example: 1 }),
+  ts: z.number().meta({ example: 1784032140000 }),
+  /** Which verifier produced this attempt. */
+  mechanism: z.enum(VERIFICATION_MECHANISMS).meta({ example: 'command' }),
+  /** The tree oid the verifier ran against. */
+  inputOid: z.string().meta({ example: 'a1b2c3d4' }),
+  /** This verifier's verdict for the attempt. */
+  verdict: z.enum(['pass', 'fail', 'inconclusive']).meta({ example: 'pass' }),
+  /** Short human summary of the outcome. */
+  summary: z.string().meta({ example: 'all checks passed' }),
+  /** Raw verifier output, caller-capped. */
+  output: z.string().meta({ example: '' }),
+  /** The Run phase the attempt was recorded in. */
+  phase: z.enum(RUN_PHASES).meta({ example: 'verifying' }),
+  /** Whether the verifier mutated the worktree. */
+  mutated: z.boolean().meta({ example: false }),
+});
+
+const verificationAttemptsListResponseSchema = z.object({ verificationAttempts: z.array(verificationAttemptSchema) });
 
 const usageResponseSchema = runUsageSchema.extend({
   cost: costSchema.nullable(),
@@ -715,6 +740,26 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
           .list(req.params.id)
           .map((r) => ({ ...r, payload: JSON.parse(r.payload) as unknown })),
       };
+    },
+  );
+
+  app.get(
+    '/runs/:id/verification-attempts',
+    {
+      schema: {
+        tags: ['Runs'],
+        description:
+          "Replay a run's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
+        params: idParamsSchema,
+        response: {
+          200: verificationAttemptsListResponseSchema.describe("The run's verification attempts in sequence order."),
+          404: errorResponse('No run has that id.'),
+        },
+      },
+    },
+    async (req) => {
+      ctx.runs.get(req.params.id); // 404 on unknown run
+      return { verificationAttempts: ctx.verificationAttempts.list(req.params.id) };
     },
   );
 

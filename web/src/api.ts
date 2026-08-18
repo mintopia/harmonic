@@ -12,6 +12,7 @@ import type {
   Run,
   RunEvent,
   Task,
+  VerificationAttempt,
   VerificationCommand,
   VerificationCritic,
   Workspace,
@@ -179,6 +180,11 @@ export const api = {
   // `GuardrailEventStore.list`, mirroring `runEvents`'s shape and 404 behaviour.
   runGuardrailEvents: (id: number) =>
     request<{ guardrailEvents: GuardrailEvent[] }>('GET', `/api/runs/${id}/guardrail-events`),
+  // Per-verifier Verification-attempt log for a Run (issue #169, part of
+  // #109): the REST surface over the attempts store, mirroring
+  // `runGuardrailEvents`'s shape and 404 behaviour.
+  runVerificationAttempts: (id: number) =>
+    request<{ verificationAttempts: VerificationAttempt[] }>('GET', `/api/runs/${id}/verification-attempts`),
   runDiff: (id: number) =>
     request<{ branch: string | null; baseBranch: string | null; stat: string | null }>(
       'GET',

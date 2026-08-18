@@ -1,3 +1,5 @@
+import type { Verdict } from './verification-model.js';
+
 export const TASK_STATES = [
   'draft',
   'blocked',
@@ -36,6 +38,32 @@ export interface GuardrailEvent {
   observedValue: number;
   configSource: 'default' | 'workspace';
   payload: unknown;
+}
+
+/** A Verification mechanism (ADR-0021, issue #132): a command verifier runs an
+ * argv check against a frozen candidate; a critic verifier is a read-only
+ * agent reviewer. Mirrors the server's `VERIFICATION_MECHANISMS`. */
+export type VerificationMechanism = 'critic' | 'command';
+
+/** One persisted Verification-attempt event (issue #169, part of #109), as
+ * `GET /api/runs/:id/verification-attempts` serves it — mirrors the server's
+ * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Run's
+ * self-heal retries append further attempts for the same `mechanism`, so the
+ * log is append-only and `seq`-ordered; the latest attempt per mechanism is
+ * the one that currently governs the Verification outcome (see
+ * `verification-attempts-model.ts`). */
+export interface VerificationAttempt {
+  id: number;
+  runId: number;
+  seq: number;
+  ts: number;
+  mechanism: VerificationMechanism;
+  inputOid: string;
+  verdict: Verdict;
+  summary: string;
+  output: string;
+  phase: RunPhase;
+  mutated: boolean;
 }
 
 /** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
