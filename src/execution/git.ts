@@ -408,6 +408,32 @@ export const Git = {
   },
 
   /**
+   * Rebase the branch checked out at `worktreeDir` onto `ontoOid` (linear replay).
+   * On conflict, aborts (`git rebase --abort`) so the worktree is left clean for
+   * the member Session's bounded corrective turn, and returns the conflict signal
+   * rather than throwing — same contract as {@link mergeNoEdit}. On success the
+   * worktree HEAD is the rebased tip (a descendant of `ontoOid`).
+   */
+  async rebaseOnto(
+    worktreeDir: string,
+    ontoOid: string,
+  ): Promise<{ ok: true; rebasedTip: string } | { ok: false; conflict: true; detail: string }> {
+    try {
+      await git(worktreeDir, ...IDENTITY, 'rebase', ontoOid);
+      const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
+      return { ok: true, rebasedTip };
+    } catch (err) {
+      const detail = err instanceof GitError ? err.message : String(err);
+      try {
+        await git(worktreeDir, 'rebase', '--abort');
+      } catch {
+        // No rebase in progress (e.g. it failed before starting).
+      }
+      return { ok: false, conflict: true, detail };
+    }
+  },
+
+  /**
    * Fast-forward the checkout at `dir` to `oid` (`merge --ff-only`), under the
    * base-repo lock (issue #153) — the **coherent checkout/reset** a checked-out
    * target lands through (reliability-design Unit D), advancing the branch ref
