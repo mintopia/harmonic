@@ -10,6 +10,8 @@ import type {
   Run,
   RunEvent,
   Task,
+  VerificationCommand,
+  VerificationCritic,
   Workspace,
 } from './types.js';
 
@@ -102,6 +104,9 @@ export const api = {
       priority?: 'high' | 'normal' | 'low' | null;
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
+      verificationCommand?: VerificationCommand | null;
+      verificationCritic?: VerificationCritic | null;
+      verificationAutoAccept?: boolean | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
     },

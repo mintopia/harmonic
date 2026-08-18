@@ -39,6 +39,7 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.autoRunnerEnabled).toBeNull();
     expect(ws.verificationCommand).toBeNull();
     expect(ws.verificationCritic).toBeNull();
+    expect(ws.verificationAutoAccept).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
   });
@@ -138,6 +139,18 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const renamed = workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
     expect(JSON.parse(renamed.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] }); // untouched
+  });
+
+  it('keeps a false verificationAutoAccept override distinct from inherit (null) (issue #165)', () => {
+    const ws = workspaces.list()[0]!;
+    const on = workspaces.update(ws.id, { verificationAutoAccept: true });
+    expect(on.verificationAutoAccept).toBe(true);
+    const off = workspaces.update(ws.id, { verificationAutoAccept: false });
+    expect(off.verificationAutoAccept).toBe(false); // an explicit "off", not inherit
+    const untouched = workspaces.update(ws.id, { name: ws.name });
+    expect(untouched.verificationAutoAccept).toBe(false); // omitted ⇒ left alone
+    const cleared = workspaces.update(ws.id, { verificationAutoAccept: null });
+    expect(cleared.verificationAutoAccept).toBeNull(); // back to inherit
   });
 
   it('sets explicit guardrail overrides (issue #126)', () => {

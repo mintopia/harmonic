@@ -6,6 +6,15 @@ import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './Set
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
+import {
+  EMPTY_COMMAND,
+  EMPTY_CRITIC,
+  argsText,
+  setCommandField,
+  setCriticField,
+  summarizeCommand,
+  summarizeCritic,
+} from './verification-override-model';
 import { Switch } from './Switch';
 import { Modal } from './Modal';
 
@@ -83,6 +92,9 @@ export function WorkspaceSettingsPage({
         priority: local.priority,
         maxConcurrentRuns: local.maxConcurrentRuns,
         autoRunnerEnabled: local.autoRunnerEnabled,
+        verificationCommand: local.verificationCommand,
+        verificationCritic: local.verificationCritic,
+        verificationAutoAccept: local.verificationAutoAccept,
         guardrailBudget: local.guardrailBudget,
         guardrailProgress: local.guardrailProgress,
       });
@@ -461,6 +473,115 @@ export function WorkspaceSettingsPage({
                 )}
               </InheritField>
               <FieldError message={fieldErrors['guardrailProgress']} />
+            </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Verification"
+          description="How a Run here is checked before it lands (ADR-0021): a command verifier (your test/lint), an agent critic that reviews the diff, and whether a passing Run auto-accepts past the human review gate. Each inherits the global default until overridden."
+        >
+          <div className="flex flex-col gap-4 sm:max-w-md">
+            <div>
+              <InheritField
+                label="Command verifier"
+                value={local.verificationCommand}
+                inherited={config.verification.command ?? EMPTY_COMMAND}
+                format={summarizeCommand}
+                onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
+              >
+                {({ value, onChange }) => (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-verify-command">Command</label>
+                      <input
+                        id="workspace-verify-command"
+                        className={`${field} font-data`}
+                        placeholder="npm"
+                        value={value.command}
+                        onChange={(e) => onChange(setCommandField(value, 'command', e.target.value))}
+                      />
+                      <FieldError message={fieldErrors['verificationCommand.command']} />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-verify-args">
+                        Arguments <span className="normal-case text-muted">(space-separated)</span>
+                      </label>
+                      <input
+                        id="workspace-verify-args"
+                        className={`${field} font-data`}
+                        placeholder="test"
+                        value={argsText(value)}
+                        onChange={(e) => onChange(setCommandField(value, 'args', e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-verify-timeout">Timeout (seconds)</label>
+                      <input
+                        id="workspace-verify-timeout"
+                        type="number"
+                        min={1}
+                        className={`${field} w-40 font-data`}
+                        value={value.timeoutSeconds}
+                        onChange={(e) => onChange(setCommandField(value, 'timeoutSeconds', e.target.value))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </InheritField>
+            </div>
+            <div>
+              <InheritField
+                label="Agent critic"
+                value={local.verificationCritic}
+                inherited={config.verification.critic ?? EMPTY_CRITIC}
+                format={summarizeCritic}
+                onChange={(verificationCritic) => set('verificationCritic', verificationCritic)}
+              >
+                {({ value, onChange }) => (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-critic-model">Model</label>
+                      <input
+                        id="workspace-critic-model"
+                        className={`${field} font-data`}
+                        placeholder="claude-opus-5"
+                        value={value.model}
+                        onChange={(e) => onChange(setCriticField(value, 'model', e.target.value))}
+                      />
+                      <FieldError message={fieldErrors['verificationCritic.model']} />
+                    </div>
+                    <div>
+                      <label className={fieldLabel} htmlFor="workspace-critic-prompt">Review prompt</label>
+                      <textarea
+                        id="workspace-critic-prompt"
+                        rows={3}
+                        className={field}
+                        placeholder="Review the diff for correctness against the ticket."
+                        value={value.prompt}
+                        onChange={(e) => onChange(setCriticField(value, 'prompt', e.target.value))}
+                      />
+                      <FieldError message={fieldErrors['verificationCritic.prompt']} />
+                    </div>
+                  </div>
+                )}
+              </InheritField>
+            </div>
+            <div>
+              <InheritField
+                label="Auto-accept"
+                value={local.verificationAutoAccept}
+                inherited={config.verification.autoAccept}
+                format={(v) => (v ? 'On' : 'Off')}
+                onChange={(verificationAutoAccept) => set('verificationAutoAccept', verificationAutoAccept)}
+              >
+                {({ value, onChange }) => (
+                  <Switch checked={value} onChange={onChange}>
+                    Land a passing Run without the human review gate
+                  </Switch>
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['verificationAutoAccept']} />
             </div>
           </div>
         </SettingsSection>

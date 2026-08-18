@@ -72,6 +72,12 @@ export interface Workspace {
   priority: 'high' | 'normal' | 'low' | null;
   maxConcurrentRuns: number | null;
   autoRunnerEnabled: boolean | null;
+  /** Verification overrides (ADR-0021, issues #132/#138/#165); `null` inherits
+   * `config.verification.{command,critic,autoAccept}`. The command and critic
+   * read back as the parsed object shape they were PATCHed as. */
+  verificationCommand: VerificationCommand | null;
+  verificationCritic: VerificationCritic | null;
+  verificationAutoAccept: boolean | null;
   /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */
@@ -79,6 +85,23 @@ export interface Workspace {
   guardrailProgress: boolean | null;
   createdAt: number;
   updatedAt: number;
+}
+
+/** A command verifier (ADR-0021, issue #132): an argv-based check run against a
+ * frozen candidate in a disposable checkout. Mirrors `verificationCommandSchema`. */
+export interface VerificationCommand {
+  command: string;
+  args: string[];
+  cwd?: string;
+  env: Record<string, string>;
+  timeoutSeconds: number;
+}
+
+/** An agent critic verifier (ADR-0021, issue #132): a read-only reviewer with
+ * its own prompt and model. Mirrors `verificationCriticSchema`. */
+export interface VerificationCritic {
+  prompt: string;
+  model: string;
 }
 
 /** The budget Guardrail (ADR-0019): a mandatory wall-clock bound per afk Run
@@ -434,6 +457,10 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
+  /** Verification defaults (ADR-0021, issues #132/#138): the global-default
+   * command verifier, agent critic, and auto-accept a Workspace inherits until it
+   * overrides them (issue #165). Command and critic are null when unconfigured. */
+  verification: { command: VerificationCommand | null; critic: VerificationCritic | null; autoAccept: boolean };
   /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
    * toggle a Workspace inherits until it overrides them (issue #166).
    * `toolTimeoutMinutes` is global-only (no per-Workspace override). */
