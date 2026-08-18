@@ -3,6 +3,7 @@ import {
   planSessionContinuation,
   estimateContinuationCost,
   isAutomatedTrigger,
+  sessionWarmthFacts,
   CONTINUATION_TRIGGERS,
   AUTOMATED_CONTINUATION_TRIGGERS,
   type SessionWarmthFacts,
@@ -142,5 +143,34 @@ describe('estimateContinuationCost (issue #147 AC4)', () => {
       updatedAt: 0,
     } satisfies SessionRow;
     expect(estimateContinuationCost(row, now).band).toBe('warm');
+  });
+
+  it('sessionWarmthFacts projects a SessionRow to exactly the two warmth fields', () => {
+    const row = {
+      id: 7,
+      harness: 'claude',
+      harnessSessionId: 'abc',
+      model: 'claude-opus-4-8',
+      cwd: '/work/repo',
+      workspaceId: 1,
+      mcpTemplates: '[]',
+      permissionMode: 'auto',
+      capabilitySnapshot: '{}',
+      supportsLoadSession: true,
+      adapterVersion: 'claude@1',
+      status: 'active',
+      lastActiveAt: 123,
+      estimatedWarmUntil: 456,
+      worktreePath: null,
+      worktreeRepoDir: null,
+      retireReason: null,
+      retireDeadline: null,
+      retiredAt: null,
+      resumeIncompatibilityReason: null,
+      resumeIncompatibilityDetail: null,
+      createdAt: 0,
+      updatedAt: 0,
+    } satisfies SessionRow;
+    expect(sessionWarmthFacts(row)).toEqual({ estimatedWarmUntil: 456, lastActiveAt: 123 });
   });
 });

@@ -33,6 +33,8 @@
  * caller's; this file only decides.
  */
 
+import type { SessionRow } from '../db/schema.js';
+
 /**
  * What prompted the continuation. Two are **automated** (they reuse the Session
  * silently); one is a **human** rejection (it surfaces the cost-gated choice).
@@ -70,9 +72,9 @@ export function isAutomatedTrigger(trigger: ContinuationTrigger): trigger is Aut
 
 /**
  * The facet of a stored Session the cost estimate reads — exactly the two warmth
- * fields. A whole {@link import('../db/schema.js').SessionRow} is structurally
- * assignable, so callers pass the row directly; the narrow shape keeps the pure
- * decision independent of the rest of the Session record.
+ * fields. A whole {@link SessionRow} is structurally assignable, so callers pass
+ * the row directly (or the {@link sessionWarmthFacts} projection); the narrow
+ * shape keeps the pure decision independent of the rest of the Session record.
  */
 export interface SessionWarmthFacts {
   /** Estimated epoch-ms at which the provider prompt cache goes cold (a per-
@@ -209,4 +211,14 @@ export function planSessionContinuation(
     continueFull: { session: 'same', conversation: 'full', estimate: estimateContinuationCost(warmth, now) },
     startCondensed: { session: 'new', conversation: 'condensed' },
   };
+}
+
+/**
+ * Narrowing convenience: a whole {@link SessionRow} projected to the
+ * {@link SessionWarmthFacts} the cost estimate reads. (A `SessionRow` is already
+ * structurally assignable; this documents the exact projection for callers, the
+ * same way `sessionFacts` does for the resume compatibility matrix.)
+ */
+export function sessionWarmthFacts(row: SessionRow): SessionWarmthFacts {
+  return { estimatedWarmUntil: row.estimatedWarmUntil, lastActiveAt: row.lastActiveAt };
 }
