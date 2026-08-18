@@ -28,6 +28,9 @@ interface Rig {
   driver: AcpDriver;
   /** Every `session/update` `update` object the stub emitted, in order. */
   updates: { sessionUpdate: string; [key: string]: unknown }[];
+  /** The load-time replay flag (issue #144) delivered alongside each update in
+   * `updates`, index-aligned — true while a `session/load` was in flight. */
+  replayFlags: boolean[];
 }
 
 let activeChild: ChildProcess | undefined;
@@ -39,11 +42,15 @@ function spawnRig(envOverrides: Record<string, string> = {}): Rig {
   });
   activeChild = child;
   const updates: Rig['updates'] = [];
+  const replayFlags: boolean[] = [];
   const driver = new AcpDriver(child, {
-    onSessionUpdate: (update) => updates.push(update),
+    onSessionUpdate: (update, replay) => {
+      updates.push(update);
+      replayFlags.push(replay);
+    },
     onRequest: async () => null,
   });
-  return { child, driver, updates };
+  return { child, driver, updates, replayFlags };
 }
 
 /** The JSON-scenario text of a `session/update` `agent_message_chunk`, parsed. */
@@ -137,6 +144,58 @@ describe('AcpDriver.load() — the session/load resume handshake (issue #143)', 
     // An incompatible outcome adopts no session — even though session/load was
     // sent to discover the modes, the driver holds no session state (#143 review).
     expect(driver.sessionId).toBe('');
+  });
+});
+
+describe('load-time replay quarantine — the driver marks replayed history (issue #144)', () => {
+  const HISTORY = [
+    { sessionUpdate: 'tool_call', toolCallId: 'hist-1', title: 'Read', kind: 'read' },
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'earlier turn' } },
+    { sessionUpdate: 'tool_call_update', toolCallId: 'hist-1', status: 'completed', content: [] },
+  ];
+
+  it('tags every session/update the harness replays during session/load as replay=true', async () => {
+    const { driver, updates, replayFlags } = spawnRig({
+      STUB_SESSION_ID: 'replay-sess-1',
+      STUB_REPLAY_ON_LOAD: JSON.stringify(HISTORY),
+    });
+
+    const outcome = await driver.load({ sessionId: 'replay-sess-1', cwd: '/tmp/reload-cwd' });
+    expect(outcome).toEqual({ loaded: true });
+
+    // The whole historical stream arrived during the load, each tagged replay.
+    expect(updates.map((u) => u.sessionUpdate)).toEqual([
+      'tool_call',
+      'agent_message_chunk',
+      'tool_call_update',
+    ]);
+    expect(replayFlags).toEqual([true, true, true]);
+  });
+
+  it('tags the current turn (post-load session/prompt) as replay=false', async () => {
+    const { driver, updates, replayFlags } = spawnRig({
+      STUB_SESSION_ID: 'replay-sess-2',
+      STUB_REPLAY_ON_LOAD: JSON.stringify(HISTORY),
+    });
+
+    await driver.load({ sessionId: 'replay-sess-2', cwd: '/tmp/reload-cwd' });
+    const replayCount = updates.length;
+    expect(replayFlags.slice(0, replayCount).every((r) => r === true)).toBe(true);
+
+    // A fresh prompt turn: its updates are current-turn output, never replay.
+    await driver.prompt([
+      {
+        type: 'text',
+        text: JSON.stringify({
+          updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'live now' } }],
+          stopReason: 'end_turn',
+        }),
+      },
+    ]);
+
+    const currentFlags = replayFlags.slice(replayCount);
+    expect(currentFlags.length).toBeGreaterThan(0);
+    expect(currentFlags.every((r) => r === false)).toBe(true);
   });
 });
 

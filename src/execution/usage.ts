@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import type { HarnessConfig } from '../config.js';
 import type { PersistedRunEvent } from '../domain/runs.js';
+import { isReplay } from '../domain/replay-quarantine.js';
 import { adapterFor, type ModelUsage } from './harness/adapter.js';
 
 export type { ModelUsage };
@@ -187,6 +188,10 @@ function tallyToolCalls(
   const tally: Record<string, number> = {};
   for (const event of events) {
     if (event.type !== 'session_update') continue;
+    // Load-time replay (`session/load`) re-emits historical tool calls before
+    // the current turn; counting them would attribute a whole prior conversation
+    // to this turn (issue #144 AC2). Exclude replayed events from the tally.
+    if (isReplay(event)) continue;
     const payload = event.payload as any;
     if (payload?.sessionUpdate !== 'tool_call') continue;
     const name = preferredName(payload) ?? payload?.title ?? payload?.kind ?? 'unknown';

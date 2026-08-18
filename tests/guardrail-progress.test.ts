@@ -137,6 +137,48 @@ describe('toProgressEvents (issue #131)', () => {
   });
 });
 
+describe('replay quarantine (issue #144)', () => {
+  it('drops replay-flagged session_update events, mapping only the current ones', () => {
+    const log: RunEventLike[] = [
+      { ...toolCall(1, 'tc-old', { title: 'Old build' }), replay: true },
+      { ...toolCallUpdate(2, 'tc-old', 'completed', { content: contentWith('old result') }), replay: true },
+      toolCall(3, 'tc-new', { title: 'New build' }),
+      toolCallUpdate(4, 'tc-new', 'completed', { content: contentWith('new result') }),
+    ];
+    const mapped = toProgressEvents(log);
+    expect(mapped.map((e) => e.seq)).toEqual([3, 4]);
+    expect(mapped).toEqual([
+      { seq: 3, kind: 'action', signature: 'New build', ref: 'tc-new' },
+      { seq: 4, kind: 'result', signature: 'new result', ref: 'tc-new' },
+    ]);
+  });
+
+  // AC4 ("does not advance progress/stall detection") and, transitively, AC3
+  // ("does not emit run_facts for the current turn"): a `guardrail-trip` is the
+  // ONLY run_fact a session/update can influence, and it fires only when
+  // detectStall returns a report. Prove a replay-only trace that WOULD stall
+  // yields null here — so no trip, hence no spurious guardrail-trip run_fact.
+  it('a stall pattern formed entirely by replayed events does not trip (AC4/AC3); the same events as current do', () => {
+    const log: RunEventLike[] = [];
+    let seq = 1;
+    for (let i = 0; i < 3; i++) {
+      log.push({ ...toolCall(seq++, `tc-${i}`, { title: 'Run build' }), replay: true });
+      log.push({
+        ...toolCallUpdate(seq++, `tc-${i}`, 'failed', { content: contentWith('build failed') }),
+        replay: true,
+      });
+    }
+    // Replay-only: no stall report → the guardrail-trip run_fact never fires.
+    expect(detectStall(toProgressEvents(log), { enabled: true })).toBeNull();
+
+    // The SAME trace as current-turn work does trip — proving the quarantine,
+    // not a too-short trace, is what suppressed the stall (and the fact).
+    const currentLog: RunEventLike[] = log.map((event) => ({ ...event, replay: false }));
+    const report = detectStall(toProgressEvents(currentLog), { enabled: true });
+    expect(report?.pattern).toBe('action-error-repeat');
+  });
+});
+
 describe('formatProgressReason (issue #131, ADR-0019)', () => {
   it('renders each pattern to its card reason', () => {
     expect(formatProgressReason({ pattern: 'action-error-repeat' })).toBe('stalled: repeated failing action');

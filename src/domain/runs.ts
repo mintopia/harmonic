@@ -26,6 +26,11 @@ export interface PersistedRunEvent {
   ts: number;
   type: string;
   payload: unknown;
+  /** True iff this event is load-time `session/load` replay history, flagged by
+   * the driver (issue #144). Every current-turn measurement — usage, stall,
+   * activity — excludes it via `domain/replay-quarantine.ts`'s `isReplay`. Absent
+   * on a current-turn event and on every event a pre-quarantine path recorded. */
+  replay?: boolean | undefined;
 }
 
 export class RunStore {

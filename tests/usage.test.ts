@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, writeCopilotUsageDb, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
-import { totalTokensOf } from '../src/execution/usage.js';
+import { collectUsage, totalTokensOf } from '../src/execution/usage.js';
 import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
+import type { PersistedRunEvent } from '../src/domain/runs.js';
+import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
 
 describe('usage collection retry (log-flush race)', () => {
   const input = (logRoot: string, cwd: string) => ({
@@ -46,6 +48,63 @@ describe('usage collection retry (log-flush race)', () => {
     const usage = await collectUsageWithRetry(input(logRoot, cwd), { timeoutMs: 2000, intervalMs: 50 });
     expect(Date.now() - before).toBeLessThan(1000);
     expect(usage?.source).toBe('acp');
+  });
+});
+
+describe('replay quarantine (issue #144)', () => {
+  const input = (logRoot: string, cwd: string, events: PersistedRunEvent[]): Parameters<typeof collectUsage>[0] => ({
+    harnessId: 'claude',
+    harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+    cwd,
+    sessionId: 'x',
+    promptResult: { usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
+    events,
+  });
+
+  const toolCall = (over: Partial<PersistedRunEvent> & { toolCallId: string; title: string }): PersistedRunEvent => ({
+    id: 1,
+    runId: 1,
+    seq: 1,
+    ts: 1,
+    type: 'session_update',
+    payload: { sessionUpdate: 'tool_call', toolCallId: over.toolCallId, title: over.title, kind: 'edit' },
+    ...over,
+  });
+
+  it('replayed tool_call events contribute zero to collectUsage(...).toolCalls', () => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-replay-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'harmonic-replay-work-'));
+    const events: PersistedRunEvent[] = [
+      toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
+      toolCall({ toolCallId: 't2', title: 'Write', replay: true }),
+      toolCall({ toolCallId: 't3', title: 'Read', replay: true }),
+    ];
+
+    const usage = collectUsage(input(logRoot, cwd, events));
+    expect(usage?.toolCalls).toEqual({});
+  });
+
+  it('a mix counts only the current-turn tool_call — a replay of prior history counts as zero current-turn usage (AC5)', () => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-replay-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'harmonic-replay-work-'));
+    const events: PersistedRunEvent[] = [
+      toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
+      toolCall({ toolCallId: 't2', title: 'Write', replay: true }),
+      toolCall({ toolCallId: 't3', title: 'Bash', replay: false }),
+    ];
+
+    const usage = collectUsage(input(logRoot, cwd, events));
+    expect(usage?.toolCalls).toEqual({ Bash: 1 });
+  });
+
+  it('currentTurnEvents returns only the non-replay events', () => {
+    const events: PersistedRunEvent[] = [
+      toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
+      toolCall({ toolCallId: 't2', title: 'Bash', replay: false }),
+      toolCall({ toolCallId: 't3', title: 'Read', replay: true }),
+    ];
+
+    expect(currentTurnEvents(events)).toEqual([events[1]]);
   });
 });
 

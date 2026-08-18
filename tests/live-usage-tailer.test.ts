@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { LiveUsageTailer } from '../src/execution/live-usage-tailer.js';
 import { activityLine, type RunUsageSnapshot } from '../src/execution/usage.js';
+import { currentTurnEvents } from '../src/domain/replay-quarantine.js';
+import type { QuarantinableEvent } from '../src/domain/replay-quarantine.js';
 
 const snap = (activity: string | null): RunUsageSnapshot => ({
   usage: { models: {}, totals: null, toolCalls: {}, source: 'session-log' },
@@ -77,5 +79,81 @@ describe('activityLine', () => {
     expect(activityLine({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'hmm' } })).toBeNull();
     expect(activityLine({ sessionUpdate: 'plan', entries: [] })).toBeNull();
     expect(activityLine(undefined)).toBeNull();
+  });
+});
+
+describe('replay quarantine at the live-usage boundary (issue #144)', () => {
+  const update = (over: Partial<QuarantinableEvent> & { title: string }): QuarantinableEvent => ({
+    type: 'session_update',
+    payload: { sessionUpdate: 'tool_call', title: over.title, kind: 'edit' },
+    ...over,
+  });
+
+  it('a run event log that is entirely load-time replay reduces to zero current-turn events', () => {
+    const allReplay: QuarantinableEvent[] = [
+      update({ title: 'Edit', replay: true }),
+      update({ title: 'Write', replay: true }),
+      update({ title: 'Read', replay: true }),
+    ];
+
+    expect(currentTurnEvents(allReplay)).toEqual([]);
+  });
+
+  it('currentTurnEvents keeps only live events in order, so activityLine on the last one shows only current-turn activity', () => {
+    // Replayed tail with nothing live: the current-turn activity is empty.
+    const replayedTail: QuarantinableEvent[] = [
+      update({ title: 'Edit', replay: true }),
+      update({ title: 'Write', replay: true }),
+    ];
+    const noLive = currentTurnEvents(replayedTail);
+    expect(noLive).toEqual([]);
+
+    // A live update present: currentTurnEvents keeps it (in order), and the
+    // activity line a tailer would show comes from it — never the replayed tail.
+    const mixed: QuarantinableEvent[] = [
+      update({ title: 'Edit', replay: true }),
+      update({ title: 'Write', replay: true }),
+      update({ title: 'Bash', replay: false }),
+    ];
+    const live = currentTurnEvents(mixed);
+    expect(live).toEqual([mixed[2]]);
+    const lastLive = live[live.length - 1]!;
+    expect(activityLine(lastLive.payload)).toBe('Bash');
+  });
+
+  // AC5, at the live-usage-tailer seam: a tailer whose sampler quarantines
+  // replay (as the runner's does — building activity/usage from currentTurnEvents
+  // only) emits a snapshot with zero replay-derived activity/usage, even when the
+  // whole event log is load-time replay.
+  it('the tailer emits a quarantined snapshot: zero current-turn usage/activity from an all-replay log', () => {
+    vi.useFakeTimers();
+    // A sampler mirroring the runner: derive the snapshot from current-turn
+    // events only, so replayed history contributes nothing.
+    const sampleFromLog = (log: QuarantinableEvent[]): RunUsageSnapshot => {
+      const current = currentTurnEvents(log);
+      const lastActivity = [...current].reverse().map((e) => activityLine(e.payload)).find((l) => l !== null) ?? null;
+      const toolCalls = current.filter(
+        (e) => e.type === 'session_update' && (e.payload as any)?.sessionUpdate === 'tool_call',
+      ).length;
+      return { ...snap(lastActivity), usage: { ...snap(null).usage, toolCalls: toolCalls ? { tool: toolCalls } : {} } };
+    };
+
+    const allReplay: QuarantinableEvent[] = [
+      update({ title: 'Edit', replay: true }),
+      update({ title: 'Write', replay: true }),
+    ];
+    const emit = vi.fn();
+    const persist = vi.fn();
+    const tailer = new LiveUsageTailer(
+      { sample: () => sampleFromLog(allReplay), emit, persist },
+      { pushMs: 1000, persistMs: 10_000 },
+    );
+    tailer.start(1);
+    tailer.stop(1);
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    const snapshot = emit.mock.calls[0]![1] as RunUsageSnapshot;
+    expect(snapshot.activity).toBeNull();
+    expect(snapshot.usage.toolCalls).toEqual({});
   });
 });

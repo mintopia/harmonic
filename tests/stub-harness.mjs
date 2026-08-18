@@ -354,6 +354,15 @@ rl.on('line', (line) => {
       // trusting what the original dispatch saw.
       sessionLoadParams = msg.params;
       {
+        // #144: a real harness replays the reloaded Session's whole historical
+        // session/update stream BEFORE the load response returns. STUB_REPLAY_ON_LOAD
+        // (a JSON array of `update` objects) simulates that replay so a quarantine
+        // test can assert these arrive tagged as replay while the load is in flight.
+        if (process.env.STUB_REPLAY_ON_LOAD) {
+          for (const update of JSON.parse(process.env.STUB_REPLAY_ON_LOAD)) {
+            notify('session/update', { sessionId: msg.params.sessionId, update });
+          }
+        }
         const modes = stubModes();
         send({ jsonrpc: '2.0', id: msg.id, result: modes ? { modes } : {} });
       }

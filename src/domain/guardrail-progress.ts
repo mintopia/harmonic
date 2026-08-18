@@ -13,6 +13,7 @@
  */
 
 import type { ProgressEvent, StallReport } from './stall-detector.js';
+import { isReplay } from './replay-quarantine.js';
 
 /**
  * The minimal shape this module needs from a persisted run event row.
@@ -28,6 +29,11 @@ export interface RunEventLike {
   type: string;
   /** For a 'session_update' event, an ACP session/update `update` object. */
   payload: unknown;
+  /** True iff this event is load-time `session/load` replay history (issue #144).
+   * `toProgressEvents` drops it, so replayed history never advances stall
+   * detection — a reloaded Session that replays N historical events reduces to an
+   * empty progress stream, exactly as if the turn had just begun. */
+  replay?: boolean | undefined;
 }
 
 /**
@@ -53,6 +59,11 @@ export function toProgressEvents(events: readonly RunEventLike[]): ProgressEvent
   const out: ProgressEvent[] = [];
   for (const event of events) {
     if (event.type !== 'session_update') continue;
+    // Load-time replay is historical activity, not current-turn progress: a
+    // reloaded Session re-emits its whole `session/update` history before the
+    // turn begins, and feeding that to the detector would trip a false stall
+    // (issue #144 AC4). Quarantine it here, at the single translation seam.
+    if (isReplay(event)) continue;
     const payload = event.payload as any;
     const kind = payload?.sessionUpdate;
 

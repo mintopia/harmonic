@@ -2,8 +2,17 @@ import type { ChildProcess } from 'node:child_process';
 import { AcpConnection } from './connection.js';
 
 export interface AcpDriverHandlers {
-  /** ACP session/update notifications — the harness's streamed output. */
-  onSessionUpdate: (update: { sessionUpdate: string; [key: string]: unknown }) => void;
+  /**
+   * ACP session/update notifications — the harness's streamed output. The
+   * second argument is the load-time replay flag (issue #144): `true` for a
+   * historical update re-emitted while a `session/load` reload is in flight
+   * ({@link AcpDriver.load}), `false` for current-turn output. Consumers
+   * quarantine replay from every current-turn measurement — activity, usage,
+   * `run_facts`, stall — via `domain/replay-quarantine.ts`; a handler that does
+   * not care about history may simply omit the parameter (a one-arg callback is
+   * assignable, so existing callers are unaffected).
+   */
+  onSessionUpdate: (update: { sessionUpdate: string; [key: string]: unknown }, replay: boolean) => void;
   /**
    * Agent→client request handler (session/request_permission, fs/*, …).
    * Returns the ACP result, or null to decline the capability. This is the
@@ -134,10 +143,20 @@ export class AcpDriver {
   sessionId = '';
   /** Session mode ids the harness offers, from session/new — e.g. Claude's permission modes (auto, bypassPermissions, …). */
   availableModes: string[] = [];
+  /**
+   * True only while a `session/load` request is in flight (issue #144). ACP
+   * streams a reloaded Session's entire historical `session/update` stream as
+   * notifications BEFORE the `session/load` response returns, so any update
+   * observed in this window is replay, not current-turn output. {@link load}
+   * brackets the request with this flag; the connection handler tags each update
+   * with it, so a consumer can quarantine replayed history (see
+   * `domain/replay-quarantine.ts`).
+   */
+  private loading = false;
 
   constructor(child: ChildProcess, handlers: AcpDriverHandlers) {
     this.connection = new AcpConnection(child.stdin!, child.stdout!, {
-      onSessionUpdate: (params) => handlers.onSessionUpdate(params.update),
+      onSessionUpdate: (params) => handlers.onSessionUpdate(params.update, this.loading),
       onRequest: handlers.onRequest,
     });
     this.exited = new Promise<never>((_, reject) => {
@@ -197,6 +216,11 @@ export class AcpDriver {
    * `permission-mode-unestablishable` is only discoverable from the reload
    * response (so `session/load` was sent) — but the loaded session is still
    * abandoned rather than adopted, since it's disposed with the process anyway.
+   *
+   * The `session/load` request is bracketed by {@link loading} so the historical
+   * `session/update` stream the harness replays during it is tagged `replay` on
+   * `onSessionUpdate` (issue #144) — replayed history is quarantined from all
+   * current-turn measurement downstream.
    */
   async load(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
     const initResult = await this.initialize(opts.onInitialize);
@@ -223,14 +247,25 @@ export class AcpDriver {
       };
     }
 
-    const loaded = (await this.race(
-      this.connection.request('session/load', {
-        sessionId: opts.sessionId,
-        cwd: opts.cwd,
-        mcpServers: opts.mcpServers ?? [],
-        ...(needsRoots ? { additionalDirectories: opts.additionalDirectories } : {}),
-      }),
-    )) as { modes?: { availableModes?: { id: string }[] } };
+    // Bracket the request so every `session/update` the harness streams as it
+    // replays the reloaded Session's history is tagged `replay` (issue #144).
+    // ACP sends that whole historical stream before this response resolves, so
+    // the flag is set for exactly the replay window and cleared in `finally`
+    // even if the reload rejects (child death via `race`).
+    this.loading = true;
+    let loaded: { modes?: { availableModes?: { id: string }[] } };
+    try {
+      loaded = (await this.race(
+        this.connection.request('session/load', {
+          sessionId: opts.sessionId,
+          cwd: opts.cwd,
+          mcpServers: opts.mcpServers ?? [],
+          ...(needsRoots ? { additionalDirectories: opts.additionalDirectories } : {}),
+        }),
+      )) as { modes?: { availableModes?: { id: string }[] } };
+    } finally {
+      this.loading = false;
+    }
 
     // AC4: re-verify modes off the reload response — not what the original
     // dispatch saw — and confirm the permission mode is still establishable
