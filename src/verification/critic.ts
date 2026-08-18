@@ -12,11 +12,13 @@ import type { VerificationAttemptInput } from '../domain/verification-attempts.j
  * The agent critic (issue #136, ADR-0021, reliability-design Unit B): a
  * read-only reviewer Harness that judges a frozen candidate's diff and
  * returns a schema-validated {@link Verdict}. This module is a
- * self-contained, fully-tested unit invoked via `runCritic(...)` — the
- * integration ticket that wires it into the `verifying` phase of the live
- * Runner settle/landing path is out of scope here, matching how the sibling
- * substrate tickets #132 (config), #133 (`combineVerdicts`), and #134
- * (candidate snapshot) shipped as real-but-unwired units.
+ * self-contained, fully-tested unit invoked via `runCritic(...)`, wired into
+ * the `verifying` phase of the live Runner settle/landing path by issue #164
+ * (`runVerification` in `execution/runner.ts`) — where its verdict folds into
+ * `combineVerdicts` alongside the command verifier, so a fail/inconclusive
+ * critic blocks or escalates the Run. The sibling substrate tickets #132
+ * (config), #133 (`combineVerdicts`), and #134 (candidate snapshot) shipped as
+ * real-but-unwired units the same way before their own integration landed.
  *
  * Everything the critic sees is bracketed by `withDetachedWorktree`
  * (`execution/candidate.ts`, #134): the candidate OID is checked out into a
@@ -336,9 +338,9 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
  * `verifier: 'critic'` tag is the store's `mechanism`; every other field maps
  * straight across. This is the one place the critic's in-memory result crosses
  * into the persisted log — kept as a named, tested function (rather than an
- * inline object literal at the future call site) so the integration ticket
- * that wires `runCritic` into the `verifying` phase persists through a path
- * this ticket already proves end-to-end (`tests/critic.test.ts`).
+ * inline object literal at the call site) so the #164 integration that wires
+ * `runCritic` into the `verifying` phase persists through a path already proven
+ * end-to-end (`tests/critic.test.ts`).
  */
 export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemptInput {
   return {

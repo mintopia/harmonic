@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { buildApp, type App } from '../src/server/app.js';
 import type { DeepPartial } from '../src/config.js';
 import type { AppConfig } from '../src/config.js';
+import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { Db } from '../src/db/index.js';
 import { workspaces } from '../src/db/schema.js';
 
@@ -117,6 +118,8 @@ export async function startServer(
     runnerTuning?: { spendGuardrail?: { pollMs?: number; graceMs?: number } } | undefined;
     /** Test-only Work Context lease heartbeat/sweep cadence overrides (issue #122), forwarded to `buildApp`. */
     leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
+    /** Test-only agent-critic drive override (issue #164), forwarded to `buildApp`. */
+    criticDrive?: CriticHarnessDrive | undefined;
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
@@ -126,6 +129,7 @@ export async function startServer(
     password: opts.password ?? TEST_PASSWORD,
     runnerTuning: opts.runnerTuning,
     leaseTuning: opts.leaseTuning,
+    criticDrive: opts.criticDrive,
   });
   // A test server must never operate on the developer's real checkout: the
   // Default Workspace seeds its workingDir from process.cwd(), and direct-mode

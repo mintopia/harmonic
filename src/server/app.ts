@@ -38,6 +38,7 @@ import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
 import { BootResumeCoordinator } from '../domain/boot-resume-coordinator.js';
 import { adapterVersion } from '../execution/harness/adapter.js';
 import { Runner } from '../execution/runner.js';
+import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { AutoDrive } from '../execution/auto-drive.js';
@@ -76,6 +77,11 @@ export interface AppOptions {
   /** Work Context lease heartbeat/sweep cadence overrides (issue #122); absent
    * uses production defaults (~30s heartbeat, ~60s sweep). */
   leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
+  /** Test-only agent-critic drive override (issue #164): a fake
+   * {@link CriticHarnessDrive} the wired critic uses instead of spawning a real
+   * harness, so an end-to-end Runner test can script a critic verdict. Absent →
+   * the real `createAcpCriticDrive` (production). */
+  criticDrive?: CriticHarnessDrive | undefined;
 }
 
 /** Paths reachable without authentication. */
@@ -374,6 +380,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
+    criticDrive: opts.criticDrive,
     // The Runner's own settle coordinator drives most terminal dispositions
     // (drive-loop, operator-cancel, auto-accept land); feed it the same
     // retirement hook so those Sessions retire too (issue #148).

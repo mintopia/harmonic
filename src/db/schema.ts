@@ -775,11 +775,12 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * kept as its own column rather than inferred from the Run row so the record
  * is self-describing even if the Run has since moved on.
  *
- * This table is substrate only, same as `run_facts` was at #112: nothing
- * reads it into a live decision yet (`domain/verification-attempts.ts`'s
- * `VerificationAttemptStore` is append+list only). The integration ticket
- * that calls `runCritic` from the `verifying` phase is what starts writing
- * here for real.
+ * Written for real during a live Run: the command verifier (#135) and the
+ * agent critic (#136, wired in #164) both append their per-attempt record here
+ * from the `verifying` phase (`execution/runner.ts` `runVerification`), and
+ * `combineVerdicts` folds the verdicts into the block/escalate/land decision.
+ * `domain/verification-attempts.ts`'s `VerificationAttemptStore` stays
+ * append+list only — this is its durable audit log.
  */
 export const verificationAttempts = sqliteTable('verification_attempts', {
   id: integer('id').primaryKey({ autoIncrement: true }),

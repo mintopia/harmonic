@@ -59,6 +59,7 @@ import {
 } from '../domain/guardrail-tool-timeout.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
+import { runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
@@ -158,6 +159,11 @@ export interface RunnerOptions {
     run: RunRow,
     patch: Partial<RunRow>,
   ) => Promise<{ ok: boolean; detail?: string | undefined }>;
+  /** Injectable agent-critic drive (issue #164): the seam `runCritic` speaks an
+   * ACP turn over. Absent → the real drive (`createAcpCriticDrive`) spawns the
+   * builder's configured harness as a contained read-only reviewer; tests
+   * substitute a fake returning a canned verdict without spawning a process. */
+  criticDrive?: CriticHarnessDrive | undefined;
   /** Session retirement hook (issue #148): every terminal disposition the
    * Runner's settle coordinator reaches records its Session's retirement intent
    * here, right after the lease releases. Absent → Sessions are never retired
@@ -327,6 +333,9 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly autoAcceptLand: RunnerOptions['autoAcceptLand'];
+  /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
+   * back to the real `createAcpCriticDrive`. */
+  private readonly criticDrive: RunnerOptions['criticDrive'];
   private readonly runFacts: RunFactStore;
   /** The Verification attempt log (issue #135/#136): every command/critic
    * verifier invocation against a Run's frozen candidate is appended here. */
@@ -382,6 +391,7 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.autoAcceptLand = options.autoAcceptLand;
+    this.criticDrive = options.criticDrive;
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
@@ -1100,6 +1110,31 @@ export class Runner {
   }
 
   /**
+   * The shared "verifier configured but no frozen candidate to review" outcome
+   * (issue #135/#136): the snapshot was skipped or failed (#134), so there is
+   * nothing to characterize — infra doubt. Persist an `inconclusive` attempt and
+   * feed its verdict to `combineVerdicts` so the gate Escalates rather than
+   * silently passing work it never verified. Shared by every verifier branch in
+   * {@link runVerification} so a new verifier can't diverge on this fail-safe.
+   */
+  private noCandidateVerdict(
+    runId: number,
+    mechanism: 'command' | 'critic',
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): VerifierVerdict {
+    this.verificationAttempts.append(runId, {
+      mechanism,
+      inputOid: '',
+      verdict: 'inconclusive',
+      summary: 'no candidate snapshot to verify',
+      output: '',
+      mutated: false,
+    });
+    record('lifecycle', { event: 'verification', mechanism, verdict: 'inconclusive' });
+    return { verifier: mechanism, verdict: 'inconclusive' };
+  }
+
+  /**
    * Run the configured verifiers against the Run's frozen candidate and fold
    * their verdicts into a single Verification decision (issue #135, ADR-0021,
    * reliability-design Unit B). Runs in `verifying`, after `finalize()` has
@@ -1107,9 +1142,10 @@ export class Runner {
    * candidate ref (`refs/harmonic/candidate/run-<id>`) in the base repo, never
    * the workspace, exactly as the sibling critic would.
    *
-   * Today only the command verifier (#135) is wired; the critic (#136,
-   * `runCritic`) plugs in as a second verdict feeding the same `combineVerdicts`
-   * when its integration ticket lands. Also returns whether a verifier actually
+   * Both verifiers are wired: the command verifier (#135) and the agent critic
+   * (#136, `runCritic`, integrated here in #164), each folding a verdict into the
+   * same `combineVerdicts` — a fail/inconclusive from either blocks or escalates
+   * the Run so broken work never lands. Also returns whether a verifier actually
    * `ran` (produced a verdict) and the resolved `autoAccept` from the same
    * `resolveVerifiers` call (issue #138): `drive` needs both, separately from the
    * decision, to distinguish "proceed because a verifier passed" (auto-accept
@@ -1131,34 +1167,27 @@ export class Runner {
   private async runVerification(
     task: TaskRow,
     run: RunRow,
+    harness: HarnessConfig,
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
     const ws = this.getWorkspace?.(task.workspaceId);
-    const { command, autoAccept } = resolveVerifiers(
+    const { command, critic, autoAccept } = resolveVerifiers(
       ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
       this.getConfig(),
     );
 
     const verdicts: VerifierVerdict[] = [];
+    // The frozen candidate both verifiers review — read once (it cannot change
+    // within a single verifying pass). Null means the snapshot was skipped
+    // (dirty direct context) or failed (#134): a configured verifier then has
+    // nothing to characterize, which every branch below treats as infra doubt
+    // → inconclusive → Escalate, never a silent pass.
+    const oid = this.runStore.get(run.id).candidateOid;
 
     if (command) {
-      const oid = this.runStore.get(run.id).candidateOid;
       if (!oid) {
-        // The verifier is configured but there is no candidate to run against —
-        // the snapshot was skipped (dirty direct context) or failed (#134). We
-        // cannot characterize work we never froze, so this is infra doubt →
-        // inconclusive → Escalate, not a silent pass.
-        this.verificationAttempts.append(run.id, {
-          mechanism: 'command',
-          inputOid: '',
-          verdict: 'inconclusive',
-          summary: 'no candidate snapshot to verify',
-          output: '',
-          mutated: false,
-        });
-        record('lifecycle', { event: 'verification', mechanism: 'command', verdict: 'inconclusive' });
-        verdicts.push({ verifier: 'command', verdict: 'inconclusive' });
+        verdicts.push(this.noCandidateVerdict(run.id, 'command', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         const attempt = await runCommandVerifier({
@@ -1175,6 +1204,43 @@ export class Runner {
         record('lifecycle', {
           event: 'verification',
           mechanism: 'command',
+          verdict: attempt.verdict,
+          summary: attempt.summary,
+        });
+        verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
+      }
+    }
+
+    if (critic) {
+      // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B):
+      // a second verdict folded into the same `combineVerdicts`. It reviews the
+      // frozen candidate's diff against its base (the candidate commit's parent,
+      // `${oid}^` — exactly what `snapshotCandidate` committed it against) from a
+      // disposable read-only worktree, and never runs against the live checkout.
+      if (!oid) {
+        verdicts.push(this.noCandidateVerdict(run.id, 'critic', record));
+      } else {
+        mkdirSync(this.worktreesDir, { recursive: true });
+        const attempt = await runCritic({
+          repoDir: task.workingDir,
+          candidateOid: oid,
+          baseRev: `${oid}^`,
+          worktreePath: join(this.worktreesDir, `critic-${run.id}`),
+          critic,
+          // The critic reuses the builder's harness binary (its own model/prompt
+          // come from `critic`); `runCritic` strips the tracker credentials and
+          // registers no MCP servers, so the turn is contained (issue #136).
+          harness,
+          harnessId: task.harness,
+          // Only pass the seam when injected — `exactOptionalPropertyTypes`
+          // forbids an explicit `undefined`, and `runCritic` defaults it to the
+          // real `createAcpCriticDrive`.
+          ...(this.criticDrive ? { drive: this.criticDrive } : {}),
+        });
+        this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+        record('lifecycle', {
+          event: 'verification',
+          mechanism: 'critic',
           verdict: attempt.verdict,
           summary: attempt.summary,
         });
@@ -2656,7 +2722,13 @@ export class Runner {
         // Escalates in place with its cause — so broken work never lands, but a
         // flaky environment is never mistaken for a code defect.
         advancePhase('verifying', autoDriven ? 'auto' : 'human');
-        const { decision, ran, autoAccept } = await this.runVerification(task, run, active.verifyAbort.signal, record);
+        const { decision, ran, autoAccept } = await this.runVerification(
+          task,
+          run,
+          harness,
+          active.verifyAbort.signal,
+          record,
+        );
         // Verification can take up to the command's timeout (minutes). Re-check
         // the two ways the Run may have been settled out from under us during
         // that window before acting on the verdict:
