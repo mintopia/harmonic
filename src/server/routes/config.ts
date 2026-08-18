@@ -2,7 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
-import { HARNESS_IDS, ISOLATION_MODES, MERGE_FATES, PRIORITIES, appConfigSchema, type DeepPartial, type AppConfig } from '../../config.js';
+import {
+  HARNESS_IDS,
+  ISOLATION_MODES,
+  MERGE_FATES,
+  PRIORITIES,
+  appConfigSchema,
+  verificationCommandSchema,
+  verificationCriticSchema,
+  type DeepPartial,
+  type AppConfig,
+} from '../../config.js';
 
 /**
  * A deep-partial patch of `AppConfig` (config.ts). Every field is optional
@@ -93,6 +103,20 @@ const configPatchBodySchema = z
       .describe(
         'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.',
       ),
+    verification: z
+      .object({
+        /** The command verifier; null clears it. Send the whole object to set one (deep-merged, then re-parsed). */
+        command: verificationCommandSchema.nullable().meta({ example: { command: 'npm', args: ['test'] } }),
+        /** The agent critic; null clears it. Send the whole object to set one. */
+        critic: verificationCriticSchema.nullable().meta({ example: { prompt: 'Review the diff for correctness.', model: 'claude-opus-5' } }),
+        /** When true, a passing native Run lands without the human review gate (ADR-0021). */
+        autoAccept: z.boolean().meta({ example: true }),
+        /** Bounded self-heal turns an actionable verification fail may trigger before Escalation. */
+        maxSelfHeals: z.number().int().min(0).meta({ example: 1 }),
+      })
+      .partial()
+      .meta({ example: { autoAccept: true } })
+      .optional(),
   })
   .partial()
   .meta({ id: 'ConfigPatch' });

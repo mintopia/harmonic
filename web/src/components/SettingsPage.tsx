@@ -3,12 +3,13 @@ import { api } from '../api';
 import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
-import type { AppConfig } from '../types';
+import type { AppConfig, VerificationCommand, VerificationCritic } from '../types';
 import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { Switch } from './Switch';
+import { EMPTY_COMMAND, EMPTY_CRITIC, argsText, setCommandField, setCriticField } from './verification-override-model';
 
 function TaskDefaultsFields({
   config,
@@ -188,6 +189,114 @@ function AutoRunnerFields({
           onChange={(e) => onChange({ ...a, maxConcurrentRuns: Number(e.target.value) })}
         />
         <FieldError message={fieldErrors['autoRunner.maxConcurrentRuns']} />
+      </div>
+    </div>
+  );
+}
+
+function VerificationFields({
+  config,
+  fieldErrors,
+  onChange,
+}: {
+  config: AppConfig;
+  fieldErrors: Record<string, string>;
+  onChange: (verification: AppConfig['verification']) => void;
+}) {
+  const v = config.verification;
+  const setCommand = (command: VerificationCommand | null) => onChange({ ...v, command });
+  const setCritic = (critic: VerificationCritic | null) => onChange({ ...v, critic });
+  return (
+    <div className="flex flex-col gap-4 sm:max-w-md">
+      <div>
+        <div className="flex items-center justify-between">
+          <span className={fieldLabel}>Command verifier</span>
+          <Switch checked={v.command !== null} onChange={(on) => setCommand(on ? EMPTY_COMMAND : null)}>
+            Enabled
+          </Switch>
+        </div>
+        {v.command !== null && (
+          <div className="mt-3 flex flex-col gap-3">
+            <div>
+              <label className={fieldLabel} htmlFor="settings-verify-command">Command</label>
+              <input
+                id="settings-verify-command"
+                className={`${field} font-data`}
+                placeholder="npm"
+                value={v.command.command}
+                onChange={(e) => setCommand(setCommandField(v.command!, 'command', e.target.value))}
+              />
+              <FieldError message={fieldErrors['verification.command.command']} />
+            </div>
+            <div>
+              <label className={fieldLabel} htmlFor="settings-verify-args">
+                Arguments <span className="normal-case text-muted">(space-separated)</span>
+              </label>
+              <input
+                id="settings-verify-args"
+                className={`${field} font-data`}
+                placeholder="test"
+                value={argsText(v.command)}
+                onChange={(e) => setCommand(setCommandField(v.command!, 'args', e.target.value))}
+              />
+            </div>
+            <div>
+              <label className={fieldLabel} htmlFor="settings-verify-timeout">Timeout (seconds)</label>
+              <input
+                id="settings-verify-timeout"
+                type="number"
+                min={1}
+                className={`${field} w-40 font-data`}
+                value={v.command.timeoutSeconds}
+                onChange={(e) => setCommand(setCommandField(v.command!, 'timeoutSeconds', e.target.value))}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      <div>
+        <div className="flex items-center justify-between">
+          <span className={fieldLabel}>Agent critic</span>
+          <Switch checked={v.critic !== null} onChange={(on) => setCritic(on ? EMPTY_CRITIC : null)}>
+            Enabled
+          </Switch>
+        </div>
+        {v.critic !== null && (
+          <div className="mt-3 flex flex-col gap-3">
+            <div>
+              <label className={fieldLabel} htmlFor="settings-critic-model">Model</label>
+              <input
+                id="settings-critic-model"
+                className={`${field} font-data`}
+                placeholder="claude-opus-5"
+                value={v.critic.model}
+                onChange={(e) => setCritic(setCriticField(v.critic!, 'model', e.target.value))}
+              />
+              <FieldError message={fieldErrors['verification.critic.model']} />
+            </div>
+            <div>
+              <label className={fieldLabel} htmlFor="settings-critic-prompt">Review prompt</label>
+              <textarea
+                id="settings-critic-prompt"
+                rows={3}
+                className={field}
+                placeholder="Review the diff for correctness against the ticket."
+                value={v.critic.prompt}
+                onChange={(e) => setCritic(setCriticField(v.critic!, 'prompt', e.target.value))}
+              />
+              <FieldError message={fieldErrors['verification.critic.prompt']} />
+            </div>
+          </div>
+        )}
+      </div>
+      <div>
+        <span className={fieldLabel}>Auto-accept</span>
+        <div className="pt-1">
+          <Switch checked={v.autoAccept} onChange={(autoAccept) => onChange({ ...v, autoAccept })}>
+            Land a passing Run without the human review gate
+          </Switch>
+        </div>
+        <FieldError message={fieldErrors['verification.autoAccept']} />
       </div>
     </div>
   );
@@ -411,6 +520,17 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             config={local}
             fieldErrors={fieldErrors}
             onChange={(autoRunner) => setLocal({ ...local, autoRunner })}
+          />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Verification"
+          description="The global default for how a Run is checked before it lands (ADR-0021): a command verifier (your test/lint), an agent critic that reviews the diff, and whether a passing Run auto-accepts past the human review gate. Each Workspace can override these."
+        >
+          <VerificationFields
+            config={local}
+            fieldErrors={fieldErrors}
+            onChange={(verification) => setLocal({ ...local, verification })}
           />
         </SettingsSection>
 
