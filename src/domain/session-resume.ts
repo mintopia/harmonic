@@ -35,7 +35,13 @@ export interface StoredSessionFacts {
   /** The adapter/config version it was dispatched under (e.g. `claude@1`), or
    * null for a legacy Session that never recorded one. */
   adapterVersion: string | null;
-  /** The working directory / Work-Context identity it executed in. */
+  /** The working directory / Work-Context identity it executed in. Compared for
+   * exact equality against {@link ResumeEnvironment.cwd}, so **both operands must
+   * be the canonical form** — the caller runs each through `repoKey`
+   * (execution/repo-lock.ts, the same canonicaliser `workContextKey` uses:
+   * trailing slashes, `.`/`..` segments and symlinks collapse) before calling.
+   * Canonicalising here would make the decision touch the filesystem; this seam
+   * stays pure, so the normalisation is the caller's contract. */
   cwd: string;
   /** The ACP permission mode in effect (e.g. `auto`/`bypassPermissions`), or
    * null when none was set. */
@@ -58,7 +64,9 @@ export interface ResumeEnvironment {
   /** The adapter/config version the reload would run under (current
    * {@link adapterVersion}). */
   adapterVersion: string;
-  /** The working directory / Work-Context identity the reload would execute in. */
+  /** The working directory / Work-Context identity the reload would execute in —
+   * canonical form (`repoKey`-normalised), matching {@link
+   * StoredSessionFacts.cwd} so the equality check compares like with like. */
   cwd: string;
   /** The model the reload would run under; may differ from the stored one. */
   model: string;
@@ -109,8 +117,16 @@ export type ResumeEligibility =
  *
  * Precedence — most fundamental first, so the reason names the deepest problem:
  * harness → `session/load` support → adapter version → cwd → permission mode.
- * A model change is deliberately *not* an axis: it is surfaced on the eligible
- * verdict for re-verification, never a block.
+ * This is exactly the declaration order of {@link RESUME_INCOMPATIBILITY_REASONS}
+ * (kept in lockstep; the ordered-cascade unit test guards against drift). A model
+ * change is deliberately *not* an axis: it is surfaced on the eligible verdict for
+ * re-verification, never a block.
+ *
+ * `session/load` support is read from the *stored* Session
+ * ({@link StoredSessionFacts.supportsLoadSession}, what the harness advertised at
+ * its `initialize`); a current harness that dropped the capability is caught by
+ * the adapter-version axis, which is Harmonic's proxy for adapter/harness
+ * capability drift — resume never has to reload before discovering it lost.
  */
 export function assessResumeEligibility(stored: StoredSessionFacts, env: ResumeEnvironment): ResumeEligibility {
   if (stored.harness !== env.harness) {

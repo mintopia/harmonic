@@ -102,14 +102,16 @@ describe('assessResumeEligibility (issue #142)', () => {
 
   describe('verdict shape', () => {
     it('every incompatible verdict carries a machine-usable reason and a detail string', () => {
-      const cases: ResumeEnvironment[] = [
-        { ...env, harness: 'codex' },
-        { ...env, adapterVersion: 'claude@2' },
-        { ...env, cwd: '/x' },
-        { ...env, availablePermissionModes: [] },
+      // Each axis, incl. load-session-unsupported (a `stored` mutation, not `env`).
+      const cases: Array<[StoredSessionFacts, ResumeEnvironment]> = [
+        [stored, { ...env, harness: 'codex' }],
+        [{ ...stored, supportsLoadSession: false }, env],
+        [stored, { ...env, adapterVersion: 'claude@2' }],
+        [stored, { ...env, cwd: '/x' }],
+        [stored, { ...env, availablePermissionModes: [] }],
       ];
-      for (const bad of cases) {
-        const verdict = assessResumeEligibility(stored, bad);
+      for (const [s, bad] of cases) {
+        const verdict = assessResumeEligibility(s, bad);
         expect(verdict.eligible).toBe(false);
         if (!verdict.eligible) {
           expect(RESUME_INCOMPATIBILITY_REASONS).toContain(verdict.reason);
@@ -119,12 +121,45 @@ describe('assessResumeEligibility (issue #142)', () => {
       }
     });
 
-    it('precedence names the deepest problem first (harness before all else)', () => {
-      const verdict = assessResumeEligibility(
-        { ...stored, supportsLoadSession: false },
-        { ...env, harness: 'codex', adapterVersion: 'claude@9', cwd: '/x' },
-      );
-      expect(verdict).toMatchObject({ reason: 'harness-mismatch' });
+    it('checks axes in the RESUME_INCOMPATIBILITY_REASONS order, deepest first', () => {
+      // A Session broken on every axis: peeling off one violation at a time must
+      // surface the reasons in exactly the declared precedence order.
+      let s: StoredSessionFacts = {
+        harness: 'codex',
+        adapterVersion: 'claude@9',
+        cwd: '/elsewhere',
+        permissionMode: 'plan',
+        model: stored.model,
+        supportsLoadSession: false,
+      };
+      const seen: string[] = [];
+      // 5 real axes → expect 5 reasons then eligible.
+      for (let i = 0; i < RESUME_INCOMPATIBILITY_REASONS.length; i++) {
+        const verdict = assessResumeEligibility(s, env);
+        expect(verdict.eligible).toBe(false);
+        if (verdict.eligible) break;
+        seen.push(verdict.reason);
+        // Heal exactly the axis that just tripped, so the next-deepest surfaces.
+        switch (verdict.reason) {
+          case 'harness-mismatch':
+            s = { ...s, harness: env.harness };
+            break;
+          case 'load-session-unsupported':
+            s = { ...s, supportsLoadSession: true };
+            break;
+          case 'adapter-version-mismatch':
+            s = { ...s, adapterVersion: env.adapterVersion };
+            break;
+          case 'cwd-mismatch':
+            s = { ...s, cwd: env.cwd };
+            break;
+          case 'permission-mode-unestablishable':
+            s = { ...s, permissionMode: null };
+            break;
+        }
+      }
+      expect(seen).toEqual([...RESUME_INCOMPATIBILITY_REASONS]);
+      expect(assessResumeEligibility(s, env).eligible).toBe(true);
     });
   });
 
