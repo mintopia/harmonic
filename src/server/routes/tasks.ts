@@ -316,6 +316,29 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
   );
 
+  app.delete(
+    '/tasks/:id',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          'Permanently delete a Task and its Runs, Usage, and Dependency edges. A mirrored Task is also dismissed so a re-poll will not re-create it. Distinct from Cancel, which keeps the record.',
+        params: idParamsSchema,
+        response: {
+          200: z.object({ id: z.number().int() }).meta({ example: { id: 4821 } }).describe('The id of the deleted Task.'),
+          404: errorResponse('No task has that id.'),
+          409: errorResponse('The task is running and cannot be deleted.'),
+        },
+      },
+    },
+    async (req) => {
+      const id = req.params.id;
+      ctx.runner.cancelForTask(id);
+      ctx.tasks.delete(id);
+      return { id };
+    },
+  );
+
   app.post(
     '/tasks/:id/complete',
     {

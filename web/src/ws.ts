@@ -12,6 +12,9 @@ export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
   | { type: 'run_changed'; run: Run }
   | { type: 'task_changed'; task: Task }
+  // Hard-delete (issue #162): the Task is gone server-side (Runs/history
+  // cascaded); drop it from local state so the board/graph lose it too.
+  | { type: 'task_removed'; id: number }
   // Live Run usage (ADR 0010): the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'run_usage' } & RunUsageEvent)

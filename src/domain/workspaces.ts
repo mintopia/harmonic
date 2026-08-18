@@ -9,12 +9,13 @@ import {
   taskDependencies,
   taskChannels,
   runs,
-  runEvents,
   conversations,
   conversationEvents,
+  trackerDismissals,
   type WorkspaceRow,
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
+import { deleteRunsAndChildren } from './run-cascade.js';
 import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
@@ -190,8 +191,9 @@ export class WorkspaceService {
     this.db.transaction((tx) => {
       if (taskIds.length > 0) {
         const runIds = tx.select({ id: runs.id }).from(runs).where(inArray(runs.taskId, taskIds)).all().map((r) => r.id);
-        if (runIds.length > 0) tx.delete(runEvents).where(inArray(runEvents.runId, runIds)).run();
-        tx.delete(runs).where(inArray(runs.taskId, taskIds)).run();
+        // Purge the whole Run tree (every FK-to-runs child), not just run_events —
+        // shared with TaskService.delete so the run-child set is enumerated once (issue #162).
+        deleteRunsAndChildren(tx, runIds);
         tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();
         tx.delete(taskDependencies)
           .where(or(inArray(taskDependencies.taskId, taskIds), inArray(taskDependencies.dependsOnId, taskIds)))
@@ -202,6 +204,9 @@ export class WorkspaceService {
         tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
         tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
+      // Dismissal tombstones (issue #162) are FK-bound to the Workspace, so they
+      // must go before the row they reference or foreign_keys=ON rejects the delete.
+      tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
       tx.delete(workspaces).where(eq(workspaces.id, id)).run();
     });
   }

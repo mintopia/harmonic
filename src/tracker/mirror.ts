@@ -52,11 +52,14 @@ export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
  * real Dependency edges so native + mirrored share one blocking model and one
  * blocked→ready derivation (issue #31). `blocking` never wires (double-edge),
  * `parent`→mapRef (never an edge). A blocker referencing a ticket outside this
- * scan (e.g. a Map) has no mirrored Task and is skipped. Maps are derived, not
- * mirrored — see {@link deriveMaps}.
+ * scan (e.g. a Map, or a Dismissed ticket below) has no mirrored Task and is
+ * skipped. Maps are derived, not mirrored — see {@link deriveMaps}. A ticket
+ * whose ref was Dismissed (issue #162, ADR-0025 — an operator hard-deleted its
+ * mirrored Task) is skipped outright: the tombstone means "stop mirroring this
+ * issue here", so re-polling it here would defeat the delete.
  */
 export function mirrorScan(tasks: TaskService, tickets: Ticket[], workspaceId: number): TaskRow[] {
-  const issues = tickets.filter((t) => !t.isMap);
+  const issues = tickets.filter((t) => !t.isMap && !tasks.isDismissed(workspaceId, t.number));
   // An Epic is any ticket with children — a Map or a Spec — identified
   // structurally as the parent of some ticket in this scan. Epics are containers:
   // they neither run (drive forced hitl, below) nor block their children (a

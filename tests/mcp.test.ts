@@ -68,6 +68,20 @@ describe('mcp server & scoped keys', () => {
     await client.close();
   });
 
+  it('deletes a task over MCP, tearing down its record (issue #162)', async () => {
+    const client = await mcpClient(server, token);
+
+    const created = parse(await client.callTool({ name: 'create_task', arguments: { prompt: 'delete me over mcp' } }));
+
+    const deleted = parse(await client.callTool({ name: 'delete_task', arguments: { taskId: created.id } }));
+    expect(deleted).toEqual({ deleted: created.id });
+
+    const gone = await client.callTool({ name: 'get_task', arguments: { taskId: created.id } });
+    expect((gone as any).isError).toBe(true);
+
+    await client.close();
+  });
+
   it('rejects unauthenticated and revoked-key MCP requests', async () => {
     await expect(mcpClient(server, 'adk_bogus')).rejects.toThrow();
 

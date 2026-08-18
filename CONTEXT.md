@@ -70,6 +70,10 @@ _Avoid_: prerequisite, parent
 A per-Task rank (high / normal / low) used only by the Auto-Runner's pick
 order; ties break FIFO by creation time.
 
+**Delete**:
+Permanently remove a Task, along with its Runs, Usage, and Dependency edges — distinct from Cancel, which keeps the record. Allowed only when the Task is not running. A native Task is removed outright; a mirrored Task is Dismissed (see below) so a re-poll cannot resurrect it. Its former dependents are re-derived (blocked → ready). Governed by ADR-0025.
+_Avoid_: cancel (Cancel keeps the record; Delete removes it).
+
 ### Tracker mirroring
 
 **Resolved Tracker**:
@@ -94,6 +98,10 @@ owns its execution state (Runs, Usage) and writes only claim/close back. A
 re-poll upserts it. Never enters *draft* — a tracker issue is already
 authored — and never enters *awaiting-review* (see Drive).
 _Avoid_: imported task, synced issue
+
+**Dismiss**:
+Deleting a mirrored Task: the row and its Runs/Usage/edges are removed AND a tombstone on (Workspace, tracker ref) is written to the `tracker_dismissals` table so the poller stops re-mirroring that issue. The operator's way to say "stop mirroring this issue here." The tracker issue itself is untouched. Governed by ADR-0025 (issue #162).
+_Avoid_: cancel, delete (Dismiss is specifically the mirrored-Task delete that tombstones the ref).
 
 **Epic**:
 A parent tracker issue that groups typed child tickets — the derived unit a

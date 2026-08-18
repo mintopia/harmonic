@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { trackerDismissals } from '../src/db/schema.js';
 import { startServer, type TestServer } from './helpers.js';
 
 describe('task authoring', () => {
@@ -107,6 +109,60 @@ describe('task authoring', () => {
     const uncancelled = await server.api('POST', `/api/tasks/${blocked.body.id}/uncancel`);
     expect(uncancelled.status).toBe(200);
     expect(uncancelled.body.state).toBe('blocked');
+  });
+
+  it('deletes a ready task outright: 200 { id }, then a 404 on GET (issue #162)', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'Delete me' });
+
+    const deleted = await server.api('DELETE', `/api/tasks/${created.body.id}`);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body).toEqual({ id: created.body.id });
+
+    expect((await server.api('GET', `/api/tasks/${created.body.id}`)).status).toBe(404);
+  });
+
+  it('refuses to delete a running task with 409, leaving it intact (issue #162)', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'Busy' });
+    server.app.ctx.tasks.setState(created.body.id, 'running');
+
+    const deleted = await server.api('DELETE', `/api/tasks/${created.body.id}`);
+    expect(deleted.status).toBe(409);
+
+    expect((await server.api('GET', `/api/tasks/${created.body.id}`)).status).toBe(200);
+  });
+
+  it('404s deleting a task that does not exist (issue #162)', async () => {
+    expect((await server.api('DELETE', '/api/tasks/999999')).status).toBe(404);
+  });
+
+  it('deletes a mirrored task and tombstones its tracker ref so a re-poll cannot resurrect it (issue #162)', async () => {
+    const seeded = await server.api('POST', '/api/tasks', { prompt: 'seed for workspaceId' });
+    const seededTask = server.app.ctx.tasks.get(seeded.body.id);
+    const mirrored = server.app.ctx.tasks.upsertMirrored(
+      {
+        trackerRef: 91234,
+        prompt: 'mirrored issue',
+        workflow: 'implement',
+        wayfinderType: null,
+        drive: 'afk',
+        mapRef: null,
+        closed: false,
+      },
+      seededTask.workspaceId ?? undefined,
+    );
+
+    const deleted = await server.api('DELETE', `/api/tasks/${mirrored.id}`);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body).toEqual({ id: mirrored.id });
+    expect((await server.api('GET', `/api/tasks/${mirrored.id}`)).status).toBe(404);
+
+    const tombstones = server.app.ctx.db
+      .select()
+      .from(trackerDismissals)
+      .where(eq(trackerDismissals.trackerRef, 91234))
+      .all();
+    expect(tombstones).toHaveLength(1);
+    expect(tombstones[0]!.workspaceId).toBe(seededTask.workspaceId);
   });
 
   it('rejects invalid input: empty prompt, unknown harness, unknown task', async () => {

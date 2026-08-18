@@ -216,6 +216,18 @@ describe('mirrorScan upsert', () => {
     expect(results[1]!.state).toBe('running');
   });
 
+  it('a Dismissed ref is skipped on re-poll — deleting a mirrored Task does not resurrect it (issue #162)', () => {
+    const [mirrored] = mscan([ticket({ number: 55, labels: ['ready-for-agent'] })]);
+    expect(tasks.list()).toHaveLength(1);
+
+    tasks.delete(mirrored!.id); // writes the tracker_dismissals tombstone
+    expect(tasks.isDismissed(wsId, 55)).toBe(true);
+
+    const after = mscan([ticket({ number: 55, labels: ['ready-for-agent'] })]);
+    expect(after).toHaveLength(0); // skipped, not re-created
+    expect(tasks.list()).toHaveLength(0);
+  });
+
   it('operator cannot add/remove an edge whose dependent is a mirrored Task', () => {
     const [mirrored] = mscan([ticket({ number: 5, labels: ['ready-for-agent'] })]);
     const native = tasks.create({ prompt: 'native' });

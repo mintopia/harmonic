@@ -16,7 +16,8 @@ export type TaskAction =
   | 'edit'
   | 'complete'
   | 'cancel'
-  | 'uncancel';
+  | 'uncancel'
+  | 'delete';
 
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
@@ -24,28 +25,37 @@ export function taskActions(state: TaskState): TaskAction[] {
     // the strongest (terminal) position. Cancelling an awaiting-review task is
     // a disposition inside the Reject dialog, not a peer of the gate: the work
     // exists and wants a verdict, and a Cancel button here would sit beside
-    // Reject looking identical while meaning something else.
+    // Reject looking identical while meaning something else. Delete (issue
+    // #162) is not part of the gate either — it's a permanent, rare escape
+    // hatch, so it sits first (quiet, out of the gate's flow) rather than
+    // disturbing Accept's terminal position.
     case 'awaiting-review':
-      return ['reject', 'accept'];
+      return ['delete', 'reject', 'accept'];
     case 'failed':
-      return ['reattempt', 'cancel'];
+      return ['delete', 'reattempt', 'cancel'];
     case 'ready':
-      return ['run', 'edit', 'cancel'];
+      return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':
-      return ['ready', 'edit', 'cancel'];
+      return ['delete', 'ready', 'edit', 'cancel'];
     // Blocked can still be edited — re-point its model/harness while it waits
     // on a dependency (ADR-0012) — but not run; running can only be cancelled.
     case 'blocked':
-      return ['edit', 'cancel'];
+      return ['delete', 'edit', 'cancel'];
     // Complete is an operator override (stop the agent, mark it done, skip the
-    // review gate); Cancel keeps its familiar rightmost destructive slot.
+    // review gate); Cancel keeps its familiar rightmost destructive slot. No
+    // delete while running (issue #162) — the same guard the server enforces
+    // (409); a running Task must be stopped first.
     case 'running':
       return ['complete', 'cancel'];
-    // Uncancel returns the card to the queue in place (issue #57).
+    // Uncancel returns the card to the queue in place (issue #57). Delete
+    // still applies — a cancelled Task is non-running — so the operator can
+    // clear it from the board for good instead of uncancelling it.
     case 'cancelled':
-      return ['uncancel'];
+      return ['delete', 'uncancel'];
+    // completed offered nothing before issue #162; now it's just Delete, so
+    // the footer stops hiding entirely once a Task is completed.
     case 'completed':
-      return [];
+      return ['delete'];
   }
   // A state from a server ahead of this bundle (version skew): offer
   // nothing rather than crash the modal on `.length` of undefined.

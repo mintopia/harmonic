@@ -5,31 +5,41 @@ import { TASK_STATES } from '../web/src/types.js';
 describe('taskActions', () => {
   // Accept is last so the affirmative holds the terminal position, and cancel
   // is absent by design: it's a disposition inside the Reject dialog, not a
-  // peer of the gate's two review verbs.
-  it('offers the review gate for awaiting-review, accept last and no cancel', () => {
-    expect(taskActions('awaiting-review')).toEqual(['reject', 'accept']);
+  // peer of the gate's two review verbs. Delete (issue #162) sits first,
+  // ahead of the gate, rather than disturbing Accept's terminal slot.
+  it('offers the review gate for awaiting-review, accept last, delete first, and no cancel', () => {
+    expect(taskActions('awaiting-review')).toEqual(['delete', 'reject', 'accept']);
   });
 
-  it('offers re-attempt for a failed task', () => {
-    expect(taskActions('failed')).toEqual(['reattempt', 'cancel']);
+  it('offers delete plus re-attempt for a failed task', () => {
+    expect(taskActions('failed')).toEqual(['delete', 'reattempt', 'cancel']);
   });
 
-  it('offers run/ready plus edit for the editable states', () => {
-    expect(taskActions('ready')).toEqual(['run', 'edit', 'cancel']);
-    expect(taskActions('draft')).toEqual(['ready', 'edit', 'cancel']);
+  it('offers delete plus run/ready and edit for the editable states', () => {
+    expect(taskActions('ready')).toEqual(['delete', 'run', 'edit', 'cancel']);
+    expect(taskActions('draft')).toEqual(['delete', 'ready', 'edit', 'cancel']);
   });
 
-  it('offers complete (operator override) and cancel while a task is running', () => {
+  // Issue #162: delete is guarded to non-running Tasks, mirroring the
+  // server's 409 — running is the one state that never offers it.
+  it('offers complete (operator override) and cancel while a task is running, no delete', () => {
     expect(taskActions('running')).toEqual(['complete', 'cancel']);
   });
 
-  it('lets a blocked task be edited (re-point its model) or cancelled', () => {
-    expect(taskActions('blocked')).toEqual(['edit', 'cancel']);
+  it('lets a blocked task be deleted, edited (re-point its model), or cancelled', () => {
+    expect(taskActions('blocked')).toEqual(['delete', 'edit', 'cancel']);
   });
 
-  it('offers no actions for completed (footer hides), and uncancel for cancelled', () => {
-    expect(taskActions('completed')).toEqual([]);
-    expect(taskActions('cancelled')).toEqual(['uncancel']);
+  it('offers delete for completed (no other action), and delete plus uncancel for cancelled', () => {
+    expect(taskActions('completed')).toEqual(['delete']);
+    expect(taskActions('cancelled')).toEqual(['delete', 'uncancel']);
+  });
+
+  // Delete is the one action offered on every state except running (issue #162).
+  it('offers delete on every non-running state', () => {
+    for (const state of TASK_STATES) {
+      expect(taskActions(state).includes('delete')).toBe(state !== 'running');
+    }
   });
 
   it('covers every task state (no state falls through to undefined)', () => {

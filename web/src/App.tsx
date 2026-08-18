@@ -245,6 +245,15 @@ export function App() {
         });
         setOpenTask((current) => (current && current.id === msg.task.id ? msg.task : current));
       }
+      // Hard-delete (issue #162): drop the Task from local state so the
+      // board/graph lose it too — no workspaceId to filter on (the message
+      // only carries the id), but filtering a Task that isn't in the current
+      // Workspace's list is a no-op. Close the detail modal if it was open on
+      // the deleted Task, rather than leaving it stranded on stale data.
+      if (msg.type === 'task_removed') {
+        setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
+        setOpenTask((current) => (current && current.id === msg.id ? null : current));
+      }
     });
     const timer = setInterval(refresh, 10_000);
     return () => {

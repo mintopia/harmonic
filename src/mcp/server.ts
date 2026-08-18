@@ -163,6 +163,20 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
   );
 
   server.registerTool(
+    'delete_task',
+    {
+      description:
+        'Permanently delete a Task and its Runs, Usage, and Dependency edges (a mirrored Task is also dismissed so a re-poll will not re-create it). Distinct from cancel_task, which keeps the record. Rejected while the Task is running.',
+      inputSchema: { ...taskId },
+    },
+    wrap(({ taskId }) => {
+      ctx.runner.cancelForTask(taskId);
+      ctx.tasks.delete(taskId);
+      return { deleted: taskId };
+    }),
+  );
+
+  server.registerTool(
     'add_dependency',
     {
       description: 'Make a Task depend on another (dependent stays blocked until the dependency is completed). Cycles are rejected.',

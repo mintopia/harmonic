@@ -141,6 +141,11 @@ export const api = {
   reattempt: (id: number, feedback?: string) =>
     request<Task>('POST', `/api/tasks/${id}/reattempt`, feedback ? { feedback } : {}),
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
+  // Hard-delete (issue #162, ADR-0025): cascades the Task's Runs/history and
+  // vanishes it from the board/graph via the `task_removed` WS broadcast
+  // (App.tsx). 409 if the Task is running (stop it first); 404 if it's
+  // already gone.
+  deleteTask: (id: number) => request<{ id: number }>('DELETE', `/api/tasks/${id}`),
   rejectTask: (id: number, feedback?: string) =>
     request<Task>('POST', `/api/tasks/${id}/reject`, feedback ? { feedback } : {}),
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),

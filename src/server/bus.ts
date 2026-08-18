@@ -11,6 +11,9 @@ export interface BusEvents {
   /** Live-usage snapshot pushed ~1s while a run tails its native log (ADR 0010). */
   run_usage: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
   task_changed: (task: TaskRow) => void;
+  /** A Task's row was hard-deleted (issue #162, ADR-0025); a live board drops
+   * it immediately rather than waiting on the next full list. */
+  task_removed: (payload: { id: number }) => void;
   conversation_event: (event: PersistedConversationEvent) => void;
   conversation_changed: (conversation: ConversationRow) => void;
   permission_request: (pending: PendingPermissionBroadcast) => void;

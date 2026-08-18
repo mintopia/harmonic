@@ -6,6 +6,7 @@ import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject, sectionT
 import { toastError, toastSuccess } from '../toast';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
+import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
 
 /** Cancel, armed with a two-step confirm. Its own component so the hook is
@@ -58,6 +59,7 @@ export function TaskActions({
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [reattempting, setReattempting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const actions = taskActions(task.state);
   if (variant === 'footer' && actions.length === 0) return null;
@@ -131,6 +133,15 @@ export function TaskActions({
             Uncancel
           </button>
         );
+      // Distinct from Cancel (issue #162): permanent, confirmed in its own
+      // dialog rather than CancelButton's inline two-click arm, and quiet
+      // here so it never visually competes with Cancel's own destructive slot.
+      case 'delete':
+        return (
+          <button key={action} className={btnQuietDestructive} onClick={() => setDeleting(true)}>
+            Delete
+          </button>
+        );
     }
   };
 
@@ -181,6 +192,9 @@ export function TaskActions({
           onClose={() => setReattempting(false)}
           onDone={done(() => setReattempting(false))}
         />
+      )}
+      {deleting && (
+        <DeleteTaskDialog task={task} onClose={() => setDeleting(false)} onDone={done(() => setDeleting(false))} />
       )}
     </>
   );

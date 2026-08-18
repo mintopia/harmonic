@@ -171,6 +171,30 @@ export const tasks = sqliteTable('tasks', {
   index('tasks_workspace_id_idx').on(t.workspaceId),
 ]);
 
+/**
+ * Tombstone for a **Dismissed** mirrored Task (issue #162, ADR-0025). Deleting
+ * a mirrored Task removes its row like any other delete, but that alone isn't
+ * enough — `upsertMirrored` re-creates a mirrored Task from its tracker issue
+ * on every poll, keyed on `(workspaceId, trackerRef)`, so a naive delete would
+ * be silently resurrected on the next scan. Writing a row here on delete lets
+ * `mirrorScan` recognise "this ref was deliberately dismissed here" and skip
+ * re-mirroring it, without inventing a hidden ninth Task state. Scoped per
+ * Workspace (not global) to mirror `tasks_tracker_ref_idx`: two repos sharing
+ * an issue number dismiss independently. Un-dismiss is out of scope (ADR-0025)
+ * — deleting the tombstone row is the manual escape hatch.
+ */
+export const trackerDismissals = sqliteTable('tracker_dismissals', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  /** The Workspace the dismissal is scoped to; mirrors the tasks.workspaceId FK. */
+  workspaceId: integer('workspace_id').references(() => workspaces.id),
+  /** The dismissed mirrored issue's tracker ref; the poller skips re-mirroring this (workspaceId, trackerRef). */
+  trackerRef: integer('tracker_ref').notNull(),
+  dismissedAt: integer('dismissed_at').notNull(),
+}, (t) => [
+  uniqueIndex('tracker_dismissals_ws_ref_idx').on(t.workspaceId, t.trackerRef),
+]);
+export type TrackerDismissalRow = typeof trackerDismissals.$inferSelect;
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

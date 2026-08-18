@@ -1,9 +1,13 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
 import {
   tasks,
   taskDependencies,
+  taskChannels,
+  runs,
+  sessions,
+  trackerDismissals,
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
@@ -17,6 +21,8 @@ import { resolveWorkspace } from './workspaces.js';
 import { resolve as resolveOverride } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
+import { decideTaskDeletion } from './task-deletion.js';
+import { deleteRunsAndChildren } from './run-cascade.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -144,6 +150,9 @@ export class TaskService {
     private readonly getWorkspaces: () => WorkspaceRow[],
     private readonly onChanged: (task: TaskRow) => void = () => {},
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
+    /** Fired once a Task's row is actually gone (issue #162), so a live board
+     * can drop it immediately rather than waiting on the next full list. */
+    private readonly onRemoved: (id: number) => void = () => {},
   ) {}
 
   /** {@link resolveWorkspace} over this service's Workspace list — see its doc comment. */
@@ -327,6 +336,19 @@ export class TaskService {
     // No task.created notify: a mirrored Task is a projection, not an authored
     // Task, and a first poll would otherwise storm one notification per issue.
     return this.changed(row);
+  }
+
+  /** Has this (workspaceId, trackerRef) been Dismissed (issue #162, ADR-0025)?
+   * `mirrorScan` consults this before mirroring a ticket, so a re-poll can't
+   * resurrect a Task an operator deleted. */
+  isDismissed(workspaceId: number, trackerRef: number): boolean {
+    return (
+      this.db
+        .select({ id: trackerDismissals.id })
+        .from(trackerDismissals)
+        .where(and(eq(trackerDismissals.workspaceId, workspaceId), eq(trackerDismissals.trackerRef, trackerRef)))
+        .get() != null
+    );
   }
 
   list(query: TaskListQuery = {}): TaskRow[] {
@@ -722,6 +744,89 @@ export class TaskService {
       }
     }
     return cancelled;
+  }
+
+  /**
+   * Hard-delete a Task (issue #162, ADR-0025): removes the row outright, with
+   * every Run and its children first, in one transaction (runtime enforces
+   * `foreign_keys = ON`, so children must go before parents). Distinct from
+   * Cancel, which keeps the record — see the ADR. Guarded to a Task that
+   * isn't `running` by {@link decideTaskDeletion}, the same guard
+   * `WorkspaceService.delete` applies to a Workspace with a running Task; the
+   * REST/MCP surface tears down any parked harness process first
+   * (`runner.cancelForTask`) before calling this.
+   *
+   * A mirrored Task additionally writes a `tracker_dismissals` tombstone on
+   * `(workspaceId, trackerRef)` so `mirrorScan` can't resurrect it on the next
+   * poll — see {@link decideTaskDeletion} / {@link isDismissed}. Former
+   * dependents are re-derived (blocked → ready) after the transaction commits,
+   * matching how every other edge change re-derives; `onRemoved` then lets a
+   * live board drop the Task immediately instead of waiting on a re-list.
+   */
+  delete(id: number): void {
+    const task = this.get(id);
+    const decision = decideTaskDeletion(task);
+    if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
+    // Snapshot before the transaction: once the row is gone, `dependents` would
+    // return nothing to re-derive.
+    const formerDependents = this.dependents(id);
+    this.db.transaction((tx) => {
+      const runIds = tx.select({ id: runs.id }).from(runs).where(eq(runs.taskId, id)).all().map((r) => r.id);
+      const sessionRowIds = [
+        ...new Set(
+          tx
+            .select({ sid: runs.sessionRowId })
+            .from(runs)
+            .where(eq(runs.taskId, id))
+            .all()
+            .map((r) => r.sid)
+            .filter((sid): sid is number => sid != null),
+        ),
+      ];
+      deleteRunsAndChildren(tx, runIds);
+      if (sessionRowIds.length > 0) {
+        // Delete a Session only once *no* Run references it any more. A warm
+        // continuation / lease transfer (#124) can share one Session across
+        // Runs of different Tasks; deleting a still-referenced Session would
+        // FK-violate under foreign_keys=ON (aborting the whole delete), so keep
+        // any Session another Task's surviving Run still points at.
+        const stillReferenced = new Set(
+          tx
+            .select({ sid: runs.sessionRowId })
+            .from(runs)
+            .where(inArray(runs.sessionRowId, sessionRowIds))
+            .all()
+            .map((r) => r.sid)
+            .filter((sid): sid is number => sid != null),
+        );
+        const orphaned = sessionRowIds.filter((sid) => !stillReferenced.has(sid));
+        if (orphaned.length > 0) tx.delete(sessions).where(inArray(sessions.id, orphaned)).run();
+      }
+      tx.delete(taskChannels).where(eq(taskChannels.taskId, id)).run();
+      tx.delete(taskDependencies)
+        .where(or(eq(taskDependencies.taskId, id), eq(taskDependencies.dependsOnId, id)))
+        .run();
+      // A re-attempt becomes standalone rather than dangling.
+      tx.update(tasks).set({ reattemptOf: null }).where(eq(tasks.reattemptOf, id)).run();
+      tx.delete(tasks).where(eq(tasks.id, id)).run();
+      if (decision.tombstone) {
+        tx.insert(trackerDismissals)
+          .values({
+            workspaceId: decision.tombstone.workspaceId,
+            trackerRef: decision.tombstone.trackerRef,
+            dismissedAt: Date.now(),
+          })
+          .onConflictDoNothing()
+          .run();
+      }
+    });
+    for (const depId of formerDependents) {
+      // The deleted task's own edges are gone with it; every other former
+      // dependent still exists — re-derive it the same way any edge edit does.
+      this.rederiveBlocked(depId);
+      this.onChanged(this.get(depId));
+    }
+    this.onRemoved(id);
   }
 
   withDeps(task: TaskRow): TaskWithDeps {
