@@ -28,11 +28,12 @@ export interface VerificationAttemptInput {
  * (`verification/critic.ts`'s `runCritic`) — against a Run's frozen candidate
  * OID, as an immutable row with a per-Run monotonic `seq`. Mirrors
  * `RunFactStore` (`domain/run-facts.ts`) exactly, down to the `seq`-assignment
- * recipe and its rationale: this is the persisted substrate only. Nothing
- * here decides anything, combines verdicts, or touches the Run/settle path —
- * a caller reads `list(runId)` and folds the verdicts through
- * `combineVerdicts` (`web/src/verification-model.ts`) itself. Attempts are
- * only ever appended and read; there is no update or delete path, by design.
+ * recipe and its rationale: the store class itself is pure persistence
+ * substrate — it decides nothing and combines no verdicts. But its appended
+ * attempts now drive the live verify path: the runner reads them back, folds
+ * the verdicts through `combineVerdicts`, and settles the Run on the result
+ * (`execution/runner.ts`, #135/#164). Attempts are only ever appended and
+ * read; there is no update or delete path, by design.
  */
 export class VerificationAttemptStore {
   constructor(private readonly db: Db) {}

@@ -283,7 +283,10 @@ export const appConfigSchema = z.object({
    * verifier and the agent critic, each nullable and defaulting to null — nothing
    * configured — so the resolved verifier set is empty and a Run behaves exactly
    * as it does today. Per-Workspace overrides resolve per-key over these defaults
-   * (`resolveVerifiers`, domain/setting-override.ts). No verifier executes yet (#132).
+   * (`resolveVerifiers`, domain/setting-override.ts). Once configured, both the
+   * command verifier and the agent critic execute live in the runner's
+   * `validating`/`verifying` phases (`execution/runner.ts`) and gate landing
+   * (#135/#164) — their verdicts feed `combineVerdicts` and drive settle.
    */
   verification: z
     .object({
