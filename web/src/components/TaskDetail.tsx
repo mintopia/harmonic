@@ -9,12 +9,13 @@ import { coalesceEvents } from '../event-stream-model';
 import { phaseTimelineFromEvents } from '../phase-timeline-model';
 import { PhaseTimeline } from './PhaseTimeline';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
+import { parseSkipReasonTaskRef } from '../skip-reason-model';
 import { VerificationCard } from './VerificationCard';
 import { Markdown } from './Markdown';
 import { Modal } from './Modal';
 import { TaskActions } from './TaskActions';
 import { subscribe } from '../ws';
-import { btnGhost, chip, labelType, selectField, stateChip } from '../ui';
+import { btnGhost, chip, labelType, selectField, stateChip, touchTargetInline } from '../ui';
 import { toastError } from '../toast';
 
 const metaChip = `${chip} bg-raised text-muted`;
@@ -460,11 +461,13 @@ export function TaskDetail({
   onEdit,
   onChanged,
   onClose,
+  onOpenTask,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
   onChanged: () => void;
   onClose: () => void;
+  onOpenTask: (taskId: number) => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -628,6 +631,18 @@ export function TaskDetail({
       ? { escalated: task.escalated, text: latestRun.reason.replace(/^escalated to human:\s*/i, '') }
       : null;
 
+  // Link the lease skip-reason to its holder (issue #176): the server string
+  // names the Task holding the Work Context but gave the operator nothing to
+  // click. `null` when the string doesn't contain a `task #<id>` to link.
+  const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
+
+  // Hoist the one-time progress-nudge to the header (issue #176): it renders
+  // inline in the Output stream too (EventStream), but it directly precedes
+  // a potential guardrail trip and was easy to miss scrolled into the
+  // transcript. Same event, read twice on purpose.
+  const progressNudge = events.find((e) => e.payload?.event === 'progress-nudge') ?? null;
+  const progressNudgePattern = progressNudge?.payload?.pattern as string | undefined;
+
   return (
     <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
       {/* Fixed height (not max-h): the modal stays one size across tabs, so
@@ -653,7 +668,28 @@ export function TaskDetail({
               subtle so it never competes with the failed/escalated alert. */}
           {task.skipReason && (
             <div className="mt-1 text-small text-muted">
-              <span className={labelType}>Skipped</span> — {task.skipReason}
+              <span className={labelType}>Skipped</span> —{' '}
+              {/* Link the holder ref to its Task (the lease owner). Split on the
+                  literal `task #<id>` the model already parsed, so the `task #…`
+                  format lives in exactly one place (skip-reason-model). */}
+              {skipHolderId === null
+                ? task.skipReason
+                : (() => {
+                    const marker = `task #${skipHolderId}`;
+                    const [before, ...after] = task.skipReason.split(marker);
+                    return (
+                      <>
+                        {before}
+                        <button
+                          onClick={() => onOpenTask(skipHolderId)}
+                          className={`${touchTargetInline} text-accent hover:underline`}
+                        >
+                          {marker}
+                        </button>
+                        {after.join(marker)}
+                      </>
+                    );
+                  })()}
             </div>
           )}
           {/* The description moved to its own tab (below) so the Output tab
@@ -675,6 +711,19 @@ export function TaskDetail({
           {phaseSteps && (
             <div className="mt-2">
               <PhaseTimeline steps={phaseSteps} />
+            </div>
+          )}
+          {/* Header-level mark of the same progress-nudge EventStream renders
+              inline (issue #176) — it precedes a potential guardrail trip, so
+              it sits just above GuardrailTrips and reads together with one if
+              it also shows. Same vocabulary as the inline version on purpose. */}
+          {progressNudge && (
+            <div className="mt-2 rounded-md bg-accent-tint px-2 py-1 text-small text-ink">
+              <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
+              <span>
+                Redirected before a guardrail trip
+                {progressNudgePattern ? ` — ${progressNudgePattern}` : ''}
+              </span>
             </div>
           )}
           <GuardrailTrips events={guardrailEvents} />

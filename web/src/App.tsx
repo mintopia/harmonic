@@ -774,6 +774,7 @@ export function App() {
           onEdit={setEditing}
           onChanged={refresh}
           onClose={() => setOpenTask(null)}
+          onOpenTask={openTaskById}
         />
       )}
 

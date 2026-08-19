@@ -11,6 +11,15 @@ const DIMENSION_LABELS: Record<GuardrailDimension, string> = {
   'tool-timeout': 'Tool timeout',
 };
 
+/** The dimension label alone (issue #176): EventStream's `guardrail-tripped`
+ * lifecycle line reuses this so the raw wire token ("wall-clock") reads as
+ * the same human word the header banner already uses, instead of forking its
+ * own vocabulary. Same fallback as `describeGuardrailTrip` — an unrecognised
+ * dimension passes through as-is. */
+export function guardrailDimensionLabel(dimension: string): string {
+  return DIMENSION_LABELS[dimension as GuardrailDimension] ?? dimension;
+}
+
 const msToMinutes = (ms: number): number => Math.round(ms / 60_000);
 
 /** wall-clock and tool-timeout share the same ms-limit shape and read the
@@ -46,7 +55,7 @@ const EVIDENCE_FORMATTERS: Record<GuardrailDimension, (e: GuardrailEvent) => str
  * limit/observed comparison instead of throwing.
  */
 export function describeGuardrailTrip(e: GuardrailEvent): { dimensionLabel: string; evidence: string } {
-  const dimensionLabel = DIMENSION_LABELS[e.dimension] ?? e.dimension;
+  const dimensionLabel = guardrailDimensionLabel(e.dimension);
   const format = EVIDENCE_FORMATTERS[e.dimension];
   const evidence = format ? format(e) : `limit ${e.limitValue}, observed ${e.observedValue}`;
   return { dimensionLabel, evidence };

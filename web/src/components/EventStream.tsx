@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { coalesceEvents, isInterrupted, type StreamEvent, type ToolCallView } from '../event-stream-model';
+import { guardrailDimensionLabel } from '../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../ui';
 
 // ACP tool kinds → the short word on the chip. Anything unknown or absent
@@ -141,12 +142,17 @@ function renderEventLine(event: StreamEvent): ReactNode {
   }
   if (event.payload.event === 'guardrail-tripped') {
     // A Guardrail actually tripped and settled the run (issue #171) — Failed
-    // rose like model_mismatch's Tooling cyan is to harness metadata, naming
-    // the dimension and the reason the trip already formatted server-side.
+    // rose like model_mismatch's Tooling cyan is to harness metadata. Same
+    // "Guardrail tripped — {label}" phrasing as the header banner
+    // (GuardrailTrips/describeGuardrailTrip in TaskDetail), reusing its label
+    // vocabulary via guardrailDimensionLabel so the raw wire token
+    // ("wall-clock") never leaks into the transcript as its own rendering
+    // (issue #176). The reason is the trip's evidence, formatted server-side.
     return (
       <div className="text-fail">
-        guardrail tripped: <span className="font-medium">{String(event.payload.dimension)}</span>
-        {event.payload.reason ? ` — ${String(event.payload.reason)}` : ''}
+        Guardrail tripped —{' '}
+        <span className="font-medium">{guardrailDimensionLabel(String(event.payload.dimension))}</span>
+        {event.payload.reason ? `: ${String(event.payload.reason)}` : ''}
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeGuardrailTrip } from '../web/src/guardrail-trip-model.js';
+import { describeGuardrailTrip, guardrailDimensionLabel } from '../web/src/guardrail-trip-model.js';
 import type { GuardrailEvent } from '../web/src/types.js';
 
 const event = (overrides: Partial<GuardrailEvent>): GuardrailEvent => ({
@@ -72,5 +72,15 @@ describe('describeGuardrailTrip', () => {
     );
     expect(dimensionLabel).toBe('made-up');
     expect(evidence).toBe('limit 3, observed 9');
+  });
+});
+
+describe('guardrailDimensionLabel (issue #176)', () => {
+  it('maps a known raw dimension token to its human label', () => {
+    expect(guardrailDimensionLabel('wall-clock')).toBe('Wall clock');
+  });
+
+  it('passes an unrecognised dimension through unchanged', () => {
+    expect(guardrailDimensionLabel('made-up')).toBe('made-up');
   });
 });
