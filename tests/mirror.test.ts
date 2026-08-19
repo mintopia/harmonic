@@ -100,17 +100,26 @@ describe('mirrorScan upsert', () => {
     expect(() => tasks.unescalate(native.id)).toThrow(/native/);
   });
 
-  it('is idempotent across re-polls: 1:1, updates in place, preserves drive', () => {
-    const t = ticket({ number: 7, labels: ['wayfinder:research'] });
+  it('is idempotent across re-polls: 1:1, updates in place, re-seeds drive from labels', () => {
+    const t = ticket({ number: 7, labels: ['ready-for-agent'] });
     const first = mscan([t])[0]!;
-    // Human/runtime flips drive to hitl (escalation); a re-poll must not re-seed it.
-    tasks.setState(first.id, 'ready');
-    db.update(tasksTable).set({ drive: 'hitl' }).where(eq(tasksTable.id, first.id)).run();
-    const second = mscan([{ ...t, title: 'Retitled on the tracker' }])[0]!;
+    expect(first.drive).toBe('afk'); // seeded from ready-for-agent
+    // Operator relabels the ticket for a human: a re-poll re-seeds drive.
+    const second = mscan([{ ...t, title: 'Retitled on the tracker', labels: ['ready-for-human'] }])[0]!;
     expect(second.id).toBe(first.id); // same row, not a duplicate
     expect(tasks.list()).toHaveLength(1);
     expect(second.prompt).toContain('Retitled on the tracker'); // shape refreshed
-    expect(second.drive).toBe('hitl'); // Harmonic-owned drive preserved
+    expect(second.drive).toBe('hitl'); // re-seeded from the new label
+  });
+
+  it('re-poll preserves an escalated Task’s drive even when the label still reads ready-for-agent', () => {
+    const t = ticket({ number: 8, labels: ['ready-for-agent'] });
+    const first = mscan([t])[0]!;
+    // Harmonic escalates at runtime (afk→hitl, escalated flag) without touching the label.
+    db.update(tasksTable).set({ drive: 'hitl', escalated: true }).where(eq(tasksTable.id, first.id)).run();
+    const second = mscan([t])[0]!; // same ready-for-agent label
+    expect(second.drive).toBe('hitl'); // escalation preserved, not re-seeded to afk
+    expect(second.escalated).toBe(true);
   });
 
   it('closed ticket → completed; open blocker → blocked via a real edge; Maps not mirrored', () => {

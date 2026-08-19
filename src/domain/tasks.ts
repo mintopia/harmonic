@@ -262,7 +262,11 @@ export class TaskService {
    * (workspaceId, trackerRef) so re-polls are idempotent and each Workspace's
    * poll loop only ever touches its own board (issue #45). The tracker owns the issue's shape;
    * Harmonic owns execution state — so a re-poll refreshes prompt/role/mapRef
-   * but never re-seeds `drive` (that protects a runtime Escalation) and never
+   * and re-seeds `drive` from the ticket's labels (relabeling ready-for-agent↔
+   * ready-for-human flips it), *except while the Task is escalated*: an
+   * Escalation is a runtime afk→hitl flip Harmonic owns, and the ticket's label
+   * may still read ready-for-agent, so re-seeding would silently undo it. A
+   * re-poll also never
    * moves a Task off `running` (nothing interrupts a live Run). A closed ticket
    * settles a resting Task to completed; reopen reconciliation is left to the
    * lifecycle work downstream. blocked⇄ready is not set here — it derives from
@@ -293,14 +297,18 @@ export class TaskService {
           state,
           workflow: input.workflow,
           wayfinderType: input.wayfinderType,
+          // Re-seed drive from the ticket's labels, so relabeling a mirrored
+          // issue flips Auto/You — except while escalated, where Harmonic's
+          // runtime hitl flip must survive a label that still reads afk.
+          drive: existing.escalated ? existing.drive : input.drive,
           mapRef: input.mapRef,
           updatedAt: now,
         })
         .where(eq(tasks.id, existing.id))
         .returning()
         .get()!;
-      // Re-poll never touches the four defaults, so an operator's pin on a
-      // mirrored Task survives every scan.
+      // Re-poll never touches the four operator picks (harness/model/isolation/
+      // priority), so an operator's pin on a mirrored Task survives every scan.
       return this.changed(row);
     }
     // Each Workspace's poll loop mirrors into its own board (issue #45): the

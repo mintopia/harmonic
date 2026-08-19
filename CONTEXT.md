@@ -153,9 +153,12 @@ Workflow, never a Wayfinder Type.
 **Drive**:
 Who drives a mirrored Task — **afk** (Harmonic auto-runs it) or **hitl** (a
 human drives it via the mattpocock skills; Harmonic surfaces it but never
-runs it). Stored and mutable. Seeded from labels (ready-for-human / grilling /
-prototype / bare-task → hitl; ready-for-agent / research → afk); an
-**unclear** signal seeds *afk* — attempt optimistically. The Auto-Runner's
+runs it). Stored, and **re-synced from the ticket's labels on every re-poll**
+(ready-for-human / grilling / prototype / bare-task → hitl; ready-for-agent /
+research → afk; an **unclear** signal → *afk*, attempt optimistically), so
+relabeling a mirrored issue flips its drive — **except while the Task is
+escalated**, where Harmonic's runtime afk→hitl flip is preserved (a stale
+ready-for-agent label must not undo it). The Auto-Runner's
 whole predicate: pick-eligible iff `drive ≠ hitl`. Mirrored Tasks bypass the
 review gate entirely — closure is a tracker act (the agent via its skill, or a
 human), never an Accept/Reject. A clean Run is not success: the agent-via-skill

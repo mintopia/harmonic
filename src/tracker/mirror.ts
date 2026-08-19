@@ -32,7 +32,9 @@ const mirrorPrompt = (t: Ticket): string => (t.body.trim() ? `${t.title}\n\n${t.
  * The upsert input for one ticket — role derived, open/closed axis resolved.
  * An Epic (a ticket with children) is a container, never auto-run: its drive is
  * forced to hitl so the Auto-Runner (pick predicate `drive !== hitl`) skips it.
- * Only affects a new mirror — upsertMirrored preserves an existing row's drive.
+ * upsertMirrored re-seeds an existing row's drive from this label-derived value
+ * on every re-poll (relabeling flips Auto/You), except while the Task is
+ * escalated — Harmonic's runtime hitl flip must not be undone by a stale label.
  */
 export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
   const role = deriveRole(ticket);
