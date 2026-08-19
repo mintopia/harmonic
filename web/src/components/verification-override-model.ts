@@ -1,4 +1,4 @@
-import type { VerificationCommand, VerificationCritic } from '../types.js';
+import type { VerificationCommand, VerificationCritic, VerifierOff } from '../types.js';
 
 /**
  * Verification-override editing (ADR-0021, issue #165). The Workspace command
@@ -15,6 +15,12 @@ import type { VerificationCommand, VerificationCritic } from '../types.js';
  * fill it in; {@link summarizeCommand}/{@link summarizeCritic} read an empty seed
  * back as "not configured" so an inheriting Workspace with no global default
  * reads honestly rather than as a blank verifier.
+ *
+ * A workspace can also turn an inherited (or overridden) verifier fully off for
+ * itself (issue #174) — the tri-state is inherit / off / override, layered on
+ * top of InheritField's own inherit/override axis: {@link VERIFIER_OFF} is the
+ * sentinel value an "Enabled" switch writes into the override when switched off,
+ * and {@link isVerifierOff} narrows an override value to that sentinel.
  */
 
 /** Seed for a freshly enabled command override when no global default exists. */
@@ -22,6 +28,14 @@ export const EMPTY_COMMAND: VerificationCommand = { command: '', args: [], env: 
 
 /** Seed for a freshly enabled critic override when no global default exists. */
 export const EMPTY_CRITIC: VerificationCritic = { prompt: '', model: '' };
+
+/** The sentinel an override field stores to force its verifier off (issue #174). */
+export const VERIFIER_OFF: VerifierOff = { off: true };
+
+/** Narrow an override value to the {@link VERIFIER_OFF} sentinel. */
+export function isVerifierOff(v: unknown): v is VerifierOff {
+  return typeof v === 'object' && v !== null && (v as { off?: unknown }).off === true;
+}
 
 /** An editable dimension of the command verifier. `args` is a whitespace-joined string in the UI. */
 export type CommandField = 'command' | 'args' | 'timeoutSeconds';
@@ -60,19 +74,30 @@ export function summarizeCommand(cmd: VerificationCommand): string {
   return `${argv} · ${cmd.timeoutSeconds}s timeout`;
 }
 
-/** An editable dimension of the agent critic. */
-export type CriticField = 'prompt' | 'model';
+/** An editable dimension of the agent critic. `harness` is a select, not free text (issue #174). */
+export type CriticField = 'prompt' | 'model' | 'harness';
 
-/** Fold a raw text-input value into the critic object. Both fields are free text; the server enforces non-empty. */
+/**
+ * Fold a raw text-input value into the critic object. `prompt`/`model` are free
+ * text. `harness` comes from a select whose first option, "Same as task", is
+ * the empty string — that must land as an *absent* `harness` key (the schema's
+ * `harness` is optional, and `z.enum` rejects `''`), not `harness: ''`, so a
+ * blank selection strips the key instead of setting it.
+ */
 export function setCriticField(critic: VerificationCritic, field: CriticField, raw: string): VerificationCritic {
+  if (field === 'harness' && raw === '') {
+    const { harness: _harness, ...rest } = critic;
+    return rest;
+  }
   return { ...critic, [field]: raw };
 }
 
 /**
  * One-line summary of an agent critic for the inheriting read-only display: the
- * reviewer model. An empty model (the seed for an unconfigured global default)
- * reads as "Not configured".
+ * reviewer harness (when overridden) and model. An empty model (the seed for
+ * an unconfigured global default) reads as "Not configured".
  */
 export function summarizeCritic(critic: VerificationCritic): string {
-  return critic.model.trim() === '' ? 'Not configured' : `Critic model: ${critic.model}`;
+  if (critic.model.trim() === '') return 'Not configured';
+  return critic.harness ? `Critic (${critic.harness}): model ${critic.model}` : `Critic model: ${critic.model}`;
 }

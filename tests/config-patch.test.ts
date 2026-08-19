@@ -43,6 +43,34 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.verification.critic.model).toBe('claude-opus-5');
   });
 
+  it('accepts a critic harness (issue #174) and round-trips it', async () => {
+    const withHarness = await server.api('PATCH', '/api/config', {
+      verification: { critic: { prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'codex' } },
+    });
+    expect(withHarness.status).toBe(200);
+    expect(withHarness.body.verification.critic.harness).toBe('codex');
+
+    const after = await server.api('GET', '/api/config');
+    expect(after.body.verification.critic.harness).toBe('codex');
+  });
+
+  it('accepts a critic with no harness (issue #174) — the field is optional, "Same as task"', async () => {
+    // A fresh critic patched with no `harness` key at all validates and
+    // resolves to "reuse the builder's harness" (no key present).
+    const patched = await server.api('PATCH', '/api/config', {
+      verification: { critic: { prompt: 'Review the diff.', model: 'claude-opus-5' } },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.verification.critic.harness).toBeUndefined();
+  });
+
+  it('rejects an invalid critic harness (issue #174) — not one of the known harness ids', async () => {
+    const invalid = await server.api('PATCH', '/api/config', {
+      verification: { critic: { prompt: 'Review the diff.', model: 'claude-opus-5', harness: 'nonexistent' } },
+    });
+    expect(invalid.status).toBe(400);
+  });
+
   it('clears a configured command back to null', async () => {
     const withCommand = await server.api('PATCH', '/api/config', {
       verification: { command: { command: 'npm', args: ['test'] } },

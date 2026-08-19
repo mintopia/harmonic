@@ -1218,14 +1218,14 @@ export class Runner {
   private async runVerification(
     task: TaskRow,
     run: RunRow,
-    harness: HarnessConfig,
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
+    const config = this.getConfig();
     const ws = this.getWorkspace?.(task.workspaceId);
     const { command, critic, autoAccept } = resolveVerifiers(
       ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
-      this.getConfig(),
+      config,
     );
 
     const verdicts: VerifierVerdict[] = [];
@@ -1272,17 +1272,26 @@ export class Runner {
         verdicts.push(this.noCandidateVerdict(run.id, 'critic', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
+        // The critic's own harness (issue #174 FIX 2): reuses the builder's
+        // harness only when `critic.harness` is unset ("Same as task"); a
+        // configured critic harness is resolved independently, mirroring the
+        // builder's own lookup/guard in `beginRun`.
+        const criticHarnessId = critic.harness ?? task.harness;
+        const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
+        if (!criticHarness) {
+          throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
+        }
         const attempt = await runCritic({
           repoDir: task.workingDir,
           candidateOid: oid,
           baseRev: `${oid}^`,
           worktreePath: join(this.worktreesDir, `critic-${run.id}`),
           critic,
-          // The critic reuses the builder's harness binary (its own model/prompt
-          // come from `critic`); `runCritic` strips the tracker credentials and
-          // registers no MCP servers, so the turn is contained (issue #136).
-          harness,
-          harnessId: task.harness,
+          // `runCritic` strips the tracker credentials and registers no MCP
+          // servers, so the turn is contained (issue #136) regardless of which
+          // harness runs it.
+          harness: criticHarness,
+          harnessId: criticHarnessId,
           // Only pass the seam when injected — `exactOptionalPropertyTypes`
           // forbids an explicit `undefined`, and `runCritic` defaults it to the
           // real `createAcpCriticDrive`.
@@ -2861,7 +2870,6 @@ export class Runner {
         const { decision, ran, autoAccept } = await this.runVerification(
           task,
           run,
-          harness,
           active.verifyAbort.signal,
           record,
         );

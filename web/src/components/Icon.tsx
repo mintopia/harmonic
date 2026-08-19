@@ -30,7 +30,8 @@ export type IconName =
   | 'plus'
   | 'expand'
   | 'collapse'
-  | 'refresh';
+  | 'refresh'
+  | 'alert-triangle';
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
@@ -143,6 +144,18 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12.75 8a4.75 4.75 0 1 1-1.4-3.36" />
       <path d="M12.75 2.5V5H10.25" />
+    </>
+  ),
+  // Alert triangle: the "needs a human look" signal (issue #174) — an
+  // inconclusive verdict / escalate outcome, so it reads without relying on
+  // colour alone (colourblind safety). The "!" is drawn stroke-only (a short
+  // bar plus a zero-length round-capped dot) to stay one weight, matching
+  // every other glyph in this file rather than introducing a filled dot.
+  'alert-triangle': (
+    <>
+      <path d="M8 2.25 14.5 13.5H1.5Z" />
+      <path d="M8 6.25v3.25" />
+      <path d="M8 11.75v.01" />
     </>
   ),
 };

@@ -4,6 +4,7 @@ import {
   latestVerdicts,
   overallDecision,
   latestCriticSummary,
+  groupAttemptsByMechanism,
 } from '../web/src/verification-attempts-model.js';
 import type { VerificationAttempt, VerificationMechanism } from '../web/src/types.js';
 import type { Verdict } from '../web/src/verification-model.js';
@@ -116,5 +117,78 @@ describe('latestCriticSummary', () => {
       attempt(2, 'critic', 'pass', { summary: 'coverage added, looks good' }),
     ];
     expect(latestCriticSummary(attempts)).toBe('coverage added, looks good');
+  });
+});
+
+describe('groupAttemptsByMechanism', () => {
+  it('is empty on the empty log', () => {
+    expect(groupAttemptsByMechanism([])).toEqual([]);
+  });
+
+  it('numbers a single mechanism\'s attempts from 1, first attempt not a self-heal', () => {
+    const attempts = [attempt(1, 'command', 'fail')];
+    expect(groupAttemptsByMechanism(attempts)).toEqual([
+      {
+        mechanism: 'command',
+        attempts: [expect.objectContaining({ seq: 1, attemptNumber: 1, isSelfHeal: false })],
+      },
+    ]);
+  });
+
+  it('numbers every retry after the first as a self-heal attempt', () => {
+    const attempts = [
+      attempt(1, 'command', 'fail'),
+      attempt(3, 'command', 'fail'), // second retry
+      attempt(5, 'command', 'pass'), // third retry, the one that fixed it
+    ];
+    const group = groupAttemptsByMechanism(attempts)[0]!;
+    expect(group.attempts.map((a) => [a.seq, a.attemptNumber, a.isSelfHeal])).toEqual([
+      [1, 1, false],
+      [3, 2, true],
+      [5, 3, true],
+    ]);
+  });
+
+  it('groups interleaved mechanisms separately, each numbered from 1', () => {
+    const attempts = [
+      attempt(1, 'command', 'fail'),
+      attempt(2, 'critic', 'pass'),
+      attempt(3, 'command', 'pass'), // command's self-heal retry
+      attempt(4, 'critic', 'fail'), // critic's self-heal retry
+    ];
+    const groups = groupAttemptsByMechanism(attempts);
+    expect(groups.map((g) => [g.mechanism, g.attempts.map((a) => [a.seq, a.attemptNumber, a.isSelfHeal])])).toEqual([
+      [
+        'command',
+        [
+          [1, 1, false],
+          [3, 2, true],
+        ],
+      ],
+      [
+        'critic',
+        [
+          [2, 1, false],
+          [4, 2, true],
+        ],
+      ],
+    ]);
+  });
+
+  it('orders groups by each mechanism\'s first-seen seq, robust to out-of-order input', () => {
+    const attempts = [
+      attempt(3, 'critic', 'fail'),
+      attempt(2, 'command', 'pass'),
+      attempt(1, 'critic', 'pass'),
+    ];
+    expect(groupAttemptsByMechanism(attempts).map((g) => g.mechanism)).toEqual(['critic', 'command']);
+  });
+
+  it("keeps each attempt's original fields alongside the added attemptNumber/isSelfHeal", () => {
+    const attempts = [attempt(1, 'command', 'fail', { summary: 'lint broke' })];
+    const group = groupAttemptsByMechanism(attempts)[0]!;
+    expect(group.attempts[0]).toEqual(
+      expect.objectContaining({ id: 1, mechanism: 'command', verdict: 'fail', summary: 'lint broke' }),
+    );
   });
 });

@@ -6,8 +6,8 @@ import type { WorkspaceRow } from '../../db/schema.js';
 import type { ResolvedTracker } from '../../tracker/adapter.js';
 import { createWorkspaceInputSchema, updateWorkspaceInputSchema } from '../../domain/workspaces.js';
 import {
-  verificationCommandSchema,
-  verificationCriticSchema,
+  verificationCommandOverrideSchema,
+  verificationCriticOverrideSchema,
   budgetGuardrailSchema,
   unpricedModelsForCostCap,
   costCapMessage,
@@ -51,11 +51,13 @@ const workspaceSchema = z
     priority: z.string().nullable().meta({ example: null }),
     maxConcurrentRuns: z.number().nullable().meta({ example: null }),
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
-    // Verification verifier overrides (issue #132): the raw JSON columns parsed
-    // back into their object shape, so a client reads a set override the same
-    // shape it PATCHes. null ⇒ inherit `config.verification.{command,critic}`.
-    verificationCommand: verificationCommandSchema.nullable().meta({ example: null }),
-    verificationCritic: verificationCriticSchema.nullable().meta({ example: null }),
+    // Verification verifier overrides (issue #132), tri-state (issue #174): the
+    // raw JSON columns parsed back into their object shape, so a client reads a
+    // set override the same shape it PATCHes. null ⇒ inherit
+    // `config.verification.{command,critic}`; `{ off: true }` ⇒ explicitly
+    // disabled for this Workspace.
+    verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
+    verificationCritic: verificationCriticOverrideSchema.nullable().meta({ example: null }),
     // Auto-accept (issue #138) is a scalar override, so it passes straight through
     // the row spread — null ⇒ inherit `config.verification.autoAccept`.
     verificationAutoAccept: z.boolean().nullable().meta({ example: null }),

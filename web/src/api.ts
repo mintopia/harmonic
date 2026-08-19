@@ -15,6 +15,7 @@ import type {
   VerificationAttempt,
   VerificationCommand,
   VerificationCritic,
+  VerifierOff,
   Workspace,
 } from './types.js';
 
@@ -107,8 +108,8 @@ export const api = {
       priority?: 'high' | 'normal' | 'low' | null;
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
-      verificationCommand?: VerificationCommand | null;
-      verificationCritic?: VerificationCritic | null;
+      verificationCommand?: VerificationCommand | VerifierOff | null;
+      verificationCritic?: VerificationCritic | VerifierOff | null;
       verificationAutoAccept?: boolean | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;

@@ -715,9 +715,14 @@ export function TaskDetail({
         >
           {tabs.map((t) => {
             // Flag when Details holds review context (why a prior run was
-            // rejected, or the feedback seeding this re-attempt) so a
-            // reviewer sees there is something to read before acting.
-            const flag = t === 'details' && Boolean(task.feedback || selectedRun?.reviewFeedback);
+            // rejected, or the feedback seeding this re-attempt) — or a
+            // Verification verdict (issue #174 FIX 1): the critic's
+            // proceed/block/escalate outcome otherwise sits unflagged in this
+            // tab, so a block/escalate run could be Accept-merged blind. A
+            // verdict exists once there is at least one verification attempt.
+            const flag =
+              t === 'details' &&
+              Boolean(task.feedback || selectedRun?.reviewFeedback || verificationAttempts.length > 0);
             return (
               <button
                 key={t}
@@ -726,7 +731,7 @@ export function TaskDetail({
                 aria-selected={tab === t}
                 aria-controls={`task-panel-${t}`}
                 tabIndex={tab === t ? 0 : -1}
-                aria-label={flag ? 'details (has review feedback)' : undefined}
+                aria-label={flag ? 'details (has review feedback or verification verdict)' : undefined}
                 onClick={() => setTab(t)}
                 className={`-mb-px border-b-2 px-2 py-2 ${labelType} transition-colors duration-150 ${
                   tab === t ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'
@@ -782,6 +787,7 @@ export function TaskDetail({
         <TaskActions
           task={task}
           variant="footer"
+          verificationAttempts={verificationAttempts}
           onEdit={(t) => {
             onClose();
             onEdit(t);

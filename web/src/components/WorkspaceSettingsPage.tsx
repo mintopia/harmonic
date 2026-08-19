@@ -5,11 +5,14 @@ import { btnDestructive, btnGhost, displayTitle, field, selectField } from '../u
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
+import { ModelCombobox } from './ModelCombobox';
 import { setBudgetField, summarizeBudget } from './guardrail-budget-model';
 import {
   EMPTY_COMMAND,
   EMPTY_CRITIC,
+  VERIFIER_OFF,
   argsText,
+  isVerifierOff,
   setCommandField,
   setCriticField,
   summarizeCommand,
@@ -487,47 +490,68 @@ export function WorkspaceSettingsPage({
                 label="Command verifier"
                 value={local.verificationCommand}
                 inherited={config.verification.command ?? EMPTY_COMMAND}
-                format={summarizeCommand}
+                format={(v) => (isVerifierOff(v) ? 'Off' : summarizeCommand(v))}
                 onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
               >
-                {({ value, onChange }) => (
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-verify-command">Command</label>
-                      <input
-                        id="workspace-verify-command"
-                        className={`${field} font-data`}
-                        placeholder="npm"
-                        value={value.command}
-                        onChange={(e) => onChange(setCommandField(value, 'command', e.target.value))}
-                      />
-                      <FieldError message={fieldErrors['verificationCommand.command']} />
+                {({ value, onChange }) => {
+                  // format() above is only ever handed the inherited (real) value —
+                  // the read-only line never shows the off sentinel — but the render
+                  // prop's value can be either, since overriding-and-off both count
+                  // as "overridden" from InheritField's point of view.
+                  if (isVerifierOff(value)) {
+                    return (
+                      <div className="flex flex-col gap-3">
+                        <Switch checked={false} onChange={() => onChange(config.verification.command ?? EMPTY_COMMAND)}>
+                          Enabled
+                        </Switch>
+                        <p className="text-small text-muted">
+                          Disabled for this workspace — this verifier will not run here.
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <Switch checked={true} onChange={() => onChange(VERIFIER_OFF)}>
+                        Enabled
+                      </Switch>
+                      <div>
+                        <label className={fieldLabel} htmlFor="workspace-verify-command">Command</label>
+                        <input
+                          id="workspace-verify-command"
+                          className={`${field} font-data`}
+                          placeholder="npm"
+                          value={value.command}
+                          onChange={(e) => onChange(setCommandField(value, 'command', e.target.value))}
+                        />
+                        <FieldError message={fieldErrors['verificationCommand.command']} />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} htmlFor="workspace-verify-args">
+                          Arguments <span className="normal-case text-muted">(space-separated)</span>
+                        </label>
+                        <input
+                          id="workspace-verify-args"
+                          className={`${field} font-data`}
+                          placeholder="test"
+                          value={argsText(value)}
+                          onChange={(e) => onChange(setCommandField(value, 'args', e.target.value))}
+                        />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} htmlFor="workspace-verify-timeout">Timeout (seconds)</label>
+                        <input
+                          id="workspace-verify-timeout"
+                          type="number"
+                          min={1}
+                          className={`${field} w-40 font-data`}
+                          value={value.timeoutSeconds}
+                          onChange={(e) => onChange(setCommandField(value, 'timeoutSeconds', e.target.value))}
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-verify-args">
-                        Arguments <span className="normal-case text-muted">(space-separated)</span>
-                      </label>
-                      <input
-                        id="workspace-verify-args"
-                        className={`${field} font-data`}
-                        placeholder="test"
-                        value={argsText(value)}
-                        onChange={(e) => onChange(setCommandField(value, 'args', e.target.value))}
-                      />
-                    </div>
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-verify-timeout">Timeout (seconds)</label>
-                      <input
-                        id="workspace-verify-timeout"
-                        type="number"
-                        min={1}
-                        className={`${field} w-40 font-data`}
-                        value={value.timeoutSeconds}
-                        onChange={(e) => onChange(setCommandField(value, 'timeoutSeconds', e.target.value))}
-                      />
-                    </div>
-                  </div>
-                )}
+                  );
+                }}
               </InheritField>
             </div>
             <div>
@@ -535,36 +559,71 @@ export function WorkspaceSettingsPage({
                 label="Agent critic"
                 value={local.verificationCritic}
                 inherited={config.verification.critic ?? EMPTY_CRITIC}
-                format={summarizeCritic}
+                format={(v) => (isVerifierOff(v) ? 'Off' : summarizeCritic(v))}
                 onChange={(verificationCritic) => set('verificationCritic', verificationCritic)}
               >
-                {({ value, onChange }) => (
-                  <div className="flex flex-col gap-3">
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-critic-model">Model</label>
-                      <input
-                        id="workspace-critic-model"
-                        className={`${field} font-data`}
-                        placeholder="claude-opus-5"
-                        value={value.model}
-                        onChange={(e) => onChange(setCriticField(value, 'model', e.target.value))}
-                      />
-                      <FieldError message={fieldErrors['verificationCritic.model']} />
+                {({ value, onChange }) => {
+                  // Same off-sentinel narrowing as the command verifier above —
+                  // format() never sees it, but the render prop's value can.
+                  if (isVerifierOff(value)) {
+                    return (
+                      <div className="flex flex-col gap-3">
+                        <Switch checked={false} onChange={() => onChange(config.verification.critic ?? EMPTY_CRITIC)}>
+                          Enabled
+                        </Switch>
+                        <p className="text-small text-muted">
+                          Disabled for this workspace — this verifier will not run here.
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <Switch checked={true} onChange={() => onChange(VERIFIER_OFF)}>
+                        Enabled
+                      </Switch>
+                      <div>
+                        <label className={fieldLabel} htmlFor="workspace-critic-harness">Harness</label>
+                        <select
+                          id="workspace-critic-harness"
+                          className={`${selectField} w-full`}
+                          value={value.harness ?? ''}
+                          onChange={(e) => onChange(setCriticField(value, 'harness', e.target.value))}
+                        >
+                          <option value="">Same as task</option>
+                          {Object.keys(config.harnesses).map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                        <FieldError message={fieldErrors['verificationCritic.harness']} />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} htmlFor="workspace-critic-model">Model</label>
+                        <ModelCombobox
+                          id="workspace-critic-model"
+                          value={value.model}
+                          onChange={(m) => onChange(setCriticField(value, 'model', m))}
+                          options={value.harness ? (config.harnesses[value.harness]?.models ?? []) : []}
+                        />
+                        <FieldError message={fieldErrors['verificationCritic.model']} />
+                      </div>
+                      <div>
+                        <label className={fieldLabel} htmlFor="workspace-critic-prompt">Review prompt</label>
+                        <textarea
+                          id="workspace-critic-prompt"
+                          rows={3}
+                          className={field}
+                          placeholder="Review the diff for correctness against the ticket."
+                          value={value.prompt}
+                          onChange={(e) => onChange(setCriticField(value, 'prompt', e.target.value))}
+                        />
+                        <FieldError message={fieldErrors['verificationCritic.prompt']} />
+                      </div>
                     </div>
-                    <div>
-                      <label className={fieldLabel} htmlFor="workspace-critic-prompt">Review prompt</label>
-                      <textarea
-                        id="workspace-critic-prompt"
-                        rows={3}
-                        className={field}
-                        placeholder="Review the diff for correctness against the ticket."
-                        value={value.prompt}
-                        onChange={(e) => onChange(setCriticField(value, 'prompt', e.target.value))}
-                      />
-                      <FieldError message={fieldErrors['verificationCritic.prompt']} />
-                    </div>
-                  </div>
-                )}
+                  );
+                }}
               </InheritField>
             </div>
             <div>

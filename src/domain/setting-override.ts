@@ -39,28 +39,41 @@ export type ResolvedVerifiers = {
 };
 
 /**
- * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021).
- * Each verifier is its own key: a Workspace's stored JSON overrides the global
- * default, `null` (or an unset column) inherits it — the same `workspace ?? global`
- * rule as every scalar override, applied per verifier. With nothing configured
- * (global default null and no Workspace override) both resolve to null: an empty
- * verifier set, so a Run behaves exactly as it does today. No verifier executes
- * here — this only resolves the config.
+ * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021),
+ * tri-state per verifier (issue #174). Each verifier is its own key: an unset
+ * column inherits the global default, a stored verifier object overrides it, and
+ * a stored `{ off: true }` sentinel forces the verifier off for this Workspace
+ * regardless of the global default. With nothing configured (global default null
+ * and no Workspace override) both resolve to null: an empty verifier set, so a
+ * Run behaves exactly as it does today. No verifier executes here — this only
+ * resolves the config.
  */
 export function resolveVerifiers(
   ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic' | 'verificationAutoAccept'>,
   config: Pick<AppConfig, 'verification'>,
 ): ResolvedVerifiers {
   return {
-    command: resolve(parseVerifier<VerificationCommand>(ws.verificationCommand), config.verification.command),
-    critic: resolve(parseVerifier<VerificationCritic>(ws.verificationCritic), config.verification.critic),
+    command: resolveVerifier<VerificationCommand>(ws.verificationCommand, config.verification.command),
+    critic: resolveVerifier<VerificationCritic>(ws.verificationCritic, config.verification.critic),
     autoAccept: ws.verificationAutoAccept ?? config.verification.autoAccept,
   };
 }
 
-/** Parse a stored verifier override column; an unset/empty column means inherit (null). */
-function parseVerifier<T>(stored: string | null | undefined): T | null {
-  return stored ? (JSON.parse(stored) as T) : null;
+/** True when a parsed verifier override column is the explicit off sentinel (issue #174). */
+function isVerifierOff(v: unknown): boolean {
+  return typeof v === 'object' && v !== null && (v as { off?: unknown }).off === true;
+}
+
+/**
+ * Resolve a single verifier column, tri-state: an unset/empty column inherits
+ * the global default, a stored `{ off: true }` sentinel resolves to null (off)
+ * regardless of the global default, and any other stored object overrides it.
+ */
+function resolveVerifier<T>(stored: string | null | undefined, globalDefault: T | null): T | null {
+  if (!stored) return globalDefault;
+  const parsed = JSON.parse(stored) as unknown;
+  if (isVerifierOff(parsed)) return null;
+  return parsed as T;
 }
 
 /** A Workspace's effective Guardrail config: the budget bounds, progress

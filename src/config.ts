@@ -119,8 +119,21 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
 export const verificationCriticSchema = z.object({
   prompt: z.string().min(1).meta({ example: 'Review the diff for correctness against the ticket.' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
+  /** Reviewer harness; omitted = reuse the builder task's harness. */
+  harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
 });
 export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
+
+/**
+ * The sentinel a Workspace stores to force a verifier OFF for itself (issue #174),
+ * distinct from inheriting the global default. At this layer `null`/absent means
+ * inherit; a configured verifier object means override; `{ off: true }` means the
+ * Workspace has explicitly disabled the verifier regardless of the global setting.
+ */
+export const verifierOffSchema = z.object({ off: z.literal(true) });
+export type VerifierOff = z.infer<typeof verifierOffSchema>;
+export const verificationCommandOverrideSchema = z.union([verificationCommandSchema, verifierOffSchema]);
+export const verificationCriticOverrideSchema = z.union([verificationCriticSchema, verifierOffSchema]);
 
 /**
  * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound

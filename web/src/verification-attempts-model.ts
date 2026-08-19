@@ -1,15 +1,18 @@
 import { combineVerdicts } from './verification-model.js';
 import type { VerifierVerdict, VerificationDecision } from './verification-model.js';
-import type { VerificationAttempt } from './types.js';
+import type { VerificationAttempt, VerificationMechanism } from './types.js';
 
 /**
  * Pure model helpers over a Run's Verification-attempt log (issue #169, part
  * of #109). The log is append-only and `seq`-ordered — a Run's self-heal
  * retries append further attempts for the same `mechanism` rather than
  * replacing the earlier one, so "the current per-verifier verdict set" is a
- * derived view (the latest attempt per mechanism), not the raw list. These
- * helpers keep that derivation in one place so `VerificationCard` only maps
- * and renders (cf. `guardrail-trip-model.ts`'s pure-formatter house style).
+ * derived view (the latest attempt per mechanism), not the raw list; grouping
+ * the full log by `mechanism` for display (self-heal retries numbered under
+ * their mechanism, issue #174) is a second derived view of the same log.
+ * These helpers keep that derivation in one place so `VerificationCard` only
+ * maps and renders (cf. `guardrail-trip-model.ts`'s pure-formatter house
+ * style).
  */
 
 /**
@@ -70,4 +73,50 @@ export function latestCriticSummary(attempts: VerificationAttempt[]): string | n
     if (!latest || attempt.seq > latest.seq) latest = attempt;
   }
   return latest?.summary ?? null;
+}
+
+/** One `mechanism`'s attempts, seq-ordered and numbered from 1 within that
+ * mechanism alone (`attemptNumber`) — the mechanism's own retry count, not
+ * the attempt's position in the interleaved log. `isSelfHeal` is
+ * `attemptNumber > 1`: the first attempt for a mechanism is its original run
+ * against the candidate; every attempt after it is a self-heal retry the
+ * same mechanism made against a later candidate. */
+export interface AttemptGroup {
+  mechanism: VerificationMechanism;
+  attempts: (VerificationAttempt & { attemptNumber: number; isSelfHeal: boolean })[];
+}
+
+/**
+ * Groups a Run's attempt log by `mechanism` (issue #174) so a self-heal
+ * retry renders under its mechanism as "attempt N of M", not as an
+ * unrelated row in a flat seq-ordered list — the log carries no
+ * attempt-number or heal flag of its own (self-heal retries are just
+ * further attempts for the same `mechanism` at a higher `seq`), so this is
+ * where that structure gets derived. Each group's attempts are seq-ordered
+ * and numbered from 1; groups themselves are ordered by each mechanism's
+ * first-seen `seq`, the same first-seen ordering {@link latestAttempts} uses
+ * — stable across renders for a log that only grows. Pure: does not mutate
+ * `attempts`.
+ */
+export function groupAttemptsByMechanism(attempts: VerificationAttempt[]): AttemptGroup[] {
+  const bySeq = [...attempts].sort((a, b) => a.seq - b.seq);
+  const order: VerificationMechanism[] = [];
+  const byMechanism = new Map<VerificationMechanism, VerificationAttempt[]>();
+  for (const attempt of bySeq) {
+    let group = byMechanism.get(attempt.mechanism);
+    if (!group) {
+      group = [];
+      byMechanism.set(attempt.mechanism, group);
+      order.push(attempt.mechanism);
+    }
+    group.push(attempt);
+  }
+  return order.map((mechanism) => ({
+    mechanism,
+    attempts: byMechanism.get(mechanism)!.map((attempt, index) => ({
+      ...attempt,
+      attemptNumber: index + 1,
+      isSelfHeal: index > 0,
+    })),
+  }));
 }

@@ -114,6 +114,66 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       );
       expect(overridden.autoAccept).toBe(false); // an explicit "off", not inherit
     });
+
+    describe('the off sentinel (issue #174)', () => {
+      it('resolves command to null when the Workspace column holds the off sentinel, even with a configured global default', () => {
+        const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+        const config = { verification: { command: globalCommand, critic: null, autoAccept: false, maxSelfHeals: 1 } };
+        const resolved = resolveVerifiers(
+          {
+            verificationCommand: JSON.stringify({ off: true }),
+            verificationCritic: null,
+            verificationAutoAccept: null,
+          },
+          config as any,
+        );
+        expect(resolved.command).toBeNull();
+      });
+
+      it('resolves critic to null when the Workspace column holds the off sentinel, even with a configured global default', () => {
+        const globalCritic = { prompt: 'global review', model: 'claude-opus-5' };
+        const config = { verification: { command: null, critic: globalCritic, autoAccept: false, maxSelfHeals: 1 } };
+        const resolved = resolveVerifiers(
+          {
+            verificationCommand: null,
+            verificationCritic: JSON.stringify({ off: true }),
+            verificationAutoAccept: null,
+          },
+          config as any,
+        );
+        expect(resolved.critic).toBeNull();
+      });
+
+      it('still inherits the global default when the column is null (not the off sentinel)', () => {
+        const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
+        const globalCritic = { prompt: 'global review', model: 'claude-opus-5' };
+        const config = {
+          verification: { command: globalCommand, critic: globalCritic, autoAccept: false, maxSelfHeals: 1 },
+        };
+        const resolved = resolveVerifiers(
+          { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+          config as any,
+        );
+        expect(resolved.command).toEqual(globalCommand);
+        expect(resolved.critic).toEqual(globalCritic);
+      });
+
+      it('still overrides with a stored verifier object, distinct from the off sentinel', () => {
+        const config = { verification: { command: null, critic: null, autoAccept: false, maxSelfHeals: 1 } };
+        const commandOverride = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
+        const criticOverride = { prompt: 'review the diff', model: 'claude-opus-5' };
+        const resolved = resolveVerifiers(
+          {
+            verificationCommand: JSON.stringify(commandOverride),
+            verificationCritic: JSON.stringify(criticOverride),
+            verificationAutoAccept: null,
+          },
+          config as any,
+        );
+        expect(resolved.command).toEqual(commandOverride);
+        expect(resolved.critic).toEqual(criticOverride);
+      });
+    });
   });
 
   describe('resolveGuardrails (issue #126, ADR-0019)', () => {

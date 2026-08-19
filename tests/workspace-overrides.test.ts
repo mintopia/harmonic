@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
+import { resolveVerifiers } from '../src/domain/setting-override.js';
 
 /**
  * Per-workspace setting overrides on the Workspace API (ADR-0012, issue #64).
@@ -131,6 +132,18 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     const cleared = workspaces.update(ws.id, { verificationCommand: null, verificationCritic: null });
     expect(cleared.verificationCommand).toBeNull();
     expect(cleared.verificationCritic).toBeNull();
+  });
+
+  it('patches a verifier to the off sentinel, round-trips it, and resolves the verifier to null (issue #174)', () => {
+    const ws = workspaces.list()[0]!;
+    const updated = workspaces.update(ws.id, { verificationCritic: { off: true } });
+    // Round-trips through the stored JSON column exactly as PATCHed.
+    expect(JSON.parse(updated.verificationCritic!)).toEqual({ off: true });
+    // A configured global default is overridden by the off sentinel, not inherited.
+    const resolved = resolveVerifiers(updated, {
+      verification: { command: null, critic: { prompt: 'global review', model: 'claude-opus-5' }, autoAccept: false },
+    } as any);
+    expect(resolved.critic).toBeNull();
   });
 
   it('leaves an omitted verifier override untouched (issue #132)', () => {

@@ -86,12 +86,16 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace Auto-Runner enable; null inherits the global default. Gated
    * by the global master switch — a Task runs only if `master ∧ resolved`. */
   autoRunnerEnabled: integer('auto_runner_enabled', { mode: 'boolean' }),
-  /** Per-Workspace command-verifier override (issue #132, ADR-0021): JSON of
-   * `verificationCommandSchema`, or null to inherit `config.verification.command`.
-   * Resolved per-key at read time by `resolveVerifiers` (setting-override.ts). */
+  /** Per-Workspace command-verifier override (issue #132, ADR-0021), tri-state
+   * (issue #174): JSON of `verificationCommandSchema` to override, the sentinel
+   * `{"off":true}` to explicitly disable the verifier for this Workspace, or
+   * null to inherit `config.verification.command`. Resolved per-key at read
+   * time by `resolveVerifiers` (setting-override.ts). */
   verificationCommand: text('verification_command'),
-  /** Per-Workspace critic-verifier override (issue #132): JSON of
-   * `verificationCriticSchema`, or null to inherit `config.verification.critic`. */
+  /** Per-Workspace critic-verifier override (issue #132), tri-state (issue #174):
+   * JSON of `verificationCriticSchema` to override, the sentinel `{"off":true}`
+   * to explicitly disable the verifier for this Workspace, or null to inherit
+   * `config.verification.critic`. */
   verificationCritic: text('verification_critic'),
   /** Per-Workspace budget-Guardrail override (issue #126, ADR-0019): JSON of
    * `budgetGuardrailSchema`, or null to inherit `config.guardrails.budget`.

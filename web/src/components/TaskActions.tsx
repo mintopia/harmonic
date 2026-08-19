@@ -1,13 +1,26 @@
 import { useState } from 'react';
 import { api } from '../api';
-import type { Task } from '../types';
+import type { Task, VerificationAttempt } from '../types';
 import { taskActions, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject, sectionTitle } from '../ui';
 import { toastError, toastSuccess } from '../toast';
+import { overallDecision } from '../verification-attempts-model';
+import type { VerificationOutcome } from '../verification-model';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
+
+/** Review-gate verdict summary tone (issue #174 FIX 1) — text-only, unlike
+ * VerificationCard's OUTCOME_TONE chips, since this lives in a one-line
+ * footer strip rather than a tinted pill. `proceed` reads as muted (nothing
+ * to flag); `block`/`escalate` both read fail-red — the footer's job is only
+ * to say "go read Details", not to distinguish the two here. */
+const DECISION_TONE: Record<VerificationOutcome, string> = {
+  proceed: 'text-muted',
+  block: 'text-fail',
+  escalate: 'text-fail',
+};
 
 /** Cancel, armed with a two-step confirm. Its own component so the hook is
  * called unconditionally (rules of hooks), not inside the action switch. */
@@ -39,6 +52,24 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
   );
 }
 
+/** Accept, armed with a two-step confirm when the run's Verification verdict
+ * is block/escalate (issue #174 FIX 1). The critic's verdict lives in an
+ * un-flagged Details tab, so a red verdict was invisible at this gate and
+ * Accept could merge it blind; arming forces a second, verdict-naming click
+ * before it does, mirroring CancelButton/CompleteButton's own gate above. */
+function AcceptButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+  return (
+    <button
+      ref={ref}
+      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
+      onClick={trigger}
+    >
+      {armed ? 'Critic flagged — accept anyway?' : 'Accept'}
+    </button>
+  );
+}
+
 /**
  * The task's operator actions, rendered from the shared taskActions() map
  * so the board card and the detail modal footer never drift. The only
@@ -49,11 +80,16 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
 export function TaskActions({
   task,
   variant,
+  verificationAttempts,
   onEdit,
   onChanged,
 }: {
   task: Task;
   variant: 'card' | 'footer';
+  // Optional (issue #174 FIX 1): only the detail modal's footer has the
+  // selected run's Verification log in scope; card callers pass nothing and
+  // Accept stays the plain immediate button it always was.
+  verificationAttempts?: VerificationAttempt[];
   onEdit: (task: Task) => void;
   onChanged: () => void;
 }) {
@@ -63,6 +99,12 @@ export function TaskActions({
 
   const actions = taskActions(task.state);
   if (variant === 'footer' && actions.length === 0) return null;
+
+  // The run's current Verification decision, if any attempts have landed —
+  // drives both the review-gate's inline verdict line and whether Accept
+  // arms itself (issue #174 FIX 1).
+  const decision =
+    verificationAttempts && verificationAttempts.length > 0 ? overallDecision(verificationAttempts) : null;
 
   const secondary = variant === 'card' ? btnQuiet : btnGhost;
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, toastError);
@@ -77,16 +119,21 @@ export function TaskActions({
 
   const button = (action: TaskAction) => {
     switch (action) {
-      case 'accept':
-        return (
-          <button
-            key={action}
-            className={btnAccept}
-            onClick={actDone(() => api.acceptTask(task.id), `Task #${task.id} accepted — merging`)}
-          >
+      case 'accept': {
+        const onConfirm = actDone(() => api.acceptTask(task.id), `Task #${task.id} accepted — merging`);
+        // Gate-arm rationale (issue #174 FIX 1): a block/escalate verdict is
+        // otherwise invisible at this footer, so Accept alone could merge it
+        // blind. Arming only when the verdict is red keeps the common case
+        // (proceed, or no Verification configured) the same single click it
+        // always was.
+        return decision && decision.outcome !== 'proceed' ? (
+          <AcceptButton key={action} className={btnAccept} onConfirm={onConfirm} />
+        ) : (
+          <button key={action} className={btnAccept} onClick={onConfirm}>
             Accept
           </button>
         );
+      }
       case 'reject':
         return (
           <button key={action} className={btnReject} onClick={() => setRejecting(true)}>
@@ -171,6 +218,15 @@ export function TaskActions({
           <div className="mr-auto">
             <div className={sectionTitle}>Review gate</div>
             <div className="text-small text-muted">Read the changes, then accept to merge.</div>
+            {/* Inline verdict summary (issue #174 FIX 1): the critic's
+                verdict otherwise sits unflagged in the Details tab, so put
+                the one-line proceed/block/escalate readout where Accept is
+                clicked. Truncated to stay one line beside the gate text. */}
+            {decision && (
+              <div className={`mt-0.5 max-w-sm truncate text-small ${DECISION_TONE[decision.outcome]}`}>
+                <span className="font-semibold">{decision.outcome}</span> — {decision.reason}
+              </div>
+            )}
           </div>
         )}
         {/* Un-escalate is a flag action, not a state action (issue #33

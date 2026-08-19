@@ -29,6 +29,11 @@ function makeRepo(): string {
 const critic = () =>
   verificationCriticSchema.parse({ prompt: 'Review the diff for correctness.', model: 'stub-model' });
 
+/** A critic verifier config pinned to a specific reviewer harness (issue #174
+ * FIX 2) rather than "Same as task". */
+const criticWithHarness = (harness: string) =>
+  verificationCriticSchema.parse({ prompt: 'Review the diff for correctness.', model: 'stub-model', harness });
+
 /** A `VerificationCommand` running an inline node script with the given exit code. */
 const exitCommand = (code: number): VerificationCommand =>
   verificationCommandSchema.parse({
@@ -56,9 +61,16 @@ describe('agent critic end-to-end (issue #164)', () => {
   let workspaceId: number;
   /** Mutable per-test verdict the injected fake critic drive returns. */
   let criticResult: { verdict: Verdict; summary: string };
+  /** The `harnessId` the most recent critic drive call was invoked with (issue
+   * #174) — lets a test assert `runCritic` was resolved against the critic's
+   * own configured harness rather than always the builder task's. */
+  let lastCriticHarnessId: string | undefined;
 
   const criticDrive: CriticHarnessDrive = {
-    run: async () => ({ output: JSON.stringify(criticResult), permissionRequests: [] }),
+    run: async (req) => {
+      lastCriticHarnessId = req.harnessId;
+      return { output: JSON.stringify(criticResult), permissionRequests: [] };
+    },
   };
 
   beforeAll(async () => {
@@ -80,6 +92,7 @@ describe('agent critic end-to-end (issue #164)', () => {
   });
   beforeEach(() => {
     criticResult = { verdict: 'pass', summary: 'the change matches the ticket' };
+    lastCriticHarnessId = undefined;
     server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
       verificationCommand: null,
@@ -260,5 +273,26 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive', inputOid: '' });
 
     rmSync(join(repoDir, 'uncommitted-critic.txt'), { force: true });
+  });
+
+  it('issue #174 FIX 2: a critic with its own harness resolves that harness, not the builder task\'s', async () => {
+    criticResult = { verdict: 'pass', summary: 'looks correct' };
+    // A second configured harness so the critic can be pointed independently
+    // of the builder's — native Runs default to task.harness 'claude'
+    // (defaultConfig), so pinning the critic at 'codex' proves the override.
+    server.app.ctx.configStore.update({
+      harnesses: {
+        codex: { command: process.execPath, args: [], models: ['stub-model'], defaultModel: 'stub-model' },
+      },
+    });
+    server.app.ctx.workspaces.update(workspaceId, { verificationCritic: criticWithHarness('codex') });
+    const { taskId } = await createAndRun();
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+    expect(task.state).toBe('awaiting-review');
+    expect(lastCriticHarnessId).toBe('codex');
   });
 });

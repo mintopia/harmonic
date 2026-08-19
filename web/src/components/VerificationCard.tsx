@@ -1,7 +1,9 @@
-import { latestAttempts, overallDecision, latestCriticSummary } from '../verification-attempts-model';
+import { latestAttempts, overallDecision, latestCriticSummary, groupAttemptsByMechanism } from '../verification-attempts-model';
 import type { VerificationOutcome, Verdict } from '../verification-model';
 import type { VerificationAttempt } from '../types';
 import { chip, labelType } from '../ui';
+import { Icon } from './Icon';
+import type { IconName } from './Icon';
 
 /**
  * Verdict/outcome → tint+text tone (issue #169, part of #109). There is no
@@ -28,39 +30,78 @@ const OUTCOME_TONE: Record<VerificationOutcome, string> = {
   escalate: 'bg-running-tint text-running',
 };
 
+/**
+ * Verdict/outcome → glyph (issue #174): the tone above is colour alone, which
+ * fails for colourblind operators, so every chip also carries a shape —
+ * `check` for the good outcome, `close` for the bad one, and the new
+ * `alert-triangle` for "needs a human" (inconclusive/escalate), mirroring the
+ * tone's own pass/fail/inconclusive grouping one-for-one.
+ */
+const VERDICT_ICON: Record<Verdict, IconName> = {
+  pass: 'check',
+  fail: 'close',
+  inconclusive: 'alert-triangle',
+};
+
+const OUTCOME_ICON: Record<VerificationOutcome, IconName> = {
+  proceed: 'check',
+  block: 'close',
+  escalate: 'alert-triangle',
+};
+
+// `inline-flex items-center gap-1` lets the glyph sit before the label inside
+// the chip (icon+colour+text, never colour alone) without touching `chip`
+// itself, which other callers rely on staying a plain inline pill.
 function verdictChip(verdict: Verdict): string {
-  return `${chip} ${VERDICT_TONE[verdict]}`;
+  return `${chip} ${VERDICT_TONE[verdict]} inline-flex items-center gap-1`;
 }
 
 function outcomeChip(outcome: VerificationOutcome): string {
-  return `${chip} ${OUTCOME_TONE[outcome]}`;
+  return `${chip} ${OUTCOME_TONE[outcome]} inline-flex items-center gap-1`;
 }
 
 /**
  * A Run's Verification readout (issue #169, part of #109): the overall
  * proceed/block/escalate outcome, the current per-verifier verdicts (latest
  * attempt per mechanism), the latest critic summary, and the full attempts
- * log in seq order. Follows `GuardrailTrips`'s presentational shape
- * (TaskDetail.tsx) — one prop, no internal fetch/state, empty guard returns
- * null — but renders in the Details tab rather than the always-visible header,
- * since a full attempts log is heavier than a one-line trip banner. All
- * derivation is delegated to `verification-attempts-model.ts` + `combineVerdicts`
- * — this component only maps and renders.
+ * log grouped by mechanism, self-heal retries numbered under their mechanism
+ * (issue #174). Follows `GuardrailTrips`'s presentational shape
+ * (TaskDetail.tsx) — one prop, no internal fetch/state — but renders in the
+ * Details tab rather than the always-visible header, since a full attempts
+ * log is heavier than a one-line trip banner. The empty log renders a quiet
+ * "Verification pending" state rather than nothing (issue #174) — the Run
+ * hasn't reached Verification yet, which is a state worth naming, not an
+ * absence to hide. All derivation is delegated to
+ * `verification-attempts-model.ts` + `combineVerdicts` — this component only
+ * maps and renders.
  */
 export function VerificationCard({ attempts }: { attempts: VerificationAttempt[] }) {
-  if (attempts.length === 0) return null;
+  if (attempts.length === 0) {
+    return (
+      <div className="py-3 first:pt-0">
+        <div className={`${labelType} mb-1 text-muted`}>Verification</div>
+        <div className="flex items-center gap-2 text-small text-muted">
+          <span className={`${chip} bg-raised text-muted`}>pending</span>
+          <span>No verification results yet</span>
+        </div>
+      </div>
+    );
+  }
 
   const decision = overallDecision(attempts);
   const current = latestAttempts(attempts);
   const criticSummary = latestCriticSummary(attempts);
-  const bySeq = [...attempts].sort((a, b) => a.seq - b.seq);
+  const groups = groupAttemptsByMechanism(attempts);
 
   return (
     <div className="py-3 first:pt-0">
       <div className={`${labelType} mb-1 text-muted`}>Verification</div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className={outcomeChip(decision.outcome)}>{decision.outcome}</span>
+        <span className={outcomeChip(decision.outcome)}>
+          <Icon className="size-3" name={OUTCOME_ICON[decision.outcome]} />
+          {decision.outcome}
+        </span>
         <span className="text-small text-muted">{decision.reason}</span>
       </div>
 
@@ -70,7 +111,10 @@ export function VerificationCard({ attempts }: { attempts: VerificationAttempt[]
             <div key={attempt.mechanism} className="contents">
               <dt className="font-medium text-ink">{attempt.mechanism}</dt>
               <dd>
-                <span className={verdictChip(attempt.verdict)}>{attempt.verdict}</span>
+                <span className={verdictChip(attempt.verdict)}>
+                  <Icon className="size-3" name={VERDICT_ICON[attempt.verdict]} />
+                  {attempt.verdict}
+                </span>
               </dd>
               <dd className="min-w-0 text-muted">{attempt.summary}</dd>
             </div>
@@ -85,15 +129,26 @@ export function VerificationCard({ attempts }: { attempts: VerificationAttempt[]
         </div>
       )}
 
-      <div className="mt-2 space-y-1">
+      <div className="mt-2 space-y-2">
         <div className={`${labelType} text-muted`}>Attempts</div>
-        {bySeq.map((a) => (
-          <div key={a.id} className="flex flex-wrap items-center gap-2 text-small">
-            <span className="font-medium text-ink">{a.mechanism}</span>
-            <span className={verdictChip(a.verdict)}>{a.verdict}</span>
-            <span className="text-muted">{a.phase}</span>
-            {a.mutated && <span className={`${chip} bg-raised text-muted`}>mutated</span>}
-            <span className="min-w-0 text-muted">{a.summary}</span>
+        {groups.map((group) => (
+          <div key={group.mechanism} className="space-y-1">
+            <div className="text-small font-medium text-ink">{group.mechanism}</div>
+            {group.attempts.map((a) => (
+              <div key={a.id} className="flex flex-wrap items-center gap-2 pl-3 text-small">
+                <span className="text-muted">
+                  attempt {a.attemptNumber} of {group.attempts.length}
+                </span>
+                {a.isSelfHeal && <span className={`${chip} bg-raised text-muted`}>self-heal</span>}
+                <span className={verdictChip(a.verdict)}>
+                  <Icon className="size-3" name={VERDICT_ICON[a.verdict]} />
+                  {a.verdict}
+                </span>
+                <span className="text-muted">{a.phase}</span>
+                {a.mutated && <span className={`${chip} bg-raised text-muted`}>mutated</span>}
+                <span className="min-w-0 text-muted">{a.summary}</span>
+              </div>
+            ))}
           </div>
         ))}
       </div>

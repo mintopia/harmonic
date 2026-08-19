@@ -16,7 +16,11 @@ import {
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { deleteRunsAndChildren } from './run-cascade.js';
-import { verificationCommandSchema, verificationCriticSchema, budgetGuardrailSchema } from '../config.js';
+import {
+  verificationCommandOverrideSchema,
+  verificationCriticOverrideSchema,
+  budgetGuardrailSchema,
+} from '../config.js';
 
 export const createWorkspaceInputSchema = z.object({
   name: z.string().min(1, 'name is required').meta({ example: 'Harmonic' }),
@@ -46,10 +50,18 @@ export const workspaceOverridesSchema = z.object({
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
-  /** Command-verifier override (issue #132); null inherits `config.verification.command`. */
-  verificationCommand: verificationCommandSchema.nullable().optional(),
-  /** Critic-verifier override (issue #132); null inherits `config.verification.critic`. */
-  verificationCritic: verificationCriticSchema.nullable().optional(),
+  /**
+   * Command-verifier override (issue #132), tri-state (issue #174): null/absent
+   * inherits `config.verification.command`, a verifier object overrides it, and
+   * `{ off: true }` explicitly disables the verifier for this Workspace.
+   */
+  verificationCommand: verificationCommandOverrideSchema.nullable().optional(),
+  /**
+   * Critic-verifier override (issue #132), tri-state (issue #174): null/absent
+   * inherits `config.verification.critic`, a verifier object overrides it, and
+   * `{ off: true }` explicitly disables the verifier for this Workspace.
+   */
+  verificationCritic: verificationCriticOverrideSchema.nullable().optional(),
   /** Auto-accept override (issue #138); null inherits `config.verification.autoAccept`. */
   verificationAutoAccept: z.boolean().nullable().optional().meta({ example: true }),
   /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */

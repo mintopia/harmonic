@@ -128,11 +128,13 @@ export interface Workspace {
   priority: 'high' | 'normal' | 'low' | null;
   maxConcurrentRuns: number | null;
   autoRunnerEnabled: boolean | null;
-  /** Verification overrides (ADR-0021, issues #132/#138/#165); `null` inherits
-   * `config.verification.{command,critic,autoAccept}`. The command and critic
-   * read back as the parsed object shape they were PATCHed as. */
-  verificationCommand: VerificationCommand | null;
-  verificationCritic: VerificationCritic | null;
+  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
+   * the command and critic: `null` inherits `config.verification.{command,critic}`,
+   * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
+   * configured object overrides it. Both read back as the shape they were PATCHed
+   * as. `verificationAutoAccept` stays a plain nullable boolean. */
+  verificationCommand: VerificationCommand | VerifierOff | null;
+  verificationCritic: VerificationCritic | VerifierOff | null;
   verificationAutoAccept: boolean | null;
   /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
@@ -158,6 +160,14 @@ export interface VerificationCommand {
 export interface VerificationCritic {
   prompt: string;
   model: string;
+  /** Reviewer harness; omitted = reuse the builder task's harness. */
+  harness?: string;
+}
+
+/** The sentinel a Workspace stores to force a verifier off for itself (issue
+ * #174), distinct from inheriting the global default. Mirrors `verifierOffSchema`. */
+export interface VerifierOff {
+  off: true;
 }
 
 /** The budget Guardrail (ADR-0019): a mandatory wall-clock bound per afk Run

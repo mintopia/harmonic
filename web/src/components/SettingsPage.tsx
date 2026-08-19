@@ -8,6 +8,7 @@ import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
 import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
 import { FloatingSaveBar } from './FloatingSaveBar';
+import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
 import { EMPTY_COMMAND, EMPTY_CRITIC, argsText, setCommandField, setCriticField } from './verification-override-model';
 
@@ -264,13 +265,29 @@ function VerificationFields({
         {v.critic !== null && (
           <div className="mt-3 flex flex-col gap-3">
             <div>
+              <label className={fieldLabel} htmlFor="settings-critic-harness">Harness</label>
+              <select
+                id="settings-critic-harness"
+                className={`${selectField} w-full`}
+                value={v.critic.harness ?? ''}
+                onChange={(e) => setCritic(setCriticField(v.critic!, 'harness', e.target.value))}
+              >
+                <option value="">Same as task</option>
+                {Object.keys(config.harnesses).map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+              <FieldError message={fieldErrors['verification.critic.harness']} />
+            </div>
+            <div>
               <label className={fieldLabel} htmlFor="settings-critic-model">Model</label>
-              <input
+              <ModelCombobox
                 id="settings-critic-model"
-                className={`${field} font-data`}
-                placeholder="claude-opus-5"
                 value={v.critic.model}
-                onChange={(e) => setCritic(setCriticField(v.critic!, 'model', e.target.value))}
+                onChange={(m) => setCritic(setCriticField(v.critic!, 'model', m))}
+                options={v.critic.harness ? (config.harnesses[v.critic.harness]?.models ?? []) : []}
               />
               <FieldError message={fieldErrors['verification.critic.model']} />
             </div>

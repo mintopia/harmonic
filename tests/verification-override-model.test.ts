@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_COMMAND,
   EMPTY_CRITIC,
+  VERIFIER_OFF,
   argsText,
+  isVerifierOff,
   setCommandField,
   setCriticField,
   summarizeCommand,
@@ -68,5 +70,20 @@ describe('summarizeCritic (issue #165)', () => {
 
   it('reads the empty seed back as "Not configured"', () => {
     expect(summarizeCritic(EMPTY_CRITIC)).toBe('Not configured');
+  });
+});
+
+describe('isVerifierOff / VERIFIER_OFF (issue #174)', () => {
+  it('recognises the off sentinel', () => {
+    expect(isVerifierOff(VERIFIER_OFF)).toBe(true);
+    expect(isVerifierOff({ off: true })).toBe(true);
+  });
+
+  it('rejects a configured verifier and other non-sentinel values', () => {
+    expect(isVerifierOff(baseCommand)).toBe(false);
+    expect(isVerifierOff(baseCritic)).toBe(false);
+    expect(isVerifierOff(null)).toBe(false);
+    expect(isVerifierOff(undefined)).toBe(false);
+    expect(isVerifierOff({ off: false })).toBe(false);
   });
 });
