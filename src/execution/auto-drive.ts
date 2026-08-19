@@ -1,4 +1,4 @@
-import { UNATTENDED_REMINDER, type AppConfig, type MergeFate } from '../config.js';
+import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { Git } from './git.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
@@ -61,9 +61,9 @@ export class AutoDrive {
     return `${withFeedback}\n\n${this.unattendedReminder(task)}`;
   }
 
-  /** The unattended reminder with this Task's id filled in (initial + continue). */
+  /** The operator-editable unattended reminder with this Task's id filled in (initial + continue). */
   private unattendedReminder(task: TaskRow): string {
-    return UNATTENDED_REMINDER.replace(/\{taskId\}/g, String(task.id));
+    return this.getConfig().drive.unattendedReminder.replace(/\{taskId\}/g, String(task.id));
   }
 
   /**
@@ -72,12 +72,8 @@ export class AutoDrive {
    * unattended reminder (working memory is short across turns).
    */
   continuePrompt(task: TaskRow): string {
-    return (
-      `Your previous turn ended but this Task is not finished — you have not called ` +
-      `\`finish_task\`. Do not wait idly for background work; pick the work back up and drive ` +
-      `it to completion now. When it is done, call \`finish_task\` — do not close the tracker ` +
-      `ticket yourself; Harmonic closes it after verification.\n\n${this.unattendedReminder(task)}`
-    );
+    const nudge = this.getConfig().drive.continuePrompt.replace(/\{taskId\}/g, String(task.id));
+    return `${nudge}\n\n${this.unattendedReminder(task)}`;
   }
 
   /** How many times to re-prompt an unfinished Run before treating it as unresolved. */

@@ -17,33 +17,38 @@ export type MergeFate = (typeof MERGE_FATES)[number];
 
 /**
  * The default Drive Prompt template (issue #33). Placeholders `{skill}` (from
- * the Task's Workflow / Wayfinder Type), `{ref}` `{url}` `{title}` `{body}` are
- * filled from the mirrored Task; the skill stays the source of truth, Harmonic
- * only injects the ticket and tells the agent to resolve + close it.
+ * the Task's Workflow / Wayfinder Type), `{ref}`, `{url}` are filled from the
+ * mirrored Task. `{title}`/`{body}` are still supported for operators who want
+ * to inline the ticket text, but the default omits them — the agent fetches
+ * the issue itself, so the skill stays the source of truth and Harmonic only
+ * points at the ticket and states its contract (fetch → resolve → finish_task).
  */
 export const DEFAULT_DRIVE_PROMPT = `{skill}
 
-You are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call \`finish_task\`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.
-
-## {title}
-
-{body}`;
+Resolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call \`finish_task\`.`;
 
 /**
- * Appended to every auto-driven prompt (initial and continue) by
- * `AutoDrive.prompt`/`continuePrompt`. Harmonic settles a run when the prompt
- * turn resolves, so an agent that ends its turn to idle-wait used to look
- * "done". This tells the agent the turn boundary is a checkpoint, not an exit,
- * and gives it the two explicit signals the Runner reads — `finish_task` and
- * `escalate_task` — with its Harmonic Task id filled into `{taskId}`.
+ * The default Unattended Reminder, appended to every auto-driven prompt (initial
+ * and continue) by `AutoDrive.prompt`/`continuePrompt`. Operator-editable via
+ * `config.drive.unattendedReminder`. Harmonic settles a run when the prompt turn
+ * resolves, so an agent that ends its turn to idle-wait used to look "done".
+ * This tells the agent the turn boundary is a checkpoint, not an exit, and gives
+ * it the two signals the Runner reads — `finish_task` and `escalate_task` — with
+ * its Harmonic Task id filled into `{taskId}`. The don't-close-the-ticket rule
+ * lives in the Drive Prompt; it is not repeated here.
  */
-export const UNATTENDED_REMINDER = `## You are running unattended
+export const UNATTENDED_REMINDER = `## Running unattended
 
-You are Harmonic Task #{taskId} and no human is watching this turn. Ending your turn does not hand back to a person — Harmonic treats it as a checkpoint and will prompt you to continue only a limited number of times. Do not stop to idle-wait for background work (CI, a watcher) or for input; that wastes those attempts. Instead:
+You are Harmonic Task #{taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call \`finish_task\` (taskId={taskId}). If you're blocked on a decision only a human can make, call \`escalate_task\` (taskId={taskId}) with a reason instead of guessing or waiting.`;
 
-- Keep working until the task is genuinely finished.
-- When it is finished, call the \`finish_task\` tool with taskId={taskId} so Harmonic stops re-prompting you. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; closing it early gets it reopened and the task escalated.
-- If you are blocked on a decision or need input only a human can give, call the \`escalate_task\` tool with taskId={taskId} and a reason — do not guess and do not idle-wait.`;
+/**
+ * The default Continue Prompt, sent when an auto-driven Run ends its turn
+ * without a finish/escalate signal (`AutoDrive.continuePrompt`). Operator-editable
+ * via `config.drive.continuePrompt`. The Unattended Reminder is appended after
+ * it, so this carries only the "pick it back up" nudge. `{taskId}` is filled
+ * per Task.
+ */
+export const DEFAULT_CONTINUE_PROMPT = `Your last turn ended but Task #{taskId} isn't finished — you haven't called \`finish_task\`. Pick the work back up and drive it to completion now; don't idle-wait, then call \`finish_task\` when it's done.`;
 
 /**
  * The default Task Prompt template for a **native** (non-mirrored) Run. The
@@ -258,7 +263,10 @@ export const appConfigSchema = z.object({
   }),
   /**
    * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
-   * global Drive Prompt template; `mergeFate` is the default fate of a
+   * global Drive Prompt template; `unattendedReminder` is appended to every
+   * auto-driven turn and `continuePrompt` is the re-prompt nudge — both
+   * operator-editable so the whole mirrored-drive prompt is visible, not
+   * hardcoded. `mergeFate` is the default fate of a
    * completed worktree Run's branch (research Tasks are always artifacts);
    * `autoRetry` is how many times a failed afk Run is silently re-queued
    * before it Escalates to a human. `continueAttempts` is how many times a
@@ -271,6 +279,8 @@ export const appConfigSchema = z.object({
   drive: z
     .object({
       prompt: z.string().default(DEFAULT_DRIVE_PROMPT).meta({ example: DEFAULT_DRIVE_PROMPT }),
+      unattendedReminder: z.string().default(UNATTENDED_REMINDER).meta({ example: UNATTENDED_REMINDER }),
+      continuePrompt: z.string().default(DEFAULT_CONTINUE_PROMPT).meta({ example: DEFAULT_CONTINUE_PROMPT }),
       mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
       autoRetry: z.number().int().min(0).default(1).meta({ example: 1 }),
       continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
@@ -469,6 +479,8 @@ export function defaultConfig(): AppConfig {
     },
     drive: {
       prompt: DEFAULT_DRIVE_PROMPT,
+      unattendedReminder: UNATTENDED_REMINDER,
+      continuePrompt: DEFAULT_CONTINUE_PROMPT,
       mergeFate: 'auto-merge',
       autoRetry: 1,
       continueAttempts: 1,

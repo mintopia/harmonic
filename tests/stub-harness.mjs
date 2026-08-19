@@ -83,7 +83,7 @@ async function handlePrompt(msg) {
   // previous attempt" still leaves the prompt non-JSON, preserving the
   // echo-scenario fallback.
   const jsonText = rawText
-    .split('\n\n## You are running unattended')[0]
+    .split('\n\n## Running unattended')[0]
     .split('\n\n## Verification failed')[0]
     .split('\n\n## Branch consolidation required')[0];
   let scenario;

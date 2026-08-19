@@ -577,8 +577,12 @@ export interface AppConfig {
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
   /** How afk mirrored Tasks are driven (issue #33): the prompt template, branch fate, and retry cap. */
   drive: {
-    /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. */
+    /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. The default omits {title}/{body} — the agent fetches the issue itself. */
     prompt: string;
+    /** Appended to every auto-driven turn, with {taskId} placeholder. */
+    unattendedReminder: string;
+    /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
+    continuePrompt: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
     autoRetry: number;
   };

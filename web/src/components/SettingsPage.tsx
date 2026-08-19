@@ -323,9 +323,11 @@ const DRIVE_PLACEHOLDERS: [string, string][] = [
   ['{skill}', 'workflow skill — /research or /implement'],
   ['{ref}', 'issue number'],
   ['{url}', 'issue URL'],
-  ['{title}', 'issue title'],
-  ['{body}', 'issue body'],
+  ['{title}', 'issue title (default omits it — agent fetches the issue)'],
+  ['{body}', 'issue body (default omits it — agent fetches the issue)'],
 ];
+
+const TASK_ID_PLACEHOLDER: [string, string][] = [['{taskId}', 'Harmonic task id']];
 
 const TASK_PLACEHOLDERS: [string, string][] = [
   ['{prompt}', "the task's own prompt"],
@@ -389,6 +391,48 @@ function DriveFields({
         <FieldError message={fieldErrors['drive.prompt']} />
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
           {DRIVE_PLACEHOLDERS.map(([token, desc]) => (
+            <div key={token} className="contents">
+              <dt className="font-data text-ink">{token}</dt>
+              <dd>{desc}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-unattended-reminder">Unattended reminder</label>
+        <p className="mb-1 text-small text-muted">
+          Appended to every auto-driven turn — the checkpoint reminder and the finish/escalate signals.
+        </p>
+        <textarea
+          id="settings-unattended-reminder"
+          className={`${field} min-h-36`}
+          value={d.unattendedReminder}
+          onChange={(e) => onChange({ ...d, unattendedReminder: e.target.value })}
+        />
+        <FieldError message={fieldErrors['drive.unattendedReminder']} />
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
+          {TASK_ID_PLACEHOLDER.map(([token, desc]) => (
+            <div key={token} className="contents">
+              <dt className="font-data text-ink">{token}</dt>
+              <dd>{desc}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-continue-prompt">Continue prompt</label>
+        <p className="mb-1 text-small text-muted">
+          The re-prompt nudge when a turn ends without finishing. The unattended reminder is appended after it.
+        </p>
+        <textarea
+          id="settings-continue-prompt"
+          className={`${field} min-h-24`}
+          value={d.continuePrompt}
+          onChange={(e) => onChange({ ...d, continuePrompt: e.target.value })}
+        />
+        <FieldError message={fieldErrors['drive.continuePrompt']} />
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
+          {TASK_ID_PLACEHOLDER.map(([token, desc]) => (
             <div key={token} className="contents">
               <dt className="font-data text-ink">{token}</dt>
               <dd>{desc}</dd>

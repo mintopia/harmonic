@@ -113,7 +113,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('AutoDrive.prompt uses the global template, the ticket url, and the workflow skill', () => {
     const config: AppConfig = {
       ...defaultConfig(),
-      drive: { prompt: '{skill} {ref} {url}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1, continueAttempts: 1 },
+      drive: { ...defaultConfig().drive, prompt: '{skill} {ref} {url}\n\n{title}::{body}' },
     };
     const research = worktreeTask({ trackerRef: 9, wayfinderType: 'research', prompt: 'Investigate X\n\nwhy' });
     const drive = new AutoDrive(() => config, (task) => (task.trackerRef === 9 ? 'https://x/9' : null));
@@ -123,7 +123,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('appends a re-queued mirrored Task’s feedback so the afk retry sees it', () => {
     const config: AppConfig = {
       ...defaultConfig(),
-      drive: { prompt: '{skill} {ref}\n\n{title}::{body}', mergeFate: 'auto-merge', autoRetry: 1, continueAttempts: 1 },
+      drive: { ...defaultConfig().drive, prompt: '{skill} {ref}\n\n{title}::{body}' },
     };
     const drive = new AutoDrive(() => config, () => null);
     const withFeedback = worktreeTask({ trackerRef: 9, prompt: 'Fix it\n\ndetails', feedback: '  tests are red  ' });
@@ -142,14 +142,14 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(text).toContain('finish_task');
     expect(text).toContain('escalate_task');
     expect(text).toContain('taskId=42');
-    expect(text).toContain('running unattended');
+    expect(text).toMatch(/running unattended/i);
   });
 
   it('continuePrompt nudges the agent to resume and carries the reminder', () => {
     const config: AppConfig = { ...defaultConfig(), drive: { ...defaultConfig().drive, continueAttempts: 3 } };
     const drive = new AutoDrive(() => config, () => null);
     const text = drive.continuePrompt(worktreeTask({ id: 7 }));
-    expect(text).toMatch(/not finished/i);
+    expect(text).toMatch(/isn't finished/i);
     expect(text).toContain('finish_task');
     expect(text).toContain('taskId=7');
     expect(drive.continueAttempts()).toBe(3);
@@ -169,7 +169,7 @@ describe('Drive Prompt fill (issue #33)', () => {
 describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
   const cfg = (autoRetry: number): AppConfig => ({
     ...defaultConfig(),
-    drive: { prompt: '', mergeFate: 'auto-merge', autoRetry, continueAttempts: 1 },
+    drive: { ...defaultConfig().drive, prompt: '', autoRetry },
   });
 
   it('retries within the cap, then escalates — never a silent retry beyond it', () => {
@@ -187,7 +187,7 @@ describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
 describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)', () => {
   const cfg = (mergeFate: AppConfig['drive']['mergeFate']): AppConfig => ({
     ...defaultConfig(),
-    drive: { prompt: '', mergeFate, autoRetry: 1, continueAttempts: 1 },
+    drive: { ...defaultConfig().drive, prompt: '', mergeFate },
   });
   const spyGit = () => ({ merge: vi.fn(async () => ({ ok: true as const })) });
 
@@ -298,7 +298,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       ...defaultConfig().harnesses,
       claude: { command: process.execPath, args: [STUB], env: {}, models: ['stub'], defaultModel: 'stub' },
     },
-    drive: { prompt: '{skill} #{ref}', mergeFate: 'auto-merge', autoRetry: 1, continueAttempts: 1, ...over },
+    drive: { ...defaultConfig().drive, prompt: '{skill} #{ref}', ...over },
   });
 
   const startMirrored = (id: number) => {

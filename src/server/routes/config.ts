@@ -90,7 +90,9 @@ const configPatchBodySchema = z
       .optional(),
     drive: z
       .object({
-        prompt: z.string().meta({ example: '{skill}\n\nResolve #{ref} ({url}) end to end.\n\n## {title}\n\n{body}' }),
+        prompt: z.string().meta({ example: '{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself.' }),
+        unattendedReminder: z.string().meta({ example: '## Running unattended\n\nYou are Harmonic Task #{taskId}…' }),
+        continuePrompt: z.string().meta({ example: "Your last turn ended but Task #{taskId} isn't finished…" }),
         mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
         autoRetry: z.number().int().min(0).meta({ example: 1 }),
       })

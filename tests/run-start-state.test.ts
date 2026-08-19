@@ -118,7 +118,7 @@ describe('evaluateAdmission (issue #149, pure gate)', () => {
 describe('drive prompt (issue #149, belt-and-suspenders)', () => {
   it('tells the agent Harmonic owns branching', () => {
     expect(DEFAULT_DRIVE_PROMPT).toMatch(/owns branching/i);
-    expect(DEFAULT_DRIVE_PROMPT).toMatch(/do not create, switch, or delete git branches/i);
+    expect(DEFAULT_DRIVE_PROMPT).toMatch(/don't create branches/i);
   });
 });
 
