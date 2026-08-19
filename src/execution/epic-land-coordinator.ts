@@ -51,6 +51,13 @@ export interface EpicLandGit {
  * supplies the Workspace's resolved verifiers. */
 export type EpicVerify = (args: { repoDir: string; candidateOid: string }) => Promise<VerificationDecision>;
 
+/** The retained whole-Epic Verification status for the operator read model
+ * (issue #178): `pending` while a verify is in flight, `pass`/`fail` for the
+ * last completed attempt's verdict, `null` when none has run for the current
+ * integration branch. In-memory only (ADR-0024), like the coordinator's other
+ * guards. */
+export type EpicVerificationStatus = 'pass' | 'fail' | 'pending' | null;
+
 /** An Epic offered for a land attempt, reduced from the poll's derived Epic and
  * its members' mirrored Task states. */
 export interface EpicLandTarget {
@@ -91,6 +98,14 @@ export class EpicLandCoordinator {
    * changes or the branch is gone; an operator force-land bypasses it. In-memory
    * only (ADR-0024), mirroring the merge train's in-memory `healAttempted`. */
   private readonly settledEscalated = new Map<number, string>();
+
+  /** The last whole-Epic Verification status per Epic ref (issue #178), retained
+   * so the operator read model surfaces the real verdict instead of the former
+   * always-`null` placeholder: `'pending'` set right before the verify runs,
+   * then `'pass'`/`'fail'` from the verdict. Cleared when the integration branch
+   * is gone (alongside {@link settledEscalated}) so a re-cut Epic reusing the ref
+   * starts `null` again. In-memory only (ADR-0024); an absent key reads as `null`. */
+  private readonly lastVerification = new Map<number, Exclude<EpicVerificationStatus, null>>();
 
   constructor(deps: {
     /** The base repo owning `epic/<ref>` — the Workspace's working directory. */
@@ -143,7 +158,10 @@ export class EpicLandCoordinator {
     const integrationExists = await this.git.branchExists(this.repoDir, branch);
     // Branch gone (a completed land retired it, or it was landed by hand): drop
     // any sticky escalation so a fresh Epic reusing the ref starts clean.
-    if (!integrationExists) this.settledEscalated.delete(target.ref);
+    if (!integrationExists) {
+      this.settledEscalated.delete(target.ref);
+      this.lastVerification.delete(target.ref);
+    }
 
     // First pass: the gate decision, before any (slow) Verification is run.
     const gate = decideEpicLand({ integrationExists, members: target.members, verification: null, force });
@@ -180,18 +198,21 @@ export class EpicLandCoordinator {
 
     // Verify the integrated whole against the integration branch tip.
     const candidateOid = await this.git.revParse(this.repoDir, branch);
+    this.lastVerification.set(target.ref, 'pending');
     let verification: VerificationDecision;
     try {
       verification = await this.verify({ repoDir: this.repoDir, candidateOid });
     } catch (err) {
       // A verification-harness failure is genuine infra doubt: fail-safe to
       // escalate, never land (the same direction `inconclusive` folds to).
+      this.lastVerification.set(target.ref, 'fail');
       return this.escalate(target, force, `whole-Epic verification could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Second pass: re-decide with the Verification result folded in.
     const verdict = decideEpicLand({ integrationExists: true, members: target.members, verification, force });
     if (verdict.action === 'escalate') {
+      this.lastVerification.set(target.ref, 'fail');
       return this.escalate(target, force, verdict.reason);
     }
     if (verdict.action !== 'land') {
@@ -200,6 +221,11 @@ export class EpicLandCoordinator {
       this.onError(`epic ${target.ref} unexpected post-verification decision: ${verdict.action}`);
       return { status: 'noop', reason: `unexpected post-verification decision: ${verdict.action}` };
     }
+
+    // Verification proceeded — record the pass verdict for the read model (issue
+    // #178) independent of whether the subsequent land succeeds (a land failure
+    // escalates via its own path and surfaces through `held`, not as a verify fail).
+    this.lastVerification.set(target.ref, 'pass');
 
     // Verification passed: land the whole integration branch into the default
     // branch, atomically (#153).
@@ -228,6 +254,16 @@ export class EpicLandCoordinator {
    */
   isInFlight(epicRef: number): boolean {
     return this.inFlight.has(epicRef);
+  }
+
+  /**
+   * The last retained whole-Epic Verification status for `epicRef` (issue #178) —
+   * exposes the private {@link lastVerification} guard as an
+   * {@link EpicVerificationStatus}, feeding the operator read endpoint's
+   * `EpicVerification.status` (previously hardcoded `null`).
+   */
+  verificationStatus(epicRef: number): EpicVerificationStatus {
+    return this.lastVerification.get(epicRef) ?? null;
   }
 
   /**

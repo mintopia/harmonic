@@ -222,11 +222,10 @@ export class TrackerPollerManager {
    *    coordinator is active for this Workspace (tracking config resolver
    *    absent), same as an Epic whose branch was never cut.
    *  - `land`: `inFlight`/`held` straight off the coordinator's own guards.
-   *  - `verification`: always `null` — the whole-Epic Verification result is
-   *    computed and used inline inside `EpicLandCoordinator.attempt` and never
-   *    retained anywhere this accessor can reach; the sourcing notes forbid
-   *    inventing a new store for it, so this is a `// ponytail:` gap, not an
-   *    oversight, until a dedicated cache exists.
+   *  - `verification`: the whole-Epic Verification status retained on the
+   *    {@link EpicLandCoordinator} (issue #178) — `pending` while a verify is in
+   *    flight, `pass`/`fail` for the last verdict, `null` when none has run for
+   *    the current integration branch (or no land coordinator is active).
    */
   private async epicFacts(entry: Entry, epicRef: number): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef);
@@ -234,9 +233,7 @@ export class TrackerPollerManager {
     const integration = epicLand ? await epicLand.integrationFacts(epicRef) : { exists: false, tip: null };
     return {
       integration: { branch, ...integration },
-      // ponytail: no reachable store for the whole-Epic Verification result
-      // (see the doc comment above) — always null until one exists.
-      verification: { status: null },
+      verification: { status: epicLand?.verificationStatus(epicRef) ?? null },
       land: {
         inFlight: epicLand?.isInFlight(epicRef) ?? false,
         held: epicLand?.heldReason(epicRef) ?? null,

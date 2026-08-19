@@ -255,6 +255,71 @@ describe('EpicLandCoordinator', () => {
     });
   });
 
+  describe('retained verification status (issue #178)', () => {
+    it('is null before any attempt', () => {
+      const { coord } = build();
+      expect(coord.verificationStatus(42)).toBeNull();
+    });
+
+    it('is pass after a successful land', async () => {
+      const { coord } = build();
+      await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      expect(coord.verificationStatus(42)).toBe('pass');
+    });
+
+    it('is fail after a blocking verdict', async () => {
+      const { coord } = build({ verify: async () => block });
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(coord.verificationStatus(42)).toBe('fail');
+    });
+
+    it('is fail after an inconclusive verdict', async () => {
+      const { coord } = build({ verify: async () => inconclusive });
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(coord.verificationStatus(42)).toBe('fail');
+    });
+
+    it('is fail after the verification harness throws', async () => {
+      const { coord } = build({
+        verify: async () => {
+          throw new Error('boom');
+        },
+      });
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(coord.verificationStatus(42)).toBe('fail');
+    });
+
+    it('is pending while a verify is in flight, then pass once it resolves', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const { coord } = build({
+        verify: async () => {
+          await gate;
+          return proceed;
+        },
+      });
+      const submitted = coord.submit({ ref: 42, members: members('completed') });
+      // Let the pre-verify awaits (branchExists/symbolicBranch/revParse) settle so
+      // `attempt` reaches the synchronous `lastVerification.set(..., 'pending')`
+      // just before the (still-gated) verify call.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(coord.verificationStatus(42)).toBe('pending');
+      release();
+      await submitted;
+      expect(coord.verificationStatus(42)).toBe('pass');
+    });
+
+    it('clears to null once the integration branch is gone', async () => {
+      const git = new FakeGit(new Set(['epic/42']));
+      const { coord } = build({ git });
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(coord.verificationStatus(42)).toBe('pass');
+      git.branches.delete('epic/42');
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(coord.verificationStatus(42)).toBeNull();
+    });
+  });
+
   it('short-circuits a concurrent re-submit for the same Epic to busy', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
