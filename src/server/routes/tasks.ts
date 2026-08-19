@@ -59,7 +59,14 @@ const continuationPreviewSchema = z.discriminatedUnion('available', [
         note: z.string(),
       }),
     }),
-    startCondensed: z.object({ session: z.literal('new'), conversation: z.literal('condensed') }),
+    startCondensed: z.object({
+      session: z.literal('new'),
+      conversation: z.literal('condensed'),
+      estimate: z.object({
+        band: z.enum(['warm', 'cold', 'unknown']),
+        note: z.string(),
+      }),
+    }),
   }),
 ]);
 const dependsOnBodySchema = z.object({ dependsOnId: z.number().int().positive().meta({ example: 4818 }) });

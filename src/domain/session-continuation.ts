@@ -132,14 +132,40 @@ export interface ContinuationCostEstimate {
 }
 
 /**
+ * The cost signal shown alongside the "start condensed" option (issue #177). A
+ * condensed re-attempt spawns a **fresh** Session re-primed from a compact
+ * summary, so — unlike {@link ContinuationCostEstimate}, which reads the source
+ * Session's own cache warmth — its cost is best expressed **relative to** the
+ * full continuation: the two paths trade places on which is cheaper as the source
+ * warmth changes. Deliberately the stated minimum (a `band` + a `note`): a
+ * condensed re-prime is a small, bounded cost, so the interesting signal is which
+ * of the two paths is the pricier one right now, not a second set of cache deltas.
+ */
+export interface CondensedContinuationEstimate {
+  /** The condensed path's cost band, **relative to continuing full**:
+   * - `cold`: the source Session is warm, so continuing full is a live cache hit
+   *   that beats a cold summary re-prime — condensed is the *pricier* of the two
+   *   (it wears the amber, see `continuationCostChip`). Still a bounded cost.
+   * - `warm`: the source Session is cold or has no known warm window, so a fresh
+   *   Session re-priming only a summary is the *cheaper* / steadier path.
+   * Never `unknown`: a condensed re-prime is always an estimable, bounded cost —
+   * the uncertainty only ever attaches to the *full* path. */
+  band: WarmthBand;
+  /** A human-legible one-liner for the dialog — the cost signal as a signal,
+   * never a guarantee, mirroring {@link ContinuationCostEstimate.note}. */
+  note: string;
+}
+
+/**
  * The plan for how a continuation is offered.
  * - `silent-continue`: an automated trigger — reuse the same Session with no
  *   operator dialog. `sameSession` is always true; there is no cost gate.
  * - `offer-choice`: a human rejection — surface the two options. `continueFull`
  *   continues the **same** Session (full conversation) and carries the cost
  *   {@link ContinuationCostEstimate}; `startCondensed` starts a **new** Session
- *   seeded with a condensed summary. Both are always available — warmth informs
- *   the estimate, it never removes an option.
+ *   seeded with a condensed summary and carries its own relative
+ *   {@link CondensedContinuationEstimate}. Both are always available — warmth
+ *   informs the estimates, it never removes an option.
  */
 export type SessionContinuationPlan =
   | { mode: 'silent-continue'; trigger: AutomatedContinuationTrigger; sameSession: true }
@@ -147,7 +173,7 @@ export type SessionContinuationPlan =
       mode: 'offer-choice';
       trigger: 'human-reject';
       continueFull: { session: 'same'; conversation: 'full'; estimate: ContinuationCostEstimate };
-      startCondensed: { session: 'new'; conversation: 'condensed' };
+      startCondensed: { session: 'new'; conversation: 'condensed'; estimate: CondensedContinuationEstimate };
     };
 
 /**
@@ -187,6 +213,37 @@ export function estimateContinuationCost(warmth: SessionWarmthFacts, now: number
 }
 
 /**
+ * Estimate the cost of starting a **condensed** re-attempt (a fresh Session
+ * re-primed from a compact summary) on `warmth`'s Session as of `now` (issue
+ * #177). Pure and total, and derived from the same warmth facts as
+ * {@link estimateContinuationCost} — because the useful condensed signal is
+ * *comparative*: the two re-attempt paths trade places on which is cheaper.
+ *
+ * - When the source Session is **warm**, continuing full is a live cache hit that
+ *   likely beats re-priming even a small summary from cold, so condensed is the
+ *   *pricier* path → `cold` (it wears the amber). Still a small, bounded cost.
+ * - When the source Session is **cold** or has **no known warm window**, a fresh
+ *   Session that re-primes only a summary is the *cheaper* / steadier path →
+ *   `warm`. (No warm window ⇒ the saving is pure token count, not a cache bet, so
+ *   condensed is if anything the surer win — hence `warm`, never `unknown`.)
+ */
+export function estimateCondensedContinuationCost(warmth: SessionWarmthFacts, now: number): CondensedContinuationEstimate {
+  const full = estimateContinuationCost(warmth, now);
+  if (full.band === 'warm') {
+    return {
+      band: 'cold',
+      note: 'The prompt cache is likely still warm, so continuing the full conversation is a cache hit and probably cheaper; a condensed re-attempt re-primes a summary from cold, so it is the pricier of the two here — though still a small, bounded cost.',
+    };
+  }
+  return {
+    band: 'warm',
+    note: full.warmthKnown
+      ? 'The prompt cache has likely gone cold, so a fresh Session that re-primes only a compact summary is cheaper than replaying the whole cold conversation.'
+      : 'A fresh Session re-primes only a compact summary — fewer tokens than replaying the whole conversation — so it is the cheaper, more predictable path.',
+  };
+}
+
+/**
  * Decide how a continuation triggered by `trigger` is offered on a Session with
  * the given `warmth`, as of `now` (issue #147 AC1–AC4). Pure and total.
  *
@@ -209,7 +266,7 @@ export function planSessionContinuation(
     mode: 'offer-choice',
     trigger: 'human-reject',
     continueFull: { session: 'same', conversation: 'full', estimate: estimateContinuationCost(warmth, now) },
-    startCondensed: { session: 'new', conversation: 'condensed' },
+    startCondensed: { session: 'new', conversation: 'condensed', estimate: estimateCondensedContinuationCost(warmth, now) },
   };
 }
 

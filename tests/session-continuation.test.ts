@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   planSessionContinuation,
   estimateContinuationCost,
+  estimateCondensedContinuationCost,
   isAutomatedTrigger,
   sessionWarmthFacts,
   previewHumanRejectContinuation,
@@ -45,8 +46,12 @@ describe('planSessionContinuation (issue #147)', () => {
       expect(plan.continueFull.conversation).toBe('full');
       expect(plan.startCondensed.session).toBe('new');
       expect(plan.startCondensed.conversation).toBe('condensed');
-      // The estimate is attached to the full option (the one whose cost varies).
+      // Each option carries its own estimate: the full option reads the source
+      // Session's cache warmth; the condensed option a band computed relative to
+      // it. On a warm Session, full is the cache hit so condensed is the pricier.
       expect(plan.continueFull.estimate).toEqual(estimateContinuationCost(warm, now));
+      expect(plan.startCondensed.estimate).toEqual(estimateCondensedContinuationCost(warm, now));
+      expect(plan.startCondensed.estimate.band).toBe('cold');
     });
 
     it('offers BOTH options even when the Session is stone cold — warmth is a cost signal, not a gate', () => {
@@ -57,6 +62,8 @@ describe('planSessionContinuation (issue #147)', () => {
       expect(plan.continueFull.estimate.band).toBe('cold');
       expect(plan.continueFull.session).toBe('same');
       expect(plan.startCondensed.session).toBe('new');
+      // The paths trade places: on a cold Session, condensed is the cheaper one.
+      expect(plan.startCondensed.estimate.band).toBe('warm');
     });
 
     it('offers BOTH options when warmth is unknown — an absent estimate never removes an option', () => {
@@ -66,6 +73,33 @@ describe('planSessionContinuation (issue #147)', () => {
       expect(plan.continueFull.estimate.band).toBe('unknown');
       expect(plan.continueFull.session).toBe('same');
       expect(plan.startCondensed.session).toBe('new');
+      // No warm window ⇒ condensed's saving is pure token count, so it is still
+      // the cheaper/steadier path (warm), never itself 'unknown'.
+      expect(plan.startCondensed.estimate.band).toBe('warm');
+    });
+  });
+
+  describe('estimateCondensedContinuationCost (issue #177): condensed cost, computed relative to the full path', () => {
+    it('is the pricier path (cold) when the source Session is warm — full is the cache hit', () => {
+      const est = estimateCondensedContinuationCost(warm, now);
+      expect(est.band).toBe('cold');
+      expect(est.note).toEqual(expect.any(String));
+      expect(est.note.length).toBeGreaterThan(0);
+    });
+
+    it('is the cheaper path (warm) when the source Session is cold — re-primes only a summary', () => {
+      const cold: SessionWarmthFacts = { estimatedWarmUntil: now - HOUR, lastActiveAt: now - 3 * HOUR };
+      const est = estimateCondensedContinuationCost(cold, now);
+      expect(est.band).toBe('warm');
+      expect(est.note).toEqual(expect.any(String));
+    });
+
+    it('is the cheaper path (warm), never unknown, when the source has no known warm window', () => {
+      const unknownWarmth: SessionWarmthFacts = { estimatedWarmUntil: null, lastActiveAt: now - HOUR };
+      const est = estimateCondensedContinuationCost(unknownWarmth, now);
+      // The uncertainty attaches to the FULL path; condensed stays estimable.
+      expect(est.band).toBe('warm');
+      expect(estimateContinuationCost(unknownWarmth, now).band).toBe('unknown');
     });
   });
 
@@ -220,7 +254,12 @@ describe('previewHumanRejectContinuation (issue #170)', () => {
     const plan = previewHumanRejectContinuation([run(null), run(5)], (id) => store.get(id) ?? null, now);
     expect(plan?.mode).toBe('offer-choice');
     expect(plan?.continueFull.estimate.band).toBe('warm');
-    expect(plan?.startCondensed).toEqual({ session: 'new', conversation: 'condensed' });
+    // Warm source ⇒ full is the cache hit, so the condensed path is the pricier.
+    expect(plan?.startCondensed).toEqual({
+      session: 'new',
+      conversation: 'condensed',
+      estimate: estimateCondensedContinuationCost(session(5, now + HOUR), now),
+    });
   });
 
   it('walks back from the newest Run — the latest Session-bound Run wins', () => {

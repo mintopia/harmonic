@@ -143,7 +143,12 @@ describe('linked re-attempts continue in the same Session (issue #147)', () => {
     const preview = (await server.api('GET', `/api/tasks/${original.id}/continuation`)).body;
     expect(preview.available).toBe(true);
     expect(preview.continueFull.estimate.note).toEqual(expect.any(String));
-    expect(preview.startCondensed).toEqual({ session: 'new', conversation: 'condensed' });
+    // The condensed path now carries its own computed cost band (issue #177),
+    // served through continuationPreviewSchema on the REST preview endpoint.
+    expect(preview.startCondensed.session).toBe('new');
+    expect(preview.startCondensed.conversation).toBe('condensed');
+    expect(['warm', 'cold', 'unknown']).toContain(preview.startCondensed.estimate.band);
+    expect(preview.startCondensed.estimate.note).toEqual(expect.any(String));
 
     await server.api('POST', `/api/tasks/${original.id}/reject`, { feedback: 'try again' });
 

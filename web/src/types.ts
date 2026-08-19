@@ -308,10 +308,20 @@ export type ContinuationPreview =
           note: string;
         };
       };
-      /** Carries no wire cost yet: the reject dialog renders a qualitative
-       * "cheaper" label for this path (issue #175). A computed condensed
-       * estimate — extending `planSessionContinuation` — is a backend follow-up. */
-      startCondensed: { session: 'new'; conversation: 'condensed' };
+      /** The condensed path's cost signal (issue #177): a fresh Session
+       * re-primed from a summary, its `band` computed **relative to** the full
+       * continuation (`estimateCondensedContinuationCost`). `cold` (amber,
+       * "pricier") only when the full path is a warm cache hit that beats a cold
+       * summary re-prime; otherwise `warm` (calm, cheaper). `note` is the
+       * operator-legible one-liner. */
+      startCondensed: {
+        session: 'new';
+        conversation: 'condensed';
+        estimate: {
+          band: 'warm' | 'cold' | 'unknown';
+          note: string;
+        };
+      };
     };
 
 export interface RunEvent {

@@ -5,7 +5,6 @@ import { Modal } from './Modal';
 import {
   btnGhost,
   btnQuietDestructive,
-  continuationCheaperChip,
   continuationCostChip,
   field,
   panelTitle,
@@ -115,10 +114,11 @@ export function RejectDialog({
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
         {preview?.available && (
-          // Both re-attempt paths carry a cost signal now (issue #175): the full
-          // continuation its computed warm/cold/unknown estimate, and the
-          // condensed path a qualitative "cheaper" label (a real condensed
-          // estimate is a backend follow-up in planSessionContinuation).
+          // Both re-attempt paths now carry a *computed* warm/cold/unknown band
+          // (issue #177): the full continuation reads the source Session's cache
+          // warmth, the condensed path a band computed relative to it
+          // (`estimateCondensedContinuationCost`). Same `continuationCostChip`, so
+          // amber marks whichever path is the pricier one right now — never both.
           <div className="mb-2 space-y-1 text-small">
             <p>
               <span className={`${continuationCostChip(preview.continueFull.estimate.band)} mr-2`}>
@@ -127,8 +127,10 @@ export function RejectDialog({
               <span className="text-muted">{preview.continueFull.estimate.note}</span>
             </p>
             <p>
-              <span className={`${continuationCheaperChip} mr-2`}>cheaper</span>
-              <span className="text-muted">Start condensed: a fresh Session, re-primed from a summary.</span>
+              <span className={`${continuationCostChip(preview.startCondensed.estimate.band)} mr-2`}>
+                {preview.startCondensed.estimate.band}
+              </span>
+              <span className="text-muted">{preview.startCondensed.estimate.note}</span>
             </p>
           </div>
         )}
