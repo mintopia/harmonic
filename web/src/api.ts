@@ -18,6 +18,7 @@ import type {
   VerifierOff,
   Workspace,
 } from './types.js';
+import type { Epic, EpicLandOutcome } from './epic-model.js';
 
 class ApiError extends Error {
   constructor(
@@ -251,4 +252,12 @@ export const api = {
     request<{ ok: true }>('POST', '/api/leases/supersede', { key, runId }),
   /** Force-release a held/suspect lease with no successor. */
   unlockLease: (key: string) => request<{ ok: true }>('POST', '/api/leases/unlock', { key }),
+
+  // Parallel-Epic read model + force-land (issue #167, ADR-0026): operator-scope
+  // only, mirroring the force-land allowlist. See epic-model.ts for the DTO shape.
+  epics: (workspaceId: number) => request<{ epics: Epic[] }>('GET', `/api/workspaces/${workspaceId}/epics`),
+  epic: (workspaceId: number, epicRef: number) =>
+    request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
+  forceLandEpic: (workspaceId: number, epicRef: number) =>
+    request<EpicLandOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-land`),
 };

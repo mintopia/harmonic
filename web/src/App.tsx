@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, TaskState, Workspace } from './types';
+import type { Epic, EpicLandOutcome } from './epic-model';
+import { epicByTaskId } from './epic-model';
 import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
 import { TaskDetail } from './components/TaskDetail';
+import { EpicPeek } from './components/EpicPeek';
 import { subscribe } from './ws';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
@@ -155,6 +158,13 @@ export function App() {
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [openTask, setOpenTask] = useState<Task | null>(null);
+  // Parallel-Epic read model (issue #167, ADR-0026): epics is the active
+  // Workspace's derived Epic list; openEpic/focusEpic mirror openTask's
+  // "which one is the operator looking at" pattern for the peek and the
+  // Board's focus-mode respectively.
+  const [epics, setEpics] = useState<Epic[]>([]);
+  const [openEpic, setOpenEpic] = useState<Epic | null>(null);
+  const [focusEpic, setFocusEpic] = useState<Epic | null>(null);
   const [route, navigate] = useRoute();
   const view = route.view;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -218,6 +228,39 @@ export function App() {
     }
   }, [activeWorkspaceId]);
 
+  // Parallel-Epic read model refetch (issue #167, ADR-0026: "the client
+  // refetches on the existing task_changed firehose poke"). Best-effort — an
+  // Epic-derivation blip is never worth the board's error banner the way a
+  // Task-list failure is, so failures are swallowed rather than tracked in
+  // failStreak. Keeps an open peek/focus-mode fresh by re-resolving them out
+  // of the freshly-fetched list; either falls back to null if the Epic no
+  // longer derives (e.g. it fully landed and dropped off the list).
+  const refreshEpics = useCallback(async () => {
+    if (activeWorkspaceId === null) return;
+    try {
+      const { epics } = await api.epics(activeWorkspaceId);
+      setEpics(epics);
+      setOpenEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
+      setFocusEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
+    } catch {
+      // Soft-fail: see comment above.
+    }
+  }, [activeWorkspaceId]);
+
+  // Force-land an Epic (issue #167, ADR-0026), used by the Board's focus-mode
+  // header and the Table's group-by-Epic band headers; EpicPeek calls the API
+  // directly since it already carries `workspaceId`. Refetches epics on any
+  // outcome so the caller's toast/banner and the next render agree.
+  const forceLandEpic = useCallback(
+    async (epicRef: number): Promise<EpicLandOutcome> => {
+      if (activeWorkspaceId === null) throw new Error('No active workspace');
+      const outcome = await api.forceLandEpic(activeWorkspaceId, epicRef);
+      refreshEpics();
+      return outcome;
+    },
+    [activeWorkspaceId, refreshEpics],
+  );
+
   useEffect(() => {
     if (!authed) return;
     api.config().then(setConfig).catch(() => {});
@@ -232,6 +275,7 @@ export function App() {
   useEffect(() => {
     if (!authed || activeWorkspaceId === null) return;
     refresh();
+    refreshEpics();
     // Live updates over WebSocket; slow polling as a reconnect safety net.
     // The active Workspace can't change out from under this subscription's
     // closure (each switch re-subscribes via the activeWorkspaceId dep), so
@@ -244,6 +288,10 @@ export function App() {
           return [...rest, msg.task];
         });
         setOpenTask((current) => (current && current.id === msg.task.id ? msg.task : current));
+        // Keep the Epic peek + landing rail live (ADR-0026): a member's
+        // task_changed is exactly the signal an Epic's fold/land/verification
+        // state may have moved, so refetch alongside the Task-list update.
+        refreshEpics();
       }
       // Hard-delete (issue #162): drop the Task from local state so the
       // board/graph lose it too — no workspaceId to filter on (the message
@@ -255,14 +303,29 @@ export function App() {
         setOpenTask((current) => (current && current.id === msg.id ? null : current));
       }
     });
-    const timer = setInterval(refresh, 10_000);
+    const timer = setInterval(() => {
+      refresh();
+      refreshEpics();
+    }, 10_000);
     return () => {
       unsubscribe();
       clearInterval(timer);
     };
-  }, [refresh, authed, activeWorkspaceId]);
+  }, [refresh, refreshEpics, authed, activeWorkspaceId]);
 
   const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
+
+  // Board/TaskCard's card → owning Epic lookup (issue #167, ADR-0026).
+  const epicByTaskIdMap = useMemo(() => epicByTaskId(epics), [epics]);
+
+  // EpicPeek's deep-link into the existing TaskDetail (ADR-0026: "rows reuse
+  // TaskDetail") — reuses the same setOpenTask path a Board/Table card click
+  // does, falling back to a fetch if the member Task isn't in the loaded list.
+  const openTaskById = (taskId: number) => {
+    const found = (tasks ?? []).find((t) => t.id === taskId);
+    if (found) setOpenTask(found);
+    else api.task(taskId).then(setOpenTask, toastError);
+  };
 
   // Browser tab title: `Harmonic - {name} - {workspace}`. The instance name is
   // dropped when unset and the workspace when none has resolved yet, so an
@@ -353,6 +416,12 @@ export function App() {
     setActiveWorkspaceId(id);
     storeActiveWorkspaceId(localStorage, id);
     setTasks(null); // "loading", not a flash of the old Workspace's (now stale) board
+    // The old Workspace's Epics (and any peek/focus onto one of them) are
+    // meaningless once scoped elsewhere — drop them rather than flash stale
+    // Epic state over the new board until refreshEpics resolves.
+    setEpics([]);
+    setOpenEpic(null);
+    setFocusEpic(null);
   };
 
   // One "a Workspace was created" flow for both entry points (the switcher's +
@@ -385,6 +454,9 @@ export function App() {
       } else {
         setActiveWorkspaceId(null);
         setTasks(null);
+        setEpics([]);
+        setOpenEpic(null);
+        setFocusEpic(null);
       }
     }
     // Programmatic redirect off the deleted Workspace's page, not a place the
@@ -649,6 +721,11 @@ export function App() {
                       onNewTask={() => setEditing('new')}
                       peeked={peeked}
                       onTogglePeek={togglePeek}
+                      epicByTaskId={epicByTaskIdMap}
+                      onOpenEpic={setOpenEpic}
+                      focusEpic={focusEpic}
+                      onClearFocus={() => setFocusEpic(null)}
+                      onForceLandEpic={forceLandEpic}
                     />
                   </>
                 )}
@@ -659,6 +736,8 @@ export function App() {
                     onOpen={setOpenTask}
                     filters={route.table}
                     onFiltersChange={setTableFilters}
+                    epics={epics}
+                    onForceLandEpic={forceLandEpic}
                   />
                 )}
                 {view === 'graph' && (
@@ -695,6 +774,24 @@ export function App() {
           onEdit={setEditing}
           onChanged={refresh}
           onClose={() => setOpenTask(null)}
+        />
+      )}
+
+      {openEpic && activeWorkspaceId !== null && (
+        <EpicPeek
+          epic={openEpic}
+          workspaceId={activeWorkspaceId}
+          onOpenTask={openTaskById}
+          onFocus={(epicRef) => {
+            const target = epics.find((e) => e.ref === epicRef) ?? null;
+            setFocusEpic(target);
+            setOpenEpic(null);
+            // "Focus on board" is a real navigation to the Board view (the
+            // only surface focus-mode applies to), mirroring pickView.
+            navigate({ ...route, view: 'board' });
+          }}
+          onClose={() => setOpenEpic(null)}
+          onChanged={refreshEpics}
         />
       )}
 

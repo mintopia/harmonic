@@ -125,6 +125,13 @@ function scopedKeyAllowed(path: string): boolean {
   // the default `false`; this early return exists only to document the
   // decision alongside its siblings.
   if (/^\/api\/workspaces\/\d+\/epics\/\d+\/force-land$/.test(path)) return false;
+  // The Epic read model (issue #167, ADR-0026) surfaces server-only
+  // integration-branch/land-coordinator state alongside board data an agent
+  // could otherwise infer from its own Task/dependency surface — kept on the
+  // same operator-only footing as force-land. This path matches no rule below
+  // and falls through to the default `false`; this early return exists only
+  // to document the decision alongside its siblings.
+  if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
   // Accept/reject are human-only, always — never reachable by a run-scoped key.
   if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
@@ -145,6 +152,11 @@ function scopedKeyAllowed(path: string): boolean {
 function readScopeAllowed(path: string, method: string): boolean {
   if (method !== 'GET') return false;
   if (path === '/api/ws') return true;
+  // The Epic read model (issue #167, ADR-0026) is operator-only, same footing
+  // as force-land — not the viz client's read-only board surface. This path
+  // matches no rule below and falls through to the default `false`; this
+  // early return exists only to document the decision alongside its siblings.
+  if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
   if (path.startsWith('/api/runs')) return true;

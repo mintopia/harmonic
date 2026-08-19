@@ -3,6 +3,7 @@ import { card, chip, escalatedChip } from '../ui';
 import { runningReadout, type RunningReadout } from '../board-model';
 import { cardBranch, cardDiffstat } from './cardBranch';
 import { TaskActions } from './TaskActions';
+import type { Epic } from '../epic-model';
 
 /** One truncating identity line: id, harness · model, plus at most one
  * deviation — a non-direct isolation mode. Secondary facts (dependency count,
@@ -96,15 +97,47 @@ function DriveBadge({ drive }: { drive: Drive }) {
   );
 }
 
+/** The card's Epic chip (issue #167, ADR-0026): mirrors the `mapTitle` row's
+ * treatment — quiet, raised, until interacted with — but is itself the
+ * opener for the Epic peek, not just a label. Only rendered when the card's
+ * Task is a mirrored member of a derived Epic. */
+function EpicChip({ epic, onOpenEpic }: { epic: Epic; onOpenEpic: (epic: Epic) => void }) {
+  return (
+    <button
+      type="button"
+      className={`${chip} bg-raised text-muted transition-colors duration-150 hover:bg-accent-tint hover:text-accent`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpenEpic(epic);
+      }}
+    >
+      Epic #{epic.ref}
+    </button>
+  );
+}
+
 /** The wayfinder role, grafted from prototype A (issue #34): a badge row (drive
  * + type + escalation) above the title, and the parent Map named below it. */
-function MirroredCard({ task, onOpen, readout }: { task: Task; onOpen: (task: Task) => void; readout: RunningReadout | null }) {
+function MirroredCard({
+  task,
+  onOpen,
+  readout,
+  epic,
+  onOpenEpic,
+}: {
+  task: Task;
+  onOpen: (task: Task) => void;
+  readout: RunningReadout | null;
+  epic?: Epic;
+  onOpenEpic?: (epic: Epic) => void;
+}) {
   return (
     <>
       <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
         {task.drive && <DriveBadge drive={task.drive} />}
         <span className={`${chip} bg-raised text-muted`}>{typeTagLabel(task)}</span>
         {task.escalated && <span className={escalatedChip}>escalated</span>}
+        {epic && onOpenEpic && <EpicChip epic={epic} onOpenEpic={onOpenEpic} />}
       </div>
       <div className="mb-2.5 flex items-start gap-2">
         {readout && <RunningPulse />}
@@ -176,6 +209,8 @@ export function TaskCard({
   dragging = false,
   onDragStart,
   onDragEnd,
+  epic,
+  onOpenEpic,
 }: {
   task: Task;
   now?: number;
@@ -187,6 +222,10 @@ export function TaskCard({
   dragging?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
+  /** The Epic this card is a member of (issue #167, ADR-0026), if any — drives
+   * the card's Epic chip. */
+  epic?: Epic;
+  onOpenEpic?: (epic: Epic) => void;
 }) {
   const readout = runningReadout(task, now, liveTools);
   return (
@@ -199,7 +238,7 @@ export function TaskCard({
       } ${dragging ? 'opacity-50' : ''}`}
     >
       {task.origin === 'mirrored' ? (
-        <MirroredCard task={task} onOpen={onOpen} readout={readout} />
+        <MirroredCard task={task} onOpen={onOpen} readout={readout} epic={epic} onOpenEpic={onOpenEpic} />
       ) : (
         <NativeCard task={task} onOpen={onOpen} readout={readout} />
       )}

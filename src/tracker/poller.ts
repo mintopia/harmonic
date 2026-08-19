@@ -139,6 +139,16 @@ export class TrackerPoller {
   }
 
   /**
+   * The last poll's raw scan (issue #167) — the same `Ticket[]` `maps()`
+   * already reads {@link lastScan} for internally, exposed so a caller can
+   * derive its own query-time roll-up (`deriveEpics`) over it. Empty before
+   * the first poll.
+   */
+  tickets(): Ticket[] {
+    return this.lastScan;
+  }
+
+  /**
    * Begin polling on this Workspace's interval and fire one poll immediately.
    * Idempotent. The interval is fixed for the poller's life; the manager tears
    * this poller down and builds a fresh one when the Workspace's interval changes.

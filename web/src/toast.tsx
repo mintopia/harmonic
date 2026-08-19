@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { Icon } from './components/Icon';
+import { landOutcomeBanner, type EpicLandOutcome } from './epic-model';
 
 /**
  * The designed notice surface: operations announce in a top-right stack of
@@ -56,6 +57,17 @@ export function toastError(e: unknown) {
  * or irreversible action never lands silently. Auto-dismisses after 6s. */
 export function toastSuccess(message: string) {
   push(message, 'success');
+}
+
+/** Surface a force-land outcome (issue #167, ADR-0026): maps the outcome's
+ * banner tone to a toast kind — `ok` acknowledges success, everything else
+ * (`warn`/`bad`/`info`) reads as a rejection so the operator notices it.
+ * Shared by Board's focus-mode header and the Table's band headers, which
+ * otherwise repeated this mapping verbatim. */
+export function toastLandOutcome(outcome: EpicLandOutcome): void {
+  const banner = landOutcomeBanner(outcome);
+  if (banner.tone === 'ok') toastSuccess(banner.text);
+  else toastError(banner.text);
 }
 
 /** Mounted once by App. */

@@ -221,6 +221,45 @@ export class EpicLandCoordinator {
     return { status: 'landed', oid: landed.oid };
   }
 
+  /**
+   * Whether `epicRef` currently has a land attempt in flight (issue #167 read
+   * model) — exposes the private {@link inFlight} guard for the operator read
+   * endpoint's `EpicLandState.inFlight`.
+   */
+  isInFlight(epicRef: number): boolean {
+    return this.inFlight.has(epicRef);
+  }
+
+  /**
+   * The hold reason if `epicRef` is currently held by the sticky-escalation
+   * guard ({@link settledEscalated}), else `null` (issue #167 read model).
+   * `settledEscalated` only stores the member-state signature it's held
+   * against, not the original escalation's free-text reason (that reason was
+   * a one-off argument to the injected `escalate` callback, never retained) —
+   * so this mirrors the exact reason text `submit` would return were it
+   * re-invoked with the same member state right now, rather than fabricating
+   * a different one.
+   */
+  heldReason(epicRef: number): string | null {
+    return this.settledEscalated.has(epicRef)
+      ? 'already escalated for this member state; awaiting operator or a state change'
+      : null;
+  }
+
+  /**
+   * The integration branch's existence and tip OID for `epicRef` (issue #167
+   * read model) — the same `EpicGit.branchExists` + `revParse` pair
+   * {@link attempt} uses, exposed read-only so the operator read endpoint
+   * doesn't need its own git plumbing. `tip:null` when the branch is absent.
+   */
+  async integrationFacts(epicRef: number): Promise<{ exists: boolean; tip: string | null }> {
+    const branch = integrationBranchName(epicRef);
+    const exists = await this.git.branchExists(this.repoDir, branch);
+    if (!exists) return { exists: false, tip: null };
+    const tip = await this.git.revParse(this.repoDir, branch);
+    return { exists: true, tip };
+  }
+
   /** Escalate the Epic (verify fail/inconclusive, verify-harness failure, or a
    * failed land) and, on the *automatic* path, make it sticky for this member
    * state so the level trigger holds rather than re-escalating every poll. */

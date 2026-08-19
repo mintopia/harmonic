@@ -2,11 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
 import { boardColumns, canDrag, dropAction, type DropAction } from '../board-model';
 import { api } from '../api';
-import { toastError, toastSuccess } from '../toast';
+import { toastError, toastLandOutcome, toastSuccess } from '../toast';
 import { subscribe } from '../ws';
 import { TaskCard } from './TaskCard';
 import { Icon } from './Icon';
-import { btnPrimary, btnQuiet, displayTitle, laneBorder, laneDot, stateCountPill, touchTargetInline } from '../ui';
+import { ArmedButton } from './ArmedButton';
+import type { Epic, EpicLandOutcome } from '../epic-model';
+import { FORCE_LAND_CONSEQUENCE, statusLine } from '../epic-model';
+import {
+  btnPrimary,
+  btnQuiet,
+  btnQuietDestructive,
+  card,
+  chip,
+  displayTitle,
+  laneBorder,
+  laneDot,
+  stateCountPill,
+  touchTargetInline,
+} from '../ui';
 
 const COLUMN_LABELS: Record<TaskState, string> = {
   draft: 'Draft',
@@ -112,6 +126,11 @@ export function Board({
   onNewTask,
   peeked,
   onTogglePeek,
+  epicByTaskId,
+  onOpenEpic,
+  focusEpic = null,
+  onClearFocus,
+  onForceLandEpic,
 }: {
   tasks: Task[];
   loading: boolean;
@@ -124,6 +143,14 @@ export function Board({
    * geometry never reflows under load. */
   peeked: ReadonlySet<TaskState>;
   onTogglePeek: (state: TaskState) => void;
+  /** Card → owning Epic lookup (issue #167, ADR-0026), for each card's Epic chip. */
+  epicByTaskId?: Map<number, Epic>;
+  onOpenEpic?: (epic: Epic) => void;
+  /** Epic focus-mode (ADR-0026): filters the board to one Epic's members with a
+   * pinned summary header, force-land control and "clear focus". */
+  focusEpic?: Epic | null;
+  onClearFocus?: () => void;
+  onForceLandEpic?: (epicRef: number) => Promise<EpicLandOutcome>;
 }) {
   // The card currently being dragged (issue #58). Its source state decides
   // which columns are valid drops; we don't move optimistically, so an invalid
@@ -234,116 +261,166 @@ export function Board({
     onTogglePeek(state);
   };
 
-  const columns = boardColumns(tasks);
+  // Epic focus-mode (ADR-0026): the board's own state columns are unchanged
+  // (a flat Kanban, never a per-Epic view), only the card set narrows to one
+  // Epic's members, matched by the DTO's mirrored taskId.
+  const boardTasks = focusEpic
+    ? tasks.filter((t) => focusEpic.members.some((m) => m.taskId === t.id))
+    : tasks;
+
+  const handleForceLandEpic = () => {
+    if (!focusEpic || !onForceLandEpic) return;
+    // Refetch is App's job: onForceLandEpic flows through App's forceLandEpic
+    // wrapper, which already calls refreshEpics() on any outcome — calling
+    // onChanged() here too would double-refetch.
+    onForceLandEpic(focusEpic.ref).then(toastLandOutcome, toastError);
+  };
+
+  const columns = boardColumns(boardTasks);
   const collapsedTerminal = columns.filter(({ state, terminal }) => terminal && !peeked.has(state));
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
-      <h1 className="sr-only">Board</h1>
-      {columns.map(({ state, terminal, tasks: column }) => {
-        if (terminal && !peeked.has(state)) return null;
-        const drop = dropProps(state);
-        return (
-          // Fixed width + shrink-0 so peeking a terminal column appends and
-          // scrolls the row (board container is overflow-x-auto) instead of
-          // shrinking the pipeline columns. Load-independent geometry: the
-          // operator's glance targets never move (DESIGN.md § The Board).
-          <section
-            key={state}
-            {...drop.handlers}
-            className={`w-[262px] shrink-0 rounded-lg transition-colors duration-150 motion-reduce:transition-none ${
-              drop.valid ? 'bg-accent-tint ring-2 ring-accent' : ''
-            }`}
-          >
-            {/* Lane colour lives on the header (Aurora's signal layer): a
-                state-coloured underline + dot, so the board reads with colour
-                while the task cards below stay calm. */}
-            <h2 className={`mb-3 flex items-center gap-2 border-b-2 ${laneBorder(state)} px-0.5 pb-2`}>
-              <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${laneDot(state)}`} />
-              <span className="font-semibold text-ink">{COLUMN_LABELS[state]}</span>
-              <span className={stateCountPill(state, column.length)}>{column.length}</span>
-              {terminal && (
-                <button
-                  ref={(el) => {
-                    collapseBtnRefs.current.set(state, el);
-                  }}
-                  aria-expanded={true}
-                  aria-label={`Collapse ${COLUMN_LABELS[state]} column`}
-                  className={`${touchTargetInline} ml-auto ${btnQuiet}`}
-                  onClick={() => togglePeek(state)}
-                >
-                  Collapse
-                </button>
-              )}
-            </h2>
-            <div className="flex flex-col gap-3">
-              {column.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  now={now}
-                  liveTools={task.runId != null ? liveTools[task.runId] : undefined}
-                  onEdit={onEdit}
-                  onOpen={onOpen}
-                  onChanged={onChanged}
-                  {...cardDragProps(task)}
-                />
-              ))}
+    <div>
+      {focusEpic && (
+        <div className={`${card} mb-4 flex flex-wrap items-start gap-3 p-4`}>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-small text-muted">
+              <span className={`${chip} bg-raised text-muted`}>{focusEpic.kind}</span>
+              <span>Epic #{focusEpic.ref}</span>
             </div>
-          </section>
-        );
-      })}
-
-      {/* Finished work lives in one quiet inset panel: counts at a glance,
-          click a row to expand that column in place. The full terminal
-          history lives in the Table view. */}
-      {collapsedTerminal.length > 0 && (
-        /* relative: sr-only below is position:absolute, and an abspos element is
-           only clipped by a *positioned* ancestor. Without a containing block here
-           it escapes the board's overflow-x-auto, anchors to the document, and
-           stretches the page's scroll width — a horizontal scrollbar into empty
-           space whenever the board overflows. */
-        <aside aria-label="Finished tasks" className="relative w-36 shrink-0 rounded-lg bg-raised p-2.5">
-          <h2 className="sr-only">Finished</h2>
-          <div className="flex flex-col">
-            {collapsedTerminal.map(({ state, tasks: column }) => {
-              const drop = dropProps(state);
-              return (
-                <button
-                  key={state}
-                  ref={(el) => {
-                    panelRowRefs.current.set(state, el);
-                  }}
-                  {...drop.handlers}
-                  aria-expanded={false}
-                  aria-label={`Expand ${COLUMN_LABELS[state]} column (${column.length} tasks)`}
-                  className={`group flex min-h-11 items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink motion-reduce:transition-none ${
-                    drop.valid ? 'bg-accent-tint text-ink ring-2 ring-accent' : ''
-                  }`}
-                  onClick={() => togglePeek(state)}
-                >
-                  <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${laneDot(state)}`} />
-                  {COLUMN_LABELS[state]}
-                  <span
-                    className={`ml-auto font-semibold ${
-                      state === 'failed' && column.length > 0
-                        ? 'text-fail'
-                        : column.length > 0
-                          ? 'text-ink'
-                          : 'text-faint'
-                    }`}
-                  >
-                    {column.length}
-                  </span>
-                  {/* Persistent disclosure caret so the row reads as expandable
-                      at rest, not only on hover (points right = closed). */}
-                  <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint group-hover:text-muted" />
-                </button>
-              );
-            })}
+            <h2 className="mt-0.5 truncate text-title font-semibold text-ink">{focusEpic.title}</h2>
+            <div className="mt-1 font-data text-small text-muted">{statusLine(focusEpic)}</div>
           </div>
-        </aside>
+          <div className="flex shrink-0 items-start gap-3">
+            {onForceLandEpic && (
+              <div className="flex flex-col items-end gap-1.5">
+                <ArmedButton
+                  label="Force-land"
+                  armedLabel="Confirm force-land"
+                  ariaLabel={`Force-land Epic #${focusEpic.ref}`}
+                  className={btnQuietDestructive}
+                  onConfirm={handleForceLandEpic}
+                />
+                <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
+              </div>
+            )}
+            {onClearFocus && (
+              <button type="button" className={btnQuiet} onClick={onClearFocus}>
+                Clear focus
+              </button>
+            )}
+          </div>
+        </div>
       )}
+      <div className="flex gap-4 overflow-x-auto pb-4">
+        <h1 className="sr-only">Board</h1>
+        {columns.map(({ state, terminal, tasks: column }) => {
+          if (terminal && !peeked.has(state)) return null;
+          const drop = dropProps(state);
+          return (
+            // Fixed width + shrink-0 so peeking a terminal column appends and
+            // scrolls the row (board container is overflow-x-auto) instead of
+            // shrinking the pipeline columns. Load-independent geometry: the
+            // operator's glance targets never move (DESIGN.md § The Board).
+            <section
+              key={state}
+              {...drop.handlers}
+              className={`w-[262px] shrink-0 rounded-lg transition-colors duration-150 motion-reduce:transition-none ${
+                drop.valid ? 'bg-accent-tint ring-2 ring-accent' : ''
+              }`}
+            >
+              {/* Lane colour lives on the header (Aurora's signal layer): a
+                  state-coloured underline + dot, so the board reads with colour
+                  while the task cards below stay calm. */}
+              <h2 className={`mb-3 flex items-center gap-2 border-b-2 ${laneBorder(state)} px-0.5 pb-2`}>
+                <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${laneDot(state)}`} />
+                <span className="font-semibold text-ink">{COLUMN_LABELS[state]}</span>
+                <span className={stateCountPill(state, column.length)}>{column.length}</span>
+                {terminal && (
+                  <button
+                    ref={(el) => {
+                      collapseBtnRefs.current.set(state, el);
+                    }}
+                    aria-expanded={true}
+                    aria-label={`Collapse ${COLUMN_LABELS[state]} column`}
+                    className={`${touchTargetInline} ml-auto ${btnQuiet}`}
+                    onClick={() => togglePeek(state)}
+                  >
+                    Collapse
+                  </button>
+                )}
+              </h2>
+              <div className="flex flex-col gap-3">
+                {column.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    now={now}
+                    liveTools={task.runId != null ? liveTools[task.runId] : undefined}
+                    onEdit={onEdit}
+                    onOpen={onOpen}
+                    onChanged={onChanged}
+                    epic={epicByTaskId?.get(task.id)}
+                    onOpenEpic={onOpenEpic}
+                    {...cardDragProps(task)}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+
+        {/* Finished work lives in one quiet inset panel: counts at a glance,
+            click a row to expand that column in place. The full terminal
+            history lives in the Table view. */}
+        {collapsedTerminal.length > 0 && (
+          /* relative: sr-only below is position:absolute, and an abspos element is
+             only clipped by a *positioned* ancestor. Without a containing block here
+             it escapes the board's overflow-x-auto, anchors to the document, and
+             stretches the page's scroll width — a horizontal scrollbar into empty
+             space whenever the board overflows. */
+          <aside aria-label="Finished tasks" className="relative w-36 shrink-0 rounded-lg bg-raised p-2.5">
+            <h2 className="sr-only">Finished</h2>
+            <div className="flex flex-col">
+              {collapsedTerminal.map(({ state, tasks: column }) => {
+                const drop = dropProps(state);
+                return (
+                  <button
+                    key={state}
+                    ref={(el) => {
+                      panelRowRefs.current.set(state, el);
+                    }}
+                    {...drop.handlers}
+                    aria-expanded={false}
+                    aria-label={`Expand ${COLUMN_LABELS[state]} column (${column.length} tasks)`}
+                    className={`group flex min-h-11 items-center gap-2 rounded-md px-1.5 py-1.5 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink motion-reduce:transition-none ${
+                      drop.valid ? 'bg-accent-tint text-ink ring-2 ring-accent' : ''
+                    }`}
+                    onClick={() => togglePeek(state)}
+                  >
+                    <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${laneDot(state)}`} />
+                    {COLUMN_LABELS[state]}
+                    <span
+                      className={`ml-auto font-semibold ${
+                        state === 'failed' && column.length > 0
+                          ? 'text-fail'
+                          : column.length > 0
+                            ? 'text-ink'
+                            : 'text-faint'
+                      }`}
+                    >
+                      {column.length}
+                    </span>
+                    {/* Persistent disclosure caret so the row reads as expandable
+                        at rest, not only on hover (points right = closed). */}
+                    <Icon name="chevron-down" className="size-3.5 -rotate-90 text-faint group-hover:text-muted" />
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

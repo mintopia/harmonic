@@ -7,9 +7,11 @@ import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import type { DerivedMap } from './mirror.js';
-import { EpicIntegrationCoordinator } from '../execution/epic-integration.js';
+import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
 import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
+import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
+import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 
 interface Entry {
   poller: TrackerPoller;
@@ -167,6 +169,79 @@ export class TrackerPollerManager {
    */
   awaitsEpicBase(task: TaskRow): boolean {
     return this.entryFor(task.workspaceId)?.epics.awaitsBase(task) ?? false;
+  }
+
+  /**
+   * Every derived Epic for a Workspace's last poll scan (issue #167, ADR-0026)
+   * — the operator read endpoint's list surface. Empty when the Workspace has
+   * no running poll loop (tracking off) or its last scan derived none, not an
+   * error: the caller 200s `{ epics: [] }` either way.
+   */
+  async listEpics(workspaceId: number): Promise<Epic[]> {
+    const entry = this.entries.get(workspaceId);
+    if (!entry) return [];
+    const derivedEpics = deriveEpics(entry.poller.tickets());
+    return Promise.all(derivedEpics.map((derived) => this.composeOne(workspaceId, entry, derived)));
+  }
+
+  /**
+   * One derived Epic by ref for a Workspace's last poll scan (issue #167,
+   * ADR-0026) — the operator read endpoint's detail surface. `null` when the
+   * Workspace has no running loop or its last scan doesn't derive `epicRef` as
+   * a leaf-most Epic; the route maps that to a 404.
+   */
+  async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
+    const entry = this.entries.get(workspaceId);
+    if (!entry) return null;
+    const derived = deriveEpics(entry.poller.tickets()).find((e) => e.ref === epicRef);
+    if (!derived) return null;
+    return this.composeOne(workspaceId, entry, derived);
+  }
+
+  /** Shared plumbing for {@link listEpics}/{@link epicDetail}: match member
+   * refs to this Workspace's mirrored Task rows and titles from the same scan,
+   * gather the git/coordinator facts, and fold everything through the pure
+   * {@link composeEpicView}. */
+  private async composeOne(workspaceId: number, entry: Entry, derived: DerivedEpic): Promise<Epic> {
+    const tickets = entry.poller.tickets();
+    const titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
+    const taskByRef = new Map<number, TaskRow>();
+    for (const task of this.tasks.list({ workspaceId })) {
+      if (task.trackerRef != null) taskByRef.set(task.trackerRef, task);
+    }
+    const facts = await this.epicFacts(entry, derived.ref);
+    return composeEpicView(derived, taskByRef, titleByRef, facts);
+  }
+
+  /**
+   * The server-only facts {@link composeOne} folds into the `Epic` DTO (issue
+   * #167 sourcing notes):
+   *  - `integration`: the branch's existence/tip via the Workspace's
+   *    {@link EpicLandCoordinator} (it already holds the `EpicLandGit` slice
+   *    the land attempt itself uses) — `exists:false, tip:null` when no land
+   *    coordinator is active for this Workspace (tracking config resolver
+   *    absent), same as an Epic whose branch was never cut.
+   *  - `land`: `inFlight`/`held` straight off the coordinator's own guards.
+   *  - `verification`: always `null` — the whole-Epic Verification result is
+   *    computed and used inline inside `EpicLandCoordinator.attempt` and never
+   *    retained anywhere this accessor can reach; the sourcing notes forbid
+   *    inventing a new store for it, so this is a `// ponytail:` gap, not an
+   *    oversight, until a dedicated cache exists.
+   */
+  private async epicFacts(entry: Entry, epicRef: number): Promise<EpicFacts> {
+    const branch = integrationBranchName(epicRef);
+    const epicLand = entry.epicLand;
+    const integration = epicLand ? await epicLand.integrationFacts(epicRef) : { exists: false, tip: null };
+    return {
+      integration: { branch, ...integration },
+      // ponytail: no reachable store for the whole-Epic Verification result
+      // (see the doc comment above) — always null until one exists.
+      verification: { status: null },
+      land: {
+        inFlight: epicLand?.isInFlight(epicRef) ?? false,
+        held: epicLand?.heldReason(epicRef) ?? null,
+      },
+    };
   }
 
   /** The last-resolved tracker for a Workspace, or null when tracking is off / not yet resolved (issue #83). */
