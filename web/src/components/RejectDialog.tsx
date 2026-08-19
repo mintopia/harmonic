@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { toastSuccess } from '../toast';
 import { Modal } from './Modal';
-import { btnGhost, btnQuietDestructive, chip, field, panelTitle, labelType } from '../ui';
+import {
+  btnGhost,
+  btnQuietDestructive,
+  continuationCheaperChip,
+  continuationCostChip,
+  field,
+  panelTitle,
+  labelType,
+} from '../ui';
 import type { ContinuationPreview } from '../types';
 
 /**
@@ -107,14 +115,22 @@ export function RejectDialog({
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
         {preview?.available && (
-          <p className="mb-2 text-small">
-            <span
-              className={`${chip} mr-2 ${preview.continueFull.estimate.band === 'warm' ? 'bg-tool-tint text-tool' : 'bg-raised text-muted'}`}
-            >
-              {preview.continueFull.estimate.band}
-            </span>
-            <span className="text-muted">{preview.continueFull.estimate.note}</span>
-          </p>
+          // Both re-attempt paths carry a cost signal now (issue #175): the full
+          // continuation its computed warm/cold/unknown estimate, and the
+          // condensed path a qualitative "cheaper" label (a real condensed
+          // estimate is a backend follow-up in planSessionContinuation).
+          <div className="mb-2 space-y-1 text-small">
+            <p>
+              <span className={`${continuationCostChip(preview.continueFull.estimate.band)} mr-2`}>
+                {preview.continueFull.estimate.band}
+              </span>
+              <span className="text-muted">{preview.continueFull.estimate.note}</span>
+            </p>
+            <p>
+              <span className={`${continuationCheaperChip} mr-2`}>cheaper</span>
+              <span className="text-muted">Start condensed: a fresh Session, re-primed from a summary.</span>
+            </p>
+          </div>
         )}
         {/* Dismissal is Modal's own X, so the footer carries only the two
             outcomes — nothing here competes with them for the eye. */}

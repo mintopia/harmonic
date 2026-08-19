@@ -135,6 +135,32 @@ export const escalatedChip = `${chip} bg-running-tint text-running`;
  * prompt (issue #11). */
 export const toolChip = `${chip} bg-tool-tint text-tool`;
 
+/** Reject-continuation cost chips (issue #175): the colour tracks the *cost* of
+ * a re-attempt path, never a task state. The reject dialog offers "continue
+ * full" — a computed warm/cold/unknown estimate — and "start condensed", always
+ * the cheaper path. `cold` reuses Running amber's tint/ink as harness-attention
+ * chrome ("this continuation will cost you"), the one sanctioned non-state use
+ * here (DESIGN.md § Signal Rule's continuation-cost carve-out); `warm`/`unknown`
+ * stay neutral — differing by muted vs faint ink so cold is never the only
+ * distinguishable band — so amber marks the expensive path alone rather than
+ * dressing the cheap one up as the promoted choice (the retired scheme lit
+ * warm/cheap in Tooling cyan and left cold ≡ unknown). One shared vocabulary so
+ * the chip can't fork registers between surfaces, the same reason `escalatedChip`
+ * moved here (issue #99). */
+const CONTINUATION_COST_STYLES: Record<'warm' | 'cold' | 'unknown', string> = {
+  cold: 'bg-running-tint text-running',
+  warm: 'bg-raised text-muted',
+  unknown: 'bg-raised text-faint',
+};
+
+export function continuationCostChip(band: 'warm' | 'cold' | 'unknown'): string {
+  return `${chip} ${CONTINUATION_COST_STYLES[band]}`;
+}
+
+/** The condensed re-attempt's cost chip — always the cheaper path, so a calm
+ * neutral, never the amber that marks the expensive full continuation. */
+export const continuationCheaperChip = `${chip} bg-raised text-muted`;
+
 /** Permission-prompt buttons (issue #11): the ACP request's `allow_once` /
  * `allow_always` options as a review-gate-style tinted pill (affirmative,
  * loudest) and a secondary ghost variant — both in Tooling cyan, since this is

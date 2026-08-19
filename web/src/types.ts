@@ -308,6 +308,9 @@ export type ContinuationPreview =
           note: string;
         };
       };
+      /** Carries no wire cost yet: the reject dialog renders a qualitative
+       * "cheaper" label for this path (issue #175). A computed condensed
+       * estimate — extending `planSessionContinuation` — is a backend follow-up. */
       startCondensed: { session: 'new'; conversation: 'condensed' };
     };
 
