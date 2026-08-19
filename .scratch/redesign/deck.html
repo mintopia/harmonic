@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Harmonic — Deck (redesign prototype)</title>
+<style>
+/* ============================================================
+   Harmonic redesign prototype — "Deck" + Ticket page
+   Deck = board (full width, summary rows).
+   Ticket = its own page: task-level header, a run rail to switch
+   between retries, run-level detail below.
+   Dense, structural, terminal-adjacent Linear-grade.
+   ============================================================ */
+
+:root {
+  --canvas:#0E1016; --shell:#14161D; --surface:#171A22; --raised:#1F232D;
+  --hairline:#242A35; --edge:#2E3440;
+  --ink:#EDEFF6; --muted:#9BA0B5; --faint:#7E8496;
+  --accent:#6E8BFF; --accent-hover:#8AA1FF; --accent-tint:#1C2545; --on-accent:#0E1016;
+  --run-text:#F3B052; --run-dot:#E08A0E; --run-tint:#3A2C12;
+  --ready-text:#3FD9A6; --ready-dot:#34D399; --ready-tint:#123026;
+  --done-text:#3FD9A6; --done-dot:#10B981; --done-tint:#123026;
+  --fail-text:#FB7185; --fail-dot:#F0576E; --fail-tint:#3A1720;
+  --block-text:#9096AD; --block-tint:#232834;
+  --tool-text:#4FC6F5; --tool-dot:#16A6BE; --tool-tint:#10303B;
+  --shadow-card: 0 0 0 1px var(--hairline);
+  --shadow-float: 0 14px 40px rgb(0 0 0 / .5), 0 0 0 1px var(--edge);
+  --ring: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --canvas:#F6F7FB; --shell:#FFFFFF; --surface:#FFFFFF; --raised:#EEF0F6;
+  --hairline:#E7E9F1; --edge:#D6D9E4;
+  --ink:#141627; --muted:#565A72; --faint:#767A8E;
+  --accent:#2563EB; --accent-hover:#1D4FD8; --accent-tint:#EAF1FE; --on-accent:#FFFFFF;
+  --run-text:#9A4E05; --run-dot:#E08A0E; --run-tint:#FBEEDA;
+  --ready-text:#0F7A3A; --ready-dot:#1BA35B; --ready-tint:#DDF3E6;
+  --done-text:#067A55; --done-dot:#10B981; --done-tint:#D8F4E9;
+  --fail-text:#B02A43; --fail-dot:#E24862; --fail-tint:#FCE1E6;
+  --block-text:#5E6278; --block-tint:#EBECF2;
+  --tool-text:#0A6E82; --tool-dot:#0E9FBB; --tool-tint:#DCF1F7;
+  --shadow-card: 0 1px 2px rgb(20 22 45 / .06), 0 6px 18px rgb(20 22 45 / .07);
+  --shadow-float: 0 16px 44px rgb(20 22 45 / .16), 0 0 0 1px var(--hairline);
+  --ring: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--canvas); color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased; letter-spacing: -0.01em;
+}
+.mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; letter-spacing: 0; }
+::selection { background: var(--accent-tint); color: var(--ink); }
+:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 7px; }
+* { scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 999px; border: 3px solid var(--canvas); }
+
+.app { display: grid; grid-template-columns: 208px 1fr; height: 100vh; overflow: hidden; }
+
+/* ---------- Rail ---------- */
+.rail { background: var(--shell); border-right: 1px solid var(--hairline); display: flex; flex-direction: column; min-height: 0; }
+.rail-top { padding: 14px 12px 8px; }
+.wordmark { display: flex; align-items: center; gap: 9px; padding: 2px 6px 14px; }
+.wordmark .glyph { width: 17px; height: 17px; color: var(--accent); }
+.wordmark b { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
+.ws { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 9px; border: 1px solid var(--edge); border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; text-align: left; }
+.ws:hover { border-color: var(--faint); }
+.ws .dir { font-size: 11.5px; color: var(--faint); }
+.ws b { font-size: 13px; font-weight: 600; }
+.ws .chev { margin-left: auto; color: var(--faint); width: 14px; height: 14px; }
+.nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 1px; }
+.nav-h { font-size: 10px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); padding: 8px 10px 4px; }
+.nav a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500; cursor: pointer; }
+.nav a svg { width: 16px; height: 16px; flex: none; }
+.nav a:hover { background: var(--raised); color: var(--ink); }
+.nav a.active { background: var(--accent-tint); color: var(--accent); font-weight: 600; }
+.nav a .badge { margin-left: auto; font-size: 10.5px; font-weight: 700; min-width: 17px; text-align: center; padding: 1px 5px; border-radius: 999px; }
+.nav a .badge.attn { background: var(--accent); color: var(--on-accent); }
+.nav a .badge.count { background: var(--raised); color: var(--muted); }
+.rail-foot { margin-top: auto; padding: 10px; border-top: 1px solid var(--hairline); }
+.rail-foot button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border: 0; background: none; color: var(--faint); font: inherit; font-size: 12.5px; cursor: pointer; border-radius: 7px; }
+.rail-foot button:hover { background: var(--raised); color: var(--ink); }
+.rail-foot svg { width: 15px; height: 15px; }
+
+/* ---------- Working area ---------- */
+.work { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.strip { height: 46px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--shell); border-bottom: 1px solid var(--hairline); }
+.strip .grp { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); }
+.strip .grp .k { color: var(--faint); }
+.strip .grp b { color: var(--ink); font-weight: 600; }
+.sep { width: 1px; height: 16px; background: var(--hairline); }
+.master { display: flex; align-items: center; gap: 8px; }
+.switch { position: relative; width: 32px; height: 19px; border-radius: 999px; background: var(--accent); border: 0; cursor: pointer; padding: 0; flex: none; }
+.switch::after { content:""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.switch[aria-checked="true"]::after { transform: translateX(13px); }
+.switch[aria-checked="false"] { background: var(--edge); }
+.strip .right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.iconbtn { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; border: 0; background: none; color: var(--faint); cursor: pointer; }
+.iconbtn:hover { background: var(--raised); color: var(--ink); }
+.iconbtn svg { width: 16px; height: 16px; }
+.btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--accent); color: var(--on-accent); border: 0; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary svg { width: 15px; height: 15px; }
+
+.stage { flex: 1; min-height: 0; overflow: hidden; }
+.stage > .view { height: 100%; overflow-y: auto; }
+.stage[data-view="deck"] .ticket-view,
+.stage[data-view="ticket"] .deck-view { display: none; }
+
+/* ============================================================
+   DECK (board)
+   ============================================================ */
+.deck-view { padding: 10px 24px 56px; }
+.deck-col { max-width: 860px; margin: 0 auto; }
+.section { margin-top: 24px; }
+.section:first-child { margin-top: 12px; }
+.section-h { display: flex; align-items: baseline; gap: 9px; padding: 0 4px 9px; }
+.section-h .lbl { font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); }
+.section-h.attn .lbl { color: var(--accent); }
+.section-h .n { font-size: 11px; font-weight: 600; color: var(--muted); }
+.section-h .sub { margin-left: auto; font-size: 11.5px; color: var(--faint); }
+
+.panel { background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-card); overflow: hidden; }
+
+.row { display: grid; grid-template-columns: 12px 1fr auto; gap: 13px; align-items: center; padding: 12px 15px; cursor: pointer; position: relative; }
+.panel .row:not(:first-child)::before,
+.epic-members .row:not(:first-child)::before { content:""; position: absolute; left: 15px; right: 15px; top: 0; height: 1px; background: var(--hairline); }
+.row:hover { background: color-mix(in srgb, var(--raised) 50%, transparent); }
+
+.marker { display: grid; place-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.run{background:var(--run-dot);} .dot.ready{background:var(--ready-dot);}
+.dot.done{background:var(--done-dot);} .dot.fail{background:var(--fail-dot);}
+.dot.block{background:var(--block-text);} .dot.review{background:var(--accent);}
+.dot.pulse{animation:pulse 1.9s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+@media (prefers-reduced-motion:reduce){.dot.pulse{animation:none;}}
+
+.row .main { min-width: 0; }
+.row .title { display: flex; align-items: center; gap: 9px; }
+.row .title .id { font-size: 11.5px; color: var(--faint); font-weight: 500; flex: none; }
+.row .title .t { font-size: 13.5px; font-weight: 550; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11.5px; color: var(--faint); }
+.row .meta .mono { color: var(--muted); }
+.row .meta .dim { color: var(--block-text); }
+
+.chip { font-size: 10px; font-weight: 600; padding: 1.5px 6px; border-radius: 5px; white-space: nowrap; flex: none; letter-spacing: .01em; }
+.chip.mirrored { background: var(--tool-tint); color: var(--tool-text); }
+.chip.afk { background: var(--raised); color: var(--muted); }
+.chip.high { background: var(--raised); color: var(--muted); }
+.chip.escal { background: var(--run-tint); color: var(--run-text); display: inline-flex; align-items: center; gap: 4px; }
+.chip.escal svg { width: 10px; height: 10px; }
+
+.row .aside { display: flex; align-items: center; gap: 11px; flex: none; }
+.aside .when { font-size: 11.5px; color: var(--faint); }
+.aside .verdict { font-size: 11.5px; color: var(--done-text); display: inline-flex; align-items: center; gap: 4px; }
+.aside .verdict svg { width: 12px; height: 12px; }
+.phase-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+.phase-pill.run { background: var(--run-tint); color: var(--run-text); }
+.phase-pill.tool { background: var(--tool-tint); color: var(--tool-text); }
+.phase-pill.review { background: var(--accent-tint); color: var(--accent); }
+.phase-pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.rowbtn { height: 27px; padding: 0 11px; border-radius: 7px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--edge); background: var(--surface); color: var(--ink); }
+.rowbtn.go { border-color: transparent; background: var(--accent); color: var(--on-accent); }
+.rowbtn:hover { border-color: var(--faint); }
+.rowbtn.go:hover { background: var(--accent-hover); }
+.rowchev { color: var(--faint); width: 15px; height: 15px; }
+
+.epic { background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-card); overflow: hidden; }
+.epic-h { display: flex; align-items: center; gap: 10px; padding: 13px 15px 11px; cursor: pointer; }
+.epic-h .kind { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tool-text); background: var(--tool-tint); padding: 2px 6px; border-radius: 5px; flex: none; }
+.epic-h .eref { font-size: 11.5px; color: var(--faint); flex: none; }
+.epic-h .etitle { font-size: 13.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.epic-h .chev { color: var(--faint); width: 16px; height: 16px; flex: none; transition: transform .16s ease; }
+.epic.open .epic-h .chev { transform: rotate(180deg); }
+.epic-status { display: flex; align-items: center; gap: 13px; padding: 0 15px 13px; flex-wrap: wrap; }
+.train { display: flex; gap: 3px; align-items: center; }
+.seg { width: 20px; height: 6px; border-radius: 3px; background: var(--raised); }
+.seg.done { background: var(--done-dot); } .seg.run { background: var(--run-dot); }
+.seg.block { background: var(--fail-dot); }
+.epic-fact { font-size: 11.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.epic-fact .k { color: var(--faint); }
+.epic-fact svg { width: 13px; height: 13px; }
+.epic-gate { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.gate-note { font-size: 11px; color: var(--fail-text); background: var(--fail-tint); padding: 2px 8px; border-radius: 6px; }
+.epic-members { border-top: 1px solid var(--hairline); display: none; }
+.epic.open .epic-members { display: block; }
+.epic-members .row { grid-template-columns: 12px 1fr auto; padding-left: 22px; }
+
+.recent { margin-top: 12px; padding: 12px 15px; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-card); display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+.recent .cnt { display: inline-flex; align-items: center; gap: 7px; }
+.recent .chev { margin-left: auto; width: 15px; height: 15px; color: var(--faint); }
+
+/* ============================================================
+   TICKET PAGE
+   ============================================================ */
+.ticket-view { display: flex; flex-direction: column; }
+.t-crumb { display: flex; align-items: center; gap: 10px; padding: 11px 24px; border-bottom: 1px solid var(--hairline); background: var(--shell); position: sticky; top: 0; z-index: 4; }
+.backbtn { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 8px; border: 1px solid var(--edge); border-radius: 8px; background: var(--surface); color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.backbtn:hover { border-color: var(--faint); color: var(--ink); }
+.backbtn svg { width: 15px; height: 15px; }
+.t-crumb .path { font-size: 12.5px; color: var(--faint); }
+.t-crumb .path b { color: var(--muted); font-weight: 500; }
+
+.t-page { max-width: 1120px; margin: 0 auto; width: 100%; padding: 0 24px; }
+
+/* task-level header */
+.t-header { padding: 22px 0 4px; }
+.t-titlerow { display: flex; align-items: flex-start; gap: 12px; }
+.t-header h1 { font-size: 23px; font-weight: 750; letter-spacing: -0.025em; line-height: 1.22; max-width: 28ch; }
+.state-chip { font-size: 10.5px; font-weight: 700; letter-spacing: .03em; padding: 3px 9px; border-radius: 6px; background: var(--accent-tint); color: var(--accent); flex: none; margin-top: 3px; }
+.task-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 13px; font-size: 12px; color: var(--muted); }
+.task-meta .mfact { display: inline-flex; align-items: center; gap: 6px; }
+.task-meta .k { color: var(--faint); }
+.task-meta .ok { color: var(--done-text); display: inline-flex; align-items: center; gap: 3px; }
+.task-meta .ok svg { width: 12px; height: 12px; }
+.task-meta .dotsep { width: 3px; height: 3px; border-radius: 50%; background: var(--edge); }
+.brief { margin-top: 15px; padding: 12px 15px; background: var(--surface); border-radius: 10px; box-shadow: var(--shadow-card); font-size: 13px; color: var(--muted); line-height: 1.55; }
+.brief .k { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: block; margin-bottom: 5px; }
+.brief code { background: var(--raised); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, Menlo, monospace; font-size: .88em; }
+
+/* run rail */
+.runrail-wrap { margin: 22px 0 2px; }
+.runrail-lbl { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); margin-bottom: 9px; }
+.runrail { display: flex; gap: 9px; flex-wrap: wrap; }
+.runchip { display: flex; flex-direction: column; gap: 4px; padding: 9px 13px; border: 1px solid var(--edge); border-radius: 10px; background: var(--surface); cursor: pointer; min-width: 132px; text-align: left; font: inherit; }
+.runchip:hover { border-color: var(--faint); }
+.runchip.active { border-color: transparent; box-shadow: 0 0 0 1.5px var(--accent); background: var(--accent-tint); }
+.runchip .rc-top { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; color: var(--ink); }
+.runchip .rc-top .dot { width: 7px; height: 7px; }
+.runchip .rc-sub { display: flex; gap: 9px; font-size: 11px; color: var(--faint); padding-left: 15px; }
+.rc-state { font-weight: 600; }
+.rc-state.failed { color: var(--fail-text); } .rc-state.rejected { color: var(--run-text); }
+.rc-state.review { color: var(--accent); } .rc-state.done { color: var(--done-text); }
+.runrail-note { margin-top: 10px; font-size: 11.5px; color: var(--faint); display: inline-flex; align-items: center; gap: 7px; }
+.runrail-note svg { width: 13px; height: 13px; color: var(--done-text); }
+
+/* run-level detail */
+.run-detail { display: none; margin-top: 20px; }
+.run-detail.active { display: block; }
+.runbanner { display: flex; align-items: flex-start; gap: 11px; padding: 12px 14px; border-radius: 10px; font-size: 12.5px; margin-bottom: 18px; }
+.runbanner .bico { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; flex: none; margin-top: 1px; }
+.runbanner .bico svg { width: 12px; height: 12px; }
+.runbanner.rejected { background: var(--run-tint); color: var(--run-text); }
+.runbanner.rejected .bico { background: color-mix(in srgb, var(--run-text) 22%, transparent); }
+.runbanner.failed { background: var(--fail-tint); color: var(--fail-text); }
+.runbanner.failed .bico { background: color-mix(in srgb, var(--fail-text) 22%, transparent); }
+.runbanner b { font-weight: 700; }
+.runbanner .carry { color: var(--muted); margin-top: 3px; }
+
+.phases { display: flex; align-items: center; padding: 15px 18px; border-radius: 11px; box-shadow: var(--shadow-card); background: var(--surface); margin-bottom: 18px; }
+.pstep { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.pstep .pnode { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--edge); color: var(--faint); }
+.pstep.ok .pnode { background: var(--done-tint); border-color: transparent; color: var(--done-text); }
+.pstep.cur .pnode { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+.pstep.fail .pnode { background: var(--fail-tint); border-color: transparent; color: var(--fail-text); }
+.pstep .plabel { color: var(--faint); }
+.pstep.ok .plabel { color: var(--muted); } .pstep.cur .plabel { color: var(--accent); font-weight: 650; }
+.pstep.fail .plabel { color: var(--fail-text); font-weight: 650; }
+.pstep svg { width: 11px; height: 11px; }
+.pconn { flex: 1; height: 1.5px; background: var(--hairline); margin: 0 8px; }
+.pconn.ok { background: var(--done-dot); }
+
+.t-body { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 22px; padding-bottom: 40px; }
+.t-main { min-width: 0; }
+.t-side { display: flex; flex-direction: column; gap: 16px; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--hairline); margin-bottom: 8px; }
+.tab { padding: 9px 13px; font-size: 13px; font-weight: 550; color: var(--faint); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: 0; border-left: 0; border-right: 0; font-family: inherit; }
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 650; }
+.tab .cnt { color: var(--faint); font-weight: 500; }
+.tabpane { display: none; padding: 8px 2px 0; }
+.tabpane.active { display: block; }
+
+.stream { display: flex; flex-direction: column; }
+.ev { display: grid; grid-template-columns: 16px 1fr; gap: 12px; padding: 9px 0; position: relative; }
+.ev::before { content:""; position: absolute; left: 7px; top: 24px; bottom: -9px; width: 1.5px; background: var(--hairline); }
+.ev:last-child::before { display: none; }
+.ev .eico { width: 16px; height: 16px; margin-top: 3px; border-radius: 5px; display: grid; place-items: center; flex: none; z-index: 1; }
+.ev .eico svg { width: 10px; height: 10px; }
+.eico.thought { background: var(--raised); color: var(--muted); }
+.eico.tool { background: var(--tool-tint); color: var(--tool-text); }
+.eico.msg { background: var(--accent-tint); color: var(--accent); }
+.eico.plan { background: var(--done-tint); color: var(--done-text); }
+.eico.err { background: var(--fail-tint); color: var(--fail-text); }
+.ev .ebody { font-size: 13px; min-width: 0; max-width: 72ch; }
+.ev .ebody .etop { display: flex; align-items: baseline; gap: 8px; }
+.ev .ebody .ekind { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+.ev .ebody .etime { font-size: 11px; color: var(--faint); margin-left: auto; }
+.ev .ebody p { color: var(--muted); margin-top: 2px; }
+.ev .ebody .toolt { color: var(--tool-text); }
+.ev .ebody .diff { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+.ev .ebody .diff .add { color: var(--done-text); } .ev .ebody .diff .del { color: var(--fail-text); }
+.ev .ebody .failt { color: var(--fail-text); }
+
+.promptbox { font-size: 13px; color: var(--muted); line-height: 1.6; max-width: 72ch; }
+.diffbox { font-size: 13px; color: var(--muted); }
+.diffbox .head { color: var(--tool-text); margin-bottom: 10px; }
+.diffbox .file { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--hairline); }
+.diffbox .file .add { color: var(--done-text); } .diffbox .file .del { color: var(--fail-text); }
+.nodiff { font-size: 13px; color: var(--faint); }
+
+.scard { border-radius: 11px; box-shadow: var(--shadow-card); overflow: hidden; background: var(--surface); }
+.scard-h { display: flex; align-items: center; gap: 8px; padding: 11px 14px; }
+.scard-h .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.scard-h .voutcome { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 6px; }
+.voutcome.proceed { color: var(--done-text); } .voutcome.fail { color: var(--fail-text); }
+.scard-h .voutcome .d { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.vrow { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-top: 1px solid var(--hairline); }
+.vrow .vico { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; flex: none; background: var(--done-tint); color: var(--done-text); }
+.vrow .vico.bad { background: var(--fail-tint); color: var(--fail-text); }
+.vrow svg { width: 13px; height: 13px; }
+.vrow .vmain { min-width: 0; }
+.vrow .vmain b { font-size: 12.5px; font-weight: 600; }
+.vrow .vmain .vsub { font-size: 11.5px; color: var(--faint); margin-top: 1px; }
+.vrow .vverd { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--done-text); flex: none; }
+.vrow .vverd.bad { color: var(--fail-text); }
+.kv { padding: 12px 14px; display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; font-size: 12.5px; }
+.kv dt { color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; align-self: center; }
+.kv dd { color: var(--ink); }
+.kv dd .mono { color: var(--muted); }
+.kv dd .warm { color: var(--done-text); }
+.kv dd .faint { color: var(--faint); }
+
+/* review / result bar */
+.gate { position: sticky; bottom: 0; z-index: 5; background: var(--surface); border-top: 1px solid var(--edge); box-shadow: var(--shadow-float); }
+.gate-variant { display: none; }
+.gate-variant.active { display: block; }
+.gate-inner { max-width: 1120px; margin: 0 auto; padding: 13px 24px; display: flex; align-items: center; gap: 16px; }
+.gate .glabel { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.gate .cost { font-size: 12.5px; color: var(--muted); }
+.gate .cost b { color: var(--ink); font-weight: 600; }
+.gate .cost .k { color: var(--faint); }
+.gate .cost .bymodel { font-size: 11px; color: var(--faint); margin-top: 1px; }
+.gate .hist { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 9px; }
+.gate .hist .hdot { width: 8px; height: 8px; border-radius: 50%; }
+.gate .hist b { color: var(--ink); font-weight: 600; }
+.gate .actions { margin-left: auto; display: flex; gap: 10px; }
+.btn-ghost { height: 36px; padding: 0 18px; border-radius: 8px; border: 1px solid var(--edge); background: var(--surface); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.btn-ghost:hover { border-color: var(--faint); }
+.btn-accept { height: 36px; padding: 0 20px; border-radius: 8px; border: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.btn-accept:hover { background: var(--accent-hover); }
+.btn-accept svg { width: 15px; height: 15px; }
+
+.ribbon { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 50; font-size: 11px; color: var(--faint); background: var(--shell); box-shadow: var(--shadow-card); padding: 4px 12px; border-radius: 999px; pointer-events: none; }
+.ribbon b { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= RAIL ================= -->
+  <aside class="rail">
+    <div class="rail-top">
+      <div class="wordmark"><svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 12h3l2-6 4 14 3-9 2 4h4"/></svg><b>Harmonic</b></div>
+      <button class="ws"><div><div class="dir mono">~/src/</div><b>harmonic</b></div><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 9 5 5 5-5"/></svg></button>
+    </div>
+    <nav class="nav">
+      <div class="nav-h">Workspace</div>
+      <a class="active" onclick="show('deck')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Deck <span class="badge attn">2</span></a>
+      <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg>Activity <span class="badge count">3</span></a>
+      <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5h18M3 12h18M3 19h18"/></svg>Table</a>
+      <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v3a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3M12 13.5v2"/></svg>Graph</a>
+      <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats</a>
+      <div class="nav-h">Instance</div>
+      <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>API</a>
+      <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9-4 9 4-9 4-9-4Z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/></svg>Workspace</a>
+    </nav>
+    <div class="rail-foot"><button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 5l-7 7 7 7M4 12h16"/></svg>Collapse</button></div>
+  </aside>
+
+  <!-- ================= WORK ================= -->
+  <main class="work">
+    <div class="strip">
+      <div class="master"><button class="switch" aria-checked="true" title="Auto-runner master switch"></button><span class="grp"><span class="k">Auto-runner</span> <b>on</b></span></div>
+      <div class="sep"></div>
+      <div class="grp"><span class="dot run pulse"></span> <b>3</b> running <span class="k">· 3/6 machine</span></div>
+      <div class="sep"></div>
+      <div class="grp"><span class="k">today</span> <b>$4.82</b></div>
+      <div class="right">
+        <button class="iconbtn" id="theme" title="Toggle theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+        <button class="iconbtn" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.2A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1-2.7H3a2 2 0 1 1 0-4h.2A1.6 1.6 0 0 0 5 6.6l-.1-.1A2 2 0 1 1 7.7 3.7l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V10a1.6 1.6 0 0 0 1.5 1H22a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1Z"/></svg></button>
+        <button class="btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New task</button>
+      </div>
+    </div>
+
+    <div class="stage" id="stage" data-view="deck">
+
+      <!-- ---------- DECK VIEW ---------- -->
+      <section class="view deck-view">
+        <div class="deck-col">
+          <div class="section">
+            <div class="section-h attn"><span class="lbl">Needs you</span><span class="n">2</span><span class="sub">review &amp; escalations</span></div>
+            <div class="panel">
+              <div class="row" tabindex="0" onclick="show('ticket')">
+                <div class="marker"><span class="dot review"></span></div>
+                <div class="main"><div class="title"><span class="id mono">172</span><span class="t">Refactor auth session refresh to single-flight</span></div><div class="meta"><span>Claude · opus</span><span class="mono">worktree</span><span class="dim">· 3 runs</span></div></div>
+                <div class="aside"><span class="verdict"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg>proceed</span><span class="phase-pill review">awaiting review</span><svg class="rowchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></div>
+              </div>
+              <div class="row" tabindex="0" onclick="show('ticket')">
+                <div class="marker"><span class="dot ready"></span></div>
+                <div class="main"><div class="title"><span class="id mono">#4821</span><span class="t">Rate-limit the webhook ingest endpoint</span></div><div class="meta"><span class="chip mirrored">mirrored</span><span class="chip escal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 4l9 16H3z"/></svg>escalated</span><span>permission prompt</span></div></div>
+                <div class="aside"><button class="rowbtn">Take over</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-h"><span class="lbl">In flight</span><span class="n">2</span></div>
+            <div class="panel">
+              <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot run pulse"></span></div><div class="main"><div class="title"><span class="id mono">173</span><span class="t">Add compact conversation formatter</span></div><div class="meta"><span>Codex · gpt-5-codex</span><span class="mono">worktree</span></div></div><div class="aside"><span class="when">1m 12s</span><span class="phase-pill tool"><span class="d"></span>verifying</span></div></div>
+              <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot run pulse"></span></div><div class="main"><div class="title"><span class="id mono">#4840</span><span class="t">Fix flaky auto-drive timeout test</span></div><div class="meta"><span class="chip afk">afk</span><span>Copilot</span></div></div><div class="aside"><span class="when">3m 05s</span><span class="phase-pill run"><span class="d"></span>executing</span></div></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-h"><span class="lbl">Landing</span><span class="n">1 epic</span><span class="sub">members land as a batch</span></div>
+            <div class="epic" id="epic44">
+              <div class="epic-h" onclick="document.getElementById('epic44').classList.toggle('open')">
+                <span class="kind">Spec</span><span class="eref mono">epic/44</span><span class="etitle">Parallel epic execution — merge train</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+              <div class="epic-status">
+                <div class="train" title="merge train — 3 of 5 folded"><span class="seg done"></span><span class="seg done"></span><span class="seg done"></span><span class="seg run"></span><span class="seg block"></span></div>
+                <span class="epic-fact"><span class="k">folded</span> 3/5</span>
+                <span class="epic-fact"><span class="k">tip</span> <span class="mono">a1f9c02</span></span>
+                <span class="epic-fact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>verification pending</span>
+                <div class="epic-gate"><span class="gate-note">#4834 blocked · rebase conflict</span><button class="rowbtn">Force-land subset</button></div>
+              </div>
+              <div class="epic-members">
+                <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot done"></span></div><div class="main"><div class="title"><span class="id mono">#4831</span><span class="t">Rebase-onto-tip helper</span></div><div class="meta"><span>folded</span><span class="mono">→ a1f9c02</span></div></div><div class="aside"><span class="when">completed</span></div></div>
+                <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot run pulse"></span></div><div class="main"><div class="title"><span class="id mono">#4830</span><span class="t">Extract merge-train FIFO into its own module</span></div><div class="meta"><span>Claude · sonnet</span></div></div><div class="aside"><span class="phase-pill run"><span class="d"></span>executing</span></div></div>
+                <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot fail"></span></div><div class="main"><div class="title"><span class="id mono">#4834</span><span class="t">Single-writer landing lock</span></div><div class="meta"><span class="dim">2nd rebase conflict → escalated</span></div></div><div class="aside"><button class="rowbtn">Open</button></div></div>
+                <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot ready"></span></div><div class="main"><div class="title"><span class="id mono">#4835</span><span class="t">Merge-train integration tests</span></div><div class="meta"><span>ready · in frontier</span></div></div><div class="aside"><span class="when">queued</span></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-h"><span class="lbl">Queued</span><span class="n">5</span><span class="sub">auto-runner picks by priority</span></div>
+            <div class="panel">
+              <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot ready"></span></div><div class="main"><div class="title"><span class="id mono">174</span><span class="t">Document the verification override chain</span></div><div class="meta"><span class="chip high">high</span><span>Claude · opus</span></div></div><div class="aside"><button class="rowbtn go">Run now</button></div></div>
+              <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot ready"></span></div><div class="main"><div class="title"><span class="id mono">#4842</span><span class="t">Upgrade ACP client to 0.4</span></div><div class="meta"><span class="chip mirrored">mirrored</span><span class="chip afk">afk</span><span class="mono">auto-merge</span></div></div><div class="aside"><span class="when">next up</span></div></div>
+              <div class="row" tabindex="0" onclick="show('ticket')"><div class="marker"><span class="dot block"></span></div><div class="main"><div class="title"><span class="id mono">175</span><span class="t">Wire condensed-continuation cost into reject dialog</span></div><div class="meta"><span class="dim">blocked by</span> <span class="mono">172</span></div></div><div class="aside"><span class="when">waiting</span></div></div>
+            </div>
+          </div>
+
+          <div class="recent" tabindex="0"><span class="cnt"><span class="dot done"></span> 12 landed</span><span class="cnt"><span class="dot fail"></span> 1 failed</span><span style="color:var(--faint)">today</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></div>
+        </div>
+      </section>
+
+      <!-- ---------- TICKET VIEW ---------- -->
+      <section class="view ticket-view">
+        <div class="t-crumb">
+          <button class="backbtn" onclick="show('deck')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14 6-6 6 6 6"/></svg>Deck</button>
+          <span class="path"><b>Deck</b> / task 172</span>
+        </div>
+
+        <div class="t-page">
+          <!-- TASK LEVEL -->
+          <div class="t-header">
+            <div class="t-titlerow">
+              <h1>Refactor auth session refresh to single-flight</h1>
+              <span class="state-chip">Awaiting review</span>
+            </div>
+            <div class="task-meta">
+              <span class="mfact">native</span><span class="dotsep"></span>
+              <span class="mfact"><span class="k">priority</span> normal</span><span class="dotsep"></span>
+              <span class="mfact"><span class="k">isolation</span> worktree</span><span class="dotsep"></span>
+              <span class="mfact"><span class="k">base</span> <span class="mono">develop</span></span><span class="dotsep"></span>
+              <span class="mfact"><span class="k">depends on</span> <span class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg>168</span> <span class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg>169</span></span><span class="dotsep"></span>
+              <span class="mfact"><span class="k">notify</span> Discord #harmonic</span>
+            </div>
+            <div class="brief"><span class="k">Brief</span>Collapse two concurrent callers on token expiry into a single in-flight refresh (single-flight). Keep the public <code>refreshSession()</code> signature; add a regression test for the concurrent-expiry race.</div>
+          </div>
+
+          <!-- RUN RAIL -->
+          <div class="runrail-wrap">
+            <div class="runrail-lbl">Runs · 3 attempts</div>
+            <div class="runrail" id="runrail">
+              <button class="runchip" data-run="1" onclick="pickRun(1)">
+                <span class="rc-top"><span class="dot fail"></span>Run 1</span>
+                <span class="rc-sub"><span class="rc-state failed">failed</span><span>$0.20</span><span>31s</span></span>
+              </button>
+              <button class="runchip" data-run="2" onclick="pickRun(2)">
+                <span class="rc-top"><span class="dot fail"></span>Run 2</span>
+                <span class="rc-sub"><span class="rc-state rejected">rejected</span><span>$0.55</span><span>58s</span></span>
+              </button>
+              <button class="runchip active" data-run="3" onclick="pickRun(3)">
+                <span class="rc-top"><span class="dot review"></span>Run 3</span>
+                <span class="rc-sub"><span class="rc-state review">awaiting</span><span>$0.71</span><span>44s</span></span>
+              </button>
+            </div>
+            <div class="runrail-note" id="rnote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M17 4v5h-5M7 20v-5h5"/></svg>Run 3 continued Run 2’s session · warm ~54m</div>
+          </div>
+
+          <!-- RUN 3 (current) -->
+          <div class="run-detail active" data-run="3">
+            <div class="phases">
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">executing</span></div><span class="pconn ok"></span>
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">validating</span></div><span class="pconn ok"></span>
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">verifying</span></div><span class="pconn ok"></span>
+              <div class="pstep cur"><span class="pnode"></span><span class="plabel">review</span></div><span class="pconn"></span>
+              <div class="pstep"><span class="pnode"></span><span class="plabel">landing</span></div>
+            </div>
+            <div class="t-body">
+              <div class="t-main">
+                <div class="tabs">
+                  <button class="tab active" data-tab="output">Output</button>
+                  <button class="tab" data-tab="changes">Changes <span class="cnt">3</span></button>
+                </div>
+                <div class="tabpane active" data-pane="output">
+                  <div class="stream">
+                    <div class="ev"><div class="eico thought"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2 2"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">thought</span><span class="etime mono">12:04:31</span></div><p>Run 2 was rejected for not handling a null token — adding that branch before the single-flight guard.</p></div></div>
+                    <div class="ev"><div class="eico tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3l7 7-9 9H5v-7z"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">edit</span><span class="etime mono">12:04:55</span></div><p class="toolt mono">src/auth/refresh.ts</p><div class="diff"><span class="add">+46</span> <span class="del">−11</span> · null-token guard + single-flight</div></div></div>
+                    <div class="ev"><div class="eico msg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">assistant</span><span class="etime mono">12:05:10</span></div><p>Guard returns early on a null token; concurrent callers now await one in-flight promise. Regression test covers both the race and the null case.</p></div></div>
+                    <div class="ev"><div class="eico plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">plan</span><span class="etime mono">12:05:12</span></div><p>4 / 4 complete — <span class="mono">finish_task</span>.</p></div></div>
+                  </div>
+                </div>
+                <div class="tabpane" data-pane="changes">
+                  <div class="diffbox">
+                    <div class="head mono">harmonic/task-172-run-3 ⇠ develop · +62 −14</div>
+                    <div class="file"><span class="mono">src/auth/refresh.ts</span><span><span class="add">+46</span> <span class="del">−11</span></span></div>
+                    <div class="file"><span class="mono">src/auth/session.ts</span><span><span class="add">+4</span> <span class="del">−3</span></span></div>
+                    <div class="file"><span class="mono">tests/auth-refresh.test.ts</span><span><span class="add">+12</span> <span class="del">−0</span></span></div>
+                  </div>
+                </div>
+              </div>
+              <aside class="t-side">
+                <div class="scard">
+                  <div class="scard-h"><span class="lbl">Verification</span><span class="voutcome proceed"><span class="d"></span>proceed</span></div>
+                  <div class="vrow"><div class="vico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></div><div class="vmain"><b>Command</b><div class="vsub mono">216 passed</div></div><span class="vverd">pass</span></div>
+                  <div class="vrow"><div class="vico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7z"/></svg></div><div class="vmain"><b>Critic · sonnet</b><div class="vsub">No blocking issues</div></div><span class="vverd">proceed</span></div>
+                </div>
+                <div class="scard">
+                  <div class="scard-h"><span class="lbl">This run</span></div>
+                  <dl class="kv">
+                    <dt>session</dt><dd class="mono">01J8Z…A4F2 <span class="warm">warm</span></dd>
+                    <dt>usage</dt><dd>63k tok · ctx 39%</dd>
+                    <dt>cost</dt><dd>$0.71 <span class="faint">opus $0.68 · sonnet $0.03</span></dd>
+                  </dl>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- RUN 2 (rejected) -->
+          <div class="run-detail" data-run="2">
+            <div class="runbanner rejected">
+              <div class="bico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12a8 8 0 1 0 3-6M7 3v4H3"/></svg></div>
+              <div><b>Rejected</b> — reviewer flagged a missed null-token edge case.<div class="carry">Feedback carried into Run 3: “handle a null token before the single-flight guard.”</div></div>
+            </div>
+            <div class="phases">
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">executing</span></div><span class="pconn ok"></span>
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">validating</span></div><span class="pconn ok"></span>
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">verifying</span></div><span class="pconn"></span>
+              <div class="pstep fail"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></span><span class="plabel">review · rejected</span></div>
+            </div>
+            <div class="t-body">
+              <div class="t-main">
+                <div class="tabs"><button class="tab active" data-tab="output">Output</button><button class="tab" data-tab="changes">Changes <span class="cnt">2</span></button></div>
+                <div class="tabpane active" data-pane="output">
+                  <div class="stream">
+                    <div class="ev"><div class="eico tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3l7 7-9 9H5v-7z"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">edit</span><span class="etime mono">11:51:02</span></div><p class="toolt mono">src/auth/refresh.ts</p><div class="diff"><span class="add">+38</span> <span class="del">−9</span> · single-flight guard</div></div></div>
+                    <div class="ev"><div class="eico msg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">assistant</span><span class="etime mono">11:51:40</span></div><p>Collapsed concurrent refreshes behind one promise; tests pass.</p></div></div>
+                  </div>
+                </div>
+                <div class="tabpane" data-pane="changes"><div class="diffbox"><div class="head mono">harmonic/task-172-run-2 · +42 −12</div><div class="file"><span class="mono">src/auth/refresh.ts</span><span><span class="add">+38</span> <span class="del">−9</span></span></div><div class="file"><span class="mono">tests/auth-refresh.test.ts</span><span><span class="add">+4</span> <span class="del">−3</span></span></div></div></div>
+              </div>
+              <aside class="t-side">
+                <div class="scard">
+                  <div class="scard-h"><span class="lbl">Verification</span><span class="voutcome proceed"><span class="d"></span>proceed</span></div>
+                  <div class="vrow"><div class="vico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></div><div class="vmain"><b>Command</b><div class="vsub mono">212 passed</div></div><span class="vverd">pass</span></div>
+                  <div class="vrow"><div class="vico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7z"/></svg></div><div class="vmain"><b>Critic · sonnet</b><div class="vsub">Passed the automated gate — the human reviewer caught the gap.</div></div><span class="vverd">proceed</span></div>
+                </div>
+                <div class="scard"><div class="scard-h"><span class="lbl">This run</span></div><dl class="kv"><dt>session</dt><dd class="mono">01J8Z…A4F2</dd><dt>usage</dt><dd>49k tok · ctx 31%</dd><dt>cost</dt><dd>$0.55</dd></dl></div>
+              </aside>
+            </div>
+          </div>
+
+          <!-- RUN 1 (failed) -->
+          <div class="run-detail" data-run="1">
+            <div class="runbanner failed">
+              <div class="bico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 8v5M12 16v.5M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg></div>
+              <div><b>Failed</b> — validation failed at <span class="mono">pnpm lint</span> (2 errors). Auto-retried as Run 2.</div>
+            </div>
+            <div class="phases">
+              <div class="pstep ok"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg></span><span class="plabel">executing</span></div><span class="pconn ok"></span>
+              <div class="pstep fail"><span class="pnode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></span><span class="plabel">validating · failed</span></div><span class="pconn"></span>
+              <div class="pstep"><span class="pnode"></span><span class="plabel">verifying</span></div><span class="pconn"></span>
+              <div class="pstep"><span class="pnode"></span><span class="plabel">review</span></div>
+            </div>
+            <div class="t-body">
+              <div class="t-main">
+                <div class="tabs"><button class="tab active" data-tab="output">Output</button><button class="tab" data-tab="changes">Changes</button></div>
+                <div class="tabpane active" data-pane="output">
+                  <div class="stream">
+                    <div class="ev"><div class="eico tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3l7 7-9 9H5v-7z"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">edit</span><span class="etime mono">11:42:19</span></div><p class="toolt mono">src/auth/refresh.ts</p><div class="diff"><span class="add">+29</span> <span class="del">−6</span></div></div></div>
+                    <div class="ev"><div class="eico err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></div><div class="ebody"><div class="etop"><span class="ekind">validation</span><span class="etime mono">11:42:50</span></div><p class="failt">pnpm lint — 2 errors: unused import, missing return type in <span class="mono">refresh.ts</span>.</p></div></div>
+                  </div>
+                </div>
+                <div class="tabpane" data-pane="changes"><div class="nodiff">Branch discarded — run failed before a reviewable diff.</div></div>
+              </div>
+              <aside class="t-side">
+                <div class="scard">
+                  <div class="scard-h"><span class="lbl">Verification</span><span class="voutcome fail"><span class="d"></span>not reached</span></div>
+                  <div class="vrow"><div class="vico bad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 6l12 12M18 6L6 18"/></svg></div><div class="vmain"><b>Validation</b><div class="vsub mono">pnpm lint — 2 errors</div></div><span class="vverd bad">fail</span></div>
+                </div>
+                <div class="scard"><div class="scard-h"><span class="lbl">This run</span></div><dl class="kv"><dt>session</dt><dd class="mono">01J8Z…A4F2</dd><dt>usage</dt><dd>18k tok · ctx 12%</dd><dt>cost</dt><dd>$0.20</dd></dl></div>
+              </aside>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom bar: review gate on current run; read-only result on history -->
+        <div class="gate">
+          <div class="gate-variant active" data-run="3">
+            <div class="gate-inner">
+              <span class="glabel">Review gate</span>
+              <div class="cost"><span><span class="k">run 3</span> <b>$0.71</b> · <span class="mono">63k</span> tok</span><div class="bymodel">task total $1.46 across 3 runs</div></div>
+              <div class="actions"><button class="btn-ghost">Reject…</button><button class="btn-accept"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 6"/></svg>Accept &amp; merge</button></div>
+            </div>
+          </div>
+          <div class="gate-variant" data-run="2">
+            <div class="gate-inner">
+              <div class="hist"><span class="hdot" style="background:var(--run-dot)"></span> <b>Run 2</b> rejected · superseded by Run 3</div>
+              <div class="actions"><button class="btn-ghost" onclick="pickRun(3)">Go to current run</button></div>
+            </div>
+          </div>
+          <div class="gate-variant" data-run="1">
+            <div class="gate-inner">
+              <div class="hist"><span class="hdot" style="background:var(--fail-dot)"></span> <b>Run 1</b> failed · auto-retried as Run 2</div>
+              <div class="actions"><button class="btn-ghost" onclick="pickRun(3)">Go to current run</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="ribbon"><b>Prototype</b> — click a row → ticket · switch runs on the run rail · back arrow → Deck · theme icon flips light/dark</div>
+
+<script>
+  function show(view){
+    document.getElementById('stage').setAttribute('data-view', view);
+    document.querySelectorAll('.view').forEach(v => v.scrollTop = 0);
+  }
+  function pickRun(n){
+    document.querySelectorAll('.runchip').forEach(c => c.classList.toggle('active', c.dataset.run == n));
+    document.querySelectorAll('.run-detail').forEach(d => d.classList.toggle('active', d.dataset.run == n));
+    document.querySelectorAll('.gate-variant').forEach(g => g.classList.toggle('active', g.dataset.run == n));
+    document.getElementById('rnote').style.display = (n == 3) ? 'inline-flex' : 'none';
+  }
+  document.getElementById('theme').addEventListener('click', () => {
+    const r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    const scope = t.closest('.run-detail');
+    scope.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    scope.querySelectorAll('.tabpane').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    scope.querySelector('.tabpane[data-pane="'+t.dataset.tab+'"]').classList.add('active');
+  }));
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-16T18:30:00Z",
-  "title": "Design System: Harmonic — \"Aurora\"",
+  "generatedAt": "2026-08-19T22:00:00Z",
+  "title": "Design System: Harmonic — \"Deck\"",
   "extensions": {
     "colorMeta": {
       "accent": {
@@ -47,12 +47,12 @@
       "accent-tint-light": {
         "role": "primary",
         "displayName": "Cobalt Tint",
-        "canonical": "oklch(94.9% 0.023 266.9)"
+        "canonical": "#EAF1FE"
       },
       "accent-tint-dark": {
         "role": "primary",
         "displayName": "Cobalt Tint (Dark)",
-        "canonical": "oklch(26.5% 0.055 270.6)"
+        "canonical": "#1C2545"
       },
       "on-accent-light": {
         "role": "primary",
@@ -66,8 +66,8 @@
       },
       "canvas-light": {
         "role": "neutral",
-        "displayName": "Sky Canvas",
-        "canonical": "oklch(98.9% 0.003 286.4)",
+        "displayName": "Canvas",
+        "canonical": "#F6F7FB",
         "tonalRamp": [
           "#0b0b0c",
           "#252526",
@@ -81,7 +81,7 @@
       },
       "canvas-dark": {
         "role": "neutral",
-        "displayName": "Night Canvas",
+        "displayName": "Canvas (Dark)",
         "canonical": "oklch(17.4% 0.013 270.6)",
         "tonalRamp": [
           "#090b11",
@@ -117,7 +117,7 @@
       "raised-light": {
         "role": "neutral",
         "displayName": "Raised Mist",
-        "canonical": "oklch(96.2% 0.005 275.0)"
+        "canonical": "#EEF0F6"
       },
       "raised-dark": {
         "role": "neutral",
@@ -127,27 +127,27 @@
       "hairline-light": {
         "role": "neutral",
         "displayName": "Hairline",
-        "canonical": "oklch(94.7% 0.008 278.6)"
+        "canonical": "#E7E9F1"
       },
       "hairline-dark": {
         "role": "neutral",
         "displayName": "Hairline (Dark)",
-        "canonical": "oklch(27.7% 0.022 265.8)"
+        "canonical": "#242A35"
       },
       "edge-light": {
         "role": "neutral",
         "displayName": "Edge",
-        "canonical": "oklch(90.5% 0.015 277.8)"
+        "canonical": "#D6D9E4"
       },
       "edge-dark": {
         "role": "neutral",
         "displayName": "Edge (Dark)",
-        "canonical": "oklch(30.5% 0.023 267.3)"
+        "canonical": "#2E3440"
       },
       "ink-light": {
         "role": "neutral",
         "displayName": "Deep Ink",
-        "canonical": "oklch(21.7% 0.037 278.2)",
+        "canonical": "#141627",
         "tonalRamp": [
           "#08091a",
           "#212337",
@@ -162,12 +162,12 @@
       "ink-dark": {
         "role": "neutral",
         "displayName": "Pale Ink",
-        "canonical": "oklch(94.7% 0.011 274.9)"
+        "canonical": "#EDEFF6"
       },
       "muted-light": {
         "role": "neutral",
         "displayName": "Muted Slate",
-        "canonical": "oklch(48.8% 0.042 277.9)"
+        "canonical": "#565A72"
       },
       "muted-dark": {
         "role": "neutral",
@@ -177,12 +177,12 @@
       "faint-light": {
         "role": "neutral",
         "displayName": "Faint Slate",
-        "canonical": "oklch(67.9% 0.039 278.4)"
+        "canonical": "#767A8E"
       },
       "faint-dark": {
         "role": "neutral",
         "displayName": "Faint Slate (Dark)",
-        "canonical": "oklch(55.1% 0.032 272.1)"
+        "canonical": "#7E8496"
       },
       "running-text-light": {
         "role": "secondary",
@@ -423,13 +423,13 @@
     "shadows": [
       {
         "name": "card",
-        "value": "0 1px 2px rgb(20 22 45 / 0.05), 0 8px 24px rgb(20 22 45 / 0.06)",
-        "purpose": "Light theme: cards floating on the canvas. Two layers — a contact shadow plus a soft ambient bloom. Never paired with a border (the ghost-card ban)."
+        "value": "0 1px 2px rgb(20 22 45 / 0.06), 0 6px 18px rgb(20 22 45 / 0.07)",
+        "purpose": "Light theme: a panel floating on the canvas — grouping is the panel. Two layers, a contact shadow plus a soft ambient bloom. Never paired with a border (ghost-card ban)."
       },
       {
         "name": "card-dark",
-        "value": "0 1px 2px rgb(0 0 0 / 0.4)",
-        "purpose": "Dark theme: shadows fade on a dark field, so a card separates by its lightness step (#0E1016 canvas -> #171A22 surface), not by this shadow."
+        "value": "0 0 0 1px #242A35",
+        "purpose": "Dark theme: shadows fade on a dark field, so a panel is a lightness step (canvas #0E1016 → surface #171A22) plus a hairline ring."
       },
       {
         "name": "bar",
@@ -532,22 +532,6 @@
       "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; width: 196px; background: var(--hm-shell); padding: 8px; box-sizing: border-box; } .ds-nav-item { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; font-weight: 500; color: var(--hm-muted); text-decoration: none; transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-nav-item:hover { color: var(--hm-ink); background: var(--hm-raised); } .ds-nav-item--active { color: var(--hm-accent); background: var(--hm-accent-tint); } .ds-nav-item:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; }"
     },
     {
-      "name": "Task Card",
-      "kind": "card",
-      "refersTo": "task-card",
-      "description": "The Board's atom, and the Prime Directive made literal: the title is the hero, and everything else is one truncating faint line. No state pill (the column already says the state), no metadata chips, no border.",
-      "html": "<article class=\"ds-task-card\"><h3 class=\"ds-task-card__title\">Add rate limiting to the ACP bridge</h3><p class=\"ds-task-card__meta\">claude · sonnet-5 · #4821</p></article>",
-      "css": ".ds-task-card { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; width: 262px; box-sizing: border-box; background: var(--hm-surface); border-radius: 12px; box-shadow: var(--hm-shadow-card); padding: 12px 14px; } .ds-task-card__title { font-size: 0.9375rem; font-weight: 600; line-height: 1.4; color: var(--hm-ink); margin: 0; } .ds-task-card__meta { font-size: 0.75rem; line-height: 1.45; color: var(--hm-faint); margin: 6px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }"
-    },
-    {
-      "name": "Board Column Header",
-      "kind": "custom",
-      "refersTo": "lane-header",
-      "description": "Signature component. This is where the Board gets its colour: a lane-coloured bottom rule, a lane dot, and a tinted count pill. The colour lives here on the signal layer so the cards below stay calm. The count pill goes neutral at zero — colour only when it means something.",
-      "html": "<div class=\"ds-lane-head\"><span class=\"ds-lane-head__dot\"></span><span class=\"ds-lane-head__name\">Running</span><span class=\"ds-lane-head__count\">3</span></div>",
-      "css": ".ds-lane-head { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; gap: 8px; width: 262px; box-sizing: border-box; padding: 0 2px 8px; border-bottom: 2px solid var(--hm-running-dot); } .ds-lane-head__dot { width: 7px; height: 7px; border-radius: 999px; background: var(--hm-running-dot); flex: none; } .ds-lane-head__name { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--hm-muted); } .ds-lane-head__count { margin-left: auto; font-size: 0.6875rem; font-weight: 600; border-radius: 999px; padding: 2px 8px; background: var(--hm-running-tint); color: var(--hm-running); font-variant-numeric: tabular-nums; }"
-    },
-    {
       "name": "Review Gate",
       "kind": "custom",
       "refersTo": "review-gate",
@@ -562,81 +546,77 @@
       "description": "How a rejected operation announces itself — never a native alert()/confirm(). A Failed-tint card in a top-right stack hanging off the header's bottom edge, aria-live, ~6s auto-dismiss.",
       "html": "<div class=\"ds-toast\" role=\"status\"><div class=\"ds-toast__body\"><p class=\"ds-toast__title\">Couldn't merge agent/4810-dark-mode</p><p class=\"ds-toast__detail\">Worktree conflict in web/src/ui.ts — the task is back in Awaiting review.</p></div><button class=\"ds-toast__dismiss\" aria-label=\"Dismiss\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"/><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"/></svg></button></div>",
       "css": ".ds-toast { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: flex-start; gap: 12px; width: 360px; box-sizing: border-box; background: var(--hm-fail-tint); border-radius: 12px; box-shadow: var(--hm-shadow-bar); padding: 12px 14px; } .ds-toast__body { flex: 1; } .ds-toast__title { font-size: 0.90625rem; font-weight: 600; color: var(--hm-fail); margin: 0; } .ds-toast__detail { font-size: 0.75rem; line-height: 1.45; color: var(--hm-muted); margin: 4px 0 0; } .ds-toast__dismiss { color: var(--hm-faint); background: none; border: none; padding: 2px; cursor: pointer; transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-toast__dismiss:hover { color: var(--hm-ink); } .ds-toast__dismiss:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; border-radius: 4px; }"
+    },
+    {
+      "name": "Panel",
+      "kind": "container",
+      "refersTo": "panel",
+      "description": "The grouping primitive: a Surface panel holds a group of rows. Groups separate by the canvas between panels; rows inside separate by a hairline inset. Never a bare ruled-row list on the canvas.",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-row\"><span class=\"ds-dot\"></span><span class=\"ds-id\">172</span><span class=\"ds-title\">Refactor auth session refresh</span></div><div class=\"ds-row\"><span class=\"ds-dot ready\"></span><span class=\"ds-id\">174</span><span class=\"ds-title\">Document verification override chain</span></div></div>",
+      "css": ".ds-panel{background:#FFFFFF;border-radius:12px;box-shadow:0 1px 2px rgb(20 22 45/.06),0 6px 18px rgb(20 22 45/.07);overflow:hidden;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;}.ds-panel .ds-row{display:flex;align-items:center;gap:12px;padding:12px 15px;}.ds-panel .ds-row+.ds-row{border-top:1px solid #E7E9F1;}.ds-panel .ds-dot{width:8px;height:8px;border-radius:50%;background:#2563EB;}.ds-panel .ds-dot.ready{background:#1BA35B;}.ds-panel .ds-id{font-size:11.5px;color:#767A8E;}.ds-panel .ds-title{font-size:13.5px;font-weight:550;color:#141627;}"
+    },
+    {
+      "name": "Deck Row",
+      "kind": "list-item",
+      "refersTo": "deck-row",
+      "description": "A Deck summary row: state dot, faint id, loud title, up to two quiet meta facts, and a right-aligned state signal. One click opens the full Ticket — the Deck never becomes the detail.",
+      "html": "<div class=\"ds-drow\"><span class=\"ds-dot\"></span><div class=\"ds-main\"><div class=\"ds-t\">Refactor auth session refresh to single-flight</div><div class=\"ds-meta\">Claude · opus · worktree</div></div><span class=\"ds-signal\">awaiting review</span></div>",
+      "css": ".ds-drow{display:flex;align-items:center;gap:13px;padding:12px 15px;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;}.ds-drow .ds-dot{width:8px;height:8px;border-radius:50%;background:#2563EB;flex:none;}.ds-drow .ds-main{flex:1;min-width:0;}.ds-drow .ds-t{font-size:13.5px;font-weight:550;color:#141627;}.ds-drow .ds-meta{font-size:11.5px;color:#767A8E;margin-top:3px;}.ds-drow .ds-signal{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;background:#EAF1FE;color:#2563EB;}"
+    },
+    {
+      "name": "Run Chip",
+      "kind": "control",
+      "refersTo": "run-chip",
+      "description": "One chip per Run on the Ticket’s run rail; selecting it switches the run-level detail (phases, verification, output, changes, cost). Shows state, cost, duration. Selected chip is Accent Tint plus a cobalt ring.",
+      "html": "<button class=\"ds-chip active\"><span class=\"ds-ctop\"><span class=\"ds-dot\"></span>Run 3</span><span class=\"ds-csub\">awaiting · $0.71 · 44s</span></button>",
+      "css": ".ds-chip{display:inline-flex;flex-direction:column;gap:4px;padding:9px 13px;border:1px solid #D6D9E4;border-radius:10px;background:#FFFFFF;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;text-align:left;cursor:pointer;}.ds-chip.active{border-color:transparent;box-shadow:0 0 0 1.5px #2563EB;background:#EAF1FE;}.ds-chip .ds-ctop{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#141627;}.ds-chip .ds-dot{width:7px;height:7px;border-radius:50%;background:#2563EB;}.ds-chip .ds-csub{font-size:11px;color:#767A8E;padding-left:15px;}"
+    },
+    {
+      "name": "Phase Stepper",
+      "kind": "indicator",
+      "refersTo": "phase-step",
+      "description": "A Run’s executing → validating → verifying → review → landing machine as a compact stepper. Done steps emerald, current cobalt, pending hollow, a failed step rose (a failed Run stops there).",
+      "html": "<div class=\"ds-phases\"><span class=\"ds-ps ok\">executing</span><span class=\"ds-pc\"></span><span class=\"ds-ps ok\">verifying</span><span class=\"ds-pc\"></span><span class=\"ds-ps cur\">review</span></div>",
+      "css": ".ds-phases{display:inline-flex;align-items:center;gap:8px;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;font-size:12px;}.ds-phases .ds-ps{padding:3px 10px;border-radius:999px;}.ds-phases .ds-ps.ok{background:#D8F4E9;color:#067A55;}.ds-phases .ds-ps.cur{background:#2563EB;color:#fff;font-weight:600;}.ds-phases .ds-pc{width:20px;height:2px;background:#1BA35B;border-radius:2px;}"
     }
   ],
   "narrative": {
-    "northStar": "Aurora",
-    "overview": "Harmonic is a premium-SaaS operator console for running and reviewing autonomous coding agents. Aurora is the calm-sky metaphor: **quiet neutral surfaces are the sky; the work's state is the aurora** — bands of signal colour (running amber, ready green, awaiting cobalt, blocked slate, completed emerald, failed rose, tooling cyan) laid over a still ground. Colour means something and lives on the *state layer*; the content underneath stays calm. One cobalt is the only voice the interface itself speaks.\n\nThe register is product (PRODUCT.md: \"fast, dense, operator-grade… the tool disappears into the task\"), built for a side-monitor glance. But Aurora corrects the Ledger's mistake: **density is not clutter.** The Ledger carried structure with ruled rows and set nearly everything in monospace, so the actual content — the tasks, the run, the message — drowned. Aurora's prime directive is the opposite.\n\nBoth themes are first-class. **Light** is a cool near-white sky (#FBFBFD) with white cards on soft real shadows; **dark** is the same product on cool near-black surfaces (#0E1016 → #171A22) where depth comes from lightness steps. Theme follows `prefers-color-scheme` with a manual override (System → Light → Dark) persisted in `localStorage` and stamped as `data-theme` on the root.\n\nAurora keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (cards and air, not wall-of-widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), and **kanban-tool sprawl** (the board is a queue with a review gate).",
+    "northStar": "Deck — the operator's board: one dense, structural, terminal-adjacent surface that reads the whole agent fleet at a glance, ordered by the operator's attention, in one cobalt accent over a semantic state palette. No metaphor, no costume.",
+    "overview": "Harmonic is an operator's console for running and reviewing a fleet of autonomous coding agents. The UI is reorganised around the real Task/Epic lifecycle: the home is the Deck — attention-ordered panelled sections (Needs you, In flight, Landing, Queued, Recent) — and a Task opens as its own full Ticket page with a run rail that switches between its Runs. Density is a virtue here, earned by structure (panels, hierarchy, alignment), never bought with clutter. Dark is the canonical operator identity; light ships for bright rooms.",
     "keyCharacteristics": [
-      "Content-first hierarchy: content loud, metadata/telemetry whispered",
-      "Calm neutral surfaces; colour is a signal on the state layer, never decoration",
-      "One cobalt accent (the interface's voice, ≤10% of any screen) + a semantic state-signal family (the work's colours)",
-      "Monospace is reserved for **code**, not merely \"data\" — sans (with tabular figures) carries everything the operator reads as language",
-      "Structure by air + elevation; hairlines mark shared edges, never ruled rows",
-      "True dual theme, AA contrast floor in both"
+      "Attention-ordered surfaces: what needs the operator now is first and loudest.",
+      "Dense and structural: grouping by floating panels, hierarchy by weight/size/colour-layer.",
+      "One cobalt accent (≤10% of any screen) plus a semantic state-signal family.",
+      "Monospace for genuine code only (paths, refs, oids, tool targets); language and figures in sans with tabular-nums.",
+      "Terminal-adjacent by restraint, never a costume — no scanlines, glow, or faux-CRT.",
+      "True dual theme with an AA contrast floor in both."
     ],
     "rules": [
-      {
-        "name": "The Prime Directive — Content Leads",
-        "section": "overview",
-        "body": "On every screen the thing the operator came for is the loudest element; metadata, telemetry, ids, and chrome are whispered. Whitespace and elevation carry grouping, not borders and fills. Every element earns its place or is cut. If a screen feels busy, cut more."
-      },
-      {
-        "name": "The One Cobalt Rule",
-        "section": "colors",
-        "body": "The accent appears on at most ~10% of any screen: primary action, active nav, selection, focus, the chart, and the awaiting-review state. If cobalt is decorating something, it's wrong."
-      },
-      {
-        "name": "The Signal Rule",
-        "section": "colors",
-        "body": "State colours mean states, and live on the **state/signal layer** — a column lane, a dot, a count pill, a state pill — never smeared across content and never decorative. A colour the operator can't parse as a state is noise. (*API-docs carve-out, retained from the Ledger:* on the developer-facing API reference only, HTTP-method and response-code pills reuse these tints as a redundant second cue to the always-shown verb/code text.)"
-      },
-      {
-        "name": "The Cool-Neutral Rule",
-        "section": "colors",
-        "body": "Neutrals carry no hue in either theme; warmth or coolness comes only from the accent and the state family."
-      },
-      {
-        "name": "The Mono Is Code Rule",
-        "section": "typography",
-        "body": "Monospace appears *only* where the operator reads genuine code: file paths, shell commands, branch refs, tool-call targets, and inline code tokens. **Everything the operator reads as language or as a figure is sans** — model names, harness names, costs, token counts, ordinary ids, timestamps, statuses, and telemetry all set in sans with `tabular-nums`. Setting a whole metadata line in mono was the Ledger's core regression; a mono model-name or a mono telemetry strip is a regression here. (This supersedes the Ledger's \"Mono Is Data Rule,\" which read too broadly.)"
-      },
-      {
-        "name": "The Three Weights Rule",
-        "section": "typography",
-        "body": "400 / 500 / 600 (700 for display titles). If hierarchy needs more, fix the size or the colour layer."
-      },
-      {
-        "name": "The Two Verbs Rule",
-        "section": "components",
-        "body": "The gate is Accept and Reject — a reviewed Task merges or fails, and nothing else belongs in the row. Accept is the cobalt primary and sits last, so the affirmative holds the terminal position; Reject is the Ghost. Cancel is not a gate action: once work exists, \"cancelled\" and \"failed\" are two names for one terminal fact, and offering both asks the operator to choose between synonyms while rendering as a second quiet destructive action beside Reject — identical in treatment, different in meaning. Cancel keeps its meaning only where a Task has produced nothing to judge (Draft / Blocked / Ready) or is still producing it (Running)."
-      },
-      {
-        "name": "The One Way Out Rule",
-        "section": "components",
-        "body": "A dialog's dismiss is one X, top-right, owned by `Modal` — Faint (an icon-only affordance), hover to Ink. Escape and backdrop-click are invisible, so a dialog needs exactly one *visible* way out, and it is the same one everywhere. A dialog footer carries only outcomes: no \"Close\", no \"Cancel\"-meaning-dismiss (that word belongs to abandoning a Task), and no second hand-rolled ✕."
-      },
-      {
-        "name": "The Soft Depth Rule",
-        "section": "elevation",
-        "body": "Depth is real but quiet, and theme-aware. Light: cards float on the canvas with a soft two-layer shadow; floating elements use the float shadow. Dark: shadows fade on a dark field, so depth comes from lightness steps (#0E1016 canvas → #14161D shell → #171A22 surface → #1F232D raised); floating elements keep a hairline ring so they still separate. Hairlines mark shared edges only — never ruled list rows. The focus ring is a 2px cobalt outline, offset 2px, everywhere."
-      }
+      "One Cobalt Rule: accent only for primary action, active nav, selection, focus, chart, selected run chip, and awaiting-review — ≤10% of any screen.",
+      "Signal Rule: state colours live on the state layer (dots, pills, merge-train segments, run-chip states), never smeared across content or decorative.",
+      "Cool-Neutral Rule: neutrals carry no hue; warmth or coolness comes only from the accent and the state family.",
+      "Mono Is Code Rule: monospace only for code and code-identity tokens; everything read as language or a figure is sans with tabular-nums.",
+      "Three Weights Rule: 400 / 500–550 / 650 (750 for the Display title); add hierarchy with size or colour layer, not weight.",
+      "Grouping is the panel: a group of rows lives in one panel; never bare ruled rows on the canvas.",
+      "Attention leads: order every surface so the review gate and escalations come first.",
+      "Elevation declared once: shadow or ring, never both (no ghost card).",
+      "Standalone (non-Epic) Tasks are first-class on every surface; the Deck row is a summary, the Ticket page is the detail."
     ],
     "dos": [
-      "**Do** lead with content — make the tasks / the run / the message the loudest thing, and whisper metadata, telemetry, ids, and status.",
-      "**Do** hold the One Cobalt Rule: accent only for primary action, active nav, selection, focus, chart, and the awaiting-review state — ≤10% of any screen.",
-      "**Do** put colour on the state/signal layer (lanes, dots, count/state pills) where it means something; keep card and detail *bodies* calm.",
-      "**Do** set everything the operator reads as language or as a figure in sans with `tabular-nums`; reserve mono for genuine code (the Mono Is Code Rule).",
-      "**Do** carry structure with whitespace + elevation; floor informational text at Muted (4.5:1); design every change in both themes; give every control default/hover/focus-visible/disabled states and every animation a `prefers-reduced-motion` alternative."
+      "Order surfaces by the operator's attention — the review gate and escalations first, loudest.",
+      "Group with panels; carry density with hierarchy and alignment, not clutter. If it reads busy, add structure before cutting content.",
+      "Set everything read as language or a figure in sans with tabular-nums; reserve mono for genuine code.",
+      "Design every change in both themes; give controls default/hover/focus-visible/disabled and every animation a prefers-reduced-motion alternative.",
+      "Give every interactive control a ≥44×44px hit area and tabular readouts real table semantics."
     ],
     "donts": [
-      "**Don't** let chrome out-shout content — no feature-sized telemetry grids, no stacked metadata chips, no boxed-per-row streams.",
-      "**Don't** carry structure with ruled hairline rows (`divide-y`/`border-t` stacks) — that was the Ledger's core regression; group with air.",
-      "**Don't** set prose, labels, model/harness names, costs, ordinary ids, or telemetry in monospace (Mono Is Code Rule). A mono metadata line is a regression.",
-      "**Don't** use state colours decoratively or smear them across content; don't pair a border with a wide shadow (ghost-card), tint the neutrals toward any hue, use gradient text, glassmorphism, or side-stripe borders; don't nest cards inside cards.",
-      "**Don't** fall back to a native `alert()`/`confirm()` — failures surface in the designed toast.",
-      "**Don't** let cobalt mean anything but the interface's voice — tooling metadata is cyan, there is no generic info blue, and no second accent exists.",
-      "**Don't** reintroduce the Ledger (ruled rows, mono-everything) or the Signal Console (scanlines, glow, rotated rails) — both are retired."
+      "Don't reintroduce a kanban Board with drag-between-columns, or a docked master/detail Task panel — the Deck is attention-ordered rows and the Ticket is its own page.",
+      "Don't build a group from bare ruled rows on the canvas — group with a panel.",
+      "Don't set prose, labels, model/harness names, costs, ordinary ids, or telemetry in monospace.",
+      "Don't use state colours decoratively or pair a border with a wide shadow (ghost card).",
+      "Don't let cobalt mean anything but the interface's voice — tooling metadata is cyan, no second accent.",
+      "Don't tint neutrals toward any hue, use gradient text, glassmorphism, side-stripe borders, or nested cards.",
+      "Don't dress the tool as a terminal costume — scanlines, glow, faux-CRT, rotated rails are banned."
     ]
   }
 }
