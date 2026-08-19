@@ -202,6 +202,74 @@ hitl (Run *failed*, drive→hitl, ticket open + un-assigned + flagged), never a
 silent retry beyond the cap.
 _Avoid_: auto-requeue
 
+### Parallel Epic execution
+
+**Integration branch**:
+The per-Epic branch (`epic/<ref>`) Harmonic cuts off the default branch and
+owns: every Member's worktree forks from it, every finished Member lands back
+onto it, and it merges to the default branch in one atomic go once the whole
+Epic is green — then Harmonic **retires** (deletes) it. Its mere existence is
+the Epic's only persisted execution state.
+_Avoid_: feature branch, epic branch
+
+**Member**:
+A direct child ticket of an Epic — one Member, one Task/Run — run concurrently
+with its siblings, each in its own worktree cut from the Integration branch.
+_Avoid_: child task, subtask
+
+**Ready frontier**:
+The subset of an Epic's Members currently runnable — *open*, unassigned, and
+free of any open non-Epic blocker — recomputed every poll; the true width of
+parallelism, not the whole Epic at once. Informally a **wave**: the next wave is
+the frontier re-derived after blockers clear. Never a stored or numbered entity.
+_Avoid_: wave (as a stored/numbered thing), batch
+
+**Merge train**:
+The single-writer, strict-FIFO mechanism that lands finished Members onto one
+Integration branch one at a time — rebase onto the current tip, then
+fast-forward — so landings never interleave and history stays linear. Different
+Epics' branches land in parallel; only same-branch Members queue.
+_Avoid_: merge queue, landing pipeline
+
+**Heal (merge)**:
+The one bounded corrective turn handed back to a conflicting Member's own warm
+Session to resolve a rebase conflict, dispatched out-of-band so siblings aren't
+stalled. A second conflict Escalates — there is no second Heal.
+_Avoid_: retry, auto-resolve
+
+**Member land status**:
+Where a Member sits from the Epic's view — **pending** (running / not started /
+awaiting review), **completed** (its work is folded into the Integration
+branch), or **blocked** (escalated / failed / cancelled — a Blocking Member that
+holds the whole Epic back). Mid-landing a Member may also read **healing** (a
+corrective turn) or **escalated**.
+_Avoid_: merge status
+
+**Blocking member**:
+A Member whose land status is *blocked* that stalls the whole Epic on the
+automatic path until it clears or the operator Force-lands.
+_Avoid_: stuck task
+
+**Whole-Epic Verification**:
+The Verification run against the Integration branch tip once the land gate
+opens — the same command primitive as per-Run Verification — catching breakage
+in the union of Members that each passed alone. A non-pass fail-safe Escalates;
+Verification never self-heals at Epic scope.
+_Avoid_: final check
+
+**Whole-Epic land**:
+Merging the Integration branch into the default branch in one atomic go and
+retiring the branch — only when the land gate is open and Whole-Epic
+Verification passes.
+_Avoid_: final merge
+
+**Force-land the ready subset**:
+The operator-only override that opens an Epic's land gate unconditionally —
+landing whatever Members are already folded into the Integration branch even
+while a sibling is stuck — without bypassing Whole-Epic Verification. The one
+escape hatch when a Blocking Member stalls the Epic.
+_Avoid_: force merge, partial land
+
 ### Conversations
 
 **Conversation**:
