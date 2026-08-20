@@ -223,6 +223,47 @@ describe('worktree isolation mode', () => {
     expect(taskB.state).toBe('awaiting-review');
   });
 
+  it('escalates instead of forking off "HEAD" when the base repo is detached and no base branch is set (issue #198)', async () => {
+    const repo = makeRepo(); // on branch main
+    // Simulate the state a prior landing/merge-train leaves behind: the base
+    // repo detached at a commit (== main here, no divergence — the landing just
+    // didn't return HEAD to the branch). `--abbrev-ref HEAD` now reports the
+    // literal "HEAD"; the Run must NOT record that as its base branch.
+    git(repo, 'checkout', '--detach', 'HEAD');
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+    const worktreesBefore = git(repo, 'worktree', 'list').split('\n').length;
+
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'feature.txt': 'nope\n' } }),
+      workingDir: repo,
+      isolationMode: 'worktree',
+    });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+
+    // The base can't be resolved to a real branch → the Run fails loudly and is
+    // handed to a human, rather than recording `base_branch: "HEAD"` and forking
+    // off the detached commit (silently defeating worktree isolation).
+    await waitFor(async () => (await server.api('GET', `/api/runs/${started.body.id}`)).body.state === 'failed');
+    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    expect(run.reason ?? '').toMatch(/^escalated to human: /);
+    expect((run.reason ?? '').toLowerCase()).toContain('detached');
+    // The poison value never reaches the row; no run branch was created.
+    expect(run.baseBranch).not.toBe('HEAD');
+    expect(run.baseBranch ?? null).toBeNull();
+    expect(run.branch ?? null).toBeNull();
+
+    // The base repo is untouched: still detached, clean, no worktree added and
+    // no `harmonic/task-*` branch forged off the detached HEAD.
+    expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('HEAD');
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
+    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+
+    // The Task is handed back to a human (escalated), not silently failed.
+    const task = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+    expect(task.escalated).toBe(true);
+  });
+
   it('fails the run cleanly when the working directory is not a git repo', async () => {
     const notARepo = mkdtempSync(join(tmpdir(), 'harmonic-plain-'));
     const created = await server.api('POST', '/api/tasks', {

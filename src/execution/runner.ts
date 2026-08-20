@@ -323,6 +323,24 @@ interface ReMergeContext {
 }
 
 /**
+ * Thrown by {@link Runner.resolveBaseBranch} when a worktree Run's base branch
+ * cannot be resolved to a real branch name (issue #198): the base repo is on a
+ * detached HEAD (no current branch) and the Task carries no explicit
+ * `baseBranch`. Rather than record the literal `base_branch: "HEAD"` and fork /
+ * land against nothing — silently defeating worktree isolation once a landing
+ * has left the base repo detached — the Runner catches this around
+ * `prepareWorkspace` and routes it to `settleEscalated` (operator-legible), the
+ * same disposition as {@link AdmissionRejected}. The `reason` tells the operator
+ * how to fix it: reattach the base repo to a branch, or set the Task's base.
+ */
+export class BaseBranchUnresolved extends Error {
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = 'BaseBranchUnresolved';
+  }
+}
+
+/**
  * The outcome of one builder turn ({@link Runner.driveOnce}, issue #137).
  * `actionable-fail` — a `block` verdict — is the SOLE heal-eligible result: the
  * turn deliberately did not settle, handing the failure up to the heal loop.
@@ -922,14 +940,31 @@ export class Runner {
 
   /**
    * The branch a worktree Run is cut from and lands back onto (issue #157,
-   * ADR-0024): the Task's explicit `baseBranch`, or the working dir's current
-   * branch when unset — today's behaviour. Cutting from the resolved base
-   * (rather than the base repo's current HEAD) is what lets a Run fork off an
-   * arbitrary base — later, an Epic's shared integration branch — without the
-   * shared working dir having it checked out.
+   * ADR-0024): the Task's explicit `baseBranch`, or the base repo's current
+   * branch when unset. Cutting from the resolved base (rather than the base
+   * repo's current HEAD) is what lets a Run fork off an arbitrary base — later,
+   * an Epic's shared integration branch — without the shared working dir having
+   * it checked out.
+   *
+   * The current branch is read via `symbolicBranch` (null on a detached HEAD),
+   * NEVER `currentBranch` (`--abbrev-ref`, which returns the literal `HEAD` when
+   * detached): with no branch and no explicit base it throws
+   * {@link BaseBranchUnresolved} — the "why" and disposition live on that class.
    */
   private async resolveBaseBranch(task: TaskRow): Promise<string> {
-    return task.baseBranch ?? (await Git.currentBranch(task.workingDir));
+    if (task.baseBranch) return task.baseBranch;
+    const branch = await Git.symbolicBranch(task.workingDir);
+    if (branch) return branch;
+    // `symbolicBranch` returns null for BOTH a detached HEAD and a non-git dir,
+    // so probe HEAD to tell them apart: `revParse` throws a GitError in a
+    // non-repo — let it propagate to a generic execution failure, exactly as
+    // before this guard existed. A repo on a detached HEAD resolves here, so it
+    // escalates (issue #198) rather than recording `base_branch: "HEAD"`.
+    await Git.revParse(task.workingDir, 'HEAD');
+    throw new BaseBranchUnresolved(
+      `base repo ${task.workingDir} is on a detached HEAD with no current branch, and the Task has no explicit base branch; ` +
+        'reattach the base repo to a branch (e.g. `git checkout <branch>`) or set an explicit base branch on the Task, then retry',
+    );
   }
 
   /**
@@ -2059,10 +2094,12 @@ export class Runner {
       if (directIsolation) {
         await this.restoreDirectCheckout(task, run, directIsolation);
       }
-      if (err instanceof AdmissionRejected) {
-        // Admission gate (issue #149): a context Harmonic cannot safely own is
-        // handed to a human with the operator-legible reason, not settled as a
-        // generic execution failure.
+      if (err instanceof AdmissionRejected || err instanceof BaseBranchUnresolved) {
+        // A context Harmonic cannot safely own is handed to a human with the
+        // operator-legible reason, not settled as a generic execution failure:
+        // the afk-direct admission gate (issue #149), or a worktree Run whose
+        // base cannot be resolved to a real branch because a prior landing left
+        // the base repo detached (issue #198). Both are operator-fixable.
         this.settleEscalated(task, run, err.reason, {});
       } else {
         this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
