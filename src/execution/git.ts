@@ -14,6 +14,11 @@ const execFileAsync = promisify(execFile);
  * runtime, so a healthy command never hits it. */
 const GIT_TIMEOUT_MS = 120_000;
 
+/** Wall-clock ceiling for a `git clone` — far more generous than a
+ * workspace-prep op (a large repo over the network is legitimately slow), but a
+ * genuinely hung clone is still killed and reaped (issue #199). */
+const CLONE_TIMEOUT_MS = 600_000;
+
 export class GitError extends Error {
   constructor(
     message: string,
@@ -225,7 +230,14 @@ export const Git = {
   cleanUntracked: (dir: string) => git(dir, 'clean', '-fd'),
 
   clone: async (repo: string, dest: string): Promise<void> => {
-    await execFileAsync('git', ['clone', repo, dest], { maxBuffer: 10 * 1024 * 1024 });
+    // A clone can legitimately run for minutes (a large repo over the network),
+    // so it gets a far more generous ceiling than a workspace-prep op — but a
+    // hung clone is still SIGKILLed and reaped rather than lingering (issue #199).
+    await execFileAsync('git', ['clone', repo, dest], {
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: CLONE_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+    });
   },
 
   pull: (dir: string) => git(dir, 'pull', '--ff-only'),

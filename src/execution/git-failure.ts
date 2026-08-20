@@ -27,50 +27,47 @@
 export type GitFailureClass = 'permanent' | 'transient';
 
 /**
- * Substrings (matched case-insensitively) that mark a git failure as permanent:
- * re-running the identical command against the identical repository state cannot
- * succeed, so retrying only burns fork/exec cycles. Kept deliberately
- * conservative — anything not on this list is treated as transient and merely
- * backed off (see {@link classifyGitFailure}), never hard-escalated on a guess.
+ * Lowercase substrings that mark a git failure as permanent: re-running the
+ * identical command against the identical repository state cannot succeed, so
+ * retrying only burns fork/exec cycles. Kept deliberately conservative —
+ * anything not on this list is treated as transient and merely backed off (see
+ * {@link classifyGitFailure}), never hard-escalated on a guess.
  */
-const PERMANENT_MARKERS: readonly RegExp[] = [
+const PERMANENT_MARKERS: readonly string[] = [
   // A worktree/detach op against a detached HEAD or an explicit bad base.
-  /head is detached/,
-  /detached head/,
+  'head is detached',
+  'detached head',
   // `git worktree add <path>` / `git branch <name>` onto something already there.
-  /already exists/,
-  /already checked out/,
-  /is already used by worktree/,
+  'already exists',
+  'already checked out',
+  'is already used by worktree',
   // A base revision that does not resolve — the caller passed a bad start point.
-  /not a valid object name/,
-  /invalid reference/,
-  /unknown revision/,
-  /bad revision/,
-  /ambiguous argument/,
-  /needed a single revision/,
+  'not a valid object name',
+  'invalid reference',
+  'unknown revision',
+  'bad revision',
+  'ambiguous argument',
+  'needed a single revision',
   // The tree is dirty in a way the op refuses to clobber.
-  /local changes to the following files would be overwritten/,
-  /would be overwritten by/,
-  /contains modified or untracked files/,
-  /please commit your changes or stash them/,
+  'local changes to the following files would be overwritten',
+  'would be overwritten by',
+  'contains modified or untracked files',
+  'please commit your changes or stash them',
   // Not a git repository at all — no amount of retrying makes it one.
-  /not a git repository/,
+  'not a git repository',
 ];
 
 /**
- * Classify a git failure from its stderr (and optionally the argv that produced
- * it). Returns `permanent` when the failure will never succeed on a plain retry
- * — the caller should escalate/park rather than loop — and `transient`
- * otherwise. Fails *open* to `transient`: an unrecognised message is backed off
- * by the circuit breaker rather than hard-escalated, so a genuinely recoverable
- * blip still gets its retries, just not at fork-rate.
+ * Classify a git failure from its stderr/message. Returns `permanent` when the
+ * failure will never succeed on a plain retry — the caller should escalate/park
+ * rather than loop — and `transient` otherwise. Fails *open* to `transient`: an
+ * unrecognised message is backed off by the circuit breaker rather than
+ * hard-escalated, so a genuinely recoverable blip still gets its retries, just
+ * not at fork-rate.
  */
-export function classifyGitFailure(stderr: string, _args?: readonly string[]): GitFailureClass {
+export function classifyGitFailure(stderr: string): GitFailureClass {
   const haystack = (stderr ?? '').toLowerCase();
-  for (const marker of PERMANENT_MARKERS) {
-    if (marker.test(haystack)) return 'permanent';
-  }
-  return 'transient';
+  return PERMANENT_MARKERS.some((marker) => haystack.includes(marker)) ? 'permanent' : 'transient';
 }
 
 /** Per-context circuit-breaker state: how many consecutive failures, and the
@@ -118,14 +115,14 @@ export function breakerStep(
   event: 'success' | 'failure',
   now: number,
   cfg: BreakerConfig,
-): { state: BreakerState; allow: boolean; backoffMs: number; opened: boolean } {
+): { state: BreakerState; backoffMs: number; opened: boolean } {
   if (event === 'success') {
-    return { state: { ...INITIAL_BREAKER }, allow: true, backoffMs: 0, opened: false };
+    return { state: { ...INITIAL_BREAKER }, backoffMs: 0, opened: false };
   }
   const fails = state.fails + 1;
   const backoffMs = Math.min(cfg.baseMs * 2 ** (fails - 1), cfg.maxMs);
   const next: BreakerState = { fails, openUntil: now + backoffMs };
-  return { state: next, allow: false, backoffMs, opened: fails >= cfg.threshold };
+  return { state: next, backoffMs, opened: fails >= cfg.threshold };
 }
 
 /**
@@ -139,7 +136,7 @@ export class GitCircuitBreaker {
 
   constructor(
     private readonly cfg: BreakerConfig = DEFAULT_GIT_BREAKER,
-    private readonly now: () => number = Date.now,
+    private readonly clock: () => number = Date.now,
   ) {}
 
   private stateFor(key: string): BreakerState {
@@ -149,19 +146,13 @@ export class GitCircuitBreaker {
   /** Whether a fresh git-spawning attempt on `key` is admissible now (not in a
    * backoff window). */
   allows(key: string): boolean {
-    return breakerAllows(this.stateFor(key), this.now());
-  }
-
-  /** The instant `key` is backed off until (0 when it has never failed) — the
-   * operator "waiting since / until" surface. */
-  openUntil(key: string): number {
-    return this.stateFor(key).openUntil;
+    return breakerAllows(this.stateFor(key), this.clock());
   }
 
   /** Record a git fast-fail on `key`; returns whether the circuit just opened
    * (caller should escalate/park the context) and the armed backoff. */
   recordFailure(key: string): { opened: boolean; backoffMs: number } {
-    const r = breakerStep(this.stateFor(key), 'failure', this.now(), this.cfg);
+    const r = breakerStep(this.stateFor(key), 'failure', this.clock(), this.cfg);
     this.states.set(key, r.state);
     return { opened: r.opened, backoffMs: r.backoffMs };
   }

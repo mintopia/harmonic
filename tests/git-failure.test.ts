@@ -79,7 +79,7 @@ describe('breakerStep (pure exponential-backoff reducer)', () => {
     const s = { fails: 5, openUntil: 9999 };
     const r = breakerStep(s, 'success', 1000, CFG);
     expect(r.state).toEqual(INITIAL_BREAKER);
-    expect(r.allow).toBe(true);
+    expect(r.opened).toBe(false);
   });
 });
 
@@ -137,14 +137,6 @@ describe('GitCircuitBreaker (stateful per-context holder)', () => {
     const f = b.recordFailure(key);
     expect(f.opened).toBe(false);
     expect(f.backoffMs).toBe(CFG.baseMs);
-  });
-
-  it('exposes openUntil for the operator wait-clock surface', () => {
-    const b = new GitCircuitBreaker(CFG, () => 1000);
-    const key = '/repo';
-    expect(b.openUntil(key)).toBe(0); // never failed
-    b.recordFailure(key);
-    expect(b.openUntil(key)).toBe(1100);
   });
 
   it('ships a sane production default config', () => {

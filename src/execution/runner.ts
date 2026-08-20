@@ -2068,14 +2068,17 @@ export class Runner {
       } else if (err instanceof GitError) {
         // A git workspace-prep failure (issue #199). Record it against the
         // per-context circuit breaker (keyed on the base repo, so colliding
-        // worktree/direct Runs share it) so the Auto-Runner backs the context
-        // off instead of re-spawning git on the next event-loop tick. Escalate
-        // to a human — rather than settle a plainly-retryable `failed` — when the
-        // failure is PERMANENT (a detached/dirty base, a path that already
-        // exists, a bad revision: it will never succeed on retry) or when the
-        // breaker has now tripped (a transient failure that kept recurring). A
-        // one-off transient failure still settles `failed` and re-attempts,
-        // just gated by the breaker's backoff, never at fork-rate.
+        // worktree/direct Runs share it): the Auto-Runner then backs the whole
+        // context off, so the *next* ready Task on this repo isn't re-picked and
+        // re-spawning git on the following event-loop tick — turning a fork-rate
+        // flood into a few spaced attempts. Escalate this Run to a human —
+        // rather than settle a plain `failed` — when the failure is PERMANENT (a
+        // detached/dirty base, a path that already exists, a bad revision: it
+        // will never succeed on retry) or when the breaker has now tripped (a
+        // transient failure that kept recurring across Runs on this repo). A
+        // one-off transient failure settles this Run `failed` (terminal, as
+        // before); the backoff it arms is what bounds the *context*, not a
+        // self-retry of this Run.
         const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
         const failure = this.gitBreaker?.recordFailure(repoKey(task.workingDir));
         if (cls === 'permanent' || failure?.opened) {
