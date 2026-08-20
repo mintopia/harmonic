@@ -109,11 +109,17 @@ git on the event loop until the server froze. Two guards close this, both keepin
 the coordinator's state **in-memory** (this ADR stores no new grouping entity, and
 that holds):
 
-- **Containment fast-path.** Before verify+land, if the integration branch is
-  already an ancestor of the default branch its work is already landed: retire it
-  idempotently and skip verify+land entirely. Checked before the sticky-escalation
-  hold, so an already-landed-but-escalated Epic is auto-retired rather than
-  lingering (the manual branch-retirement that recovery previously required).
+- **Containment fast-path (two tiers).** Before verify+land, if the integration
+  branch's work is already in the default branch, retire it idempotently and skip
+  verify+land entirely. Tier 1 is a cheap ancestor check (`merge-base
+  --is-ancestor`) run every poll, before the sticky-escalation hold, so a
+  merge-landed-but-escalated Epic is auto-retired rather than lingering (the manual
+  branch-retirement that recovery previously required). Tier 2 catches a
+  **squash/rebase** land that rewrote the member OIDs so the tip is not a literal
+  ancestor even though the content is present — a real 3-way `merge-tree` that adds
+  no net content. Tier 2 is heavier, so it runs only past the hold and backoff, on
+  a poll already committed to the expensive work (at most once per backoff window),
+  never every poll.
 - **Hard verify+land backoff.** A per-Epic minimum interval (default 60s) between
   verify+land attempts, so a churning member signature — or the first poll after a
   restart cleared the in-memory guards — cannot spin verify+land on the event

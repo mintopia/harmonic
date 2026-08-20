@@ -53,10 +53,16 @@ export interface EpicLandGit {
    * detached HEAD (a concurrent afk-direct Run — defer the land that poll). */
   symbolicBranch(dir: string): Promise<string | null>;
   /** Whether `branch` is already merged into `baseBranch` (an ancestor of its
-   * tip) — the containment fast-path (issue #218): an integration branch whose
-   * work is already in the default branch is retired without re-running the
+   * tip) — the cheap containment fast-path (issue #218): an integration branch
+   * whose work is already in the default branch is retired without re-running the
    * (expensive, git-heavy) verify+land. */
   isAncestor(dir: string, baseBranch: string, branch: string): Promise<boolean>;
+  /** Whether merging `branch` into `baseBranch` adds no net content — the
+   * work is already landed even when a squash/rebase rewrote its commits so the
+   * tip is *not* a literal ancestor (issue #218). Heavier than {@link isAncestor}
+   * (a real 3-way merge), so the coordinator runs it only when already committed
+   * to expensive work this poll. */
+  isContentContained(dir: string, baseBranch: string, branch: string): Promise<boolean>;
 }
 
 /** Run a whole-Epic Verification against the integration branch's tip OID and
@@ -225,24 +231,16 @@ export class EpicLandCoordinator {
       return { status: 'waiting', reason: 'default branch is detached; deferring the land' };
     }
 
-    // Containment fast-path (issue #218). If the integration branch tip is already
-    // an ancestor of the default branch, its work is *already landed* — a prior
-    // land whose retire didn't complete, or a hand-merge. Retire it idempotently
-    // and skip verify+land entirely: re-running the (expensive, git-heavy)
-    // verify+land against a branch with nothing left to land is exactly the
-    // reconcile git storm this fixes. Checked *before* the sticky-escalation hold
+    // Containment fast-path, tier 1 (issue #218). If the integration branch tip is
+    // already an ancestor of the default branch, its work is *already landed* — a
+    // prior land whose retire didn't complete, or a hand-merge. Retire it
+    // idempotently and skip verify+land entirely: re-running the (expensive,
+    // git-heavy) verify+land against a branch with nothing left to land is exactly
+    // the reconcile git storm this fixes. The `isAncestor` check is cheap (one
+    // `merge-base`), so it runs every poll — *before* the sticky-escalation hold,
     // so a hand-landed-but-escalated Epic is auto-retired, not left lingering.
-    // (This detects whole-branch containment; a squash/rebase land that rewrote
-    // the member OIDs individually — tip not an ancestor — still verifies+lands,
-    // now bounded by the sticky hold + backoff below rather than storming.)
     if (await this.git.isAncestor(this.repoDir, defaultBranch, branch)) {
-      const tip = await this.git.revParse(this.repoDir, branch);
-      // Keep any retained verification verdict (a normal land that reached here
-      // via a failed retire stays `pass`); only the escalation/backoff guards must
-      // not outlive the land.
-      this.clearLandGuards(target.ref);
-      await this.retireQuietly(target.ref, 'already-contained');
-      return { status: 'landed', oid: tip };
+      return await this.retireContained(target, branch);
     }
 
     // Gate open, work not yet landed. On the automatic path, an Epic already
@@ -265,6 +263,17 @@ export class EpicLandCoordinator {
         return { status: 'waiting', reason: 'whole-Epic verify+land backoff active; deferring this poll' };
       }
       this.lastVerifyAttemptAt.set(target.ref, at);
+    }
+
+    // Containment fast-path, tier 2 (issue #218). Tier 1 misses a squash/rebase
+    // land that rewrote the member OIDs so the tip is not a literal ancestor even
+    // though the *content* is already in the default branch. Catch that with a
+    // real 3-way merge (`merge-tree`) that adds no net content. It is heavier than
+    // tier 1, so it runs only here — past the sticky hold and the backoff, i.e. on
+    // a poll already committed to the expensive verify+land (at most once per
+    // backoff window), never every poll. Contained ⇒ retire, don't verify+land.
+    if (await this.git.isContentContained(this.repoDir, defaultBranch, branch)) {
+      return await this.retireContained(target, branch);
     }
 
     // Verify the integrated whole against the integration branch tip.
@@ -400,6 +409,18 @@ export class EpicLandCoordinator {
   private clearLandGuards(ref: number): void {
     this.settledEscalated.delete(ref);
     this.lastVerifyAttemptAt.delete(ref);
+  }
+
+  /** Retire an integration branch whose work is *already contained* in the
+   * default branch (either containment tier, issue #218): keep any retained
+   * verification verdict (a normal land that reached here via a failed retire
+   * stays `pass`), clear only the escalation/backoff guards, retire idempotently,
+   * and report the branch tip as the landed OID. */
+  private async retireContained(target: EpicLandTarget, branch: string): Promise<EpicLandOutcome> {
+    const tip = await this.git.revParse(this.repoDir, branch);
+    this.clearLandGuards(target.ref);
+    await this.retireQuietly(target.ref, 'already-contained');
+    return { status: 'landed', oid: tip };
   }
 
   /** Retire the integration branch, logging (not throwing) on failure: the land

@@ -13,8 +13,11 @@ const inconclusive: VerificationDecision = { outcome: 'escalate', reason: 'verif
  * merge-train coordinator test uses. */
 class FakeGit implements EpicLandGit {
   /** Branch names already contained in (an ancestor of) the default branch —
-   * the containment fast-path (#218). Empty by default: nothing pre-landed. */
+   * the tier-1 containment fast-path (#218). Empty by default: nothing pre-landed. */
   readonly contained: Set<string> = new Set();
+  /** Branch names whose *content* is already in the default branch even though
+   * the tip is not an ancestor (a squash/rebase land) — the tier-2 fast-path (#218). */
+  readonly contentContained: Set<string> = new Set();
   constructor(
     readonly branches: Set<string> = new Set(['epic/42']),
     private readonly tips: Map<string, string> = new Map([['epic/42', 'oid-epic-42']]),
@@ -32,11 +35,17 @@ class FakeGit implements EpicLandGit {
   async isAncestor(_dir: string, _baseBranch: string, branch: string): Promise<boolean> {
     return this.contained.has(branch);
   }
+  async isContentContained(_dir: string, _baseBranch: string, branch: string): Promise<boolean> {
+    return this.contentContained.has(branch);
+  }
   setDefaultBranch(b: string | null): void {
     this.defaultBranch = b;
   }
   setContained(branch: string): void {
     this.contained.add(branch);
+  }
+  setContentContained(branch: string): void {
+    this.contentContained.add(branch);
   }
 }
 
@@ -230,6 +239,29 @@ describe('EpicLandCoordinator', () => {
       const out = await coord.submit({ ref: 42, members: members('completed') });
       expect(out.status).toBe('landed');
       expect(onError).toHaveBeenCalledWith(expect.stringContaining('already-contained'));
+    });
+
+    it('retires a squash/rebase-landed branch whose content is contained but tip is not an ancestor (tier 2, #218)', async () => {
+      const git = new FakeGit();
+      git.setContentContained('epic/42'); // content in default, but NOT an ancestor
+      const { coord, verify, land, retire } = build({ git });
+      const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      expect(out).toEqual({ status: 'landed', oid: 'oid-epic-42' });
+      expect(verify).not.toHaveBeenCalled();
+      expect(land).not.toHaveBeenCalled();
+      expect(retire).toHaveBeenCalledWith(42);
+    });
+
+    it('holds the tier-2 content check behind the backoff (not run every poll)', async () => {
+      let clock = 0;
+      const git = new FakeGit();
+      const isContentContained = vi.spyOn(git, 'isContentContained');
+      const { coord } = build({ git, verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
+      await coord.submit({ ref: 42, members: members('completed') }); // runs tier 2, then escalates
+      expect(isContentContained).toHaveBeenCalledTimes(1);
+      clock = 30_000; // inside the window
+      await coord.submit({ ref: 42, members: members('completed', 'completed') }); // churn → deferred by backoff
+      expect(isContentContained).toHaveBeenCalledTimes(1); // NOT re-run under backoff
     });
 
     it('retains the last verification verdict on the containment fast-path (read-model consistency, #218)', async () => {

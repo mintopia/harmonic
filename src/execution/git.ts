@@ -379,6 +379,33 @@ export const Git = {
   },
 
   /**
+   * Whether merging `branch` into `baseBranch` would introduce **no net
+   * content** — `branch`'s work is already present in `baseBranch` even when its
+   * commits were **squashed or rebased** so the tip is *not* a literal ancestor
+   * (issue #218). Where {@link isAncestor} only catches a fast-forwardable /
+   * merge-landed branch, this catches a squash-landed one: a real 3-way merge
+   * via `merge-tree --write-tree` yields the merged tree, and the work is
+   * contained iff that tree equals `baseBranch`'s own tree (the merge adds
+   * nothing). A merge **conflict** (divergent edits) makes `merge-tree` exit
+   * non-zero — treated as not-contained (`false`), so the caller falls through
+   * to a real land rather than wrongly retiring. Requires git ≥ 2.38
+   * (`--write-tree`); no checkout or worktree needed. Never throws.
+   */
+  async isContentContained(dir: string, baseBranch: string, branch: string): Promise<boolean> {
+    try {
+      const baseTree = (await git(dir, 'rev-parse', `${baseBranch}^{tree}`)).trim();
+      // On a clean merge `merge-tree --write-tree` prints just the merged tree
+      // OID on the first line and exits 0; on conflict it exits non-zero (→ the
+      // catch below). Compare the merged tree to the base tree.
+      const out = await git(dir, 'merge-tree', '--write-tree', baseBranch, branch);
+      const mergedTree = out.split('\n', 1)[0]?.trim() ?? '';
+      return mergedTree !== '' && mergedTree === baseTree;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
    * The absolute path of the worktree that currently has `branch` checked out,
    * or `null` when no worktree does (issue #153). Landing must never update a
    * target ref out from under a live index/worktree via a plumbing `update-ref`

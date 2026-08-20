@@ -66,3 +66,74 @@ describe('Git branch primitives (issue #159)', () => {
     }
   });
 });
+
+describe('Git.isContentContained (issue #218)', () => {
+  it('is true when the branch is an ancestor (merge-landed)', async () => {
+    const dir = makeRepo();
+    try {
+      raw(dir, 'checkout', '-b', 'feature');
+      writeFileSync(join(dir, 'f.txt'), 'a\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'feat');
+      raw(dir, 'checkout', 'main');
+      raw(dir, 'merge', '--ff-only', 'feature');
+      expect(await Git.isAncestor(dir, 'main', 'feature')).toBe(true);
+      expect(await Git.isContentContained(dir, 'main', 'feature')).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is true when the content is squash-landed but the tip is NOT an ancestor', async () => {
+    const dir = makeRepo();
+    try {
+      raw(dir, 'checkout', '-b', 'feature');
+      writeFileSync(join(dir, 'f.txt'), 'a\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'feat 1');
+      writeFileSync(join(dir, 'f.txt'), 'a\nb\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'feat 2');
+      raw(dir, 'checkout', 'main');
+      // Squash-land: the same net content as a single unrelated commit.
+      writeFileSync(join(dir, 'f.txt'), 'a\nb\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'squash of feature');
+      expect(await Git.isAncestor(dir, 'main', 'feature')).toBe(false); // tier 1 misses it
+      expect(await Git.isContentContained(dir, 'main', 'feature')).toBe(true); // tier 2 catches it
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is false when the branch adds net-new content not in the default branch', async () => {
+    const dir = makeRepo();
+    try {
+      raw(dir, 'checkout', '-b', 'feature');
+      writeFileSync(join(dir, 'g.txt'), 'new\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'feat');
+      raw(dir, 'checkout', 'main');
+      expect(await Git.isContentContained(dir, 'main', 'feature')).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('is false on a merge conflict (divergent edits) — never throws', async () => {
+    const dir = makeRepo();
+    try {
+      raw(dir, 'checkout', '-b', 'feature');
+      writeFileSync(join(dir, 'README.md'), '# feat\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'feat edit');
+      raw(dir, 'checkout', 'main');
+      writeFileSync(join(dir, 'README.md'), '# main\n');
+      raw(dir, 'add', '-A');
+      raw(dir, 'commit', '-m', 'main edit');
+      expect(await Git.isContentContained(dir, 'main', 'feature')).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
