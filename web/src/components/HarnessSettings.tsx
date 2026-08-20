@@ -301,7 +301,7 @@ export function PriceOverridesSection({
                   min={0}
                   step="any"
                   aria-label={PRICE_LABELS[k]}
-                  className={`${field} font-data`}
+                  className={`${field} tabular-nums`}
                   value={price[k]}
                   onChange={(e) => setPrice(model, { ...price, [k]: Number(e.target.value) })}
                 />

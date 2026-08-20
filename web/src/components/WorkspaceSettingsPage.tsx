@@ -185,7 +185,7 @@ export function WorkspaceSettingsPage({
                 id="workspace-poll-interval"
                 type="number"
                 min={5}
-                className={`${field} w-28 font-data`}
+                className={`${field} w-28 tabular-nums`}
                 value={local.trackerPollIntervalSeconds}
                 onChange={(e) => set('trackerPollIntervalSeconds', Number(e.target.value))}
               />
@@ -235,7 +235,7 @@ export function WorkspaceSettingsPage({
                     // The ceiling is the hard limit an override can't breach
                     // (ADR-0012); clamping is read-time (#60), this just guides.
                     max={config.autoRunner.maxConcurrentRuns}
-                    className={`${field} w-28 font-data`}
+                    className={`${field} w-28 tabular-nums`}
                     value={value}
                     onChange={(e) => onChange(Number(e.target.value))}
                   />
@@ -418,7 +418,7 @@ export function WorkspaceSettingsPage({
                         id="workspace-budget-wallclock"
                         type="number"
                         min={1}
-                        className={`${field} w-40 font-data`}
+                        className={`${field} w-40 tabular-nums`}
                         value={value.wallClockMinutes}
                         onChange={(e) => onChange(setBudgetField(value, 'wallClockMinutes', e.target.value))}
                       />
@@ -433,7 +433,7 @@ export function WorkspaceSettingsPage({
                         type="number"
                         min={1}
                         placeholder="No cap"
-                        className={`${field} w-40 font-data`}
+                        className={`${field} w-40 tabular-nums`}
                         value={value.tokens ?? ''}
                         onChange={(e) => onChange(setBudgetField(value, 'tokens', e.target.value))}
                       />
@@ -449,7 +449,7 @@ export function WorkspaceSettingsPage({
                         min={0}
                         step="0.01"
                         placeholder="No cap"
-                        className={`${field} w-40 font-data`}
+                        className={`${field} w-40 tabular-nums`}
                         value={value.costUsd ?? ''}
                         onChange={(e) => onChange(setBudgetField(value, 'costUsd', e.target.value))}
                       />
@@ -544,7 +544,7 @@ export function WorkspaceSettingsPage({
                           id="workspace-verify-timeout"
                           type="number"
                           min={1}
-                          className={`${field} w-40 font-data`}
+                          className={`${field} w-40 tabular-nums`}
                           value={value.timeoutSeconds}
                           onChange={(e) => onChange(setCommandField(value, 'timeoutSeconds', e.target.value))}
                         />

@@ -185,7 +185,7 @@ function AutoRunnerFields({
           id="settings-max-runs"
           type="number"
           min={1}
-          className={`${field} w-28 font-data`}
+          className={`${field} w-28 tabular-nums`}
           value={a.maxConcurrentRuns}
           onChange={(e) => onChange({ ...a, maxConcurrentRuns: Number(e.target.value) })}
         />
@@ -247,7 +247,7 @@ function VerificationFields({
                 id="settings-verify-timeout"
                 type="number"
                 min={1}
-                className={`${field} w-40 font-data`}
+                className={`${field} w-40 tabular-nums`}
                 value={v.command.timeoutSeconds}
                 onChange={(e) => setCommand(setCommandField(v.command!, 'timeoutSeconds', e.target.value))}
               />
@@ -461,7 +461,7 @@ function DriveFields({
             id="settings-auto-retry"
             type="number"
             min={0}
-            className={`${field} w-28 font-data`}
+            className={`${field} w-28 tabular-nums`}
             value={d.autoRetry}
             onChange={(e) => onChange({ ...d, autoRetry: Number(e.target.value) })}
           />
