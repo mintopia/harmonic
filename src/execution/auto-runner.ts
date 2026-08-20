@@ -4,6 +4,8 @@ import type { RunStore } from '../domain/runs.js';
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import { resolve, resolveCap } from '../domain/setting-override.js';
 import { workContextKey } from '../domain/work-context-key.js';
+import { repoKey } from './repo-lock.js';
+import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
 
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
@@ -117,6 +119,14 @@ export class AutoRunner {
      * Absent (native-only server / no live poll loop) ⇒ never gated.
      */
     private readonly awaitsEpicBase?: (task: TaskRow) => boolean,
+    /**
+     * The per-context git circuit breaker (issue #199), shared with the Runner
+     * that records failures into it. A ready Task whose base repo is in a git
+     * backoff window is passed over — so a context whose workspace-prep keeps
+     * fast-failing isn't re-picked (and re-spawning git) on the next tick.
+     * Absent → no git-backoff skip (native-only / test servers).
+     */
+    private readonly gitBreaker?: GitCircuitBreaker,
   ) {}
 
   /**
@@ -259,6 +269,16 @@ export class AutoRunner {
         const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
         const running = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
         if (running >= cap) return false;
+        // Git-backoff skip (issue #199): a base repo whose workspace-prep git just
+        // fast-failed is in an exponential-backoff window — pass its Tasks over so
+        // the scheduler doesn't re-spawn git at fork-rate. Keyed on the base repo,
+        // so a direct Run and a worktree Run colliding on the same repo share the
+        // window. Recorded on the wait-clock so the block is legible to an operator.
+        if (this.gitBreaker && !this.gitBreaker.allows(repoKey(t.workingDir))) {
+          this.contextSkipReasons.set(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
+          if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
+          return false;
+        }
         const key = directContextKey(t);
         const holder = key ? occupied.get(key) : undefined;
         if (holder) {
