@@ -193,6 +193,14 @@ export interface RunnerOptions {
    * no breaker (a git-prep failure settles as before); the Auto-Runner must be
    * given the SAME instance for the backoff/pick sides to agree. */
   gitBreaker?: GitCircuitBreaker;
+  /** Start-funnel gate for parallel-Epic members (issue #159): true while a
+   * mirrored Task is an Epic member whose integration base isn't ready to fork
+   * from — unresolved, or set to an `epic/<ref>` branch the poll hasn't confirmed
+   * live. {@link Runner.beginRun} refuses to spawn such a Run (a `DomainError`
+   * the REST/MCP start surface returns as 409, the Auto-Runner catches and leaves
+   * the Task ready), so no member forks off a missing integration branch — the
+   * hand-started counterpart to the Auto-Runner's pick gate. Absent → not gated. */
+  epicBaseNotReady?: (task: TaskRow) => boolean;
 }
 
 interface Workspace {
@@ -349,6 +357,27 @@ export class BaseBranchUnresolved extends Error {
 }
 
 /**
+ * Thrown inside {@link Runner.prepareWorkspace} when a worktree Run's resolved
+ * base is an Epic integration branch (`epic/<ref>`) that does NOT currently
+ * exist (issue #159): the create-before-set ordering guarantees the branch
+ * existed when the member's `baseBranch` was assigned, not that it still exists
+ * when the member finally spawns — a restart, a degraded tracker scan, or a
+ * retire can leave the durable base column pointing at a branch that has since
+ * gone. Forking off it fast-fails `git worktree add … invalid reference`, which
+ * `classifyGitFailure` would read as PERMANENT and escalate to a human. This is
+ * instead a *transient* condition: the reconcile re-cuts the branch on a healthy
+ * poll, so the Runner settles the Run back to `ready` (non-escalating) to be
+ * re-picked, rather than handing a false permanent failure to an operator. The
+ * belt-and-suspenders backstop to {@link RunnerOptions.epicBaseNotReady}'s
+ * start-funnel gate, which catches the common case one poll earlier. */
+export class EpicBaseNotReady extends Error {
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = 'EpicBaseNotReady';
+  }
+}
+
+/**
  * The outcome of one builder turn ({@link Runner.driveOnce}, issue #137).
  * `actionable-fail` — a `block` verdict — is the SOLE heal-eligible result: the
  * turn deliberately did not settle, handing the failure up to the heal loop.
@@ -381,6 +410,7 @@ export class Runner {
   private shuttingDown = false;
 
   private readonly gitBreaker: GitCircuitBreaker | undefined;
+  private readonly epicBaseNotReady: RunnerOptions['epicBaseNotReady'];
   private readonly events: RunnerEvents;
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
@@ -461,6 +491,7 @@ export class Runner {
     this.autoAcceptLand = options.autoAcceptLand;
     this.mergeTrain = options.mergeTrain;
     this.gitBreaker = options.gitBreaker;
+    this.epicBaseNotReady = options.epicBaseNotReady;
     this.criticDrive = options.criticDrive;
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
@@ -550,6 +581,20 @@ export class Runner {
 
   /** Validate the harness, snapshot Guardrails, create the run row, and drive it. Shared by start / launchClaimed. */
   private beginRun(task: TaskRow): RunRow {
+    // Parallel-Epic start-funnel gate (issue #159): an Epic member whose
+    // integration base isn't ready to fork from must not spawn — its `epic/<ref>`
+    // branch is unresolved or not confirmed live this poll, so `git worktree add`
+    // off it would fast-fail. Enforced HERE, the shared funnel, so a hand-started
+    // Run (REST/MCP `start` → 409) is blocked identically to an auto-picked one
+    // (the Auto-Runner's `launchClaimed` catch leaves the Task ready). The
+    // reconcile re-cuts the branch and re-marks it live, opening the gate.
+    if (this.epicBaseNotReady?.(task)) {
+      throw new DomainError(
+        'invalid_state',
+        `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +
+          'it is cut/re-cut on the next tracker poll — retry shortly',
+      );
+    }
     const config = this.getConfig();
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
@@ -1114,6 +1159,16 @@ export class Runner {
     }
 
     const baseBranch = await this.resolveBaseBranch(task);
+    // Backstop to the start-funnel gate (issue #159): if the resolved base is an
+    // Epic integration branch that has gone missing between its assignment and
+    // now (a restart / degraded scan / retire raced the spawn), don't let the
+    // `worktree add` fast-fail escalate as a false PERMANENT git error — surface
+    // it as the transient it is, so the Run re-queues and the reconcile re-cuts.
+    if (parseIntegrationBranch(baseBranch) !== null && !(await Git.branchExists(task.workingDir, baseBranch))) {
+      throw new EpicBaseNotReady(
+        `Epic integration branch ${baseBranch} does not exist yet; it is cut/re-cut on the next tracker poll`,
+      );
+    }
     const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
     await Git.addWorktree(task.workingDir, path, branch, baseBranch);
     this.runStore.update(run.id, { branch, baseBranch });
@@ -2117,7 +2172,18 @@ export class Runner {
       if (directIsolation) {
         await this.restoreDirectCheckout(task, run, directIsolation);
       }
-      if (err instanceof AdmissionRejected || err instanceof BaseBranchUnresolved) {
+      if (err instanceof EpicBaseNotReady) {
+        // A member raced ahead of its Epic integration branch (issue #159): the
+        // branch is transiently missing, not a permanent fault. Settle the Run
+        // failed but hand the Task back to `ready` (not escalate) so it re-runs
+        // once the reconcile re-cuts the branch — the start-funnel gate holds it
+        // there in the meantime. No breaker arm: this isn't a git-fork storm.
+        this.coordinateSettle(task, run, 'failed', {
+          runState: 'failed',
+          taskAction: 'ready',
+          reason: err.reason,
+        });
+      } else if (err instanceof AdmissionRejected || err instanceof BaseBranchUnresolved) {
         // A context Harmonic cannot safely own is handed to a human with the
         // operator-legible reason, not settled as a generic execution failure:
         // the afk-direct admission gate (issue #149), or a worktree Run whose

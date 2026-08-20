@@ -286,4 +286,37 @@ describe('worktree isolation mode', () => {
     expect(runs[0].state).toBe('failed');
     expect(runs[0].reason).toBeTruthy();
   });
+
+  it('re-queues (does NOT escalate) a worktree Run whose Epic integration base is transiently missing (issue #159)', async () => {
+    const repo = makeRepo();
+    const worktreesBefore = git(repo, 'worktree', 'list').split('\n').length;
+    // A member whose durable base points at an Epic integration branch that isn't
+    // present (retired / lost to a restart before the reconcile re-cut it).
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: 'anything',
+      workingDir: repo,
+      isolationMode: 'worktree',
+      baseBranch: 'epic/999',
+    });
+    await server.api('POST', `/api/tasks/${created.body.id}/run`);
+
+    // The Run settles failed — but the Task returns to `ready` (not escalated to a
+    // human): the branch is transiently absent, so it re-runs once the reconcile
+    // re-cuts it, rather than a false PERMANENT git-prep escalation (issue #199).
+    const task = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+      return t.state === 'ready' ? t : undefined;
+    });
+    expect(task.escalated).toBe(false);
+    expect(task.drive).not.toBe('hitl');
+
+    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
+    expect(runs.length).toBe(1);
+    expect(runs[0].state).toBe('failed');
+    expect(runs[0].reason).toContain('epic/999');
+
+    // The base repo is untouched: no worktree added, no run branch forged.
+    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
+    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+  });
 });

@@ -108,6 +108,21 @@ export class EpicIntegrationCoordinator {
    */
   private readyMemberRefs = new Set<number>();
 
+  /**
+   * The Epic refs whose integration branch this coordinator confirmed to exist
+   * on its last reconcile — either found present or freshly cut. The
+   * {@link memberBaseNotReady} gate consults it to catch a member whose
+   * `baseBranch` is set to `epic/<ref>` but whose branch is *currently absent*
+   * (never cut yet, or transiently gone after a server restart / a degraded
+   * tracker scan): the create-before-set ordering only guarantees the branch
+   * existed at *set* time, not that it still exists when the member finally
+   * spawns, so a bare non-null base is not proof the fork target is there.
+   * Rebuilt each reconcile, and left empty (fail-closed: gate members) whenever
+   * a poll can confirm nothing — a detached working dir, or before the first
+   * post-restart reconcile completes.
+   */
+  private liveIntegrationRefs = new Set<number>();
+
   constructor(
     private readonly tasks: TaskService,
     private readonly workingDir: string,
@@ -139,11 +154,18 @@ export class EpicIntegrationCoordinator {
     // Publish the gate set before any await so a racing pick already sees these
     // refs as base-pending (their `baseBranch` is still null until below).
     this.readyMemberRefs = readyRefs;
+    // Rebuilt from scratch each poll; only refs whose branch we actually confirm
+    // below are marked live. Published (empty) on every early return so a poll
+    // that can confirm nothing gates all members rather than trusting a stale set.
+    const liveRefs = new Set<number>();
     // Nothing to base and no land trigger ⇒ no work this poll (preserves #159's
     // no-op when the whole-Epic land isn't wired). With a land trigger present we
     // must run even with an empty ready frontier: an Epic whose members are all
     // `completed` has no ready members yet still needs its land attempt.
-    if (readyRefs.size === 0 && this.epicLand === undefined) return;
+    if (readyRefs.size === 0 && this.epicLand === undefined) {
+      this.liveIntegrationRefs = liveRefs;
+      return;
+    }
 
     const byRef = new Map<number, TaskRow>();
     for (const task of mirrored) {
@@ -155,7 +177,13 @@ export class EpicIntegrationCoordinator {
     // yields null: defer this poll rather than anchor a durable branch on a
     // transient OID. Members stay base-pending (gated), retried next poll.
     const defaultBranch = await this.git.symbolicBranch(this.workingDir);
-    if (defaultBranch === null) return;
+    if (defaultBranch === null) {
+      // Detached working dir (a concurrent afk-direct Run): nothing confirmed
+      // live this poll, so gate every member rather than fork off a base repo
+      // whose branches we can't vouch for.
+      this.liveIntegrationRefs = liveRefs;
+      return;
+    }
 
     for (const epic of epics) {
       // Base-set half (#159): cut/reuse the integration branch and point each
@@ -164,6 +192,8 @@ export class EpicIntegrationCoordinator {
         const branch = integrationBranchName(epic.ref);
         try {
           await this.ensureIntegrationBranch(branch, defaultBranch);
+          // The branch is now known to exist — a member may safely fork from it.
+          liveRefs.add(epic.ref);
           for (const memberRef of epic.ready) {
             const task = byRef.get(memberRef);
             if (!task) continue;
@@ -196,6 +226,8 @@ export class EpicIntegrationCoordinator {
           .catch((err) => this.onError(`epic ${epic.ref} whole-Epic land attempt failed: ${String(err)}`));
       }
     }
+    // Publish the confirmed-live set for this poll's gate reads (memberBaseNotReady).
+    this.liveIntegrationRefs = liveRefs;
   }
 
   /**
@@ -213,6 +245,30 @@ export class EpicIntegrationCoordinator {
       task.trackerRef != null &&
       this.readyMemberRefs.has(task.trackerRef)
     );
+  }
+
+  /**
+   * Whether a member is not yet safe to spawn a worktree Run for — the broader
+   * gate consulted by BOTH the Auto-Runner pick and the Runner's start funnel
+   * (so no member forks off a missing integration branch, hand-started or auto).
+   * True when either:
+   *
+   *  - its base is still unresolved ({@link awaitsBase}: a ready member the
+   *    reconcile hasn't pointed at its integration branch yet, #159); or
+   *  - its base IS an `epic/<ref>` integration branch that this poll did not
+   *    confirm to exist ({@link liveIntegrationRefs}) — the branch was retired,
+   *    lost to a restart, or not re-cut yet, so `git worktree add` off it would
+   *    fast-fail `invalid reference`. Forking is deferred until a reconcile
+   *    re-cuts it and re-marks the ref live.
+   *
+   * A non-mirrored Task, or a member whose base is an ordinary (non-Epic)
+   * branch, is never gated here.
+   */
+  memberBaseNotReady(task: TaskRow): boolean {
+    if (task.origin !== 'mirrored') return false;
+    if (this.awaitsBase(task)) return true;
+    const ref = parseIntegrationBranch(task.baseBranch);
+    return ref != null && !this.liveIntegrationRefs.has(ref);
   }
 
   /**

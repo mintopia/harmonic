@@ -272,6 +272,49 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(coord.awaitsBase(nonMember)).toBe(false); // never an Epic member
     expect(coord.awaitsBase(native)).toBe(false); // native Task ⇒ never gated
   });
+
+  it('memberBaseNotReady opens once the reconcile confirms the base branch live, closes when a later poll cannot', async () => {
+    const tickets = [
+      ...epicTickets(),
+      ticket({ number: 99, parent: null, labels: ['ready-for-agent'] }), // not an Epic member
+    ];
+    const git = new FakeGit([], 'develop');
+    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+
+    await coord.reconcile(tickets, mscan(tickets));
+
+    const m11 = () => tasks.list().find((t) => t.trackerRef === 11)!;
+    const nonMember = tasks.list().find((t) => t.trackerRef === 99)!;
+    const native = tasks.create({ prompt: 'native task' });
+    // Base set to epic/10 and the reconcile confirmed that branch live ⇒ open.
+    expect(m11().baseBranch).toBe('epic/10');
+    expect(coord.memberBaseNotReady(m11())).toBe(false);
+    expect(coord.memberBaseNotReady(nonMember)).toBe(false); // ordinary Task base
+    expect(coord.memberBaseNotReady(native)).toBe(false); // native ⇒ never gated
+
+    // The working dir goes detached (a concurrent afk-direct Run): this poll
+    // confirms nothing live, so the durable epic/10 base is no longer vouched for
+    // and the member is gated rather than allowed to fork off a branch we can't
+    // guarantee is there.
+    const detached = new FakeGit(['epic/10'], null);
+    const coordDetached = new EpicIntegrationCoordinator(tasks, dir, detached);
+    await coordDetached.reconcile(tickets, mscan(tickets));
+    expect(coordDetached.memberBaseNotReady(m11())).toBe(true);
+  });
+
+  it('memberBaseNotReady gates every member before the first reconcile confirms any branch live', () => {
+    const tickets = epicTickets();
+    const mirrored = mscan(tickets);
+    // Point member 11 at epic/10 directly, as a durable base surviving a restart,
+    // without ever running a reconcile (liveIntegrationRefs still empty).
+    const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
+    tasks.setBaseBranch(m11Id, 'epic/10');
+    const git = new FakeGit(['epic/10'], 'develop');
+    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    // No reconcile has run: the branch may exist on disk, but this coordinator
+    // has confirmed nothing, so it fails closed and gates the member.
+    expect(coord.memberBaseNotReady(tasks.get(m11Id))).toBe(true);
+  });
 });
 
 describe('reduceMemberState (issue #161)', () => {

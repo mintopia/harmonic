@@ -169,13 +169,16 @@ export class TrackerPollerManager {
   }
 
   /**
-   * Whether a mirrored Task is a ready Epic member still awaiting its
-   * integration-branch base (issue #159) — the Auto-Runner's pick gate. Routed
-   * to the Task's own Workspace coordinator; no live loop ⇒ not gated (false),
-   * so a Workspace without tracking keeps today's per-Run behaviour.
+   * Whether a mirrored Task is an Epic member not yet safe to spawn a worktree
+   * Run for (issue #159): its integration-branch base is unresolved, or set to
+   * an `epic/<ref>` branch this poll has not confirmed to exist. Consulted by
+   * BOTH the Auto-Runner's pick gate and the Runner's start funnel, so neither
+   * an auto-pick nor a hand-started Run forks off a missing integration branch.
+   * Routed to the Task's own Workspace coordinator; no live loop ⇒ not gated
+   * (false), so a Workspace without tracking keeps today's per-Run behaviour.
    */
-  awaitsEpicBase(task: TaskRow): boolean {
-    return this.entryFor(task.workspaceId)?.epics.awaitsBase(task) ?? false;
+  epicBaseNotReady(task: TaskRow): boolean {
+    return this.entryFor(task.workspaceId)?.epics.memberBaseNotReady(task) ?? false;
   }
 
   /**

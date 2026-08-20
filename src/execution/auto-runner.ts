@@ -111,14 +111,18 @@ export class AutoRunner {
     private readonly getWorkspaces: () => WorkspaceRow[],
     private readonly mirror?: MirrorClaim,
     /**
-     * Pick gate for parallel-Epic members (issue #159): true while a ready
-     * mirrored Task is an Epic member whose integration-branch `baseBranch` has
-     * not yet been set by the poll's reconcile. Skips it — without this, the
+     * Pick gate for parallel-Epic members (issue #159): true while a mirrored
+     * Task is an Epic member not yet safe to fork a worktree from — its
+     * integration-branch base is unresolved (the reconcile hasn't set it), or set
+     * to an `epic/<ref>` branch the poll hasn't confirmed live (never cut, or
+     * transiently gone after a restart/retire). Skips it — without this, the
      * mirror insert's `ready` poke could spawn the member before its base is
-     * resolved, forking it from the working dir's branch instead of `epic/<ref>`.
+     * resolved, forking it from the working dir's branch instead of `epic/<ref>`,
+     * or off a missing integration branch. The same gate the Runner's start funnel
+     * consults, so hand-started and auto-picked members are held identically.
      * Absent (native-only server / no live poll loop) ⇒ never gated.
      */
-    private readonly awaitsEpicBase?: (task: TaskRow) => boolean,
+    private readonly epicBaseNotReady?: (task: TaskRow) => boolean,
     /**
      * The per-context git circuit breaker (issue #199), shared with the Runner
      * that records failures into it. A ready Task whose base repo is in a git
@@ -259,9 +263,10 @@ export class AutoRunner {
         if (this.mirror?.foreignAssignee(t)) return false;
         // Parallel-Epic pick gate (issue #159): a ready Epic member isn't
         // spawnable until this poll's reconcile has cut its integration branch
-        // and set its base. Transient (the reconcile sets it within the same
-        // poll and re-pokes), so it isn't recorded as a wait-clock skip.
-        if (this.awaitsEpicBase?.(t)) return false;
+        // (and confirmed it live) and set its base. Transient (the reconcile
+        // sets it within the same poll and re-pokes), so it isn't recorded as a
+        // wait-clock skip.
+        if (this.epicBaseNotReady?.(t)) return false;
         const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
         // Master is on (fill returned early otherwise), so an inheriting
         // Workspace (null) is enabled; only an explicit `false` opts out.

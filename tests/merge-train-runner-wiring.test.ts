@@ -10,6 +10,7 @@ import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
+import { DomainError } from '../src/domain/errors.js';
 import type { MergeTrainMember } from '../src/execution/merge-train-coordinator.js';
 import { turnQueue } from '../src/db/schema.js';
 import { startServer, stubHarness, waitFor, allWorkspaces, type TestServer } from './helpers.js';
@@ -141,6 +142,33 @@ describe('Runner merge-train adapters (issue #163)', () => {
     expect(() => runner.settleEscalatedForMember(member, 'integration branch missing')).not.toThrow();
     expect(runs.get(runId).state).toBe('failed');
     expect(tasks.get(taskId).escalated).toBe(true);
+  });
+
+  it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', () => {
+    // The shared start funnel consults the injected gate: a hand-started member
+    // (REST/MCP) whose `epic/<ref>` base the poll hasn't confirmed live must be
+    // rejected before a run is created — the same gate the Auto-Runner's pick
+    // side uses, so neither path forks off a missing integration branch.
+    const gated = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig(), {
+      epicBaseNotReady: (t) => t.baseBranch === 'epic/1',
+    });
+    const task = tasks.create({ prompt: 'member work' });
+    tasks.setBaseBranch(task.id, 'epic/1');
+
+    let err: unknown;
+    try {
+      gated.start(task.id);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(DomainError);
+    expect((err as DomainError).code).toBe('invalid_state'); // → HTTP 409
+    expect((err as DomainError).message).toContain('epic/1');
+
+    // The gate fires before `beginRun` creates the row or flips the Task, so no
+    // orphan run and the Task stays on the frontier for the next poll.
+    expect(runs.listForTask(task.id)).toHaveLength(0);
+    expect(tasks.get(task.id).state).toBe('ready');
   });
 });
 

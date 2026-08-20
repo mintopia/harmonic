@@ -420,6 +420,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
     mergeTrain,
     gitBreaker,
+    // Start-funnel gate (issue #159): refuse to spawn a worktree Run for an Epic
+    // member whose integration base isn't ready — set to an `epic/<ref>` branch
+    // the poll hasn't confirmed live, or still unresolved. Routed to the Task's
+    // own Workspace coordinator via the forward ref (like the Auto-Runner gate),
+    // so a hand-started member is blocked identically to an auto-picked one.
+    epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
@@ -515,7 +521,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // Parallel-Epic pick gate (issue #159): route to the Task's own Workspace
     // poll loop, which owns its per-Epic integration-branch coordinator. No live
     // loop ⇒ not gated, so a native-only / tracking-off Workspace is unaffected.
-    (task) => trackerManagerRef?.awaitsEpicBase(task) ?? false,
+    (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
     gitBreaker,
   );
   // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
