@@ -6,7 +6,7 @@ import type { Epic, EpicLandOutcome } from './epic-model';
 import { epicByTaskId } from './epic-model';
 import { Board } from './components/Board';
 import { TaskForm } from './components/TaskForm';
-import { TaskDetail } from './components/TaskDetail';
+import { TicketPage } from './components/TicketPage';
 import { EpicPeek } from './components/EpicPeek';
 import { subscribe } from './ws';
 import { Login } from './components/Login';
@@ -793,92 +793,108 @@ export function App() {
             rail, drops below the drawer under 900px, and wraps to two rows
             under ~520px (63 → 121 → 165px measured). */}
         <div className="relative min-h-0 flex-1">
-          <main id="main-content" tabIndex={-1} className="h-full min-w-0 overflow-y-auto px-6 py-5">
-            {showWorkspaceEmptyState ? (
-              <EmptyState
-                title="No workspace open"
-                className="mt-24"
-                action={
-                  <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
-                    Open a workspace
-                  </button>
-                }
-              >
-                A workspace points Harmonic at a project directory — its tasks, runs, and cost all
-                scope to it. Open one to get started.
-              </EmptyState>
-            ) : (
-              <>
-                {view === 'deck' && (
-                  <>
-                    {/* Manual tracker refresh — only when this Workspace mirrors a
-                        tracker; otherwise there's nothing to re-poll. */}
-                    {activeWorkspace?.trackerEnabled && (
-                      <div className="mb-4 flex">
-                        <button
-                          className={`${btnQuiet} inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 hover:bg-raised disabled:opacity-60`}
-                          disabled={refreshingTracker}
-                          title="Rescan the tracker and mirror ticket changes now"
-                          onClick={refreshTracker}
-                        >
-                          <Icon
-                            name="refresh"
-                            className={refreshingTracker ? 'motion-safe:animate-spin' : ''}
-                          />
-                          {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
-                        </button>
-                      </div>
-                    )}
-                    <Board
-                      tasks={taskList}
-                      loading={tasks === null}
-                      onEdit={setEditing}
+          {openTask ? (
+            // The Ticket page is its own full-bleed surface (crumb bar, its
+            // own scroll region, its own review-gate footer) — it replaces
+            // the padded <main> view-switch below entirely rather than
+            // layering over it, so it isn't fighting the view's own padding
+            // (issue #183). It keeps the same skip-link target (`#main-
+            // content`) the <main> below carries when no Ticket is open.
+            <TicketPage
+              task={openTask}
+              onEdit={setEditing}
+              onChanged={refresh}
+              onClose={() => navigate({ ...route, task: null }, { replace: true })}
+              onOpenTask={openTaskById}
+            />
+          ) : (
+            <main id="main-content" tabIndex={-1} className="h-full min-w-0 overflow-y-auto px-6 py-5">
+              {showWorkspaceEmptyState ? (
+                <EmptyState
+                  title="No workspace open"
+                  className="mt-24"
+                  action={
+                    <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
+                      Open a workspace
+                    </button>
+                  }
+                >
+                  A workspace points Harmonic at a project directory — its tasks, runs, and cost all
+                  scope to it. Open one to get started.
+                </EmptyState>
+              ) : (
+                <>
+                  {view === 'deck' && (
+                    <>
+                      {/* Manual tracker refresh — only when this Workspace mirrors a
+                          tracker; otherwise there's nothing to re-poll. */}
+                      {activeWorkspace?.trackerEnabled && (
+                        <div className="mb-4 flex">
+                          <button
+                            className={`${btnQuiet} inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 hover:bg-raised disabled:opacity-60`}
+                            disabled={refreshingTracker}
+                            title="Rescan the tracker and mirror ticket changes now"
+                            onClick={refreshTracker}
+                          >
+                            <Icon
+                              name="refresh"
+                              className={refreshingTracker ? 'motion-safe:animate-spin' : ''}
+                            />
+                            {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
+                          </button>
+                        </div>
+                      )}
+                      <Board
+                        tasks={taskList}
+                        loading={tasks === null}
+                        onEdit={setEditing}
+                        onOpen={openRow}
+                        onChanged={refresh}
+                        onNewTask={() => setEditing('new')}
+                        peeked={peeked}
+                        onTogglePeek={togglePeek}
+                        epicByTaskId={epicByTaskIdMap}
+                        onOpenEpic={setOpenEpic}
+                        focusEpic={focusEpic}
+                        onClearFocus={() => setFocusEpic(null)}
+                        onForceLandEpic={forceLandEpic}
+                      />
+                    </>
+                  )}
+                  {view === 'activity' && <ActivityView config={config} />}
+                  {view === 'table' && (
+                    <TableView
+                      workspaceId={activeWorkspaceId}
                       onOpen={openRow}
-                      onChanged={refresh}
-                      onNewTask={() => setEditing('new')}
-                      peeked={peeked}
-                      onTogglePeek={togglePeek}
-                      epicByTaskId={epicByTaskIdMap}
-                      onOpenEpic={setOpenEpic}
-                      focusEpic={focusEpic}
-                      onClearFocus={() => setFocusEpic(null)}
+                      filters={route.table}
+                      onFiltersChange={setTableFilters}
+                      epics={epics}
                       onForceLandEpic={forceLandEpic}
                     />
-                  </>
-                )}
-                {view === 'activity' && <ActivityView config={config} />}
-                {view === 'table' && (
-                  <TableView
-                    workspaceId={activeWorkspaceId}
-                    onOpen={openRow}
-                    filters={route.table}
-                    onFiltersChange={setTableFilters}
-                    epics={epics}
-                    onForceLandEpic={forceLandEpic}
-                  />
-                )}
-                {view === 'graph' && (
-                  <GraphView
-                    tasks={taskList}
-                    loading={tasks === null}
-                    onOpen={openRow}
-                  />
-                )}
-                {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
-                {view === 'api' && <ApiPage />}
-                {view === 'settings' && <SettingsPage onSaved={setConfig} />}
-                {view === 'workspace' && config && activeWorkspace && (
-                  <WorkspaceSettingsPage
-                    workspace={activeWorkspace}
-                    config={config}
-                    blockedByRunningTask={runningCount > 0}
-                    onSaved={handleWorkspaceSaved}
-                    onDeleted={handleWorkspaceDeleted}
-                  />
-                )}
-              </>
-            )}
-          </main>
+                  )}
+                  {view === 'graph' && (
+                    <GraphView
+                      tasks={taskList}
+                      loading={tasks === null}
+                      onOpen={openRow}
+                    />
+                  )}
+                  {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+                  {view === 'api' && <ApiPage />}
+                  {view === 'settings' && <SettingsPage onSaved={setConfig} />}
+                  {view === 'workspace' && config && activeWorkspace && (
+                    <WorkspaceSettingsPage
+                      workspace={activeWorkspace}
+                      config={config}
+                      blockedByRunningTask={runningCount > 0}
+                      onSaved={handleWorkspaceSaved}
+                      onDeleted={handleWorkspaceDeleted}
+                    />
+                  )}
+                </>
+              )}
+            </main>
+          )}
 
           {!noWorkspaces && (
             <ConversationLauncher
@@ -888,16 +904,6 @@ export function App() {
           )}
         </div>
       </div>
-
-      {openTask && (
-        <TaskDetail
-          task={openTask}
-          onEdit={setEditing}
-          onChanged={refresh}
-          onClose={() => navigate({ ...route, task: null }, { replace: true })}
-          onOpenTask={openTaskById}
-        />
-      )}
 
       {openEpic && activeWorkspaceId !== null && (
         <EpicPeek

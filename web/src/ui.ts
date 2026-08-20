@@ -1,4 +1,5 @@
 import type { Conversation, PermissionAcpRequest, TaskState } from './types.js';
+import type { RunDot } from './run-rail-model.js';
 
 /** One component vocabulary (DESIGN.md § Components); screens share these
  * class strings so a button or field never drifts between surfaces. */
@@ -328,6 +329,17 @@ export const dot = 'size-2 rounded-full';
 export function stateDot(state: TaskState): string {
   return `${dot} ${laneDot(state)}`;
 }
+
+/** RunDot → the dot's fill utility, shared by the Ticket run rail's chips and
+ * its read-only result bar so the run-signal mapping lives in one place (the
+ * pulse is applied separately in the markup, never baked in here). */
+export const runDotFill: Record<RunDot, string> = {
+  running: 'bg-running-dot',
+  fail: 'bg-fail-dot',
+  accept: 'bg-accept-dot',
+  review: 'bg-accent',
+  neutral: 'bg-edge',
+};
 
 /** Run chip (DESIGN.md § 6): one attempt in the Ticket's run rail — a state dot
  * + `Run N` and a `state · cost · duration` subline. Selected chip = Accent Tint

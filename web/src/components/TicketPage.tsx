@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNo
 import { api } from '../api';
 import { nextTabIndex } from '../tablist-model';
 import { formatCost, formatCostByModel } from '../cost';
-import type { Cost, GuardrailEvent, Run, RunEvent, Task, VerificationAttempt } from '../types';
+import type { GuardrailEvent, Run, RunEvent, Task, VerificationAttempt } from '../types';
 import { EmptyState } from './EmptyState';
 import { EventStream } from './EventStream';
 import { coalesceEvents } from '../event-stream-model';
@@ -12,15 +12,18 @@ import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
 import { VerificationCard } from './VerificationCard';
 import { Markdown } from './Markdown';
-import { Modal } from './Modal';
-import { TaskActions } from './TaskActions';
+import { Icon } from './Icon';
 import { subscribe } from '../ws';
-import { btnGhost, chip, labelType, selectField, stateChip, touchTargetInline } from '../ui';
+import { gateForRun } from '../ticket-gate-model';
+import { RunRail } from './ticket/RunRail';
+import { Gate } from './ticket/Gate';
+import { card, chip, displayTitle, labelType, sectionLabel, selectField, stateChip, touchTargetInline } from '../ui';
 import { toastError } from '../toast';
 
 const metaChip = `${chip} bg-raised text-muted`;
 
-type Tab = 'description' | 'prompt' | 'output' | 'changes' | 'details';
+type Tab = 'output' | 'changes' | 'prompt' | 'details';
+const TAB_LABEL: Record<Tab, string> = { output: 'Output', changes: 'Changes', prompt: 'Prompt', details: 'Details' };
 
 /** The Changes tab's diff fetch, as a state machine so a swallowed error
  * or the in-flight window is never mistaken for "no changes". */
@@ -247,7 +250,7 @@ function RunMeta({ run }: { run: Run }) {
 function GuardrailTrips({ events }: { events: GuardrailEvent[] }) {
   if (events.length === 0) return null;
   return (
-    <div className="mt-2 space-y-2">
+    <div className="mb-3 space-y-2">
       {events.map((event) => {
         const { dimensionLabel, evidence } = describeGuardrailTrip(event);
         return (
@@ -257,29 +260,6 @@ function GuardrailTrips({ events }: { events: GuardrailEvent[] }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/** The task's description, on its own tab so the Output tab keeps the full
- * panel height (issue #34 follow-up). Mirrored prompts render as Markdown;
- * native prompts stay plain. */
-function DescriptionTab({ task }: { task: Task }) {
-  return (
-    <div>
-      {task.origin === 'mirrored' ? (
-        <Markdown source={task.prompt} className="text-ink" />
-      ) : (
-        <p className="whitespace-pre-wrap text-ink">{task.prompt}</p>
-      )}
-      {(task.reattemptOf !== null || task.reattempts.length > 0) && (
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
-          {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
-          {task.reattempts.length > 0 && (
-            <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -332,12 +312,12 @@ function SteerBox({ taskId }: { taskId: number }) {
           className="min-w-0 flex-1 resize-none rounded-md border border-edge bg-field px-2 py-1 text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
         {/* Ghost, not a cobalt fill: steering a running run is a secondary
-            move, and the modal keeps its one cobalt primary for the review
+            move, and the page keeps its one cobalt primary for the review
             gate's Accept (the One Cobalt Rule; issue #94). */}
         <button
           onClick={() => void send()}
           disabled={sending || text.trim().length === 0}
-          className={btnGhost}
+          className="inline-flex min-h-11 items-center justify-center rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-ink transition-colors duration-150 hover:border-faint disabled:opacity-50"
         >
           {sending ? 'Sending…' : 'Send'}
         </button>
@@ -416,28 +396,16 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
   );
 }
 
-function DetailsTab({
-  task,
-  run,
-  events,
-  verificationAttempts,
-}: {
-  task: Task;
-  run: Run | undefined;
-  events: RunEvent[];
-  verificationAttempts: VerificationAttempt[];
-}) {
+/** The re-attempt/review context and the editable Dependencies/Notify blocks
+ * — everything DetailsTab held that isn't now permanently visible in the
+ * Ticket page's side aside (RunMeta and VerificationCard moved there, so this
+ * tab no longer repeats them — issue #183). */
+function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunEvent[] }) {
   return (
     <div className="flex flex-col">
-      {run && (
-        <div className="py-3 first:pt-0">
-          <RunMeta run={run} />
-        </div>
-      )}
       <OutputSummary events={events} />
-      <VerificationCard attempts={verificationAttempts} />
       {run?.reviewFeedback && (
-        <div className="py-3">
+        <div className="py-3 first:pt-0">
           <div className={`${labelType} mb-1 text-muted`}>
             {run.review === 'rejected' ? 'Rejection feedback' : 'Review feedback'}
           </div>
@@ -456,7 +424,155 @@ function DetailsTab({
   );
 }
 
-export function TaskDetail({
+/** A compact `key value` fact for the task-meta line (prototype `.mfact`). */
+function MetaFact({ k, children }: { k?: string; children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {k && <span className="text-faint">{k}</span>}
+      {children}
+    </span>
+  );
+}
+
+/** The `·` divider between task-meta facts (prototype `.dotsep`). */
+function MetaSep() {
+  return <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-edge" />;
+}
+
+/** The header meta line's "depends on" fact: each dependency id, checked off
+ * once its own Task has landed. Read-only and compact — the full editable
+ * add/remove list stays in the Details tab's `Dependencies` (unchanged);
+ * this fetches the same `api.tasks()` list `Dependencies` does, purely to
+ * resolve each dependency's own state for the checkmark (issue #183). */
+function DependsOnFact({ task }: { task: Task }) {
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  useEffect(() => {
+    let live = true;
+    api.tasks().then(({ tasks }) => live && setAllTasks(tasks));
+    return () => {
+      live = false;
+    };
+  }, [task.id]);
+  if (task.dependsOn.length === 0) return null;
+  return (
+    <>
+      <MetaSep />
+      <MetaFact k="depends on">
+        <span className="inline-flex flex-wrap items-center gap-2">
+          {task.dependsOn.map((depId) => {
+            const satisfied = allTasks.find((t) => t.id === depId)?.state === 'completed';
+            return (
+              <span key={depId} className={`inline-flex items-center gap-1 ${satisfied ? 'text-accept' : ''}`}>
+                {satisfied && <Icon name="check" className="size-3" />}
+                {depId}
+              </span>
+            );
+          })}
+        </span>
+      </MetaFact>
+    </>
+  );
+}
+
+/** The header meta line's "notify" fact: the channels this Task routes to, or
+ * "channel defaults" when none are pinned — read-only, same data
+ * `NotifyOverrides` (Details tab) edits. Renders nothing when the Workspace
+ * has no channels configured at all, mirroring `NotifyOverrides`'s own gate. */
+function NotifyFact({ taskId }: { taskId: number }) {
+  const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
+  const [attached, setAttached] = useState<number[]>([]);
+  useEffect(() => {
+    let live = true;
+    Promise.all([api.channels(), fetch(`/api/tasks/${taskId}/channels`).then((r) => r.json()) as Promise<{ channelIds: number[] }>]).then(
+      ([c, t]) => {
+        if (!live) return;
+        setChannels(c.channels);
+        setAttached(t.channelIds);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [taskId]);
+  if (channels.length === 0) return null;
+  const names = attached.map((id) => channels.find((c) => c.id === id)?.name ?? `#${id}`);
+  return (
+    <>
+      <MetaSep />
+      <MetaFact k="notify">{names.length > 0 ? names.join(', ') : 'channel defaults'}</MetaFact>
+    </>
+  );
+}
+
+/** The task-level Brief card (prototype `.brief`): the same prompt render
+ * `DescriptionTab` used inside the old modal's Description tab, now surfaced
+ * directly under the header instead of behind a tab — the header IS the
+ * Ticket page's front matter (issue #183). */
+function Brief({ task }: { task: Task }) {
+  return (
+    <div className={`${card} mt-[15px] px-4 py-3 text-small leading-relaxed text-muted`}>
+      <div className={`${labelType} mb-1.5 block text-faint`}>Brief</div>
+      {task.origin === 'mirrored' ? (
+        <Markdown source={task.prompt} className="text-ink" />
+      ) : (
+        <p className="whitespace-pre-wrap text-ink">{task.prompt}</p>
+      )}
+      {(task.reattemptOf !== null || task.reattempts.length > 0) && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
+          {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
+          {task.reattempts.length > 0 && (
+            <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A rejected/failed selected Run's banner (prototype `.runbanner`), carrying
+ * feedback forward into the next Run on the same Task when one exists — an
+ * auto-retry after a validation failure, the one same-Task case a "next Run"
+ * genuinely applies (a *reviewed* rejection spawns a new linked Task instead,
+ * surfaced by the Brief's re-attempt lineage line, not a Run in this list). */
+function RunBanner({ run, nextRun }: { run: Run; nextRun: Run | undefined }) {
+  if (run.review === 'rejected') {
+    return (
+      <div className="mb-[18px] rounded-lg bg-running-tint px-3.5 py-3 text-small text-running">
+        <b className="font-bold">Rejected</b>
+        {run.reviewFeedback ? <> — reviewer feedback: “{run.reviewFeedback}”</> : ' — no feedback recorded.'}
+        {nextRun && run.reviewFeedback && (
+          <div className="mt-0.5 text-muted">
+            Feedback carried into Run {nextRun.attempt}: “{run.reviewFeedback}”
+          </div>
+        )}
+      </div>
+    );
+  }
+  if (run.state === 'failed') {
+    return (
+      <div className="mb-[18px] rounded-lg bg-fail-tint px-3.5 py-3 text-small text-fail">
+        <b className="font-bold">Failed</b>
+        {run.reason ? <> — {run.reason}</> : ''}
+        {nextRun && <> Auto-retried as Run {nextRun.attempt}.</>}
+      </div>
+    );
+  }
+  return null;
+}
+
+/**
+ * The full-width Ticket page (issue #183, part of #179 — the Deck redesign):
+ * TaskDetail's modal, adapted into its own route. Every hook/effect/state
+ * below is carried over verbatim from the modal (the run list + selected-run
+ * state, the WS `run_changed` sync, the event-stream replay + live
+ * `run_event`, the guardrail/verification-attempt polls, the diff fetch) —
+ * only the *rendering* changes: a crumb bar replaces the Modal's dialog
+ * chrome, the run switcher becomes the `RunRail`, the always-current
+ * `TaskActions` footer becomes the run-aware `Gate`, and RunMeta/
+ * VerificationCard move out of the tabbed Details into an always-visible side
+ * column (matching the prototype's `.t-side`).
+ */
+export function TicketPage({
   task,
   onEdit,
   onChanged,
@@ -475,18 +591,15 @@ export function TaskDetail({
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
   const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
-  const [tab, setTab] = useState<Tab>('description');
-  const [taskCost, setTaskCost] = useState<Cost | null>(null);
+  const [tab, setTab] = useState<Tab>('output');
 
   useEffect(() => {
     let live = true;
-    const loadCost = () => api.taskUsage(task.id).then((usage) => live && setTaskCost(usage.cost));
     api.taskRuns(task.id).then(({ runs }) => {
       if (!live) return;
       setRuns(runs);
       setSelectedRunId((current) => current ?? runs[runs.length - 1]?.id ?? null);
     });
-    loadCost();
     // New runs and state changes arrive over the socket.
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'run_changed' && msg.run.taskId === task.id) {
@@ -494,7 +607,6 @@ export function TaskDetail({
           const rest = current.filter((r) => r.id !== msg.run.id);
           return [...rest, msg.run].sort((a, b) => a.attempt - b.attempt);
         });
-        loadCost();
       }
     });
     return () => {
@@ -575,7 +687,9 @@ export function TaskDetail({
 
   // Keep the Output panel pinned to the newest event as it streams — but only
   // while the operator is already at the bottom, so we never yank them up
-  // mid-read. `stickToBottom` is tracked by the container's onScroll below.
+  // mid-read. `stickToBottom` is tracked by the page's own scroll region
+  // below (unlike the old modal, the whole page scrolls as one — there's no
+  // separate fixed-height tab-panel viewport any more).
   const scrollRef = useRef<HTMLDivElement>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -603,15 +717,22 @@ export function TaskDetail({
     };
   }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
 
-  const tabs: Tab[] = ['description', 'prompt', 'output', 'changes', 'details'];
+  // Escape → back to the Deck, same parity the old Modal gave for free via
+  // the native <dialog> element.
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const tabs: Tab[] = ['output', 'changes', 'prompt', 'details'];
 
   // WAI-ARIA tablist keyboard nav: Tab reaches the tablist as one stop (roving
   // tabindex below), then Left/Right/Home/End move between tabs. Selection
   // follows focus (automatic activation) — switching a tab only toggles a
   // `hidden` panel, so there's no cost that would justify manual activation.
-  // The current index is read from `tab` state (not `document.activeElement`
-  // like ProcessTree's tree nav) precisely because activation is automatic:
-  // focus and `tab` stay in lockstep, so state is the simpler source of truth.
   const onTablistKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const next = nextTabIndex(e.key, tabs.indexOf(tab), tabs.length);
     if (next === null) return;
@@ -623,8 +744,8 @@ export function TaskDetail({
   };
 
   // Surface why a Task failed or Escalated up top — the reason lives on the
-  // latest Run and was otherwise buried in the Details tab's meta line, so an
-  // escalated Task (back in ready) gave the operator nothing to act on.
+  // latest Run (task-level: independent of whichever Run the operator has
+  // currently selected below).
   const latestRun = runs[runs.length - 1];
   const alert =
     (task.escalated || latestRun?.state === 'failed') && latestRun?.reason
@@ -636,214 +757,226 @@ export function TaskDetail({
   // click. `null` when the string doesn't contain a `task #<id>` to link.
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
 
-  // Hoist the one-time progress-nudge to the header (issue #176): it renders
-  // inline in the Output stream too (EventStream), but it directly precedes
-  // a potential guardrail trip and was easy to miss scrolled into the
-  // transcript. Same event, read twice on purpose.
+  // The one-time progress-nudge and the run-level next-attempt lookup are
+  // both scoped to the *selected* run, so they render alongside it (phases/
+  // runbanner), not in the task-level header above.
   const progressNudge = events.find((e) => e.payload?.event === 'progress-nudge') ?? null;
   const progressNudgePattern = progressNudge?.payload?.pattern as string | undefined;
+  const nextRun = selectedRun ? runs.find((r) => r.attempt === selectedRun.attempt + 1) : undefined;
+
+  // The bottom bar (issue #183): whether the selected run gets the live gate
+  // or a read-only historical result. The accept-anyway arming on a block/
+  // escalate verdict (issue #174) lives inside TaskActions, which the live
+  // variant embeds — not re-decided here.
+  const gateModel = gateForRun({ task, runs, selectedRunId });
 
   return (
-    <Modal label={`Task #${task.id}`} onClose={onClose} className="max-w-3xl">
-      {/* Fixed height (not max-h): the modal stays one size across tabs, so
-          switching between a short Description and a long Output never resizes
-          it — each panel scrolls within this frame instead. */}
-      <div className="flex h-[85vh] flex-col">
-        <header className="border-b border-hairline p-4">
-          <div className="mb-1 flex items-center gap-2 text-small text-muted">
-            <span>Task #{task.id}</span>
-            <span className={stateChip(task.state)}>{task.state}</span>
-            <span>
-              {task.harness} · {task.model} · {task.isolationMode}
-            </span>
-            {formatCost(taskCost) && (
-              <span title="Total cost across all runs, retries included">Cost {formatCost(taskCost)}</span>
-            )}
-            {/* Modal owns the close X; the right padding keeps this line clear
-                of the corner it sits in. */}
-            <div className="flex-1" />
-          </div>
-          {/* Informational, not alarming (issue #171): a ready Task not
-              running yet because its Work Context lease is held elsewhere —
-              subtle so it never competes with the failed/escalated alert. */}
-          {task.skipReason && (
-            <div className="mt-1 text-small text-muted">
-              <span className={labelType}>Skipped</span> —{' '}
-              {/* Link the holder ref to its Task (the lease owner). Split on the
-                  literal `task #<id>` the model already parsed, so the `task #…`
-                  format lives in exactly one place (skip-reason-model). */}
-              {skipHolderId === null
-                ? task.skipReason
-                : (() => {
-                    const marker = `task #${skipHolderId}`;
-                    const [before, ...after] = task.skipReason.split(marker);
-                    return (
-                      <>
-                        {before}
-                        <button
-                          onClick={() => onOpenTask(skipHolderId)}
-                          className={`${touchTargetInline} text-accent hover:underline`}
-                        >
-                          {marker}
-                        </button>
-                        {after.join(marker)}
-                      </>
-                    );
-                  })()}
-            </div>
-          )}
-          {/* The description moved to its own tab (below) so the Output tab
-              keeps the full panel height — a header-mounted prompt starved it. */}
-          {alert && (
-            <div
-              className={`mt-2 rounded-md px-3 py-2 text-small ${alert.escalated ? 'bg-running-tint' : 'bg-fail-tint'}`}
-            >
-              <span className={`font-semibold ${alert.escalated ? 'text-running' : 'text-fail'}`}>
-                {alert.escalated ? 'Escalated to you' : 'Run failed'}
-              </span>
-              {alert.escalated && <span className="text-muted"> — auto-drive stopped and handed this back</span>}
-              <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{alert.text}</div>
-            </div>
-          )}
-          {/* The phase timeline is the primary surface for "where is this run
-              in its lifecycle" (issue #171) — the per-run picker below keeps
-              only a quiet phase word for the non-selected runs. */}
-          {phaseSteps && (
-            <div className="mt-2">
-              <PhaseTimeline steps={phaseSteps} />
-            </div>
-          )}
-          {/* Header-level mark of the same progress-nudge EventStream renders
-              inline (issue #176) — it precedes a potential guardrail trip, so
-              it sits just above GuardrailTrips and reads together with one if
-              it also shows. Same vocabulary as the inline version on purpose. */}
-          {progressNudge && (
-            <div className="mt-2 rounded-md bg-accent-tint px-2 py-1 text-small text-ink">
-              <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
-              <span>
-                Redirected before a guardrail trip
-                {progressNudgePattern ? ` — ${progressNudgePattern}` : ''}
-              </span>
-            </div>
-          )}
-          <GuardrailTrips events={guardrailEvents} />
-        </header>
-
-        <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2">
-          {runs.length === 0 && <span className="text-muted">No runs yet.</span>}
-          {runs.map((run) => (
-            <button
-              key={run.id}
-              aria-pressed={run.id === selectedRunId}
-              onClick={() => setSelectedRunId(run.id)}
-              // Selected run reads as selected by weight + a neutral raised
-              // ground, not cobalt: the modal reserves the accent for the
-              // review gate's Accept so it stays unambiguously the primary
-              // (issue #94).
-              className={`rounded-md px-2 py-1 transition-colors duration-150 ${
-                run.id === selectedRunId
-                  ? 'bg-raised font-semibold text-ink'
-                  : 'font-medium text-muted hover:bg-raised hover:text-ink'
-              }`}
-            >
-              Run {run.attempt}
-              <span className={`ml-2 ${stateChip(run.state)}`}>{run.state}</span>
-              {run.phase && run.phase !== 'terminal' && (
-                <span className="ml-2 text-xs text-muted">{run.phase}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div
-          ref={tablistRef}
-          role="tablist"
-          aria-label="Task detail"
-          onKeyDown={onTablistKeyDown}
-          className="flex gap-1 border-b border-hairline px-4"
+    <div className="flex h-full flex-col">
+      {/* Crumb bar: the page's back-to-Deck affordance, replacing the Modal's
+          dialog chrome (issue #183). */}
+      <div className="sticky top-0 z-[4] flex shrink-0 items-center gap-2.5 border-b border-hairline bg-shell px-6 py-2.5">
+        <button
+          type="button"
+          onClick={onClose}
+          className={`${touchTargetInline} gap-1.5 rounded-md border border-edge bg-surface px-2.5 font-medium text-muted transition-colors duration-150 hover:border-faint hover:text-ink`}
         >
-          {tabs.map((t) => {
-            // Flag when Details holds review context (why a prior run was
-            // rejected, or the feedback seeding this re-attempt) — or a
-            // Verification verdict (issue #174 FIX 1): the critic's
-            // proceed/block/escalate outcome otherwise sits unflagged in this
-            // tab, so a block/escalate run could be Accept-merged blind. A
-            // verdict exists once there is at least one verification attempt.
-            const flag =
-              t === 'details' &&
-              Boolean(task.feedback || selectedRun?.reviewFeedback || verificationAttempts.length > 0);
-            return (
-              <button
-                key={t}
-                role="tab"
-                id={`task-tab-${t}`}
-                aria-selected={tab === t}
-                aria-controls={`task-panel-${t}`}
-                tabIndex={tab === t ? 0 : -1}
-                aria-label={flag ? 'details (has review feedback or verification verdict)' : undefined}
-                onClick={() => setTab(t)}
-                className={`-mb-px border-b-2 px-2 py-2 ${labelType} transition-colors duration-150 ${
-                  tab === t ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'
-                }`}
-              >
-                {t}
-                {flag && (
-                  <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-accent align-middle" aria-hidden />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Panels stay mounted (toggled with `hidden`) so switching tabs
-            never discards in-progress state — notably a dependency edit
-            held in the Dependencies component. */}
-        {/* tabIndex=0 puts the scroll body in the Tab order so a keyboard
-            operator can scroll a long panel (e.g. Output) with the arrow /
-            Page keys even when its content holds nothing else focusable —
-            without it the review text below was simply unreadable by keyboard
-            (issue #95). */}
-        <div
-          ref={scrollRef}
-          tabIndex={0}
-          role="group"
-          aria-labelledby={`task-tab-${tab}`}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          }}
-          className="flex-1 overflow-y-auto p-4 focus:outline-none focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          <div role="tabpanel" id="task-panel-description" aria-labelledby="task-tab-description" hidden={tab !== 'description'}>
-            <DescriptionTab task={task} />
-          </div>
-          <div role="tabpanel" id="task-panel-prompt" aria-labelledby="task-tab-prompt" hidden={tab !== 'prompt'}>
-            <PromptTab run={selectedRun} />
-          </div>
-          <div role="tabpanel" id="task-panel-output" aria-labelledby="task-tab-output" hidden={tab !== 'output'}>
-            <OutputTab run={selectedRun} events={events} />
-          </div>
-          <div role="tabpanel" id="task-panel-changes" aria-labelledby="task-tab-changes" hidden={tab !== 'changes'}>
-            <ChangesTab run={selectedRun} diff={diff} />
-          </div>
-          <div role="tabpanel" id="task-panel-details" aria-labelledby="task-tab-details" hidden={tab !== 'details'}>
-            <DetailsTab task={task} run={selectedRun} events={events} verificationAttempts={verificationAttempts} />
-          </div>
-        </div>
-
-        {/* Editing opens the task form; close the detail modal first so the
-            two don't stack. */}
-        <TaskActions
-          task={task}
-          variant="footer"
-          verificationAttempts={verificationAttempts}
-          onEdit={(t) => {
-            onClose();
-            onEdit(t);
-          }}
-          onChanged={onChanged}
-        />
+          <Icon name="arrow-left" />
+          Deck
+        </button>
+        <span className="text-small text-faint">
+          <b className="font-medium text-muted">Deck</b> / task {task.id}
+        </span>
       </div>
-    </Modal>
+
+      {/* The scrolling middle region — the whole page's content, including
+          the sticky crumb's sibling below-the-fold content. Carries the skip
+          link's target (issue #183: the same `id="main-content"` App.tsx's
+          own `<main>` uses when no Ticket is open). */}
+      <div
+        id="main-content"
+        ref={scrollRef}
+        tabIndex={-1}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+        className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <div className="mx-auto w-full max-w-[1120px] px-6">
+          {/* TASK LEVEL */}
+          <div className="pb-1 pt-[22px]">
+            <div className="flex items-start gap-3">
+              <h1 className={`${displayTitle} line-clamp-2 max-w-[28ch]`}>{task.prompt}</h1>
+              <span className={`${stateChip(task.state)} mt-1 shrink-0`}>{task.state}</span>
+            </div>
+            <div className="mt-[13px] flex flex-wrap items-center gap-2.5 text-small text-muted">
+              <span>{task.origin}</span>
+              <MetaSep />
+              <MetaFact k="priority">{task.priority}</MetaFact>
+              <MetaSep />
+              <MetaFact k="isolation">{task.isolationMode}</MetaFact>
+              {task.baseBranch && (
+                <>
+                  <MetaSep />
+                  <MetaFact k="base">
+                    <span className="font-data text-data text-tool">{task.baseBranch}</span>
+                  </MetaFact>
+                </>
+              )}
+              <DependsOnFact task={task} />
+              <NotifyFact taskId={task.id} />
+            </div>
+            <Brief task={task} />
+            {/* Informational, not alarming (issue #171): a ready Task not
+                running yet because its Work Context lease is held elsewhere —
+                subtle so it never competes with the failed/escalated alert. */}
+            {task.skipReason && (
+              <div className="mt-2 text-small text-muted">
+                <span className={labelType}>Skipped</span> —{' '}
+                {/* Link the holder ref to its Task (the lease owner). Split on the
+                    literal `task #<id>` the model already parsed, so the `task #…`
+                    format lives in exactly one place (skip-reason-model). */}
+                {skipHolderId === null
+                  ? task.skipReason
+                  : (() => {
+                      const marker = `task #${skipHolderId}`;
+                      const [before, ...after] = task.skipReason.split(marker);
+                      return (
+                        <>
+                          {before}
+                          <button
+                            onClick={() => onOpenTask(skipHolderId)}
+                            className={`${touchTargetInline} text-accent hover:underline`}
+                          >
+                            {marker}
+                          </button>
+                          {after.join(marker)}
+                        </>
+                      );
+                    })()}
+              </div>
+            )}
+            {alert && (
+              <div
+                className={`mt-2 rounded-md px-3 py-2 text-small ${alert.escalated ? 'bg-running-tint' : 'bg-fail-tint'}`}
+              >
+                <span className={`font-semibold ${alert.escalated ? 'text-running' : 'text-fail'}`}>
+                  {alert.escalated ? 'Escalated to you' : 'Run failed'}
+                </span>
+                {alert.escalated && <span className="text-muted"> — auto-drive stopped and handed this back</span>}
+                <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{alert.text}</div>
+              </div>
+            )}
+          </div>
+
+          {/* RUN RAIL */}
+          <RunRail runs={runs} selectedRunId={selectedRunId} onSelect={setSelectedRunId} />
+
+          {/* PER-RUN DETAIL */}
+          <div className="mt-5">
+            {selectedRun && <RunBanner run={selectedRun} nextRun={nextRun} />}
+            {selectedRun && progressNudge && (
+              <div className="mb-[18px] rounded-md bg-accent-tint px-2 py-1 text-small text-ink">
+                <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
+                <span>
+                  Redirected before a guardrail trip
+                  {progressNudgePattern ? ` — ${progressNudgePattern}` : ''}
+                </span>
+              </div>
+            )}
+            {selectedRun && <GuardrailTrips events={guardrailEvents} />}
+            {phaseSteps && (
+              <div className={`${card} mb-[18px] flex items-center px-[18px] py-[15px]`}>
+                <PhaseTimeline steps={phaseSteps} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-[22px] pb-10">
+              <div className="min-w-0">
+                <div
+                  ref={tablistRef}
+                  role="tablist"
+                  aria-label="Run detail"
+                  onKeyDown={onTablistKeyDown}
+                  className="mb-2 flex gap-1 border-b border-hairline"
+                >
+                  {tabs.map((t) => {
+                    // Flag when Details holds review context (why a prior run
+                    // was rejected, or the feedback seeding this re-attempt) —
+                    // Verification's own verdict now lives in the always-open
+                    // side card, so it no longer needs to flag this tab too.
+                    const flag = t === 'details' && Boolean(task.feedback || selectedRun?.reviewFeedback);
+                    return (
+                      <button
+                        key={t}
+                        role="tab"
+                        id={`ticket-tab-${t}`}
+                        aria-selected={tab === t}
+                        aria-controls={`ticket-panel-${t}`}
+                        tabIndex={tab === t ? 0 : -1}
+                        aria-label={flag ? `${t} (has review feedback)` : undefined}
+                        onClick={() => setTab(t)}
+                        className={`-mb-px border-b-2 px-3 py-2 text-title font-medium transition-colors duration-150 ${
+                          tab === t ? 'border-accent font-semibold text-ink' : 'border-transparent text-faint hover:text-ink'
+                        }`}
+                      >
+                        {TAB_LABEL[t]}
+                        {flag && (
+                          <span className="ml-1 inline-block size-1.5 rounded-full bg-accent align-middle" aria-hidden />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Panels stay mounted (toggled with `hidden`) so switching
+                    tabs never discards in-progress state — notably a
+                    dependency edit held in the Dependencies component. */}
+                <div role="tabpanel" id="ticket-panel-output" aria-labelledby="ticket-tab-output" hidden={tab !== 'output'}>
+                  <OutputTab run={selectedRun} events={events} />
+                </div>
+                <div role="tabpanel" id="ticket-panel-changes" aria-labelledby="ticket-tab-changes" hidden={tab !== 'changes'}>
+                  <ChangesTab run={selectedRun} diff={diff} />
+                </div>
+                <div role="tabpanel" id="ticket-panel-prompt" aria-labelledby="ticket-tab-prompt" hidden={tab !== 'prompt'}>
+                  <PromptTab run={selectedRun} />
+                </div>
+                <div role="tabpanel" id="ticket-panel-details" aria-labelledby="ticket-tab-details" hidden={tab !== 'details'}>
+                  <DetailsTab task={task} run={selectedRun} events={events} />
+                </div>
+              </div>
+
+              <aside className="flex flex-col gap-4">
+                {selectedRun && (
+                  <div className={`${card} p-3.5`}>
+                    <VerificationCard attempts={verificationAttempts} />
+                  </div>
+                )}
+                {selectedRun && (
+                  <div className={`${card} p-3.5`}>
+                    <div className={`${sectionLabel} mb-1.5`}>This run</div>
+                    <RunMeta run={selectedRun} />
+                  </div>
+                )}
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* GATE */}
+      <Gate
+        model={gateModel}
+        task={task}
+        runs={runs}
+        verificationAttempts={verificationAttempts}
+        onEdit={(t) => {
+          onClose();
+          onEdit(t);
+        }}
+        onChanged={onChanged}
+        onGoToCurrent={setSelectedRunId}
+      />
+    </div>
   );
 }
