@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { btnPrimary, btnQuiet, btnQuietDestructive, card, displayTitle, field, labelType, tableHead } from '../ui';
+import { btnPrimary, btnQuiet, btnQuietDestructive, card, chip, displayTitle, field, labelType, selectField, tableHead } from '../ui';
 import { ApiReference } from './ApiReference';
 
 interface ApiKey {
@@ -11,6 +11,12 @@ interface ApiKey {
   lastUsedAt: number | null;
   revokedAt: number | null;
 }
+
+/** The scopes the public create endpoint offers (`src/server/routes/auth.ts`):
+ * `full` drives the whole fleet, `read` is the viz-client key (issue #35).
+ * `ApiKey.scope` stays an open `string` — the server may return other internal
+ * scopes — so `ScopeChip` keeps a neutral fallback. */
+type Scope = 'full' | 'read';
 
 async function json<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -45,6 +51,21 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+/** A key's scope → a neutral chip. Scope is a *capability* (what the key may
+ * do), not a Task state, so it never takes a state colour (the Signal Rule):
+ * `full` and `read` differ only by ink weight, the same non-chromatic
+ * distinction the conversation-state and continuation-cost chips use. A `read`
+ * key is the viz-client credential (issue #35) — GET tasks/runs/maps + WS, no
+ * mutations — so it reads quieter (muted) than a full-access key (ink). */
+const SCOPE_STYLES: Record<string, string> = {
+  full: 'bg-raised text-ink',
+  read: 'bg-raised text-muted',
+};
+
+function ScopeChip({ scope }: { scope: string }) {
+  return <span className={`${chip} ${SCOPE_STYLES[scope] ?? 'bg-raised text-muted'}`}>{scope}</span>;
+}
+
 /** One row of the connection header: a Label name, the Data-role value
  * (a URL/command is code — the Mono Is Code Rule), and its copy button. */
 function ConnectionRow({ label, value }: { label: string; value: string }) {
@@ -60,6 +81,7 @@ function ConnectionRow({ label, value }: { label: string; value: string }) {
 export function ApiPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [name, setName] = useState('');
+  const [scope, setScope] = useState<Scope>('full');
   const [freshToken, setFreshToken] = useState<string | null>(null);
 
   const load = () => json<{ keys: ApiKey[] }>('GET', '/api/keys').then(({ keys }) => setKeys(keys));
@@ -68,9 +90,12 @@ export function ApiPage() {
   }, []);
 
   const create = async () => {
-    const created = await json<ApiKey & { token: string }>('POST', '/api/keys', { name });
+    const created = await json<ApiKey & { token: string }>('POST', '/api/keys', { name, scope });
     setFreshToken(created.token);
     setName('');
+    // Back to the least-privileged-surprising default: a minted `read` key
+    // must not silently carry over and mint the next key `read` too.
+    setScope('full');
     load();
   };
 
@@ -115,14 +140,25 @@ export function ApiPage() {
       <section className={`${card} p-5`}>
         <h2 className="mb-3 text-title font-semibold">API keys</h2>
 
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap gap-2">
           <input
             aria-label="Key name"
-            className={`${field} flex-1`}
+            className={`${field} min-w-40 flex-1`}
             placeholder="Key name (e.g. ci-bot)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          {/* Scope is chosen at mint time — the backend supports a read-only
+              viz-client key (issue #35), full-access by default. */}
+          <select
+            aria-label="Key scope"
+            className={selectField}
+            value={scope}
+            onChange={(e) => setScope(e.target.value as Scope)}
+          >
+            <option value="full">Full access</option>
+            <option value="read">Read only</option>
+          </select>
           <button disabled={!name} onClick={create} className={btnPrimary}>
             Create
           </button>
@@ -151,7 +187,9 @@ export function ApiPage() {
                 <tr key={key.id} className="border-t border-hairline">
                   <td className="py-2">{key.name}</td>
                   <td className="font-data text-data text-muted">{key.prefix}…</td>
-                  <td className="text-muted">{key.scope}</td>
+                  <td>
+                    <ScopeChip scope={key.scope} />
+                  </td>
                   <td className="tabular-nums text-muted">
                     {key.revokedAt
                       ? 'revoked'
