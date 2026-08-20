@@ -5,6 +5,7 @@ import type { ActivityProcess, AppConfig } from '../types';
 import { subscribe } from '../ws';
 import { toastError, toastSuccess } from '../toast';
 import {
+  btnQuiet,
   btnQuietDestructive,
   card,
   chip,
@@ -218,7 +219,7 @@ function RowActions({
           target="_blank"
           rel="noreferrer"
           title="Open the tracker issue"
-          className={`${touchTargetInline} text-small font-medium text-muted transition-colors duration-150 hover:text-ink`}
+          className={`${touchTargetInline} text-small ${btnQuiet}`}
         >
           {process.trackerRef != null ? `#${process.trackerRef}` : 'Ticket'} ↗
         </a>
@@ -247,7 +248,7 @@ function RowActions({
         <button
           onClick={() => fail(api.unescalateTask(resolve.taskId))}
           title="Hand this escalated Task back to autonomous drive"
-          className={`${touchTargetInline} text-small font-medium text-muted transition-colors duration-150 hover:text-ink`}
+          className={`${touchTargetInline} text-small ${btnQuiet}`}
         >
           Un-escalate
         </button>
@@ -429,7 +430,7 @@ function SupersedeControl({ onSupersede }: { onSupersede: (runId: number) => voi
       <button
         onClick={submit}
         disabled={runId.trim() === ''}
-        className={`${touchTarget} text-small font-medium text-muted transition-colors duration-150 hover:text-ink disabled:opacity-50 disabled:hover:text-muted`}
+        className={`${touchTarget} text-small ${btnQuiet} disabled:opacity-50 disabled:hover:text-muted`}
       >
         Supersede
       </button>
@@ -706,8 +707,8 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
 
       {processes.length === 0 ? (
         <EmptyState title="Nothing running">
-          No Runs or Conversations are in flight right now. Start a task on the{' '}
-          <span className="font-semibold text-ink">Board</span> or open a Conversation, and it appears here live.
+          No Runs or Conversations are in flight right now. Start a task with New task or open a Conversation, and it
+          appears here live.
         </EmptyState>
       ) : (
         <>

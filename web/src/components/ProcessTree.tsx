@@ -46,7 +46,7 @@ function StatusDot({ status }: { status: ProcessStatus }) {
   return (
     <span
       aria-hidden="true"
-      className={`size-[6px] shrink-0 rounded-full ${active ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
+      className={`size-[7px] shrink-0 rounded-full ${active ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
     />
   );
 }
