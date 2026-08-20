@@ -60,6 +60,15 @@ One ACP `session/update` (message chunk, thought, tool call, plan update)
 persisted against a Run; the source of truth for observability.
 _Avoid_: log line, message
 
+**run_fact**:
+An immutable row in the append-only fact log that is the coordination spine:
+every *ending signal* a Run emits — `agent-finish` (clean completion) and
+`failed` among them — is one row stamped with a timestamp and a per-Run monotonic
+`seq`. Distinct from a Run Event (an observability chunk): a run_fact is a
+decision-grade fact the runtime acts on, and the `agent-finish` fact's timestamp
+is what Active-execution duration measures to.
+_Avoid_: event (that is the Run Event stream), log line, marker
+
 **Dependency**:
 A directed edge between Tasks: the dependent stays *blocked* until every
 Task it depends on is *completed*. Failed dependencies leave dependents
@@ -477,6 +486,56 @@ _Avoid_: spend, billing (it is an estimate, not an invoice)
 Copilot's native consumption unit (~$1 each), read per-turn from Copilot's
 session store (with Subagent attribution). Recorded on Usage and shown as
 actual spend alongside Cost — a separate figure, not a Cost input.
+
+### Statistics
+
+The **Stats** page's derived metrics, over a Run set in a range. All keep the
+honest-numbers discipline (floors shown as `≥`, unpriceable Usage flagged
+`incomplete`, `—` never a fake zero). The three with a contested definition are
+governed by ADR-0028.
+
+**Cache hit rate**:
+The share of a Run set's input-side tokens served from cache:
+`read / (input + read + write)` — cache-read tokens over fresh input plus
+cache-read plus cache-write. The denominator **includes cache-write**, so
+priming the cache counts against the rate until it pays back (ADR-0028, matching
+the reference project). A higher rate is cheaper Usage, not faster work.
+_Avoid_: cache efficiency, hit ratio
+
+**Active-execution duration**:
+How long a Run's agent actually worked: the `agent-finish` run_fact's timestamp
+minus the Run's start. It **excludes the review-park and landing wait** that
+follow agent-finish, so it is the agent's working time, not calendar time through
+the Phase pipeline. Falls back to wall-clock (finish − start) only when a Run has
+no agent-finish fact; reported as **p50 / p95** across the set (ADR-0028).
+_Avoid_: run time, wall-clock, elapsed
+
+**Failure rate**:
+`failed / total` Runs — **failed-only**. Cancelled Runs and review-rejected Runs
+are counted and shown separately in the run-states breakdown, never folded into
+the numerator: the rate reflects genuine execution failure, not deliberate
+abandonment or a reviewer's no (ADR-0028).
+_Avoid_: error rate, success rate (its complement is not this)
+
+**Avg cost / run**:
+Total Cost over the range divided by Run count. A **floor** (`≥`) when any Run in
+the range is unpriceable — the aggregate is flagged `incomplete` rather than
+counting a missing price as zero (see Cost).
+_Avoid_: mean spend
+
+**Cache savings**:
+The dollar delta caching returned — cache-read tokens priced at the gap between
+the full input price and the cache-read price
+(`read × (inputPrice − cacheReadPrice)`). Shown beside Cost as "what caching
+saved," never subtracted from Cost.
+_Avoid_: discount, rebate
+
+**Per-tool token attribution**:
+Output tokens — and their Cost — attributed to the tools a Run called, by
+splitting each turn's output tokens across that turn's tool-use blocks by
+count-share; a turn that called no tool goes to a separate **reasoning** bucket.
+Covers the whole Process Tree, Subagents included.
+_Avoid_: tool cost, per-tool spend
 
 ### Interfaces
 
