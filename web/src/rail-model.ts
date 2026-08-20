@@ -62,12 +62,13 @@ export interface RailGroup {
   views: readonly View[];
 }
 
-/** The rail's two labelled groups (DESIGN.md §5): Workspace-scoped working
- * views, then instance/global surfaces. 'settings' is deliberately absent —
- * it's a status-strip icon, not a rail item (ADR 0012). */
+/** The rail's single labelled group (DESIGN.md §5): the Workspace's working
+ * views, its API surface, then the per-Workspace Settings page (formerly the
+ * "Workspace" item, under a separate "Instance" group — collapsed into one so
+ * the per-Workspace settings sit with the views they scope). Global Settings
+ * stays a status-strip icon, not a rail item (ADR 0012). */
 export const RAIL_GROUPS: readonly RailGroup[] = [
-  { label: 'Workspace', views: ['deck', 'activity', 'table', 'graph', 'stats'] },
-  { label: 'Instance', views: ['api', 'workspace'] },
+  { label: 'Workspace', views: ['deck', 'activity', 'table', 'graph', 'stats', 'api', 'workspace'] },
 ];
 
 /**
@@ -90,5 +91,5 @@ export const VIEW_LABELS: Record<View, string> = {
   stats: 'Stats',
   api: 'API',
   settings: 'Settings',
-  workspace: 'Workspace',
+  workspace: 'Settings',
 };

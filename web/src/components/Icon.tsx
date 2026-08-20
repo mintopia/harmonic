@@ -64,11 +64,13 @@ const PATHS: Record<IconName, JSX.Element> = {
   stats: <path d="M4.5 13.5V9M8 13.5V3.5M11.5 13.5V7" />,
   // Code brackets: the API surface, not the key — this is a view now, not a modal.
   api: <path d="M6 4.5 2.5 8l3.5 3.5M10 4.5 13.5 8l-3.5 3.5" />,
-  // Gear: the config editor.
+  // Gear: the config editor. A toothed cog ring around a hub — deliberately
+  // NOT a hub-plus-straight-spokes (that reads as a sunburst, and collided
+  // visually with the `sun` theme glyph below).
   settings: (
     <>
-      <circle cx="8" cy="8" r="1.8" />
-      <path d="M8 2.5v1.6M8 11.9v1.6M13.5 8h-1.6M4.1 8H2.5M11.7 4.3l-1.1 1.1M5.4 10.6l-1.1 1.1M11.7 11.7l-1.1-1.1M5.4 5.4 4.3 4.3" />
+      <path d="M12.59 6.77L14.34 7.11L14.34 8.89L12.59 9.23L12.11 10.38L13.11 11.85L11.85 13.11L10.38 12.11L9.23 12.59L8.89 14.34L7.11 14.34L6.77 12.59L5.63 12.11L4.15 13.11L2.89 11.85L3.89 10.38L3.41 9.23L1.66 8.89L1.66 7.11L3.41 6.77L3.89 5.63L2.89 4.15L4.15 2.89L5.62 3.89L6.77 3.41L7.11 1.66L8.89 1.66L9.23 3.41L10.38 3.89L11.85 2.89L13.11 4.15L12.11 5.62Z" />
+      <circle cx="8" cy="8" r="2" />
     </>
   ),
   // Folder: the per-Workspace settings page (issue #64) — a Workspace is a

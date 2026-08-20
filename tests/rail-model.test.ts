@@ -67,7 +67,9 @@ describe('rail primary views', () => {
     expect(VIEW_LABELS.api).toBe('API');
     expect(VIEW_LABELS.graph).toBe('Graph');
     expect(VIEW_LABELS.settings).toBe('Settings');
-    expect(VIEW_LABELS.workspace).toBe('Workspace');
+    // The per-Workspace settings page reads as plain "Settings" in the rail
+    // (global Settings is the status-strip cog, so no rail-side collision).
+    expect(VIEW_LABELS.workspace).toBe('Settings');
   });
 
   it('scopes Deck/Table/Graph/Stats and the per-Workspace settings page to a Workspace, so the empty state (#68) spares Activity/API/Settings', () => {
@@ -79,13 +81,12 @@ describe('rail primary views', () => {
 });
 
 describe('rail groups (issue #181)', () => {
-  it('has the Workspace group then the Instance group', () => {
-    expect(RAIL_GROUPS.map((g) => g.label)).toEqual(['Workspace', 'Instance']);
+  it('has a single Workspace group — the Instance group was folded in', () => {
+    expect(RAIL_GROUPS.map((g) => g.label)).toEqual(['Workspace']);
   });
 
-  it('groups the working views under Workspace and the instance/global surfaces under Instance', () => {
-    expect(RAIL_GROUPS[0]!.views).toEqual(['deck', 'activity', 'table', 'graph', 'stats']);
-    expect(RAIL_GROUPS[1]!.views).toEqual(['api', 'workspace']);
+  it('groups the working views, the API surface, then the per-Workspace Settings page under Workspace', () => {
+    expect(RAIL_GROUPS[0]!.views).toEqual(['deck', 'activity', 'table', 'graph', 'stats', 'api', 'workspace']);
   });
 
   it('flattens back to RAIL_VIEWS in the same order — the rail-grouping coherence invariant', () => {

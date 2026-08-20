@@ -4,6 +4,7 @@ import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
 import type { Epic, EpicLandOutcome } from './epic-model';
 import { Deck } from './components/Deck';
+import { deckSections } from './deck-model';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
 import { EpicPeek } from './components/EpicPeek';
@@ -372,10 +373,15 @@ export function App() {
 
   // The rail's cobalt "Needs you" badge (DESIGN.md §5): Tasks awaiting review
   // (the review gate) plus afk Runs that escalated to a human — the two states
-  // that want an operator's eyes now.
+  // that want an operator's eyes now. Derived from `deckSections` (not a local
+  // predicate) so the badge is the exact count of the Deck's Needs-you section:
+  // a hand-rolled `state === 'awaiting-review' || escalated` filter drifts —
+  // it keeps counting a terminal Task still flagged `escalated` (and Epic
+  // members that render in their band), so the badge stuck above the real item
+  // count. One source of truth means the number always matches what's shown.
   const needsYouCount = useMemo(
-    () => (tasks ?? []).filter((t) => t.state === 'awaiting-review' || t.escalated).length,
-    [tasks],
+    () => deckSections(tasks ?? [], epics, Date.now()).needsYou.length,
+    [tasks, epics],
   );
 
   // EpicPeek's deep-link into the Ticket, and TaskDetail's skip-holder link:
@@ -537,8 +543,8 @@ export function App() {
       <nav aria-label="Views" className="flex flex-col gap-4 rail:flex-1">
         {RAIL_GROUPS.map((group) => {
           // Wire each group's uppercase Label header to its buttons so a screen
-          // reader announces the Workspace/Instance grouping the sighted user
-          // sees (role="group" + aria-labelledby), not a flat list.
+          // reader announces the Workspace grouping the sighted user sees
+          // (role="group" + aria-labelledby), not a flat list.
           const groupId = `rail-group-${group.label.toLowerCase()}`;
           return (
             <div key={group.label} role="group" aria-labelledby={groupId} className="flex flex-col gap-0.5">

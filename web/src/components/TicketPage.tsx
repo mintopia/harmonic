@@ -691,9 +691,15 @@ export function TicketPage({
   // mid-read. `stickToBottom` is tracked by the page's own scroll region
   // below (unlike the old modal, the whole page scrolls as one — there's no
   // separate fixed-height tab-panel viewport any more).
+  //
+  // Starts `false`, not `true`: because the whole page scrolls as one, pinning
+  // on the very first render would slam the page from the ticket header down to
+  // the tail of the output the instant a ticket opens — a jarring jump. Opening
+  // should land on the header; following resumes the moment the operator scrolls
+  // to the bottom themselves (the `onScroll` handler below re-arms it).
   const scrollRef = useRef<HTMLDivElement>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
+  const stickToBottom = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (tab !== 'output' || !el || !stickToBottom.current) return;
