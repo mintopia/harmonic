@@ -4,6 +4,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
+import type { FeatureIndex } from './local-markdown.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import type { DerivedMap } from './mirror.js';
@@ -50,7 +51,10 @@ export class TrackerPollerManager {
   constructor(
     private readonly tasks: TaskService,
     private readonly getWorkspaces: () => WorkspaceRow[],
-    private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
+    private readonly resolveAdapter: (
+      repoRoot: string,
+      featureIndex?: FeatureIndex,
+    ) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     private readonly onMirrored: () => void = () => {},
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
     /** A mirrored Task whose ticket closed while it was still running (board-refresh backstop) — routed to the Runner to stop the parked agent and settle it done. */
@@ -129,12 +133,15 @@ export class TrackerPollerManager {
       });
       epics.attachLandTrigger(epicLand);
     }
+    // Bind this Workspace's persistent feature-id index so local-markdown feature
+    // bases stay small and stable across scans (see TaskService.mdFeatureIndex).
+    const resolveForWs = (dir: string) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(ws.id, slug));
     const poller = new TrackerPoller(
       this.tasks,
       ws.id,
       ws.workingDir,
       ws.trackerPollIntervalSeconds * 1000,
-      this.resolveAdapter,
+      resolveForWs,
       this.onMirrored,
       this.onError,
       mirror,

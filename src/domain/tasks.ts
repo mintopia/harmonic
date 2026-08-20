@@ -7,6 +7,7 @@ import {
   taskChannels,
   runs,
   sessions,
+  settings,
   trackerDismissals,
   TASK_STATES,
   type TaskRow,
@@ -344,6 +345,27 @@ export class TaskService {
     // No task.created notify: a mirrored Task is a projection, not an authored
     // Task, and a first poll would otherwise storm one notification per issue.
     return this.changed(row);
+  }
+
+  /**
+   * The stable id index for a local-markdown **feature** slug within a Workspace
+   * (0, 1, 2, … → base index*STRIDE in the adapter). Assign-once, first-seen, and
+   * persisted, so a feature's mirrored ticket `number`s never shift when another
+   * feature dir is added beside it — a shifting base would recycle a completed
+   * feature's refs onto new work, which the mirror (keyed on `trackerRef`) then
+   * reads as already-seen. One `settings` row per Workspace holds the slug→index map.
+   */
+  mdFeatureIndex(workspaceId: number, slug: string): number {
+    const key = `md-feature-index:${workspaceId}`;
+    const row = this.db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
+    const map: Record<string, number> = row ? JSON.parse(row.value) : {};
+    const existing = map[slug];
+    if (existing !== undefined) return existing;
+    const index = Object.keys(map).length;
+    map[slug] = index;
+    const value = JSON.stringify(map);
+    this.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
+    return index;
   }
 
   /** Has this (workspaceId, trackerRef) been Dismissed (issue #162, ADR-0025)?

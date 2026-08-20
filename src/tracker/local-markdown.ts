@@ -15,12 +15,44 @@ const SPEC_ID = 0;
 
 /**
  * Per-feature id namespace, so tickets stay unique across coexisting feature
- * specs. Feature N's ids are `N * STRIDE + <local NN>` (feature 0 → bare `NN`,
- * spec `0` — the common single-feature case is unchanged). A feature is capped
- * at STRIDE-1 tickets. Ids are stable per file; feature order is sorted, so
- * appending a later-sorting feature never renumbers existing ones.
+ * specs. A feature's ids are `base + <local NN>`, base a distinct multiple of
+ * STRIDE. A feature is capped at STRIDE-1 tickets. The single-feature case keeps
+ * base 0 (bare `NN`, spec `0`). For coexisting features the base is derived from
+ * the feature dir's **name**, not its sorted position ({@link assignBases}) —
+ * position is unstable: adding an earlier-sorting feature would otherwise
+ * renumber existing features *and* hand the new one the freed low refs, which a
+ * consumer keying on the ticket `number` reads as already-seen work. A
+ * name-derived base is stable under any sibling insertion.
  */
 const STRIDE = 10000;
+
+/**
+ * Resolves a feature slug to its stable id **index** (0, 1, 2, …); its base is
+ * `index * STRIDE`. Harmonic injects a DB-backed, assign-once (first-seen)
+ * implementation so a feature's index never shifts when a sibling is added —
+ * see `TaskService.mdFeatureIndex`. Absent (standalone reads), the adapter
+ * falls back to sorted position.
+ */
+export type FeatureIndex = (slug: string) => number;
+
+/**
+ * Each feature scope's id base — a distinct multiple of STRIDE. The single-feature
+ * layout keeps base 0 (bare `NN`, spec `0`). For coexisting features the base is
+ * `index(slug) * STRIDE`. That index must be **stable per feature name across
+ * scans**: the mirror keys a ticket by its `number` for dedup, so a base that
+ * shifts when a sibling dir is added would recycle old refs onto new work (or
+ * hide new work as already-seen). Harmonic supplies a persistent `featureIndex`;
+ * standalone falls back to sorted position — deterministic for a one-shot read,
+ * but not stable across insertions (no store to remember prior assignments).
+ */
+function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): number[] {
+  // The unnamed single-feature layout (issues/ or root directly) → clean base 0.
+  // A *named* feature always goes through featureIndex even when it's currently
+  // the only one, so its index is recorded now and survives a later sibling —
+  // otherwise the sibling (sorted first) would claim index 0 and renumber it.
+  if (scopes.length === 1 && scopes[0]!.slug === '') return [0];
+  return scopes.map((s, i) => (featureIndex ? featureIndex(s.slug) : i) * STRIDE);
+}
 
 /**
  * The local-markdown Tracker Adapter — reads tickets in the **mattpocock**
@@ -52,18 +84,21 @@ const STRIDE = 10000;
  *   reservation/accept writes have nowhere to land: `claim`/`release`/`close`
  *   no-op. The board mirrors the tickets but never mutates them on disk.
  */
-export function localMarkdownAdapter(dir: string, opts: { identity?: string } = {}): TrackerAdapter {
+export function localMarkdownAdapter(
+  dir: string,
+  opts: { identity?: string; featureIndex?: FeatureIndex } = {},
+): TrackerAdapter {
   let identity: string | undefined = opts.identity;
 
   return {
     name: 'local-markdown',
 
     async scan() {
-      return synthesise(await parseAll(dir));
+      return synthesise(await parseAll(dir, opts.featureIndex));
     },
 
     async readTicket(ref: TicketRef) {
-      const found = (await synthesise(await parseAll(dir))).find((t) => t.number === ref.number);
+      const found = (await synthesise(await parseAll(dir, opts.featureIndex))).find((t) => t.number === ref.number);
       if (!found) throw new Error(`local-markdown: no ticket #${ref.number} under ${dir}`);
       return found;
     },
@@ -118,8 +153,9 @@ async function ticketNames(d: string): Promise<string[]> {
   }
 }
 
-/** One feature's dirs: where its `issues/` live and where its `spec.md` sits (its parent). */
+/** One feature's dirs: where its `issues/` live and where its `spec.md` sits (its parent). `slug` (the feature dir name; empty for the single-feature layout) seeds its stable id base. */
 interface Scope {
+  slug: string;
   issuesDir: string;
   specDir: string;
 }
@@ -132,8 +168,8 @@ interface Scope {
  */
 async function resolveScopes(root: string): Promise<Scope[]> {
   const nested = join(root, 'issues');
-  if ((await ticketNames(nested)).length) return [{ issuesDir: nested, specDir: root }];
-  if ((await ticketNames(root)).length) return [{ issuesDir: root, specDir: root }];
+  if ((await ticketNames(nested)).length) return [{ slug: '', issuesDir: nested, specDir: root }];
+  if ((await ticketNames(root)).length) return [{ slug: '', issuesDir: root, specDir: root }];
 
   let entries: string[];
   try {
@@ -144,7 +180,7 @@ async function resolveScopes(root: string): Promise<Scope[]> {
   const scopes: Scope[] = [];
   for (const e of entries.sort()) {
     const cand = join(root, e, 'issues');
-    if ((await ticketNames(cand)).length) scopes.push({ issuesDir: cand, specDir: join(root, e) });
+    if ((await ticketNames(cand)).length) scopes.push({ slug: e, issuesDir: cand, specDir: join(root, e) });
   }
   return scopes;
 }
@@ -165,9 +201,10 @@ interface Parsed {
   closedAt: string | null;
 }
 
-async function parseAll(root: string): Promise<Parsed[]> {
+async function parseAll(root: string, featureIndex?: FeatureIndex): Promise<Parsed[]> {
   const scopes = await resolveScopes(root);
-  const perScope = await Promise.all(scopes.map((scope, i) => parseScope(scope, i * STRIDE)));
+  const bases = assignBases(scopes, featureIndex);
+  const perScope = await Promise.all(scopes.map((scope, i) => parseScope(scope, bases[i]!)));
   return perScope.flat();
 }
 

@@ -23,7 +23,7 @@ async function gitlabRemote(repoRoot: string): Promise<string | null> {
 }
 import { githubAdapter } from './github.js';
 import { gitlabAdapter } from './gitlab.js';
-import { localMarkdownAdapter } from './local-markdown.js';
+import { localMarkdownAdapter, type FeatureIndex } from './local-markdown.js';
 
 export type TicketState = 'open' | 'closed';
 
@@ -197,7 +197,10 @@ export async function resolveTracker(
  * `Project: <group/repo>` line, inferring it from the repo's `origin` remote
  * when absent; auth and host come from the ambient `glab` CLI (never the doc).
  */
-export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAdapter> {
+export async function resolveTrackerAdapter(
+  repoRoot: string,
+  featureIndex?: FeatureIndex,
+): Promise<TrackerAdapter> {
   const docPath = join(repoRoot, 'docs/agents/issue-tracker.md');
   let doc: string;
   try {
@@ -213,7 +216,7 @@ export async function resolveTrackerAdapter(repoRoot: string): Promise<TrackerAd
       return githubAdapter(repoRoot);
     case 'local-markdown': {
       const path = doc.match(/^\s*Path:\s*(.+?)\s*$/im)?.[1] ?? '.scratch';
-      return localMarkdownAdapter(isAbsolute(path) ? path : join(repoRoot, path));
+      return localMarkdownAdapter(isAbsolute(path) ? path : join(repoRoot, path), { ...(featureIndex && { featureIndex }) });
     }
     case 'gitlab': {
       const project = doc.match(/^\s*Project:\s*(.+?)\s*$/im)?.[1] ?? (await gitlabRemote(repoRoot));

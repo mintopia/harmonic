@@ -364,20 +364,23 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     }
   });
 
-  it('aggregates coexisting feature specs, namespacing ids per feature', async () => {
-    const root = mkTree('feature-a'); // ids 0 (map), 1, 2
-    try {
-      // a second feature dir, sorted after the first → base 10000
-      const issuesB = join(root, 'feature-b', 'issues');
-      mkdirSync(issuesB, { recursive: true });
-      writeFileSync(join(issuesB, '01-foo.md'), '# 01 — Foo\n\n**Blocked by:** None\n\n**Status:** ready-for-agent\n');
-      writeFileSync(join(issuesB, '02-bar.md'), '# 02 — Bar\n\n**Blocked by:** 01\n\n**Status:** ready-for-agent\n');
-      writeFileSync(join(root, 'feature-b', 'spec.md'), '# Spec: feature B\n\nBody.');
+  /** Adds a `feature-b` (issues 01 Foo, 02 Bar→01, + spec) beside an existing feature root. */
+  const addFeatureB = (root: string) => {
+    const issuesB = join(root, 'feature-b', 'issues');
+    mkdirSync(issuesB, { recursive: true });
+    writeFileSync(join(issuesB, '01-foo.md'), '# 01 — Foo\n\n**Blocked by:** None\n\n**Status:** ready-for-agent\n');
+    writeFileSync(join(issuesB, '02-bar.md'), '# 02 — Bar\n\n**Blocked by:** 01\n\n**Status:** ready-for-agent\n');
+    writeFileSync(join(root, 'feature-b', 'spec.md'), '# Spec: feature B\n\nBody.');
+  };
 
+  it('aggregates coexisting feature specs, namespacing ids per feature', async () => {
+    const root = mkTree('feature-a'); // feature-a: map + issues 01, 02
+    try {
+      addFeatureB(root);
+
+      // Standalone (no store) → sorted position: feature-a base 0, feature-b base 10000.
       const tickets = (await localMarkdownAdapter(root).scan()).sort((a, b) => a.number - b.number);
-      // feature-a: 0,1,2  feature-b: 10000 (map),10001,10002 — no collisions.
       expect(tickets.map((t) => t.number)).toEqual([0, 1, 2, 10000, 10001, 10002]);
-      // two Maps, each parenting only its own feature's issues.
       expect(tickets.filter((t) => t.isMap).map((t) => t.number)).toEqual([0, 10000]);
       expect(tickets.find((t) => t.number === 1)!.parent).toBe(0);
       expect(tickets.find((t) => t.number === 10001)!.parent).toBe(10000);
@@ -385,6 +388,38 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
       expect(tickets.find((t) => t.number === 10002)!.blockedBy).toEqual([
         { number: 10001, title: 'Foo', state: 'open' },
       ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: an existing feature's ticket numbers are its identity for the mirror's
+  // dedup. Adding an earlier-sorting sibling must not renumber it (nor hand the sibling
+  // its refs) — else already-run work reappears as new/done. This is the musicparty-soloist
+  // case (a completed feature + a later autoplay batch). A persistent, assign-once
+  // `featureIndex` (Harmonic backs it with the DB) is what makes the base stable.
+  it('keeps a feature\'s ids stable across an earlier-sorting insertion via featureIndex', async () => {
+    const root = mkTree('m-feature'); // sorts after the sibling added below
+    const store = new Map<string, number>();
+    const featureIndex = (slug: string) => store.get(slug) ?? (store.set(slug, store.size), store.size - 1);
+    try {
+      const before = new Map(
+        (await localMarkdownAdapter(root, { featureIndex }).scan()).map((t) => [t.url, t.number]),
+      );
+
+      // 'a-feature' sorts before 'm-feature' — the case the old positional base broke.
+      const issuesA = join(root, 'a-feature', 'issues');
+      mkdirSync(issuesA, { recursive: true });
+      writeFileSync(join(issuesA, '01-new.md'), '# 01 — New\n\n**Status:** ready-for-agent\n');
+
+      const after = await localMarkdownAdapter(root, { featureIndex }).scan();
+      // Every pre-existing ticket keeps its exact number (m-feature stayed index 0).
+      for (const t of after) if (before.has(t.url)) expect(t.number).toBe(before.get(t.url));
+      // The new feature's refs are disjoint from every ref recorded before it existed.
+      const priorRefs = new Set(before.values());
+      const aIds = after.filter((t) => t.url.includes('/a-feature/')).map((t) => t.number);
+      expect(aIds.length).toBe(1);
+      for (const id of aIds) expect(priorRefs.has(id)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
