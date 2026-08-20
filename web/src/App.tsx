@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
-import type { AppConfig, Cost, Task, TaskState, Workspace } from './types';
+import type { AppConfig, Cost, Task, Workspace } from './types';
 import type { Epic, EpicLandOutcome } from './epic-model';
-import { epicByTaskId } from './epic-model';
-import { Board } from './components/Board';
+import { Deck } from './components/Deck';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
 import { EpicPeek } from './components/EpicPeek';
@@ -200,10 +199,6 @@ export function App() {
   // and spins its icon until the rescan + mirror settle.
   const [refreshingTracker, setRefreshingTracker] = useState(false);
 
-  // Board's peeked terminal columns now live in the route; a Set is the
-  // shape Board wants, the array is what the URL can serialize.
-  const peeked = useMemo(() => new Set(route.peeked), [route.peeked]);
-
   useEffect(() => {
     applyTheme(document.documentElement, theme);
   }, [theme]);
@@ -340,9 +335,6 @@ export function App() {
 
   const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
 
-  // Board/TaskCard's card → owning Epic lookup (issue #167, ADR-0026).
-  const epicByTaskIdMap = useMemo(() => epicByTaskId(epics), [epics]);
-
   // The focused Ticket (route.task), resolved to its Task: the live one from
   // the Workspace list when present, else the fetched cache. Deriving it (vs.
   // holding a copy in state) keeps one source of truth — the URL — so Back,
@@ -446,14 +438,6 @@ export function App() {
     setMenuOpen(false);
   };
 
-  // Peek/filter tweaks are in-place param changes on the current location,
-  // not a new place to visit — replace, so they don't spam history.
-  const togglePeek = (state: TaskState) => {
-    const next = new Set(route.peeked);
-    if (next.has(state)) next.delete(state);
-    else next.add(state);
-    navigate({ ...route, peeked: [...next] }, { replace: true });
-  };
 
   const setTableFilters = (table: TableFilters) => navigate({ ...route, table }, { replace: true });
 
@@ -844,20 +828,19 @@ export function App() {
                           </button>
                         </div>
                       )}
-                      <Board
+                      <Deck
                         tasks={taskList}
                         loading={tasks === null}
-                        onEdit={setEditing}
+                        epics={epics}
                         onOpen={openRow}
+                        onOpenTask={openTaskById}
                         onChanged={refresh}
                         onNewTask={() => setEditing('new')}
-                        peeked={peeked}
-                        onTogglePeek={togglePeek}
-                        epicByTaskId={epicByTaskIdMap}
                         onOpenEpic={setOpenEpic}
+                        onForceLandEpic={forceLandEpic}
+                        onShowRecent={() => pickView('table')}
                         focusEpic={focusEpic}
                         onClearFocus={() => setFocusEpic(null)}
-                        onForceLandEpic={forceLandEpic}
                       />
                     </>
                   )}
