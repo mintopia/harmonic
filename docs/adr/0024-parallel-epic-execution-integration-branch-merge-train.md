@@ -126,6 +126,14 @@ that holds):
   loop. An operator force-land bypasses it. In-memory only: at most one attempt
   per boot survives a restart, then the hold re-asserts; nothing is persisted.
 
+These two guards bound the *cost* of re-polling a terminal Epic, but the incident's
+root cause was a land that could never succeed: an Epic landing into a
+checked-out default branch returned `fallback-pr-manual`, escalated permanently,
+and was re-attempted every poll. That is removed at its source by the clean-lease
+assertion in [ADR-0023](0023-harmonic-owns-branching.md)'s #218 amendment (the land
+now succeeds instead of escalating); the containment fast-path and backoff here are
+the complementary defence that keeps *any* stuck-terminal Epic from spinning git.
+
 The per-Epic land is already single-flighted by the coordinator's in-flight guard
 (a slow verify cannot stack a second attempt for the same Epic). Generalising the
 "bound every reconcile/retry loop" principle across the server is #219, not this.

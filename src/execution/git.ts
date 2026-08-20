@@ -63,6 +63,25 @@ async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[
 // fixed identity so they work without operator git config.
 const IDENTITY = ['-c', 'user.name=Harmonic', '-c', 'user.email=harmonic@localhost'];
 
+// `merge-tree --write-tree` (git ≥ 2.38) backs the tier-2 containment check
+// (issue #218). On an older git the flag is unknown and the call errors on
+// *every* invocation, so the check silently degrades to a no-op. Surface that
+// exactly once — a real merge conflict (the expected non-contained result) must
+// stay quiet, so only an unsupported-flag/usage error trips the warning.
+let warnedMergeTreeUnsupported = false;
+function warnOnceIfMergeTreeUnsupported(err: unknown): void {
+  if (warnedMergeTreeUnsupported) return;
+  const msg = String((err as { message?: string })?.message ?? err);
+  if (!/write-tree/.test(msg)) return;
+  if (!/unknown option|unknown switch|usage:|not a git command/i.test(msg)) return;
+  warnedMergeTreeUnsupported = true;
+  process.emitWarning(
+    'git is older than 2.38 (no `merge-tree --write-tree`): epic-land tier-2 ' +
+      'squash/rebase containment detection is disabled; upgrade git to restore it (#218).',
+    { code: 'HARMONIC_GIT_TOO_OLD' },
+  );
+}
+
 export const Git = {
   currentBranch: (dir: string) => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD'),
 
@@ -400,7 +419,13 @@ export const Git = {
       const out = await git(dir, 'merge-tree', '--write-tree', baseBranch, branch);
       const mergedTree = out.split('\n', 1)[0]?.trim() ?? '';
       return mergedTree !== '' && mergedTree === baseTree;
-    } catch {
+    } catch (err) {
+      // A conflict (the common, expected outcome) is not-contained → false.
+      // But a git older than 2.38 lacks `--write-tree`, so *every* call lands
+      // here and the tier-2 storm protection silently no-ops forever. Distinguish
+      // that once so a mis-provisioned host is visible in logs rather than
+      // degrading in silence (issue #218). Behaviour is unchanged either way.
+      warnOnceIfMergeTreeUnsupported(err);
       return false;
     }
   },
