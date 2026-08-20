@@ -86,6 +86,11 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['tool', 'tool', 'tool-tint'],
   // awaiting-review and active-nav render accent text on the accent tint.
   ['accent', 'accent', 'accent-tint'],
+  // Themed text selection (index.css `::selection`, issue #187): the Accent Tint
+  // ground carries whatever text was selected, recoloured to Ink — a new tint
+  // pairing the Deck redesign introduced, so DESIGN.md § 2 requires it clear the
+  // text floor in both themes before it ships.
+  ['selection', 'ink', 'accent-tint'],
   // The permission band (issue #97) takes the Running amber tint as its ground
   // — the harness is blocked, "work in flight, now yours" — and carries its
   // copy in the neutral text roles on top of it: the prominent "Waiting for

@@ -244,6 +244,15 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Themed text selection: the browser's native highlight is a Deck surface too
+     — draw it from the one cobalt voice (Accent Tint fill / Ink text) instead of
+     the OS default blue, so a drag-select reads as part of the system in both
+     themes. `color-scheme` already flips native form controls and scrollbars. */
+  ::selection {
+    background-color: var(--hm-accent-tint);
+    color: var(--hm-ink);
+  }
+
   :focus-visible {
     outline: 2px solid var(--hm-accent);
     outline-offset: 2px;

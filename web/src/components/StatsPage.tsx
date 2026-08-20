@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { formatCost, usd } from '../cost';
 import type { Cost, TaskState } from '../types';
 import { card, chip, displayTitle, labelType, STATE_CHIP_STYLES, tableHead } from '../ui';
@@ -36,18 +36,21 @@ const fmt = (n: number) => n.toLocaleString();
 /** Summary figures compact ("18.2M"); tables keep exact numbers. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
-/** One cell of the summary grid: muted label over a weighted, tabular value.
- * The hero (cost) is the one loud figure — big sans, not mono (Mono Is Code
- * Rule) — and spans its own full-width row so it leads. */
-function SummaryCell({ label, value, hero = false }: { label: string; value: string; hero?: boolean }) {
+/** The muted uppercase label above a stat figure — shared by the hero and the
+ * quiet stat row so the two can't drift (Label role, DESIGN.md § 3). */
+function StatLabel({ children }: { children: ReactNode }) {
+  return <div className={`${labelType} mb-1.5 text-muted`}>{children}</div>;
+}
+
+/** One cell of the quiet stat row: muted label over a weighted, tabular value.
+ * (The hero cost figure is rendered separately — it leads on the canvas, never
+ * boxed in this row: DESIGN.md § Stats, "the Hero cost figure leads, no
+ * card-in-a-card".) */
+function SummaryCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className={hero ? 'col-span-full' : ''}>
-      <div className={`${labelType} mb-1.5 text-muted`}>{label}</div>
-      <div
-        className={`font-semibold tabular-nums ${value === '—' ? 'text-faint' : 'text-ink'} ${
-          hero ? 'text-hero font-bold' : 'text-title'
-        }`}
-      >
+    <div>
+      <StatLabel>{label}</StatLabel>
+      <div className={`text-title font-semibold tabular-nums ${value === '—' ? 'text-faint' : 'text-ink'}`}>
         {value}
       </div>
     </div>
@@ -86,6 +89,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   }, [range, workspaceId]);
 
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
+  const costText = stats ? formatCost(stats.cost) : null;
 
   return (
     <div>
@@ -123,10 +127,18 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
       {stats && stats.runCount > 0 && (
         <>
-          {/* The one loud element of the view: cost — the number the
-              operator glances at. Everything else answers alongside. */}
+          {/* The one loud figure of the view: cost — the number the operator
+              glances at. It leads on the canvas (no card-in-a-card, DESIGN.md
+              § Stats), big sans + tabular-nums, never mono (Mono Is Code). */}
+          <div className="mb-5">
+            <StatLabel>Cost · {range}</StatLabel>
+            <div className={`text-hero font-bold tabular-nums ${costText == null ? 'text-faint' : 'text-ink'}`}>
+              {costText ?? '—'}
+            </div>
+          </div>
+
+          {/* A quiet stat row answers alongside the hero. */}
           <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
-            <SummaryCell hero label={`Cost · ${range}`} value={formatCost(stats.cost) ?? '—'} />
             <SummaryCell label="Runs" value={fmt(stats.runCount)} />
             <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
             <SummaryCell label="Tokens out" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
