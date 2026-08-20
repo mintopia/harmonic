@@ -115,11 +115,14 @@ describe('Aurora palette meets WCAG AA in both themes (issue #87)', () => {
         });
       }
 
-      // Faint must read as text (branch names, ids, metadata, zero counts, the
-      // dialog close ✕) on every neutral background — including the raised inset
-      // fill, which is the hardest (its luminance is nearest faint's mid-tone).
-      // Muted is the informational floor.
-      for (const role of ['faint', 'muted'] as const) {
+      // The three text roles must read on every neutral panel background the
+      // Deck retune touched — Surface, Canvas, and the Raised inset fill (the
+      // hardest, its luminance nearest the mid-tone roles). Ink is primary text;
+      // Muted is the informational floor; Faint (branch names, ids, metadata,
+      // zero counts, the dialog close ✕) must still clear the text floor even at
+      // its quietest. All three re-verified here because the Deck darkened the
+      // light neutrals (canvas/raised) and nudged ink/muted/faint (issue #180).
+      for (const role of ['ink', 'muted', 'faint'] as const) {
         for (const bg of ['surface', 'canvas', 'raised'] as const) {
           it(`${role} on ${bg} ≥ ${TEXT_FLOOR}:1`, () => {
             expect(contrast(hex(t, role), hex(t, bg))).toBeGreaterThanOrEqual(TEXT_FLOOR);
@@ -146,6 +149,29 @@ describe('Aurora palette meets WCAG AA in both themes (issue #87)', () => {
       it(`neutral lane rule vs canvas ≥ ${UI_FLOOR}:1`, () => {
         expect(contrast(hex(t, 'faint'), hex(t, 'canvas'))).toBeGreaterThanOrEqual(UI_FLOOR);
       });
+
+      // The two retuned subtle seams — Hairline (a panel's inset row-separators,
+      // and the dark-theme "hairline ring standing in for the shadow", DESIGN.md
+      // §4) and Edge (interactive borders: fields, ghost buttons, run chips) —
+      // are deliberately BELOW the 3:1 affordance floor. The operator-relied-on
+      // ≥3:1 non-text element is the Switch off-track — the one neutral DESIGN.md
+      // §2 gives an explicit "held at ≥3:1" callout — not these; a seam that read
+      // at 3:1 would be a rule, which the Deck retired (§4: "grouping is the
+      // panel, not the rule"). They must still be a *visible* seam (never collapse
+      // into the fill they sit on), but claiming the text/affordance floors here
+      // would misread the design. Locking the band makes the exclusion a decision
+      // rather than an omission for "every retuned pairing" (issue #180): a future
+      // nudge that darkens Edge into a real 3:1 border, or lightens either seam
+      // into invisibility, trips this and forces the design call. (Edge's border-
+      // as-sole-affordance case — a ghost button is bg-surface on a Surface panel
+      // — is the one pairing plausibly owed 3:1; flagged to design on the ticket.)
+      for (const seam of ['hairline', 'edge'] as const) {
+        it(`${seam} is a visible sub-floor seam on surface (1:1 < r < ${UI_FLOOR}:1)`, () => {
+          const r = contrast(hex(t, seam), hex(t, 'surface'));
+          expect(r).toBeGreaterThan(1);
+          expect(r).toBeLessThan(UI_FLOOR);
+        });
+      }
     });
   }
 });

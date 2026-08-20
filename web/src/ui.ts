@@ -1,4 +1,4 @@
-import type { Conversation, PermissionAcpRequest, TaskState } from './types';
+import type { Conversation, PermissionAcpRequest, TaskState } from './types.js';
 
 /** One component vocabulary (DESIGN.md § Components); screens share these
  * class strings so a button or field never drifts between surfaces. */
@@ -284,3 +284,69 @@ export function laneBorder(state: TaskState): string {
 export function laneDot(state: TaskState): string {
   return LANE_DOT[state];
 }
+
+/* ── Deck primitives (DESIGN.md § 5–6) ────────────────────────────────
+ * The Deck reorganises the home + ticket around floating panels and
+ * attention-ordered rows. These class strings are the shared vocabulary the
+ * Deck surface (#182), the Ticket page (#183) and the other surfaces consume,
+ * so a panel, a row, or a run chip never drifts between screens. */
+
+/** A floating panel: a group of rows on a Surface fill, 12px radius, elevation
+ * declared once (soft shadow in light, a hairline ring in dark — `shadow-card`).
+ * `overflow-hidden` clips row hovers and inset dividers to the radius. Group a
+ * list of rows in one panel; separate groups by the canvas between panels
+ * (DESIGN.md § 4 — never bare ruled rows on the canvas). */
+export const panel = 'overflow-hidden rounded-xl bg-surface shadow-card';
+
+/** The uppercase Label header above a section's panel (weight 700 — the Deck's
+ * section register, distinct from `labelType`'s 600 field-label weight). The
+ * 'Needs you' section is the one whose label is accent, not faint (§ 6). */
+export const sectionLabel = 'text-label font-bold uppercase text-faint';
+export const sectionLabelAttn = 'text-label font-bold uppercase text-accent';
+
+/** A Deck row: state dot · faint id · loud title · ≤2 facts · right-aligned
+ * signal (DESIGN.md § 6). One content line + one quiet meta line; the whole row
+ * is the click target to the Ticket. Rows live inside a `panel` and separate by
+ * a hairline inset (`divide-y divide-hairline` on the panel), never on the
+ * canvas. */
+export const deckRow =
+  'grid w-full grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-3.5 px-4 py-3 text-left transition-colors duration-150 hover:bg-raised/50';
+
+/** State dot (DESIGN.md § 6): a ~8px round in the state's colour — the lightest
+ * state signal, before a row title or a run-chip label. Reuses the lane-dot
+ * mapping so the dot and the board lane can't fork colours. Running dots pulse
+ * via `animate-dot-pulse` (static under prefers-reduced-motion). */
+export const dot = 'size-2 rounded-full';
+export function stateDot(state: TaskState): string {
+  return `${dot} ${laneDot(state)}`;
+}
+
+/** Run chip (DESIGN.md § 6): one attempt in the Ticket's run rail — a state dot
+ * + `Run N` and a `state · cost · duration` subline. Selected chip = Accent Tint
+ * + a 1.5px cobalt ring; the rail wraps to scale to many retries. */
+export const runChip =
+  'flex min-w-[132px] flex-col gap-1 rounded-lg border border-edge bg-surface px-3 py-2 text-left transition-colors duration-150 hover:border-faint';
+export const runChipActive =
+  'flex min-w-[132px] flex-col gap-1 rounded-lg border border-transparent bg-accent-tint px-3 py-2 text-left shadow-[0_0_0_1.5px_var(--hm-accent)]';
+
+/** Phase-stepper node (DESIGN.md § 6): the Run's executing → validating →
+ * verifying → review → landing machine. A done step is an emerald ✓ node, the
+ * current step a cobalt node, a pending step a hollow Edge node, a failed step a
+ * rose ✗ node (a failed Run stops there). */
+export const PHASE_NODE_STYLES = {
+  done: 'border-transparent bg-accept-tint text-accept',
+  current: 'border-transparent bg-accent text-on-accent',
+  pending: 'border-edge text-faint',
+  failed: 'border-transparent bg-fail-tint text-fail',
+} as const;
+export type PhaseNodeVisual = keyof typeof PHASE_NODE_STYLES;
+
+/** Verification combined-outcome colour (DESIGN.md § 6 Verification card):
+ * proceed emerald / block·escalate rose / not-reached faint — a fail-safe read
+ * (inconclusive → escalate) never renders as a silent pass. */
+export const VERIFICATION_OUTCOME_COLORS = {
+  proceed: 'text-accept',
+  fail: 'text-fail',
+  'not-reached': 'text-faint',
+} as const;
+export type VerificationOutcomeVisual = keyof typeof VERIFICATION_OUTCOME_COLORS;
