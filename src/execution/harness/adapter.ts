@@ -27,6 +27,24 @@ export interface SpawnInput {
 }
 
 /**
+ * A live, incremental reader of one run's native session log (issue #217).
+ * `sample()` folds only the bytes appended since the previous call — off the
+ * event loop — instead of the whole-file re-parse `parse()` does every tick,
+ * which pinned a core on a long run. `latest()` returns that same folded
+ * result with no I/O, for the on-demand readers (Activity snapshot, spend
+ * guard) that piggy-back on the tailer's cadence rather than re-parsing
+ * themselves. One reader per (run, session); concurrent `sample()`s serialize.
+ */
+export interface SessionTailReader {
+  /** Advance over newly-appended bytes and return the freshest parse; null
+   *  until a log exists. Never throws — a mid-write file yields the last good
+   *  parse. Concurrent calls are serialized onto one cursor. */
+  sample(): Promise<ParsedSession | null>;
+  /** The last parse `sample()` produced, with no I/O; null before the first. */
+  latest(): ParsedSession | null;
+}
+
+/**
  * The per-Harness Usage source (CONTEXT.md: Usage Collector): how to read
  * a per-model breakdown, either straight off the ACP prompt result
  * (codex) or out of the native session log (claude). Aggregate totals
@@ -42,6 +60,16 @@ export interface UsageCollector {
    * Returns null when no log exists yet.
    */
   parse?(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string | null }): ParsedSession | null;
+  /**
+   * An incremental, async tailer for this harness's live session log (#217):
+   * each tick folds only newly-appended bytes instead of re-reading the whole
+   * file synchronously on the event loop. Absent → the runner falls back to a
+   * whole-file `parse()` per tick (`wholeFileReader`), which is fine for the
+   * small rollout/DB logs codex and copilot keep; claude's transcripts grow
+   * unbounded, so only claude implements it. `sessionId` is non-null here —
+   * the reader is created only once a session exists.
+   */
+  createTailReader?(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): SessionTailReader;
   /**
    * Per-model usage read straight off the ACP prompt result, when the
    * harness reports it there (codex: `_meta.quota.model_usage`). Absent
@@ -111,6 +139,27 @@ const adapters: Record<HarnessId, HarnessAdapter> = {
 /** Lookup takes the untyped harness id off a TaskRow; unknown ids get a no-op adapter. */
 export function adapterFor(harnessId: string): HarnessAdapter {
   return (adapters as Record<string, HarnessAdapter>)[harnessId] ?? unknownAdapter;
+}
+
+/**
+ * The fallback tail reader for a collector with no `createTailReader` (codex,
+ * copilot): re-run the whole-file `parse()` each `sample()` and cache it for
+ * `latest()`. No incremental win, but it keeps every harness on the same async
+ * `sample()`/cached-`latest()` contract the runner drives (#217). `parse` here
+ * is still synchronous CPU, acceptable for their small logs.
+ */
+export function wholeFileReader(
+  collector: UsageCollector,
+  input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string },
+): SessionTailReader {
+  let cached: ParsedSession | null = null;
+  return {
+    sample: async () => {
+      cached = collector.parse?.(input) ?? null;
+      return cached;
+    },
+    latest: () => cached,
+  };
 }
 
 /**

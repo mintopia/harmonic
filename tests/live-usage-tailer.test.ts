@@ -14,53 +14,72 @@ const snap = (activity: string | null): RunUsageSnapshot => ({
 describe('LiveUsageTailer cadence (ADR 0010)', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('pushes ~1s (coalesced) but persists only ~10s, and dedupes unchanged snapshots', () => {
+  it('pushes ~1s (coalesced) but persists only ~10s, and dedupes unchanged snapshots', async () => {
     vi.useFakeTimers();
     let current = snap('one');
     const emit = vi.fn();
     const persist = vi.fn();
     const tailer = new LiveUsageTailer(
-      { sample: () => current, emit, persist },
+      { sample: async () => current, emit, persist },
       { pushMs: 1000, persistMs: 10_000 },
     );
     tailer.start(1);
 
     // Nine 1s ticks with no change: one emit (first), the rest deduped; no persist yet.
-    vi.advanceTimersByTime(9_000);
+    await vi.advanceTimersByTimeAsync(9_000);
     expect(emit).toHaveBeenCalledTimes(1);
     expect(persist).not.toHaveBeenCalled();
 
     // A change re-emits; the 10th tick also crosses the persist threshold.
     current = snap('two');
-    vi.advanceTimersByTime(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(emit).toHaveBeenCalledTimes(2);
     expect(persist).toHaveBeenCalledTimes(1);
   });
 
-  it('flushes emit + persist unconditionally on stop, then goes quiet', () => {
+  it('flushes emit + persist unconditionally on stop, then goes quiet', async () => {
     vi.useFakeTimers();
     const emit = vi.fn();
     const persist = vi.fn();
-    const tailer = new LiveUsageTailer({ sample: () => snap('done'), emit, persist }, { pushMs: 1000, persistMs: 10_000 });
+    const tailer = new LiveUsageTailer({ sample: async () => snap('done'), emit, persist }, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
-    tailer.stop(1);
+    await tailer.stop(1);
     expect(emit).toHaveBeenCalledTimes(1);
     expect(persist).toHaveBeenCalledTimes(1);
     // The interval is cleared — further time advances nothing.
-    vi.advanceTimersByTime(60_000);
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
-  it('emits nothing while the log has no snapshot yet', () => {
+  it('emits nothing while the log has no snapshot yet', async () => {
     vi.useFakeTimers();
     const emit = vi.fn();
     const persist = vi.fn();
-    const tailer = new LiveUsageTailer({ sample: () => null, emit, persist }, { pushMs: 1000, persistMs: 10_000 });
+    const tailer = new LiveUsageTailer({ sample: async () => null, emit, persist }, { pushMs: 1000, persistMs: 10_000 });
     tailer.start(1);
-    vi.advanceTimersByTime(30_000);
-    tailer.stop(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await tailer.stop(1);
     expect(emit).not.toHaveBeenCalled();
     expect(persist).not.toHaveBeenCalled();
+  });
+
+  it('skips a fire while a slow sample is still in flight — never overlaps reads on one cursor', async () => {
+    vi.useFakeTimers();
+    let resolve!: (s: RunUsageSnapshot) => void;
+    let calls = 0;
+    const sample = vi.fn(() => {
+      calls++;
+      return new Promise<RunUsageSnapshot>((r) => (resolve = r));
+    });
+    const tailer = new LiveUsageTailer({ sample, emit: vi.fn(), persist: vi.fn() }, { pushMs: 1000, persistMs: 10_000 });
+    tailer.start(1);
+    // Three fires while the first sample is still pending: only one sample runs.
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(calls).toBe(1);
+    // Let it finish; the next fire is free to sample again.
+    resolve(snap('one'));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(calls).toBe(2);
   });
 });
 
@@ -125,7 +144,7 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
   // replay (as the runner's does — building activity/usage from currentTurnEvents
   // only) emits a snapshot with zero replay-derived activity/usage, even when the
   // whole event log is load-time replay.
-  it('the tailer emits a quarantined snapshot: zero current-turn usage/activity from an all-replay log', () => {
+  it('the tailer emits a quarantined snapshot: zero current-turn usage/activity from an all-replay log', async () => {
     vi.useFakeTimers();
     // A sampler mirroring the runner: derive the snapshot from current-turn
     // events only, so replayed history contributes nothing.
@@ -145,11 +164,11 @@ describe('replay quarantine at the live-usage boundary (issue #144)', () => {
     const emit = vi.fn();
     const persist = vi.fn();
     const tailer = new LiveUsageTailer(
-      { sample: () => sampleFromLog(allReplay), emit, persist },
+      { sample: async () => sampleFromLog(allReplay), emit, persist },
       { pushMs: 1000, persistMs: 10_000 },
     );
     tailer.start(1);
-    tailer.stop(1);
+    await tailer.stop(1);
 
     expect(emit).toHaveBeenCalledTimes(1);
     const snapshot = emit.mock.calls[0]![1] as RunUsageSnapshot;

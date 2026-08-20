@@ -10,8 +10,8 @@ import {
   restoreLiveCheckout,
   rematerializeCandidate,
 } from './execution-isolation.js';
-import { adapterFor, adapterVersion } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, tallyToolCalls, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot } from './usage.js';
+import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, tallyToolCalls, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -399,6 +399,11 @@ export class Runner {
    * so the winning disposition is decided by precedence, once. */
   private readonly settleCoordinator: RunSettleCoordinator;
   private readonly tailer: LiveUsageTailer;
+  /** One incremental session-log reader per active Run (#217): the tailer tick
+   *  advances it off the event loop; the Activity snapshot and spend guard read
+   *  its cached `latest()`. Created lazily once a session id exists, dropped on
+   *  `tailer.stop`. */
+  private readonly readers = new Map<number, SessionTailReader>();
   /** Spend-Guardrail (issue #128) poll cadence in ms; how often the live token/
    * cost usage snapshot is checked against a Run's frozen budget. */
   private readonly spendPollMs: number;
@@ -479,15 +484,15 @@ export class Runner {
 
   /**
    * A live view of every active Run for the Activity snapshot (issue #51):
-   * each running Run's ids plus its freshest live-usage snapshot, sampled
-   * from the same source the ~1s tailer uses — so the endpoint reads the
-   * current Usage/Process Tree even between the tailer's ~10s persist ticks.
+   * each running Run's ids plus its freshest live-usage snapshot. Reads the
+   * tailer's cached `latestSnapshot` (#217) — the ~1s tick keeps it current
+   * without this endpoint re-parsing the whole log on every poll.
    */
   activeSnapshots(): { runId: number; taskId: number; snapshot: RunUsageSnapshot | null }[] {
     return [...this.active.values()].map((a) => ({
       runId: a.runId,
       taskId: a.taskId,
-      snapshot: this.sampleSnapshot(a.runId),
+      snapshot: this.latestSnapshot(a.runId),
     }));
   }
 
@@ -777,8 +782,11 @@ export class Runner {
       if (active.taskId !== taskId) continue;
       if (active.externallySettled || !active.idle) return false; // mid-turn / mid-landing / already settling
       active.externallySettled = true;
-      // Flush the final usage snapshot before the log's cwd (worktree) is torn down.
-      this.tailer.stop(active.runId);
+      // Flush the final usage snapshot before the log's cwd (worktree) is torn
+      // down, then drop the reader (finalize drops it too, but don't depend on
+      // that path always running).
+      await this.tailer.stop(active.runId);
+      this.readers.delete(active.runId);
       const run = this.runStore.get(active.runId);
       const task = this.taskService.get(taskId);
       // Revert the premature close, then hand the Task to a human (#139).
@@ -886,11 +894,14 @@ export class Runner {
   shutdown(): void {
     this.shuttingDown = true;
     for (const active of this.active.values()) {
-      this.tailer.stop(active.runId);
+      // Best-effort final flush; the process is going down, so fire-and-forget
+      // the now-async stop rather than block shutdown on it (#217).
+      void this.tailer.stop(active.runId);
       active.verifyAbort.abort();
       this.kill(active);
     }
     this.active.clear();
+    this.readers.clear();
   }
 
   private spawnHarness(
@@ -2065,7 +2076,9 @@ export class Runner {
       finalized = true;
       // Stop tailing before the log's cwd (worktree) is torn down; this also
       // flushes the final snapshot to the row (ADR 0010: always on finish).
-      this.tailer.stop(run.id);
+      // Awaited so the reader's last async read finishes before teardown (#217).
+      await this.tailer.stop(run.id);
+      this.readers.delete(run.id);
       this.kill(active);
       try {
         this.keys?.revoke(run.id);
@@ -2263,80 +2276,93 @@ export class Runner {
           }),
       );
       let unmeasurableSince: number | null = null;
+      let spendSampling = false;
       spendTimer = setInterval(() => {
-        if (active.externallySettled) return;
-        const now = this.runStore.get(run.id);
-        if (now.state !== 'running') return;
-        const snap = this.sampleSnapshot(run.id);
-        const observedTokens = snap ? totalTokensOf(snap.usage) : null;
-        const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
-        const observedUsd = cost?.totalUsd ?? null;
-        const costIncomplete = cost?.incomplete ?? true;
-        // Two spend checks against the SAME frozen caps (issue #129 acceptance:
-        // a trip fires when EITHER the per-Run or the chain budget is exceeded).
-        // The per-Run check is #128's unchanged behaviour; the chain check folds
-        // this Run's live usage onto the chain's prior floor, so a retry whose
-        // own usage is under the cap still trips once the cumulative crosses it —
-        // the reset-and-bypass this guard exists to prevent. `combineSpendOutcomes`
-        // prefers a per-Run trip (keeping #128's card evidence) and only reports
-        // the chain scope when the cumulative is what pushed it over.
-        const runOutcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
-        const chainSpend = chainObserved(priorSpend, { tokens: observedTokens, usd: observedUsd, costIncomplete });
-        const chainOutcome = spendTrip({
-          phase: now.phase ?? null,
-          budget,
-          observedTokens: chainSpend.tokens,
-          observedUsd: chainSpend.usd,
-          costIncomplete: chainSpend.costIncomplete,
-        });
-        const { outcome, scope } = combineSpendOutcomes(runOutcome, chainOutcome);
-        if (outcome.kind === 'ok') {
-          unmeasurableSince = null;
-          return;
-        }
-        if (outcome.kind === 'unmeasurable') {
-          if (unmeasurableSince == null) unmeasurableSince = Date.now();
-          if (Date.now() - unmeasurableSince < this.spendGraceMs) return;
-          const reason = formatUnmeasurableReason(outcome.dimension);
-          const limitValue =
-            outcome.dimension === 'tokens' ? (budget.tokens ?? 0) : toMicroUsd(budget.costUsd ?? 0);
-          tripSpend(
-            now,
-            {
-              dimension: outcome.dimension,
-              phase: now.phase ?? 'executing',
-              limitValue,
-              observedValue: 0,
-              configSource,
-              payload: { unmeasurable: true, graceMs: this.spendGraceMs, scope },
-            },
-            reason,
-          );
-          return;
-        }
-        // outcome.kind === 'trip'
-        unmeasurableSince = null;
-        const trip = outcome.trip;
-        const event =
-          trip.dimension === 'tokens'
-            ? {
-                dimension: 'tokens' as const,
-                phase: now.phase ?? ('executing' as RunPhase),
-                limitValue: trip.limitTokens,
-                observedValue: trip.observedTokens,
-                configSource,
-                payload: { scope },
-              }
-            : {
-                dimension: 'cost' as const,
-                phase: now.phase ?? ('executing' as RunPhase),
-                limitValue: toMicroUsd(trip.limitUsd),
-                observedValue: toMicroUsd(trip.observedUsd),
-                configSource,
-                payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd, scope },
-              };
-        const reason = formatBudgetReason(trip);
-        tripSpend(now, event, reason);
+        // The spend guard is a correctness control, so it advances the reader
+        // itself (#217 — incremental, off the event loop) rather than riding the
+        // tailer's cached snapshot: a budget trip must never lag the real spend.
+        // Skip a fire while a prior async evaluation is still reading.
+        if (spendSampling) return;
+        spendSampling = true;
+        void (async () => {
+          try {
+            if (active.externallySettled) return;
+            const now = this.runStore.get(run.id);
+            if (now.state !== 'running') return;
+            const snap = await this.sampleSnapshot(run.id);
+            const observedTokens = snap ? totalTokensOf(snap.usage) : null;
+            const cost = snap ? costOfUsages([snap.usage], priceTable) : null;
+            const observedUsd = cost?.totalUsd ?? null;
+            const costIncomplete = cost?.incomplete ?? true;
+            // Two spend checks against the SAME frozen caps (issue #129 acceptance:
+            // a trip fires when EITHER the per-Run or the chain budget is exceeded).
+            // The per-Run check is #128's unchanged behaviour; the chain check folds
+            // this Run's live usage onto the chain's prior floor, so a retry whose
+            // own usage is under the cap still trips once the cumulative crosses it —
+            // the reset-and-bypass this guard exists to prevent. `combineSpendOutcomes`
+            // prefers a per-Run trip (keeping #128's card evidence) and only reports
+            // the chain scope when the cumulative is what pushed it over.
+            const runOutcome = spendTrip({ phase: now.phase ?? null, budget, observedTokens, observedUsd, costIncomplete });
+            const chainSpend = chainObserved(priorSpend, { tokens: observedTokens, usd: observedUsd, costIncomplete });
+            const chainOutcome = spendTrip({
+              phase: now.phase ?? null,
+              budget,
+              observedTokens: chainSpend.tokens,
+              observedUsd: chainSpend.usd,
+              costIncomplete: chainSpend.costIncomplete,
+            });
+            const { outcome, scope } = combineSpendOutcomes(runOutcome, chainOutcome);
+            if (outcome.kind === 'ok') {
+              unmeasurableSince = null;
+              return;
+            }
+            if (outcome.kind === 'unmeasurable') {
+              if (unmeasurableSince == null) unmeasurableSince = Date.now();
+              if (Date.now() - unmeasurableSince < this.spendGraceMs) return;
+              const reason = formatUnmeasurableReason(outcome.dimension);
+              const limitValue =
+                outcome.dimension === 'tokens' ? (budget.tokens ?? 0) : toMicroUsd(budget.costUsd ?? 0);
+              tripSpend(
+                now,
+                {
+                  dimension: outcome.dimension,
+                  phase: now.phase ?? 'executing',
+                  limitValue,
+                  observedValue: 0,
+                  configSource,
+                  payload: { unmeasurable: true, graceMs: this.spendGraceMs, scope },
+                },
+                reason,
+              );
+              return;
+            }
+            // outcome.kind === 'trip'
+            unmeasurableSince = null;
+            const trip = outcome.trip;
+            const event =
+              trip.dimension === 'tokens'
+                ? {
+                    dimension: 'tokens' as const,
+                    phase: now.phase ?? ('executing' as RunPhase),
+                    limitValue: trip.limitTokens,
+                    observedValue: trip.observedTokens,
+                    configSource,
+                    payload: { scope },
+                  }
+                : {
+                    dimension: 'cost' as const,
+                    phase: now.phase ?? ('executing' as RunPhase),
+                    limitValue: toMicroUsd(trip.limitUsd),
+                    observedValue: toMicroUsd(trip.observedUsd),
+                    configSource,
+                    payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd, scope },
+                  };
+            const reason = formatBudgetReason(trip);
+            tripSpend(now, event, reason);
+          } finally {
+            spendSampling = false;
+          }
+        })();
       }, this.spendPollMs);
       spendTimer.unref?.();
     };
@@ -3099,35 +3125,64 @@ export class Runner {
   }
 
   /**
-   * The live snapshot for a run's tailer (ADR 0010): parse the harness's
-   * native log into rolled-up Usage + Process Tree, plus the root's context
-   * fill and the latest current-activity line. null before a session id or
-   * a log exists, or for a harness with no Usage Collector.
+   * The run's incremental session-log reader (#217), created lazily once a
+   * session id exists. claude tails only newly-appended bytes each tick; the
+   * other harnesses fall back to a whole-file `parse()` per tick
+   * (`wholeFileReader`). null before a session id, or for a harness with no
+   * Usage Collector. Reused across ticks so the byte cursor persists.
    */
-  private sampleSnapshot(runId: number): RunUsageSnapshot | null {
+  private readerFor(runId: number): SessionTailReader | null {
+    const existing = this.readers.get(runId);
+    if (existing) return existing;
     const active = this.active.get(runId);
     if (!active) return null;
     const sessionId = this.runStore.get(runId).sessionId;
     if (!sessionId) return null;
-    // ponytail: re-parses the whole native log each ~1s tick (parse() has no
-    // incremental cursor). Fine for coding-run log sizes; add a tail offset to
-    // parse() if a long run's per-second full scan shows up in a profile.
     const collector = adapterFor(active.harnessId).usage;
-    const parsed = collector?.parse?.({
-      sessionLogDir: active.harness.sessionLogDir,
-      cwd: active.cwd,
-      sessionId,
-    });
+    if (!collector) return null;
+    const input = { sessionLogDir: active.harness.sessionLogDir, cwd: active.cwd, sessionId };
+    const reader = collector.createTailReader?.(input) ?? wholeFileReader(collector, input);
+    this.readers.set(runId, reader);
+    return reader;
+  }
+
+  /**
+   * The live snapshot for a run's tailer (ADR 0010): advance the incremental
+   * reader (#217 — off the event loop, only newly-appended bytes) and decorate
+   * its parse with the event-derived tool tally + activity line. Called only by
+   * the tailer tick; the on-demand callers read `latestSnapshot`.
+   */
+  private async sampleSnapshot(runId: number): Promise<RunUsageSnapshot | null> {
+    const reader = this.readerFor(runId);
+    if (!reader) return null;
+    return this.decorateSnapshot(runId, await reader.sample());
+  }
+
+  /**
+   * The freshest snapshot the tailer has already sampled, with no I/O — for the
+   * on-demand callers (Activity snapshot #51, spend guard #128) that ride the
+   * tailer's ~1s cadence instead of re-parsing the whole log themselves (#217).
+   * null before the tailer's first sample.
+   */
+  private latestSnapshot(runId: number): RunUsageSnapshot | null {
+    return this.decorateSnapshot(runId, this.readers.get(runId)?.latest() ?? null);
+  }
+
+  /**
+   * `parse`/the reader yield the per-model roll-up and tree but no tool tally
+   * (that lives in the event stream) — so the live "· N tools" figure the Board
+   * ticks off `run_usage` (issue #100) would be stuck at zero. Tally the run's
+   * events here, and fold the per-agent breakdown in for parity with the
+   * settle-time Usage. The current-activity line comes off the active Run.
+   */
+  private decorateSnapshot(runId: number, parsed: ParsedSession | null): RunUsageSnapshot | null {
     if (!parsed) return null;
-    // `parse()` yields the per-model roll-up and tree but no tool tally (that
-    // lives in the event stream) — so the live "· N tools" figure the Board
-    // ticks off `run_usage` (issue #100) would be stuck at zero. Tally the
-    // run's events here, and fold the per-agent breakdown in for parity with
-    // the settle-time Usage.
+    const active = this.active.get(runId);
+    const collector = active ? adapterFor(active.harnessId).usage : null;
     const toolCalls = tallyToolCalls(this.runStore.listEvents(runId), (payload) => collector?.toolName(payload) ?? null);
     const agents = agentsFromTree(parsed.tree);
     const usage: RunUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
-    return { usage, contextTokens: parsed.tree.contextTokens, activity: active.activity, tree: parsed.tree };
+    return { usage, contextTokens: parsed.tree.contextTokens, activity: active?.activity ?? null, tree: parsed.tree };
   }
 
   /** Usage is decoration on a finished run — never let it fail the run. */

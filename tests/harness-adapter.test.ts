@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adapterFor } from '../src/execution/harness/adapter.js';
@@ -405,5 +405,108 @@ describe('harness adapters', () => {
       join(homedir(), '.claude', 'projects', '-w', 's1.jsonl'),
     );
     expect(usage.sessionLogFile({ sessionLogDir: '/logs', cwd: '/w', sessionId: null })).toBeNull();
+  });
+});
+
+describe("claude's incremental session-log tail reader (#217)", () => {
+  const assistant = (model: string, u: Record<string, number>, id: string) =>
+    JSON.stringify({ type: 'assistant', message: { id, model, usage: u } }) + '\n';
+
+  /** A fresh claude home + root-transcript path for session `S` running in `/w`. */
+  const setup = (S: string) => {
+    const home = mkdtempSync(join(tmpdir(), 'claude-tail-'));
+    const dir = join(home, '-w');
+    mkdirSync(dir, { recursive: true });
+    const rootFile = join(dir, `${S}.jsonl`);
+    const reader = adapterFor('claude').usage!.createTailReader!({ sessionLogDir: home, cwd: '/w', sessionId: S });
+    return { home, dir, rootFile, reader };
+  };
+
+  it('folds only newly-appended bytes across ticks, and dedupes a repeated message id', async () => {
+    const { rootFile, reader } = setup('inc1');
+
+    // No log yet: null, and latest() is null before the first sample.
+    expect(reader.latest()).toBeNull();
+    expect(await reader.sample()).toBeNull();
+
+    writeFileSync(rootFile, assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10 }, 'm1'));
+    const first = await reader.sample();
+    expect(first!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10 });
+    expect(first!.tree.contextTokens).toBe(100);
+    // latest() serves that same build with no further I/O.
+    expect(reader.latest()).toBe(first);
+
+    // Append a second, distinct message — only the appended bytes are folded in.
+    appendFileSync(rootFile, assistant('claude-opus-4-8', { input_tokens: 30, output_tokens: 3 }, 'm2'));
+    const second = await reader.sample();
+    expect(second!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 130, outputTokens: 13 });
+    expect(second!.tree.contextTokens).toBe(30); // latest message's input-side footprint
+
+    // A chunked assistant message repeats its id across ticks: deduped, not re-added.
+    appendFileSync(rootFile, assistant('claude-opus-4-8', { input_tokens: 30, output_tokens: 3 }, 'm2'));
+    const third = await reader.sample();
+    expect(third!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 130, outputTokens: 13 });
+  });
+
+  it('holds back a mid-write partial line (invalid JSON) until it completes', async () => {
+    const { rootFile, reader } = setup('inc2');
+    const line = assistant('claude-opus-4-8', { input_tokens: 50, output_tokens: 5 }, 'p1'); // ends with '\n'
+
+    // Only the first half of the line is on disk: invalid JSON, so nothing counts yet.
+    const half = Math.floor(line.length / 2);
+    writeFileSync(rootFile, line.slice(0, half));
+    const partial = await reader.sample();
+    expect(partial!.usage.models).toEqual({});
+
+    // The rest (and its newline) lands: the now-complete line folds in exactly once.
+    appendFileSync(rootFile, line.slice(half));
+    const complete = await reader.sample();
+    expect(complete!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 50, outputTokens: 5 });
+  });
+
+  it('counts a complete final line that has no trailing newline — parity with the whole-file scan', async () => {
+    const { rootFile, reader } = setup('inc4');
+    // A whole log written at once with no trailing newline: still fully counted.
+    writeFileSync(rootFile, assistant('claude-opus-4-8', { input_tokens: 70, output_tokens: 7 }, 'm1').trimEnd());
+    const s = await reader.sample();
+    expect(s!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 70, outputTokens: 7 });
+  });
+
+  it('re-scans from scratch when the log shrinks, not folding new content onto stale tokens', async () => {
+    const { rootFile, reader } = setup('inc5');
+    writeFileSync(
+      rootFile,
+      assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10 }, 'a') +
+        assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10 }, 'b'),
+    );
+    const before = await reader.sample();
+    expect(before!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 200 });
+
+    // The file is replaced with shorter, different content (truncation/rotation).
+    writeFileSync(rootFile, assistant('claude-haiku-4-5', { input_tokens: 5, output_tokens: 1 }, 'c'));
+    const after = await reader.sample();
+    expect(after!.usage.models['claude-haiku-4-5']).toMatchObject({ inputTokens: 5 });
+    // The old opus tokens are gone — not carried across the truncation.
+    expect(after!.usage.models['claude-opus-4-8']).toBeUndefined();
+  });
+
+  it('picks up a Subagent that appears after the first tick and rolls its tokens up', async () => {
+    const { dir, rootFile, reader } = setup('inc3');
+    writeFileSync(rootFile, assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10 }, 'm1'));
+
+    const s1 = await reader.sample();
+    expect(s1!.tree.children).toHaveLength(0);
+
+    // A Subagent's transcript + meta land on a later tick.
+    const subs = join(dir, 'inc3', 'subagents');
+    mkdirSync(subs, { recursive: true });
+    writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-haiku-4-5', { input_tokens: 20, output_tokens: 2 }, 's1'));
+    writeFileSync(join(subs, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'Explore', toolUseId: 't1', spawnDepth: 1 }));
+
+    const s2 = await reader.sample();
+    expect(s2!.tree.children.map((c) => c.id)).toEqual(['a1']);
+    expect(s2!.tree.children[0]).toMatchObject({ name: 'Explore', model: 'claude-haiku-4-5', depth: 1 });
+    // Flat Usage rolls the Subagent's tokens into the run (the undercount fix, #48).
+    expect(s2!.usage.models['claude-haiku-4-5']).toMatchObject({ inputTokens: 20, outputTokens: 2 });
   });
 });

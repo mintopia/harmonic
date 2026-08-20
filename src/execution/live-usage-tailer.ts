@@ -8,8 +8,10 @@ export interface TailerCadence {
 }
 
 export interface TailerHooks {
-  /** Rebuild the run's snapshot from its native log; null when nothing to read yet. */
-  sample: (runId: number) => RunUsageSnapshot | null;
+  /** Advance the run's incremental reader and return its freshest snapshot;
+   *  null when nothing to read yet. Async (#217): the read is off the event
+   *  loop, so a growing log never blocks the tick. */
+  sample: (runId: number) => Promise<RunUsageSnapshot | null>;
   /** Broadcast the snapshot as a `run_usage` firehose event. */
   emit: (runId: number, snapshot: RunUsageSnapshot) => void;
   /** Overwrite the run row's persisted snapshot. */
@@ -21,6 +23,9 @@ interface Tail {
   /** Serialized last-pushed snapshot; skips emitting an unchanged one. */
   lastPushed: string | null;
   lastPersistAt: number;
+  /** A tick's async sample is in flight; the next fire skips rather than piling
+   *  up overlapping reads if a sample ever runs longer than the push cadence. */
+  sampling: boolean;
 }
 
 /**
@@ -40,39 +45,49 @@ export class LiveUsageTailer {
 
   start(runId: number): void {
     if (this.tails.has(runId)) return;
-    const timer = setInterval(() => this.tick(runId), this.cadence.pushMs);
+    const timer = setInterval(() => void this.tick(runId), this.cadence.pushMs);
     // Never keep the process alive for a usage sampler.
     timer.unref?.();
-    this.tails.set(runId, { timer, lastPushed: null, lastPersistAt: Date.now() });
+    this.tails.set(runId, { timer, lastPushed: null, lastPersistAt: Date.now(), sampling: false });
   }
 
-  /** Final flush + teardown: emit and persist the last snapshot unconditionally. */
-  stop(runId: number): void {
+  /** Final flush + teardown: emit and persist the last snapshot unconditionally.
+   *  Awaited so the caller (which then tears the log's worktree down) knows the
+   *  last read has finished. */
+  async stop(runId: number): Promise<void> {
     const tail = this.tails.get(runId);
     if (!tail) return;
     clearInterval(tail.timer);
     this.tails.delete(runId);
-    const snapshot = this.hooks.sample(runId);
+    const snapshot = await this.hooks.sample(runId);
     if (snapshot) {
       this.hooks.emit(runId, snapshot);
       this.hooks.persist(runId, snapshot);
     }
   }
 
-  private tick(runId: number): void {
+  private async tick(runId: number): Promise<void> {
     const tail = this.tails.get(runId);
-    if (!tail) return;
-    const snapshot = this.hooks.sample(runId);
-    if (!snapshot) return;
-    const serialized = JSON.stringify(snapshot);
-    if (serialized !== tail.lastPushed) {
-      tail.lastPushed = serialized;
-      this.hooks.emit(runId, snapshot);
-    }
-    const now = Date.now();
-    if (now - tail.lastPersistAt >= this.cadence.persistMs) {
-      tail.lastPersistAt = now;
-      this.hooks.persist(runId, snapshot);
+    if (!tail || tail.sampling) return;
+    tail.sampling = true;
+    try {
+      const snapshot = await this.hooks.sample(runId);
+      // `stop` may have run while the async sample was in flight; if so it has
+      // already done the final flush, so don't push a late duplicate.
+      const live = this.tails.get(runId);
+      if (!live || !snapshot) return;
+      const serialized = JSON.stringify(snapshot);
+      if (serialized !== live.lastPushed) {
+        live.lastPushed = serialized;
+        this.hooks.emit(runId, snapshot);
+      }
+      const now = Date.now();
+      if (now - live.lastPersistAt >= this.cadence.persistMs) {
+        live.lastPersistAt = now;
+        this.hooks.persist(runId, snapshot);
+      }
+    } finally {
+      tail.sampling = false;
     }
   }
 }
