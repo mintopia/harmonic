@@ -813,7 +813,7 @@ export function TicketPage({
           {/* TASK LEVEL */}
           <div className="pb-1 pt-[22px]">
             <div className="flex items-start gap-3">
-              <h1 className={`${displayTitle} line-clamp-2 max-w-[28ch]`}>{task.prompt}</h1>
+              <h1 className={`${displayTitle} line-clamp-2 min-w-0`}>{task.prompt}</h1>
               <span className={`${stateChip(task.state)} mt-1 shrink-0`}>{task.state}</span>
             </div>
             <div className="mt-[13px] flex flex-wrap items-center gap-2.5 text-small text-muted">
