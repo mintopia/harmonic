@@ -25,13 +25,13 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 }
 
 /**
- * Primary nav views (issue 5): API joins Board/Table/Stats as a full working
+ * Primary nav views (issue 5): API joins Deck/Table/Stats as a full working
  * view — the former Keys modal is promoted here, not left as a pinned-bottom
  * action, since it now behaves like Stats rather than like Log out.
  * Settings (issue 6) joins the same way, as the operator config editor;
  * the former Channels modal now lives inside Settings as Notifications.
  */
-// Activity (issue #52) joins as a primary view beside the Board: the
+// Activity (issue #52) joins as a primary view beside the Deck: the
 // instance-wide live view of every in-flight process across Workspaces, so it
 // sits high in the rail next to the queue it complements.
 // Workspace (issue #64) is the per-Workspace settings page, scoped to the
@@ -39,8 +39,8 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 // to the global Settings it mirrors — Settings holds machine + default config,
 // Workspace holds one Workspace's identity and its overrides of those defaults.
 // Graph (issue #85, ADR 0015) is the read-only Dependency Graph view — a
-// workspace-scoped sibling of Board/Table, so it sits beside Table in the rail.
-export const VIEWS = ['board', 'activity', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
+// workspace-scoped sibling of Deck/Table, so it sits beside Table in the rail.
+export const VIEWS = ['deck', 'activity', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -52,6 +52,25 @@ export type View = (typeof VIEWS)[number];
 export const RAIL_VIEWS: readonly View[] = VIEWS.filter((v) => v !== 'settings');
 
 /**
+ * Rail grouping (issue #181, DESIGN.md §5): the rail's two labelled groups —
+ * Workspace-scoped working views, then instance/global surfaces. 'settings'
+ * is deliberately absent — it's a status-strip icon, not a rail item
+ * (ADR 0012).
+ */
+export interface RailGroup {
+  label: string;
+  views: readonly View[];
+}
+
+/** The rail's two labelled groups (DESIGN.md §5): Workspace-scoped working
+ * views, then instance/global surfaces. 'settings' is deliberately absent —
+ * it's a status-strip icon, not a rail item (ADR 0012). */
+export const RAIL_GROUPS: readonly RailGroup[] = [
+  { label: 'Workspace', views: ['deck', 'activity', 'table', 'graph', 'stats'] },
+  { label: 'Instance', views: ['api', 'workspace'] },
+];
+
+/**
  * Views scoped to the active Workspace (ADR-0008): they read the active
  * Workspace's Tasks/stats and go blank without one, so with zero Workspaces
  * they yield to the "No workspace open" empty state (#68). Activity is
@@ -60,11 +79,11 @@ export const RAIL_VIEWS: readonly View[] = VIEWS.filter((v) => v !== 'settings')
  */
 export function isWorkspaceScopedView(view: View): boolean {
   return (
-    view === 'board' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
+    view === 'deck' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
   );
 }
 export const VIEW_LABELS: Record<View, string> = {
-  board: 'Board',
+  deck: 'Deck',
   activity: 'Activity',
   table: 'Table',
   graph: 'Graph',

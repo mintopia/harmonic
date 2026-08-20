@@ -23,7 +23,7 @@ import { ConversationLauncher } from './components/ConversationLauncher';
 import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
-import { RAIL_VIEWS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import { RAIL_GROUPS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
 import type { View } from './rail-model';
 import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
 import {
@@ -41,7 +41,7 @@ import {
   RUN_HINT_DISMISSED_KEY,
   REVIEW_HINT_DISMISSED_KEY,
 } from './onboarding-model';
-import { btnPrimary, btnQuiet, touchTarget } from './ui';
+import { btnPrimary, btnQuiet, railBadge, sectionLabel, touchTarget } from './ui';
 import { Toaster, toastError } from './toast';
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
@@ -72,22 +72,26 @@ const railItem = (active: boolean, collapsed: boolean) =>
 // entry for real navigation and replaces for in-place param tweaks — see the
 // callers below for which is which.
 function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void] {
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.search));
+  const [route, setRoute] = useState<Route>(() =>
+    parseRoute(window.location.pathname, window.location.search),
+  );
   useEffect(() => {
     // Canonicalize a hand-edited or bookmarked URL on load (drop unknown params,
     // normalize order) so the no-op-navigation guard in navigate() can trust
     // window.location — otherwise re-selecting the active view would push a lone
-    // canonicalization entry and cost a dead Back press.
-    const canonical = `${window.location.pathname}${serializeRoute(parseRoute(window.location.search))}`;
+    // canonicalization entry and cost a dead Back press. serializeRoute now
+    // owns the whole path (pathname + query): the focused Ticket lives at
+    // /task/:id, so we no longer prepend window.location.pathname to it.
+    const canonical = serializeRoute(parseRoute(window.location.pathname, window.location.search));
     if (canonical !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(null, '', canonical);
     }
-    const onPop = () => setRoute(parseRoute(window.location.search));
+    const onPop = () => setRoute(parseRoute(window.location.pathname, window.location.search));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const navigate = useCallback((next: Route, opts?: { replace?: boolean }) => {
-    const url = `${window.location.pathname}${serializeRoute(next)}`;
+    const url = serializeRoute(next);
     // Re-selecting the active view (or otherwise landing on the URL we're
     // already at) must not push a duplicate entry — that leaves a dead Back
     // press. Sync state without touching history when nothing moved.
@@ -157,7 +161,12 @@ export function App() {
   );
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
-  const [openTask, setOpenTask] = useState<Task | null>(null);
+  // The focused Ticket is the URL (route.task), not local state (issue #181):
+  // a row opens /task/:id and Back returns to the Deck. `fetchedTask` only
+  // caches a Task that isn't in the current Workspace's list (an EpicPeek
+  // deep-link, a cross-Workspace id) so the derived `openTask` below can still
+  // resolve it; a Task that IS in the list stays live off the poll/socket.
+  const [fetchedTask, setFetchedTask] = useState<Task | null>(null);
   // Parallel-Epic read model (issue #167, ADR-0026): epics is the active
   // Workspace's derived Epic list; openEpic/focusEpic mirror openTask's
   // "which one is the operator looking at" pattern for the peek and the
@@ -167,6 +176,15 @@ export function App() {
   const [focusEpic, setFocusEpic] = useState<Epic | null>(null);
   const [route, navigate] = useRoute();
   const view = route.view;
+  // Latest route for the ws subscription's task_removed handler, which lives
+  // outside React's render scope and must not put `route` in its effect deps
+  // (that would re-subscribe on every navigation).
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  // The last Ticket id we fired a not-in-list fetch for, so a 10s poll (which
+  // hands `tasks` a fresh array reference) can't re-fire the fetch — and, on a
+  // failing fetch, can't re-toast — every tick for a cross-Workspace deep link.
+  const fetchedTaskIdRef = useRef<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed(localStorage));
   const [theme, setTheme] = useState<ThemePref>(() => loadTheme(localStorage));
@@ -214,10 +232,9 @@ export function App() {
     try {
       const { tasks } = await api.tasks(activeWorkspaceId);
       setTasks(tasks);
-      // Keep an open detail modal fresh from the poll too, not only the
-      // socket — otherwise its state-aware footer can go stale (and keep
-      // offering Accept on an already-completed task) if the ws drops.
-      setOpenTask((current) => (current ? tasks.find((t) => t.id === current.id) ?? current : current));
+      // The open Ticket derives from this list (see `openTask` below), so the
+      // poll keeps its state-aware footer fresh with no extra bookkeeping —
+      // the list is refreshed here, the modal re-reads it.
       failStreak.current = 0;
       setError(null);
     } catch (e) {
@@ -287,7 +304,9 @@ export function App() {
           const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
           return [...rest, msg.task];
         });
-        setOpenTask((current) => (current && current.id === msg.task.id ? msg.task : current));
+        // Keep the cached (not-in-list) open Ticket fresh from the socket too;
+        // an in-list one refreshes via setTasks above.
+        setFetchedTask((current) => (current && current.id === msg.task.id ? msg.task : current));
         // Keep the Epic peek + landing rail live (ADR-0026): a member's
         // task_changed is exactly the signal an Epic's fold/land/verification
         // state may have moved, so refetch alongside the Task-list update.
@@ -300,7 +319,13 @@ export function App() {
       // the deleted Task, rather than leaving it stranded on stale data.
       if (msg.type === 'task_removed') {
         setTasks((current) => (current ?? []).filter((t) => t.id !== msg.id));
-        setOpenTask((current) => (current && current.id === msg.id ? null : current));
+        setFetchedTask((current) => (current && current.id === msg.id ? null : current));
+        // If the focused Ticket's Task was hard-deleted, step back to the Deck
+        // rather than stranding the URL on a dead /task/:id. Refs keep this out
+        // of the subscription's deps so a navigation never re-subscribes the ws.
+        if (routeRef.current.task === msg.id) {
+          navigate({ ...routeRef.current, task: null }, { replace: true });
+        }
       }
     });
     const timer = setInterval(() => {
@@ -318,14 +343,55 @@ export function App() {
   // Board/TaskCard's card → owning Epic lookup (issue #167, ADR-0026).
   const epicByTaskIdMap = useMemo(() => epicByTaskId(epics), [epics]);
 
-  // EpicPeek's deep-link into the existing TaskDetail (ADR-0026: "rows reuse
-  // TaskDetail") — reuses the same setOpenTask path a Board/Table card click
-  // does, falling back to a fetch if the member Task isn't in the loaded list.
-  const openTaskById = (taskId: number) => {
-    const found = (tasks ?? []).find((t) => t.id === taskId);
-    if (found) setOpenTask(found);
-    else api.task(taskId).then(setOpenTask, toastError);
-  };
+  // The focused Ticket (route.task), resolved to its Task: the live one from
+  // the Workspace list when present, else the fetched cache. Deriving it (vs.
+  // holding a copy in state) keeps one source of truth — the URL — so Back,
+  // a bookmark, and a socket update can never disagree with the open modal.
+  const openTask = useMemo<Task | null>(() => {
+    if (route.task === null) return null;
+    return (
+      (tasks ?? []).find((t) => t.id === route.task) ??
+      (fetchedTask && fetchedTask.id === route.task ? fetchedTask : null)
+    );
+  }, [route.task, tasks, fetchedTask]);
+
+  // Fetch the focused Ticket's Task only when it isn't in the loaded list (an
+  // EpicPeek deep-link into another Epic, a cross-Workspace or dropped-off id).
+  // An in-list id needs no fetch — the poll/socket already keep it fresh.
+  useEffect(() => {
+    if (route.task === null) {
+      setFetchedTask(null);
+      fetchedTaskIdRef.current = null;
+      return;
+    }
+    if ((tasks ?? []).some((t) => t.id === route.task)) return;
+    // Fetch once per focused id — the socket's task_changed keeps the cached
+    // Ticket fresh thereafter, so a later `tasks` reference change must not
+    // refetch (or re-toast on failure). The ref, not fetchedTask, gates this:
+    // a failed fetch leaves fetchedTask null but must still not retry-spam.
+    if (fetchedTaskIdRef.current === route.task) return;
+    fetchedTaskIdRef.current = route.task;
+    let live = true;
+    api.task(route.task).then((t) => live && setFetchedTask(t), toastError);
+    return () => {
+      live = false;
+    };
+  }, [route.task, tasks]);
+
+  // The rail's cobalt "Needs you" badge (DESIGN.md §5): Tasks awaiting review
+  // (the review gate) plus afk Runs that escalated to a human — the two states
+  // that want an operator's eyes now.
+  const needsYouCount = useMemo(
+    () => (tasks ?? []).filter((t) => t.state === 'awaiting-review' || t.escalated).length,
+    [tasks],
+  );
+
+  // EpicPeek's deep-link into the Ticket, and TaskDetail's skip-holder link:
+  // both navigate to /task/:id so the focus is a real, bookmarkable route.
+  const openTaskById = (taskId: number) => navigate({ ...route, task: taskId });
+  // A Deck/Table/Graph row's click target — the one seam every surface's
+  // `onOpen(task)` shares, so a row always opens the same /task/:id route.
+  const openRow = (t: Task) => openTaskById(t.id);
 
   // Browser tab title: `Harmonic - {name} - {workspace}`. The instance name is
   // dropped when unset and the workspace when none has resolved yet, so an
@@ -360,21 +426,23 @@ export function App() {
   // task reaches review the run hint retires and the review hint takes over —
   // the two never show at once (see onboarding-model).
   const showRunHint =
-    view === 'board' && !!config && shouldShowRunHint(taskList, config.autoRunner, runHintDismissed);
+    view === 'deck' && !!config && shouldShowRunHint(taskList, config.autoRunner, runHintDismissed);
   const dismissRunHint = () => {
     storeDismissed(localStorage, RUN_HINT_DISMISSED_KEY);
     setRunHintDismissed(true);
   };
-  const showReviewHint = view === 'board' && shouldShowReviewHint(taskList, reviewHintDismissed);
+  const showReviewHint = view === 'deck' && shouldShowReviewHint(taskList, reviewHintDismissed);
   const dismissReviewHint = () => {
     storeDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY);
     setReviewHintDismissed(true);
   };
 
   // Picking a view is real navigation — push, so Back returns to the
-  // previous view rather than leaving the app.
+  // previous view rather than leaving the app. It also closes any open Ticket
+  // (clears route.task): choosing a rail destination leaves the focused Task
+  // behind, and the sibling "Focus on board" handler clears it in step.
   const pickView = (v: View) => {
-    navigate({ ...route, view: v });
+    navigate({ ...route, view: v, task: null });
     setMenuOpen(false);
   };
 
@@ -461,14 +529,20 @@ export function App() {
     }
     // Programmatic redirect off the deleted Workspace's page, not a place the
     // operator chose to visit — replace, no history entry.
-    navigate({ ...route, view: 'board' }, { replace: true });
+    navigate({ ...route, view: 'deck', task: null }, { replace: true });
   };
 
   // Collapsed items keep their accessible name and gain a native tooltip;
   // when the label is visible neither is needed — below the breakpoint the
   // drawer shows labels, so the attributes must not apply there.
-  const railItemName = (label: string) =>
-    railCollapsed && railDesktop ? { 'aria-label': label, title: label } : {};
+  // Collapsed, the icon-only button has no visible text, so it needs an
+  // aria-label/title. Fold the Deck's "Needs you" count into the label there:
+  // the visual pill is suppressed at 48px, but a screen-reader operator — for
+  // whom the collapsed rail is the whole nav — still hears the attention count.
+  const railItemName = (label: string, needsYou: number | null = null) =>
+    railCollapsed && railDesktop
+      ? { 'aria-label': needsYou !== null ? `${label}, ${needsYou} needs you` : label, title: label }
+      : {};
 
   // Hidden, not unmounted, when collapsed: keyboard order and focus
   // behavior stay identical in both widths.
@@ -476,19 +550,50 @@ export function App() {
 
   const navItems = (
     <>
-      <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
-        {RAIL_VIEWS.map((v) => (
-          <button
-            key={v}
-            aria-current={view === v ? 'page' : undefined}
-            {...railItemName(VIEW_LABELS[v])}
-            className={railItem(view === v, railCollapsed)}
-            onClick={() => pickView(v)}
-          >
-            <Icon name={v} />
-            <span className={railLabel}>{VIEW_LABELS[v]}</span>
-          </button>
-        ))}
+      <nav aria-label="Views" className="flex flex-col gap-4 rail:flex-1">
+        {RAIL_GROUPS.map((group) => {
+          // Wire each group's uppercase Label header to its buttons so a screen
+          // reader announces the Workspace/Instance grouping the sighted user
+          // sees (role="group" + aria-labelledby), not a flat list.
+          const groupId = `rail-group-${group.label.toLowerCase()}`;
+          return (
+            <div key={group.label} role="group" aria-labelledby={groupId} className="flex flex-col gap-0.5">
+              {/* Uppercase Label group header (DESIGN.md §5), the shared
+                  sectionLabel register. Hidden — not unmounted — when the rail
+                  collapses to icons, so the icon-only nav keeps its order and
+                  grouping gap without a header. */}
+              <div id={groupId} className={`${sectionLabel} px-2.5 pb-1 ${railCollapsed ? 'rail:hidden' : ''}`}>
+                {group.label}
+              </div>
+              {group.views.map((v) => {
+                // The Deck carries the cobalt "Needs you" count; other items none
+                // (the absence is the default). Suppressed when the rail is a
+                // strip of icons — there's no room for a numeric pill at 48px.
+                const needsYou = v === 'deck' && needsYouCount > 0 ? needsYouCount : null;
+                return (
+                  <button
+                    key={v}
+                    aria-current={view === v ? 'page' : undefined}
+                    {...railItemName(VIEW_LABELS[v], needsYou)}
+                    className={railItem(view === v, railCollapsed)}
+                    onClick={() => pickView(v)}
+                  >
+                    <Icon name={v} />
+                    <span className={railLabel}>{VIEW_LABELS[v]}</span>
+                    {needsYou !== null && (
+                      <span
+                        aria-label={`${needsYou} needs you`}
+                        className={`${railBadge} ${railCollapsed ? 'rail:hidden' : ''}`}
+                      >
+                        {needsYou}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
       </nav>
       {/* Desktop only: the nav's rail:flex-1 above pins this to the sidebar
           foot. Below the rail breakpoint the top drawer wins. */}
@@ -558,7 +663,15 @@ export function App() {
       </aside>
 
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-hairline bg-shell px-6 py-3">
+        {/* The status strip (DESIGN.md §5): status, not navigation — the
+            auto-runner master switch, the running/machine ceiling, and today's
+            cost, in hairline-separated clusters; then the theme cycle, the
+            global Settings icon, Log out, and the one primary action. It pins
+            with the rail while only the working area below scrolls. */}
+        <header
+          aria-label="Status"
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5"
+        >
           {config && (
             <Switch
               checked={config.autoRunner.enabled}
@@ -575,6 +688,7 @@ export function App() {
               </span>
             </Switch>
           )}
+          {config && <span aria-hidden="true" className="h-5 w-px shrink-0 bg-hairline" />}
           {config && (
             <span className="flex items-center gap-2 text-muted">
               <span
@@ -589,12 +703,23 @@ export function App() {
               </span>
             </span>
           )}
+          {config && cost24h && (
+            <span aria-hidden="true" className="h-5 w-px shrink-0 bg-hairline" />
+          )}
           {cost24h && (
             <span className="text-muted" title="Cost over the last 24 hours">
               <span className="font-semibold tabular-nums text-ink">{cost24h}</span> today
             </span>
           )}
           <div className="flex-1" />
+          <button
+            aria-label={THEME_LABELS[theme]}
+            title={THEME_LABELS[theme]}
+            className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
+            onClick={cycleTheme}
+          >
+            <Icon name={THEME_ICONS[theme]} />
+          </button>
           <button
             aria-label="Settings"
             aria-current={view === 'settings' ? 'page' : undefined}
@@ -605,14 +730,6 @@ export function App() {
             onClick={() => pickView('settings')}
           >
             <Icon name="settings" />
-          </button>
-          <button
-            aria-label={THEME_LABELS[theme]}
-            title={THEME_LABELS[theme]}
-            className={`${touchTarget} rounded-md text-muted transition-colors duration-150 hover:bg-raised hover:text-ink`}
-            onClick={cycleTheme}
-          >
-            <Icon name={THEME_ICONS[theme]} />
           </button>
           {passwordSet && (
             <button
@@ -692,7 +809,7 @@ export function App() {
               </EmptyState>
             ) : (
               <>
-                {view === 'board' && (
+                {view === 'deck' && (
                   <>
                     {/* Manual tracker refresh — only when this Workspace mirrors a
                         tracker; otherwise there's nothing to re-poll. */}
@@ -716,7 +833,7 @@ export function App() {
                       tasks={taskList}
                       loading={tasks === null}
                       onEdit={setEditing}
-                      onOpen={setOpenTask}
+                      onOpen={openRow}
                       onChanged={refresh}
                       onNewTask={() => setEditing('new')}
                       peeked={peeked}
@@ -733,7 +850,7 @@ export function App() {
                 {view === 'table' && (
                   <TableView
                     workspaceId={activeWorkspaceId}
-                    onOpen={setOpenTask}
+                    onOpen={openRow}
                     filters={route.table}
                     onFiltersChange={setTableFilters}
                     epics={epics}
@@ -741,7 +858,11 @@ export function App() {
                   />
                 )}
                 {view === 'graph' && (
-                  <GraphView tasks={taskList} loading={tasks === null} onOpen={setOpenTask} />
+                  <GraphView
+                    tasks={taskList}
+                    loading={tasks === null}
+                    onOpen={openRow}
+                  />
                 )}
                 {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
                 {view === 'api' && <ApiPage />}
@@ -773,7 +894,7 @@ export function App() {
           task={openTask}
           onEdit={setEditing}
           onChanged={refresh}
-          onClose={() => setOpenTask(null)}
+          onClose={() => navigate({ ...route, task: null }, { replace: true })}
           onOpenTask={openTaskById}
         />
       )}
@@ -787,9 +908,9 @@ export function App() {
             const target = epics.find((e) => e.ref === epicRef) ?? null;
             setFocusEpic(target);
             setOpenEpic(null);
-            // "Focus on board" is a real navigation to the Board view (the
+            // "Focus on board" is a real navigation to the Deck view (the
             // only surface focus-mode applies to), mirroring pickView.
-            navigate({ ...route, view: 'board' });
+            navigate({ ...route, view: 'deck', task: null });
           }}
           onClose={() => setOpenEpic(null)}
           onChanged={refreshEpics}

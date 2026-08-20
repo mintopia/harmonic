@@ -7,7 +7,7 @@ import type { JSX } from 'react';
  * icon-font dependency.
  */
 export type IconName =
-  | 'board'
+  | 'deck'
   | 'activity'
   | 'table'
   | 'graph'
@@ -35,7 +35,7 @@ export type IconName =
 
 const PATHS: Record<IconName, JSX.Element> = {
   // Kanban columns, top-aligned at differing heights.
-  board: (
+  deck: (
     <>
       <rect height="7" rx="1" width="3.5" x="1.75" y="2.75" />
       <rect height="10.5" rx="1" width="3.5" x="6.25" y="2.75" />
@@ -139,7 +139,7 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M13.5 13.5 9 9" />
     </>
   ),
-  // Circular arrow: force a re-poll of the tracker (the board's manual refresh).
+  // Circular arrow: force a re-poll of the tracker (the deck's manual refresh).
   refresh: (
     <>
       <path d="M12.75 8a4.75 4.75 0 1 1-1.4-3.36" />

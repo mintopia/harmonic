@@ -5,18 +5,19 @@ import { VIEWS, type View } from './rail-model.js';
 import { TASK_STATES, type TaskState } from './types.js';
 
 /**
- * Client routing (issue #103): the active view and its per-view filter/sort/peek
+ * Client routing (issue #103, #181): the active view and its per-view filter/sort/peek
  * state live in the URL's query string, so a side-monitor view is bookmarkable,
  * a refresh restores where the operator was, and the browser Back button steps
  * between views instead of leaving the app. This module is the pure, testable
- * seam — parse a query string into a {@link Route}, serialize a Route back — with
- * the React history glue kept in App.tsx.
+ * seam — parse a pathname + query string into a {@link Route}, serialize a Route
+ * back to a relative URL — with the React history glue kept in App.tsx.
  *
- * The URL is the source of truth for the *active* view, but a Route carries every
- * view's state at once (board peek + table filters), so the query string fully
- * describes the app location and one URL restores all of it. Unknown or malformed
- * params fall back to defaults rather than throwing: a hand-edited or stale link
- * lands somewhere sane, never on a blank screen.
+ * The URL is the source of truth for the app's location. The pathname carries the
+ * focused Ticket (`/task/:id`, the Deck's "Deck" redesign): a `Route` carries every
+ * view's state at once (deck peek + table filters) in the query string, so a Ticket
+ * URL still remembers which underlying view/filters to return to. Unknown or
+ * malformed params fall back to defaults rather than throwing: a hand-edited or
+ * stale link lands somewhere sane, never on a blank screen.
  */
 
 /** Table sort keys. TableView imports `SortKey` from here as its single source. */
@@ -51,13 +52,21 @@ export const DEFAULT_TABLE_FILTERS: TableFilters = {
 /** A full app location: active view plus every view's persisted state. */
 export interface Route {
   view: View;
-  /** Board terminal columns the operator has peeked open. */
+  /**
+   * The focused Ticket (issue #181): `null` when on a view, or the Task id when
+   * the pathname is `/task/:id`. Lives in the pathname, not the query, but the
+   * Route still carries the underlying `view`/`table`/`peeked` so returning
+   * restores exactly where the operator was.
+   */
+  task: number | null;
+  /** Deck terminal columns the operator has peeked open. */
   peeked: TaskState[];
   table: TableFilters;
 }
 
 export const DEFAULT_ROUTE: Route = {
-  view: 'board',
+  view: 'deck',
+  task: null,
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
 };
@@ -82,6 +91,9 @@ const isTaskState = (v: string): v is TaskState => (TASK_STATES as readonly stri
 const isPeekable = (v: string): v is TaskState => (TERMINAL_STATES as readonly string[]).includes(v);
 const isSortKey = (v: string | null): v is SortKey => v !== null && (SORT_KEYS as readonly string[]).includes(v);
 
+/** Matches the Ticket path `/task/:id` (optional trailing slash). */
+const TASK_PATH = /^\/task\/(\d+)\/?$/;
+
 /** Accept a full URL, a `?a=b` search string, or a bare `a=b`; return just the
  * query portion for URLSearchParams. */
 function queryOf(input: string): string {
@@ -90,15 +102,20 @@ function queryOf(input: string): string {
 }
 
 /**
- * Parse a query string into a {@link Route}. Every field is validated against its
- * allowed set; anything unrecognized falls back to its default, so a malformed or
- * stale link never produces an invalid view or filter.
+ * Parse a pathname + query string into a {@link Route}. Every field is validated
+ * against its allowed set; anything unrecognized falls back to its default, so a
+ * malformed or stale link never produces an invalid view, filter, or Ticket id.
  */
-export function parseRoute(search: string): Route {
+export function parseRoute(pathname: string, search: string): Route {
   const params = new URLSearchParams(queryOf(search));
 
   const rawView = params.get(PARAM.view);
-  const view: View = isView(rawView) ? rawView : 'board';
+  const view: View = isView(rawView) ? rawView : 'deck';
+
+  // The Ticket path: a bare positive integer Task id, else no Ticket open.
+  const taskMatch = TASK_PATH.exec(pathname);
+  const taskId = taskMatch ? Number(taskMatch[1]) : NaN;
+  const task = taskMatch && Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null;
 
   // Dedupe while preserving order; drop anything that isn't a peekable column.
   const peeked: TaskState[] = [];
@@ -121,19 +138,20 @@ export function parseRoute(search: string): Route {
     order: rawOrder === 'asc' ? 'asc' : 'desc',
   };
 
-  return { view, peeked, table };
+  return { view, task, peeked, table };
 }
 
 /**
- * Serialize a {@link Route} to a query string (leading `?`, or `''` when the route
- * is all defaults — the clean board URL). Default-valued params are omitted so the
- * URL stays terse, and `peek` states are emitted in TASK_STATES order so equal
- * routes serialize identically (stable round-trip / bookmarks).
+ * Serialize a {@link Route} to a relative URL: `/task/:id` when a Ticket is
+ * focused, else `/` — plus a query string carrying the non-default view/peek/table
+ * state (omitted entirely for the all-default deck route, giving the clean `/`
+ * URL). `peek` states are emitted in TASK_STATES order so equal routes serialize
+ * identically (stable round-trip / bookmarks).
  */
 export function serializeRoute(route: Route): string {
   const params = new URLSearchParams();
 
-  if (route.view !== 'board') params.set(PARAM.view, route.view);
+  if (route.view !== 'deck') params.set(PARAM.view, route.view);
 
   const peekSet = new Set(route.peeked);
   const peek = TASK_STATES.filter((s) => peekSet.has(s));
@@ -148,5 +166,6 @@ export function serializeRoute(route: Route): string {
   if (t.order !== 'desc') params.set(PARAM.order, t.order);
 
   const query = params.toString();
-  return query ? `?${query}` : '';
+  const base = route.task !== null ? `/task/${route.task}` : '/';
+  return query ? `${base}?${query}` : base;
 }

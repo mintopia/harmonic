@@ -304,6 +304,14 @@ export const panel = 'overflow-hidden rounded-xl bg-surface shadow-card';
 export const sectionLabel = 'text-label font-bold uppercase text-faint';
 export const sectionLabelAttn = 'text-label font-bold uppercase text-accent';
 
+/** The rail's cobalt "Needs you" count badge (DESIGN.md §5): a count pill in
+ * the accent, right-aligned in its nav row. This is the one sanctioned cobalt
+ * in the rail besides the active item — the §5 carve-out ("a badge carries a
+ * count, cobalt when it's the 'Needs you' count"), not a Signal-Rule state
+ * colour. Shared here so the shell can't fork the pill's register. */
+export const railBadge =
+  'ml-auto min-w-5 rounded-full bg-accent px-1.5 py-0.5 text-center text-label font-bold tabular-nums text-on-accent';
+
 /** A Deck row: state dot · faint id · loud title · ≤2 facts · right-aligned
  * signal (DESIGN.md § 6). One content line + one quiet meta line; the whole row
  * is the click target to the Ticket. Rows live inside a `panel` and separate by

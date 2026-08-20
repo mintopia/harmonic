@@ -8,35 +8,35 @@ import {
 } from '../web/src/router-model.js';
 
 describe('parseRoute', () => {
-  it('defaults to the board with no filters when the query is empty', () => {
-    expect(parseRoute('')).toEqual(DEFAULT_ROUTE);
-    expect(parseRoute('?')).toEqual(DEFAULT_ROUTE);
+  it('defaults to the deck with no filters when the query is empty', () => {
+    expect(parseRoute('/', '')).toEqual(DEFAULT_ROUTE);
+    expect(parseRoute('/', '?')).toEqual(DEFAULT_ROUTE);
   });
 
   it('reads the active view', () => {
-    expect(parseRoute('?view=table').view).toBe('table');
-    expect(parseRoute('?view=stats').view).toBe('stats');
+    expect(parseRoute('/', '?view=table').view).toBe('table');
+    expect(parseRoute('/', '?view=stats').view).toBe('stats');
   });
 
-  it('falls back to the board for an unknown or missing view', () => {
-    expect(parseRoute('?view=bogus').view).toBe('board');
-    expect(parseRoute('?view=').view).toBe('board');
+  it('falls back to the deck for an unknown or missing view', () => {
+    expect(parseRoute('/', '?view=bogus').view).toBe('deck');
+    expect(parseRoute('/', '?view=').view).toBe('deck');
   });
 
   it('parses the board peeked columns, dropping unknown states and duplicates', () => {
-    expect(parseRoute('?peek=completed,failed').peeked).toEqual(['completed', 'failed']);
-    expect(parseRoute('?peek=completed,bogus,completed').peeked).toEqual(['completed']);
-    expect(parseRoute('?peek=').peeked).toEqual([]);
+    expect(parseRoute('/', '?peek=completed,failed').peeked).toEqual(['completed', 'failed']);
+    expect(parseRoute('/', '?peek=completed,bogus,completed').peeked).toEqual(['completed']);
+    expect(parseRoute('/', '?peek=').peeked).toEqual([]);
   });
 
   it('drops non-terminal states from peek — only terminal columns are peekable', () => {
     // running/ready aren't collapsible columns, so they can never be "peeked".
-    expect(parseRoute('?peek=running,ready').peeked).toEqual([]);
-    expect(parseRoute('?peek=completed,running,cancelled').peeked).toEqual(['completed', 'cancelled']);
+    expect(parseRoute('/', '?peek=running,ready').peeked).toEqual([]);
+    expect(parseRoute('/', '?peek=completed,running,cancelled').peeked).toEqual(['completed', 'cancelled']);
   });
 
   it('parses table filters and validates each against its allowed set', () => {
-    const t = parseRoute('?view=table&state=running&harness=claude&priority=high&sort=cost&order=asc').table;
+    const t = parseRoute('/', '?view=table&state=running&harness=claude&priority=high&sort=cost&order=asc').table;
     expect(t).toEqual({
       state: 'running',
       harness: 'claude',
@@ -48,33 +48,57 @@ describe('parseRoute', () => {
   });
 
   it('drops invalid table filter values back to their defaults', () => {
-    const t = parseRoute('?state=nope&harness=nope&priority=nope&sort=nope&order=nope').table;
+    const t = parseRoute('/', '?state=nope&harness=nope&priority=nope&sort=nope&order=nope').table;
     expect(t).toEqual(DEFAULT_TABLE_FILTERS);
   });
 
   it('accepts a full URL, a search string, or a bare query', () => {
-    expect(parseRoute('https://host/app?view=stats').view).toBe('stats');
-    expect(parseRoute('?view=stats').view).toBe('stats');
-    expect(parseRoute('view=stats').view).toBe('stats');
+    expect(parseRoute('/', 'https://host/app?view=stats').view).toBe('stats');
+    expect(parseRoute('/', '?view=stats').view).toBe('stats');
+    expect(parseRoute('/', 'view=stats').view).toBe('stats');
+  });
+});
+
+describe('parseRoute — Ticket path (#181)', () => {
+  it('reads a focused Task id from /task/:id, defaulting the view to deck', () => {
+    const route = parseRoute('/task/172', '');
+    expect(route.task).toBe(172);
+    expect(route.view).toBe('deck');
+  });
+
+  it('carries the underlying view alongside the Ticket id', () => {
+    const route = parseRoute('/task/172', '?view=table');
+    expect(route.task).toBe(172);
+    expect(route.view).toBe('table');
+  });
+
+  it('rejects a zero, non-numeric, or missing id — no Ticket focused', () => {
+    expect(parseRoute('/task/0', '').task).toBeNull();
+    expect(parseRoute('/task/abc', '').task).toBeNull();
+    expect(parseRoute('/task/', '').task).toBeNull();
+  });
+
+  it('has no Ticket focused on the root path', () => {
+    expect(parseRoute('/', '').task).toBeNull();
   });
 });
 
 describe('serializeRoute', () => {
-  it('serializes the all-default board route to an empty string (clean URL)', () => {
-    expect(serializeRoute(DEFAULT_ROUTE)).toBe('');
+  it('serializes the all-default deck route to the root path (clean URL)', () => {
+    expect(serializeRoute(DEFAULT_ROUTE)).toBe('/');
   });
 
-  it('omits the view param for the board, emits it otherwise', () => {
-    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'board' })).toBe('');
-    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table' })).toBe('?view=table');
+  it('omits the view param for the deck, emits it otherwise', () => {
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'deck' })).toBe('/');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table' })).toBe('/?view=table');
   });
 
   it('emits peeked columns in TASK_STATES order regardless of input order', () => {
-    expect(serializeRoute({ ...DEFAULT_ROUTE, peeked: ['failed', 'completed'] })).toBe('?peek=completed%2Cfailed');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, peeked: ['failed', 'completed'] })).toBe('/?peek=completed%2Cfailed');
   });
 
   it('omits default-valued table filters', () => {
-    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table', table: DEFAULT_TABLE_FILTERS })).toBe('?view=table');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table', table: DEFAULT_TABLE_FILTERS })).toBe('/?view=table');
   });
 
   it('emits only the non-default table filters', () => {
@@ -83,19 +107,27 @@ describe('serializeRoute', () => {
       view: 'table',
       table: { state: 'running', harness: '', priority: '', search: '', sortBy: 'cost', order: 'asc' },
     };
-    const parsed = parseRoute(serializeRoute(route));
+    const parsed = parseRoute('/', serializeRoute(route));
     expect(parsed.table).toEqual(route.table);
     expect(parsed.view).toBe('table');
+  });
+
+  it('builds a /task/:id path when a Ticket is focused', () => {
+    expect(serializeRoute({ ...DEFAULT_ROUTE, task: 172 })).toBe('/task/172');
+  });
+
+  it('carries the underlying view as a query param on the Ticket path', () => {
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table', task: 172 })).toBe('/task/172?view=table');
   });
 });
 
 describe('search', () => {
   it('parses the q param into table.search', () => {
-    expect(parseRoute('?q=rate%20limit').table.search).toBe('rate limit');
+    expect(parseRoute('/', '?q=rate%20limit').table.search).toBe('rate limit');
   });
 
   it('defaults to an empty search when q is absent', () => {
-    expect(parseRoute('').table.search).toBe('');
+    expect(parseRoute('/', '').table.search).toBe('');
   });
 
   it('serializes a non-empty search to the q param', () => {
@@ -113,7 +145,9 @@ describe('search', () => {
       view: 'table',
       table: { ...DEFAULT_TABLE_FILTERS, search: 'rate limit' },
     };
-    expect(parseRoute(serializeRoute(route))).toEqual(route);
+    const url = serializeRoute(route);
+    const u = new URL(url, 'http://x');
+    expect(parseRoute(u.pathname, u.search)).toEqual(route);
   });
 });
 
@@ -121,17 +155,28 @@ describe('round-trip', () => {
   const routes: Route[] = [
     DEFAULT_ROUTE,
     {
+      ...DEFAULT_ROUTE,
       view: 'table',
-      peeked: [],
       table: { state: 'running', harness: 'codex', priority: 'low', search: '', sortBy: 'priority', order: 'asc' },
     },
-    { view: 'board', peeked: ['completed', 'failed', 'cancelled'], table: DEFAULT_TABLE_FILTERS },
-    { view: 'stats', peeked: ['completed'], table: { ...DEFAULT_TABLE_FILTERS, sortBy: 'cost' } },
+    { ...DEFAULT_ROUTE, peeked: ['completed', 'failed', 'cancelled'] },
+    { ...DEFAULT_ROUTE, view: 'stats', peeked: ['completed'], table: { ...DEFAULT_TABLE_FILTERS, sortBy: 'cost' } },
+    { ...DEFAULT_ROUTE, task: 172 },
+    { ...DEFAULT_ROUTE, view: 'table', task: 42, table: { ...DEFAULT_TABLE_FILTERS, priority: 'high' } },
+    {
+      ...DEFAULT_ROUTE,
+      view: 'stats',
+      task: 9,
+      peeked: ['completed', 'failed'],
+      table: { ...DEFAULT_TABLE_FILTERS, search: 'timeout', order: 'asc' },
+    },
   ];
 
   it('serialize → parse is the identity on normalized routes', () => {
     for (const route of routes) {
-      expect(parseRoute(serializeRoute(route))).toEqual(route);
+      const url = serializeRoute(route);
+      const u = new URL(url, 'http://x');
+      expect(parseRoute(u.pathname, u.search)).toEqual(route);
     }
   });
 });
