@@ -264,6 +264,41 @@ describe('EpicLandCoordinator', () => {
       expect(isContentContained).toHaveBeenCalledTimes(1); // NOT re-run under backoff
     });
 
+    it('keeps the backoff when a contained-branch retire fails, so tier 2 does not re-run every poll (#218)', async () => {
+      // Regression: a content-contained branch whose retire keeps failing must
+      // stay throttled. If retireContained cleared the backoff, the heavy tier-2
+      // merge would re-run every poll — the storm class #218 targets.
+      let clock = 0;
+      const git = new FakeGit();
+      git.setContentContained('epic/42'); // content landed (squash), tip not an ancestor
+      const isContentContained = vi.spyOn(git, 'isContentContained');
+      const retire = vi.fn(async (_ref: number) => {
+        throw new Error('branch -d failed');
+      });
+      const onError = vi.fn<(msg: string) => void>();
+      const coord = new EpicLandCoordinator({
+        repoDir: '/repo',
+        git,
+        verify: async () => proceed,
+        land: async () => okLand(),
+        retire,
+        escalate: vi.fn(),
+        now: () => clock,
+        verifyBackoffMs: 60_000,
+        onError,
+      });
+      const first = await coord.submit({ ref: 42, members: members('completed') });
+      expect(first.status).toBe('landed'); // tier 2 retires (retire throws, logged non-fatal)
+      expect(isContentContained).toHaveBeenCalledTimes(1);
+      expect(retire).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining('already-contained'));
+      clock = 30_000; // still inside the backoff window
+      const second = await coord.submit({ ref: 42, members: members('completed') });
+      expect(second.status).toBe('waiting'); // deferred by the retained backoff
+      expect(isContentContained).toHaveBeenCalledTimes(1); // heavy check NOT re-run
+      expect(retire).toHaveBeenCalledTimes(1); // no per-poll retire retry storm
+    });
+
     it('retains the last verification verdict on the containment fast-path (read-model consistency, #218)', async () => {
       const git = new FakeGit();
       const { coord } = build({ git });

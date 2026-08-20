@@ -414,11 +414,18 @@ export class EpicLandCoordinator {
   /** Retire an integration branch whose work is *already contained* in the
    * default branch (either containment tier, issue #218): keep any retained
    * verification verdict (a normal land that reached here via a failed retire
-   * stays `pass`), clear only the escalation/backoff guards, retire idempotently,
-   * and report the branch tip as the landed OID. */
+   * stays `pass`), release only the sticky escalation, retire idempotently, and
+   * report the branch tip as the landed OID.
+   *
+   * Deliberately does *not* clear the verify+land backoff: a contained Epic has
+   * nothing left to land, so if the retire keeps failing (a lingering branch),
+   * the backoff must keep throttling the poll — otherwise the heavy tier-2
+   * `isContentContained` merge would re-run every poll, reviving the storm class
+   * #218 targets on the op it labels heavy. A successful retire makes the branch
+   * gone, and the next poll's `forget()` clears every guard anyway. */
   private async retireContained(target: EpicLandTarget, branch: string): Promise<EpicLandOutcome> {
     const tip = await this.git.revParse(this.repoDir, branch);
-    this.clearLandGuards(target.ref);
+    this.settledEscalated.delete(target.ref);
     await this.retireQuietly(target.ref, 'already-contained');
     return { status: 'landed', oid: tip };
   }
