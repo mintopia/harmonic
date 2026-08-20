@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SIGNAL,
+  STATE_LABEL,
+  edgePath,
+  fitTransform,
   graphEdges,
   isTerminalState,
   mapBadges,
   nodeTitle,
+  port,
+  truncate,
   visibleTasks,
   type GraphEdge,
 } from '../web/src/graph-model.js';
-import type { Task, TaskState } from '../web/src/types.js';
+import { TASK_STATES, type Task, type TaskState } from '../web/src/types.js';
 
 /** A Task fixture — only the fields the Graph reads matter; the rest are the
  * same neutral defaults board-model.test.ts uses. */
@@ -155,5 +161,80 @@ describe('map badges', () => {
     expect(badges.get(30)).toBe(1);
     expect(badges.get(52)).toBe(2);
     expect(badges.size).toBe(2);
+  });
+});
+
+describe('state-signal palette (the Signal Rule)', () => {
+  it('maps every task state to a signal colour and a label', () => {
+    for (const s of TASK_STATES) {
+      expect(SIGNAL[s]).toBeDefined();
+      expect(SIGNAL[s].color).toMatch(/^var\(--hm-/);
+      expect(SIGNAL[s].text).toMatch(/^var\(--hm-/);
+      expect(STATE_LABEL[s]).toBeTruthy();
+    }
+  });
+
+  it('keeps draft and cancelled neutral — only true states carry a hue', () => {
+    // The Signal Rule: nothing-happening (draft) and it's-over (cancelled) get
+    // no state colour, just the neutral Faint dot / Muted text.
+    const neutral = { color: 'var(--hm-faint)', text: 'var(--hm-muted)' };
+    expect(SIGNAL.draft).toEqual(neutral);
+    expect(SIGNAL.cancelled).toEqual(neutral);
+
+    // Every live state reads as something other than the neutral pair.
+    for (const s of ['blocked', 'ready', 'running', 'awaiting-review', 'completed', 'failed'] as TaskState[]) {
+      expect(SIGNAL[s]).not.toEqual(neutral);
+    }
+  });
+
+  it('speaks awaiting-review in the cobalt accent (the One Cobalt Rule)', () => {
+    expect(SIGNAL['awaiting-review']).toEqual({ color: 'var(--hm-accent)', text: 'var(--hm-accent)' });
+  });
+});
+
+describe('truncate', () => {
+  it('leaves a short string untouched and ellipsises a long one', () => {
+    expect(truncate('short', 10)).toBe('short');
+    expect(truncate('a very long title indeed', 10)).toBe('a very lo…');
+    expect(truncate('a very long title indeed', 10)).toHaveLength(10);
+  });
+});
+
+describe('fitTransform', () => {
+  it('returns the identity transform for a degenerate box or viewport', () => {
+    expect(fitTransform(0, 100, 800, 600)).toEqual({ k: 1, tx: 0, ty: 0 });
+    expect(fitTransform(100, 100, 0, 600)).toEqual({ k: 1, tx: 0, ty: 0 });
+  });
+
+  it('scales a large graph down to fit inside the padded viewport', () => {
+    const t = fitTransform(2000, 2000, 800, 600);
+    // Fits within the 48px padding on the tighter (height) axis.
+    expect(t.k).toBeCloseTo((600 - 96) / 2000, 5);
+    expect(t.k).toBeLessThan(1);
+  });
+
+  it('caps the zoom at 1.5× so a tiny graph does not balloon, and centres it', () => {
+    const t = fitTransform(100, 100, 800, 600);
+    expect(t.k).toBe(1.5);
+    // Centred: equal margin either side of the scaled content.
+    expect(t.tx).toBeCloseTo((800 - 100 * 1.5) / 2, 5);
+    expect(t.ty).toBeCloseTo((600 - 100 * 1.5) / 2, 5);
+  });
+});
+
+describe('edge geometry', () => {
+  const box = (x: number, y: number) => ({ x, y, w: 100, h: 40 });
+
+  it('ports out of the trailing edge and into the leading edge (L→R flow)', () => {
+    const n = box(10, 20);
+    expect(port(n, 'out')).toEqual({ x: 110, y: 40 }); // right-centre
+    expect(port(n, 'in')).toEqual({ x: 10, y: 40 }); // left-centre
+  });
+
+  it('draws a cubic bezier from source out-port to target in-port', () => {
+    const a = box(0, 0);
+    const b = box(200, 100);
+    // out(a) = (100, 20), in(b) = (200, 120), mid-x = 150.
+    expect(edgePath(a, b)).toBe('M100,20 C150,20 150,120 200,120');
   });
 });

@@ -1,6 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Task, TaskState } from '../types';
-import { graphEdges, mapBadges, nodeTitle, visibleTasks } from '../graph-model';
+import type { Task } from '../types';
+import {
+  SIGNAL,
+  STATE_LABEL,
+  type Transform,
+  edgePath,
+  fitTransform,
+  graphEdges,
+  mapBadges,
+  nodeTitle,
+  truncate,
+  visibleTasks,
+} from '../graph-model';
 import { layoutGraph, type LaidNode, type Layout } from '../graph-layout';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
@@ -10,72 +21,21 @@ import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
  * The read-only Dependency Graph view (issue #85, ADR 0015). It renders the
  * active Workspace's Tasks as a DAG over their Dependency edges — native and
  * mirrored alike — using elkjs for layout and hand-rolled SVG for the render.
- * The visuals are the ones settled in the prototype (#84): left-right layout,
- * card nodes with a state stripe + label + native/mirrored glyph, Map
- * membership as a per-node badge + quiet label (no container box), edges tinted
- * by their source state, and pan/zoom/fit navigation. It is read-only — a node
- * click deep-links to the Task detail, where editing already lives.
+ * The visuals follow the Deck language (issue #186) over the prototype's start
+ * (#84): left-right layout, card nodes carrying a state dot + label +
+ * native/mirrored glyph, Map membership as a per-node badge + quiet label (no
+ * container box), edges tinted by their source state, and pan/zoom/fit
+ * navigation. Elevation is the hairline ring alone — no ghost-card shadow, and
+ * every colour is a re-theming token, so it reads in both themes. It is
+ * read-only — a node click deep-links to the Task detail, where editing lives.
  */
 
-// ── State-signal palette (the Signal Rule — only true states get colour) ─────
-interface Signal {
-  color: string; // stripe / arrowhead / edge
-  text: string; // readable state-label colour
-}
-const SIGNAL: Record<TaskState, Signal> = {
-  draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
-  blocked: { color: 'var(--hm-blocked)', text: 'var(--hm-blocked)' },
-  ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
-  running: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
-  'awaiting-review': { color: 'var(--hm-accent)', text: 'var(--hm-accent)' },
-  completed: { color: 'var(--hm-accept-dot)', text: 'var(--hm-accept)' },
-  failed: { color: 'var(--hm-fail-dot)', text: 'var(--hm-fail)' },
-  cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
-};
-
-const STATE_LABEL: Record<TaskState, string> = {
-  draft: 'Draft',
-  blocked: 'Blocked',
-  ready: 'Ready',
-  running: 'Running',
-  'awaiting-review': 'Review',
-  completed: 'Done',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-};
+// The state palette (SIGNAL / STATE_LABEL) and the pan/zoom + edge geometry live
+// in graph-model.ts so they're unit-testable without a browser; the render below
+// is the only browser-bound part.
 
 const NODE_W = 196;
 const NODE_H = 60;
-
-const truncate = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
-interface Transform {
-  k: number;
-  tx: number;
-  ty: number;
-}
-
-/** Fit the content box into the viewport with padding, capped so a tiny graph
- * doesn't balloon. */
-function fitTransform(w: number, h: number, vw: number, vh: number): Transform {
-  if (w <= 0 || h <= 0 || vw <= 0 || vh <= 0) return { k: 1, tx: 0, ty: 0 };
-  const pad = 48;
-  const k = Math.min((vw - pad * 2) / w, (vh - pad * 2) / h, 1.5);
-  return { k, tx: (vw - w * k) / 2, ty: (vh - h * k) / 2 };
-}
-
-/** Centre of a node's leading (out) / trailing (in) edge for the left-right flow. */
-function port(n: LaidNode, side: 'out' | 'in') {
-  return { x: side === 'out' ? n.x + n.w : n.x, y: n.y + n.h / 2 };
-}
-
-/** A bezier from source to target, bending along the horizontal flow axis. */
-function edgePath(a: LaidNode, b: LaidNode): string {
-  const p = port(a, 'out');
-  const q = port(b, 'in');
-  const mx = (p.x + q.x) / 2;
-  return `M${p.x},${p.y} C${mx},${p.y} ${mx},${q.y} ${q.x},${q.y}`;
-}
 
 export function GraphView({
   tasks,
@@ -409,6 +369,10 @@ function CardNode({
         }
       }}
     >
+      {/* Elevation is declared once — the hairline ring (accent on hover), no
+          drop-shadow: a border+shadow is the banned ghost-card pairing, and a
+          hardcoded shadow wouldn't re-theme (DESIGN.md § 4). Dark already leans
+          on the ring; light now matches. */}
       <rect
         x={n.x}
         y={n.y}
@@ -418,13 +382,23 @@ function CardNode({
         fill="var(--hm-surface)"
         stroke={hovered ? 'var(--hm-accent)' : 'var(--hm-hairline)'}
         strokeWidth={hovered ? 1.5 : 1}
-        filter="drop-shadow(0 1px 2px rgb(20 22 45 / 0.06))"
       />
-      <rect x={n.x} y={n.y} width={4} height={n.h} rx={2} fill={sig.color} />
-      <text x={n.x + 14} y={n.y + 22} className="fill-ink" fontSize={12.5} fontWeight={600}>
-        {truncate(nodeTitle(task.prompt), 26)}
+      {/* State dot before the title — the Deck's lightest state signal
+          (DESIGN.md § 6), replacing the old left side-stripe (a pattern the Deck
+          bans). `draft` / `cancelled` render neutral, per the Signal Rule; a
+          running dot pulses (motion-safe), the same "work in flight" cue the
+          Deck row's dot carries. */}
+      <circle
+        cx={n.x + 18}
+        cy={n.y + 18}
+        r={4}
+        fill={sig.color}
+        className={task.state === 'running' ? 'motion-safe:animate-pulse' : undefined}
+      />
+      <text x={n.x + 30} y={n.y + 22} className="fill-ink" fontSize={12.5} fontWeight={600}>
+        {truncate(nodeTitle(task.prompt), 24)}
       </text>
-      <text x={n.x + 14} y={n.y + 44} fontSize={10.5} fontWeight={600} fill={sig.text} letterSpacing="0.03em">
+      <text x={n.x + 30} y={n.y + 44} fontSize={10.5} fontWeight={600} fill={sig.text} letterSpacing="0.03em">
         {STATE_LABEL[task.state].toUpperCase()}
       </text>
       {/* native = filled dot, mirrored = ring (tracker-owned). */}

@@ -1,8 +1,10 @@
 // elkjs layered layout for the Dependency Graph view (issue #85, ADR 0015).
-// We use elk ONLY for node/group *positions* (layer assignment + crossing
-// minimisation — the hard part). Edges are drawn by the view from the returned
-// node boxes, so edge styling stays ours and we avoid elk's cross-hierarchy
-// edge-coordinate frames.
+// This module is the browser-only elk adapter: it builds the elk graph, calls
+// elk for node/group *positions* (layer assignment + crossing minimisation — the
+// hard part), and hands the raw result to the pure `flattenElkLayout`
+// (graph-model.ts) for the parent-relative→absolute coordinate maths. Keeping
+// elk isolated here is what lets the flatten be unit-tested without pulling elkjs
+// into the node test project.
 //
 // Map grouping is expressed the elk-native way: same `mapRef` → a group node
 // whose children are the members. elk positions the members together; the view
@@ -10,41 +12,10 @@
 // never a container box (ADR 0015 / prototype #84).
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { Task } from './types';
-import type { GraphEdge } from './graph-model';
+import { flattenElkLayout, type GraphEdge, type Layout, type LayoutOpts } from './graph-model';
 
-export type Direction = 'DOWN' | 'RIGHT';
-
-export interface LaidNode {
-  id: number;
-  task: Task;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-export interface LaidGroup {
-  ref: number;
-  title: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-export interface Layout {
-  nodes: LaidNode[];
-  groups: LaidGroup[];
-  edges: GraphEdge[];
-  width: number;
-  height: number;
-}
-
-export interface LayoutOpts {
-  direction: Direction;
-  nodeW: number;
-  nodeH: number;
-  /** Extra top padding inside a group, so the floating map label has room. */
-  groupLabelPad?: number;
-}
+// Re-exported so existing view imports (`from './graph-layout'`) keep resolving.
+export type { Direction, LaidGroup, LaidNode, Layout, LayoutOpts } from './graph-model';
 
 const elk = new ELK();
 
@@ -103,42 +74,6 @@ export async function layoutGraph(tasks: Task[], edges: GraphEdge[], opts: Layou
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const res = await elk.layout(graph as any);
-
-  // Flatten to absolute coordinates (child coords are parent-relative).
-  const nodes: LaidNode[] = [];
-  const groups: LaidGroup[] = [];
-  for (const child of res.children ?? []) {
-    if (child.id.startsWith('m')) {
-      const ref = Number(child.id.slice(1));
-      const ox = child.x ?? 0;
-      const oy = child.y ?? 0;
-      groups.push({ ref, title: maps.get(ref)!.title, x: ox, y: oy, w: child.width ?? 0, h: child.height ?? 0 });
-      for (const gc of child.children ?? []) {
-        nodes.push(node(gc, byId, ox, oy));
-      }
-    } else {
-      nodes.push(node(child, byId, 0, 0));
-    }
-  }
-
-  return {
-    nodes,
-    groups,
-    edges,
-    width: res.width ?? 0,
-    height: res.height ?? 0,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function node(elkNode: any, byId: Map<number, Task>, ox: number, oy: number): LaidNode {
-  const id = Number(elkNode.id.slice(1));
-  return {
-    id,
-    task: byId.get(id)!,
-    x: (elkNode.x ?? 0) + ox,
-    y: (elkNode.y ?? 0) + oy,
-    w: elkNode.width ?? 0,
-    h: elkNode.height ?? 0,
-  };
+  const groupTitles = new Map([...maps.entries()].map(([ref, g]) => [ref, g.title]));
+  return flattenElkLayout(res, groupTitles, byId, edges);
 }

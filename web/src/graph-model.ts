@@ -99,3 +99,181 @@ export function mapBadges(tasks: Task[]): Map<number, number> {
   );
   return new Map(refs.map((ref, i) => [ref, i + 1]));
 }
+
+// ── View-model: the state palette + the SVG geometry the render needs ────────
+// Kept here (not in GraphView.tsx) so both are exercised without a browser: the
+// palette encodes the Deck Signal Rule, the geometry is pure maths.
+
+/** The state signal for a node, on the Deck state/signal layer. */
+export interface Signal {
+  /** State-dot / edge-stroke / arrowhead colour (a state hue, or neutral). */
+  color: string;
+  /** Readable state-label colour on the card surface. */
+  text: string;
+}
+
+/**
+ * State → signal colour, straight from the Deck state-signal family
+ * (`web/src/index.css`, DESIGN.md § 2). The Signal Rule: only true states carry
+ * a hue — `draft` and `cancelled` stay neutral (Faint dot / Muted text), nothing
+ * is happening or it's over. Tokens re-theme for free, so this reads in both
+ * themes. `awaiting-review` is the one state that speaks in the cobalt accent
+ * (the One Cobalt Rule lists awaiting-review among accent's few homes).
+ */
+export const SIGNAL: Record<TaskState, Signal> = {
+  draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
+  blocked: { color: 'var(--hm-blocked)', text: 'var(--hm-blocked)' },
+  ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
+  running: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
+  'awaiting-review': { color: 'var(--hm-accent)', text: 'var(--hm-accent)' },
+  completed: { color: 'var(--hm-accept-dot)', text: 'var(--hm-accept)' },
+  failed: { color: 'var(--hm-fail-dot)', text: 'var(--hm-fail)' },
+  cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
+};
+
+/** Short, human state word for the node's state label (uppercased at render). */
+export const STATE_LABEL: Record<TaskState, string> = {
+  draft: 'Draft',
+  blocked: 'Blocked',
+  ready: 'Ready',
+  running: 'Running',
+  'awaiting-review': 'Review',
+  completed: 'Done',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+/** Ellipsis-truncate to `n` chars (the card is too small for a full title). */
+export function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
+}
+
+/** A laid-out box; the geometry helpers only need its position and size. */
+export interface NodeBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The pan/zoom transform of the SVG viewport: scale `k`, translate `tx`/`ty`. */
+export interface Transform {
+  k: number;
+  tx: number;
+  ty: number;
+}
+
+/**
+ * Fit the content box into the viewport with padding, centred, capped at 1.5×
+ * so a tiny graph doesn't balloon. Degenerate inputs (a zero dimension, before
+ * layout or sizing) fall back to the identity transform.
+ */
+export function fitTransform(w: number, h: number, vw: number, vh: number): Transform {
+  if (w <= 0 || h <= 0 || vw <= 0 || vh <= 0) return { k: 1, tx: 0, ty: 0 };
+  const pad = 48;
+  const k = Math.min((vw - pad * 2) / w, (vh - pad * 2) / h, 1.5);
+  return { k, tx: (vw - w * k) / 2, ty: (vh - h * k) / 2 };
+}
+
+/** Centre of a node's leading (out) / trailing (in) edge for the L→R flow. */
+export function port(n: NodeBox, side: 'out' | 'in'): { x: number; y: number } {
+  return { x: side === 'out' ? n.x + n.w : n.x, y: n.y + n.h / 2 };
+}
+
+/** A bezier from source to target, bending along the horizontal flow axis. */
+export function edgePath(a: NodeBox, b: NodeBox): string {
+  const p = port(a, 'out');
+  const q = port(b, 'in');
+  const mx = (p.x + q.x) / 2;
+  return `M${p.x},${p.y} C${mx},${p.y} ${mx},${q.y} ${q.x},${q.y}`;
+}
+
+// ── Layout result: types + the pure coordinate flatten ───────────────────────
+// elk itself is called in graph-layout.ts (the browser-only adapter); the shapes
+// and the parent-relative→absolute flatten — the bug-prone part — live here so
+// they're testable without pulling elkjs into the node test project.
+
+export type Direction = 'DOWN' | 'RIGHT';
+
+/** A laid-out Task node in absolute canvas coordinates. */
+export interface LaidNode extends NodeBox {
+  id: number;
+  task: Task;
+}
+/** A laid-out Map group box (never drawn as a container — ADR 0015 — only its
+ * origin/size inform the floating label). */
+export interface LaidGroup extends NodeBox {
+  ref: number;
+  title: string;
+}
+export interface Layout {
+  nodes: LaidNode[];
+  groups: LaidGroup[];
+  edges: GraphEdge[];
+  width: number;
+  height: number;
+}
+export interface LayoutOpts {
+  direction: Direction;
+  nodeW: number;
+  nodeH: number;
+  /** Extra top padding inside a group, so the floating map label has room. */
+  groupLabelPad?: number;
+}
+
+/** The subset of an elk-laid node the flatten reads — kept structural so this
+ * module needn't depend on elkjs. A group node's id is `m<ref>`, a task's `t<id>`. */
+export interface ElkLaidNode {
+  id: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  children?: ElkLaidNode[];
+}
+export interface ElkLaidGraph {
+  children?: ElkLaidNode[];
+  width?: number;
+  height?: number;
+}
+
+function laidNode(elkNode: ElkLaidNode, byId: Map<number, Task>, ox: number, oy: number): LaidNode {
+  const id = Number(elkNode.id.slice(1));
+  return {
+    id,
+    task: byId.get(id)!,
+    x: (elkNode.x ?? 0) + ox,
+    y: (elkNode.y ?? 0) + oy,
+    w: elkNode.width ?? 0,
+    h: elkNode.height ?? 0,
+  };
+}
+
+/**
+ * Flatten elk's hierarchical result to absolute coordinates. A Map's members
+ * come back parent-relative, so each gets its group's origin added and the group
+ * becomes a `LaidGroup`; loose nodes pass through at root level. `groupTitles`
+ * carries the resolved Map title (falling back to `Map <ref>`). Pure — this is
+ * just the coordinate maths, exercised without elk.
+ */
+export function flattenElkLayout(
+  res: ElkLaidGraph,
+  groupTitles: Map<number, string>,
+  byId: Map<number, Task>,
+  edges: GraphEdge[],
+): Layout {
+  const nodes: LaidNode[] = [];
+  const groups: LaidGroup[] = [];
+  for (const child of res.children ?? []) {
+    if (child.id.startsWith('m')) {
+      const ref = Number(child.id.slice(1));
+      const ox = child.x ?? 0;
+      const oy = child.y ?? 0;
+      groups.push({ ref, title: groupTitles.get(ref) ?? `Map ${ref}`, x: ox, y: oy, w: child.width ?? 0, h: child.height ?? 0 });
+      for (const gc of child.children ?? []) nodes.push(laidNode(gc, byId, ox, oy));
+    } else {
+      nodes.push(laidNode(child, byId, 0, 0));
+    }
+  }
+  return { nodes, groups, edges, width: res.width ?? 0, height: res.height ?? 0 };
+}
