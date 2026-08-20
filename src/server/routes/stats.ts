@@ -6,6 +6,7 @@ import type { App } from '../app.js';
 import { runs, tasks } from '../../db/schema.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
+import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema } from '../schemas.js';
 
 const querySchema = z.object({
@@ -29,6 +30,10 @@ const daySeriesEntrySchema = z.object({
   totalUsd: z.number().nullable().meta({ example: 0.52 }),
   /** True when any of the day's tokens could not be priced (honest numbers: the value is a floor). */
   incomplete: z.boolean().meta({ example: false }),
+  /** Input + output tokens of runs started that day (cache excluded); 0 when no usage was reported. */
+  tokens: z.number().meta({ example: 21850 }),
+  /** Count of runs started that day, whatever their state. */
+  runs: z.number().meta({ example: 3 }),
 });
 
 const statsResponseSchema = z.object({
@@ -118,22 +123,12 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const runsByState: Record<string, number> = {};
       for (const run of rows) runsByState[run.state] = (runsByState[run.state] ?? 0) + 1;
 
-      // Cost per local day (by run start time) for the Stats chart.
-      const byDay = new Map<number, typeof rows>();
-      for (const run of rows) {
-        const d = new Date(run.startedAt);
-        d.setHours(0, 0, 0, 0);
-        const day = d.getTime();
-        const bucket = byDay.get(day);
-        if (bucket) bucket.push(run);
-        else byDay.set(day, [run]);
-      }
-      const series = [...byDay.entries()]
-        .sort(([a], [b]) => a - b)
-        .map(([day, dayRows]) => {
-          const dayCost = costOfRuns(ctx, dayRows);
-          return { day, totalUsd: dayCost?.totalUsd ?? null, incomplete: dayCost?.incomplete ?? false };
-        });
+      // Cost, input+output tokens, and run count per local day (by run start
+      // time) for the Stats chart's USD / Tokens / Runs series (issue #194).
+      // buildDaySeries re-parses/re-merges each bucket's usage rather than
+      // reusing the range-wide merge above — a deliberate cost of keeping it a
+      // pure, ctx-free seam (pricing is injected); the per-bucket work is small.
+      const series = buildDaySeries(rows, (dayRows) => costOfRuns(ctx, dayRows));
 
       // A day with runs but no priceable usage shows as unpriceable (null) in
       // the series. A range total that spans such a day is a floor, not an

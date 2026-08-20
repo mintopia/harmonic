@@ -4,9 +4,10 @@ import type { Cost } from '../types';
 import { card, displayTitle, labelType } from '../ui';
 import { orderedRunStates, subagentShare, usageBars } from '../stats-model';
 import { CostBars } from './CostBars';
+import { CumulativeCurve } from './CumulativeCurve';
 import { BarChart, type Bar } from './BarChart';
 import { Donut, type DonutSegment } from './Donut';
-import { fillSeries, type DayCost } from './costChart-model';
+import { fillSeries, METRIC_LABEL, type DayCost, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 
 /** Each run state's signal colour, for the run-states donut — the same
@@ -46,9 +47,43 @@ const RANGES: Record<string, number | null> = {
   'All time': null,
 };
 
+const METRICS: Record<string, StatMetric> = { USD: 'usd', Tokens: 'tokens', Runs: 'runs' };
+
 const fmt = (n: number) => n.toLocaleString();
 /** Summary figures compact ("18.2M"); tables keep exact numbers. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+
+/** A segmented pill toggle — the shared control behind both the time-range and
+ * the chart-metric switch, so the two can't drift in style (DESIGN.md: the
+ * accent marks the current selection; state colours stay off it). */
+function SegmentedControl<T extends string>({
+  ariaLabel,
+  options,
+  value,
+  onChange,
+}: {
+  ariaLabel: string;
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-0.5 rounded-md bg-raised p-0.5" role="group" aria-label={ariaLabel}>
+      {options.map(({ label, value: v }) => (
+        <button
+          key={label}
+          aria-pressed={v === value}
+          onClick={() => onChange(v)}
+          className={`rounded-sm px-2.5 py-1.5 transition-colors duration-150 ${
+            v === value ? 'bg-surface font-semibold text-ink shadow-card' : 'font-medium text-muted hover:text-ink'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /** The muted uppercase label above a stat figure — shared by the hero and the
  * quiet stat row so the two can't drift (Label role, DESIGN.md § 3). */
@@ -75,6 +110,8 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const [range, setRange] = useState('7 days');
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Local only — re-plots the already-fetched series in place, never refetches.
+  const [metric, setMetric] = useState<StatMetric>('usd');
 
   useEffect(() => {
     if (workspaceId === null) return;
@@ -139,20 +176,12 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h1 className={displayTitle}>Usage &amp; statistics</h1>
         <div className="flex-1" />
-        <div className="flex gap-0.5 rounded-md bg-raised p-0.5" role="group" aria-label="Time range">
-          {Object.keys(RANGES).map((r) => (
-            <button
-              key={r}
-              aria-pressed={r === range}
-              onClick={() => setRange(r)}
-              className={`rounded-sm px-2.5 py-1.5 transition-colors duration-150 ${
-                r === range ? 'bg-surface font-semibold text-ink shadow-card' : 'font-medium text-muted hover:text-ink'
-              }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          ariaLabel="Time range"
+          options={Object.keys(RANGES).map((r) => ({ label: r, value: r }))}
+          value={range}
+          onChange={setRange}
+        />
       </div>
 
       {error && (
@@ -194,8 +223,18 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
           {filled.length >= 2 && (
             <section className={`${card} mb-4 p-5`}>
-              <h2 className="mb-3 text-title font-semibold">Cost per day</h2>
-              <CostBars series={filled} />
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <h2 className="text-title font-semibold">{METRIC_LABEL[metric]} per day</h2>
+                <div className="flex-1" />
+                <SegmentedControl
+                  ariaLabel="Chart metric"
+                  options={Object.entries(METRICS).map(([label, m]) => ({ label, value: m }))}
+                  value={metric}
+                  onChange={setMetric}
+                />
+              </div>
+              <CostBars series={filled} metric={metric} />
+              <CumulativeCurve series={filled} metric={metric} />
             </section>
           )}
 

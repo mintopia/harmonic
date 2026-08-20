@@ -1,18 +1,21 @@
 import { usd } from '../cost';
-import { costFloor, type DayCost } from './costChart-model';
+import { costFloor, formatMetric, metricValue, METRIC_LABEL, type DayCost, type StatMetric } from './costChart-model';
 
 const dateLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { weekday: 'short' });
 
 /**
- * Cost per day as a compact bar chart (DESIGN.md § Charts): one cobalt series,
- * a friendly 1/2/5×10ⁿ ceiling, ≤~12 date labels. Honest numbers — an
- * unpriceable day is a hollow dashed column (no value asserted), never a zero
- * bar; a day whose cost is a floor tooltips with a "≥". Replaces the old
- * full-width area chart with something that reads at a glance and stays small.
+ * Cost/tokens/runs per day as a compact bar chart (DESIGN.md § Charts): one
+ * cobalt series, a friendly 1/2/5×10ⁿ ceiling, ≤~12 date labels. Honest
+ * numbers — for the usd metric an unpriceable day is a hollow dashed column
+ * (no value asserted), never a zero bar, and a floored day tooltips with a
+ * "≥". Tokens/runs are always concrete counts, so every day plots as a solid
+ * bar with no dashed/floor treatment. Replaces the old full-width area chart
+ * with something that reads at a glance and stays small.
  */
-export function CostBars({ series }: { series: DayCost[] }) {
-  const max = Math.max(...series.map((s) => s.totalUsd ?? 0), 0.01);
+export function CostBars({ series, metric = 'usd' }: { series: DayCost[]; metric?: StatMetric }) {
+  const values = series.map((s) => metricValue(s, metric) ?? 0);
+  const max = Math.max(...values, metric === 'usd' ? 0.01 : 1);
   const pow = 10 ** Math.floor(Math.log10(max));
   const ceil = [1, 2, 5, 10].map((m) => m * pow).find((v) => v >= max) ?? max;
 
@@ -23,23 +26,32 @@ export function CostBars({ series }: { series: DayCost[] }) {
   const last = series[series.length - 1];
   if (!first || !last) return null;
 
+  const totalLabel =
+    metric === 'usd'
+      ? `totalling ${isFloor ? 'at least ' : ''}${usd(total)}`
+      : `totalling ${formatMetric(
+          series.reduce((sum, s) => sum + (metricValue(s, metric) ?? 0), 0),
+          metric,
+        )} ${metric}`;
+
   return (
-    <figure
-      role="img"
-      aria-label={`Cost per day, ${dateLabel(first.day)} to ${dateLabel(last.day)}, totalling ${isFloor ? 'at least ' : ''}${usd(total)}.`}
-    >
+    <figure role="img" aria-label={`${METRIC_LABEL[metric]} per day, ${dateLabel(first.day)} to ${dateLabel(last.day)}, ${totalLabel}.`}>
       <div className="flex h-28 items-end gap-1">
         {series.map((s) => {
-          const title = `${dateLabel(s.day)} · ${s.totalUsd === null ? 'unpriced' : `${s.incomplete ? '≥' : ''}${usd(s.totalUsd)}`}`;
-          const h = s.totalUsd === null ? 100 : (s.totalUsd / ceil) * 100;
+          const v = metricValue(s, metric);
+          const unpriceable = metric === 'usd' && v === null;
+          const title = `${dateLabel(s.day)} · ${
+            metric === 'usd' && v === null ? 'unpriced' : `${metric === 'usd' && s.incomplete ? '≥' : ''}${formatMetric(v, metric)}`
+          }`;
+          const h = unpriceable ? 100 : ((v ?? 0) / ceil) * 100;
           return (
             <div key={s.day} className="flex h-full flex-1 items-end" title={title}>
-              {s.totalUsd === null ? (
+              {unpriceable ? (
                 <div className="h-full w-full rounded-sm border border-dashed border-edge" />
               ) : (
                 <div
                   className="w-full rounded-sm bg-accent"
-                  style={{ height: `${s.totalUsd === 0 ? 0 : Math.max(3, h)}%` }}
+                  style={{ height: `${(v ?? 0) === 0 ? 0 : Math.max(3, h)}%` }}
                 />
               )}
             </div>

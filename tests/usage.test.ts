@@ -480,11 +480,16 @@ describe('usage collection and statistics', () => {
     expect(all.body.totals.inputTokens).toBe(5);
     expect(all.body.toolCalls).toEqual({ Bash: 1 });
     expect(all.body.runCount).toBe(1);
-    // Per-day chart series: one bucket at today's local midnight.
+    // Per-day chart series: one bucket at today's local midnight, carrying
+    // cost, input+output tokens (cache excluded), and run count (issue #194).
     const midnight = new Date();
     midnight.setHours(0, 0, 0, 0);
     expect(all.body.series).toHaveLength(1);
     expect(all.body.series[0].day).toBe(midnight.getTime());
+    expect(all.body.series[0].tokens).toBe(12); // 5 input + 7 output
+    expect(all.body.series[0].runs).toBe(1);
+    expect(all.body.series[0]).toHaveProperty('totalUsd');
+    expect(all.body.series[0]).toHaveProperty('incomplete');
 
     const empty = await server.api('GET', `/api/stats?from=${Date.now() + 60_000}&to=${Date.now() + 120_000}`);
     expect(empty.body.runCount).toBe(0);
