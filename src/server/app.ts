@@ -45,6 +45,7 @@ import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
+import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
@@ -81,6 +82,10 @@ export interface AppOptions {
   /** Work Context lease heartbeat/sweep cadence overrides (issue #122); absent
    * uses production defaults (~30s heartbeat, ~60s sweep). */
   leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
+  /** Event-loop stall monitor overrides (issue #200). `enabled: false` turns
+   * the probe off (tests keep it off to avoid stall-log noise); otherwise
+   * production defaults apply (~1s probe, 200ms stall threshold). */
+  reliabilityTuning?: { eventLoop?: { enabled?: boolean; probeMs?: number; stallMs?: number } } | undefined;
   /** Test-only agent-critic drive override (issue #164): a fake
    * {@link CriticHarnessDrive} the wired critic uses instead of spawning a real
    * harness, so an end-to-end Runner test can script a critic verdict. Absent →
@@ -496,6 +501,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     }
   }, opts.leaseTuning?.sweepMs ?? 60_000);
   leaseSweep.unref?.();
+  // Event-loop stall monitor (issue #200 / ADR-0029 §5): synchronous SQLite
+  // shares the loop with every request, so a slow query or a non-yielding loop
+  // freezes the whole server. This probes loop delay and logs a stall as a
+  // legible event instead of a silent hang. Constructed here but *started* in
+  // the onListen hook below, once all synchronous boot work — migrate, reconcile,
+  // drain, and the route/OpenAPI schema registration that follows — is done, so
+  // startup CPU is never misread as a stall. Off in tests via reliabilityTuning.
+  const eventLoopTuning = opts.reliabilityTuning?.eventLoop;
+  const loopMonitor =
+    eventLoopTuning?.enabled === false
+      ? undefined
+      : new EventLoopMonitor({ probeMs: eventLoopTuning?.probeMs, stallMs: eventLoopTuning?.stallMs });
   // The advisory-assignment coordinator (issue #32) is per-Workspace (issue
   // #45); the Auto-Runner routes a mirrored Task's pick filter + claim step to
   // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
@@ -587,6 +604,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runner.shutdown();
     conversationDriver.shutdown();
     clearInterval(leaseSweep);
+    loopMonitor?.stop();
   });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
@@ -804,6 +822,9 @@ not resolved yet.`;
     }
     autoRunner.poke();
     await trackerManager.sync();
+    // Boot is complete and the server is listening — begin stall monitoring now
+    // so the first probe measures steady-state loop health, not startup CPU.
+    loopMonitor?.start();
   });
   await app.register(wsRoutes, { prefix: '/api' });
 
