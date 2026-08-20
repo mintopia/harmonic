@@ -11,6 +11,7 @@ import {
   labelType,
 } from '../ui';
 import type { ContinuationPreview } from '../types';
+import { taskLabel } from '../id-format.js';
 
 /**
  * The review gate's Reject path. Feedback is saved on the run either way; the
@@ -83,7 +84,9 @@ export function RejectDialog({
       // Acknowledge the completed gate action naming its outcome (issue #98).
       const suffix = continuation ? ` (${continuation})` : '';
       toastSuccess(
-        retry ? `Task #${taskId} rejected — re-attempt created${suffix}` : `Task #${taskId} rejected — marked failed`,
+        retry
+          ? `${taskLabel(taskId)} rejected — re-attempt created${suffix}`
+          : `${taskLabel(taskId)} rejected — marked failed`,
       );
       onDone();
     } catch (e) {
@@ -93,9 +96,9 @@ export function RejectDialog({
   };
 
   return (
-    <Modal label={`Reject task #${taskId}`} onClose={onClose} className="max-w-md">
+    <Modal label={`Reject ${taskLabel(taskId)}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${panelTitle} mb-1`}>Reject task #{taskId}</h2>
+        <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)}</h2>
         <p className="mb-4 text-muted">
           Feedback is saved on the run. Create a re-attempt to spawn a new task linked to this one, with the notes added
           to its prompt — or mark it failed to stop here.

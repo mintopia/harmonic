@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { Task } from '../types';
 import { Modal } from './Modal';
 import { btnGhost, field, panelTitle, labelType } from '../ui';
+import { taskKey, taskLabel } from '../id-format.js';
 
 /**
  * Give a failed task feedback and send it back for another attempt.
@@ -45,13 +46,13 @@ export function ReattemptDialog({
   };
 
   return (
-    <Modal label={`Re-attempt task #${task.id}`} onClose={onClose} className="max-w-md">
+    <Modal label={`Re-attempt ${taskLabel(task.id)}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${panelTitle} mb-1`}>Re-attempt task #{task.id}</h2>
+        <h2 className={`${panelTitle} mb-1`}>Re-attempt {taskLabel(task.id)}</h2>
         <p className="mb-4 text-muted">
           {mirrored
-            ? `Re-runs #${task.id} in place, keeping it linked to its tracker issue. Your feedback is carried into the next attempt.`
-            : `Creates a new task linked to #${task.id}, copying its setup. Feedback is added to the retry’s prompt and kept in full; the original is left as-is.`}
+            ? `Re-runs ${taskKey(task.id)} in place, keeping it linked to its tracker issue. Your feedback is carried into the next attempt.`
+            : `Creates a new task linked to ${taskKey(task.id)}, copying its setup. Feedback is added to the retry’s prompt and kept in full; the original is left as-is.`}
         </p>
         <label className={`${labelType} mb-1 block text-muted`} htmlFor="reattempt-feedback">
           Feedback (optional)

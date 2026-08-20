@@ -39,7 +39,7 @@ Resolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue
  */
 export const UNATTENDED_REMINDER = `## Running unattended
 
-You are Harmonic Task #{taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call \`finish_task\` (taskId={taskId}). If you're blocked on a decision only a human can make, call \`escalate_task\` (taskId={taskId}) with a reason instead of guessing or waiting.`;
+You are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call \`finish_task\` (taskId={taskId}). If you're blocked on a decision only a human can make, call \`escalate_task\` (taskId={taskId}) with a reason instead of guessing or waiting.`;
 
 /**
  * The default Continue Prompt, sent when an auto-driven Run ends its turn
@@ -48,7 +48,7 @@ You are Harmonic Task #{taskId} — no human is watching this turn. Ending a tur
  * it, so this carries only the "pick it back up" nudge. `{taskId}` is filled
  * per Task.
  */
-export const DEFAULT_CONTINUE_PROMPT = `Your last turn ended but Task #{taskId} isn't finished — you haven't called \`finish_task\`. Pick the work back up and drive it to completion now; don't idle-wait, then call \`finish_task\` when it's done.`;
+export const DEFAULT_CONTINUE_PROMPT = `Your last turn ended but Task {taskId} isn't finished — you haven't called \`finish_task\`. Pick the work back up and drive it to completion now; don't idle-wait, then call \`finish_task\` when it's done.`;
 
 /**
  * The default Task Prompt template for a **native** (non-mirrored) Run. The

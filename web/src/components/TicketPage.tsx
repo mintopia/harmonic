@@ -19,6 +19,7 @@ import { RunRail } from './ticket/RunRail';
 import { Gate } from './ticket/Gate';
 import { card, chip, displayTitle, labelType, sectionLabel, selectField, stateChip, touchTargetInline } from '../ui';
 import { toastError } from '../toast';
+import { taskKey, ticketIdentity } from '../id-format.js';
 
 const metaChip = `${chip} bg-raised text-muted`;
 
@@ -67,10 +68,10 @@ function Dependencies({ task }: { task: Task }) {
         {current.dependsOn.length === 0 && <span className="text-muted">nothing</span>}
         {current.dependsOn.map((depId) => (
           <span key={depId} className={`flex items-center gap-1 ${metaChip} tabular-nums`}>
-            #{depId}
+            {taskKey(depId)}
             {editable && (
               <button
-                aria-label={`Remove dependency #${depId}`}
+                aria-label={`Remove dependency ${taskKey(depId)}`}
                 className="text-muted hover:text-fail"
                 onClick={() => act(() => api.removeDependency(task.id, depId))}
               >
@@ -93,7 +94,7 @@ function Dependencies({ task }: { task: Task }) {
             <option value="">+ add…</option>
             {candidates.map((t) => (
               <option key={t.id} value={t.id}>
-                #{t.id} {t.prompt.slice(0, 40)}
+                {taskKey(t.id)} {t.prompt.slice(0, 40)}
               </option>
             ))}
           </select>
@@ -103,7 +104,7 @@ function Dependencies({ task }: { task: Task }) {
         {current.dependents.length === 0 && <span className="text-muted">nothing</span>}
         {current.dependents.map((id) => (
           <span key={id} className={`${metaChip} tabular-nums`}>
-            #{id}
+            {taskKey(id)}
           </span>
         ))}
         {current.dependents.length > 0 && current.state !== 'completed' && (
@@ -519,9 +520,9 @@ function Brief({ task }: { task: Task }) {
       )}
       {(task.reattemptOf !== null || task.reattempts.length > 0) && (
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-small tabular-nums text-muted">
-          {task.reattemptOf !== null && <span>↻ re-attempt of #{task.reattemptOf}</span>}
+          {task.reattemptOf !== null && <span>↻ re-attempt of {taskKey(task.reattemptOf)}</span>}
           {task.reattempts.length > 0 && (
-            <span>re-attempted as {task.reattempts.map((id) => `#${id}`).join(', ')}</span>
+            <span>re-attempted as {task.reattempts.map((id) => taskKey(id)).join(', ')}</span>
           )}
         </div>
       )}
@@ -754,7 +755,7 @@ export function TicketPage({
 
   // Link the lease skip-reason to its holder (issue #176): the server string
   // names the Task holding the Work Context but gave the operator nothing to
-  // click. `null` when the string doesn't contain a `task #<id>` to link.
+  // click. `null` when the string doesn't contain a `task <id>` to link.
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
 
   // The one-time progress-nudge and the run-level next-attempt lookup are
@@ -784,7 +785,7 @@ export function TicketPage({
           Deck
         </button>
         <span className="text-small text-faint">
-          <b className="font-medium text-muted">Deck</b> / task {task.id}
+          <b className="font-medium text-muted">Deck</b> / {ticketIdentity(task.id, task.trackerRef)}
         </span>
       </div>
 
@@ -834,12 +835,12 @@ export function TicketPage({
               <div className="mt-2 text-small text-muted">
                 <span className={labelType}>Skipped</span> —{' '}
                 {/* Link the holder ref to its Task (the lease owner). Split on the
-                    literal `task #<id>` the model already parsed, so the `task #…`
+                    literal `task <id>` the model already parsed, so the `task …`
                     format lives in exactly one place (skip-reason-model). */}
                 {skipHolderId === null
                   ? task.skipReason
                   : (() => {
-                      const marker = `task #${skipHolderId}`;
+                      const marker = `task ${skipHolderId}`;
                       const [before, ...after] = task.skipReason.split(marker);
                       return (
                         <>

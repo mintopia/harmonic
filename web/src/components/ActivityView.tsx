@@ -54,6 +54,7 @@ import {
 } from '../conversation-permissions-model';
 import { computeContextUsage, formatContextUsage } from '../conversation-telemetry-model';
 import { ProcessDrillIn } from './ProcessDrillIn';
+import { issueRef, taskKey, taskLabel } from '../id-format.js';
 
 /** Compact figures ("18.2k") — the same treatment Stats and the telemetry strip use. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
@@ -202,7 +203,7 @@ function RowActions({
     if (stop.kind === 'run') {
       // Acknowledge the cancel naming what it hit (issue #98); success otherwise
       // only shows as the row leaving the live fleet.
-      api.cancelTask(stop.taskId).then(() => toastSuccess(`Task #${stop.taskId} cancelled`), toastError);
+      api.cancelTask(stop.taskId).then(() => toastSuccess(`${taskLabel(stop.taskId)} cancelled`), toastError);
     } else {
       fail(api.endConversation(stop.conversationId));
     }
@@ -221,7 +222,7 @@ function RowActions({
           title="Open the tracker issue"
           className={`${touchTargetInline} text-small ${btnQuiet}`}
         >
-          {process.trackerRef != null ? `#${process.trackerRef}` : 'Ticket'} ↗
+          {process.trackerRef != null ? issueRef(process.trackerRef) : 'Ticket'} ↗
         </a>
       )}
       {resolve?.kind === 'permission' && (
@@ -499,7 +500,7 @@ function LeaseRow({ lease, onChanged }: { lease: LeaseDiagnostic; onChanged: () 
         <div className="truncate text-small text-ink">
           {lease.ownerTaskId != null ? (
             <>
-              #{lease.ownerTaskId} {lease.ownerTaskTitle}
+              {taskKey(lease.ownerTaskId)} {lease.ownerTaskTitle}
             </>
           ) : (
             <Empty />

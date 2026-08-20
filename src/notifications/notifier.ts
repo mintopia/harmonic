@@ -36,7 +36,7 @@ const summarize = (event: NotificationEvent, task?: TaskRow): string => {
     'task.failed': 'FAILED',
     'queue.idle': 'queue idle',
   };
-  return `Harmonic: task #${task.id} ${label[event]} — "${excerpt}"`;
+  return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;
 };
 
 export class Notifier {

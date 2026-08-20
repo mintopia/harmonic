@@ -223,6 +223,8 @@ Three working weights: 400 body / 500–550 UI emphasis / 650–750 headings. `t
 ### Named rules
 **The Mono Is Code Rule.** Monospace appears *only* where the operator reads genuine code or a code-identity token: file paths, shell commands, branch/epic refs, commit oids, tool-call targets, session ids, inline code. **Everything read as language or as a plain figure is sans** — model names, harness names, costs, token counts, ordinary Task ids, timestamps, statuses, telemetry — all sans with `tabular-nums`. A whole metadata line in mono is a regression (the Ledger's core mistake). Run-event timestamps beside code stay mono only where they read as log lines within a stream; a standalone timestamp is sans.
 
+**The Two Number Spaces Rule.** A task id and a tracker issue ref are different number spaces that collide as integers. A task id is never a bare `#n` — it reads `T-<id>` in compact slots (Deck rows, graph nodes, table cells) and `Task <id>` in prose and dialog titles; `#<n>` is reserved for a tracker (GitHub) issue ref, GitHub's own convention. Where both meet (the Ticket header) both show, disambiguated: `Task 174 · issue #185` (issue #192). The single formatter is `web/src/id-format.ts`.
+
 **The Three Weights Rule.** 400 / 500–550 / 650 (750 for the Display title). If hierarchy needs more, fix the size or the colour layer, not the weight ramp.
 
 ## 4. Elevation & grouping
@@ -249,10 +251,10 @@ The Deck replaces the kanban Board. It is **full-width, a single centered column
 
 **No drag-between-columns.** Agent Tasks change state by executing, not by being dragged; the Deck row carries its state's forward action as a button (`Run now`, `Take over`, `Force-land`, `Open`). Editing happens on the Ticket, never by drop.
 
-**Rows are the summary.** A Deck row is one glanceable line: a state dot, the id (faint mono), the title (loud), at most two quiet facts (harness·model, or an escalation reason), and a right-aligned signal (phase pill, verdict, or the state's action). Clicking a row opens the full Ticket — the Deck never tries to be the detail.
+**Rows are the summary.** A Deck row is one glanceable line: a state dot, the id (faint mono — a native Task reads `T-<id>`, a mirrored one its tracker issue `#<ref>`), the title (loud), at most two quiet facts (harness·model, or an escalation reason), and a right-aligned signal (phase pill, verdict, or the state's action). Clicking a row opens the full Ticket — the Deck never tries to be the detail.
 
 ### The Ticket page (its own route)
-Reviewing a Task, or reading a Run in full, is a **full-width page you navigate into** (crumb: `Deck / task 172`, with a back control), not a docked panel. It separates **task-level** facts (constant) from **run-level** facts (per attempt):
+Reviewing a Task, or reading a Run in full, is a **full-width page you navigate into** (crumb: `Deck / Task 172 · issue #185` for a mirrored Task showing both identities; a native Task shows just `Deck / Task 172`, with a back control), not a docked panel. It separates **task-level** facts (constant) from **run-level** facts (per attempt):
 - **Task-level header:** Display title + state chip; one meta line (origin · priority · isolation · base branch · dependencies-met · notify); a **Brief** panel holding the prompt (Markdown for mirrored issues, plain for native).
 - **Run rail:** a row of run chips — `✗ Run 1 failed · ⟲ Run 2 rejected · ● Run 3 awaiting` — each showing state + cost + duration, selected chip on Accent Tint. Selecting a run switches the whole detail below; a note names session continuity ("Run 3 continued Run 2's session · warm").
 - **Run-level detail** (per selected run): a phase stepper for *this* run (a failed run stops with a rose ✗ at the phase it died in); a two-column body — **main** (underline tabs Output / Changes) and a **sidebar** (Verification card, then a This-run card: session warmth, usage, cost-by-model). A historical run leads with a result banner (failed: reason; rejected: reason + the feedback carried forward) and is read-only.

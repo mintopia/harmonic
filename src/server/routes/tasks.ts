@@ -163,7 +163,7 @@ const taskSchema = taskWithDepsSchema
     runId: z.number().nullable().meta({ example: 41 }),
     /** The transient House-Rule reason (ADR-0022, issue #120) this ready Task is
      * being skipped for a held Work Context lease; null when not skipped (issue #171). */
-    skipReason: z.string().nullable().meta({ example: 'Work Context held by task #12 (running)' }),
+    skipReason: z.string().nullable().meta({ example: 'Work Context held by task 12 (running)' }),
   })
   .meta({ id: 'Task' });
 

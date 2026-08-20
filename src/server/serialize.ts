@@ -154,7 +154,7 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       runId,
       conversationId: null,
       taskId,
-      title: firstLineTitle(task.prompt) ?? `Task #${taskId}`,
+      title: firstLineTitle(task.prompt) ?? `Task ${taskId}`,
       workspaceId: atRestWorkspaceId(task.workspaceId),
       workspaceName: workspaceNameOf(ctx, task.workspaceId),
       harness: task.harness,

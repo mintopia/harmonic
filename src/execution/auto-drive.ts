@@ -188,7 +188,7 @@ export class AutoDrive {
       const { title } = splitTitleBody(task.prompt);
       await adapter.close(
         { number: task.trackerRef, title, state: 'open' },
-        `Completed and landed by Harmonic (task #${task.id}).`,
+        `Completed and landed by Harmonic (task ${task.id}).`,
       );
       return true;
     } catch {
@@ -210,7 +210,7 @@ export class AutoDrive {
       const { title } = splitTitleBody(task.prompt);
       await adapter.reopen(
         { number: task.trackerRef, title, state: 'closed' },
-        `Reopened by Harmonic: the ticket was closed before verification and landing completed (task #${task.id}).`,
+        `Reopened by Harmonic: the ticket was closed before verification and landing completed (task ${task.id}).`,
       );
       return true;
     } catch {

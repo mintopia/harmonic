@@ -24,6 +24,7 @@ import {
 } from '../ui';
 import { toastError, toastLandOutcome } from '../toast';
 import { fetchTasks, filterBySearch, paginate, TABLE_PAGE_SIZE } from '../table-model';
+import { taskKey } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { ArmedButton } from './ArmedButton';
 import { Icon } from './Icon';
@@ -195,20 +196,20 @@ export function TableView({
       <div role="cell" className="flex items-center justify-end gap-1.5 tabular-nums text-muted">
         <span aria-hidden="true" className={stateDot(task.state)} />
         <span className="sr-only">Id: </span>
-        {task.id}
+        {taskKey(task.id)}
       </div>
       <div role="cell" className="min-w-0 pr-2">
         {task.reattemptOf !== null && (
           <button
             type="button"
-            title={`Open the original, task #${task.reattemptOf}`}
+            title={`Open the original, task ${task.reattemptOf}`}
             className="mb-1 inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted transition-colors duration-150 hover:text-ink"
             onClick={(e) => {
               e.stopPropagation();
               openOriginal(task.reattemptOf!);
             }}
           >
-            ↻ re-attempt of <span className="tabular-nums normal-case">#{task.reattemptOf}</span>
+            ↻ re-attempt of <span className="tabular-nums normal-case">{taskKey(task.reattemptOf)}</span>
           </button>
         )}
         <button

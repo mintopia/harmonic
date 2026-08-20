@@ -4,6 +4,7 @@ import type { Task } from '../types';
 import { toastSuccess } from '../toast';
 import { Modal } from './Modal';
 import { btnDestructive, panelTitle } from '../ui';
+import { taskLabel } from '../id-format.js';
 
 /**
  * The hard-delete confirm (issue #162, ADR-0025). Deliberately its own dialog
@@ -36,7 +37,7 @@ export function DeleteTaskDialog({
     setError(null);
     try {
       await api.deleteTask(task.id);
-      toastSuccess(`Task #${task.id} deleted`);
+      toastSuccess(`${taskLabel(task.id)} deleted`);
       onDone();
     } catch (e) {
       setBusy(false);
@@ -45,9 +46,9 @@ export function DeleteTaskDialog({
   };
 
   return (
-    <Modal label={`Delete task #${task.id}`} onClose={onClose} className="max-w-md">
+    <Modal label={`Delete ${taskLabel(task.id)}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${panelTitle} mb-2 pr-6`}>Delete task #{task.id}</h2>
+        <h2 className={`${panelTitle} mb-2 pr-6`}>Delete {taskLabel(task.id)}</h2>
         <p className="text-muted">
           Delete this task permanently? Its runs and history will be removed. This cannot be undone.
         </p>

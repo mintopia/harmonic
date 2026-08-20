@@ -38,7 +38,7 @@ For the chat and email channel types, Harmonic builds a human-readable
 summary text:
 
 ```
-Harmonic: task #<id> <label> — "<excerpt>"
+Harmonic: task <id> <label> — "<excerpt>"
 ```
 
 where the prompt excerpt is truncated to 80 characters. For `queue.idle`

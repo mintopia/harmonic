@@ -6,6 +6,7 @@ import { ModelCombobox } from './ModelCombobox';
 import { InheritField } from './InheritField';
 import { inheritSource } from './inherit-field-model';
 import { btnGhost, btnPrimary, field, panelTitle, labelType, selectField } from '../ui';
+import { taskLabel } from '../id-format.js';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
@@ -88,9 +89,9 @@ export function TaskForm({
   };
 
   return (
-    <Modal label={task ? `Edit task #${task.id}` : 'New task'} onClose={onClose} className="max-w-lg">
+    <Modal label={task ? `Edit ${taskLabel(task.id)}` : 'New task'} onClose={onClose} className="max-w-lg">
       <form onSubmit={submit} className="p-5">
-        <h2 className={`${panelTitle} mb-4`}>{task ? `Edit task #${task.id}` : 'New task'}</h2>
+        <h2 className={`${panelTitle} mb-4`}>{task ? `Edit ${taskLabel(task.id)}` : 'New task'}</h2>
 
         <div className="mb-3">
           <label className={label} htmlFor="task-prompt">Prompt</label>

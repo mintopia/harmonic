@@ -8,6 +8,7 @@ import {
   rosterLanes,
 } from '../epic-model';
 import { deckSections, startOfDay, type RecentSummary } from '../deck-model';
+import { issueRef, taskKey } from '../id-format.js';
 import { runningReadout, type RunningReadout } from '../board-model';
 import { api } from '../api';
 import { subscribe } from '../ws';
@@ -38,10 +39,13 @@ import {
  * full Ticket page. The pure section model lives in `deck-model.ts`.
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** A mirrored Task reads by its tracker issue number; a native Task by its id
- * (DESIGN.md § 6 — "faint mono id"). */
+/** A mirrored Task reads by its tracker issue number; a native Task by its id,
+ * `T-<id>` (DESIGN.md § 6 — "faint mono id"; a native task id is never a bare
+ * number). */
 function rowId(task: Task): string {
-  return task.origin === 'mirrored' && task.trackerRef != null ? `#${task.trackerRef}` : `${task.id}`;
+  return task.origin === 'mirrored' && task.trackerRef != null
+    ? issueRef(task.trackerRef)
+    : taskKey(task.id);
 }
 
 /** One quiet identity fact: harness · model, plus a non-direct isolation
@@ -324,7 +328,7 @@ function EpicBand({
   const stuck = rosterLanes(epic).stuck;
   const verification = epic.verification.status;
   const blockingNote =
-    epic.land.held ?? (stuck.length > 0 ? `#${stuck[0]!.ref} blocked` : null);
+    epic.land.held ?? (stuck.length > 0 ? `${issueRef(stuck[0]!.ref)} blocked` : null);
 
   return (
     <div className={panel}>

@@ -264,7 +264,7 @@ export class AutoRunner {
         if (holder) {
           this.contextSkipReasons.set(
             t.id,
-            `Work Context held by task #${holder.id} (${holder.state})`,
+            `Work Context held by task ${holder.id} (${holder.state})`,
           );
           if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
           return false;

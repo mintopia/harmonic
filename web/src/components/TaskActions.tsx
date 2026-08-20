@@ -10,6 +10,7 @@ import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
+import { taskLabel } from '../id-format.js';
 
 /** Review-gate verdict summary tone (issue #174 FIX 1) — text-only, unlike
  * VerificationCard's OUTCOME_TONE chips, since this lives in a one-line
@@ -120,7 +121,7 @@ export function TaskActions({
   const button = (action: TaskAction) => {
     switch (action) {
       case 'accept': {
-        const onConfirm = actDone(() => api.acceptTask(task.id), `Task #${task.id} accepted — merging`);
+        const onConfirm = actDone(() => api.acceptTask(task.id), `${taskLabel(task.id)} accepted — merging`);
         // Gate-arm rationale (issue #174 FIX 1): a block/escalate verdict is
         // otherwise invisible at this footer, so Accept alone could merge it
         // blind. Arming only when the verdict is red keeps the common case
@@ -171,7 +172,7 @@ export function TaskActions({
           <CancelButton
             key={action}
             className={btnQuietDestructive}
-            onConfirm={actDone(() => api.cancelTask(task.id), `Task #${task.id} cancelled`)}
+            onConfirm={actDone(() => api.cancelTask(task.id), `${taskLabel(task.id)} cancelled`)}
           />
         );
       case 'uncancel':

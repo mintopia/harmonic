@@ -231,7 +231,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
     expect(started).not.toContain(blocked.id);
     expect(tasks.get(blocked.id).state).toBe('ready'); // stays on the frontier
-    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${occupant.id} (running)`);
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (running)`);
     expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
   });
 
@@ -248,7 +248,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
     expect(started).not.toContain(blocked.id);
     expect(tasks.get(blocked.id).state).toBe('ready');
-    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${reviewing.id} (awaiting-review)`);
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${reviewing.id} (awaiting-review)`);
   });
 
   it('exempts worktree-mode Tasks — a unique key per Run means they parallelize even off a shared base dir', async () => {
@@ -284,7 +284,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     // Task is simply absent, not reordering anything.
     expect(started).toEqual([high.id, normalFirst.id, normalSecond.id, low.id]);
     expect(started).not.toContain(blocked.id);
-    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task #${occupant.id} (running)`);
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (running)`);
   });
 
   it('waitingSince (issue #125): starts a clock on the first House-Rule-blocked pass and clears it once unblocked', async () => {

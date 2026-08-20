@@ -247,7 +247,7 @@ export interface Task {
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
   /** Transient House-Rule reason a `ready` Task is being skipped for a held
-   * Work Context lease (issue #171, e.g. "Work Context held by task #12
+   * Work Context lease (issue #171, e.g. "Work Context held by task 12
    * (running)"); null normally, including once the Task starts running. */
   skipReason: string | null;
 }

@@ -13,6 +13,7 @@ import {
   visibleTasks,
 } from '../graph-model';
 import { layoutGraph, type LaidNode, type Layout } from '../graph-layout';
+import { taskKey } from '../id-format.js';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
 import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
@@ -411,7 +412,7 @@ function CardNode({
         strokeWidth={1.5}
       />
       <text x={n.x + n.w - 14} y={n.y + 44} className="fill-faint" fontSize={10} textAnchor="end">
-        #{task.id}
+        {taskKey(task.id)}
       </text>
       {/* Map badge: the membership signal that survives elk's dependency layering. */}
       {badge != null && (

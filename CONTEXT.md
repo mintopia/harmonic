@@ -74,6 +74,14 @@ order; ties break FIFO by creation time.
 Permanently remove a Task, along with its Runs, Usage, and Dependency edges — distinct from Cancel, which keeps the record. Allowed only when the Task is not running. A native Task is removed outright; a mirrored Task is Dismissed (see below) so a re-poll cannot resurrect it. Its former dependents are re-derived (blocked → ready). Governed by ADR-0025.
 _Avoid_: cancel (Cancel keeps the record; Delete removes it).
 
+### Task id vs tracker ref
+
+**Task id**:
+The database primary key of a Task — what `finish_task` / `escalate_task` take as `taskId` and `GET /api/tasks/:id` uses. Rendered `T-<id>` in compact identifier slots (Deck row, graph node, table cell) and `Task <id>` in prose and dialog titles, never a bare `#`. The formatter lives in `web/src/id-format.ts`.
+
+**Tracker ref**:
+The GitHub issue number a mirrored Task resolves — e.g. `#185`. Rendered `#<ref>`, distinct from task id (issue #192). It is what `/implement <N>` takes as the argument. Where both appear on the Ticket header, both show disambiguated: `Task 174 · issue #185`.
+
 ### Tracker mirroring
 
 **Resolved Tracker**:
