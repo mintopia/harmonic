@@ -234,6 +234,59 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(journal.views(run.id).at(-1)).toMatchObject({ kind: 'result', payload: { ok: true, observed: { mergedOid: 'cafe' } } });
   });
 
+  it('an operator-accept land (issue #191) settles under `operator-accept`, not the default `agent-finish/unresolved`', async () => {
+    const { task, run } = fixture();
+    const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
+    expect(outcome).toEqual({ ok: true });
+    expect(runStore.get(run.id).state).toBe('completed');
+    const types = runFacts.list(run.id).map((f) => f.type);
+    expect(types).toContain('operator-accept');
+    expect(types).not.toContain('agent-finish/unresolved');
+  });
+
+  it('an operator-accept loses to a racing operator-cancel appended BEFORE the land\'s PONC (issue #191)', async () => {
+    const { task, run } = fixture();
+    // The cancel is already settled on this Run's log before `land` is ever
+    // called — e.g. a cancel that raced in and fully resolved just ahead of
+    // the operator's accept request reaching this coordinator.
+    settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
+    expect(runStore.get(run.id).state).toBe('cancelled');
+
+    const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
+    expect(outcome).toEqual({ ok: true }); // effects still applied; the loop doesn't check prior disposition
+    // But the disposition replay still finds the earlier, higher-precedence
+    // operator-cancel fact within the frozen PONC window — the accept cannot
+    // flip the Run back to completed.
+    expect(runStore.get(run.id).state).toBe('cancelled');
+    expect(tasks.get(task.id).state).toBe('awaiting-review'); // taskAction 'none' on cancel left it here
+  });
+
+  it('an operator-accept still wins over a cancel appended AFTER the land\'s PONC (issue #191)', async () => {
+    const { task, run } = fixture();
+    let resolveApply!: (v: LandingEffectOutcome) => void;
+    const effect: LandingEffectExec = {
+      effect: 'target-ref',
+      idempotencyKey: 'main@accept-race',
+      expected: {},
+      apply: () => new Promise<LandingEffectOutcome>((resolve) => (resolveApply = resolve)),
+    };
+
+    const landPromise = coordinator.land(task, run, LAND_PROJECTION, [effect], {}, 'operator-accept');
+
+    // Mid-landing: a cancel races in on a separate settle call, after this
+    // land's PONC has already frozen the cutoff at the operator-accept fact.
+    settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
+
+    const afterCancelRace = runStore.get(run.id);
+    expect(afterCancelRace.state).toBe('completed');
+    expect(afterCancelRace.phase).toBe('terminal');
+    expect(tasks.get(task.id).state).toBe('completed');
+
+    resolveApply({ ok: true, observed: {} });
+    expect(await landPromise).toEqual({ ok: true });
+    expect(runStore.get(run.id).state).toBe('completed'); // unchanged, still landed
+  });
+
   it('reconcile after a completed landing is a no-op (all already-applied, no executor calls)', async () => {
     const { task, run } = fixture();
     let applied = 0;

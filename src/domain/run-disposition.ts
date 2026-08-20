@@ -19,6 +19,19 @@
  *   operator-cancel > escalate > branch-violation > verify-fail >
  *   guardrail-trip > agent-finish/unresolved > process-death
  *
+ * `operator-accept` (issue #191) is slotted just below `operator-cancel` and
+ * just above `escalate`: an operator's explicit Accept of an escalated-then-
+ * adopted-for-review Run is a deliberate human disposition that must outrank
+ * the automatic `escalate` fact already sitting on that Run's log (otherwise
+ * the accept's irreversible land runs, but the disposition still collapses
+ * back to the earlier escalate — a split-brain between the merge that
+ * happened and the bookkeeping that says it didn't). An operator cancel still
+ * wins over an accept, though: cancel-vs-accept is resolved the same way every
+ * other cancel race is (`landing-coordinator.ts`'s PONC) — safety wins, but
+ * only up to the point of no return; a cancel fact appended *after* the land's
+ * PONC cutoff is late and cannot un-land a Run the accept has already
+ * committed.
+ *
  * `review-sla-expiry` (issue #114, reliability-design round-5 #4) is slotted
  * just above `agent-finish/unresolved`: an un-reviewed Run whose review SLA has
  * lapsed is a Harmonic-initiated give-up in the same tier as a guardrail trip,
@@ -41,6 +54,7 @@
  */
 export const DISPOSITION_PRECEDENCE = [
   'operator-cancel',
+  'operator-accept',
   'escalate',
   'branch-violation',
   'verify-fail',

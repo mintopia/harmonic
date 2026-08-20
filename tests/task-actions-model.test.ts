@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { taskActions } from '../web/src/task-actions-model.js';
+import { showsEscalationRecovery, taskActions } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
@@ -50,5 +50,27 @@ describe('taskActions', () => {
 
   it('returns [] for an unknown state instead of crashing (server version skew)', () => {
     expect(taskActions('some-future-state' as never)).toEqual([]);
+  });
+});
+
+// issue #191: an escalated Task's stranded-candidate recovery actions
+// (Adopt & review, Note to critic) are flag actions layered beside
+// taskActions(state) — mirroring Un-escalate — so they get their own pure
+// gate rather than living inline in the component.
+describe('showsEscalationRecovery', () => {
+  it('is false when the task is not escalated, even with a candidate', () => {
+    expect(showsEscalationRecovery({ escalated: false, candidateRef: 'refs/harmonic/candidate/run-9137' })).toBe(
+      false,
+    );
+  });
+
+  it('is false when escalated but no run ever produced a candidate', () => {
+    expect(showsEscalationRecovery({ escalated: true, candidateRef: null })).toBe(false);
+  });
+
+  it('is true only once both an escalation and a stranded candidate are present', () => {
+    expect(showsEscalationRecovery({ escalated: true, candidateRef: 'refs/harmonic/candidate/run-9137' })).toBe(
+      true,
+    );
   });
 });

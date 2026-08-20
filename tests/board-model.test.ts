@@ -37,6 +37,7 @@ const task = (id: number, state: TaskState, createdAt: number, priority: Task['p
   runStartedAt: null,
   toolCount: null,
   runId: null,
+  candidateRef: null,
   skipReason: null,
 });
 

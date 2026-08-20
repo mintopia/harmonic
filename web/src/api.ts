@@ -164,6 +164,12 @@ export const api = {
   // full vs starting condensed. Feeds RejectDialog's re-attempt buttons.
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
+  // Escalated-task recovery (issue #191): adopt the stranded candidate from an
+  // escalated/failed run straight to awaiting-review (no fresh builder run),
+  // or send the critic a human note and re-run verification against the same
+  // candidate. Both apply only while `task.escalated && task.candidateRef`.
+  adoptReview: (id: number) => request<Task>('POST', `/api/tasks/${id}/adopt-review`),
+  noteToCritic: (id: number, note: string) => request<Task>('POST', `/api/tasks/${id}/note-to-critic`, { note }),
   // Hard-delete (issue #162, ADR-0025): cascades the Task's Runs/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast
   // (App.tsx). 409 if the Task is running (stop it first); 404 if it's

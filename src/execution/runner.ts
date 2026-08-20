@@ -60,7 +60,12 @@ import {
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
-import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
+import {
+  combineVerdicts,
+  dispositionAfterNote,
+  type VerificationDecision,
+  type VerifierVerdict,
+} from '../verification/combine.js';
 import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
@@ -3234,18 +3239,183 @@ export class Runner {
    * that already transitioned it wins.
    */
   private parkForReview(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
-    this.runStore.update(run.id, { ...patch, phase: 'review', reviewDeadline: Date.now() + REVIEW_SLA_MS });
+    this.reparkForReview(run, patch);
+    if (this.taskService.get(task.id).state === 'running') {
+      this.taskService.setState(task.id, 'awaiting-review');
+    }
+  }
+
+  /**
+   * Reset a Run to the non-terminal review phase — the shared core
+   * {@link parkForReview} extracts (issue #191): flips the Run to
+   * `state:'running', phase:'review'` with a fresh review-SLA deadline,
+   * clearing `finishedAt`/`reason`. The state reset is a no-op for
+   * `parkForReview`'s own native happy path (the Run was never settled
+   * terminal there), but is REQUIRED for the Adopt & review / Note-to-critic
+   * operator escape hatches (issue #191): those re-park an escalated Run that
+   * `settleEscalated` already settled `state:'failed', phase:'terminal'`, and
+   * `ReviewService.accept` (`review.ts:71`) only lands a Run through the
+   * journaled `LandingCoordinator` when `run.state === 'running'` — otherwise
+   * it takes the legacy already-terminal accept-hook path, which is wrong for
+   * a Run that never actually landed. Releases the Work Context lease
+   * (best-effort; already released at escalation there, so a no-op) and
+   * pushes the updated Run to the board. Callers own the Task-side
+   * transition: `parkForReview` moves a still-`running` Task, the escape
+   * hatches move an already-`ready`+escalated one (`parkEscalatedForReview`).
+   *
+   * This reset does NOT erase the Run's `run_facts` disposition log, which
+   * still carries the original `escalate` fact — `RunSettleCoordinator.settle`
+   * (`run-settle.ts`) recomputes the winning disposition over the Run's WHOLE
+   * fact log by the fixed, ADR-locked precedence in `run-disposition.ts`, rank
+   * not recency. That used to be a problem (issue #191): a later
+   * `ReviewService.accept` appended a bare `agent-finish/unresolved` land
+   * fact, which the older `escalate` fact still outranked, so the merge ran
+   * but the bookkeeping replayed back to escalated. It no longer is:
+   * `ReviewService.accept` now lands an adopted-and-accepted Run under the
+   * `operator-accept` disposition, which `DISPOSITION_PRECEDENCE` ranks just
+   * above `escalate` — an explicit operator Accept wins over the retained
+   * escalate, so accept and the record agree.
+   */
+  private reparkForReview(run: RunRow, patch: Partial<RunRow> = {}): void {
+    // Single write: the caller's decoration (`parkForReview`'s usage/stat
+    // `patch`) layered under the review-phase reset, so `phase`/`reviewDeadline`
+    // always win and the board sees one update, not two.
+    this.runStore.update(run.id, {
+      ...patch,
+      state: 'running',
+      phase: 'review',
+      reviewDeadline: Date.now() + REVIEW_SLA_MS,
+      finishedAt: null,
+      reason: null,
+    });
     try {
       this.leaseStore.releaseByOwner(run.id);
     } catch {
       // best-effort; boot reconciliation is the backstop
     }
-    if (this.taskService.get(task.id).state === 'running') {
-      this.taskService.setState(task.id, 'awaiting-review');
-    }
-    // Push the updated Run (phase/stat) to the board; the Task transition already
-    // emitted its own change event.
+    // Push the updated Run (phase/stat) to the board; the Task transition (if
+    // any) already emitted its own change event.
     this.events.onRunFinished?.(this.runStore.get(run.id));
+  }
+
+  /**
+   * The tail both operator escape hatches for an escalated Run share (issue
+   * #191, "Adopt & review" and "Note-to-critic" on a re-folded `proceed`):
+   * re-park the Run non-terminal and move the Task from `ready`+escalated to
+   * `awaiting-review`, clearing the flag so it reads as an ordinary human
+   * review gate. Mirrors `parkForReview`'s Task-side transition, but for a
+   * `ready` Task rather than a `running` one — `parkForReview`'s own guard
+   * only moves a still-`running` Task (see its doc comment), which an
+   * already-escalated (`ready`) Task never is.
+   */
+  private parkEscalatedForReview(task: TaskRow, run: RunRow): void {
+    this.reparkForReview(run);
+    this.taskService.setState(task.id, 'awaiting-review');
+    this.taskService.clearEscalated(task.id);
+  }
+
+  /**
+   * Operator escape hatch (a): "Adopt & review" (issue #191). An escalated
+   * Task's stranded candidate — parked at `run.candidateOid` on its last Run
+   * when `settleEscalated` terminaled it — gets no fresh builder Run; it is
+   * simply re-parked at `awaiting-review` so the existing `ReviewService.accept`
+   * (accept-anyway) can land it exactly as it would a native Run's own review
+   * gate. Guards: the Task must actually be escalated, and its latest Run must
+   * have a candidate to adopt — an escalation that never reached a candidate
+   * snapshot (dirty direct context, or a pre-`validating` escalate) has nothing
+   * to review.
+   */
+  /**
+   * The precondition both operator escape hatches (issue #191) share: the Task
+   * must be escalated and its latest Run must carry a stranded candidate. `verb`
+   * only shapes the error message ("adopt" / "reverify"). Returns the resolved
+   * Task, Run, and non-null candidate OID so callers skip the null-recheck.
+   */
+  private resolveEscalatedCandidateRun(taskId: number, verb: string): { task: TaskRow; run: RunRow; oid: string } {
+    const task = this.taskService.get(taskId);
+    const run = this.runStore.listForTask(taskId).at(-1);
+    if (!run) throw new DomainError('conflict', `task ${taskId} has no runs to ${verb}`);
+    if (!task.escalated) {
+      throw new DomainError('invalid_state', `task ${taskId} is not escalated; nothing to ${verb}`);
+    }
+    if (run.candidateOid == null) {
+      throw new DomainError('conflict', `task ${taskId}'s latest run has no candidate to ${verb}`);
+    }
+    return { task, run, oid: run.candidateOid };
+  }
+
+  adoptForReview(taskId: number): void {
+    const { task, run } = this.resolveEscalatedCandidateRun(taskId, 'adopt');
+    this.parkEscalatedForReview(task, run);
+  }
+
+  /**
+   * Operator escape hatch (b): "Note-to-critic" (issue #191). Re-runs ONLY the
+   * agent critic against an escalated Task's existing stranded candidate, with
+   * a human `note` folded into the critic's trusted preamble
+   * (`critic-prompt.ts`'s `operatorNote`) — never a fresh builder Run, and the
+   * note can never itself force a pass (ADR-0021 containment). The fresh critic
+   * verdict is persisted, then re-folded via `combineVerdicts` alongside the
+   * latest stored `command` verdict (if any command attempt exists), so an
+   * original command failure still blocks even if the critic now passes
+   * (honest fail-safe — never silently overridden by a note). A `proceed`
+   * decision re-parks the Task at `awaiting-review` exactly like
+   * {@link adoptForReview} (never auto-landed, whatever the Workspace's
+   * auto-accept setting); anything else leaves the Task escalated — the
+   * appended attempt is the only operator-visible result.
+   */
+  async reverifyWithNote(taskId: number, note: string): Promise<void> {
+    const { task, run, oid } = this.resolveEscalatedCandidateRun(taskId, 'reverify');
+
+    const config = this.getConfig();
+    const ws = this.getWorkspace?.(task.workspaceId);
+    const { critic } = resolveVerifiers(
+      ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+      config,
+    );
+    if (!critic) throw new DomainError('invalid_state', 'no critic configured for this workspace');
+
+    // The critic's own harness (mirrors `runVerification`'s resolution,
+    // issue #174 FIX 2): reuses the builder task's harness only when
+    // `critic.harness` is unset ("Same as task").
+    const criticHarnessId = critic.harness ?? task.harness;
+    const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
+    if (!criticHarness) {
+      throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
+    }
+
+    mkdirSync(this.worktreesDir, { recursive: true });
+    const attempt = await runCritic({
+      repoDir: task.workingDir,
+      candidateOid: oid,
+      baseRev: `${oid}^`,
+      worktreePath: join(this.worktreesDir, `critic-reverify-${run.id}`),
+      critic,
+      harness: criticHarness,
+      harnessId: criticHarnessId,
+      operatorNote: note,
+      ...(this.criticDrive ? { drive: this.criticDrive } : {}),
+    });
+    this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+
+    // Re-fold latest-per-verifier (mirrors `latestVerdicts`,
+    // `web/src/verification-attempts-model.ts`): the fresh critic verdict plus
+    // the latest stored `command` attempt, if this Run ever had one — an
+    // original command failure still blocks even if the critic now passes.
+    const priorCommand = this.verificationAttempts
+      .list(run.id)
+      .filter((a) => a.mechanism === 'command')
+      .at(-1);
+    const verdicts: VerifierVerdict[] = [{ verifier: 'critic', verdict: attempt.verdict }];
+    if (priorCommand) verdicts.push({ verifier: 'command', verdict: priorCommand.verdict });
+
+    if (dispositionAfterNote(combineVerdicts(verdicts)) === 'park-review') {
+      this.parkEscalatedForReview(task, run);
+    } else {
+      // Stays escalated: the appended attempt is the operator-visible
+      // result — push the Run's fresh verdict to the board.
+      this.events.onRunFinished?.(this.runStore.get(run.id));
+    }
   }
 
   private settle(

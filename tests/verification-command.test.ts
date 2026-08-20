@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { verificationCommandSchema, type VerificationCommand } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
+import { RunFactStore } from '../src/domain/run-facts.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -259,6 +260,14 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     const rows = attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
+
+    // Auto-accept is Harmonic landing the Run, not an operator — it must
+    // keep appending the default `agent-finish/unresolved` land fact (issue
+    // #191), never the operator-only `operator-accept` disposition, so the
+    // audit log stays honest about who actually accepted the work.
+    const factTypes = new RunFactStore(server.app.ctx.db).list(runId).map((f) => f.type);
+    expect(factTypes).toContain('agent-finish/unresolved');
+    expect(factTypes).not.toContain('operator-accept');
   });
 
   it('safety: auto-accept ON + a fail still Escalates — auto-accept never rescues a red verdict', async () => {

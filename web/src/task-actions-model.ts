@@ -1,6 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
-import type { TaskState } from './types.js';
+import type { Task, TaskState } from './types.js';
 
 /**
  * The operator actions the TaskDetail footer and TaskCard offer in a given
@@ -60,4 +60,18 @@ export function taskActions(state: TaskState): TaskAction[] {
   // A state from a server ahead of this bundle (version skew): offer
   // nothing rather than crash the modal on `.length` of undefined.
   return [];
+}
+
+/**
+ * Whether an escalated Task's stranded-candidate recovery actions
+ * (Adopt & review, Note to critic — issue #191) should show. These are flag
+ * actions layered beside `taskActions(state)`'s state-driven list, not part
+ * of it (mirroring Un-escalate, issue #33 follow-up): an afk→hitl escalation
+ * drops the Task back to `ready` with its last run's candidate stranded on a
+ * private ref, and both actions need that candidate to act on. No
+ * `candidateRef` (e.g. escalated before a builder run ever reached
+ * `validating`) leaves only the plain `ready` actions plus Un-escalate.
+ */
+export function showsEscalationRecovery(task: Pick<Task, 'escalated' | 'candidateRef'>): boolean {
+  return task.escalated && task.candidateRef !== null;
 }

@@ -77,3 +77,17 @@ export function combineVerdicts(verdicts: VerifierVerdict[]): VerificationDecisi
 
   return { outcome: 'escalate', reason: 'unrecognized verifier verdict; escalating fail-safe' };
 }
+
+/**
+ * What an escalated Task's Note-to-critic re-verification (issue #191) does
+ * with a re-folded {@link VerificationDecision}: `proceed` parks the Task at
+ * `awaiting-review` for the human accept/reject gate; anything else (`block`
+ * or `escalate`) leaves the Task escalated — the appended attempt is the only
+ * operator-visible change. A human note can steer the critic's *attention*,
+ * never force a pass: only a genuine `proceed` decision reaches `park-review`
+ * here, and this never auto-lands (the human accept gate still applies).
+ * Pure, total over its input.
+ */
+export function dispositionAfterNote(decision: VerificationDecision): 'park-review' | 'stay-escalated' {
+  return decision.outcome === 'proceed' ? 'park-review' : 'stay-escalated';
+}

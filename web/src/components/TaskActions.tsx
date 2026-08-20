@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { api } from '../api';
 import type { Task, VerificationAttempt } from '../types';
-import { taskActions, type TaskAction } from '../task-actions-model';
+import { taskActions, showsEscalationRecovery, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject, sectionTitle } from '../ui';
 import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
 import type { VerificationOutcome } from '../verification-model';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
+import { NoteToCriticDialog } from './NoteToCriticDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
 import { taskLabel } from '../id-format.js';
@@ -97,6 +98,7 @@ export function TaskActions({
   const [rejecting, setRejecting] = useState(false);
   const [reattempting, setReattempting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [notingToCritic, setNotingToCritic] = useState(false);
 
   const actions = taskActions(task.state);
   if (variant === 'footer' && actions.length === 0) return null;
@@ -238,6 +240,27 @@ export function TaskActions({
             Un-escalate
           </button>
         )}
+        {/* Escalated-candidate recovery (issue #191): flag actions beside
+            Un-escalate, not part of taskActions(state) — an afk→hitl
+            escalation drops back to `ready` with the last run's candidate
+            stranded on a private ref. Adopt & review is the primary
+            affirmative path (the accent stays sanctioned here as a second
+            primary alongside the gate's own Accept, same as issue #174's
+            accept-anyway); Note to critic is a plain secondary ghost button
+            (One Cobalt Rule) that re-runs only the critic, not the builder. */}
+        {showsEscalationRecovery(task) && (
+          <>
+            <button className={secondary} onClick={() => setNotingToCritic(true)}>
+              Note to critic
+            </button>
+            <button
+              className={btnAccept}
+              onClick={actDone(() => api.adoptReview(task.id), `${taskLabel(task.id)} adopted — awaiting review`)}
+            >
+              Adopt &amp; review
+            </button>
+          </>
+        )}
         {actions.map(button)}
       </div>
       {rejecting && (
@@ -252,6 +275,13 @@ export function TaskActions({
       )}
       {deleting && (
         <DeleteTaskDialog task={task} onClose={() => setDeleting(false)} onDone={done(() => setDeleting(false))} />
+      )}
+      {notingToCritic && (
+        <NoteToCriticDialog
+          task={task}
+          onClose={() => setNotingToCritic(false)}
+          onDone={done(() => setNotingToCritic(false))}
+        />
       )}
     </>
   );

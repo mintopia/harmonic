@@ -49,7 +49,14 @@ export class LandingCoordinator {
    * through to the land `run_fact` and (on success) to the actual settle
    * call. `patch` rides the winning settle write exactly as it does for
    * `RunSettleCoordinator.settle` directly (e.g. the review decoration
-   * `{ review: 'accepted', reviewedAt, reviewDeadline: null }`).
+   * `{ review: 'accepted', reviewedAt, reviewDeadline: null }`). `landFactType`
+   * (issue #191) is the disposition kind the land fact appends as; it defaults
+   * to {@link LAND_FACT_TYPE} (`agent-finish/unresolved`) so every existing
+   * caller is unchanged. `ReviewService.accept`'s native-running branch passes
+   * `'operator-accept'` instead: an explicit operator Accept must outrank an
+   * `escalate` fact already sitting on an adopted-for-review Run's log
+   * (`DISPOSITION_PRECEDENCE`, run-disposition.ts), which a bare
+   * `agent-finish/unresolved` cannot.
    *
    * Ordering (the PONC mechanism):
    *
@@ -94,6 +101,7 @@ export class LandingCoordinator {
     landProjection: SettleProjection,
     effects: readonly LandingEffectExec[],
     patch: Partial<RunRow> = {},
+    landFactType: RunFactType = LAND_FACT_TYPE,
   ): Promise<LandingOutcome> {
     const now = this.opts.now ?? Date.now;
 
@@ -104,7 +112,7 @@ export class LandingCoordinator {
 
     // Step 2 + 3: freeze the PONC before the first irreversible effect. See
     // the doc comment above for exactly why this ordering is race-safe.
-    const landFact = this.runFacts.append(run.id, LAND_FACT_TYPE, { ...landProjection }, now());
+    const landFact = this.runFacts.append(run.id, landFactType, { ...landProjection }, now());
     this.journal.writePonc(run.id, landFact.seq, now());
 
     const timeoutMs = this.opts.timeoutMs ?? LANDING_OP_TIMEOUT_MS;
@@ -130,7 +138,7 @@ export class LandingCoordinator {
       }
     }
 
-    this.settle.settle(task, run, LAND_FACT_TYPE, landProjection, patch);
+    this.settle.settle(task, run, landFactType, landProjection, patch);
     return { ok: true };
   }
 
@@ -183,12 +191,13 @@ export class LandingCoordinator {
 }
 
 /**
- * The disposition type every journaled landing settles under. There is only
- * one "land" signal today — a successful landing is always
- * `agent-finish/unresolved` with a `completed`-projecting payload (matching
- * `ReviewService.accept`'s pre-#115 direct call) — so this stays an internal
- * constant rather than a `land` parameter; if a future unit needs a distinct
- * landing disposition kind, it becomes a parameter then, not before.
+ * The default disposition type a journaled landing settles under when the
+ * caller doesn't name one (issue #191; was the sole, hardcoded kind pre-#191
+ * — a successful landing was always `agent-finish/unresolved` with a
+ * `completed`-projecting payload, matching `ReviewService.accept`'s pre-#115
+ * direct call). Now a parameter (`land`'s `landFactType`) so an operator's
+ * explicit Accept can settle under `'operator-accept'` instead — this
+ * constant is only the default every existing caller keeps getting.
  */
 const LAND_FACT_TYPE: RunFactType = 'agent-finish/unresolved';
 

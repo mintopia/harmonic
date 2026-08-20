@@ -37,8 +37,8 @@ owned by **Session retirement (§C)**, not by reaching `terminal`.
 ### 0.3 Terminal disposition + journaled landing (locked)
 - Every ending signal is an append-only `run_fact` with a monotonic seq. At each
   phase decision point (**cutoff**) the coordinator computes the disposition by
-  fixed precedence: `operator-cancel > escalate > branch-violation > verify-fail
-  > guardrail-trip > agent-finish/unresolved > process-death`.
+  fixed precedence: `operator-cancel > operator-accept > escalate > branch-violation > verify-fail
+  > guardrail-trip > agent-finish/unresolved > process-death`. `operator-accept` overrides automatic `escalate` on re-parked runs (issue #191), ranked below cancel to preserve pre-PONC safety.
 - **Landing is a journaled, non-interruptible operation.** Before each external
   side effect (target-ref update, PR creation, ticket close) the coordinator
   writes a `landing_journal` intent with an **expected-result / idempotency

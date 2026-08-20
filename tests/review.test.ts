@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { RunFactStore } from '../src/domain/run-facts.js';
 
 describe('review: accept / reject (direct mode)', () => {
   let server: TestServer;
@@ -33,6 +34,20 @@ describe('review: accept / reject (direct mode)', () => {
 
     const runs = await server.api('GET', `/api/tasks/${taskId}/runs`);
     expect(runs.body.runs[0].review).toBe('accepted');
+  });
+
+  it('a native accept settles under the `operator-accept` disposition (issue #191)', async () => {
+    const taskId = await runToAwaitingReview();
+    const runsBefore = await server.api('GET', `/api/tasks/${taskId}/runs`);
+    const runId = runsBefore.body.runs[0].id;
+
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.state).toBe('completed');
+
+    const facts = new RunFactStore(server.app.ctx.db).list(runId);
+    expect(facts.some((f) => f.type === 'operator-accept')).toBe(true);
+    expect(facts.some((f) => f.type === 'agent-finish/unresolved')).toBe(false);
   });
 
   it('rejecting stores the feedback and fails the task', async () => {

@@ -607,6 +607,7 @@ export type WorkContextLeaseDispositionRow = typeof workContextLeaseDispositions
  */
 export const RUN_FACT_TYPES = [
   'operator-cancel',
+  'operator-accept',
   'escalate',
   'branch-violation',
   'branch-recovery',

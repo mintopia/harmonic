@@ -199,6 +199,10 @@ export interface RunCriticArgs {
   critic: VerificationCritic;
   harness: HarnessConfig;
   harnessId: string;
+  /** An operator's ad-hoc note for a Note-to-critic re-verification (issue
+   * #191) — forwarded into {@link buildCriticPrompt}'s trusted preamble.
+   * Omitted for the ordinary verify-gate invocation from `runVerification`. */
+  operatorNote?: string;
   /** Injectable drive seam; defaults to {@link createAcpCriticDrive}. */
   drive?: CriticHarnessDrive;
   /** Injectable nonce (tests); defaults to a fresh {@link newNonce}. */
@@ -285,7 +289,12 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
         ? `${args.critic.prompt}\n\n(Note: the diff below was truncated to the first ${DIFF_CHAR_CAP} characters; judge only what you can see, and treat anything past the cut as unreviewed.)`
         : args.critic.prompt;
       const nonce = args.nonce ?? newNonce();
-      const prompt = buildCriticPrompt({ operatorPrompt, diff, nonce });
+      const prompt = buildCriticPrompt({
+        operatorPrompt,
+        diff,
+        nonce,
+        ...(args.operatorNote !== undefined ? { operatorNote: args.operatorNote } : {}),
+      });
 
       try {
         const result = await drive.run({

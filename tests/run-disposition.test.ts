@@ -30,6 +30,7 @@ describe('computeDisposition (issue #112)', () => {
   it('matches the reliability-design §0.3 precedence exactly (locked ordering)', () => {
     expect(DISPOSITION_PRECEDENCE).toEqual([
       'operator-cancel',
+      'operator-accept',
       'escalate',
       'branch-violation',
       'verify-fail',
@@ -39,6 +40,26 @@ describe('computeDisposition (issue #112)', () => {
       'failed',
       'process-death',
     ]);
+  });
+
+  describe('operator-accept (issue #191) sits between operator-cancel and escalate', () => {
+    it('ranks operator-cancel > operator-accept > escalate', () => {
+      const cancelIdx = DISPOSITION_PRECEDENCE.indexOf('operator-cancel');
+      const acceptIdx = DISPOSITION_PRECEDENCE.indexOf('operator-accept');
+      const escalateIdx = DISPOSITION_PRECEDENCE.indexOf('escalate');
+      expect(cancelIdx).toBeLessThan(acceptIdx);
+      expect(acceptIdx).toBeLessThan(escalateIdx);
+    });
+
+    it('an operator-accept outranks a retained escalate fact (the #191 fix)', () => {
+      expect(computeDisposition([fact(1, 'escalate'), fact(2, 'operator-accept')], 2)).toBe('operator-accept');
+      // Order-independent, same as every other precedence pair.
+      expect(computeDisposition([fact(1, 'operator-accept'), fact(2, 'escalate')], 2)).toBe('operator-accept');
+    });
+
+    it('still loses to an operator-cancel', () => {
+      expect(computeDisposition([fact(1, 'operator-accept'), fact(2, 'operator-cancel')], 2)).toBe('operator-cancel');
+    });
   });
 
   describe('review-sla-expiry (issue #114) sits above agent-finish, below the deliberate signals', () => {

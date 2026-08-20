@@ -36,6 +36,10 @@ const reattemptInputSchema = z
   })
   .nullish();
 const rejectInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
+/** The operator's note-to-critic input (issue #191): a required human note
+ * folded into the critic's trusted preamble for a targeted re-review. */
+const noteExample = 'The rate limiter must be shared across worker processes, not per-process.';
+const noteToCriticInputSchema = z.object({ note: z.string().trim().min(1).meta({ example: noteExample }) });
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
 /** The reject dialog's continuation preview (issue #170): what `planSessionContinuation`
  * offers for this Task's live Session, so the operator sees the full-continuation
@@ -164,6 +168,11 @@ const taskSchema = taskWithDepsSchema
     /** The transient House-Rule reason (ADR-0022, issue #120) this ready Task is
      * being skipped for a held Work Context lease; null when not skipped (issue #171). */
     skipReason: z.string().nullable().meta({ example: 'Work Context held by task 12 (running)' }),
+    /** The latest run's frozen verification candidate ref (issue #134's Run
+     * `candidateRef`), surfaced here so an escalated Task's stranded candidate
+     * can be adopted for review, or re-reviewed with a note, without a fresh
+     * builder run (issue #191); null when no run has produced a candidate yet. */
+    candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
   })
   .meta({ id: 'Task' });
 
@@ -632,6 +641,48 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => withDeps(ctx.review.reject(req.params.id, req.body?.feedback)),
+  );
+
+  app.post(
+    '/tasks/:id/adopt-review',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          "Operator escape hatch (issue #191): park an escalated task's existing stranded candidate at awaiting-review — no fresh builder run — so the ordinary accept (accept-anyway) can land it. Human-only.",
+        params: idParamsSchema,
+        response: {
+          200: taskSchema.describe('The task, now awaiting-review with the escalated flag cleared.'),
+          409: errorResponse('The task is not escalated, or its latest run has no candidate to adopt.'),
+        },
+      },
+    },
+    async (req) => {
+      ctx.runner.adoptForReview(req.params.id);
+      return withDeps({ id: req.params.id });
+    },
+  );
+
+  app.post(
+    '/tasks/:id/note-to-critic',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description:
+          "Operator escape hatch (issue #191): re-run ONLY the agent critic against an escalated task's existing stranded candidate, with a human note folded into its trusted preamble, and re-fold the verdict. A `proceed` result parks the task at awaiting-review (never auto-landed); otherwise the task stays escalated with the new attempt recorded. Human-only.",
+        params: idParamsSchema,
+        body: noteToCriticInputSchema,
+        response: {
+          200: taskSchema.describe('The task — awaiting-review on a proceed verdict, still escalated otherwise.'),
+          400: errorResponse('The note is empty (blank/whitespace-only), or the resolved critic harness is not configured.'),
+          409: errorResponse('The task is not escalated, its latest run has no candidate, or no critic is configured.'),
+        },
+      },
+    },
+    async (req) => {
+      await ctx.runner.reverifyWithNote(req.params.id, req.body.note);
+      return withDeps({ id: req.params.id });
+    },
   );
 
   app.get(

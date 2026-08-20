@@ -246,6 +246,11 @@ export interface Task {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
+  /** The latest run's frozen verification candidate ref (issue #134's Run
+   * `candidateRef`), surfaced here so an escalated Task's stranded candidate
+   * can be adopted for review without a fresh builder run (issue #191); null
+   * when no run has produced a candidate yet. */
+  candidateRef: string | null;
   /** Transient House-Rule reason a `ready` Task is being skipped for a held
    * Work Context lease (issue #171, e.g. "Work Context held by task 12
    * (running)"); null normally, including once the Task starts running. */

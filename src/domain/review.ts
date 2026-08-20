@@ -82,6 +82,13 @@ export class ReviewService {
         { runState: 'completed', taskAction: 'completed', reason: null },
         this.landingEffects(task, run),
         { review: 'accepted', reviewedAt: Date.now(), reviewDeadline: null },
+        // Explicit operator disposition (issue #191): outranks a retained
+        // `escalate` fact on an adopted-for-review Run's log
+        // (`DISPOSITION_PRECEDENCE`), so an adopt→accept lands AND completes
+        // instead of the land succeeding while the bookkeeping replays back
+        // to escalated. Identical behaviour on a native-parked Run (no
+        // escalate in its log to outrank).
+        'operator-accept',
       );
       if (!outcome.ok) {
         // Merge conflict (or any other effect failure): surface it and leave

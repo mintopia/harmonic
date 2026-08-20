@@ -59,6 +59,12 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
    * last pick pass skipped this ready Task for — a held Work Context lease
    * (`AutoRunner.skipReasonFor`); null when the Task wasn't skipped (issue #171). */
   skipReason: string | null;
+  /** The latest run's frozen verification candidate ref (issue #134); null
+   * when no run has produced a candidate yet (pre-feature, escalated before
+   * `validating`, or a dirty direct-mode context). Surfaced so an escalated
+   * Task's stranded candidate can be adopted for review, or re-reviewed with
+   * an operator note, without a fresh builder run (issue #191). */
+  candidateRef: string | null;
 };
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
@@ -78,6 +84,7 @@ export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
     toolCount: running ? runningToolCount(running) : null,
     runId: running?.id ?? null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
+    candidateRef: runs.at(-1)?.candidateRef ?? null,
   };
 }
 

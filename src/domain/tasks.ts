@@ -572,6 +572,25 @@ export class TaskService {
     return this.changed(row);
   }
 
+  /**
+   * Clear the escalated flag without touching `drive` (issue #191): used by
+   * the Runner's Adopt & review / Note-to-critic operator escape hatches,
+   * which move an escalated Task straight to `awaiting-review` (a human
+   * disposition, not a hand-back to autonomous drive) — unlike
+   * {@link unescalate}, which flips `drive` hitl→afk and is guarded to
+   * mirrored Tasks only. This has no such guard: the caller has already
+   * checked `escalated` and moved `state` itself.
+   */
+  clearEscalated(id: number): TaskRow {
+    const row = this.db
+      .update(tasks)
+      .set({ escalated: false, updatedAt: Date.now() })
+      .where(eq(tasks.id, id))
+      .returning()
+      .get()!;
+    return this.changed(row);
+  }
+
   cancel(id: number): TaskRow {
     const task = this.get(id);
     if (!CANCELLABLE_STATES.includes(task.state)) {

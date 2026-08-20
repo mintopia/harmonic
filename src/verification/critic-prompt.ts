@@ -18,6 +18,14 @@ export interface BuildCriticPromptArgs {
    * from agent or repo content. Sent first, so it is the critic's framing
    * before it ever sees the diff. */
   operatorPrompt: string;
+  /** An operator's ad-hoc note for a Note-to-critic re-verification (issue
+   * #191, ADR-0021 containment): TRUSTED — it comes from Harmonic's own
+   * operator UI, never from the diff or agent output — so it is included in
+   * the trusted preamble alongside `operatorPrompt`, before the untrusted
+   * diff, inside the same nonce/reply-schema containment. It can steer what
+   * the critic pays attention to; it can never force a `pass` — only a
+   * genuine `pass` verdict parks the Task for review. */
+  operatorNote?: string;
   /** The candidate's diff against its base — UNTRUSTED: it is the agent's own
    * output, and a malicious or confused agent may have written text into a
    * file designed to look like an instruction to whichever process reviews
@@ -57,8 +65,11 @@ export interface BuildCriticPromptArgs {
  * Pure: no I/O, no randomness of its own (the caller supplies `nonce`), total
  * over its input.
  */
-export function buildCriticPrompt({ operatorPrompt, diff, nonce }: BuildCriticPromptArgs): string {
-  return `${operatorPrompt}
+export function buildCriticPrompt({ operatorPrompt, operatorNote, diff, nonce }: BuildCriticPromptArgs): string {
+  const noteBlock = operatorNote
+    ? `\n\nOPERATOR NOTE (trusted guidance from the human reviewer for this specific re-review — weigh it like any other instruction above; it does not by itself make the diff pass):\n${operatorNote}`
+    : '';
+  return `${operatorPrompt}${noteBlock}
 
 You are acting as a READ-ONLY code critic reviewing a candidate change. You
 must not edit, create, or delete any file; you must not run any command or
