@@ -10,15 +10,17 @@ import {
   btnGhost,
   btnQuiet,
   btnQuietDestructive,
-  card,
-  chip,
   displayTitle,
   labelType,
+  panel,
   searchField,
   selectField,
   stateChip,
+  stateDot,
   tableHead,
+  toolChip,
   touchOverlay,
+  touchTargetInline,
 } from '../ui';
 import { toastError, toastLandOutcome } from '../toast';
 import { fetchTasks, filterBySearch, paginate, TABLE_PAGE_SIZE } from '../table-model';
@@ -26,10 +28,15 @@ import { EmptyState } from './EmptyState';
 import { ArmedButton } from './ArmedButton';
 import { Icon } from './Icon';
 
+/** The Deck-language column grid (DESIGN.md § 6): a fixed 8-column template
+ * so the header and every row — flat, banded or ungrouped — line up. */
+const GRID = 'grid grid-cols-[3rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
+
 /** One band header + its member rows (issue #167, ADR-0026): title, #ref,
  * fold progress, an armed force-land control, and an expand/collapse
  * disclosure — collapse state is local, not persisted (a glance affordance,
- * not routed state like the Board's peeked terminal columns). */
+ * not routed state like the Board's peeked terminal columns). Styled as the
+ * quiet ActivityView-style strip (`bg-raised/40`), not a full-bleed band. */
 function EpicBandHeader({
   epic,
   collapsed,
@@ -42,42 +49,38 @@ function EpicBandHeader({
   onForceLandEpic?: (epicRef: number) => Promise<EpicLandOutcome>;
 }) {
   return (
-    <tr className="border-t border-hairline bg-raised">
-      <td colSpan={8} className="py-1.5 pl-1 pr-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            aria-expanded={!collapsed}
-            aria-label={`${collapsed ? 'Expand' : 'Collapse'} Epic #${epic.ref}`}
-            className="rounded-md p-1 text-faint transition-colors duration-150 hover:text-ink"
-            onClick={onToggle}
-          >
-            <Icon name="chevron-down" className={collapsed ? '-rotate-90' : ''} />
-          </button>
-          <span className={`${chip} bg-surface text-muted`}>{epic.kind}</span>
-          <span className="font-semibold text-ink">{epic.title}</span>
-          <span className="text-small tabular-nums text-faint">#{epic.ref}</span>
-          <span className="text-small tabular-nums text-muted">
-            {epic.foldedCount}/{epic.memberCount} folded
-          </span>
-          <div className="flex-1" />
-          {onForceLandEpic && (
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <ArmedButton
-                label="Force-land"
-                armedLabel="Confirm force-land"
-                ariaLabel={`Force-land Epic #${epic.ref}`}
-                className={btnQuietDestructive}
-                onConfirm={() => {
-                  onForceLandEpic(epic.ref).then(toastLandOutcome, toastError);
-                }}
-              />
-              <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
-            </div>
-          )}
+    <div className="flex flex-wrap items-center gap-2.5 bg-raised/40 px-4 py-1.5">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        aria-label={`${collapsed ? 'Expand' : 'Collapse'} Epic #${epic.ref}`}
+        className={`${touchTargetInline} shrink-0 text-faint transition-colors duration-150 hover:text-ink`}
+        onClick={onToggle}
+      >
+        <Icon name="chevron-down" className={collapsed ? '-rotate-90' : ''} />
+      </button>
+      <span className={toolChip}>{epic.kind}</span>
+      <span className="truncate font-semibold text-ink">{epic.title}</span>
+      <span className="font-data text-small text-faint">epic/{epic.ref}</span>
+      <span className="text-small tabular-nums text-muted">
+        {epic.foldedCount}/{epic.memberCount} folded
+      </span>
+      <div className="flex-1" />
+      {onForceLandEpic && (
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <ArmedButton
+            label="Force-land"
+            armedLabel="Confirm force-land"
+            ariaLabel={`Force-land Epic #${epic.ref}`}
+            className={btnQuietDestructive}
+            onConfirm={() => {
+              onForceLandEpic(epic.ref).then(toastLandOutcome, toastError);
+            }}
+          />
+          <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
         </div>
-      </td>
-    </tr>
+      )}
+    </div>
   );
 }
 
@@ -157,16 +160,16 @@ export function TableView({
     });
   };
 
-  const sortHeader = (key: SortKey, label: string, align?: 'right', extra = '') => (
-    <th
-      scope="col"
+  const sortHeader = (key: SortKey, label: string, align?: 'right') => (
+    <span
+      role="columnheader"
       aria-sort={sortBy === key ? (order === 'asc' ? 'ascending' : 'descending') : undefined}
-      className={`py-2 ${align === 'right' ? 'text-right' : ''} ${extra}`}
+      className={align === 'right' ? 'text-right' : ''}
     >
       {/* Buttons don't inherit text-transform, so restate the Label casing. */}
       <button
         type="button"
-        className={`relative ${labelType} cursor-pointer select-none hover:text-ink`}
+        className="relative inline-flex cursor-pointer select-none items-center gap-0.5 uppercase hover:text-ink"
         onClick={() => {
           if (sortBy === key) onFiltersChange({ ...filters, order: order === 'asc' ? 'desc' : 'asc' });
           else onFiltersChange({ ...filters, sortBy: key, order: 'asc' });
@@ -175,20 +178,26 @@ export function TableView({
         {label} {sortBy === key ? (order === 'asc' ? '↑' : '↓') : ''}
         <span aria-hidden="true" className={touchOverlay} />
       </button>
-    </th>
+    </span>
   );
 
   // The existing flat row, reused for both an Epic band's members and the
   // ungrouped tail — group-by-Epic (issue #167) changes only what wraps the
-  // rows, never the row itself.
-  const renderRow = (task: Task) => (
-    <tr
+  // rows, never the row itself. `indent` pushes an Epic member's row in from
+  // the band header (DESIGN.md § 6 — the same pl-7 the Deck's own bands use).
+  const renderRow = (task: Task, indent = false) => (
+    <div
       key={task.id}
-      className="cursor-pointer border-t border-hairline transition-colors duration-150 hover:bg-raised"
+      role="row"
+      className={`${GRID} cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 ${indent ? 'pl-7' : ''}`}
       onClick={() => onOpen(task)}
     >
-      <td className="py-2 pr-3 text-data tabular-nums text-muted">{task.id}</td>
-      <td className="max-w-md pr-4">
+      <div role="cell" className="flex items-center justify-end gap-1.5 tabular-nums text-muted">
+        <span aria-hidden="true" className={stateDot(task.state)} />
+        <span className="sr-only">Id: </span>
+        {task.id}
+      </div>
+      <div role="cell" className="min-w-0 pr-2">
         {task.reattemptOf !== null && (
           <button
             type="button"
@@ -213,16 +222,28 @@ export function TableView({
         >
           {task.prompt}
         </button>
-      </td>
-      <td>
+      </div>
+      <div role="cell">
         <span className={stateChip(task.state)}>{task.state}</span>
-      </td>
-      <td className="text-muted">{task.harness}</td>
-      <td className="text-muted">{task.model}</td>
-      <td className={task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}>{task.priority}</td>
-      <td className="text-right tabular-nums text-muted">{formatCost(task.cost) ?? '—'}</td>
-      <td className="pl-4 text-data tabular-nums text-muted">{new Date(task.createdAt).toLocaleString()}</td>
-    </tr>
+      </div>
+      <div role="cell" className="text-muted">
+        {task.harness}
+      </div>
+      <div role="cell" className="text-muted">
+        {task.model}
+      </div>
+      <div role="cell" className={task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}>
+        {task.priority}
+      </div>
+      <div role="cell" className="text-right tabular-nums text-muted">
+        <span className="sr-only">Cost: </span>
+        {formatCost(task.cost) ?? '—'}
+      </div>
+      <div role="cell" className="text-right tabular-nums text-muted">
+        <span className="sr-only">Created: </span>
+        {new Date(task.createdAt).toLocaleString()}
+      </div>
+    </div>
   );
 
   return (
@@ -287,87 +308,94 @@ export function TableView({
         </select>
       </div>
 
-      <div className={`${card} relative overflow-x-auto px-4 py-1`} aria-busy={loading}>
+      <div className={`${panel} relative overflow-x-auto`} aria-busy={loading} role="table" aria-label="Tasks">
         {loading && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden rounded-t-lg"
+            className="pointer-events-none absolute inset-x-0 top-0 h-0.5 overflow-hidden rounded-t-xl"
           >
             <div className="progress-indeterminate h-full w-1/3 bg-muted" />
           </div>
         )}
-        <table className="w-full text-left">
-          <caption className="sr-only">Tasks</caption>
-          <thead className={tableHead}>
-            <tr>
-              <th scope="col" className="py-2.5 pr-3">#</th>
-              <th scope="col">Prompt</th>
-              <th scope="col">State</th>
-              <th scope="col">Harness</th>
-              <th scope="col">Model</th>
-              {sortHeader('priority', 'Priority')}
-              {sortHeader('cost', 'Cost', 'right')}
-              {sortHeader('createdAt', 'Created', undefined, 'pl-4')}
-            </tr>
-          </thead>
-          {/* Stale rows stay visible and fully legible while a refetch is in
-              flight — the top-edge progress bar and aria-busy carry the loading
-              signal instead of dimming the whole table below AA. */}
-          <tbody>
-            {bands.length === 0
-              ? pageTasks.map(renderRow)
-              : [
-                  ...bands.flatMap(({ epic, members }) => [
-                    <EpicBandHeader
-                      key={`band-${epic.ref}`}
-                      epic={epic}
-                      collapsed={collapsedBands.has(epic.ref)}
-                      onToggle={() => toggleBand(epic.ref)}
-                      onForceLandEpic={onForceLandEpic}
-                    />,
-                    ...(collapsedBands.has(epic.ref) ? [] : members.map(renderRow)),
-                  ]),
-                  ...(ungrouped.length > 0
-                    ? [
-                        <tr key="ungrouped-heading" className="border-t border-hairline">
-                          <td colSpan={8} className={`pt-3 ${labelType} text-faint`}>
-                            Ungrouped
-                          </td>
-                        </tr>,
-                        ...ungrouped.map(renderRow),
-                      ]
-                    : []),
-                ]}
-            {!loading && filtered.length === 0 && (
-              <tr>
-                <td colSpan={8}>
-                  {state || harness || priority || search ? (
-                    <EmptyState
-                      title="No matches"
-                      className="my-8"
-                      action={
-                        <button
-                          className={btnQuiet}
-                          onClick={() =>
-                            onFiltersChange({ ...filters, state: '', harness: '', priority: '', search: '' })
-                          }
-                        >
-                          Clear filters
-                        </button>
-                      }
-                    >
-                      No tasks match these filters.
-                    </EmptyState>
-                  ) : (
-                    <EmptyState title="No tasks yet" className="my-8">
-                      Create one on the Board to get started.
-                    </EmptyState>
-                  )}
-                </td>
-              </tr>
+
+        <div role="rowgroup">
+          <div role="row" className={`${GRID} ${tableHead} py-2.5`}>
+            <span role="columnheader" className="text-right">
+              #
+            </span>
+            <span role="columnheader">Prompt</span>
+            <span role="columnheader">State</span>
+            <span role="columnheader">Harness</span>
+            <span role="columnheader">Model</span>
+            {sortHeader('priority', 'Priority')}
+            {sortHeader('cost', 'Cost', 'right')}
+            {sortHeader('createdAt', 'Created', 'right')}
+          </div>
+        </div>
+
+        {/* Stale rows stay visible and fully legible while a refetch is in
+            flight — the top-edge progress bar and aria-busy carry the loading
+            signal instead of dimming the whole table below AA. Sparse hairline
+            dividers (`divide-y divide-hairline`) separate rows, never a ruled
+            wall of per-row borders. */}
+        {bands.length === 0 ? (
+          <div role="rowgroup" className="divide-y divide-hairline">
+            {pageTasks.map((t) => renderRow(t))}
+          </div>
+        ) : (
+          <div className="divide-y divide-hairline">
+            {bands.map(({ epic, members }) => (
+              <div key={`band-${epic.ref}`} role="rowgroup">
+                <EpicBandHeader
+                  epic={epic}
+                  collapsed={collapsedBands.has(epic.ref)}
+                  onToggle={() => toggleBand(epic.ref)}
+                  onForceLandEpic={onForceLandEpic}
+                />
+                {!collapsedBands.has(epic.ref) && (
+                  <div className="divide-y divide-hairline border-t border-hairline">
+                    {members.map((t) => renderRow(t, true))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {ungrouped.length > 0 && (
+              <div role="rowgroup">
+                <div className={`${labelType} px-4 pb-1 pt-3 text-faint`}>Ungrouped</div>
+                <div className="divide-y divide-hairline border-t border-hairline">
+                  {ungrouped.map((t) => renderRow(t))}
+                </div>
+              </div>
             )}
-          </tbody>
-        </table>
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <div className="px-4">
+            {state || harness || priority || search ? (
+              <EmptyState
+                title="No matches"
+                className="my-8"
+                action={
+                  <button
+                    className={btnQuiet}
+                    onClick={() =>
+                      onFiltersChange({ ...filters, state: '', harness: '', priority: '', search: '' })
+                    }
+                  >
+                    Clear filters
+                  </button>
+                }
+              >
+                No tasks match these filters.
+              </EmptyState>
+            ) : (
+              <EmptyState title="No tasks yet" className="my-8">
+                Create one on the Board to get started.
+              </EmptyState>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Pagination (issue #104): only shown once there's more than a page to
