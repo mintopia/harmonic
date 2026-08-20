@@ -12,6 +12,9 @@ const inconclusive: VerificationDecision = { outcome: 'escalate', reason: 'verif
  * (symbolic) branch, plus a call record — the fake-the-injected-slice idiom the
  * merge-train coordinator test uses. */
 class FakeGit implements EpicLandGit {
+  /** Branch names already contained in (an ancestor of) the default branch —
+   * the containment fast-path (#218). Empty by default: nothing pre-landed. */
+  readonly contained: Set<string> = new Set();
   constructor(
     readonly branches: Set<string> = new Set(['epic/42']),
     private readonly tips: Map<string, string> = new Map([['epic/42', 'oid-epic-42']]),
@@ -26,8 +29,14 @@ class FakeGit implements EpicLandGit {
   async symbolicBranch(): Promise<string | null> {
     return this.defaultBranch;
   }
+  async isAncestor(_dir: string, _baseBranch: string, branch: string): Promise<boolean> {
+    return this.contained.has(branch);
+  }
   setDefaultBranch(b: string | null): void {
     this.defaultBranch = b;
+  }
+  setContained(branch: string): void {
+    this.contained.add(branch);
   }
 }
 
@@ -47,6 +56,8 @@ const build = (opts: {
   verify?: VerifyFn;
   land?: (args: LandBranchArgs) => Promise<LandBranchOutcome>;
   landLeaseHeld?: boolean;
+  now?: () => number;
+  verifyBackoffMs?: number;
 } = {}) => {
   const git = opts.git ?? new FakeGit();
   const verify = vi.fn<VerifyFn>(opts.verify ?? (async () => proceed));
@@ -54,6 +65,10 @@ const build = (opts: {
   const retire = vi.fn(async (_ref: number) => {});
   const escalate = vi.fn<(epicRef: number, reason: string) => void>();
   const onError = vi.fn<(msg: string) => void>();
+  // Default clock steps 10min per read so the hard backoff (#218, default 60s)
+  // never blocks the many tests that re-submit rapidly; backoff tests inject
+  // their own controlled clock.
+  let t = 0;
   const coord = new EpicLandCoordinator({
     repoDir: '/repo',
     git,
@@ -62,6 +77,8 @@ const build = (opts: {
     retire,
     escalate,
     ...(opts.landLeaseHeld !== undefined ? { landLeaseHeld: opts.landLeaseHeld } : {}),
+    now: opts.now ?? (() => (t += 600_000)),
+    ...(opts.verifyBackoffMs !== undefined ? { verifyBackoffMs: opts.verifyBackoffMs } : {}),
     onError,
   });
   return { coord, git, verify, land, retire, escalate, onError };
@@ -171,10 +188,121 @@ describe('EpicLandCoordinator', () => {
     expect(onError).toHaveBeenCalledWith(expect.stringContaining('retire'));
   });
 
-  it('passes landLeaseHeld through to landBranch', async () => {
-    const { coord, land } = build({ landLeaseHeld: true });
+  it('asserts the exclusive clean lease by default — Harmonic owns its working dir (#218)', async () => {
+    const { coord, land } = build();
     await coord.submit({ ref: 42, members: members('completed') });
     expect(land).toHaveBeenCalledWith(expect.objectContaining({ leaseHeld: true }));
+  });
+
+  it('passes an explicit landLeaseHeld=false through to landBranch', async () => {
+    const { coord, land } = build({ landLeaseHeld: false });
+    await coord.submit({ ref: 42, members: members('completed') });
+    expect(land).toHaveBeenCalledWith(expect.objectContaining({ leaseHeld: false }));
+  });
+
+  describe('containment fast-path (#218)', () => {
+    it('retires (no verify, no land) when the integration branch is already contained in the default branch', async () => {
+      const git = new FakeGit();
+      git.setContained('epic/42');
+      const { coord, verify, land, retire } = build({ git });
+      const out = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      expect(out).toEqual({ status: 'landed', oid: 'oid-epic-42' });
+      expect(verify).not.toHaveBeenCalled();
+      expect(land).not.toHaveBeenCalled();
+      expect(retire).toHaveBeenCalledWith(42);
+    });
+
+    it('stays a success when the retire of an already-contained branch fails (logged, non-fatal)', async () => {
+      const git = new FakeGit();
+      git.setContained('epic/42');
+      const onError = vi.fn<(msg: string) => void>();
+      const coord = new EpicLandCoordinator({
+        repoDir: '/repo',
+        git,
+        verify: async () => proceed,
+        land: async () => okLand(),
+        retire: async () => {
+          throw new Error('branch -d failed');
+        },
+        escalate: vi.fn(),
+        onError,
+      });
+      const out = await coord.submit({ ref: 42, members: members('completed') });
+      expect(out.status).toBe('landed');
+      expect(onError).toHaveBeenCalledWith(expect.stringContaining('already-contained'));
+    });
+
+    it('retains the last verification verdict on the containment fast-path (read-model consistency, #218)', async () => {
+      const git = new FakeGit();
+      const { coord } = build({ git });
+      // A normal land records verificationStatus='pass' (the default fake retire
+      // is a no-op, so the branch lingers). Marking it contained then exercises
+      // the fast-path, which must NOT clobber that verdict to null.
+      await coord.submit({ ref: 42, members: members('completed') });
+      expect(coord.verificationStatus(42)).toBe('pass');
+      git.setContained('epic/42');
+      const out = await coord.submit({ ref: 42, members: members('completed') });
+      expect(out.status).toBe('landed');
+      expect(coord.verificationStatus(42)).toBe('pass');
+    });
+
+    it('auto-retires an already-contained branch even if it was previously escalated (clears the sticky hold)', async () => {
+      const git = new FakeGit();
+      const { coord, verify, retire } = build({ git, verify: async () => block });
+      // First poll escalates and sticks.
+      const first = await coord.submit({ ref: 42, members: members('completed') });
+      expect(first.status).toBe('escalated');
+      expect(retire).not.toHaveBeenCalled();
+      // The work then lands by hand: the branch becomes contained. The next poll
+      // retires it rather than staying held forever.
+      git.setContained('epic/42');
+      const out = await coord.submit({ ref: 42, members: members('completed') });
+      expect(out).toEqual({ status: 'landed', oid: 'oid-epic-42' });
+      expect(retire).toHaveBeenCalledWith(42);
+      expect(verify).toHaveBeenCalledTimes(1); // never re-ran verify
+    });
+  });
+
+  describe('hard verify+land backoff (#218)', () => {
+    // A churning member signature (completed → completed,completed) makes the
+    // per-signature sticky-escalation hold miss, so only the ref-keyed backoff
+    // stops the second verify+land from re-burning inside the window.
+    it('defers a repeat verify+land within the backoff window (no re-burn)', async () => {
+      let clock = 0;
+      const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
+      const first = await coord.submit({ ref: 42, members: members('completed') });
+      expect(first.status).toBe('escalated');
+      clock = 30_000; // < 60s
+      const second = await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      expect(second.status).toBe('waiting');
+      expect(verify).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows the next verify+land once the backoff window elapses', async () => {
+      let clock = 0;
+      const { coord, verify } = build({ verify: async () => inconclusive, now: () => clock, verifyBackoffMs: 60_000 });
+      await coord.submit({ ref: 42, members: members('completed') });
+      clock = 60_001; // past the window
+      await coord.submit({ ref: 42, members: members('completed', 'completed') });
+      expect(verify).toHaveBeenCalledTimes(2);
+    });
+
+    it('an operator force-land bypasses the backoff', async () => {
+      let clock = 0;
+      const { coord, verify } = build({
+        // First (auto) attempt escalates and records the attempt time; the forced
+        // retry inside the window still runs, proving force bypasses the backoff.
+        verify: vi.fn<VerifyFn>().mockResolvedValueOnce(inconclusive).mockResolvedValue(proceed),
+        now: () => clock,
+        verifyBackoffMs: 60_000,
+      });
+      const first = await coord.submit({ ref: 42, members: members('completed') });
+      expect(first.status).toBe('escalated');
+      clock = 10_000; // well inside the window
+      const forced = await coord.submit({ ref: 42, members: members('completed') }, { force: true });
+      expect(forced.status).toBe('landed');
+      expect(verify).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('operator force-land-ready-subset', () => {

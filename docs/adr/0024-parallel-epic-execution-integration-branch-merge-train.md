@@ -98,3 +98,28 @@ with no owner. Merge-back at parallel scale is therefore unproven.
   Authoring correct tickets is the operator's / an agent's job, by design.
 - Redefines afk **Merge Fate** `auto-merge` for an Epic member: it lands via the
   Epic's merge train, not a direct merge into a live base.
+
+## Amendment (2026-08-20, #218): containment fast-path + in-memory backoff, no new persisted entity
+
+The whole-Epic land coordinator kept re-running the (expensive, git-heavy)
+verify+land every reconcile tick for an Epic that could never land — one whose
+work was **already contained** in the default branch (a prior land whose retire
+didn't finish, or a hand-merge), or one whose land permanently failed — spawning
+git on the event loop until the server froze. Two guards close this, both keeping
+the coordinator's state **in-memory** (this ADR stores no new grouping entity, and
+that holds):
+
+- **Containment fast-path.** Before verify+land, if the integration branch is
+  already an ancestor of the default branch its work is already landed: retire it
+  idempotently and skip verify+land entirely. Checked before the sticky-escalation
+  hold, so an already-landed-but-escalated Epic is auto-retired rather than
+  lingering (the manual branch-retirement that recovery previously required).
+- **Hard verify+land backoff.** A per-Epic minimum interval (default 60s) between
+  verify+land attempts, so a churning member signature — or the first poll after a
+  restart cleared the in-memory guards — cannot spin verify+land on the event
+  loop. An operator force-land bypasses it. In-memory only: at most one attempt
+  per boot survives a restart, then the hold re-asserts; nothing is persisted.
+
+The per-Epic land is already single-flighted by the coordinator's in-flight guard
+(a slow verify cannot stack a second attempt for the same Epic). Generalising the
+"bound every reconcile/retry loop" principle across the server is #219, not this.

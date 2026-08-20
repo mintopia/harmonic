@@ -27,12 +27,22 @@ import type { VerificationDecision } from '../verification/combine.js';
  * re-submits. After a successful land the integration branch is retired, so the
  * following poll observes no branch and decides `noop`.
  *
- * Landing into the default branch obeys `branch-landing.ts`'s contract (#153):
- * when the default branch is checked out in the base repo (the common case — it
- * is the working dir's symbolic HEAD), a coherent in-place land needs an
- * exclusive clean lease; absent one, `landBranch` returns `fallback-pr-manual`
- * and this coordinator escalates (fail-safe) rather than desyncing the checkout.
- * The lease assertion is the one fact the wiring supplies via `landLeaseHeld`.
+ * Landing into the default branch obeys `branch-landing.ts`'s contract (#153).
+ * When the default branch is checked out in the base repo — the common case, it
+ * is the working dir's symbolic HEAD — a coherent in-place land needs an
+ * exclusive clean lease. The coordinator asserts that lease (issue #218,
+ * ADR-0023 amendment): `repoDir` *is* the base repo Harmonic owns, and it lands
+ * only after confirming the default branch is that repo's live symbolic HEAD (a
+ * detached HEAD defers), so it legitimately holds a clean lease over its own
+ * working directory. `landBranch` still re-checks the checkout is clean and
+ * lands `--ff-only`, so a dirty tree or a moved tip falls back rather than
+ * desyncing; a checked-out target is merged into, never refused outright.
+ *
+ * Idempotent and storm-proof (issue #218): before verify+land it (a) retires the
+ * integration branch outright when its work is already contained in the default
+ * branch (an ancestor of it) — a prior land whose retire didn't finish, or a
+ * hand-merge — and (b) hard-backs-off repeated verify+land per Epic, so a
+ * never-landing or already-landed Epic can't spin git on the event loop.
  */
 
 /** The slice of {@link Git} the coordinator needs — real Git in prod, a fake in tests. */
@@ -42,6 +52,11 @@ export interface EpicLandGit {
   /** The default branch the integration branch lands into, or `null` on a
    * detached HEAD (a concurrent afk-direct Run — defer the land that poll). */
   symbolicBranch(dir: string): Promise<string | null>;
+  /** Whether `branch` is already merged into `baseBranch` (an ancestor of its
+   * tip) — the containment fast-path (issue #218): an integration branch whose
+   * work is already in the default branch is retired without re-running the
+   * (expensive, git-heavy) verify+land. */
+  isAncestor(dir: string, baseBranch: string, branch: string): Promise<boolean>;
 }
 
 /** Run a whole-Epic Verification against the integration branch's tip OID and
@@ -107,6 +122,18 @@ export class EpicLandCoordinator {
    * starts `null` again. In-memory only (ADR-0024); an absent key reads as `null`. */
   private readonly lastVerification = new Map<number, Exclude<EpicVerificationStatus, null>>();
 
+  /** The wall-clock of the last verify+land *attempt* per Epic ref (issue #218),
+   * the key to the hard backoff. Cleared alongside the other guards when the
+   * branch is gone or just retired. In-memory only (ADR-0024). */
+  private readonly lastVerifyAttemptAt = new Map<number, number>();
+
+  private readonly now: () => number;
+  /** The minimum gap between whole-Epic verify+land attempts for one Epic (issue
+   * #218): a hard floor so a churning member signature or an in-memory-guard
+   * reset after a restart can't spin the (git-heavy) verify+land on the event
+   * loop. Bypassed by an operator force-land. */
+  private readonly verifyBackoffMs: number;
+
   constructor(deps: {
     /** The base repo owning `epic/<ref>` — the Workspace's working directory. */
     repoDir: string;
@@ -121,9 +148,19 @@ export class EpicLandCoordinator {
     /** Epic-level escalation surface (verify fail/inconclusive or land failure). */
     escalate: (epicRef: number, reason: string) => void;
     /** Whether an exclusive clean lease is asserted over a checked-out default
-     * branch, permitting a coherent in-place land (#153). Default `false`: a
-     * checked-out target with no lease falls back to PR/manual → escalate. */
+     * branch, permitting a coherent in-place land (#153). Default `true` (issue
+     * #218): the coordinator's `repoDir` **is** the base repo Harmonic owns, and
+     * it only reaches the land after confirming the default branch is that repo's
+     * live symbolic HEAD (detached defers), so it legitimately holds a clean
+     * lease over its own working directory (ADR-0023 amendment). `landBranch`
+     * still re-checks the checkout is clean and lands `--ff-only`, so a dirty
+     * tree or a moved tip still falls back rather than desyncing. */
     landLeaseHeld?: boolean;
+    /** Injected clock for the hard backoff (issue #218); default `Date.now`. */
+    now?: () => number;
+    /** Minimum gap between whole-Epic verify+land attempts per Epic (issue #218);
+     * default 60s. */
+    verifyBackoffMs?: number;
     onError?: (msg: string) => void;
   }) {
     this.repoDir = deps.repoDir;
@@ -132,7 +169,9 @@ export class EpicLandCoordinator {
     this.land = deps.land ?? landBranch;
     this.retire = deps.retire;
     this.escalateFn = deps.escalate;
-    this.landLeaseHeld = deps.landLeaseHeld ?? false;
+    this.landLeaseHeld = deps.landLeaseHeld ?? true;
+    this.now = deps.now ?? (() => Date.now());
+    this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
     this.onError = deps.onError ?? ((msg) => console.error(msg));
   }
 
@@ -157,10 +196,9 @@ export class EpicLandCoordinator {
     const branch = integrationBranchName(target.ref);
     const integrationExists = await this.git.branchExists(this.repoDir, branch);
     // Branch gone (a completed land retired it, or it was landed by hand): drop
-    // any sticky escalation so a fresh Epic reusing the ref starts clean.
+    // any sticky escalation / backoff so a fresh Epic reusing the ref starts clean.
     if (!integrationExists) {
-      this.settledEscalated.delete(target.ref);
-      this.lastVerification.delete(target.ref);
+      this.forget(target.ref);
     }
 
     // First pass: the gate decision, before any (slow) Verification is run.
@@ -179,21 +217,54 @@ export class EpicLandCoordinator {
         return { status: 'noop', reason: gate.reason };
     }
 
-    // Gate open. On the automatic path, an Epic already escalated for this exact
-    // member state is held: don't re-burn Verification or re-escalate every poll
-    // until its state changes or the branch is gone. An operator force-land (which
-    // never sets this) always retries. Checked *after* `branchExists` above so a
-    // retired/hand-landed branch clears the hold rather than sticking forever.
+    // Resolve the default branch up front so a detached HEAD (a concurrent
+    // afk-direct Run #152) defers *before* burning a minutes-long Verification or
+    // the containment check, and reuse the same value as the land target below.
+    const defaultBranch = await this.git.symbolicBranch(this.repoDir);
+    if (defaultBranch === null) {
+      return { status: 'waiting', reason: 'default branch is detached; deferring the land' };
+    }
+
+    // Containment fast-path (issue #218). If the integration branch tip is already
+    // an ancestor of the default branch, its work is *already landed* — a prior
+    // land whose retire didn't complete, or a hand-merge. Retire it idempotently
+    // and skip verify+land entirely: re-running the (expensive, git-heavy)
+    // verify+land against a branch with nothing left to land is exactly the
+    // reconcile git storm this fixes. Checked *before* the sticky-escalation hold
+    // so a hand-landed-but-escalated Epic is auto-retired, not left lingering.
+    // (This detects whole-branch containment; a squash/rebase land that rewrote
+    // the member OIDs individually — tip not an ancestor — still verifies+lands,
+    // now bounded by the sticky hold + backoff below rather than storming.)
+    if (await this.git.isAncestor(this.repoDir, defaultBranch, branch)) {
+      const tip = await this.git.revParse(this.repoDir, branch);
+      // Keep any retained verification verdict (a normal land that reached here
+      // via a failed retire stays `pass`); only the escalation/backoff guards must
+      // not outlive the land.
+      this.clearLandGuards(target.ref);
+      await this.retireQuietly(target.ref, 'already-contained');
+      return { status: 'landed', oid: tip };
+    }
+
+    // Gate open, work not yet landed. On the automatic path, an Epic already
+    // escalated for this exact member state is held: don't re-burn Verification or
+    // re-escalate every poll until its state changes or the branch is gone. An
+    // operator force-land (which never sets this) always retries.
     if (!force && this.settledEscalated.get(target.ref) === this.signatureOf(target.members)) {
       return { status: 'escalated', reason: 'already escalated for this member state; awaiting operator or a state change' };
     }
 
-    // Resolve the default branch up front so a detached HEAD (a concurrent
-    // afk-direct Run #152) defers *before* burning a minutes-long Verification,
-    // and reuse the same value as the land target below.
-    const defaultBranch = await this.git.symbolicBranch(this.repoDir);
-    if (defaultBranch === null) {
-      return { status: 'waiting', reason: 'default branch is detached; deferring the land' };
+    // Hard backoff (issue #218): bound how often the expensive verify+land runs
+    // per Epic, so a churning member signature — or a re-burn after a restart
+    // cleared the in-memory guards — can't spin verify+land on the event loop. An
+    // operator force-land bypasses it. In-memory only (ADR-0024): no persisted
+    // record, so at most one attempt per boot survives a restart, then this holds.
+    if (!force) {
+      const at = this.now();
+      const last = this.lastVerifyAttemptAt.get(target.ref);
+      if (last !== undefined && at - last < this.verifyBackoffMs) {
+        return { status: 'waiting', reason: 'whole-Epic verify+land backoff active; deferring this poll' };
+      }
+      this.lastVerifyAttemptAt.set(target.ref, at);
     }
 
     // Verify the integrated whole against the integration branch tip.
@@ -228,22 +299,23 @@ export class EpicLandCoordinator {
     this.lastVerification.set(target.ref, 'pass');
 
     // Verification passed: land the whole integration branch into the default
-    // branch, atomically (#153).
+    // branch, atomically (#153). `leaseHeld` is asserted (issue #218): `repoDir`
+    // is the base repo Harmonic owns and `defaultBranch` is its live symbolic HEAD
+    // (a detached HEAD deferred above), so a checked-out target is merged into
+    // coherently (`landBranch` still re-checks clean + lands `--ff-only`) rather
+    // than refused — a checked-out target is the common case, not a failure.
     const landed = await this.land({ repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld });
     if (!landed.ok) {
       return this.escalate(target, force, `whole-Epic land into '${defaultBranch}' failed (${landed.reason}): ${landed.detail}`);
     }
 
-    // Landed: clear any sticky escalation, then retire the integration branch
+    // Landed: clear the sticky escalation and the backoff (but keep the retained
+    // `pass` verification for the read model), then retire the integration branch
     // (idempotent). The land already succeeded, so a retire hiccup is logged, not
-    // fatal — the branch is stale (a redundant no-op verify+land next poll self-
-    // heals it), never corrupting.
-    this.settledEscalated.delete(target.ref);
-    try {
-      await this.retire(target.ref);
-    } catch (err) {
-      this.onError(`epic ${target.ref} integration branch retire after land failed: ${String(err)}`);
-    }
+    // fatal — the branch is stale; the next poll's containment fast-path (#218)
+    // retires it, never corrupting.
+    this.clearLandGuards(target.ref);
+    await this.retireQuietly(target.ref, 'after land');
     return { status: 'landed', oid: landed.oid };
   }
 
@@ -309,5 +381,36 @@ export class EpicLandCoordinator {
    * escalation is held under, so any change in a member's state releases the hold. */
   private signatureOf(members: MemberLandState[]): string {
     return [...members].sort().join(',');
+  }
+
+  /** Drop every in-memory per-Epic guard for `ref` — the sticky escalation, the
+   * retained verification status, and the verify+land backoff — when the branch
+   * is *gone*, so a re-cut Epic reusing the ref starts clean (issue #218). */
+  private forget(ref: number): void {
+    this.settledEscalated.delete(ref);
+    this.lastVerification.delete(ref);
+    this.lastVerifyAttemptAt.delete(ref);
+  }
+
+  /** Clear only the guards that must not outlive a completed land — the sticky
+   * escalation and the verify+land backoff — while *retaining* the last
+   * verification verdict for the operator read model (issue #178). Shared by the
+   * post-land success path and the containment fast-path so a landed Epic reports
+   * a consistent verdict either way (issue #218). */
+  private clearLandGuards(ref: number): void {
+    this.settledEscalated.delete(ref);
+    this.lastVerifyAttemptAt.delete(ref);
+  }
+
+  /** Retire the integration branch, logging (not throwing) on failure: the land
+   * has already succeeded or the branch is already contained, so a retire hiccup
+   * leaves a stale branch the next poll's containment fast-path retires — never a
+   * corruption. `context` names the call site for the log (issue #218). */
+  private async retireQuietly(ref: number, context: string): Promise<void> {
+    try {
+      await this.retire(ref);
+    } catch (err) {
+      this.onError(`epic ${ref} integration branch retire (${context}) failed: ${String(err)}`);
+    }
   }
 }

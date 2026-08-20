@@ -59,3 +59,24 @@ expected-old-OID CAS and a **point of no cancellation**. **Deterministic git
 recovery is preferred**; agent re-merge is a bounded fallback whose success is
 defined as matching an allowed commit-set/tree-diff, else Escalate. See
 `docs/reliability-design.md` Unit D and §0.3.
+
+## Amendment (2026-08-20, #218): the whole-Epic land asserts the lease over Harmonic's own working directory
+
+The Epic-land coordinator (`epic-land-coordinator.ts`, ADR-0024) landing an
+integration branch into the **default branch** is a special case of the
+`branch-landing.ts` contract, and it may assert the exclusive clean lease
+(`leaseHeld: true`) itself rather than being handed it. Its `repoDir` **is** the
+base repo Harmonic owns, and it lands only after confirming the default branch is
+that repo's live symbolic HEAD — a detached HEAD (a concurrent afk-direct Run,
+which runs on a private detached ref) defers the land — so at land time Harmonic
+legitimately holds a clean lease over its own working directory. `landBranch`
+still re-checks the checkout is clean and lands `--ff-only`, so a dirty tree or a
+tip that moved underneath still falls back rather than desyncing.
+
+This corrects the prior behaviour where the coordinator passed no lease, so every
+Epic land into a checked-out default branch returned `fallback-pr-manual` and
+Escalated — a permanent, un-retryable failure that the reconcile loop re-attempted
+every poll (the #218 git storm). A checked-out target is the common case, not a
+fault: it is **merged into**, never refused outright. Landing stays within
+"Harmonic owns branching" — the target is Harmonic's own working directory, not a
+checkout it cannot vouch for.
