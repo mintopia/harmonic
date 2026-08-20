@@ -27,6 +27,6 @@
 4. **Routes async** — flip server route handlers to await. Blocked by: the store batches its routes touch.
 5. **Runner async** — flip runner / auto-drive / coordinators. Blocked by: the store batches.
 6. **Contract** — delete the sync better-sqlite3 `Db` path + dependency once no caller remains. Blocked by: Routes + Runner.
-7. **Guarantee tickets** (parallel to the migration): event-loop **watchdog** · **loops-must-yield** helper+rule · **per-query timeouts** · **heavy-reads-off-thread** (largely free once async).
+7. **Guarantee tickets** (parallel to the migration): event-loop **watchdog** · **loops-must-yield** helper+rule · **per-query timeouts** · **heavy-reads-off-thread** (largely free once async). Note: the live-usage tailer's session-log read — the worst offender that motivated #200 — is already off-thread-async and O(new-bytes) after #217 (incremental `SessionTailReader`), so worker-thread offload of *its* per-tick parse is deferred here and low priority; it's sub-ms per tick now, not a core-second.
 
 **Magnitude:** ~18–22 tickets; a multi-week migration touching most of the codebase and the whole test suite. Expand + ADR are the safe starting frontier.
