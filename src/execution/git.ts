@@ -204,6 +204,17 @@ export const Git = {
   checkoutForce: (dir: string, branch: string) => git(dir, 'checkout', '-f', branch),
 
   /**
+   * Re-point HEAD at `branch` with a metadata-only `symbolic-ref` — no checkout,
+   * no index or working-tree write. Unlike {@link checkoutForce} this moves NO
+   * data, so it is coherent ONLY when the working tree already matches `branch`'s
+   * tip (the caller's responsibility). Because it never touches the index it
+   * succeeds where a contended `checkout -f` fails — the reattach used to lift a
+   * base repo off a bare detached HEAD when HEAD already sits on the branch tip
+   * (issue #198).
+   */
+  reattachHead: (dir: string, branch: string) => git(dir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`),
+
+  /**
    * Remove untracked files and directories (`clean -fd`), leaving ignored files
    * (no `-x`) untouched. A coherent restore (issue #152) must match the **clean**
    * context admission (#149) recorded at Run start, so agent-created untracked

@@ -8,6 +8,7 @@ import {
   detachForDirectRun,
   captureDirectHead,
   restoreLiveCheckout,
+  reattachBareDetachedHead,
   rematerializeCandidate,
 } from './execution-isolation.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
@@ -1430,6 +1431,9 @@ export class Runner {
    * is frozen in the candidate (#134) and the commit chain on the private ref.
    * Best-effort: a failed restore leaves the checkout detached for the startup
    * sweep + owned-ref tracking to reconcile, and never breaks the settle funnel.
+   * The {@link reattachBareDetachedHead} backstop then guarantees the base repo
+   * is not left on a bare detached HEAD (issue #198) whenever HEAD already sits
+   * on the start branch's tip.
    */
   private async restoreDirectCheckout(
     task: TaskRow,
@@ -1442,6 +1446,13 @@ export class Runner {
     } catch {
       // Non-fatal: recorded start-state + owned-ref tracking are the backstop.
     }
+    // Return the base repo to its branch (issue #198, direction #1): if the
+    // restore above threw (e.g. index contention) HEAD may still be detached.
+    // When it sits exactly on the start branch's tip, a metadata-only reattach
+    // lifts it back onto the branch — no worktree write, so it survives the same
+    // contention that stranded the `checkout -f`. A divergent detached HEAD is
+    // left for crash-recovery. Never breaks the settle funnel.
+    await reattachBareDetachedHead(task.workingDir, isolation.startBranch).catch(() => {});
   }
 
   /**

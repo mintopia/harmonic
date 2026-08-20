@@ -8,6 +8,7 @@ import {
   detachForDirectRun,
   captureDirectHead,
   restoreLiveCheckout,
+  reattachBareDetachedHead,
   rematerializeCandidate,
 } from '../src/execution/execution-isolation.js';
 import { buildCandidate } from '../src/execution/candidate.js';
@@ -364,5 +365,68 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
     expect(git(repo, 'show', `${run.candidateOid}:a.txt`)).toBe('first');
     expect(git(repo, 'show', `${run.candidateOid}:b.txt`)).toBe('second');
+  });
+});
+
+describe('reattachBareDetachedHead — never leave the base repo on a bare detached HEAD (issue #198)', () => {
+  it('reattaches HEAD to the branch when detached exactly on its tip — the incident (base detached == develop)', async () => {
+    const repo = makeRepo();
+    // Simulate a direct Run's landing: the branch was advanced to the commit
+    // HEAD holds, but the restore that should have re-attached HEAD threw, so
+    // HEAD is a bare detached HEAD sitting exactly on `main`'s tip.
+    const tip = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'checkout', '--detach', 'HEAD');
+    expect(isDetached(repo)).toBe(true);
+
+    const outcome = await reattachBareDetachedHead(repo, 'main');
+
+    expect(outcome).toBe('reattached');
+    expect(isDetached(repo)).toBe(false);
+    expect(git(repo, 'symbolic-ref', '--short', 'HEAD')).toBe('main');
+    // A pure pointer flip: neither the branch ref nor the working tree moved.
+    expect(git(repo, 'rev-parse', 'main')).toBe(tip);
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(tip);
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+  });
+
+  it('is a no-op when HEAD is already on a branch', async () => {
+    const repo = makeRepo();
+    const tip = git(repo, 'rev-parse', 'HEAD');
+
+    const outcome = await reattachBareDetachedHead(repo, 'main');
+
+    expect(outcome).toBe('already-attached');
+    expect(git(repo, 'symbolic-ref', '--short', 'HEAD')).toBe('main');
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(tip);
+  });
+
+  it('leaves a divergent detached HEAD alone — the branch tip is NOT where HEAD sits', async () => {
+    const repo = makeRepo();
+    // HEAD detaches at the start commit; then `main` advances past it. HEAD now
+    // sits on a commit that is not main's tip — a genuine divergence to leave
+    // for crash-recovery, never a silent force-move of the working tree.
+    const startCommit = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'checkout', '--detach', 'HEAD');
+    git(repo, 'checkout', 'main');
+    agentCommit(repo, 'ahead.txt', 'advanced\n', 'advance main');
+    git(repo, 'checkout', '--detach', startCommit);
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(startCommit);
+    expect(git(repo, 'rev-parse', 'main')).not.toBe(startCommit);
+
+    const outcome = await reattachBareDetachedHead(repo, 'main');
+
+    expect(outcome).toBe('left-detached');
+    expect(isDetached(repo)).toBe(true);
+    expect(git(repo, 'rev-parse', 'HEAD')).toBe(startCommit);
+  });
+
+  it('leaves HEAD detached when the branch does not exist', async () => {
+    const repo = makeRepo();
+    git(repo, 'checkout', '--detach', 'HEAD');
+
+    const outcome = await reattachBareDetachedHead(repo, 'no-such-branch');
+
+    expect(outcome).toBe('left-detached');
+    expect(isDetached(repo)).toBe(true);
   });
 });

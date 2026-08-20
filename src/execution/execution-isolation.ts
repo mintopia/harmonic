@@ -94,3 +94,40 @@ export async function rematerializeCandidate(repoDir: string, candidateOid: stri
   await Git.checkoutDetach(repoDir, candidateOid);
   await Git.cleanUntracked(repoDir);
 }
+
+/** The outcome of a {@link reattachBareDetachedHead} attempt (audit/test only). */
+export type ReattachOutcome =
+  /** HEAD was already on a branch — nothing to do. */
+  | 'already-attached'
+  /** HEAD was a bare detached HEAD sitting on `branch`'s tip → flipped back onto it. */
+  | 'reattached'
+  /** HEAD is detached at a commit that is NOT `branch`'s tip (divergent, or the
+   *  branch is missing) — left for crash-recovery, never guessed at. */
+  | 'left-detached';
+
+/**
+ * Return the base repo to its branch after a Run settles, so a landing never
+ * leaves it on a **bare detached HEAD** (issue #198). The direct-mode restore
+ * ({@link restoreLiveCheckout}) is best-effort — a contended `checkout -f` can
+ * throw and leave HEAD detached, after which every later worktree Run resolves
+ * `base_branch` to the literal `"HEAD"` and isolation silently breaks.
+ *
+ * This is the guaranteed backstop: when HEAD is detached but sits **exactly** on
+ * `branch`'s tip (the common case — the branch was advanced to the same commit
+ * HEAD holds, e.g. a direct Run's landing), flip HEAD back onto the branch with
+ * a metadata-only `symbolic-ref`. It moves no data (the tree already matches the
+ * tip) and, touching no index, succeeds where the `checkout -f` that stranded us
+ * failed. A HEAD detached at a *different* commit is a genuine divergence left
+ * for crash-recovery ({@link file://branch-recovery.ts} `head-at-unknown-commit`);
+ * this never force-moves the working tree to "fix" it.
+ */
+export async function reattachBareDetachedHead(repoDir: string, branch: string): Promise<ReattachOutcome> {
+  if ((await Git.symbolicBranch(repoDir)) !== null) return 'already-attached';
+  const [head, tip] = await Promise.all([
+    Git.revParse(repoDir, 'HEAD'),
+    Git.revParse(repoDir, branch).catch(() => null),
+  ]);
+  if (tip === null || tip !== head) return 'left-detached';
+  await Git.reattachHead(repoDir, branch);
+  return 'reattached';
+}
