@@ -78,6 +78,12 @@ describe('live run_usage firehose (ADR 0010)', () => {
     expect(msg.cost.totalUsd).toBeGreaterThan(0);
     // The tool call drove the current-activity line.
     expect(msg.activity).toBe('Read');
+    // The live snapshot carries the running tool tally (issue #100): the Board
+    // ticks "· N tools" off this, so an empty map would freeze the count at
+    // zero. `parse()` alone yields no tally — it is folded in from the events.
+    expect(msg.usage.toolCalls).toEqual({ Read: 1 });
+    // Per-agent breakdown rides the snapshot too: this run is root-only.
+    expect(msg.usage.agents.root).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
 
     // Always persisted on finish (ADR 0010): the row's snapshot survives a
     // restart. Guards the finalize→stop flush ordering the reviewer flagged.

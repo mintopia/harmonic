@@ -63,6 +63,15 @@ export const runUsageSchema = z
         'sonnet-5': { inputTokens: 18240, outputTokens: 3610, cacheReadTokens: 26400, cacheWriteTokens: 1200 },
       },
     }),
+    /** Per-agent-type breakdown (root session + each Subagent type); absent when the harness parsed no Process Tree. */
+    agents: z
+      .record(z.string(), modelUsageSchema)
+      .optional()
+      .meta({
+        example: {
+          root: { inputTokens: 40120, outputTokens: 5200, cacheReadTokens: 60300, cacheWriteTokens: 2400 },
+        },
+      }),
     /** Aggregate token counts; null when no source reported tokens. */
     totals: modelUsageSchema.extend({ totalTokens: z.number().meta({ example: 49450 }).nullable() }).nullable(),
     /** Tool-call tallies from the run's events. */

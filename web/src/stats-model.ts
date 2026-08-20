@@ -21,3 +21,51 @@ export function orderedRunStates(runsByState: Record<string, number>): RunStateC
   }
   return [...known, ...unknown];
 }
+
+/** The root-session bucket in a per-agent breakdown; everything else is a Subagent. */
+export const ROOT_AGENT = 'root';
+
+interface TokenCounts {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
+/** All four token classes of one bucket, summed — the magnitude a token bar plots. */
+export const totalTokens = (u: TokenCounts): number =>
+  u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
+
+export interface UsageBar {
+  key: string;
+  tokens: number;
+}
+
+/**
+ * Bar rows for a per-key token breakdown (per-model, per-agent), largest
+ * first, zero-token keys dropped — the shape the Stats bar charts render.
+ */
+export function usageBars(byKey: Record<string, TokenCounts>): UsageBar[] {
+  return Object.entries(byKey)
+    .map(([key, u]) => ({ key, tokens: totalTokens(u) }))
+    .filter((r) => r.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens || a.key.localeCompare(b.key));
+}
+
+/**
+ * The Subagent share of total tokens (0..1): everything not under `root`,
+ * over the whole tree. null when there is no per-agent data or no tokens —
+ * the caller shows "—", never a fabricated 0%.
+ */
+export function subagentShare(agents: Record<string, TokenCounts> | undefined): number | null {
+  if (!agents) return null;
+  let total = 0;
+  let root = 0;
+  for (const [name, u] of Object.entries(agents)) {
+    const t = totalTokens(u);
+    total += t;
+    if (name === ROOT_AGENT) root += t;
+  }
+  if (total === 0) return null;
+  return (total - root) / total;
+}

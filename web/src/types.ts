@@ -474,6 +474,8 @@ export interface ModelUsage {
 export interface RunUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
   models: Record<string, ModelUsage>;
+  /** Per-agent-type breakdown (root session + each Subagent type); absent when the harness parsed no Process Tree. */
+  agents?: Record<string, ModelUsage>;
   /** Aggregate token counts; null when no source reported tokens. */
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   /** Tool-call tallies from the process's events. */

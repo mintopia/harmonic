@@ -9,12 +9,24 @@ export type { ModelUsage };
 export interface RunUsage {
   /** Per-model breakdown (session-log fallback; ACP only reports aggregates). */
   models: Record<string, ModelUsage>;
+  /**
+   * Per-agent-type breakdown (agent-usage / subagent-share stats): each
+   * Process Tree node's own tokens folded under its name (`root` for the
+   * root session, the agentType for a Subagent). Absent for harnesses/runs
+   * with no parsed tree, and on runs recorded before the field existed —
+   * the Stats aggregation treats a missing map as "no per-agent data".
+   */
+  agents?: Record<string, ModelUsage>;
   /** Aggregate token counts; null when no source reported tokens. */
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   /** Tool-call tallies from the run's events. */
   toolCalls: Record<string, number>;
   source: 'acp' | 'session-log' | 'combined' | null;
 }
+
+/** The reserved agent name for the root session in a per-agent breakdown —
+ * everything else is a Subagent, so `subagent share = 1 − root/total`. */
+export const ROOT_AGENT = 'root';
 
 /** Live status of a Process Tree node — idle age drives active → inactive → hidden. */
 export type ProcessStatus = 'active' | 'inactive' | 'hidden';
@@ -137,25 +149,64 @@ export interface CollectUsageInput {
  */
 export function collectUsage(input: CollectUsageInput): RunUsage | null {
   const collector = adapterFor(input.harnessId).usage;
-  const totals = totalsFromAcp(input.promptResult?.usage);
-  // Prompt-result breakdown first (codex); session log as the fallback.
+  const acpTotals = totalsFromAcp(input.promptResult?.usage);
+  // The harness parser rolls Subagents into the per-model split (the
+  // undercount fix, #48) and yields the Process Tree the per-agent
+  // breakdown is folded from. Parsed once, reused for models and agents.
+  const parsed = collector?.parse?.({
+    sessionLogDir: input.harness.sessionLogDir,
+    cwd: input.cwd,
+    sessionId: input.sessionId,
+  });
+
+  // Prompt-result breakdown first (codex); the parsed tree's rolled-up
+  // per-model split next (claude/copilot — this is where a Subagent's model,
+  // e.g. a Sonnet helper, now shows up instead of being dropped); the raw
+  // session-log reader (parent only) as the last resort.
   let models =
     input.promptResult && collector?.modelsFromPromptResult
       ? collector.modelsFromPromptResult(input.promptResult)
       : {};
   if (Object.keys(models).length === 0) {
-    const file = sessionLogFile(input);
-    models = collector && file ? collector.modelsFromSessionLog(file, input.sessionId) : {};
+    if (parsed && Object.keys(parsed.usage.models).length > 0) {
+      models = parsed.usage.models;
+    } else {
+      const file = sessionLogFile(input);
+      models = collector && file ? collector.modelsFromSessionLog(file, input.sessionId) : {};
+    }
   }
+  const agents = parsed ? agentsFromTree(parsed.tree) : undefined;
   const toolCalls = tallyToolCalls(input.events, (payload) => collector?.toolName(payload) ?? null);
 
-  if (!totals && Object.keys(models).length === 0) return null;
+  if (!acpTotals && Object.keys(models).length === 0) return null;
   return {
     models,
-    totals: totals ?? sumModels(models),
+    ...(agents && Object.keys(agents).length > 0 ? { agents } : {}),
+    totals: acpTotals ?? sumModels(models),
     toolCalls,
-    source: totals && Object.keys(models).length > 0 ? 'combined' : totals ? 'acp' : 'session-log',
+    source: acpTotals && Object.keys(models).length > 0 ? 'combined' : acpTotals ? 'acp' : 'session-log',
   };
+}
+
+/**
+ * Fold a Process Tree into a per-agent-type breakdown: each node's *own*
+ * tokens summed under its name (`root` for the root, the agentType for a
+ * Subagent), so N agents of the same type roll into one bucket. The source
+ * for the Stats agent-usage chart and the subagent-share figure.
+ */
+export function agentsFromTree(tree: ProcessNode): Record<string, ModelUsage> {
+  const agents: Record<string, ModelUsage> = {};
+  const walk = (node: ProcessNode): void => {
+    const bucket = (agents[node.name] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    bucket.inputTokens += node.usage.inputTokens;
+    bucket.outputTokens += node.usage.outputTokens;
+    bucket.cacheReadTokens += node.usage.cacheReadTokens;
+    bucket.cacheWriteTokens += node.usage.cacheWriteTokens;
+    if (node.usage.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + node.usage.aiUnits;
+    for (const child of node.children) walk(child);
+  };
+  walk(tree);
+  return agents;
 }
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
@@ -181,7 +232,7 @@ function sessionLogFile(input: CollectUsageInput): string | null {
   });
 }
 
-function tallyToolCalls(
+export function tallyToolCalls(
   events: PersistedRunEvent[],
   preferredName: (payload: unknown) => string | null,
 ): Record<string, number> {
@@ -390,6 +441,17 @@ export function mergeUsage(usages: RunUsage[]): RunUsage | null {
     }
     for (const [tool, count] of Object.entries(usage.toolCalls)) {
       merged.toolCalls[tool] = (merged.toolCalls[tool] ?? 0) + count;
+    }
+    if (usage.agents) {
+      const agents = (merged.agents ??= {});
+      for (const [name, au] of Object.entries(usage.agents)) {
+        const bucket = (agents[name] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+        bucket.inputTokens += au.inputTokens;
+        bucket.outputTokens += au.outputTokens;
+        bucket.cacheReadTokens += au.cacheReadTokens;
+        bucket.cacheWriteTokens += au.cacheWriteTokens;
+        if (au.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + au.aiUnits;
+      }
     }
   }
   merged.totals = totals;

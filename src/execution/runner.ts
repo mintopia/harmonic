@@ -11,7 +11,7 @@ import {
   rematerializeCandidate,
 } from './execution-isolation.js';
 import { adapterFor, adapterVersion } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, totalTokensOf, type RunUsage, type RunUsageSnapshot } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, tallyToolCalls, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -3112,13 +3112,22 @@ export class Runner {
     // ponytail: re-parses the whole native log each ~1s tick (parse() has no
     // incremental cursor). Fine for coding-run log sizes; add a tail offset to
     // parse() if a long run's per-second full scan shows up in a profile.
-    const parsed = adapterFor(active.harnessId).usage?.parse?.({
+    const collector = adapterFor(active.harnessId).usage;
+    const parsed = collector?.parse?.({
       sessionLogDir: active.harness.sessionLogDir,
       cwd: active.cwd,
       sessionId,
     });
     if (!parsed) return null;
-    return { usage: parsed.usage, contextTokens: parsed.tree.contextTokens, activity: active.activity, tree: parsed.tree };
+    // `parse()` yields the per-model roll-up and tree but no tool tally (that
+    // lives in the event stream) — so the live "· N tools" figure the Board
+    // ticks off `run_usage` (issue #100) would be stuck at zero. Tally the
+    // run's events here, and fold the per-agent breakdown in for parity with
+    // the settle-time Usage.
+    const toolCalls = tallyToolCalls(this.runStore.listEvents(runId), (payload) => collector?.toolName(payload) ?? null);
+    const agents = agentsFromTree(parsed.tree);
+    const usage: RunUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
+    return { usage, contextTokens: parsed.tree.contextTokens, activity: active.activity, tree: parsed.tree };
   }
 
   /** Usage is decoration on a finished run — never let it fail the run. */

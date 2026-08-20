@@ -49,6 +49,18 @@ const statsResponseSchema = z.object({
       'sonnet-5': { inputTokens: 18240, outputTokens: 3610, cacheReadTokens: 26400, cacheWriteTokens: 1200 },
     },
   }),
+  /**
+   * Per-agent-type token breakdown across the range (root session + each
+   * Subagent type), from runs whose harness parsed a Process Tree. `root` is
+   * the reserved root-session bucket, so the subagent share is
+   * `1 − root/total`. Empty when no run in range carried per-agent data.
+   */
+  agents: z.record(z.string(), modelUsageSchema).meta({
+    example: {
+      root: { inputTokens: 40120, outputTokens: 5200, cacheReadTokens: 60300, cacheWriteTokens: 2400 },
+      'code-reviewer': { inputTokens: 8100, outputTokens: 1400, cacheReadTokens: 12000, cacheWriteTokens: 600 },
+    },
+  }),
   toolCalls: z.record(z.string(), z.number()).meta({ example: { read: 14, edit: 6, bash: 3 } }),
   cost: costSchema.nullable(),
   /** Per-day cost buckets (only days with runs), ordered by day. */
@@ -138,6 +150,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         runsByState,
         totals: merged?.totals ?? null,
         models: merged?.models ?? {},
+        agents: merged?.agents ?? {},
         toolCalls: merged?.toolCalls ?? {},
         cost: flooredCost,
         series,

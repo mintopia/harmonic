@@ -1,25 +1,39 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatCost, usd } from '../cost';
-import type { Cost, TaskState } from '../types';
-import { card, chip, displayTitle, labelType, STATE_CHIP_STYLES, tableHead } from '../ui';
-import { orderedRunStates } from '../stats-model';
-import { CostChart } from './CostChart';
+import type { Cost } from '../types';
+import { card, displayTitle, labelType } from '../ui';
+import { orderedRunStates, subagentShare, usageBars } from '../stats-model';
+import { CostBars } from './CostBars';
+import { BarChart, type Bar } from './BarChart';
+import { Donut, type DonutSegment } from './Donut';
 import { fillSeries, type DayCost } from './costChart-model';
 import { EmptyState } from './EmptyState';
+
+/** Each run state's signal colour, for the run-states donut — the same
+ * state-signal family the chips use (the Signal Rule), so the segment colour
+ * reads as the state. Unknown states fall back to a neutral edge grey. */
+const STATE_DONUT_COLOR: Record<string, string> = {
+  draft: 'var(--hm-muted)',
+  blocked: 'var(--hm-blocked)',
+  ready: 'var(--hm-ready-dot)',
+  running: 'var(--hm-running-dot)',
+  'awaiting-review': 'var(--hm-accent)',
+  completed: 'var(--hm-accept-dot)',
+  failed: 'var(--hm-fail-dot)',
+  cancelled: 'var(--hm-faint)',
+};
+
+type ModelUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
 
 interface Stats {
   from: number;
   to: number;
   runCount: number;
   runsByState: Record<string, number>;
-  totals: {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    totalTokens: number | null;
-  } | null;
-  models: Record<string, { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }>;
+  totals: (ModelUsage & { totalTokens: number | null }) | null;
+  models: Record<string, ModelUsage>;
+  /** Per-agent-type token breakdown (root + each Subagent type); may be absent on older data. */
+  agents?: Record<string, ModelUsage>;
   toolCalls: Record<string, number>;
   cost: Cost | null;
   series: DayCost[];
@@ -90,6 +104,35 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
   const costText = stats ? formatCost(stats.cost) : null;
+  const share = stats ? subagentShare(stats.agents) : null;
+  // Token bars, largest first. Per-model rows carry their Cost too (the table
+  // this replaced showed both); agent + tool rows are single-figure.
+  const modelBars: Bar[] = stats
+    ? usageBars(stats.models).map((b) => {
+        const c = stats.cost?.byModel[b.key];
+        return {
+          key: b.key,
+          value: b.tokens,
+          valueLabel: c == null ? compact.format(b.tokens) : `${compact.format(b.tokens)} · ${usd(c)}`,
+        };
+      })
+    : [];
+  const agentBars: Bar[] = stats?.agents
+    ? usageBars(stats.agents).map((b) => ({ key: b.key, value: b.tokens, valueLabel: compact.format(b.tokens) }))
+    : [];
+  const toolBars: Bar[] = stats
+    ? Object.entries(stats.toolCalls)
+        .map(([key, count]) => ({ key, value: count, valueLabel: fmt(count) }))
+        .sort((a, b) => b.value - a.value)
+    : [];
+  const runStateSegments: DonutSegment[] = stats
+    ? orderedRunStates(stats.runsByState).map(({ state, count }) => ({
+        key: state,
+        label: state,
+        value: count,
+        color: STATE_DONUT_COLOR[state] ?? 'var(--hm-edge)',
+      }))
+    : [];
 
   return (
     <div>
@@ -137,100 +180,59 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </div>
           </div>
 
-          {/* A quiet stat row answers alongside the hero. */}
-          <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
+          {/* A quiet stat row answers alongside the hero. Subagent share is
+              the fraction of tokens spent below the root session (issue #48
+              made Subagent tokens visible); "—" when no per-agent data. */}
+          <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-6`}>
             <SummaryCell label="Runs" value={fmt(stats.runCount)} />
             <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
             <SummaryCell label="Tokens out" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
             <SummaryCell label="Cache read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
             <SummaryCell label="Cache write" value={stats.totals ? compact.format(stats.totals.cacheWriteTokens) : '—'} />
+            <SummaryCell label="Subagent share" value={share == null ? '—' : `${Math.round(share * 100)}%`} />
           </div>
 
           {filled.length >= 2 && (
             <section className={`${card} mb-4 p-5`}>
               <h2 className="mb-3 text-title font-semibold">Cost per day</h2>
-              <CostChart series={filled} />
+              <CostBars series={filled} />
             </section>
           )}
 
           <section className={`${card} mb-4 p-5`}>
             <h2 className="mb-3 text-title font-semibold">Run states</h2>
-            <div className="flex flex-wrap gap-2">
-              {orderedRunStates(stats.runsByState).map(({ state, count }) => (
-                <span
-                  key={state}
-                  className={`${chip} ${STATE_CHIP_STYLES[state as TaskState] ?? 'bg-raised text-muted'}`}
-                >
-                  {state} <span className="font-semibold">{count.toLocaleString()}</span>
-                </span>
-              ))}
-            </div>
+            <Donut segments={runStateSegments} total={stats.runCount} ariaLabel="Runs by state" />
           </section>
 
           <div className="grid gap-4 md:grid-cols-2">
             <section className={`${card} p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tokens &amp; cost per model</h2>
-              {Object.keys(stats.models).length === 0 && <p className="text-muted">No per-model data in range.</p>}
-              {Object.keys(stats.models).length > 0 && (
-                <table className="w-full text-left">
-                  <thead className={tableHead}>
-                    <tr>
-                      <th className="pb-2 font-semibold">Model</th>
-                      <th className="pb-2 text-right font-semibold">Tokens</th>
-                      <th className="pb-2 pl-3 text-right font-semibold">Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(stats.models).map(([model, u]) => {
-                      const modelCost = stats.cost?.byModel[model];
-                      return (
-                        <tr key={model} className="border-t border-hairline">
-                          <td className="py-2 text-data text-ink">{model}</td>
-                          <td className="text-right text-data tabular-nums text-muted">
-                            {fmt(u.inputTokens)} in · {fmt(u.outputTokens)} out
-                          </td>
-                          <td
-                            className="pl-3 text-right text-data tabular-nums text-ink"
-                            title={modelCost == null ? 'No price configured for this model' : undefined}
-                          >
-                            {modelCost == null ? '—' : usd(modelCost)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              {modelBars.length === 0 ? (
+                <p className="text-muted">No per-model data in range.</p>
+              ) : (
+                <BarChart bars={modelBars} ariaLabel="Tokens per model" />
               )}
             </section>
 
             <section className={`${card} p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tool calls</h2>
-              {Object.keys(stats.toolCalls).length === 0 && <p className="text-muted">No tool calls in range.</p>}
-              {Object.keys(stats.toolCalls).length > 0 && (
-                <table className="w-full text-left">
-                  <thead className={tableHead}>
-                    <tr>
-                      <th className="pb-2 font-semibold">Tool</th>
-                      <th className="pb-2 text-right font-semibold">Calls</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(stats.toolCalls)
-                      .sort(([, a], [, b]) => b - a)
-                      .map(([tool, count]) => (
-                        // The tool name is a row label, not a state — colour stays
-                        // off content and lives only on the state/signal layer (the
-                        // Signal Rule; issue #87). So the name renders in ink.
-                        <tr key={tool} className="border-t border-hairline">
-                          <td className="py-2 text-data text-ink">{tool}</td>
-                          <td className="text-right text-data tabular-nums text-ink">{fmt(count)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
+              {toolBars.length === 0 ? (
+                <p className="text-muted">No tool calls in range.</p>
+              ) : (
+                <BarChart bars={toolBars} ariaLabel="Tool calls by tool" />
               )}
             </section>
           </div>
+
+          {/* Per-agent-type spend (root session vs each Subagent type). Only
+              runs whose harness parsed a Process Tree carry this, so older
+              data may leave it empty — then the card is simply omitted. */}
+          {agentBars.length > 0 && (
+            <section className={`${card} mt-4 p-5`}>
+              <h2 className="mb-3 text-title font-semibold">Tokens per agent</h2>
+              <BarChart bars={agentBars} ariaLabel="Tokens per agent type" />
+            </section>
+          )}
         </>
       )}
     </div>

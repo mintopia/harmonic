@@ -51,6 +51,45 @@ describe('usage collection retry (log-flush race)', () => {
   });
 });
 
+describe('collectUsage rolls Subagent models + per-agent breakdown into the persisted Usage', () => {
+  const assistant = (model: string, u: Record<string, number>, id = model) =>
+    JSON.stringify({ type: 'assistant', message: { id, model, usage: u } });
+
+  it('the settle-time collector shows a Subagent model (not just the root) and folds a per-agent breakdown', () => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-agents-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'harmonic-agents-work-'));
+    const S = 'agents-session';
+    const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+    mkdirSync(join(logRoot, slug), { recursive: true });
+    const subs = join(logRoot, slug, S, 'subagents');
+    mkdirSync(subs, { recursive: true });
+
+    // Root runs Opus; a spawned Subagent runs Sonnet — the model the old
+    // parent-only collector dropped ("shows no Sonnet").
+    writeFileSync(join(logRoot, slug, `${S}.jsonl`), assistant('claude-opus-4-8', { input_tokens: 100, output_tokens: 10 }));
+    writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-sonnet-5', { input_tokens: 40, output_tokens: 4 }));
+    writeFileSync(join(subs, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'code-reviewer', toolUseId: 'toolu_1', spawnDepth: 1 }));
+
+    // No ACP prompt result → the per-model split (and totals) come from the log.
+    const usage = collectUsage({
+      harnessId: 'claude',
+      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+      cwd,
+      sessionId: S,
+      events: [],
+    })!;
+
+    // The Subagent's Sonnet now appears in the per-model breakdown.
+    expect(usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10 });
+    expect(usage.models['claude-sonnet-5']).toMatchObject({ inputTokens: 40, outputTokens: 4 });
+    // Totals roll the whole tree up (Subagent tokens count).
+    expect(usage.totals).toMatchObject({ inputTokens: 140, outputTokens: 14 });
+    // Per-agent breakdown: the root bucket and the Subagent's agentType bucket.
+    expect(usage.agents?.root).toMatchObject({ inputTokens: 100, outputTokens: 10 });
+    expect(usage.agents?.['code-reviewer']).toMatchObject({ inputTokens: 40, outputTokens: 4 });
+  });
+});
+
 describe('replay quarantine (issue #144)', () => {
   const input = (logRoot: string, cwd: string, events: PersistedRunEvent[]): Parameters<typeof collectUsage>[0] => ({
     harnessId: 'claude',
