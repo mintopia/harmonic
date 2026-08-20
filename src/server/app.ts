@@ -44,6 +44,7 @@ import { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
+import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
@@ -406,6 +407,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
     escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
   });
+  // Per-context git circuit breaker (issue #199): shared by the Runner (which
+  // records a workspace-prep git fast-fail into it) and the Auto-Runner (which
+  // skips a Task whose base repo is in the resulting backoff window), so a
+  // doomed context is escalated/backed off instead of being re-spawned forever.
+  const gitBreaker = new GitCircuitBreaker();
   const runner = new Runner(runs, tasks, leases, db, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
@@ -413,6 +419,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
     mergeTrain,
+    gitBreaker,
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
@@ -509,6 +516,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // poll loop, which owns its per-Epic integration-branch coordinator. No live
     // loop ⇒ not gated, so a native-only / tracking-off Workspace is unaffected.
     (task) => trackerManagerRef?.awaitsEpicBase(task) ?? false,
+    gitBreaker,
   );
   // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
   // poll pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.

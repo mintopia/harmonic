@@ -223,7 +223,7 @@ describe('worktree isolation mode', () => {
     expect(taskB.state).toBe('awaiting-review');
   });
 
-  it('fails the run cleanly when the working directory is not a git repo', async () => {
+  it('escalates the run when the working directory is not a git repo (permanent git-prep failure, issue #199)', async () => {
     const notARepo = mkdtempSync(join(tmpdir(), 'harmonic-plain-'));
     const created = await server.api('POST', '/api/tasks', {
       prompt: 'anything',
@@ -231,8 +231,18 @@ describe('worktree isolation mode', () => {
       isolationMode: 'worktree',
     });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed');
+    // A non-git base can never succeed on retry (issue #199): the workspace-prep
+    // git command fatally fails, so the Task is escalated to a human (→ hitl)
+    // rather than settled a bare `failed` the scheduler would keep re-touching.
+    const task = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+      return t.escalated ? t : undefined;
+    });
+    expect(task.drive).toBe('hitl');
     const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
+    // The Run itself still fails with a legible reason; only one is ever created.
+    expect(runs.length).toBe(1);
+    expect(runs[0].state).toBe('failed');
     expect(runs[0].reason).toBeTruthy();
   });
 });

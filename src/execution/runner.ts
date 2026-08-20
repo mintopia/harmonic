@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Git } from './git.js';
+import { Git, GitError } from './git.js';
+import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import { snapshotCandidate } from './candidate.js';
 import {
   detachForDirectRun,
@@ -185,6 +186,12 @@ export interface RunnerOptions {
    * {@link Runner.settleEscalatedForMember}, so the coordinator must be shared
    * with the Runner that owns those callbacks. */
   mergeTrain?: MergeTrainCoordinator;
+  /** Per-context git circuit breaker (issue #199): shared with the Auto-Runner
+   * so a context whose git workspace-prep keeps fast-failing is backed off (and
+   * ultimately escalated) instead of being re-spawned at fork-rate. Absent →
+   * no breaker (a git-prep failure settles as before); the Auto-Runner must be
+   * given the SAME instance for the backoff/pick sides to agree. */
+  gitBreaker?: GitCircuitBreaker;
 }
 
 interface Workspace {
@@ -354,6 +361,7 @@ export class Runner {
    * spurious `failed` (issue #113). */
   private shuttingDown = false;
 
+  private readonly gitBreaker: GitCircuitBreaker | undefined;
   private readonly events: RunnerEvents;
   private readonly worktreesDir: string;
   private readonly keys: RunnerOptions['keys'];
@@ -428,6 +436,7 @@ export class Runner {
     this.getWorkspace = options.getWorkspace;
     this.autoAcceptLand = options.autoAcceptLand;
     this.mergeTrain = options.mergeTrain;
+    this.gitBreaker = options.gitBreaker;
     this.criticDrive = options.criticDrive;
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
@@ -2012,6 +2021,9 @@ export class Runner {
     let stderrFlushed: Promise<void> = Promise.resolve();
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined || remergeCtx !== undefined);
+      // Workspace prep (its git ops) succeeded — clear any accumulated git
+      // backoff for this context, so a later unrelated blip starts fresh (#199).
+      this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
       directIsolation = workspace.directIsolation;
       // Agents reach the MCP server with zero setup: a Run Key (its
       // lifetime follows the run's) plus the endpoint, in the environment
@@ -2053,6 +2065,24 @@ export class Runner {
         // handed to a human with the operator-legible reason, not settled as a
         // generic execution failure.
         this.settleEscalated(task, run, err.reason, {});
+      } else if (err instanceof GitError) {
+        // A git workspace-prep failure (issue #199). Record it against the
+        // per-context circuit breaker (keyed on the base repo, so colliding
+        // worktree/direct Runs share it) so the Auto-Runner backs the context
+        // off instead of re-spawning git on the next event-loop tick. Escalate
+        // to a human — rather than settle a plainly-retryable `failed` — when the
+        // failure is PERMANENT (a detached/dirty base, a path that already
+        // exists, a bad revision: it will never succeed on retry) or when the
+        // breaker has now tripped (a transient failure that kept recurring). A
+        // one-off transient failure still settles `failed` and re-attempts,
+        // just gated by the breaker's backoff, never at fork-rate.
+        const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
+        const failure = this.gitBreaker?.recordFailure(repoKey(task.workingDir));
+        if (cls === 'permanent' || failure?.opened) {
+          this.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
+        } else {
+          this.settle(task, run, 'failed', err.message);
+        }
       } else {
         this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
       }

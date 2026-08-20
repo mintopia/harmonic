@@ -8,6 +8,12 @@ import { withRepoLock } from './repo-lock.js';
 
 const execFileAsync = promisify(execFile);
 
+/** Wall-clock ceiling for a single git invocation (issue #199): a hung child is
+ * SIGKILLed and reaped rather than lingering as a zombie during an event-loop
+ * starvation episode. Two minutes is far beyond any workspace-prep op's real
+ * runtime, so a healthy command never hits it. */
+const GIT_TIMEOUT_MS = 120_000;
+
 export class GitError extends Error {
   constructor(
     message: string,
@@ -33,6 +39,12 @@ async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[
     const { stdout } = await execFileAsync('git', ['-C', cwd, ...args], {
       maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env, ...env },
+      // A git child that hangs (e.g. blocked on a lock) is SIGKILLed rather than
+      // lingering — so it is reaped deterministically instead of relying on an
+      // unblocked event loop to process its exit (issue #199). Well above any
+      // real op's turnaround, so a normal command never trips it.
+      timeout: GIT_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
     });
     return stdout.trim();
   } catch (err: any) {
