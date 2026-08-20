@@ -510,3 +510,81 @@ describe("claude's incremental session-log tail reader (#217)", () => {
     expect(s2!.usage.models['claude-haiku-4-5']).toMatchObject({ inputTokens: 20, outputTokens: 2 });
   });
 });
+
+describe("codex's incremental rollout tail reader (#217)", () => {
+  const turn = (model: string) => JSON.stringify({ type: 'turn_context', payload: { model, effort: 'low' } });
+  const tokenCount = (input: number, cached: number, output: number, last: number) =>
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: { input_tokens: input, cached_input_tokens: cached, output_tokens: output },
+          last_token_usage: { input_tokens: last, cached_input_tokens: 0, output_tokens: 0 },
+        },
+      },
+    });
+
+  /** A codex sessions root + dated rollout path for session `S`. */
+  const setup = (S: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-tail-'));
+    const day = join(root, '2026', '07', '14');
+    mkdirSync(day, { recursive: true });
+    const file = join(day, `rollout-x-${S}.jsonl`);
+    const reader = adapterFor('codex').usage!.createTailReader!({ sessionLogDir: root, cwd: '/w', sessionId: S });
+    return { file, reader };
+  };
+
+  it('folds only newly-appended rollout bytes across ticks and never double-counts a re-read line', async () => {
+    const { file, reader } = setup('s1');
+    expect(reader.latest()).toBeNull();
+    expect(await reader.sample()).toBeNull(); // rollout not written yet
+
+    writeFileSync(file, turn('gpt-5.6-sol') + '\n' + tokenCount(16173, 9984, 5, 16173) + '\n');
+    const first = await reader.sample();
+    // Rollout input_tokens include cached reads; ModelUsage.inputTokens is uncached-only.
+    expect(first!.usage.models['gpt-5.6-sol']).toEqual({ inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 });
+    expect(first!.tree.contextTokens).toBe(16173);
+    expect(reader.latest()).toBe(first);
+
+    // A second turn appended (cumulative counter) — only the delta is attributed.
+    appendFileSync(file, turn('gpt-5.4-mini') + '\n' + tokenCount(31723, 15488, 26, 15550) + '\n');
+    const second = await reader.sample();
+    expect(second!.usage.models).toEqual({
+      'gpt-5.6-sol': { inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 },
+      'gpt-5.4-mini': { inputTokens: 10046, outputTokens: 21, cacheReadTokens: 5504, cacheWriteTokens: 0 },
+    });
+    expect(second!.tree.contextTokens).toBe(15550);
+
+    // A no-op sample (nothing appended) must not shift the cumulative totals.
+    const third = await reader.sample();
+    expect(third!.usage.models).toEqual(second!.usage.models);
+  });
+
+  it('counts a complete final rollout line with no trailing newline, then does not double-count it', async () => {
+    const { file, reader } = setup('s2');
+    // Whole content at once, no trailing newline (parity with the whole-file scan).
+    writeFileSync(file, turn('gpt-5.6-sol') + '\n' + tokenCount(16173, 9984, 5, 16173));
+    const s1 = await reader.sample();
+    expect(s1!.usage.models['gpt-5.6-sol']).toEqual({ inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 });
+
+    // The newline lands on a later tick; the cumulative-delta baseline makes the
+    // re-fold a zero delta — no double count.
+    appendFileSync(file, '\n');
+    const s2 = await reader.sample();
+    expect(s2!.usage.models['gpt-5.6-sol']).toEqual({ inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 });
+  });
+
+  it('holds back a mid-write partial rollout line (invalid JSON) until it completes', async () => {
+    const { file, reader } = setup('s3');
+    const tc = tokenCount(16173, 9984, 5, 16173);
+    const half = Math.floor(tc.length / 2);
+    writeFileSync(file, turn('gpt-5.6-sol') + '\n' + tc.slice(0, half));
+    const partial = await reader.sample();
+    expect(partial!.usage.models).toEqual({}); // the token_count line isn't complete yet
+
+    appendFileSync(file, tc.slice(half) + '\n');
+    const complete = await reader.sample();
+    expect(complete!.usage.models['gpt-5.6-sol']).toEqual({ inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 });
+  });
+});

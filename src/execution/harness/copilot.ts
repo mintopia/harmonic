@@ -161,6 +161,16 @@ export const copilotAdapter: HarnessAdapter = {
      * in all captured rows, and `events.jsonl` chains Subagents flatly by
      * `toolCallId`). Attribute deeper nesting via `agent_id` if Copilot
      * ever spawns Subagents-of-Subagents; ProcessNode is already recursive.
+     *
+     * ponytail: no `createTailReader` (#217) — deliberately stays on the
+     * whole-file `wholeFileReader` fallback. Usage lives in a sqlite store read
+     * through better-sqlite3, which is *synchronous*, so there's nothing to move
+     * off the event loop the way an async byte-cursor does for claude/codex;
+     * and the read is already a bounded, indexed `WHERE session_id = ?` query
+     * (a session's rows, not an unbounded whole-file re-parse), so it isn't the
+     * O(total) cost #217 targets. A rowid cursor would add real state for no
+     * event-loop win. Revisit only if a session's row count ever gets large
+     * enough that the per-tick query shows up in a profile.
      */
     parse(input) {
       const { sessionId } = input;

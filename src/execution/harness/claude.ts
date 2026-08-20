@@ -1,10 +1,10 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { open, readdir, readFile, type FileHandle } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { StringDecoder } from 'node:string_decoder';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
+import { LineCursor, type LineAccumulator } from './incremental-log.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -35,7 +35,7 @@ interface Transcript {
  * assistant message (repeated id) is deduped even when its chunks land in two
  * different ticks.
  */
-class TranscriptAcc {
+class TranscriptAcc implements LineAccumulator {
   readonly models: Record<string, ModelUsage> = {};
   private readonly seen = new Set<string>();
   readonly completed = new Set<string>();
@@ -79,72 +79,6 @@ function scanTranscript(file: string): Transcript {
   if (!existsSync(file)) return acc.snapshot();
   for (const line of readFileSync(file, 'utf8').split('\n')) acc.fold(line);
   return acc.snapshot();
-}
-
-/**
- * An incremental line reader over one append-only transcript (#217). Each
- * `advance()` reads only the bytes appended since the previous call, off the
- * event loop, and folds the newly-completed lines into a persistent
- * `TranscriptAcc`. The trailing line after the last newline is kept as `carry`
- * and *also* folded speculatively: a real in-progress write is invalid JSON
- * that `fold` skips, while a genuinely complete final line with no trailing
- * newline (what the whole-file scan would still parse) is counted now — and
- * re-folding it once its newline arrives is a no-op, since the acc dedupes on
- * message id / line. A `StringDecoder` carries a UTF-8 multibyte sequence split
- * across a read boundary.
- */
-class TranscriptCursor {
-  private offset = 0;
-  private carry = '';
-  private decoder = new StringDecoder('utf8');
-  private acc = new TranscriptAcc();
-
-  constructor(private readonly file: string) {}
-
-  async advance(): Promise<void> {
-    let handle: FileHandle | undefined;
-    try {
-      handle = await open(this.file, 'r');
-      const { size } = await handle.stat();
-      if (size < this.offset) this.reset(); // truncated/rotated: re-read from the top
-      if (size <= this.offset) return;
-      const length = size - this.offset;
-      const buf = Buffer.allocUnsafe(length);
-      const { bytesRead } = await handle.read(buf, 0, length, this.offset);
-      this.offset += bytesRead;
-      const text = this.carry + this.decoder.write(buf.subarray(0, bytesRead));
-      const lastNl = text.lastIndexOf('\n');
-      if (lastNl >= 0) {
-        this.carry = text.slice(lastNl + 1);
-        for (const line of text.slice(0, lastNl).split('\n')) this.acc.fold(line);
-      } else {
-        this.carry = text;
-      }
-      // Speculatively fold the trailing line too: a complete final line with no
-      // newline is real (the whole-file scan parses it), a partial write is
-      // invalid JSON `fold` drops, and the acc dedupes a later re-fold.
-      if (this.carry) this.acc.fold(this.carry);
-    } catch {
-      // Not written yet, vanished, or a transient read error: keep what we have.
-      // Never throw — a sampler must not fail a run.
-    } finally {
-      await handle?.close().catch(() => {});
-    }
-  }
-
-  private reset(): void {
-    // A shrunk file means the log was truncated or replaced (session logs are
-    // append-only, so this is rare). Re-scan from scratch with a fresh acc
-    // rather than folding new content onto already-counted tokens.
-    this.offset = 0;
-    this.carry = '';
-    this.decoder = new StringDecoder('utf8');
-    this.acc = new TranscriptAcc();
-  }
-
-  transcript(): Transcript {
-    return this.acc.snapshot();
-  }
 }
 
 interface SubagentMeta {
@@ -260,7 +194,7 @@ interface SubEntry {
   id: string;
   jsonlPath?: string;
   metaPath?: string;
-  cursor?: TranscriptCursor;
+  cursor?: LineCursor<TranscriptAcc>;
   meta: SubagentMeta;
   /** True once `.meta.json` parsed; a mid-run incomplete write retries next tick. */
   metaResolved: boolean;
@@ -268,16 +202,16 @@ interface SubEntry {
 
 /**
  * The incremental, async live reader for a claude run's session log (#217).
- * Holds a `TranscriptCursor` per file (root + each Subagent) so every tick
- * folds only newly-appended bytes instead of re-reading the whole tree, and
- * rebuilds the (cheap, O(#agents)) Process Tree from the accumulated
- * transcripts. `latest()` serves the last build to the on-demand callers
- * (Activity snapshot, spend guard) with no I/O.
+ * Holds a `LineCursor` per file (root + each Subagent) so every tick folds
+ * only newly-appended bytes instead of re-reading the whole tree, and rebuilds
+ * the (cheap, O(#agents)) Process Tree from the accumulated transcripts.
+ * `latest()` serves the last build to the on-demand callers (Activity
+ * snapshot, spend guard) with no I/O.
  */
 class ClaudeSessionTailReader implements SessionTailReader {
   private readonly rootFile: string | null;
   private readonly subDir: string | null;
-  private rootCursor: TranscriptCursor | null = null;
+  private rootCursor: LineCursor<TranscriptAcc> | null = null;
   private readonly subs = new Map<string, SubEntry>();
   private cached: ParsedSession | null = null;
   private inflight: Promise<ParsedSession | null> | null = null;
@@ -306,16 +240,16 @@ class ClaudeSessionTailReader implements SessionTailReader {
     if (!this.rootFile) return null;
     if (!this.rootCursor) {
       if (!existsSync(this.rootFile)) return this.cached; // no log yet → stays null
-      this.rootCursor = new TranscriptCursor(this.rootFile);
+      this.rootCursor = new LineCursor(this.rootFile, () => new TranscriptAcc());
     }
     await this.discoverSubs();
     await Promise.all([this.rootCursor.advance(), ...[...this.subs.values()].map((s) => this.advanceSub(s))]);
     const subs: Subagent[] = [...this.subs.values()].map((s) => ({
       id: s.id,
       meta: s.meta,
-      scan: s.cursor ? s.cursor.transcript() : emptyTranscript(),
+      scan: s.cursor ? s.cursor.acc.snapshot() : emptyTranscript(),
     }));
-    this.cached = buildParsed(this.input.sessionId, this.rootCursor.transcript(), subs);
+    this.cached = buildParsed(this.input.sessionId, this.rootCursor.acc.snapshot(), subs);
     return this.cached;
   }
 
@@ -337,7 +271,7 @@ class ClaudeSessionTailReader implements SessionTailReader {
       if (m[2] === 'jsonl') {
         if (!entry.jsonlPath) {
           entry.jsonlPath = abs;
-          entry.cursor = new TranscriptCursor(abs);
+          entry.cursor = new LineCursor(abs, () => new TranscriptAcc());
         }
       } else if (!entry.metaPath) {
         entry.metaPath = abs;

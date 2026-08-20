@@ -63,11 +63,12 @@ export interface UsageCollector {
   /**
    * An incremental, async tailer for this harness's live session log (#217):
    * each tick folds only newly-appended bytes instead of re-reading the whole
-   * file synchronously on the event loop. Absent → the runner falls back to a
-   * whole-file `parse()` per tick (`wholeFileReader`), which is fine for the
-   * small rollout/DB logs codex and copilot keep; claude's transcripts grow
-   * unbounded, so only claude implements it. `sessionId` is non-null here —
-   * the reader is created only once a session exists.
+   * file synchronously on the event loop. Implemented by the line-log harnesses
+   * (claude transcripts, codex rollouts) via a `LineCursor`. Absent → the
+   * runner falls back to a whole-file `parse()` per tick (`wholeFileReader`);
+   * copilot stays there deliberately (its usage is a bounded, synchronous
+   * sqlite query, not an unbounded whole-file re-parse). `sessionId` is non-null
+   * here — the reader is created only once a session exists.
    */
   createTailReader?(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): SessionTailReader;
   /**

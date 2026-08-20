@@ -2,13 +2,21 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
-import type { HarnessAdapter, ModelUsage } from './adapter.js';
+import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
+import { LineCursor, type LineAccumulator } from './incremental-log.js';
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
+interface RolloutScan {
+  models: Record<string, ModelUsage>;
+  contextTokens: number | null;
+}
+
 /**
- * One pass over a rollout log: per-model usage (turn_context × token_count
- * deltas) plus the latest context-window fill. `turn_context` names the
+ * The running fold of a rollout log: per-model usage (turn_context ×
+ * token_count deltas) plus the latest context-window fill, updated line by
+ * line so a whole-file scan (`scanRollout`) and an incremental tail
+ * (`LineCursor`, #217) share the exact accounting. `turn_context` names the
  * model driving the turn; `event_msg/token_count` carries the *cumulative*
  * session usage, so each entry's delta against the previous one is the
  * current model's spend. Rollout `input_tokens` includes cached reads;
@@ -17,47 +25,50 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
  * (`last_token_usage.input_tokens`, cache included) — how full the window
  * is right now.
  *
+ * The `prev` cumulative baseline is what makes re-folding the exact same line
+ * a no-op (its delta is 0), so the tail cursor can speculatively re-fold the
+ * trailing line without double-counting.
+ *
  * ponytail: the rollout's `model_context_window` (window *size*) is not
  * surfaced — ProcessNode has no capacity field (T1/#47) and window size
  * already comes from config (`harnesses.*.models` → `contextWindow`).
  * Read it here if a node ever needs a per-served-model capacity.
  */
-function scanRollout(file: string): { models: Record<string, ModelUsage>; contextTokens: number | null } {
-  if (!existsSync(file)) return { models: {}, contextTokens: null };
+class RolloutAcc implements LineAccumulator {
+  readonly models: Record<string, ModelUsage> = {};
+  private model: string | null = null;
+  private contextTokens: number | null = null;
+  private readonly prev = { input: 0, cached: 0, output: 0 };
 
-  const models: Record<string, ModelUsage> = {};
-  let model: string | null = null;
-  let contextTokens: number | null = null;
-  const prev = { input: 0, cached: 0, output: 0 };
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
+  fold(line: string): void {
+    if (!line.trim()) return;
     let entry: any;
     try {
       entry = JSON.parse(line);
     } catch {
-      continue;
+      return;
     }
     if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
-      model = entry.payload.model;
-      continue;
+      this.model = entry.payload.model;
+      return;
     }
     const info = entry?.type === 'event_msg' && entry.payload?.type === 'token_count' ? entry.payload.info : null;
     const total = info?.total_token_usage;
-    if (!total) continue;
-    if (typeof info.last_token_usage?.input_tokens === 'number') contextTokens = info.last_token_usage.input_tokens;
+    if (!total) return;
+    if (typeof info.last_token_usage?.input_tokens === 'number') this.contextTokens = info.last_token_usage.input_tokens;
     const input = num(total.input_tokens);
     const cached = num(total.cached_input_tokens);
     const output = num(total.output_tokens);
     // A shrinking cumulative counter means it was reset (session resume):
     // the entry is its own delta. Never emit negatives.
-    const reset = input < prev.input || cached < prev.cached || output < prev.output;
+    const reset = input < this.prev.input || cached < this.prev.cached || output < this.prev.output;
     const delta = reset
       ? { input, cached, output }
-      : { input: input - prev.input, cached: cached - prev.cached, output: output - prev.output };
+      : { input: input - this.prev.input, cached: cached - this.prev.cached, output: output - this.prev.output };
     // Pre-turn_context spend is unattributable: drop it (never guess),
     // but still advance the baseline so it can't leak into a model.
-    if (model) {
-      const bucket = (models[model] ??= {
+    if (this.model) {
+      const bucket = (this.models[this.model] ??= {
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,
@@ -67,11 +78,90 @@ function scanRollout(file: string): { models: Record<string, ModelUsage>; contex
       bucket.cacheReadTokens += delta.cached;
       bucket.outputTokens += delta.output;
     }
-    prev.input = input;
-    prev.cached = cached;
-    prev.output = output;
+    this.prev.input = input;
+    this.prev.cached = cached;
+    this.prev.output = output;
   }
-  return { models, contextTokens };
+
+  snapshot(): RolloutScan {
+    return { models: this.models, contextTokens: this.contextTokens };
+  }
+}
+
+/** One whole-file pass over a rollout log (the run-end `collectUsage` path). */
+function scanRollout(file: string): RolloutScan {
+  const acc = new RolloutAcc();
+  if (!existsSync(file)) return acc.snapshot();
+  for (const line of readFileSync(file, 'utf8').split('\n')) acc.fold(line);
+  return acc.snapshot();
+}
+
+/**
+ * Codex has no Subagent concept, so its Process Tree is a single root node:
+ * its own tokens are the whole session and its context fill is the latest
+ * request's input footprint. Shared by the whole-file `parse` and the
+ * incremental `CodexSessionTailReader`.
+ *
+ * ponytail: single-model-per-node — a session that switched models (manual
+ * resume with a different pin) collapses the node's tokens under its dominant
+ * model. The flat `usage` keeps the true per-model split; only the tree node
+ * is lossy. Split per model if the Activity view ever needs exact per-node
+ * pricing.
+ */
+function buildRolloutTree(rootId: string, scan: RolloutScan): ParsedSession {
+  const root: ProcessNode = {
+    id: rootId,
+    name: 'root',
+    model: dominantModel(scan.models) ?? 'unknown',
+    usage: foldModels(scan.models),
+    contextTokens: scan.contextTokens,
+    status: 'active',
+    depth: 0,
+    toolUseId: null,
+    children: [],
+  };
+  return { usage: usageFromModels(scan.models), tree: root } satisfies ParsedSession;
+}
+
+/**
+ * The incremental, async live reader for a codex run's rollout log (#217): a
+ * single `LineCursor` folds only newly-appended bytes each tick instead of
+ * re-reading the whole rollout, off the event loop. The rollout filename
+ * embeds an unpredictable timestamp, so the path can't be resolved until the
+ * file exists — keep re-resolving until it appears, then the path is stable.
+ */
+class CodexSessionTailReader implements SessionTailReader {
+  private cursor: LineCursor<RolloutAcc> | null = null;
+  private cached: ParsedSession | null = null;
+  private inflight: Promise<ParsedSession | null> | null = null;
+
+  constructor(private readonly input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }) {}
+
+  latest(): ParsedSession | null {
+    return this.cached;
+  }
+
+  sample(): Promise<ParsedSession | null> {
+    // Serialize onto the cursor: a slow tick and an on-demand read must never
+    // advance the same byte offset concurrently. Chain past whatever ran last.
+    const run = (this.inflight ?? Promise.resolve(null)).then(
+      () => this.doSample(),
+      () => this.doSample(),
+    );
+    this.inflight = run;
+    return run;
+  }
+
+  private async doSample(): Promise<ParsedSession | null> {
+    if (!this.cursor) {
+      const file = codexAdapter.usage!.sessionLogFile(this.input);
+      if (!file) return this.cached; // rollout not written yet → stays null
+      this.cursor = new LineCursor(file, () => new RolloutAcc());
+    }
+    await this.cursor.advance();
+    this.cached = buildRolloutTree(this.input.sessionId, this.cursor.acc.snapshot());
+    return this.cached;
+  }
 }
 
 /** Entries of `dir`, newest name first; [] when unreadable. */
@@ -117,34 +207,21 @@ export const codexAdapter: HarnessAdapter = {
 
   usage: {
     /**
-     * Rollout parse into rolled-up Usage + Process Tree (ADR 0009). Codex
-     * has no Subagent concept, so the tree is a single root node: its own
-     * tokens are the whole session and its context fill is the latest
-     * request's input footprint. Returns null when the rollout has not
-     * appeared yet.
-     *
-     * ponytail: single-model-per-node — a session that switched models
-     * (manual resume with a different pin) collapses the node's tokens
-     * under its dominant model. The flat `usage` keeps the true per-model
-     * split; only the tree node is lossy. Split per model if the Activity
-     * view ever needs exact per-node pricing.
+     * Rollout parse into rolled-up Usage + Process Tree (ADR 0009), for the
+     * one-shot run-end `collectUsage`. Returns null when the rollout has not
+     * appeared yet. See `buildRolloutTree` for the single-node tree shape.
      */
     parse(input) {
       const file = codexAdapter.usage!.sessionLogFile(input);
       if (!file || !existsSync(file)) return null;
-      const { models, contextTokens } = scanRollout(file);
-      const root: ProcessNode = {
-        id: input.sessionId ?? file,
-        name: 'root',
-        model: dominantModel(models) ?? 'unknown',
-        usage: foldModels(models),
-        contextTokens,
-        status: 'active',
-        depth: 0,
-        toolUseId: null,
-        children: [],
-      };
-      return { usage: usageFromModels(models), tree: root } satisfies ParsedSession;
+      return buildRolloutTree(input.sessionId ?? file, scanRollout(file));
+    },
+
+    /** The live path (#217): an incremental, off-the-event-loop tailer that
+     *  folds only newly-appended rollout bytes each tick, versus `parse`'s
+     *  whole-file re-scan. */
+    createTailReader(input) {
+      return new CodexSessionTailReader(input);
     },
 
     /**
