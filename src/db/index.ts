@@ -77,6 +77,14 @@ export function openDb(dataDir: string): Db {
   mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(join(dataDir, 'harmonic.db'));
   sqlite.pragma('journal_mode = WAL');
+  // Bound lock waits so a busy writer can never block a caller indefinitely
+  // (issue #200 / ADR-0029). Kept small on purpose: on the synchronous
+  // better-sqlite3 connection a busy wait is an in-thread sleep that blocks the
+  // event loop, so this must stay well under the stall budget rather than the
+  // multi-second value the future async model can afford. Effectively inert
+  // today (one connection ⇒ no contention); a backstop for any second reader,
+  // and the async libsql migration will retune it for concurrent reads.
+  sqlite.pragma('busy_timeout = 250');
   // ADR-0016: table-rebuild migrations (create __new_x, copy, DROP TABLE x,
   // rename) need foreign-key enforcement OFF, and SQLite ignores
   // `PRAGMA foreign_keys` inside a transaction (drizzle wraps each migration in

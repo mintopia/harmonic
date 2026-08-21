@@ -8,6 +8,22 @@ import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
 import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema } from '../schemas.js';
+import { yieldToEventLoop } from '../../reliability/yield.js';
+
+/**
+ * Aggregating this range is synchronous JS on the shared event loop (issue
+ * #200): parsing each run's usage, merging, and building the day series all
+ * block every other request. Past this wall-clock the aggregation is logged so
+ * a growing DB making Stats a latent freeze is a visible signal, not a mystery.
+ */
+const SLOW_STATS_MS = 500;
+
+/**
+ * Only hand the event loop back mid-aggregation (issue #200) once the range is
+ * big enough for the JS post-processing to be worth interleaving; below this a
+ * yield is pure added latency for no isolation benefit.
+ */
+const YIELD_ROW_THRESHOLD = 500;
 
 const querySchema = z.object({
   /** Epoch ms, inclusive; defaults to 0, i.e. all of recorded history. */
@@ -97,6 +113,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // Omitted `to` means "up to now" — applied here so the query schema
       // carries no dynamic default (keeps the OpenAPI snapshot deterministic).
       const to = req.query.to ?? Date.now();
+      const startedAtMs = Date.now();
       // runs carries no workspaceId of its own (it inherits via its Task —
       // ADR-0008), so scoping by Workspace means joining tasks.
       const rows = (
@@ -114,6 +131,11 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
               .all()
               .map((r) => r.runs)
       );
+
+      // Hand the loop back between the blocking read and the heavy JS
+      // aggregation below (issue #200), so a large Stats request interleaves
+      // with other in-flight work instead of blocking it start-to-finish.
+      if (rows.length >= YIELD_ROW_THRESHOLD) await yieldToEventLoop();
 
       const usages = rows
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
@@ -137,6 +159,11 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const cost = costOfRuns(ctx, rows);
       const flooredCost =
         cost && !cost.incomplete && series.some((s) => s.totalUsd === null) ? { ...cost, incomplete: true } : cost;
+
+      const elapsedMs = Date.now() - startedAtMs;
+      if (elapsedMs >= SLOW_STATS_MS) {
+        console.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} runs — consider narrowing the range`);
+      }
 
       return {
         from,
