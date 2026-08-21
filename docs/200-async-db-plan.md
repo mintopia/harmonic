@@ -43,8 +43,12 @@ engine, ahead of the migration (ADR-0029 §5 assigns them to #200):
   `forEachYielding(items, fn, {budgetMs})`, the reusable helper #213 (bound every
   reconcile/retry loop) leans on. Applied to the Stats aggregation as a proof of
   use; wider application to reconcile loops is #213's scope.
-- **Lock-wait bound** — `busy_timeout = 5000` in `openDb` (forward-looking until
-  concurrent reads exist under the async model).
+- **Lock-wait bound** — `busy_timeout = 250` in `openDb`. Kept deliberately small:
+  on the synchronous better-sqlite3 connection a busy wait is an in-thread sleep
+  that blocks the event loop, so it must stay well under the stall budget rather
+  than the multi-second value the future async model can afford. Effectively inert
+  today (one connection ⇒ no contention); the async libsql migration retunes it
+  for concurrent reads.
 - **Heavy reads** — the `/api/stats` handler yields between the blocking read and
   its JS aggregation, and slow-logs when the aggregation runs long. A *true*
   per-query wall-clock timeout and off-thread aggregation need an interruptible
