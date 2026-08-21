@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -21,9 +20,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('Session retirement (issue #148)', () => {
   let dir: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let sessions: SessionStore;
   let runs: RunStore;
@@ -56,13 +52,12 @@ describe('Session retirement (issue #148)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-retire-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
     sessions = new SessionStore(asyncDb);
     runs = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    workspaceId = (await allWorkspaces(db)())[0]!.id;
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    workspaceId = (await allWorkspaces(asyncDb)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

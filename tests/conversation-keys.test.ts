@@ -4,7 +4,7 @@ import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js
 import { apiKeys } from '../src/db/schema.js';
 
 const conversationKeyRows = (server: TestServer) =>
-  server.app.ctx.db.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all();
+  server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all());
 
 /** Run one Turn that echoes the injected key, and return the conversation + token. */
 async function echoTurn(server: TestServer) {
@@ -31,7 +31,7 @@ describe('conversation key lifecycle (issue 16)', () => {
     expect(env.HARMONIC_API_KEY).toMatch(/^adk_/);
     expect(env.HARMONIC_MCP_URL).toContain('/mcp');
     // Exactly one conversation key exists, and it is never an operator key.
-    const rows = conversationKeyRows(server);
+    const rows = await conversationKeyRows(server);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.scope).toBe('conversation');
   });
@@ -52,7 +52,7 @@ describe('conversation key lifecycle (issue 16)', () => {
     server = await startServer(stubHarness());
     await server.api('POST', '/api/keys', { name: 'ops' });
     await echoTurn(server);
-    expect(conversationKeyRows(server).length).toBe(1);
+    expect((await conversationKeyRows(server)).length).toBe(1);
     const { body } = await server.api('GET', '/api/keys');
     expect(body.keys.map((k: any) => k.name)).toEqual(['ops']);
     expect(body.keys.every((k: any) => k.scope === 'full')).toBe(true);
@@ -61,10 +61,10 @@ describe('conversation key lifecycle (issue 16)', () => {
   it('deletes the Conversation Key when the Conversation ends; the token stops authenticating', async () => {
     server = await startServer(stubHarness());
     const { convo, env } = await echoTurn(server);
-    expect(conversationKeyRows(server).length).toBe(1);
+    expect((await conversationKeyRows(server)).length).toBe(1);
 
     await server.api('POST', `/api/conversations/${convo.id}/end`);
-    expect(conversationKeyRows(server)).toEqual([]);
+    expect(await conversationKeyRows(server)).toEqual([]);
     const res = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: `Bearer ${env.HARMONIC_API_KEY}` },
     });
@@ -87,14 +87,14 @@ describe('conversation key lifecycle (issue 16)', () => {
 
   it('startup sweep deletes orphaned conversation keys, not operator keys', async () => {
     server = await startServer(stubHarness());
-    const orphan = server.app.ctx.auth.createKey('conversation-999', { scope: 'conversation', conversationId: 999 });
+    const orphan = await server.app.ctx.auth.createKey('conversation-999', { scope: 'conversation', conversationId: 999 });
     const operator = await server.api('POST', '/api/keys', { name: 'ops' });
 
     const dataDir = server.dataDir;
     await server.app.close();
     server = await startServer(stubHarness(), { dataDir });
 
-    expect(conversationKeyRows(server)).toEqual([]);
+    expect(await conversationKeyRows(server)).toEqual([]);
     const orphanRes = await fetch(`${server.baseUrl}/api/tasks`, {
       headers: { authorization: `Bearer ${orphan.token}` },
     });

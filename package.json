@@ -32,7 +32,6 @@
     "@fastify/websocket": "^11.3.0",
     "@libsql/client": "^0.17.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "better-sqlite3": "^12.11.1",
     "dompurify": "^3.4.13",
     "drizzle-orm": "^0.45.2",
     "elkjs": "^0.10.2",
@@ -46,7 +45,6 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/space-grotesk": "^5.2.10",
     "@tailwindcss/vite": "^4.3.2",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.2.17",
@@ -72,7 +70,6 @@
     "esbuild@0.18.20": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true,
-    "better-sqlite3@12.11.1": true,
     "fsevents@2.3.3": true
   }
 }

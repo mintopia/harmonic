@@ -55,7 +55,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req, reply) => reply.status(201).send(ctx.channels.create(req.body)),
+    async (req, reply) => reply.status(201).send(await ctx.channels.create(req.body)),
   );
 
   app.get(
@@ -68,7 +68,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         response: { 200: channelsListResponseSchema.describe('Every configured notification channel.') },
       },
     },
-    async () => ({ channels: ctx.channels.list() }),
+    async () => ({ channels: await ctx.channels.list() }),
   );
 
   app.get(
@@ -85,7 +85,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => ctx.channels.get(req.params.id),
+    async (req) => await ctx.channels.get(req.params.id),
   );
 
   app.patch(
@@ -108,7 +108,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => ctx.channels.update(req.params.id, req.body),
+    async (req) => await ctx.channels.update(req.params.id, req.body),
   );
 
   app.delete(
@@ -126,7 +126,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.channels.delete(req.params.id);
+      await ctx.channels.delete(req.params.id);
       return { ok: true } as const;
     },
   );
@@ -153,8 +153,8 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.get(req.params.id);
-      ctx.channels.addOverride(req.params.id, req.body.channelId);
-      return { channelIds: ctx.channels.channelIdsForTask(req.params.id) };
+      await ctx.channels.addOverride(req.params.id, req.body.channelId);
+      return { channelIds: await ctx.channels.channelIdsForTask(req.params.id) };
     },
   );
 
@@ -174,8 +174,8 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.channels.removeOverride(req.params.id, req.params.channelId);
-      return { channelIds: ctx.channels.channelIdsForTask(req.params.id) };
+      await ctx.channels.removeOverride(req.params.id, req.params.channelId);
+      return { channelIds: await ctx.channels.channelIdsForTask(req.params.id) };
     },
   );
 
@@ -197,7 +197,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.get(req.params.id);
-      return { channelIds: ctx.channels.channelIdsForTask(req.params.id) };
+      return { channelIds: await ctx.channels.channelIdsForTask(req.params.id) };
     },
   );
 }

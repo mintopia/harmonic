@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
@@ -288,9 +287,6 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
 describe('Runner auto-drive settle (issue #33)', () => {
   let dir: string;
   let workDir: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runs: RunStore;
@@ -312,7 +308,6 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
     // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
     // Harmonic repo during a test run. The afk-direct admission gate (issue
@@ -321,7 +316,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // where the branch contract does not apply, so the gate skips and each Run
     // exercises its intended settle path.
     workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
-    db.update(workspaces).set({ workingDir: workDir }).run();
+    await asyncDb.write((d) => d.update(workspaces).set({ workingDir: workDir }).run());
   });
   afterEach(async () => {
     runner.shutdown();
@@ -331,7 +326,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
-    tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb));
     runs = new RunStore(asyncDb);
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.

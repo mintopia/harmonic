@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -33,7 +32,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   let dataDir: string;
   let repoA: string;
   let repoB: string;
-  let db: Db;
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let workspaces: WorkspaceService;
@@ -49,9 +47,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-mgr-'));
     repoA = mkdtempSync(join(tmpdir(), 'harmonic-repoA-'));
     repoB = mkdtempSync(join(tmpdir(), 'harmonic-repoB-'));
-    db = openDb(dataDir);
     asyncDb = await openAsyncDb(dataDir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     workspaces = new WorkspaceService(asyncDb);
     polled = [];
     ticketsByRepo = new Map();

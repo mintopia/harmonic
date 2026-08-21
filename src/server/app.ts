@@ -15,7 +15,6 @@ import { join, dirname, sep } from 'node:path';
 import { landBranch } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
-import { openDb, type Db } from '../db/index.js';
 import { openAsyncDb, openAsyncReadHandle, type AsyncDbHandle, type AsyncReadDb } from '../db/async.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
@@ -183,24 +182,22 @@ function readScopeAllowed(path: string, method: string): boolean {
  * function so the operator determination lives in a single place rather than
  * being re-derived per gate.
  */
-function requestIsOperator(req: FastifyRequest, auth: AuthService): boolean {
-  if (!auth.hasPassword()) return true;
+async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promise<boolean> {
+  if (!(await auth.hasPassword())) return true;
   const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-  if (bearer) return auth.verifyKey(bearer)?.scope === 'full';
+  if (bearer) return (await auth.verifyKey(bearer))?.scope === 'full';
   if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
   const queryToken = (req.query as Record<string, string | undefined>)?.token;
-  if (queryToken) return auth.validateSession(queryToken) || auth.verifyKey(queryToken)?.scope === 'full';
+  if (queryToken) return auth.validateSession(queryToken) || (await auth.verifyKey(queryToken))?.scope === 'full';
   return false;
 }
 
 export interface AppContext {
-  db: Db;
   asyncDb: AsyncDbHandle;
   /**
    * Concurrent-read libsql sibling of {@link asyncDb}, for routing heavy
-   * aggregates (Stats) off the event-loop-blocking sync path (#213, ADR-0029 §5).
-   * Read-only by type; `db`/`asyncDb` remain the writers during the
-   * expand-contract migration.
+   * aggregates (Stats) off the write connection (#213, ADR-0029 §5).
+   * Read-only by type; `asyncDb` is the single writer.
    */
   asyncReadDb: AsyncReadDb;
   configStore: ConfigStore;
@@ -233,31 +230,27 @@ export interface RegisteredRoute {
 export type App = FastifyInstance & { ctx: AppContext; registeredRoutes: RegisteredRoute[] };
 
 export async function buildApp(opts: AppOptions): Promise<App> {
-  const db = openDb(opts.dataDir);
-  // The async libsql path runs alongside the sync Db during the expand-contract
-  // migration (ADR-0029): RunStore is the first store ported to it. Both open the
-  // same `harmonic.db` in WAL — a second connection, safe because better-sqlite3's
-  // synchronous writes never overlap a libsql write on the one event loop, and its
-  // default busy timeout absorbs the reverse. Stores migrate to `asyncDb` batch by
-  // batch until the sync `db` is deleted in the contract step.
+  // The async libsql facade is the sole DB path (ADR-0029 contract step, #216):
+  // it owns boot — migrations, the FK dance, the Default-Workspace backfill — and
+  // is the single writer through its queue.
   const asyncDb = await openAsyncDb(opts.dataDir);
-  // #213 / ADR-0029 §5: heavy aggregates (the Stats range scan) read off the
-  // event-loop-blocking path through a *separate* concurrent libsql read
-  // connection, so an expensive scan never contends with the write facade's
-  // single connection. openDb/openAsyncDb (above) have already booted the file,
-  // so this connection only attaches — no migrate, no backfill, no write.
+  // #213 / ADR-0029 §5: heavy aggregates (the Stats range scan) read through a
+  // *separate* concurrent libsql read connection, so an expensive scan never
+  // contends with the write facade's single connection. `openAsyncDb` above has
+  // already booted the file, so this connection only attaches — no migrate, no
+  // backfill, no write.
   const asyncReadDb = openAsyncReadHandle(opts.dataDir);
   const bus = new EventBus();
   const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb);
-  const channels = new ChannelService(db);
+  const channels = new ChannelService(asyncDb);
   const notifier = new Notifier(channels, (msg) => console.error(msg));
   const tasks = new TaskService(
     asyncDb,
     () => configStore.get(),
     () => workspaces.list(),
     (task) => bus.emit('task_changed', task),
-    (event, task) => notifier.notify(event, task),
+    (event, task) => void notifier.notify(event, task).catch(() => {}),
     (id) => bus.emit('task_removed', { id }),
   );
   const runs = new RunStore(asyncDb);
@@ -265,12 +258,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
   const leases = new WorkContextLeaseStore(asyncDb);
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
-  const permissionRules = new PermissionRuleStore(db);
-  const auth = new AuthService(db);
+  const permissionRules = new PermissionRuleStore(asyncDb);
+  const auth = new AuthService(asyncDb);
   // An explicit empty password clears the gate; undefined leaves it as-is.
   if (opts.password !== undefined) {
-    if (opts.password === '') auth.clearPassword();
-    else auth.setPassword(opts.password);
+    if (opts.password === '') await auth.clearPassword();
+    else await auth.setPassword(opts.password);
   }
   const conversationDriver = new ConversationDriver(conversations, () => configStore.get(), {
     events: {
@@ -281,8 +274,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // A Conversation Key (its lifetime follows the Conversation's) plus the
     // MCP endpoint let the chatting agent drive the fleet (issue 16).
     keys: {
-      mint: (conversationId) =>
-        auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId }).token,
+      mint: async (conversationId) =>
+        (await auth.createKey(`conversation-${conversationId}`, { scope: 'conversation', conversationId })).token,
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
   });
@@ -374,8 +367,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Run Keys of every non-running run die here — catches keys orphaned by
   // a crash or restart. Conversation Keys can never survive a restart (their
   // warm process is gone), so every one present at boot is orphaned (issue 16).
-  auth.sweepOrphanedRunKeys();
-  auth.sweepOrphanedConversationKeys();
+  await auth.sweepOrphanedRunKeys();
+  await auth.sweepOrphanedConversationKeys();
   // A Conversation cannot survive a restart — its warm harness is gone — so
   // any still marked active is ended; its transcript survives read-only (issue 15).
   await conversations.markActiveEnded();
@@ -460,7 +453,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // retirement hook so those Sessions retire too (issue #148).
     sessionRetirement,
     keys: {
-      mint: (runId) => auth.createKey(`run-${runId}`, { scope: 'run', runId }).token,
+      mint: async (runId) => (await auth.createKey(`run-${runId}`, { scope: 'run', runId })).token,
       revoke: (runId) => auth.deleteKeysForRun(runId),
     },
     autoDrive,
@@ -606,11 +599,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // run them in a fire-and-forget chain so the EventBus listener stays sync.
     void (async () => {
       if ((await tasks.list({ state: 'ready' })).length !== 0) return;
-      if ((await runs.countRunning()) === 0) notifier.notify('queue.idle');
+      if ((await runs.countRunning()) === 0) await notifier.notify('queue.idle');
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { db, asyncDb, asyncReadDb, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, asyncReadDb, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -631,11 +624,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     clearInterval(leaseSweep);
     loopMonitor?.stop();
     // The async libsql clients (`asyncDb`, and the `asyncReadDb` read sibling)
-    // are deliberately NOT closed here, mirroring the sync `db` (better-sqlite3,
-    // also never explicitly closed): shutdown races best-effort background reads
-    // (autoRunner poke, the queue-idle probe below, in-flight Stats scans) that a
-    // closed client would reject as unhandled `CLIENT_CLOSED`. The clients are
-    // released on process exit, exactly as the sync connection is.
+    // are deliberately NOT closed here: shutdown races best-effort background
+    // reads (autoRunner poke, the queue-idle probe below, in-flight Stats scans)
+    // that a closed client would reject as unhandled `CLIENT_CLOSED`. The clients
+    // are released on process exit.
   });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
@@ -740,7 +732,7 @@ not resolved yet.`;
 
     // Open by default: with no operator password set, Harmonic runs ungated —
     // a local single-user tool. Setting a password (once) turns the gate on.
-    if (!auth.hasPassword()) return;
+    if (!(await auth.hasPassword())) return;
 
     const forbidden = () =>
       reply
@@ -755,7 +747,7 @@ not resolved yet.`;
 
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
     if (bearer) {
-      const key = auth.verifyKey(bearer);
+      const key = await auth.verifyKey(bearer);
       if (key) {
         if (!scopeAllows(key.scope)) return forbidden();
         return;
@@ -765,7 +757,7 @@ not resolved yet.`;
     const queryToken = (req.query as Record<string, string | undefined>)?.token;
     if (queryToken) {
       if (auth.validateSession(queryToken)) return;
-      const key = auth.verifyKey(queryToken);
+      const key = await auth.verifyKey(queryToken);
       if (key) {
         if (!scopeAllows(key.scope)) return forbidden();
         return;
@@ -826,7 +818,7 @@ not resolved yet.`;
     // is never an operator, so the operator-only lease tools (issue #125) stay
     // gated to a full-scope credential or an authenticated session — resolved by
     // the same helper the notion is defined in.
-    const operator = requestIsOperator(req, auth);
+    const operator = await requestIsOperator(req, auth);
     const mcp = buildMcpServer(ctx, { operator });
     // `as any`: the SDK's option/transport types don't satisfy
     // exactOptionalPropertyTypes; sessionIdGenerator: undefined selects

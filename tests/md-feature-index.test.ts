@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -10,15 +9,13 @@ import { allWorkspaces } from './helpers.js';
 
 describe('TaskService.mdFeatureIndex', () => {
   let dir: string;
-  let db: Db;
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'md-idx-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -45,7 +42,7 @@ describe('TaskService.mdFeatureIndex', () => {
   it('survives a fresh TaskService over the same db (persisted in settings)', async () => {
     expect(await tasks.mdFeatureIndex(1, 'alpha')).toBe(0);
     expect(await tasks.mdFeatureIndex(1, 'beta')).toBe(1);
-    const reopened = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    const reopened = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     expect(await reopened.mdFeatureIndex(1, 'beta')).toBe(1);
     expect(await reopened.mdFeatureIndex(1, 'gamma')).toBe(2);
   });

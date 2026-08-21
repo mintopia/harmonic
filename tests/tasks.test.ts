@@ -157,11 +157,9 @@ describe('task authoring', () => {
     expect(deleted.body).toEqual({ id: mirrored.id });
     expect((await server.api('GET', `/api/tasks/${mirrored.id}`)).status).toBe(404);
 
-    const tombstones = server.app.ctx.db
-      .select()
-      .from(trackerDismissals)
-      .where(eq(trackerDismissals.trackerRef, 91234))
-      .all();
+    const tombstones = await server.app.ctx.asyncDb.read((d) =>
+      d.select().from(trackerDismissals).where(eq(trackerDismissals.trackerRef, 91234)).all(),
+    );
     expect(tombstones).toHaveLength(1);
     expect(tombstones[0]!.workspaceId).toBe(seededTask.workspaceId);
   });

@@ -32,7 +32,7 @@ export async function permissionRuleRoutes(fastify: FastifyInstance): Promise<vo
         response: { 200: permissionRulesListResponseSchema.describe('Every Permission Rule in force, newest first.') },
       },
     },
-    async () => ({ rules: ctx.permissionRules.list() }),
+    async () => ({ rules: await ctx.permissionRules.list() }),
   );
 
   app.delete(
@@ -51,7 +51,7 @@ export async function permissionRuleRoutes(fastify: FastifyInstance): Promise<vo
       },
     },
     async (req) => {
-      ctx.permissionRules.delete(req.params.id);
+      await ctx.permissionRules.delete(req.params.id);
       return { ok: true } as const;
     },
   );

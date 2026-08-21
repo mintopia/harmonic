@@ -495,11 +495,9 @@ describe('wall-clock guardrail (issue #127)', () => {
 
       // The structured guardrail_events row the card reason derives from is
       // persisted, in the execution phase, with observed ≥ the configured limit.
-      const rows = server.app.ctx.db
-        .select()
-        .from(guardrailEvents)
-        .where(eq(guardrailEvents.runId, runId))
-        .all();
+      const rows = await server.app.ctx.asyncDb.read((d) =>
+        d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all(),
+      );
       expect(rows).toHaveLength(1);
       const event = rows[0]!;
       expect(event).toMatchObject({ dimension: 'wall-clock', configSource: 'default' });
@@ -596,7 +594,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
 
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'tokens', configSource: 'default' });
       expect(rows[0]!.observedValue).toBeGreaterThanOrEqual(rows[0]!.limitValue);
@@ -633,7 +631,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('cost');
 
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'cost', configSource: 'default' });
       // Stored in micro-dollars (integer columns): $2 observed >= $1 limit.
@@ -664,7 +662,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
 
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ dimension: 'tokens', configSource: 'default' });
     } finally {
@@ -705,7 +703,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(trip).toBeTruthy();
       expect(trip.payload.dimension).toBe('tokens');
 
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!.dimension).toBe('tokens');
       expect(JSON.parse(rows[0]!.payload)).toMatchObject({ unmeasurable: true });
@@ -728,7 +726,7 @@ describe('token/cost budget guardrail (issue #128)', () => {
       graceMs: 2_000, // tolerate a slow first usage read without escalating "unmeasurable"
     });
     try {
-      const db = server.app.ctx.db;
+      const db = server.app.ctx.asyncDb;
       const created = await server.api('POST', '/api/tasks', {
         prompt: scenario({ exit: 'hang' }),
         workingDir: workDir,
@@ -739,26 +737,27 @@ describe('token/cost budget guardrail (issue #128)', () => {
       // Seed a settled prior Run of this Task on a fresh chain that already spent
       // 800 tokens — the cumulative the live retry inherits (branch 1 of
       // `resolveForTask`: same-Task continuation) and adds its own 300 onto.
-      const chainId = db
-        .insert(executionChains)
-        .values({ createdAt: Date.now() })
-        .returning({ id: executionChains.id })
-        .get()!.id;
-      db.insert(runs)
-        .values({
-          taskId,
-          attempt: 1,
-          state: 'failed',
-          phase: 'terminal',
-          chainId,
-          usage: JSON.stringify({
-            models: { 'stub-model': { inputTokens: 800, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } },
-            totals: { totalTokens: 800 },
-          }),
-          startedAt: Date.now(),
-          finishedAt: Date.now(),
-        })
-        .run();
+      const chainId = (await db.write((d) =>
+        d.insert(executionChains).values({ createdAt: Date.now() }).returning({ id: executionChains.id }).get(),
+      ))!.id;
+      await db.write((d) =>
+        d
+          .insert(runs)
+          .values({
+            taskId,
+            attempt: 1,
+            state: 'failed',
+            phase: 'terminal',
+            chainId,
+            usage: JSON.stringify({
+              models: { 'stub-model': { inputTokens: 800, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+              totals: { totalTokens: 800 },
+            }),
+            startedAt: Date.now(),
+            finishedAt: Date.now(),
+          })
+          .run(),
+      );
 
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
       expect(started.status).toBe(201);
@@ -776,10 +775,10 @@ describe('token/cost budget guardrail (issue #128)', () => {
       expect(run.reason).toMatch(/^budget:/);
       // The live Run inherited the seeded chain rather than minting a new one
       // (read from the row directly — chainId is internal, not on the run API).
-      const liveRun = db.select().from(runs).where(eq(runs.id, runId)).get()!;
+      const liveRun = (await db.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!;
       expect(liveRun.chainId).toBe(chainId);
 
-      const rows = db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await db.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!.dimension).toBe('tokens');
       // Cumulative 800 (prior) + 300 (live) = 1,100 ≥ the 1,000 cap.
@@ -837,7 +836,7 @@ describe('progress guardrail (issue #131)', () => {
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip.payload.dimension).toBe('progress');
 
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!).toMatchObject({ dimension: 'progress', configSource: 'default' });
     } finally {
@@ -878,7 +877,7 @@ describe('progress guardrail (issue #131)', () => {
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge')).toBe(false);
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped')).toBe(false);
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(0);
     } finally {
       await server.close();
@@ -919,7 +918,7 @@ describe('progress guardrail (issue #131)', () => {
       const trip = events.find((e: any) => e.type === 'lifecycle' && e.payload.event === 'guardrail-tripped');
       expect(trip.payload.dimension).toBe('tool-timeout');
 
-      const rows = server.app.ctx.db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all();
+      const rows = await server.app.ctx.asyncDb.read((d) => d.select().from(guardrailEvents).where(eq(guardrailEvents.runId, runId)).all());
       expect(rows).toHaveLength(1);
       expect(rows[0]!).toMatchObject({ dimension: 'tool-timeout', configSource: 'default' });
       expect(['executing', 'validating', 'verifying']).toContain(rows[0]!.phase);

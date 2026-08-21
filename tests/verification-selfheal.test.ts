@@ -80,7 +80,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
 
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
   const selfHealTurns = (runId: number) =>
-    server.app.ctx.db.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all();
+    server.app.ctx.asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
 
   async function runWorktreeTask(prompt: unknown): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
@@ -130,7 +130,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
 
     // AC1: exactly one self-heal turn was enqueued via the turn queue, and it
     // settled done.
-    const turns = selfHealTurns(runId);
+    const turns = await selfHealTurns(runId);
     expect(turns).toHaveLength(1);
     expect(turns[0]!).toMatchObject({ purpose: 'self-heal', status: 'done' });
     expect(turns[0]!.sessionId).toBe(`run-${runId}`); // stable Session anchor across heals
@@ -165,7 +165,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.verdict).toBe('inconclusive');
     // And no self-heal turn was ever enqueued.
-    expect(selfHealTurns(runId)).toHaveLength(0);
+    expect(await selfHealTurns(runId)).toHaveLength(0);
   });
 
   it('AC3: self-heal is bounded — an actionable fail that never heals exhausts the budget and Escalates', async () => {
@@ -189,7 +189,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     // the Run Escalates — exactly two attempts and exactly one self-heal turn.
     const rows = await attempts(runId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'fail']);
-    expect(selfHealTurns(runId)).toHaveLength(1);
+    expect(await selfHealTurns(runId)).toHaveLength(1);
   });
 
   it('maxSelfHeals: 0 disables self-heal — an actionable fail Escalates on the first turn, no heal turn', async () => {
@@ -208,6 +208,6 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(task.escalated).toBe(true);
 
     expect((await attempts(runId)).map((r) => r.verdict)).toEqual(['fail']);
-    expect(selfHealTurns(runId)).toHaveLength(0);
+    expect(await selfHealTurns(runId)).toHaveLength(0);
   });
 });

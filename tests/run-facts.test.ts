@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
-import { openDb, type Db } from '../src/db/index.js';
+import { createClient } from '@libsql/client';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -17,10 +16,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('RunFactStore (issue #112)', () => {
   let dir: string;
-  let db: Db;
-  // RunStore and RunFactStore both migrated to the async libsql Db (ADR-0029
-  // #203); `db` (sync) still backs TaskService and the raw sqlite duplicate-seq
-  // check below, so this fixture runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let facts: RunFactStore;
   let runId: number;
@@ -28,9 +23,8 @@ describe('RunFactStore (issue #112)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-run-facts-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     const runStore = new RunStore(asyncDb);
     facts = new RunFactStore(asyncDb);
 
@@ -75,12 +69,14 @@ describe('RunFactStore (issue #112)', () => {
     await facts.append(runId, 'failed'); // seq 1
     // Force a raw duplicate seq against the same file — the store never does
     // this, but the index must guarantee no two facts share a seq in a Run.
-    const sqlite = new Database(join(dir, 'harmonic.db'));
-    const insert = sqlite.prepare(
-      `insert into run_facts (run_id, seq, ts, type, payload) values (?, 1, ?, 'process-death', '{}')`,
-    );
-    expect(() => insert.run(runId, Date.now())).toThrow(/UNIQUE constraint failed/);
-    sqlite.close();
+    const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
+    await expect(
+      raw.execute({
+        sql: `insert into run_facts (run_id, seq, ts, type, payload) values (?, 1, ?, 'process-death', '{}')`,
+        args: [runId, Date.now()],
+      }),
+    ).rejects.toThrow(/UNIQUE constraint failed/);
+    raw.close();
   });
 
   it('feeds computeDisposition: the persisted log resolves to the winning disposition', async () => {

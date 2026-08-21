@@ -277,7 +277,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
    * pick: point the single Workspace at `repo`, flip the Task to running, then
    * launchClaimed spawns the Run through the shared funnel. */
   async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
-    server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
+    await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     // The stub agent runs the *drive prompt* as its scenario script — so put the
     // scenario JSON at the head of the drive prompt (the same trick auto-drive
     // tests use). A mirrored Task's own prompt is wrapped under a `## ` header,

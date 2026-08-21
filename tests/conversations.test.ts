@@ -149,7 +149,7 @@ describe('conversation walking skeleton (issue 10)', () => {
   it('never lets a run-scoped key reach the operator-only Conversation API', async () => {
     // A Conversation route is not in the run-scoped allowlist (app.ts).
     const { body: convo } = await server.api('POST', '/api/conversations', {});
-    const key = server.app.ctx.auth.createKey('run-1', { scope: 'run', runId: 1 });
+    const key = await server.app.ctx.auth.createKey('run-1', { scope: 'run', runId: 1 });
     const res = await fetch(`${server.baseUrl}/api/conversations/${convo.id}`, {
       headers: { authorization: `Bearer ${key.token}` },
     });

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -30,11 +29,8 @@ const CANCEL_PROJECTION: SettleProjection = { runState: 'cancelled', taskAction:
  */
 describe('LandingCoordinator (issue #115)', () => {
   let dir: string;
-  let db: Db;
   // These stores (RunStore, TaskService, leases, RunFactStore, LandingJournalStore)
   // are all on the async libsql Db (ADR-0029; landing journal migrated in #209).
-  // `db` (sync) still backs TaskService's `allWorkspaces`, so this fixture runs
-  // both connections on the one file (same pattern as tests/run-facts.test.ts).
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
@@ -46,9 +42,8 @@ describe('LandingCoordinator (issue #115)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-coordinator-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);

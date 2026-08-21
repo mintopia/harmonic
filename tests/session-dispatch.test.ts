@@ -55,9 +55,9 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     // --- The rest reads the durable rows directly (sessionRowId/session
     // internals aren't on the public Run API — same pattern execution.test.ts
     // uses to read guardrail_events straight off `server.app.ctx.db`). ---
-    const db = server.app.ctx.db;
-    const runRow = db.select().from(runs).where(eq(runs.id, runId)).get()!;
-    const workspace = db.select().from(workspaces).get()!;
+    const asyncDb = server.app.ctx.asyncDb;
+    const runRow = (await asyncDb.read((d) => d.select().from(runs).where(eq(runs.id, runId)).get()))!;
+    const workspace = (await asyncDb.read((d) => d.select().from(workspaces).get()))!;
 
     // AC 2: the Run is bound to its Session.
     expect(runRow.sessionId).toBeTruthy();
@@ -65,7 +65,9 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
 
     // AC 1: exactly one sessions row, keyed on the ACP session id, with the
     // dispatch identity (harness/model/cwd) matching the task/run.
-    const matching = db.select().from(sessions).where(eq(sessions.harnessSessionId, runRow.sessionId!)).all();
+    const matching = await asyncDb.read((d) =>
+      d.select().from(sessions).where(eq(sessions.harnessSessionId, runRow.sessionId!)).all(),
+    );
     expect(matching).toHaveLength(1);
     const session = matching[0]!;
     expect(session.id).toBe(runRow.sessionRowId);
@@ -73,7 +75,7 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     expect(session.model).toBe('stub-model'); // stubHarness()'s only/default model
     expect(session.cwd).toBe(workspace.workingDir);
 
-    const allSessions = db.select().from(sessions).all();
+    const allSessions = await asyncDb.read((d) => d.select().from(sessions).all());
     expect(allSessions).toHaveLength(1);
 
     // AC 3: mcpTemplates is credential-free. The test server always mints a

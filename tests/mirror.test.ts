@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { tasks as tasksTable } from '../src/db/schema.js';
 import { defaultConfig } from '../src/config.js';
@@ -56,7 +55,6 @@ describe('deriveRole (labels → workflow/wayfinderType/drive)', () => {
 
 describe('mirrorScan upsert', () => {
   let dir: string;
-  let db: Db;
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
@@ -64,10 +62,9 @@ describe('mirrorScan upsert', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mirror-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    wsId = (await allWorkspaces(db)())[0]!.id;
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -122,7 +119,7 @@ describe('mirrorScan upsert', () => {
     const t = ticket({ number: 8, labels: ['ready-for-agent'] });
     const first = (await mscan([t]))[0]!;
     // Harmonic escalates at runtime (afk→hitl, escalated flag) without touching the label.
-    db.update(tasksTable).set({ drive: 'hitl', escalated: true }).where(eq(tasksTable.id, first.id)).run();
+    await asyncDb.write((d) => d.update(tasksTable).set({ drive: 'hitl', escalated: true }).where(eq(tasksTable.id, first.id)).run());
     const second = (await mscan([t]))[0]!; // same ready-for-agent label
     expect(second.drive).toBe('hitl'); // escalation preserved, not re-seeded to afk
     expect(second.escalated).toBe(true);
@@ -257,10 +254,9 @@ describe('mirrorScan upsert', () => {
 describe('deriveMaps (query-time rollup)', () => {
   it('groups mirrored Tasks under their map by mapRef, with per-state counts', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-maps-'));
-    const db = openDb(dir);
     const asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    const wsId = (await allWorkspaces(db)())[0]!.id;
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const wsId = (await allWorkspaces(asyncDb)())[0]!.id;
     const scan = [
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'] }),

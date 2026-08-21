@@ -70,7 +70,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
   /** Launch a mirrored afk/direct Run against `repo`, mirroring the Auto-Runner
    * pick (see issue #152's isolation integration test). */
   async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
-    server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
+    await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     // The stub agent runs the drive prompt as its scenario script; a mirrored
     // Task's own prompt is wrapped under a `## ` header the stub can't parse, so
     // drive.prompt is the reliable seam.

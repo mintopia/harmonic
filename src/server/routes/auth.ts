@@ -83,7 +83,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const { password } = req.body;
-      if (!ctx.auth.verifyLogin(password)) {
+      if (!(await ctx.auth.verifyLogin(password))) {
         return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong password' } });
       }
       const token = ctx.auth.createSession();
@@ -131,7 +131,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => ({
       authenticated: ctx.auth.validateSession(req.cookies[SESSION_COOKIE]),
-      passwordConfigured: ctx.auth.hasPassword(),
+      passwordConfigured: await ctx.auth.hasPassword(),
     }),
   );
 
@@ -160,10 +160,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const { currentPassword, newPassword } = req.body;
       // Ungated → this is the initial set, so skip the current-password check.
-      if (ctx.auth.hasPassword() && !ctx.auth.verifyLogin(currentPassword)) {
+      if ((await ctx.auth.hasPassword()) && !(await ctx.auth.verifyLogin(currentPassword))) {
         return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong current password' } });
       }
-      ctx.auth.setPassword(newPassword);
+      await ctx.auth.setPassword(newPassword);
       ctx.auth.destroyOtherSessions(req.cookies[SESSION_COOKIE]);
       return { ok: true } as const;
     },
@@ -185,11 +185,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      if (ctx.auth.hasPassword()) {
-        if (!ctx.auth.verifyLogin(req.body.currentPassword)) {
+      if (await ctx.auth.hasPassword()) {
+        if (!(await ctx.auth.verifyLogin(req.body.currentPassword))) {
           return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong current password' } });
         }
-        ctx.auth.clearPassword();
+        await ctx.auth.clearPassword();
         ctx.auth.destroyOtherSessions(req.cookies[SESSION_COOKIE]);
       }
       return { ok: true } as const;
@@ -213,7 +213,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const { key, token } = ctx.auth.createKey(req.body.name, req.body.scope ? { scope: req.body.scope } : {});
+      const { key, token } = await ctx.auth.createKey(req.body.name, req.body.scope ? { scope: req.body.scope } : {});
       const { tokenHash: _hash, ...rest } = key;
       return reply.status(201).send({ ...rest, token });
     },
@@ -233,7 +233,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async () => ({ keys: ctx.auth.listKeys() }),
+    async () => ({ keys: await ctx.auth.listKeys() }),
   );
 
   app.delete(
@@ -252,7 +252,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.auth.revokeKey(req.params.id);
+      await ctx.auth.revokeKey(req.params.id);
       return { ok: true } as const;
     },
   );

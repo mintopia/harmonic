@@ -34,7 +34,7 @@ describe('auth and api keys', () => {
   it('runs ungated when no operator password is set — every surface is open', async () => {
     const open = await startServer(undefined, { password: '' });
     try {
-      expect(open.app.ctx.auth.hasPassword()).toBe(false);
+      expect(await open.app.ctx.auth.hasPassword()).toBe(false);
       expect((await open.anonApi('GET', '/api/tasks')).status).toBe(200);
       expect((await open.anonApi('POST', '/api/tasks', { prompt: 'p' })).status).toBe(201);
       expect((await open.anonApi('GET', '/api/config')).status).toBe(200);
@@ -77,10 +77,10 @@ describe('auth and api keys', () => {
     try {
       // Wrong current password changes nothing.
       expect((await s.api('DELETE', '/api/auth/password', { currentPassword: 'nope' })).status).toBe(401);
-      expect(s.app.ctx.auth.hasPassword()).toBe(true);
+      expect(await s.app.ctx.auth.hasPassword()).toBe(true);
 
       expect((await s.api('DELETE', '/api/auth/password', { currentPassword: TEST_PASSWORD })).status).toBe(200);
-      expect(s.app.ctx.auth.hasPassword()).toBe(false);
+      expect(await s.app.ctx.auth.hasPassword()).toBe(false);
       // Now ungated: an unauthenticated request goes through.
       expect((await s.anonApi('GET', '/api/tasks')).status).toBe(200);
       // Removing again is idempotent.
@@ -93,9 +93,9 @@ describe('auth and api keys', () => {
   it('sets the initial password on an ungated install (currentPassword ignored)', async () => {
     const s = await startServer(undefined, { password: '' });
     try {
-      expect(s.app.ctx.auth.hasPassword()).toBe(false);
+      expect(await s.app.ctx.auth.hasPassword()).toBe(false);
       expect((await s.anonApi('POST', '/api/auth/change-password', { currentPassword: '', newPassword: 'hunter2' })).status).toBe(200);
-      expect(s.app.ctx.auth.hasPassword()).toBe(true);
+      expect(await s.app.ctx.auth.hasPassword()).toBe(true);
       // Gate is back on: unauthenticated is rejected, the new password logs in.
       expect((await s.anonApi('GET', '/api/tasks')).status).toBe(401);
       expect((await s.anonApi('POST', '/api/auth/login', { password: 'hunter2' })).status).toBe(200);
@@ -108,11 +108,11 @@ describe('auth and api keys', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-clearpw-'));
     try {
       const withPw = await startServer(undefined, { dataDir: dir, password: 'secret1' });
-      expect(withPw.app.ctx.auth.hasPassword()).toBe(true);
+      expect(await withPw.app.ctx.auth.hasPassword()).toBe(true);
       await withPw.close();
 
       const cleared = await startServer(undefined, { dataDir: dir, password: '' });
-      expect(cleared.app.ctx.auth.hasPassword()).toBe(false);
+      expect(await cleared.app.ctx.auth.hasPassword()).toBe(false);
       await cleared.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -120,7 +120,7 @@ describe('auth and api keys', () => {
   });
 
   it('the password hash at rest is not the password', async () => {
-    const row = server.app.ctx.db.select().from(settings).where(eq(settings.key, 'auth')).get()!;
+    const row = (await server.app.ctx.asyncDb.read((d) => d.select().from(settings).where(eq(settings.key, 'auth')).get()))!;
     expect(row.value).not.toContain(TEST_PASSWORD);
     expect(JSON.parse(row.value)).toHaveProperty('hash');
     expect(JSON.parse(row.value)).toHaveProperty('salt');
@@ -155,9 +155,9 @@ describe('auth and api keys', () => {
 
   it('password-only login works even when a legacy auth record carries a username', async () => {
     const legacy = await startServer();
-    const row = legacy.app.ctx.db.select().from(settings).where(eq(settings.key, 'auth')).get()!;
+    const row = (await legacy.app.ctx.asyncDb.read((d) => d.select().from(settings).where(eq(settings.key, 'auth')).get()))!;
     const value = JSON.stringify({ ...JSON.parse(row.value), username: 'jess' });
-    legacy.app.ctx.db.update(settings).set({ value }).where(eq(settings.key, 'auth')).run();
+    await legacy.app.ctx.asyncDb.write((d) => d.update(settings).set({ value }).where(eq(settings.key, 'auth')).run());
     expect((await legacy.anonApi('POST', '/api/auth/login', { password: TEST_PASSWORD })).status).toBe(200);
     await legacy.close();
   });

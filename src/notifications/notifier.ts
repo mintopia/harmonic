@@ -45,12 +45,17 @@ export class Notifier {
     private readonly log: (msg: string) => void = () => {},
   ) {}
 
-  /** Fan a notification out to subscribed channels + the task's overrides. Fire-and-forget. */
-  notify(event: NotificationEvent, task?: TaskRow): void {
+  /**
+   * Fan a notification out to subscribed channels + the task's overrides.
+   * The channel/override lookups are awaited (ChannelService is backed by
+   * the async DB handle now); delivery itself stays fire-and-forget per
+   * destination.
+   */
+  async notify(event: NotificationEvent, task?: TaskRow): Promise<void> {
     const destinations = new Map<number, Channel>();
-    for (const channel of this.channels.subscribed(event)) destinations.set(channel.id, channel);
+    for (const channel of await this.channels.subscribed(event)) destinations.set(channel.id, channel);
     if (task) {
-      for (const channel of this.channels.overridesForTask(task.id)) destinations.set(channel.id, channel);
+      for (const channel of await this.channels.overridesForTask(task.id)) destinations.set(channel.id, channel);
     }
     if (destinations.size === 0) return;
 

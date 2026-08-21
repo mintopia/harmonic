@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, notInArray, or } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import { apiKeys, runs, settings, type ApiKeyRow } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 
@@ -25,40 +25,44 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 export class AuthService {
   private sessions = new Set<string>();
 
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   // ---- Operator password ----
 
-  hasPassword(): boolean {
-    return this.readAuth() !== null;
+  async hasPassword(): Promise<boolean> {
+    return (await this.readAuth()) !== null;
   }
 
-  setPassword(password: string): void {
+  async setPassword(password: string): Promise<void> {
     if (password.length < 4) throw new DomainError('validation', 'password too short');
     const salt = randomBytes(16).toString('hex');
     const value = JSON.stringify({ salt, hash: hashPassword(password, salt) } satisfies StoredAuth);
-    this.db
-      .insert(settings)
-      .values({ key: AUTH_KEY, value })
-      .onConflictDoUpdate({ target: settings.key, set: { value } })
-      .run();
+    await this.db.write((db) =>
+      db
+        .insert(settings)
+        .values({ key: AUTH_KEY, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } })
+        .run(),
+    );
   }
 
   /** Remove the operator password — Harmonic falls back to ungated. Idempotent. */
-  clearPassword(): void {
-    this.db.delete(settings).where(eq(settings.key, AUTH_KEY)).run();
+  async clearPassword(): Promise<void> {
+    await this.db.write((db) => db.delete(settings).where(eq(settings.key, AUTH_KEY)).run());
   }
 
-  verifyLogin(password: string): boolean {
-    const stored = this.readAuth();
+  async verifyLogin(password: string): Promise<boolean> {
+    const stored = await this.readAuth();
     if (!stored) return false;
     const candidate = Buffer.from(hashPassword(password, stored.salt), 'hex');
     const expected = Buffer.from(stored.hash, 'hex');
     return candidate.length === expected.length && timingSafeEqual(candidate, expected);
   }
 
-  private readAuth(): StoredAuth | null {
-    const row = this.db.select().from(settings).where(eq(settings.key, AUTH_KEY)).get();
+  private async readAuth(): Promise<StoredAuth | null> {
+    const row = await this.db.read((db) =>
+      db.select().from(settings).where(eq(settings.key, AUTH_KEY)).get(),
+    );
     return row ? (JSON.parse(row.value) as StoredAuth) : null;
   }
 
@@ -90,83 +94,103 @@ export class AuthService {
 
   // ---- API keys ----
 
-  createKey(
+  async createKey(
     name: string,
     opts: { scope?: 'full' | 'run' | 'conversation' | 'read'; runId?: number; conversationId?: number } = {},
-  ): { key: ApiKeyRow; token: string } {
+  ): Promise<{ key: ApiKeyRow; token: string }> {
     const token = KEY_PREFIX + randomBytes(24).toString('hex');
-    const key = this.db
-      .insert(apiKeys)
-      .values({
-        name,
-        tokenHash: hashToken(token),
-        prefix: token.slice(0, KEY_PREFIX.length + 8),
-        scope: opts.scope ?? 'full',
-        runId: opts.runId ?? null,
-        conversationId: opts.conversationId ?? null,
-        createdAt: Date.now(),
-      })
-      .returning()
-      .get();
+    const key = await this.db.write((db) =>
+      db
+        .insert(apiKeys)
+        .values({
+          name,
+          tokenHash: hashToken(token),
+          prefix: token.slice(0, KEY_PREFIX.length + 8),
+          scope: opts.scope ?? 'full',
+          runId: opts.runId ?? null,
+          conversationId: opts.conversationId ?? null,
+          createdAt: Date.now(),
+        })
+        .returning()
+        .get(),
+    );
     return { key, token };
   }
 
-  /** Validate a bearer token; touches last-used. Returns null when invalid or revoked. */
-  verifyKey(token: string): ApiKeyRow | null {
+  /**
+   * Validate a bearer token; touches last-used. Returns null when invalid or
+   * revoked. The read and the `lastUsedAt` bump are one `write()` unit so the
+   * touch has committed by the time the request that authenticated resolves —
+   * a caller that immediately re-reads the key (the last-used tracking test)
+   * never races the async queue.
+   */
+  async verifyKey(token: string): Promise<ApiKeyRow | null> {
     if (!token.startsWith(KEY_PREFIX)) return null;
-    const row = this.db.select().from(apiKeys).where(eq(apiKeys.tokenHash, hashToken(token))).get();
-    if (!row || row.revokedAt !== null) return null;
-    this.db.update(apiKeys).set({ lastUsedAt: Date.now() }).where(eq(apiKeys.id, row.id)).run();
-    return row;
+    return this.db.write(async (db) => {
+      const row = await db.select().from(apiKeys).where(eq(apiKeys.tokenHash, hashToken(token))).get();
+      if (!row || row.revokedAt !== null) return null;
+      await db.update(apiKeys).set({ lastUsedAt: Date.now() }).where(eq(apiKeys.id, row.id)).run();
+      return row;
+    });
   }
 
   /** Operator-created API Keys (full + read) — Run/Conversation Keys are machine credentials, never listed. */
-  listKeys(): Omit<ApiKeyRow, 'tokenHash'>[] {
-    return this.db
-      .select()
-      .from(apiKeys)
-      .where(inArray(apiKeys.scope, ['full', 'read']))
-      .orderBy(desc(apiKeys.createdAt))
-      .all()
-      .map(({ tokenHash: _hash, ...rest }) => rest);
+  async listKeys(): Promise<Omit<ApiKeyRow, 'tokenHash'>[]> {
+    const rows = await this.db.read((db) =>
+      db
+        .select()
+        .from(apiKeys)
+        .where(inArray(apiKeys.scope, ['full', 'read']))
+        .orderBy(desc(apiKeys.createdAt))
+        .all(),
+    );
+    return rows.map(({ tokenHash: _hash, ...rest }) => rest);
   }
 
-  revokeKey(id: number): void {
-    const row = this.db.select().from(apiKeys).where(eq(apiKeys.id, id)).get();
-    if (!row) throw new DomainError('not_found', `api key ${id} not found`);
-    if (row.revokedAt === null) {
-      this.db.update(apiKeys).set({ revokedAt: Date.now() }).where(eq(apiKeys.id, id)).run();
-    }
+  async revokeKey(id: number): Promise<void> {
+    await this.db.write(async (db) => {
+      const row = await db.select().from(apiKeys).where(eq(apiKeys.id, id)).get();
+      if (!row) throw new DomainError('not_found', `api key ${id} not found`);
+      if (row.revokedAt === null) {
+        await db.update(apiKeys).set({ revokedAt: Date.now() }).where(eq(apiKeys.id, id)).run();
+      }
+    });
   }
 
   /** Run Keys die with their Run — hard delete; the Run itself is the audit record. */
-  deleteKeysForRun(runId: number): void {
-    this.db
-      .delete(apiKeys)
-      .where(and(eq(apiKeys.scope, 'run'), eq(apiKeys.runId, runId)))
-      .run();
+  async deleteKeysForRun(runId: number): Promise<void> {
+    await this.db.write((db) =>
+      db
+        .delete(apiKeys)
+        .where(and(eq(apiKeys.scope, 'run'), eq(apiKeys.runId, runId)))
+        .run(),
+    );
   }
 
   /** Conversation Keys die with their Conversation — hard delete (issue 16). */
-  deleteKeysForConversation(conversationId: number): void {
-    this.db
-      .delete(apiKeys)
-      .where(and(eq(apiKeys.scope, 'conversation'), eq(apiKeys.conversationId, conversationId)))
-      .run();
+  async deleteKeysForConversation(conversationId: number): Promise<void> {
+    await this.db.write((db) =>
+      db
+        .delete(apiKeys)
+        .where(and(eq(apiKeys.scope, 'conversation'), eq(apiKeys.conversationId, conversationId)))
+        .run(),
+    );
   }
 
   /** Boot-time sweep: delete every Run Key whose Run is no longer running. */
-  sweepOrphanedRunKeys(): void {
-    const runningRuns = this.db.select({ id: runs.id }).from(runs).where(eq(runs.state, 'running'));
-    this.db
-      .delete(apiKeys)
-      .where(
-        and(
-          eq(apiKeys.scope, 'run'),
-          or(isNull(apiKeys.runId), notInArray(apiKeys.runId, runningRuns)),
-        ),
-      )
-      .run();
+  async sweepOrphanedRunKeys(): Promise<void> {
+    await this.db.write((db) => {
+      const runningRuns = db.select({ id: runs.id }).from(runs).where(eq(runs.state, 'running'));
+      return db
+        .delete(apiKeys)
+        .where(
+          and(
+            eq(apiKeys.scope, 'run'),
+            or(isNull(apiKeys.runId), notInArray(apiKeys.runId, runningRuns)),
+          ),
+        )
+        .run();
+    });
   }
 
   /**
@@ -175,8 +199,8 @@ export class AuthService {
    * gone — so every conversation-scoped key present at boot is orphaned by
    * definition.
    */
-  sweepOrphanedConversationKeys(): void {
-    this.db.delete(apiKeys).where(eq(apiKeys.scope, 'conversation')).run();
+  async sweepOrphanedConversationKeys(): Promise<void> {
+    await this.db.write((db) => db.delete(apiKeys).where(eq(apiKeys.scope, 'conversation')).run());
   }
 }
 

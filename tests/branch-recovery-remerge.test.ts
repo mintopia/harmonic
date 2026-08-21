@@ -77,7 +77,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
 
   /** Launch a mirrored afk/direct Run against `repo`. */
   async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
-    server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
+    await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
@@ -90,7 +90,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
   const facts = (runId: number) => new RunFactStore(server.app.ctx.asyncDb).list(runId);
   const factOfType = async (runId: number, type: string) => (await facts(runId)).find((f) => f.type === type);
   const remergeTurns = (runId: number) =>
-    server.app.ctx.db.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all();
+    server.app.ctx.asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
 
   const lifecycleEvents = async (runId: number): Promise<Array<{ event: string; [k: string]: unknown }>> =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
@@ -139,7 +139,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     expect(await factOfType(runId, 'branch-violation')).toBeUndefined();
 
     // Exactly ONE corrective turn, dispatched single-flight on this Session's queue.
-    const turns = remergeTurns(runId);
+    const turns = await remergeTurns(runId);
     expect(turns).toHaveLength(1);
     expect(turns[0]!).toMatchObject({ purpose: 're-merge', status: 'done' });
     expect(turns[0]!.sessionId).toBe(`run-${runId}`);
@@ -181,7 +181,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
 
     // Exactly one corrective turn — no second mutating turn (no further re-merge,
     // and no self-heal after a re-merge).
-    const turns = remergeTurns(runId);
+    const turns = await remergeTurns(runId);
     expect(turns.filter((t) => t.purpose === 're-merge')).toHaveLength(1);
     expect(turns.filter((t) => t.purpose === 'self-heal')).toHaveLength(0);
   });

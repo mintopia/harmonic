@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import { channels, taskChannels, CHANNEL_TYPES, type ChannelRow, type ChannelType } from '../db/schema.js';
 import { DomainError } from '../domain/errors.js';
 
@@ -70,86 +70,104 @@ const deserialize = (row: ChannelRow): Channel => ({
 });
 
 export class ChannelService {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
-  create(input: CreateChannelInput): Channel {
+  create(input: CreateChannelInput): Promise<Channel> {
     const config = CONFIG_SCHEMAS[input.type].parse(input.config);
-    const row = this.db
-      .insert(channels)
-      .values({
-        name: input.name,
-        type: input.type,
-        config: JSON.stringify(config),
-        events: JSON.stringify(input.events ?? DEFAULT_EVENTS),
-        createdAt: Date.now(),
-      })
-      .returning()
-      .get();
-    return deserialize(row);
+    return this.db
+      .write(async (db) =>
+        db
+          .insert(channels)
+          .values({
+            name: input.name,
+            type: input.type,
+            config: JSON.stringify(config),
+            events: JSON.stringify(input.events ?? DEFAULT_EVENTS),
+            createdAt: Date.now(),
+          })
+          .returning()
+          .get(),
+      )
+      .then(deserialize);
   }
 
-  get(id: number): Channel {
-    const row = this.db.select().from(channels).where(eq(channels.id, id)).get();
+  async get(id: number): Promise<Channel> {
+    const row = await this.db.read((db) => db.select().from(channels).where(eq(channels.id, id)).get());
     if (!row) throw new DomainError('not_found', `channel ${id} not found`);
     return deserialize(row);
   }
 
-  list(): Channel[] {
-    return this.db.select().from(channels).all().map(deserialize);
+  async list(): Promise<Channel[]> {
+    const rows = await this.db.read((db) => db.select().from(channels).all());
+    return rows.map(deserialize);
   }
 
-  update(id: number, input: z.infer<typeof updateChannelSchema>): Channel {
-    const current = this.get(id);
-    const patch: Partial<typeof channels.$inferInsert> = {};
-    if (input.name !== undefined) patch.name = input.name;
-    if (input.config !== undefined) {
-      patch.config = JSON.stringify(CONFIG_SCHEMAS[current.type].parse(input.config));
-    }
-    if (input.events !== undefined) patch.events = JSON.stringify(input.events);
-    const row = this.db.update(channels).set(patch).where(eq(channels.id, id)).returning().get()!;
-    return deserialize(row);
+  // Read-then-write (the current row, then a patch derived from it) runs as
+  // one `this.db.write()` unit — ADR-0029 §3 — so no concurrent update can
+  // interleave between the 404-check/type lookup and the write.
+  update(id: number, input: z.infer<typeof updateChannelSchema>): Promise<Channel> {
+    return this.db
+      .write(async (db) => {
+        const current = await db.select().from(channels).where(eq(channels.id, id)).get();
+        if (!current) throw new DomainError('not_found', `channel ${id} not found`);
+        const patch: Partial<typeof channels.$inferInsert> = {};
+        if (input.name !== undefined) patch.name = input.name;
+        if (input.config !== undefined) {
+          patch.config = JSON.stringify(CONFIG_SCHEMAS[current.type].parse(input.config));
+        }
+        if (input.events !== undefined) patch.events = JSON.stringify(input.events);
+        return (await db.update(channels).set(patch).where(eq(channels.id, id)).returning().get())!;
+      })
+      .then(deserialize);
   }
 
-  delete(id: number): void {
-    this.get(id);
-    this.db.delete(taskChannels).where(eq(taskChannels.channelId, id)).run();
-    this.db.delete(channels).where(eq(channels.id, id)).run();
+  // Same read-then-write rule: the 404-check and the two deletes run as one
+  // write unit so nothing can race the channel out from under the delete.
+  delete(id: number): Promise<void> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(channels).where(eq(channels.id, id)).get();
+      if (!row) throw new DomainError('not_found', `channel ${id} not found`);
+      await db.delete(taskChannels).where(eq(taskChannels.channelId, id)).run();
+      await db.delete(channels).where(eq(channels.id, id)).run();
+    });
   }
 
   /** Channels subscribed to this event type. */
-  subscribed(event: NotificationEvent): Channel[] {
-    return this.list().filter((c) => c.events.includes(event));
+  async subscribed(event: NotificationEvent): Promise<Channel[]> {
+    return (await this.list()).filter((c) => c.events.includes(event));
   }
 
   // ---- Per-task overrides ----
 
-  addOverride(taskId: number, channelId: number): void {
-    this.get(channelId);
-    this.db.insert(taskChannels).values({ taskId, channelId }).onConflictDoNothing().run();
+  // 404-check + insert run as one write unit, per the read-then-write rule.
+  addOverride(taskId: number, channelId: number): Promise<void> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(channels).where(eq(channels.id, channelId)).get();
+      if (!row) throw new DomainError('not_found', `channel ${channelId} not found`);
+      await db.insert(taskChannels).values({ taskId, channelId }).onConflictDoNothing().run();
+    });
   }
 
-  removeOverride(taskId: number, channelId: number): void {
-    this.db
-      .delete(taskChannels)
-      .where(and(eq(taskChannels.taskId, taskId), eq(taskChannels.channelId, channelId)))
-      .run();
+  removeOverride(taskId: number, channelId: number): Promise<void> {
+    return this.db.write(async (db) => {
+      await db
+        .delete(taskChannels)
+        .where(and(eq(taskChannels.taskId, taskId), eq(taskChannels.channelId, channelId)))
+        .run();
+    });
   }
 
-  overridesForTask(taskId: number): Channel[] {
-    const ids = this.db
-      .select({ channelId: taskChannels.channelId })
-      .from(taskChannels)
-      .where(eq(taskChannels.taskId, taskId))
-      .all();
-    return ids.map(({ channelId }) => this.get(channelId));
+  async overridesForTask(taskId: number): Promise<Channel[]> {
+    const ids = await this.db.read((db) =>
+      db.select({ channelId: taskChannels.channelId }).from(taskChannels).where(eq(taskChannels.taskId, taskId)).all(),
+    );
+    return Promise.all(ids.map(({ channelId }) => this.get(channelId)));
   }
 
-  channelIdsForTask(taskId: number): number[] {
-    return this.db
-      .select({ channelId: taskChannels.channelId })
-      .from(taskChannels)
-      .where(eq(taskChannels.taskId, taskId))
-      .all()
-      .map((r) => r.channelId);
+  async channelIdsForTask(taskId: number): Promise<number[]> {
+    const rows = await this.db.read((db) =>
+      db.select({ channelId: taskChannels.channelId }).from(taskChannels).where(eq(taskChannels.taskId, taskId)).all(),
+    );
+    return rows.map((r) => r.channelId);
   }
 }

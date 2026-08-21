@@ -38,7 +38,7 @@ export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
       // from the same credential (bearer header, or `?token=` for browser clients).
       const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
       const token = bearer ?? (req.query as Record<string, string | undefined>)?.token;
-      const readOnly = (token ? ctx.auth.verifyKey(token) : null)?.scope === 'read';
+      const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
       return { processes: await activitySnapshot(ctx, !readOnly) };
     },
   );

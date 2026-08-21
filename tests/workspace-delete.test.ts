@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { trackerDismissals, runs, runFacts } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -17,19 +16,15 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('WorkspaceService.delete guards (issue #61)', () => {
   let dataDir: string;
-  let db: Db;
-  // TaskService migrated to the async libsql Db (ADR-0029); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let workspaces: WorkspaceService;
   let tasks: TaskService;
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-del-'));
-    db = openDb(dataDir); // backfills the single Default Workspace
-    asyncDb = await openAsyncDb(dataDir);
+    asyncDb = await openAsyncDb(dataDir); // backfills the single Default Workspace
     workspaces = new WorkspaceService(asyncDb);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -57,25 +52,29 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     const ws = (await workspaces.list())[0]!;
     // A Dismissed mirrored Task leaves a tombstone FK-bound to the Workspace;
     // deleting the Workspace must purge it first or foreign_keys=ON rejects it.
-    db.insert(trackerDismissals).values({ workspaceId: ws.id, trackerRef: 42, dismissedAt: Date.now() }).run();
+    await asyncDb.write((d) =>
+      d.insert(trackerDismissals).values({ workspaceId: ws.id, trackerRef: 42, dismissedAt: Date.now() }).run(),
+    );
 
     await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
-    expect(db.select().from(trackerDismissals).all()).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(trackerDismissals).all())).toHaveLength(0);
   });
 
   it('purges the whole Run tree (run_facts), not just run_events, with no FK error (issue #162)', async () => {
     const ws = (await workspaces.list())[0]!;
     const task = await tasks.create({ prompt: 'has a run with facts' });
-    const runId = db
-      .insert(runs)
-      .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now() })
-      .returning({ id: runs.id })
-      .get()!.id;
+    const runId = (await asyncDb.write((d) =>
+      d
+        .insert(runs)
+        .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now() })
+        .returning({ id: runs.id })
+        .get(),
+    ))!.id;
     // Before #162 the Workspace cascade only deleted run_events, so a run_fact
     // row would FK-reject the runs delete under foreign_keys=ON.
-    db.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run();
+    await asyncDb.write((d) => d.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run());
 
     await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
-    expect(db.select().from(runFacts).where(eq(runFacts.runId, runId)).all()).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(runFacts).where(eq(runFacts.runId, runId)).all())).toHaveLength(0);
   });
 });

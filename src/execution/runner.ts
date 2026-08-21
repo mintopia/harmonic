@@ -132,8 +132,8 @@ export interface RunnerOptions {
   worktreesDir?: string;
   /** Mints/revokes the per-run scoped API key injected into the harness. */
   keys?: {
-    mint: (runId: number) => string;
-    revoke: (runId: number) => void;
+    mint: (runId: number) => Promise<string>;
+    revoke: (runId: number) => void | Promise<void>;
   };
   /** Auto-drive collaborator for afk mirrored Tasks (issue #33); absent on a native-only server. */
   autoDrive?: AutoDrive;
@@ -2162,11 +2162,18 @@ export class Runner {
       // — and, where the harness supports it (codex), registered directly
       // via ACP `session/new` mcpServers.
       if (this.keys && this.mcpUrl) {
-        const runKey = this.keys.mint(run.id);
+        const runKey = await this.keys.mint(run.id);
         workspace.env.HARMONIC_API_KEY = runKey;
         workspace.env.HARMONIC_MCP_URL = this.mcpUrl;
         mcpServers = adapterFor(task.harness).mcpServers({ url: this.mcpUrl, token: runKey });
       }
+      // Process/server shutdown began while this turn was preparing its workspace.
+      // Spawning now would launch a harness into a workspace teardown may already
+      // be removing (the child's own cwd), whose spawn error has no awaiter once
+      // the Run is abandoned. Leave the Run `running` for boot reconciliation to
+      // record interrupted — exactly as the post-verify guard below does — rather
+      // than spawn on shutdown timing.
+      if (this.shuttingDown) return { kind: 'terminal' };
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
       const stderr = child.stderr;
       if (stderr) {
@@ -2182,7 +2189,7 @@ export class Runner {
     } catch (err) {
       // The Run Key may already be minted; it must not outlive the run.
       try {
-        this.keys?.revoke(run.id);
+        void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
       } catch {
         // Best-effort; the startup sweep is the backstop.
       }
@@ -2248,7 +2255,7 @@ export class Runner {
       this.readers.delete(run.id);
       this.kill(active);
       try {
-        this.keys?.revoke(run.id);
+        void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
       } catch {
         // Revocation is best-effort; keys also die with the database row.
       }

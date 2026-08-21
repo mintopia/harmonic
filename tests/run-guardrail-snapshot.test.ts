@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -18,7 +17,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   let dir: string;
-  let db: Db;
   // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
   // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
@@ -27,9 +25,8 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
   });
   afterEach(async () => {

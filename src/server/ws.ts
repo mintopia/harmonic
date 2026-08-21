@@ -10,7 +10,7 @@ import { conversationToApi, runToApi, runUsageToApi, taskToApi } from './seriali
 export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as unknown as App;
 
-  fastify.get('/ws', { websocket: true }, (socket, req) => {
+  fastify.get('/ws', { websocket: true }, async (socket, req) => {
     const send = (msg: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
     };
@@ -19,7 +19,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     // events dropped. Auth already passed in the onRequest hook; this just
     // re-reads the key's scope from the same `?token=`.
     const token = (req.query as Record<string, string | undefined>)?.token;
-    const readOnly = (token ? ctx.auth.verifyKey(token) : null)?.scope === 'read';
+    const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
     const unsubscribes = [
       ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
       ctx.bus.on('run_changed', (run) => send({ type: 'run_changed', run: runToApi(ctx, run) })),

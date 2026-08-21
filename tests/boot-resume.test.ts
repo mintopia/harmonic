@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -28,10 +27,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('BootResumeCoordinator (issue #146)', () => {
   let dir: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); the other stores
-  // here are still on the sync Db, so this fixture runs both connections on
-  // the one file (same pattern as tests/run-facts.test.ts).
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
@@ -41,9 +36,8 @@ describe('BootResumeCoordinator (issue #146)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-boot-resume-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
     sessions = new SessionStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -19,7 +18,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('WorkContextLeaseStore (issue #118)', () => {
   let dir: string;
-  let db: Db;
   // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
   // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
@@ -29,9 +27,8 @@ describe('WorkContextLeaseStore (issue #118)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-wcl-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     const runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
 

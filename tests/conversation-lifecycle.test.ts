@@ -53,15 +53,15 @@ describe('conversation history & lifecycle (issue 15)', () => {
     server = await startServer(stubHarness());
     const convo = await firstTurn(server, 'to be deleted');
     // It has events and a live conversation key while warm.
-    expect(server.app.ctx.db.select().from(conversationEvents).where(eq(conversationEvents.conversationId, convo.id)).all().length).toBeGreaterThan(0);
-    expect(server.app.ctx.db.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all().length).toBe(1);
+    expect((await server.app.ctx.asyncDb.read((d) => d.select().from(conversationEvents).where(eq(conversationEvents.conversationId, convo.id)).all())).length).toBeGreaterThan(0);
+    expect((await server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all())).length).toBe(1);
 
     const del = await server.api('DELETE', `/api/conversations/${convo.id}`);
     expect(del.status).toBe(200);
 
     expect((await server.api('GET', `/api/conversations/${convo.id}`)).status).toBe(404);
-    expect(server.app.ctx.db.select().from(conversationEvents).where(eq(conversationEvents.conversationId, convo.id)).all()).toEqual([]);
-    expect(server.app.ctx.db.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all()).toEqual([]);
+    expect(await server.app.ctx.asyncDb.read((d) => d.select().from(conversationEvents).where(eq(conversationEvents.conversationId, convo.id)).all())).toEqual([]);
+    expect(await server.app.ctx.asyncDb.read((d) => d.select().from(apiKeys).where(eq(apiKeys.scope, 'conversation')).all())).toEqual([]);
   });
 
   it('ends a Conversation left idle past the timeout', async () => {

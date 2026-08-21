@@ -224,7 +224,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       // Stop the harness if warm (revokes its key); then revoke any orphaned
       // key and cascade the events.
       await ctx.conversationDriver.end(req.params.id);
-      ctx.auth.deleteKeysForConversation(req.params.id);
+      await ctx.auth.deleteKeysForConversation(req.params.id);
       await ctx.conversations.delete(req.params.id);
       return { ok: true } as const;
     },

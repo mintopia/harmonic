@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
@@ -67,9 +66,6 @@ function reopenSpy() {
 
 describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   let dir: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runs: RunStore;
@@ -78,9 +74,8 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-ccm-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runs = new RunStore(asyncDb);
     const spy = reopenSpy();
     reopened = spy.reopened;

@@ -14,7 +14,6 @@ import {
 import { defaultConfig, type HarnessConfig } from '../src/config.js';
 import { combineVerdicts } from '../web/src/verification-model.js';
 import type { VerifierVerdict } from '../web/src/verification-model.js';
-import { openDb } from '../src/db/index.js';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -277,12 +276,10 @@ describe('runCritic (issue #136)', () => {
 
     const dbDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-persist-db-'));
     tmpDirs.push(dbDir);
-    const db = openDb(dbDir);
-    // RunStore migrated to the async libsql Db (ADR-0029 #203); this is a
-    // one-off local fixture (not the shared beforeEach pattern), so the async
+    // A one-off local fixture (not the shared beforeEach pattern), so the
     // connection is opened and closed inline within the test.
     const asyncDb = await openAsyncDb(dbDir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     const runStore = new RunStore(asyncDb);
     const store = new VerificationAttemptStore(asyncDb);
     const runId = (await runStore.create((await tasks.create({ prompt: 'verify me', state: 'ready' })).id)).id;

@@ -60,8 +60,8 @@ export interface ConversationDriverOptions {
   rules?: PermissionRuleStore;
   /** Mints/revokes the per-Conversation scoped MCP key injected into the harness (issue 16). */
   keys?: {
-    mint: (conversationId: number) => string;
-    revoke: (conversationId: number) => void;
+    mint: (conversationId: number) => Promise<string>;
+    revoke: (conversationId: number) => void | Promise<void>;
   };
 }
 
@@ -232,7 +232,7 @@ export class ConversationDriver {
     if (remember && this.rules) {
       const kind = permissionKind(pending.request);
       if (kind) {
-        const created = this.rules.create({ kind, workingDir: pending.workingDir });
+        const created = await this.rules.create({ kind, workingDir: pending.workingDir });
         rule = { kind: created.kind, workingDir: created.workingDir };
       }
     }
@@ -284,7 +284,7 @@ export class ConversationDriver {
     // follows the Conversation's.
     let mcpServers: unknown[] = [];
     if (this.keys && this.mcpUrl) {
-      const token = this.keys.mint(convo.id);
+      const token = await this.keys.mint(convo.id);
       env.HARMONIC_API_KEY = token;
       env.HARMONIC_MCP_URL = this.mcpUrl;
       mcpServers = adapterFor(convo.harness).mcpServers({ url: this.mcpUrl, token });
@@ -364,7 +364,7 @@ export class ConversationDriver {
    */
   private async decidePermission(conversationId: number, workingDir: string, request: unknown): Promise<PermissionOutcome> {
     const kind = permissionKind(request);
-    const rule = kind ? this.rules?.findMatch(kind, workingDir) : null;
+    const rule = kind ? ((await this.rules?.findMatch(kind, workingDir)) ?? null) : null;
     if (rule) {
       const optionId = allowOptionId(request);
       const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
@@ -459,7 +459,8 @@ export class ConversationDriver {
   /** Best-effort Conversation Key revocation; the boot-time sweep is the backstop. */
   private revokeKey(conversationId: number): void {
     try {
-      this.keys?.revoke(conversationId);
+      // revoke may be sync or async; swallow both failure modes.
+      void Promise.resolve(this.keys?.revoke(conversationId)).catch(() => {});
     } catch {
       // Keys also die with the database row and the startup sweep.
     }

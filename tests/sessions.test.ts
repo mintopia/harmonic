@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { sessions } from '../src/db/schema.js';
 import { DomainError } from '../src/domain/errors.js';
+import { isUniqueViolation } from '../src/domain/work-context-leases.js';
 import {
   SessionStore,
   stripMcpCredentials,
@@ -117,7 +117,6 @@ describe('Sessions (issue #141)', () => {
 
   describe('SessionStore', () => {
     let dir: string;
-    let db: Db;
     let asyncDb: AsyncDbHandle;
     let store: SessionStore;
     let workspaceId: number;
@@ -138,10 +137,9 @@ describe('Sessions (issue #141)', () => {
 
     beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-sessions-'));
-      db = openDb(dir);
       asyncDb = await openAsyncDb(dir);
       store = new SessionStore(asyncDb);
-      workspaceId = (await allWorkspaces(db)())[0]!.id;
+      workspaceId = (await allWorkspaces(asyncDb)())[0]!.id;
     });
     afterEach(async () => {
       await asyncDb.close();
@@ -318,22 +316,31 @@ describe('Sessions (issue #141)', () => {
       it('rejects a raw duplicate insert — the DB backstops a racing double-record', async () => {
         await store.recordDispatch(baseInput());
         // A second row with the SAME natural key, bypassing recordDispatch's
-        // read-then-upsert, must be rejected by the schema's unique index.
-        expect(() =>
-          db
-            .insert(sessions)
-            .values({
-              harness: 'claude',
-              harnessSessionId: 'sess-1',
-              model: 'racing',
-              cwd: '/tmp/work',
-              status: 'active',
-              lastActiveAt: now,
-              createdAt: now,
-              updatedAt: now,
-            })
-            .run(),
-        ).toThrow(/UNIQUE/i);
+        // read-then-upsert, must be rejected by the schema's unique index. The
+        // libsql async driver wraps the raw UNIQUE error onto `.cause` (ADR-0029),
+        // so detect it via isUniqueViolation walking the cause chain rather than a
+        // message regex.
+        let caught: unknown;
+        try {
+          await asyncDb.write((d) =>
+            d
+              .insert(sessions)
+              .values({
+                harness: 'claude',
+                harnessSessionId: 'sess-1',
+                model: 'racing',
+                cwd: '/tmp/work',
+                status: 'active',
+                lastActiveAt: now,
+                createdAt: now,
+                updatedAt: now,
+              })
+              .run(),
+          );
+        } catch (err) {
+          caught = err;
+        }
+        expect(isUniqueViolation(caught)).toBe(true);
       });
 
       it('allows the same harnessSessionId under a different harness', async () => {

@@ -68,7 +68,7 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
    * Run through the same funnel REST/MCP/Auto-Runner all share.
    */
   async function launchAfkDirect(repo: string): Promise<{ taskId: number; runId: number }> {
-    server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
+    await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++));
     // Sanity: mirrored Tasks resolve to the global `direct` isolation default,
     // so this is genuinely the afk+direct path the gate guards (not worktree).

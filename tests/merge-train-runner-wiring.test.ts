@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
@@ -68,9 +67,7 @@ afterAll(() => {
 
 describe('Runner merge-train adapters (issue #163)', () => {
   let dir: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
+  // RunStore migrated to the async libsql Db (ADR-0029 #203).
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runs: RunStore;
@@ -78,9 +75,8 @@ describe('Runner merge-train adapters (issue #163)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mergetrain-adapters-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runs = new RunStore(asyncDb);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig());
   });
@@ -116,7 +112,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     // member's Session queue. The stashed row id (a private field) is not peeked
     // at here — the AC3 e2e test exercises the full stash→settle round-trip
     // through the real `drive()` loop (it asserts the row ends up settled `done`).
-    const rows = db.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all();
+    const rows = await asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ purpose: 're-merge', status: 'in_flight', sessionId: `run-${runId}` });
   });
@@ -218,7 +214,8 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     return { taskId: task.id, runId: run.id, trackerRef };
   }
 
-  const turnsFor = (runId: number) => server.app.ctx.db.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all();
+  const turnsFor = (runId: number) =>
+    server.app.ctx.asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
 
   it('AC2: two Epic members finishing near-simultaneously land serially via rebase→ff, no PR/manual fallback', async () => {
     const repo = makeRepo();
@@ -265,8 +262,8 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     expect(git(repo, 'show', `${epic}:member-${m2.trackerRef}.txt`)).toBe(`member ${m2.trackerRef}`);
 
     // Clean lands: neither member's Session ever needed a corrective turn.
-    expect(turnsFor(m1.runId)).toHaveLength(0);
-    expect(turnsFor(m2.runId)).toHaveLength(0);
+    expect(await turnsFor(m1.runId)).toHaveLength(0);
+    expect(await turnsFor(m2.runId)).toHaveLength(0);
   });
 
   it('AC3: a rebase conflict on a member\'s land dispatches exactly one corrective turn, and a second conflict Escalates', async () => {
@@ -304,8 +301,8 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
 
     // First conflict → the coordinator's dispatchHeal → enqueueReMergeForMember
     // records exactly ONE `re-merge` turn on this member's own Session queue.
-    await waitFor(async () => (turnsFor(runId).length > 0 ? true : undefined));
-    const afterFirstConflict = turnsFor(runId);
+    await waitFor(async () => ((await turnsFor(runId)).length > 0 ? true : undefined));
+    const afterFirstConflict = await turnsFor(runId);
     expect(afterFirstConflict).toHaveLength(1);
     expect(afterFirstConflict[0]).toMatchObject({ purpose: 're-merge', sessionId: `run-${runId}` });
 
@@ -328,7 +325,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     // Still exactly ONE corrective turn ever recorded — settled `done` by the
     // `drive()` loop once the corrective turn ran its course, regardless of
     // its (escalating) verdict.
-    const finalTurns = turnsFor(runId);
+    const finalTurns = await turnsFor(runId);
     expect(finalTurns.filter((t) => t.purpose === 're-merge')).toHaveLength(1);
     expect(finalTurns[0]!.status).toBe('done');
 

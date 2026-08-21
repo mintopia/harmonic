@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
-import { openDb, type Db } from '../src/db/index.js';
+import { createClient } from '@libsql/client';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -19,11 +18,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('LandingJournalStore (issue #115)', () => {
   let dir: string;
-  let db: Db;
-  // LandingJournalStore migrated to the async libsql Db (ADR-0029 #209); `db`
-  // (sync) still backs TaskService's `allWorkspaces` and the raw sqlite
-  // duplicate-seq check below, so this fixture runs both connections on the one
-  // file (same pattern as tests/run-facts.test.ts).
   let asyncDb: AsyncDbHandle;
   let journal: LandingJournalStore;
   let runId: number;
@@ -31,9 +25,8 @@ describe('LandingJournalStore (issue #115)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-journal-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     const runStore = new RunStore(asyncDb);
     journal = new LandingJournalStore(asyncDb);
 
@@ -75,12 +68,14 @@ describe('LandingJournalStore (issue #115)', () => {
 
   it('the (run_id, seq) unique index rejects a duplicate seq (append-only integrity)', async () => {
     await journal.writePonc(runId, 0); // seq 1
-    const sqlite = new Database(join(dir, 'harmonic.db'));
-    const insert = sqlite.prepare(
-      `insert into landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, 1, ?, 'intent', 'target-ref', 'k', '{}')`,
-    );
-    expect(() => insert.run(runId, Date.now())).toThrow(/UNIQUE constraint failed/);
-    sqlite.close();
+    const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
+    await expect(
+      raw.execute({
+        sql: `insert into landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, 1, ?, 'intent', 'target-ref', 'k', '{}')`,
+        args: [runId, Date.now()],
+      }),
+    ).rejects.toThrow(/UNIQUE constraint failed/);
+    raw.close();
   });
 
   it('writePonc/ponc round-trip the cutoff seq', async () => {

@@ -88,7 +88,9 @@ describe('live run_usage firehose (ADR 0010)', () => {
     // Always persisted on finish (ADR 0010): the row's snapshot survives a
     // restart. Guards the finalize→stop flush ordering the reviewer flagged.
     const persisted = await waitFor(async () => {
-      const row = server.app.ctx.db.select({ live: runs.liveUsage }).from(runs).where(eq(runs.id, runId)).get();
+      const row = await server.app.ctx.asyncDb.read((d) =>
+        d.select({ live: runs.liveUsage }).from(runs).where(eq(runs.id, runId)).get(),
+      );
       return row?.live ?? false;
     });
     expect(JSON.parse(persisted).tree.id).toBe(sessionId);

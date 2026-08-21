@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +31,7 @@ interface UsageRow {
 /** A session's usage rows, oldest first; [] when the DB is missing/unreadable. */
 function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
   try {
-    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
       return db
         .prepare(
@@ -39,7 +39,7 @@ function readUsageRows(dbPath: string, sessionId: string): UsageRow[] {
                   cache_read_tokens, cache_write_tokens, total_nano_aiu
              FROM assistant_usage_events WHERE session_id = ? ORDER BY id`,
         )
-        .all(sessionId) as UsageRow[];
+        .all(sessionId) as unknown as UsageRow[];
     } finally {
       db.close();
     }
@@ -164,8 +164,8 @@ export const copilotAdapter: HarnessAdapter = {
      *
      * ponytail: no `createTailReader` (#217) — deliberately stays on the
      * whole-file `wholeFileReader` fallback. Usage lives in a sqlite store read
-     * through better-sqlite3, which is *synchronous*, so there's nothing to move
-     * off the event loop the way an async byte-cursor does for claude/codex;
+     * through node:sqlite's `DatabaseSync`, which is *synchronous*, so there's
+     * nothing to move off the event loop the way an async byte-cursor does for claude/codex;
      * and the read is already a bounded, indexed `WHERE session_id = ?` query
      * (a session's rows, not an unbounded whole-file re-parse), so it isn't the
      * O(total) cost #217 targets. A rowid cursor would add real state for no

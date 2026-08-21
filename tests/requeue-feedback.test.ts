@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -40,17 +39,15 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
  */
 describe('requeue feedback — origin-aware placement', () => {
   let dir: string;
-  let db: Db;
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-requeue-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    wsId = (await allWorkspaces(db)())[0]!.id;
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -18,20 +17,18 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('TaskService.delete (issue #162)', () => {
   let dataDir: string;
-  let db: Db;
   let asyncDb: AsyncDbHandle;
   let tasksSvc: TaskService;
   let removedIds: number[];
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-task-del-'));
-    db = openDb(dataDir);
     asyncDb = await openAsyncDb(dataDir);
     removedIds = [];
     tasksSvc = new TaskService(
       asyncDb,
       () => defaultConfig(),
-      allWorkspaces(db),
+      allWorkspaces(asyncDb),
       () => {},
       () => {},
       (id) => removedIds.push(id),
@@ -50,19 +47,21 @@ describe('TaskService.delete (issue #162)', () => {
 
   it('cascades Runs and their children (run_events, run_facts) with no FK error', async () => {
     const task = await tasksSvc.create({ prompt: 'has runs' });
-    const runId = db
-      .insert(runs)
-      .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now(), finishedAt: Date.now() })
-      .returning({ id: runs.id })
-      .get()!.id;
-    db.insert(runEvents).values({ runId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run();
-    db.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run();
+    const runId = (await asyncDb.write((d) =>
+      d
+        .insert(runs)
+        .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now(), finishedAt: Date.now() })
+        .returning({ id: runs.id })
+        .get(),
+    ))!.id;
+    await asyncDb.write((d) => d.insert(runEvents).values({ runId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run());
+    await asyncDb.write((d) => d.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run());
 
     await tasksSvc.delete(task.id);
 
-    expect(db.select().from(runs).where(eq(runs.taskId, task.id)).all()).toHaveLength(0);
-    expect(db.select().from(runEvents).where(eq(runEvents.runId, runId)).all()).toHaveLength(0);
-    expect(db.select().from(runFacts).where(eq(runFacts.runId, runId)).all()).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(runs).where(eq(runs.taskId, task.id)).all())).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(runEvents).where(eq(runEvents.runId, runId)).all())).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(runFacts).where(eq(runFacts.runId, runId)).all())).toHaveLength(0);
   });
 
   it('removes dependency edges in both directions and re-derives a former dependent blocked→ready', async () => {
@@ -76,11 +75,9 @@ describe('TaskService.delete (issue #162)', () => {
 
     await tasksSvc.delete(blocker.id);
 
-    const remaining = db
-      .select()
-      .from(taskDependencies)
-      .all()
-      .filter((r) => r.taskId === blocker.id || r.dependsOnId === blocker.id);
+    const remaining = (await asyncDb.read((d) => d.select().from(taskDependencies).all())).filter(
+      (r) => r.taskId === blocker.id || r.dependsOnId === blocker.id,
+    );
     expect(remaining).toHaveLength(0);
     expect((await tasksSvc.get(dependent.id)).state).toBe('ready');
   });
@@ -107,7 +104,7 @@ describe('TaskService.delete (issue #162)', () => {
   });
 
   it('writes a tracker_dismissals row and removes the task for a mirrored delete; a second delete throws not_found', async () => {
-    const workspace = (await allWorkspaces(db)())[0]!;
+    const workspace = (await allWorkspaces(asyncDb)())[0]!;
     const mirrored = await tasksSvc.upsertMirrored(
       {
         trackerRef: 4242,
@@ -123,50 +120,52 @@ describe('TaskService.delete (issue #162)', () => {
 
     await tasksSvc.delete(mirrored.id);
 
-    const tombstones = db
-      .select()
-      .from(trackerDismissals)
-      .where(eq(trackerDismissals.trackerRef, 4242))
-      .all();
+    const tombstones = await asyncDb.read((d) =>
+      d.select().from(trackerDismissals).where(eq(trackerDismissals.trackerRef, 4242)).all(),
+    );
     expect(tombstones).toHaveLength(1);
     expect(tombstones[0]!.workspaceId).toBe(workspace.id);
-    expect(db.select().from(tasks).where(eq(tasks.id, mirrored.id)).all()).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(tasks).where(eq(tasks.id, mirrored.id)).all())).toHaveLength(0);
 
     await expect(tasksSvc.delete(mirrored.id)).rejects.toThrow(/not found/);
   });
 
   it('keeps a Session another Task still references, and removes it once orphaned', async () => {
-    const sessionId = db
-      .insert(sessions)
-      .values({
-        harness: 'claude',
-        harnessSessionId: 's-shared',
-        model: 'm',
-        cwd: '/tmp',
-        lastActiveAt: Date.now(),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      })
-      .returning({ id: sessions.id })
-      .get()!.id;
+    const sessionId = (await asyncDb.write((d) =>
+      d
+        .insert(sessions)
+        .values({
+          harness: 'claude',
+          harnessSessionId: 's-shared',
+          model: 'm',
+          cwd: '/tmp',
+          lastActiveAt: Date.now(),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        .returning({ id: sessions.id })
+        .get(),
+    ))!.id;
     const taskA = await tasksSvc.create({ prompt: 'shares a session' });
     const taskB = await tasksSvc.create({ prompt: 'also shares it' });
     const mk = (taskId: number) =>
-      db
-        .insert(runs)
-        .values({ taskId, attempt: 1, state: 'completed', sessionRowId: sessionId, startedAt: Date.now() })
-        .run();
-    mk(taskA.id);
-    mk(taskB.id);
+      asyncDb.write((d) =>
+        d
+          .insert(runs)
+          .values({ taskId, attempt: 1, state: 'completed', sessionRowId: sessionId, startedAt: Date.now() })
+          .run(),
+      );
+    await mk(taskA.id);
+    await mk(taskB.id);
 
     // Deleting A must not FK-violate on the shared Session, and must leave it.
     await tasksSvc.delete(taskA.id);
-    expect(db.select().from(sessions).where(eq(sessions.id, sessionId)).all()).toHaveLength(1);
-    expect(db.select().from(runs).where(eq(runs.taskId, taskB.id)).all()).toHaveLength(1);
+    expect(await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).all())).toHaveLength(1);
+    expect(await asyncDb.read((d) => d.select().from(runs).where(eq(runs.taskId, taskB.id)).all())).toHaveLength(1);
 
     // Once B (the last referrer) goes, the now-orphaned Session is removed.
     await tasksSvc.delete(taskB.id);
-    expect(db.select().from(sessions).where(eq(sessions.id, sessionId)).all()).toHaveLength(0);
+    expect(await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).all())).toHaveLength(0);
   });
 
   it('fires onRemoved with the deleted id', async () => {

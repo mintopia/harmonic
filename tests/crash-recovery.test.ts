@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb, type Db } from '../src/db/index.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -46,10 +45,6 @@ function makeRepo(): string {
 describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   let dir: string;
   let repo: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); the other stores
-  // here are still on the sync Db, so this fixture runs both connections on
-  // the one file (same pattern as tests/run-facts.test.ts).
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
@@ -63,9 +58,8 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-'));
     repo = makeRepo();
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
@@ -167,10 +161,6 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
 describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
   let dir: string;
   let repo: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); the other stores
-  // here are still on the sync Db, so this fixture runs both connections on
-  // the one file (same pattern as tests/run-facts.test.ts).
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
@@ -184,9 +174,8 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-leases-'));
     repo = makeRepo();
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);

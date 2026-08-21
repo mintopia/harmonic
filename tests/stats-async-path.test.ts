@@ -26,24 +26,28 @@ describe('Stats heavy aggregate routes through the async read path (#213)', () =
     server = await startServer(stubHarness());
     const { ctx } = server.app;
 
-    // The sync better-sqlite3 connection (the single writer) commits a run…
+    // The async single writer commits a run…
     const now = Date.now();
-    const ws = ctx.db.select().from(workspaces).get()!;
-    const task = ctx.db
-      .insert(tasks)
-      .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId: ws.id })
-      .returning()
-      .get();
-    ctx.db
-      .insert(runs)
-      .values({
-        taskId: task.id,
-        attempt: 1,
-        state: 'completed',
-        startedAt: now,
-        usage: JSON.stringify({ models: {}, totals: null, toolCalls: { Bash: 2 }, source: 'session-log' }),
-      })
-      .run();
+    const ws = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!;
+    const task = await ctx.asyncDb.write((d) =>
+      d
+        .insert(tasks)
+        .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId: ws.id })
+        .returning()
+        .get(),
+    );
+    await ctx.asyncDb.write((d) =>
+      d
+        .insert(runs)
+        .values({
+          taskId: task.id,
+          attempt: 1,
+          state: 'completed',
+          startedAt: now,
+          usage: JSON.stringify({ models: {}, totals: null, toolCalls: { Bash: 2 }, source: 'session-log' }),
+        })
+        .run(),
+    );
 
     // …and the aggregate is served off the async read connection, seeing it.
     const readSpy = vi.spyOn(ctx.asyncReadDb, 'read');
@@ -61,22 +65,28 @@ describe('Stats heavy aggregate routes through the async read path (#213)', () =
     const { ctx } = server.app;
 
     const now = Date.now();
-    const ws = ctx.db.select().from(workspaces).get()!;
-    const other = ctx.db
-      .insert(workspaces)
-      .values({ name: 'Other', workingDir: '/tmp/other', createdAt: now, updatedAt: now })
-      .returning()
-      .get();
-    const seed = (workspaceId: number): void => {
-      const task = ctx.db
-        .insert(tasks)
-        .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId })
+    const ws = (await ctx.asyncDb.read((d) => d.select().from(workspaces).get()))!;
+    const other = await ctx.asyncDb.write((d) =>
+      d
+        .insert(workspaces)
+        .values({ name: 'Other', workingDir: '/tmp/other', createdAt: now, updatedAt: now })
         .returning()
-        .get();
-      ctx.db.insert(runs).values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: now }).run();
+        .get(),
+    );
+    const seed = async (workspaceId: number): Promise<void> => {
+      const task = await ctx.asyncDb.write((d) =>
+        d
+          .insert(tasks)
+          .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId })
+          .returning()
+          .get(),
+      );
+      await ctx.asyncDb.write((d) =>
+        d.insert(runs).values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: now }).run(),
+      );
     };
-    seed(ws.id);
-    seed(other.id);
+    await seed(ws.id);
+    await seed(other.id);
 
     const readSpy = vi.spyOn(ctx.asyncReadDb, 'read');
     const scoped = await server.api('GET', `/api/stats?from=0&to=${now + 1000}&workspaceId=${other.id}`);

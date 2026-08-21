@@ -11,7 +11,6 @@ import {
   isQueryTimeout,
   type AsyncDbHandle,
 } from '../src/db/async.js';
-import { openDb, type Db } from '../src/db/index.js';
 import { isUniqueViolation } from '../src/domain/work-context-leases.js';
 import { workContextLeases, runFacts, runs, tasks, workspaces } from '../src/db/schema.js';
 
@@ -31,19 +30,6 @@ async function seedRunAsync(h: AsyncDbHandle): Promise<number> {
     .values({ taskId: task.id, attempt: 1, state: 'running', startedAt: now })
     .returning()
     .get();
-  return run.id;
-}
-
-/** The sync twin, for the cross-driver CAS parity check. */
-function seedRunSync(db: Db): number {
-  const now = Date.now();
-  const ws = db.select().from(workspaces).get()!;
-  const task = db
-    .insert(tasks)
-    .values({ prompt: 'p', state: 'ready', workingDir: '/tmp', createdAt: now, updatedAt: now, workspaceId: ws.id })
-    .returning()
-    .get();
-  const run = db.insert(runs).values({ taskId: task.id, attempt: 1, state: 'running', startedAt: now }).returning().get();
   return run.id;
 }
 
@@ -115,10 +101,10 @@ describe('openAsyncReadHandle — concurrent-read attach (#213, ADR-0029 §5)', 
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('attaches to an already-booted DB and reads rows the sync writer committed', async () => {
-    // The sync driver owns boot (migrate + backfill) and writes a run…
-    const sync = openDb(dir);
-    const runId = seedRunSync(sync);
+  it('attaches to an already-booted DB and reads rows the writer committed', async () => {
+    // The async single writer owns boot (migrate + backfill) and writes a run…
+    const writer = await openAsyncDb(dir);
+    const runId = await seedRunAsync(writer);
 
     // …and a plain read-attach connection sees that committed row over WAL,
     // having run no migrate/backfill of its own.
@@ -129,6 +115,7 @@ describe('openAsyncReadHandle — concurrent-read attach (#213, ADR-0029 §5)', 
       expect(seen[0]).toMatchObject({ id: runId, state: 'running' });
     } finally {
       await read.close();
+      await writer.close();
     }
   });
 });
@@ -402,38 +389,6 @@ describe('unique-index CAS behaviour unchanged under libsql (ADR-0029 §3)', () 
     }
     expect(caught).toBeInstanceOf(Error);
     expect(isUniqueViolation(caught)).toBe(true);
-  });
-
-  it('lease acquire: better-sqlite3 and libsql are detected identically', async () => {
-    // libsql (async)
-    const runIdAsync = await seedRunAsync(h);
-    const now = Date.now();
-    await h.db.insert(workContextLeases).values(leaseValues('dup', runIdAsync, now)).run();
-    let libsqlErr: unknown;
-    try {
-      await h.db.insert(workContextLeases).values(leaseValues('dup', runIdAsync, now)).run();
-    } catch (err) {
-      libsqlErr = err;
-    }
-
-    // better-sqlite3 (sync) — the live path
-    const syncDir = mkdtempSync(join(tmpdir(), 'harmonic-sync-cas-'));
-    let syncErr: unknown;
-    try {
-      const db = openDb(syncDir);
-      const runIdSync = seedRunSync(db);
-      db.insert(workContextLeases).values(leaseValues('dup', runIdSync, now)).run();
-      try {
-        db.insert(workContextLeases).values(leaseValues('dup', runIdSync, now)).run();
-      } catch (err) {
-        syncErr = err;
-      }
-    } finally {
-      rmSync(syncDir, { recursive: true, force: true });
-    }
-
-    expect(isUniqueViolation(libsqlErr)).toBe(true);
-    expect(isUniqueViolation(syncErr)).toBe(true);
   });
 
   it('run_facts seq stays monotonic when appends route through the single-writer queue', async () => {

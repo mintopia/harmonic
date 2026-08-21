@@ -80,7 +80,7 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
 
   /** Launch a mirrored afk/direct Run against `repo` (mirrors #151/#152's harness). */
   async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
-    server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
+    await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');

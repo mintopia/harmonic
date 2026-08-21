@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,16 +7,16 @@ import { buildApp, type App } from '../src/server/app.js';
 import type { DeepPartial } from '../src/config.js';
 import type { AppConfig } from '../src/config.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
-import type { Db } from '../src/db/index.js';
+import type { AsyncDbHandle } from '../src/db/async.js';
 import { workspaces } from '../src/db/schema.js';
 
 /** A `TaskService`/`AutoRunner`-shaped `getWorkspaces` callback over
- * whatever Workspaces already exist in `db` (openDb's boot-time backfill
+ * whatever Workspaces already exist in `db` (openAsyncDb's boot-time backfill
  * seeds a default one) — the plumbing every domain test that constructs
  * `TaskService` by hand needs, without repeating the select everywhere.
  * Async (`() => Promise<WorkspaceRow[]>`) to match the migrated
  * `TaskService`/`AutoRunner` `getWorkspaces` contract (ADR-0029). */
-export const allWorkspaces = (db: Db) => () => Promise.resolve(db.select().from(workspaces).all());
+export const allWorkspaces = (db: AsyncDbHandle) => () => db.read((d) => d.select().from(workspaces).all());
 
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -50,7 +50,7 @@ export interface CopilotUsageRow {
 
 /** Write a minimal Copilot `session-store.db` with the given usage rows. */
 export function writeCopilotUsageDb(dbPath: string, rows: CopilotUsageRow[]): void {
-  const db = new Database(dbPath);
+  const db = new DatabaseSync(dbPath);
   db.exec(`CREATE TABLE IF NOT EXISTS assistant_usage_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
@@ -142,7 +142,7 @@ export async function startServer(
   // it at an isolated, non-git temp dir so tests that don't set an explicit
   // workingDir stay hermetic (worktree tests pass their own repo per task).
   const workspaceDir = mkdtempSync(join(tmpdir(), 'harmonic-workdir-'));
-  app.ctx.db.update(workspaces).set({ workingDir: workspaceDir }).run();
+  await app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: workspaceDir }).run());
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const baseUrl = `http://127.0.0.1:${port}`;

@@ -27,17 +27,17 @@ describe('Work Context lease heartbeat wiring (issue #122)', () => {
 
       await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.state === 'running');
 
-      const db = server.app.ctx.db;
-      const leaseFor = () => db.select().from(workContextLeases).where(eq(workContextLeases.ownerRunId, runId)).get();
+      const db = server.app.ctx.asyncDb;
+      const leaseFor = () => db.read((d) => d.select().from(workContextLeases).where(eq(workContextLeases.ownerRunId, runId)).get());
 
       const first = await waitFor(async () => {
-        const row = leaseFor();
+        const row = await leaseFor();
         return row?.expiry != null ? row : undefined;
       });
       expect(first.state).toBe('held');
 
       const second = await waitFor(async () => {
-        const row = leaseFor();
+        const row = await leaseFor();
         return row && row.expiry != null && row.expiry > first.expiry! ? row : undefined;
       });
       expect(second.state).toBe('held');

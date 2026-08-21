@@ -132,7 +132,9 @@ describe('change operator password', () => {
     });
     expect(change.status).toBe(200);
 
-    const row = fresh.app.ctx.db.select().from(settings).where(eq(settings.key, 'auth')).get()!;
+    const row = (await fresh.app.ctx.asyncDb.read((d) =>
+      d.select().from(settings).where(eq(settings.key, 'auth')).get(),
+    ))!;
     expect(row.value).not.toContain(newPassword);
     expect(JSON.parse(row.value)).toHaveProperty('hash');
     expect(JSON.parse(row.value)).toHaveProperty('salt');

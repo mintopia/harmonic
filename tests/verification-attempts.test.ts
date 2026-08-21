@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Database from 'better-sqlite3';
-import { openDb, type Db } from '../src/db/index.js';
+import { createClient } from '@libsql/client';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -17,9 +16,6 @@ import { allWorkspaces } from './helpers.js';
  */
 describe('VerificationAttemptStore (issue #136)', () => {
   let dir: string;
-  let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
-  // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let attempts: VerificationAttemptStore;
   let runId: number;
@@ -27,9 +23,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-verification-attempts-'));
-    db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     const runStore = new RunStore(asyncDb);
     attempts = new VerificationAttemptStore(asyncDb);
 
@@ -140,20 +135,24 @@ describe('VerificationAttemptStore (issue #136)', () => {
 
     // Force a raw duplicate seq against the same file — the store never does
     // this, but the index must guarantee no two attempts share a seq in a Run.
-    const sqlite = new Database(join(dir, 'harmonic.db'));
-    const insert = sqlite.prepare(
-      `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase, mutated)
+    const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
+    await expect(
+      raw.execute({
+        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase, mutated)
        values (?, 1, ?, 'critic', ?, 'fail', 's', 'o', 'verifying', 0)`,
-    );
-    expect(() => insert.run(runId, Date.now(), 'b'.repeat(40))).toThrow(/UNIQUE constraint failed/);
+        args: [runId, Date.now(), 'b'.repeat(40)],
+      }),
+    ).rejects.toThrow(/UNIQUE constraint failed/);
 
     // A different seq for the same Run is fine.
-    const insertSeq2 = sqlite.prepare(
-      `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase, mutated)
+    await expect(
+      raw.execute({
+        sql: `insert into verification_attempts (run_id, seq, ts, mechanism, input_oid, verdict, summary, output, phase, mutated)
        values (?, 2, ?, 'critic', ?, 'fail', 's', 'o', 'verifying', 0)`,
-    );
-    expect(() => insertSeq2.run(runId, Date.now(), 'b'.repeat(40))).not.toThrow();
-    sqlite.close();
+        args: [runId, Date.now(), 'b'.repeat(40)],
+      }),
+    ).resolves.toBeDefined();
+    raw.close();
   });
 
   it('mechanism reserves the "command" value for the sibling verifier ticket', async () => {
