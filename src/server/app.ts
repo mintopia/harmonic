@@ -240,7 +240,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const channels = new ChannelService(db);
   const notifier = new Notifier(channels, (msg) => console.error(msg));
   const tasks = new TaskService(
-    db,
+    asyncDb,
     () => configStore.get(),
     () => workspaces.list(),
     (task) => bus.emit('task_changed', task),
@@ -335,9 +335,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // must stay `running`. Every non-resume running Run was already failed by the
   // sweep, so this only ever spares a resume Task; a Task with no Run row (the
   // mid-launch crash) has no running Run and is still failed.
-  for (const orphan of tasks.list({ state: 'running' })) {
+  for (const orphan of await tasks.list({ state: 'running' })) {
     if ((await runs.listForTask(orphan.id)).some((run) => run.state === 'running')) continue;
-    tasks.setState(orphan.id, 'failed');
+    await tasks.setState(orphan.id, 'failed');
   }
   // Resume: a restart-interrupted Run that was mid-conversation on a durable
   // Session comes back as a NEW Run + a new prompt turn on the (reloaded or
@@ -591,13 +591,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // `running` at agent-finish. `countRunning()` already excludes review-parked.
   bus.on('run_changed', (run) => {
     if (run.state === 'running' && run.phase !== 'review') return;
-    if (tasks.list({ state: 'ready' }).length !== 0) return;
-    void runs
-      .countRunning()
-      .then((running) => {
-        if (running === 0) notifier.notify('queue.idle');
-      })
-      .catch(() => {});
+    // Both the ready-Task probe and the running-Run count are async reads now;
+    // run them in a fire-and-forget chain so the EventBus listener stays sync.
+    void (async () => {
+      if ((await tasks.list({ state: 'ready' })).length !== 0) return;
+      if ((await runs.countRunning()) === 0) notifier.notify('queue.idle');
+    })().catch(() => {});
   });
 
   const ctx: AppContext = { db, asyncDb, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };

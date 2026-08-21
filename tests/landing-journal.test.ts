@@ -31,13 +31,13 @@ describe('LandingJournalStore (issue #115)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-journal-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
     journal = new LandingJournalStore(db);
 
-    const task = tasks.create({ prompt: 'land it', state: 'ready' });
+    const task = await tasks.create({ prompt: 'land it', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
-    const otherTask = tasks.create({ prompt: 'separate log', state: 'ready' });
+    const otherTask = await tasks.create({ prompt: 'separate log', state: 'ready' });
     otherRunId = (await runStore.create(otherTask.id)).id;
   });
   afterEach(async () => {

@@ -79,7 +79,7 @@ export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
       leases: buildLeaseDiagnostics({
         leases: ctx.leases.listAll(),
         runs: await ctx.runs.listAll(),
-        tasks: ctx.tasks.list(),
+        tasks: await ctx.tasks.list(),
         waitingSince: (id) => ctx.autoRunner.waitingSince(id),
         now: Date.now(),
       }),

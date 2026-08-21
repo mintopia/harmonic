@@ -155,7 +155,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
   const prices = pricesOf(ctx);
   const runs: ApiActivityProcess[] = await Promise.all((await ctx.runner.activeSnapshots()).map(async ({ runId, taskId, snapshot }) => {
     const run = await ctx.runs.get(runId);
-    const task = ctx.tasks.get(taskId);
+    const task = await ctx.tasks.get(taskId);
     return {
       type: 'run',
       runId,

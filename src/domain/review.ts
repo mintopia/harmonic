@@ -57,7 +57,7 @@ export class ReviewService {
   ) {}
 
   private async reviewable(taskId: number): Promise<{ task: TaskRow; run: RunRow }> {
-    const task = this.taskService.get(taskId);
+    const task = await this.taskService.get(taskId);
     if (task.state !== 'awaiting-review') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only awaiting-review tasks can be reviewed`);
     }
@@ -97,7 +97,7 @@ export class ReviewService {
         await this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
         throw new DomainError('conflict', outcome.detail ?? 'merge conflict on accept');
       }
-      return this.taskService.get(taskId);
+      return await this.taskService.get(taskId);
     }
     // Legacy Run already settled `completed` at agent-finish (pre-#114): the
     // accept hook (the merge) IS the landing, run directly — no live
@@ -109,7 +109,7 @@ export class ReviewService {
       throw new DomainError('conflict', outcome.detail ?? 'merge conflict on accept');
     }
     await this.runStore.update(run.id, { review: 'accepted', reviewedAt: Date.now() });
-    return this.taskService.setState(taskId, 'completed');
+    return await this.taskService.setState(taskId, 'completed');
   }
 
   async reject(taskId: number, feedback?: string): Promise<TaskRow> {
@@ -125,11 +125,11 @@ export class ReviewService {
         { runState: 'failed', taskAction: 'failed', reason },
         { review: 'rejected', reviewFeedback: feedback ?? null, reviewedAt: Date.now(), reviewDeadline: null },
       );
-      return this.taskService.get(taskId);
+      return await this.taskService.get(taskId);
     }
     // Legacy Run already settled at agent-finish (pre-#114).
     await this.runStore.update(run.id, { review: 'rejected', reviewFeedback: feedback ?? null, reviewedAt: Date.now() });
-    return this.taskService.setState(taskId, 'failed');
+    return await this.taskService.setState(taskId, 'failed');
   }
 
   /**
@@ -144,7 +144,7 @@ export class ReviewService {
   async sweepExpiredReviews(now: number = Date.now()): Promise<number> {
     let swept = 0;
     for (const run of await this.runStore.listReviewParkedOverdue(now)) {
-      const task = this.taskService.get(run.taskId);
+      const task = await this.taskService.get(run.taskId);
       if (task.state !== 'awaiting-review') continue;
       await this.settle.settle(task, run, 'review-sla-expiry', {
         runState: 'failed',

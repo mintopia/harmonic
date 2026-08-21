@@ -29,7 +29,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
   });
   afterEach(async () => {
@@ -38,7 +38,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   });
 
   it('captures the effective Guardrail config + price table onto the Run at start', async () => {
-    const task = tasks.create({ prompt: 'snapshot me', state: 'ready' });
+    const task = await tasks.create({ prompt: 'snapshot me', state: 'ready' });
     const config = defaultConfig();
     const snapshot = {
       guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null }, config),
@@ -52,7 +52,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   });
 
   it('is frozen: a later config change does not retroactively alter the stored snapshot', async () => {
-    const task = tasks.create({ prompt: 'frozen snapshot', state: 'ready' });
+    const task = await tasks.create({ prompt: 'frozen snapshot', state: 'ready' });
     const config = defaultConfig();
     const originalSnapshot = {
       guardrailConfig: resolveGuardrails({ guardrailBudget: null, guardrailProgress: null }, config),

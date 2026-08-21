@@ -145,7 +145,7 @@ export class RunSettleCoordinator {
     } catch {
       // best-effort; the boot/periodic drain reconciles from the Session row
     }
-    this.applySettleTaskAction(task.id, winner.taskAction);
+    await this.applySettleTaskAction(task.id, winner.taskAction);
     this.onRunFinished?.(finished);
   }
 
@@ -195,25 +195,25 @@ export class RunSettleCoordinator {
    * action no-op, so the higher-precedence signal still wins the Run row while the
    * Task keeps the disposition the race already gave it.
    */
-  private applySettleTaskAction(taskId: number, action: SettleTaskAction): void {
+  private async applySettleTaskAction(taskId: number, action: SettleTaskAction): Promise<void> {
     if (action === 'none') return;
-    const state = this.taskService.get(taskId).state;
+    const state = (await this.taskService.get(taskId)).state;
     if (state !== 'running' && state !== 'awaiting-review') return;
     switch (action) {
       case 'awaiting-review':
-        this.taskService.setState(taskId, 'awaiting-review');
+        await this.taskService.setState(taskId, 'awaiting-review');
         break;
       case 'completed':
-        this.taskService.setState(taskId, 'completed');
+        await this.taskService.setState(taskId, 'completed');
         break;
       case 'failed':
-        this.taskService.setState(taskId, 'failed');
+        await this.taskService.setState(taskId, 'failed');
         break;
       case 'ready':
-        this.taskService.setState(taskId, 'ready');
+        await this.taskService.setState(taskId, 'ready');
         break;
       case 'escalate':
-        this.taskService.escalate(taskId);
+        await this.taskService.escalate(taskId);
         break;
     }
   }

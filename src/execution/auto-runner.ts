@@ -182,7 +182,7 @@ export class AutoRunner {
           // Recomputed each iteration: startPicked adds a running Run, so a
           // Workspace can reach its own cap mid-fill while the ceiling has room.
           const runningByWorkspace = await this.runStore.countRunningByWorkspace();
-          const next = this.pickNext(skip, workspacesById, runningByWorkspace, ceiling);
+          const next = await this.pickNext(skip, workspacesById, runningByWorkspace, ceiling);
           if (!next) break;
           await this.startPicked(next, skip);
         }
@@ -210,22 +210,22 @@ export class AutoRunner {
       }
       return;
     }
-    this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write
+    await this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write
     let decision: 'spawn' | 'yield';
     try {
-      decision = await this.mirror.recheckAndClaim(this.taskService.get(task.id));
+      decision = await this.mirror.recheckAndClaim(await this.taskService.get(task.id));
     } catch {
       decision = 'spawn'; // readTicket/claim failed — proceed; reconcile retries the assignment
     }
     if (decision === 'yield') {
-      this.taskService.setState(task.id, 'ready'); // a human grabbed it — back to the frontier
+      await this.taskService.setState(task.id, 'ready'); // a human grabbed it — back to the frontier
       skip.add(task.id);
       return;
     }
     try {
       await this.runner.launchClaimed(task.id);
     } catch {
-      this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
+      await this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
       skip.add(task.id);
     }
   }
@@ -248,13 +248,13 @@ export class AutoRunner {
    * context. Occupancy is recomputed each pass, so a Task started earlier this
    * fill correctly blocks a same-context sibling picked later.
    */
-  private pickNext(
+  private async pickNext(
     skip: Set<number>,
     workspacesById: Map<number, WorkspaceRow>,
     runningByWorkspace: Map<number, number>,
     ceiling: number,
-  ): TaskRow | undefined {
-    const all = this.taskService.list();
+  ): Promise<TaskRow | undefined> {
+    const all = await this.taskService.list();
     const occupied = occupiedDirectContexts(all);
     this.contextSkipReasons.clear();
     const picked = all

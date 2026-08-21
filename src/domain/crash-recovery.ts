@@ -98,7 +98,7 @@ export class CrashRecoveryCoordinator {
     for (const lease of this.leaseStore.listAll()) {
       if (lease.state === 'suspect') continue; // already reconciled — idempotent
       const run = await this.runStore.get(lease.ownerRunId);
-      const task = this.taskService.get(run.taskId);
+      const task = await this.taskService.get(run.taskId);
       const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
       if (releasable) this.leaseStore.release(lease.key);
       else this.leaseStore.markSuspect(lease.key);
@@ -108,7 +108,7 @@ export class CrashRecoveryCoordinator {
   /** Pass A: resolve every Run mid-landing when the process died. */
   private async reconcileLandingOrphans(now: number): Promise<void> {
     for (const run of await this.runStore.listLandingOrphans()) {
-      const task = this.taskService.get(run.taskId);
+      const task = await this.taskService.get(run.taskId);
       const poncSeq = this.landingJournal.ponc(run.id);
       if (poncSeq === null) {
         // Died before the PONC ever froze — no irreversible effect could have
@@ -198,7 +198,7 @@ export class CrashRecoveryCoordinator {
         // landing, since `RunSettleCoordinator.settle` re-projects whenever the
         // winning disposition changes even when `state !== 'running'`.
         if (run.state === 'running') {
-          const task = this.taskService.get(run.taskId);
+          const task = await this.taskService.get(run.taskId);
           await this.settle.settle(task, run, 'escalate', {
             runState: 'failed',
             taskAction: 'escalate',

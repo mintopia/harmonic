@@ -80,7 +80,7 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-ccm-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runs = new RunStore(asyncDb);
     const spy = reopenSpy();
     reopened = spy.reopened;
@@ -93,11 +93,11 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   });
 
   it('reopens the ticket and Escalates a still-running Task with no Run in flight', async () => {
-    const task = tasks.upsertMirrored(mirrored(7));
-    tasks.setState(task.id, 'running'); // flipped running, but nothing is driving it
+    const task = await tasks.upsertMirrored(mirrored(7));
+    await tasks.setState(task.id, 'running'); // flipped running, but nothing is driving it
 
     expect(await runner.reopenClosedMirrored(task.id)).toBe(true);
-    const settled = tasks.get(task.id);
+    const settled = await tasks.get(task.id);
     expect(settled.escalated).toBe(true); // handed to a human, NOT completed
     expect(settled.drive).toBe('hitl');
     expect(settled.state).not.toBe('completed');
@@ -105,45 +105,45 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   });
 
   it('does NOT complete — a premature close never unblocks dependents', async () => {
-    const blocker = tasks.upsertMirrored(mirrored(1));
-    const dependent = tasks.create({ prompt: 'dependent', state: 'ready' });
-    tasks.addDependency(dependent.id, blocker.id);
-    expect(tasks.get(dependent.id).state).toBe('blocked');
-    tasks.setState(blocker.id, 'running');
+    const blocker = await tasks.upsertMirrored(mirrored(1));
+    const dependent = await tasks.create({ prompt: 'dependent', state: 'ready' });
+    await tasks.addDependency(dependent.id, blocker.id);
+    expect((await tasks.get(dependent.id)).state).toBe('blocked');
+    await tasks.setState(blocker.id, 'running');
 
     await runner.reopenClosedMirrored(blocker.id);
     // The blocker was Escalated, not completed, so the dependent stays blocked.
-    expect(tasks.get(dependent.id).state).toBe('blocked');
+    expect((await tasks.get(dependent.id)).state).toBe('blocked');
   });
 
   it('leaves a Task with a live Run row alone (a Run is mid-spawn)', async () => {
-    const task = tasks.upsertMirrored(mirrored(5));
-    tasks.setState(task.id, 'running');
+    const task = await tasks.upsertMirrored(mirrored(5));
+    await tasks.setState(task.id, 'running');
     await runs.create(task.id); // Run row exists (state running); its ActiveRun not yet registered
 
     expect(await runner.reopenClosedMirrored(task.id)).toBe(false);
-    expect(tasks.get(task.id).state).toBe('running');
+    expect((await tasks.get(task.id)).state).toBe('running');
     expect(reopened).toEqual([]);
   });
 
   it('reopens + Escalates once the in-flight Run row has finished without settling', async () => {
-    const task = tasks.upsertMirrored(mirrored(9));
-    tasks.setState(task.id, 'running');
+    const task = await tasks.upsertMirrored(mirrored(9));
+    await tasks.setState(task.id, 'running');
     const run = await runs.create(task.id);
     await runs.finish(run.id, 'failed'); // Run ended but the Task was left running
 
     expect(await runner.reopenClosedMirrored(task.id)).toBe(true);
-    expect(tasks.get(task.id).escalated).toBe(true);
+    expect((await tasks.get(task.id)).escalated).toBe(true);
     expect(reopened).toEqual([9]);
   });
 
   it('is a no-op on a Task that is no longer running', async () => {
-    const task = tasks.upsertMirrored(mirrored(3));
-    tasks.setState(task.id, 'running');
-    tasks.setState(task.id, 'completed'); // a racing settle won
+    const task = await tasks.upsertMirrored(mirrored(3));
+    await tasks.setState(task.id, 'running');
+    await tasks.setState(task.id, 'completed'); // a racing settle won
 
     expect(await runner.reopenClosedMirrored(task.id)).toBe(false);
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('completed');
     expect(reopened).toEqual([]);
   });
 });

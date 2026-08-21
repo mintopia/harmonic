@@ -33,7 +33,7 @@ const STRIDE = 10000;
  * see `TaskService.mdFeatureIndex`. Absent (standalone reads), the adapter
  * falls back to sorted position.
  */
-export type FeatureIndex = (slug: string) => number;
+export type FeatureIndex = (slug: string) => Promise<number>;
 
 /**
  * Each feature scope's id base — a distinct multiple of STRIDE. The single-feature
@@ -45,13 +45,20 @@ export type FeatureIndex = (slug: string) => number;
  * standalone falls back to sorted position — deterministic for a one-shot read,
  * but not stable across insertions (no store to remember prior assignments).
  */
-function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): number[] {
+async function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): Promise<number[]> {
   // The unnamed single-feature layout (issues/ or root directly) → clean base 0.
   // A *named* feature always goes through featureIndex even when it's currently
   // the only one, so its index is recorded now and survives a later sibling —
   // otherwise the sibling (sorted first) would claim index 0 and renumber it.
   if (scopes.length === 1 && scopes[0]!.slug === '') return [0];
-  return scopes.map((s, i) => (featureIndex ? featureIndex(s.slug) : i) * STRIDE);
+  const bases: number[] = [];
+  // Sequential (not Promise.all): each first-seen slug's index is assigned by
+  // reading the prior count, so the persistent featureIndex must observe earlier
+  // siblings' assignments before numbering the next.
+  for (let i = 0; i < scopes.length; i++) {
+    bases.push((featureIndex ? await featureIndex(scopes[i]!.slug) : i) * STRIDE);
+  }
+  return bases;
 }
 
 /**
@@ -203,7 +210,7 @@ interface Parsed {
 
 async function parseAll(root: string, featureIndex?: FeatureIndex): Promise<Parsed[]> {
   const scopes = await resolveScopes(root);
-  const bases = assignBases(scopes, featureIndex);
+  const bases = await assignBases(scopes, featureIndex);
   const perScope = await Promise.all(scopes.map((scope, i) => parseScope(scope, bases[i]!)));
   return perScope.flat();
 }

@@ -78,7 +78,7 @@ export class MirrorCoordinator {
    */
   async reconcile(): Promise<void> {
     if (!this.adapter) return;
-    for (const task of this.tasks.list({ workspaceId: this.workspaceId })) {
+    for (const task of await this.tasks.list({ workspaceId: this.workspaceId })) {
       if (task.origin !== 'mirrored' || task.trackerRef == null) continue;
       const ticket = this.byRef.get(task.trackerRef);
       if (!ticket) continue;

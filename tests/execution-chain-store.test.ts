@@ -28,7 +28,7 @@ describe('ExecutionChainStore (issue #129)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-exec-chain-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     chains = new ExecutionChainStore(db);
   });
@@ -43,17 +43,17 @@ describe('ExecutionChainStore (issue #129)', () => {
     expect(a).not.toBe(b);
   });
 
-  it('resolveForTask mints a fresh chain for a task with no runs', () => {
-    const task = tasks.create({ prompt: 'fresh line of work', state: 'ready' });
+  it('resolveForTask mints a fresh chain for a task with no runs', async () => {
+    const task = await tasks.create({ prompt: 'fresh line of work', state: 'ready' });
     const chainId = chains.resolveForTask(task);
     expect(chainId).toBeTypeOf('number');
     // A second, unrelated task with no runs gets its own fresh chain.
-    const other = tasks.create({ prompt: 'another fresh line', state: 'ready' });
+    const other = await tasks.create({ prompt: 'another fresh line', state: 'ready' });
     expect(chains.resolveForTask(other)).not.toBe(chainId);
   });
 
   it("same-task second attempt inherits the first Run's chain", async () => {
-    const task = tasks.create({ prompt: 'retry me', state: 'ready' });
+    const task = await tasks.create({ prompt: 'retry me', state: 'ready' });
     const chainId = chains.resolveForTask(task);
     await runStore.create(task.id, undefined, chainId);
 
@@ -62,21 +62,21 @@ describe('ExecutionChainStore (issue #129)', () => {
   });
 
   it('reattempt: a new linked Task inherits the original Task chain', async () => {
-    const original = tasks.create({ prompt: 'original attempt', state: 'ready' });
+    const original = await tasks.create({ prompt: 'original attempt', state: 'ready' });
     const chainId = chains.resolveForTask(original);
     await runStore.create(original.id, undefined, chainId);
-    tasks.setState(original.id, 'failed'); // reattempt requires a finished task
+    await tasks.setState(original.id, 'failed'); // reattempt requires a finished task
 
-    const reattempt = tasks.reattempt(original.id, 'try again');
+    const reattempt = await tasks.reattempt(original.id, 'try again');
     expect(chains.resolveForTask(reattempt)).toBe(chainId);
   });
 
   it("listForChain returns member Runs across two different tasks, id-ordered", async () => {
-    const taskA = tasks.create({ prompt: 'chain member A', state: 'ready' });
+    const taskA = await tasks.create({ prompt: 'chain member A', state: 'ready' });
     const chainId = chains.resolveForTask(taskA);
     const runA = await runStore.create(taskA.id, undefined, chainId);
 
-    const taskB = tasks.create({ prompt: 'chain member B', state: 'ready' });
+    const taskB = await tasks.create({ prompt: 'chain member B', state: 'ready' });
     const runB = await runStore.create(taskB.id, undefined, chainId);
 
     const members = chains.listForChain(chainId);

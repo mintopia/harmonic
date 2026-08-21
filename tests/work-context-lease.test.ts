@@ -31,13 +31,13 @@ describe('WorkContextLeaseStore (issue #118)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-wcl-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
 
-    const task = tasks.create({ prompt: 'own a lease', state: 'ready' });
+    const task = await tasks.create({ prompt: 'own a lease', state: 'ready' });
     ownerRunId = (await runStore.create(task.id)).id;
-    const otherTask = tasks.create({ prompt: 'contend for a lease', state: 'ready' });
+    const otherTask = await tasks.create({ prompt: 'contend for a lease', state: 'ready' });
     otherRunId = (await runStore.create(otherTask.id)).id;
   });
   afterEach(async () => {

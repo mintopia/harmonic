@@ -308,7 +308,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
   const withDeps = async (task: { id: number }) =>
-    await taskToApi(ctx, ctx.tasks.withDeps(ctx.tasks.get(task.id)));
+    await taskToApi(ctx, await ctx.tasks.withDeps(await ctx.tasks.get(task.id)));
 
   app.post(
     '/tasks',
@@ -324,7 +324,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const task = ctx.tasks.create(req.body);
+      const task = await ctx.tasks.create(req.body);
       return reply.status(201).send(await withDeps(task));
     },
   );
@@ -344,9 +344,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       // Cost is not a task column — it is derived from runs — so the cost
       // sort happens here, after serialization; unknown cost sorts lowest.
       const tasks = await Promise.all(
-        ctx.tasks
-          .listWithDeps(sortBy === 'cost' ? query : { ...query, ...(sortBy ? { sortBy } : {}) })
-          .map((task) => taskToApi(ctx, task)),
+        (await ctx.tasks.listWithDeps(sortBy === 'cost' ? query : { ...query, ...(sortBy ? { sortBy } : {}) })).map((task) =>
+          taskToApi(ctx, task),
+        ),
       );
       if (sortBy === 'cost') {
         const dir = query.order === 'desc' ? -1 : 1;
@@ -388,7 +388,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(ctx.tasks.update(req.params.id, req.body)),
+    async (req) => await withDeps(await ctx.tasks.update(req.params.id, req.body)),
   );
 
   app.post(
@@ -404,7 +404,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(ctx.tasks.promote(req.params.id)),
+    async (req) => await withDeps(await ctx.tasks.promote(req.params.id)),
   );
 
   app.post(
@@ -424,11 +424,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const id = req.params.id;
       if (req.body?.withDependents) {
-        const cancelled = ctx.tasks.cancelWithDependents(id);
+        const cancelled = await ctx.tasks.cancelWithDependents(id);
         cancelled.forEach((taskId) => ctx.runner.cancelForTask(taskId));
         return await withDeps({ id });
       }
-      const task = ctx.tasks.cancel(id);
+      const task = await ctx.tasks.cancel(id);
       ctx.runner.cancelForTask(task.id);
       return await withDeps(task);
     },
@@ -452,7 +452,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       const id = req.params.id;
       ctx.runner.cancelForTask(id);
-      ctx.tasks.delete(id);
+      await ctx.tasks.delete(id);
       return { id };
     },
   );
@@ -472,7 +472,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const task = ctx.tasks.complete(req.params.id);
+      const task = await ctx.tasks.complete(req.params.id);
       ctx.runner.completeForTask(task.id);
       return await withDeps(task);
     },
@@ -494,7 +494,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.tasks.get(req.params.id); // 404 on unknown task
+      await ctx.tasks.get(req.params.id); // 404 on unknown task
       if (!(await ctx.runner.steer(req.params.id, req.body.text))) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer`);
       }
@@ -516,7 +516,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(ctx.tasks.unescalate(req.params.id)),
+    async (req) => await withDeps(await ctx.tasks.unescalate(req.params.id)),
   );
 
   app.post(
@@ -534,7 +534,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(ctx.tasks.requeue(req.params.id, req.body?.feedback)),
+    async (req) => await withDeps(await ctx.tasks.requeue(req.params.id, req.body?.feedback)),
   );
 
   app.post(
@@ -551,7 +551,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(ctx.tasks.uncancel(req.params.id)),
+    async (req) => await withDeps(await ctx.tasks.uncancel(req.params.id)),
   );
 
   app.post(
@@ -571,7 +571,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) =>
-      reply.status(201).send(await withDeps(ctx.tasks.reattempt(req.params.id, req.body?.feedback, req.body?.continuation))),
+      reply
+        .status(201)
+        .send(await withDeps(await ctx.tasks.reattempt(req.params.id, req.body?.feedback, req.body?.continuation))),
   );
 
   app.post(
@@ -589,7 +591,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const task = ctx.tasks.addDependency(req.params.id, req.body.dependsOnId);
+      const task = await ctx.tasks.addDependency(req.params.id, req.body.dependsOnId);
       return { ...task, workspaceId: atRestWorkspaceId(task.workspaceId) };
     },
   );
@@ -605,7 +607,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const task = ctx.tasks.removeDependency(req.params.id, req.params.depId);
+      const task = await ctx.tasks.removeDependency(req.params.id, req.params.depId);
       return { ...task, workspaceId: atRestWorkspaceId(task.workspaceId) };
     },
   );
@@ -702,7 +704,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.tasks.get(req.params.id); // 404s an unknown id via DomainError
+      await ctx.tasks.get(req.params.id); // 404s an unknown id via DomainError
       const plan = previewHumanRejectContinuation(
         await ctx.runs.listForTask(req.params.id),
         (sessionRowId) => {
@@ -746,7 +748,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.tasks.get(req.params.id);
+      await ctx.tasks.get(req.params.id);
       return { runs: (await ctx.runs.listForTask(req.params.id)).map((run) => runToApi(ctx, run)) };
     },
   );
@@ -835,7 +837,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.tasks.get(req.params.id);
+      await ctx.tasks.get(req.params.id);
       const runs = await ctx.runs.listForTask(req.params.id);
       const usages = runs
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
@@ -865,7 +867,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       // Prefer the settle-time snapshot so this endpoint and the board card can
       // never show two different stats (issue #36); only compute live for a run
       // that predates the snapshot column.
-      const task = ctx.tasks.get(run.taskId);
+      const task = await ctx.tasks.get(run.taskId);
       const stat = run.stat ?? (await Git.diffStat(task.workingDir, run.baseBranch, run.branch));
       return { branch: run.branch, baseBranch: run.baseBranch, stat };
     },

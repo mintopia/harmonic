@@ -45,7 +45,7 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
         response: { 200: mapsListResponseSchema.describe('Every derived Map, newest tracker scan.') },
       },
     },
-    async (req) => ({ maps: ctx.trackerManager.maps(req.query.workspaceId) }),
+    async (req) => ({ maps: await ctx.trackerManager.maps(req.query.workspaceId) }),
   );
 
   app.get(
@@ -64,7 +64,7 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const map = ctx.trackerManager.maps(req.query.workspaceId).find((m) => m.ref === req.params.ref);
+      const map = (await ctx.trackerManager.maps(req.query.workspaceId)).find((m) => m.ref === req.params.ref);
       if (!map) throw new DomainError('not_found', `no map with ref ${req.params.ref}`);
       return map;
     },

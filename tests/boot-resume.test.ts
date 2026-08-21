@@ -43,7 +43,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-boot-resume-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     sessions = new SessionStore(db);
     runFacts = new RunFactStore(asyncDb);
@@ -58,11 +58,11 @@ describe('BootResumeCoordinator (issue #146)', () => {
   /** An interrupted Run bound to a durable Session, exactly as the boot
    * orphan-fail sweep (`RunStore.markInterrupted`) leaves one. */
   async function seedInterrupted(opts: { supportsLoadSession?: boolean; adapterVersion?: string; sessionCwd?: string } = {}): Promise<{
-    task: ReturnType<TaskService['get']>;
+    task: Awaited<ReturnType<TaskService['get']>>;
     run: RunRow;
     session: SessionRow;
   }> {
-    const created = tasks.create({ prompt: 'resume me', state: 'ready', workingDir: '/tmp/repo' });
+    const created = await tasks.create({ prompt: 'resume me', state: 'ready', workingDir: '/tmp/repo' });
     const run = await runStore.create(created.id);
     const session = sessions.recordDispatch({
       harness: 'claude',
@@ -79,8 +79,8 @@ describe('BootResumeCoordinator (issue #146)', () => {
     // What `markInterrupted` writes for a generic orphan.
     await runFacts.append(run.id, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
     const failed = await runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
-    tasks.setState(created.id, 'failed');
-    return { task: tasks.get(created.id), run: failed, session };
+    await tasks.setState(created.id, 'failed');
+    return { task: await tasks.get(created.id), run: failed, session };
   }
 
   /** `resolveCapabilities` matching the seeded Session on every axis unless
@@ -120,7 +120,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     // Idempotency ledger + Task re-driven.
     expect((await runFacts.list(run.id)).some((f) => f.type === 'session-resumed')).toBe(true);
     expect((await runFacts.list(resumeRun.id)).some((f) => f.type === 'resume-entry')).toBe(true);
-    expect(tasks.get(task.id).state).toBe('running');
+    expect((await tasks.get(task.id)).state).toBe('running');
   });
 
   it('incompatible (session/load unsupported) → fails forward: new Session, summarized prompt, reason recorded', async () => {
@@ -180,7 +180,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
   });
 
   it('leaves an interrupted Run with no Session alone (nothing to resume)', async () => {
-    const created = tasks.create({ prompt: 'no session', state: 'ready', workingDir: '/tmp/repo' });
+    const created = await tasks.create({ prompt: 'no session', state: 'ready', workingDir: '/tmp/repo' });
     const run = await runStore.create(created.id);
     await runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
 

@@ -49,7 +49,7 @@ describe('Session retirement (issue #148)', () => {
 
   /** A running Run bound to `sessionRowId`. */
   const runForSession = async (sessionRowId: number): Promise<RunRow> => {
-    const task = tasks.create({ prompt: 'p', state: 'ready' });
+    const task = await tasks.create({ prompt: 'p', state: 'ready' });
     const run = await runs.create(task.id);
     return runs.update(run.id, { sessionRowId });
   };
@@ -61,7 +61,7 @@ describe('Session retirement (issue #148)', () => {
     sessions = new SessionStore(db);
     runs = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     workspaceId = allWorkspaces(db)()[0]!.id;
   });
   afterEach(async () => {
@@ -155,7 +155,7 @@ describe('Session retirement (issue #148)', () => {
     });
 
     it('is a no-op for a Run with no Session', async () => {
-      const task = tasks.create({ prompt: 'p', state: 'ready' });
+      const task = await tasks.create({ prompt: 'p', state: 'ready' });
       const run = await runs.create(task.id); // sessionRowId null
       expect(() => makeCoord().onRunSettled(run, 'landed', now)).not.toThrow();
     });

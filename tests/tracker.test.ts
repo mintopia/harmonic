@@ -401,7 +401,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
   it('keeps a feature\'s ids stable across an earlier-sorting insertion via featureIndex', async () => {
     const root = mkTree('m-feature'); // sorts after the sibling added below
     const store = new Map<string, number>();
-    const featureIndex = (slug: string) => store.get(slug) ?? (store.set(slug, store.size), store.size - 1);
+    const featureIndex = async (slug: string) => store.get(slug) ?? (store.set(slug, store.size), store.size - 1);
     try {
       const before = new Map(
         (await localMarkdownAdapter(root, { featureIndex }).scan()).map((t) => [t.url, t.number]),

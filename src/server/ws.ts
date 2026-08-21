@@ -30,7 +30,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       // Enrich to the API task shape, same as the REST routes — the SPA
       // merges these payloads straight into its task list (issue 15).
       ctx.bus.on('task_changed', async (task) =>
-        send({ type: 'task_changed', task: await taskToApi(ctx, ctx.tasks.withDeps(task)) })),
+        send({ type: 'task_changed', task: await taskToApi(ctx, await ctx.tasks.withDeps(task)) })),
       // A Task was hard-deleted (issue #162); the SPA drops it straight from
       // its task list, same board traffic as task_changed above.
       ctx.bus.on('task_removed', ({ id }) => send({ type: 'task_removed', id })),

@@ -200,9 +200,9 @@ export class EpicIntegrationCoordinator {
             // Re-read live state: the snapshot predates this poll's picks, so a
             // member the Auto-Runner already spawned reads `running` here even if
             // the snapshot said `ready` — its base is frozen, leave it.
-            const live = this.tasks.get(task.id);
+            const live = await this.tasks.get(task.id);
             if (PRE_SPAWN.has(live.state) && live.baseBranch !== branch) {
-              this.tasks.setBaseBranch(live.id, branch);
+              await this.tasks.setBaseBranch(live.id, branch);
             }
           }
         } catch (err) {
@@ -217,10 +217,12 @@ export class EpicIntegrationCoordinator {
       // attempt while one is running. Its outcome (land/escalate/wait) is the
       // coordinator's to surface; here only an unexpected throw is logged.
       if (this.epicLand) {
-        const members = epic.members.map((ref) => {
-          const task = byRef.get(ref);
-          return reduceMemberState(task ? this.tasks.get(task.id) : undefined);
-        });
+        const members = await Promise.all(
+          epic.members.map(async (ref) => {
+            const task = byRef.get(ref);
+            return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
+          }),
+        );
         void this.epicLand
           .submit({ ref: epic.ref, members })
           .catch((err) => this.onError(`epic ${epic.ref} whole-Epic land attempt failed: ${String(err)}`));

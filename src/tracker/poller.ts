@@ -89,7 +89,7 @@ export class TrackerPoller {
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter, tickets);
-    const mirrored = mirrorScan(this.tasks, tickets, this.workspaceId);
+    const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId);
     // Set each ready Epic member's base branch before the poke (issue #159), so
     // the Auto-Runner forks its worktree Run from the Epic's integration branch.
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
@@ -120,12 +120,11 @@ export class TrackerPoller {
    * mirrored Tasks that point at it. Not stored — recomputed per call from the
    * last poll's scan and this Workspace's mirrored Tasks. Empty before the first poll.
    */
-  maps(): DerivedMap[] {
-    return deriveMaps(
-      this.lastScan,
-      this.tasks.list({ workspaceId: this.workspaceId }).filter((t) => t.origin === 'mirrored'),
-      this.workspaceId,
+  async maps(): Promise<DerivedMap[]> {
+    const mirrored = (await this.tasks.list({ workspaceId: this.workspaceId })).filter(
+      (t) => t.origin === 'mirrored',
     );
+    return deriveMaps(this.lastScan, mirrored, this.workspaceId);
   }
 
   /** The tracker URL for a mirrored Task's ref, from the last scan; null for native Tasks or before a poll. */

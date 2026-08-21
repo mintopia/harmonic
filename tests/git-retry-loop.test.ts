@@ -36,7 +36,7 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
     // A worktree-isolation Task whose working dir is not a git repo: preparing
     // its workspace runs `git rev-parse`/`git worktree add`, which fatally fails
     // ("not a git repository"). That is a will-never-succeed failure.
-    const task = server.app.ctx.tasks.create({
+    const task = await server.app.ctx.tasks.create({
       prompt: 'do a thing',
       workingDir: nonGitDir(),
       isolationMode: 'worktree',
@@ -53,7 +53,7 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
     // ...and the Task is handed to a human (escalated → drive hitl), NOT left as
     // a bare `failed` that the scheduler would keep re-touching. Before the fix
     // this settled a plain `failed`; now the permanent git failure escalates.
-    const settled = server.app.ctx.tasks.get(task.id);
+    const settled = await server.app.ctx.tasks.get(task.id);
     expect(settled.escalated).toBe(true);
     expect(settled.drive).toBe('hitl');
 

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AutoRunner, type MirrorClaim } from '../src/execution/auto-runner.js';
@@ -25,30 +26,35 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
 describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (issue #32)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     // Worktree default so these Tasks are exempt from the Work Context House Rule
     // (issue #120): mirrored Tasks all inherit the one Workspace workingDir, and
     // in direct mode that shared context would serialize them — this test is about
     // the mirrored *pick predicate* (foreign/yield/claim), not context occupancy.
     tasks = new TaskService(
-      db,
+      asyncDb,
       () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
       allWorkspaces(db),
     );
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('picks drive≠hitl ∧ no-foreign-assignee, flips ready→running before claim, and spawns through a failed claim', async () => {
-    const native = tasks.create({ prompt: 'native', state: 'ready' });
-    const afk = tasks.upsertMirrored(mirroredAfk(42));
-    const hitl = tasks.upsertMirrored(mirroredAfk(43, { drive: 'hitl' }));
-    const foreign = tasks.upsertMirrored(mirroredAfk(44));
-    const failedClaim = tasks.upsertMirrored(mirroredAfk(45));
-    const yielded = tasks.upsertMirrored(mirroredAfk(46));
+    const native = await tasks.create({ prompt: 'native', state: 'ready' });
+    const afk = await tasks.upsertMirrored(mirroredAfk(42));
+    const hitl = await tasks.upsertMirrored(mirroredAfk(43, { drive: 'hitl' }));
+    const foreign = await tasks.upsertMirrored(mirroredAfk(44));
+    const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
+    const yielded = await tasks.upsertMirrored(mirroredAfk(46));
 
     const foreignRefs = new Set([44]);
     const throwRefs = new Set([45]); // recheckAndClaim throws → must still spawn
@@ -65,9 +71,9 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     const started: Array<{ id: number; via: 'start' | 'launchClaimed' }> = [];
     const runner = {
-      start: (id: number) => {
+      start: async (id: number) => {
         started.push({ id, via: 'start' });
-        tasks.setState(id, 'running'); // native path flips inside the runner
+        await tasks.setState(id, 'running'); // native path flips inside the runner
       },
       launchClaimed: (id: number) => {
         started.push({ id, via: 'launchClaimed' });
@@ -99,7 +105,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     expect(rechecks.map((r) => r.ref).sort()).toEqual([42, 45, 46]);
 
     // The yielded Task is handed back to the frontier, not stranded running.
-    expect(tasks.get(yielded.id).state).toBe('ready');
+    expect((await tasks.get(yielded.id)).state).toBe('ready');
   });
 });
 
@@ -113,27 +119,32 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-epic-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     // Worktree default so these mirrored Tasks are exempt from the Work Context
     // House Rule (issue #120) — this test is about the Epic base gate alone.
     tasks = new TaskService(
-      db,
+      asyncDb,
       () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
       allWorkspaces(db),
     );
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   const build = (awaitsEpicBase: (t: { id: number }) => boolean) => {
     const started: number[] = [];
     const runner = {
-      start: (id: number) => {
+      start: async (id: number) => {
         started.push(id);
-        tasks.setState(id, 'running');
+        await tasks.setState(id, 'running');
       },
       launchClaimed: (id: number) => started.push(id),
     } as unknown as Runner;
@@ -155,8 +166,8 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   };
 
   it('skips a base-pending Epic member, admits a non-gated Task, and picks it once the gate opens', async () => {
-    const gated = tasks.upsertMirrored(mirroredAfk(11)); // Epic member, base pending
-    const free = tasks.upsertMirrored(mirroredAfk(99)); // not an Epic member
+    const gated = await tasks.upsertMirrored(mirroredAfk(11)); // Epic member, base pending
+    const free = await tasks.upsertMirrored(mirroredAfk(99)); // not an Epic member
     const pending = new Set<number>([gated.id]);
 
     const { ar, started } = build((t) => pending.has(t.id));
@@ -164,7 +175,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     await vi.waitFor(() => expect(started).toContain(free.id));
 
     expect(started).not.toContain(gated.id);
-    expect(tasks.get(gated.id).state).toBe('ready'); // held on the frontier, not spawned unbased
+    expect((await tasks.get(gated.id)).state).toBe('ready'); // held on the frontier, not spawned unbased
 
     // The reconcile sets its base → the gate opens → the next pass picks it.
     pending.delete(gated.id);
@@ -185,23 +196,28 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
 describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR-0022)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-hr-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   // A ceiling well above the task count, so the two-level cap never masks the
   // context predicate under test.
   const build = () => {
     const started: number[] = [];
     const runner = {
-      start: (id: number) => {
+      start: async (id: number) => {
         started.push(id);
-        tasks.setState(id, 'running'); // native path flips inside the runner
+        await tasks.setState(id, 'running'); // native path flips inside the runner
       },
       launchClaimed: (id: number) => started.push(id),
     } as unknown as Runner;
@@ -220,42 +236,42 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
   it('skips a ready afk Task whose direct Work Context holds a running afk Run; admits a distinct-context Task, with a reason naming the occupant', async () => {
     const busy = freshDir();
-    const occupant = directTask(busy, 'occupant');
-    tasks.setState(occupant.id, 'running');
-    const blocked = directTask(busy, 'same context'); // shares the occupied dir
-    const free = directTask(freshDir(), 'other context'); // distinct dir → admits
+    const occupant = await directTask(busy, 'occupant');
+    await tasks.setState(occupant.id, 'running');
+    const blocked = await directTask(busy, 'same context'); // shares the occupied dir
+    const free = await directTask(freshDir(), 'other context'); // distinct dir → admits
 
     const { ar, started } = build();
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(free.id));
 
     expect(started).not.toContain(blocked.id);
-    expect(tasks.get(blocked.id).state).toBe('ready'); // stays on the frontier
+    expect((await tasks.get(blocked.id)).state).toBe('ready'); // stays on the frontier
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (running)`);
     expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
   });
 
   it('still skips when the occupying Run sits in awaiting-review — the lease is gone but the work is not', async () => {
     const busy = freshDir();
-    const reviewing = directTask(busy, 'awaiting review');
-    tasks.setState(reviewing.id, 'awaiting-review'); // hard lease already released here
-    const blocked = directTask(busy, 'same context');
-    const free = directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
+    const reviewing = await directTask(busy, 'awaiting review');
+    await tasks.setState(reviewing.id, 'awaiting-review'); // hard lease already released here
+    const blocked = await directTask(busy, 'same context');
+    const free = await directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
 
     const { ar, started } = build();
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(free.id));
 
     expect(started).not.toContain(blocked.id);
-    expect(tasks.get(blocked.id).state).toBe('ready');
+    expect((await tasks.get(blocked.id)).state).toBe('ready');
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${reviewing.id} (awaiting-review)`);
   });
 
   it('exempts worktree-mode Tasks — a unique key per Run means they parallelize even off a shared base dir', async () => {
     const shared = freshDir();
-    const occupant = tasks.create({ prompt: 'wt occupant', workingDir: shared, isolationMode: 'worktree' });
-    tasks.setState(occupant.id, 'running');
-    const candidate = tasks.create({ prompt: 'wt candidate', workingDir: shared, isolationMode: 'worktree' });
+    const occupant = await tasks.create({ prompt: 'wt occupant', workingDir: shared, isolationMode: 'worktree' });
+    await tasks.setState(occupant.id, 'running');
+    const candidate = await tasks.create({ prompt: 'wt candidate', workingDir: shared, isolationMode: 'worktree' });
 
     const { ar, started } = build();
     ar.poke();
@@ -265,16 +281,16 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
   it('leaves priority-then-FIFO ordering intact among the other ready Tasks while one is context-blocked', async () => {
     const busy = freshDir();
-    const occupant = directTask(busy, 'occupant');
-    tasks.setState(occupant.id, 'running');
+    const occupant = await directTask(busy, 'occupant');
+    await tasks.setState(occupant.id, 'running');
     // A high-priority Task sharing the occupied context: it must be skipped
     // despite its priority, and skipping it must not perturb the others' order.
-    const blocked = tasks.create({ prompt: 'blocked high', workingDir: busy, isolationMode: 'direct', priority: 'high' });
+    const blocked = await tasks.create({ prompt: 'blocked high', workingDir: busy, isolationMode: 'direct', priority: 'high' });
     // Distinct contexts, mixed priorities + a same-priority pair for the FIFO tiebreak.
-    const low = tasks.create({ prompt: 'low', workingDir: freshDir(), isolationMode: 'direct', priority: 'low' });
-    const high = tasks.create({ prompt: 'high', workingDir: freshDir(), isolationMode: 'direct', priority: 'high' });
-    const normalFirst = tasks.create({ prompt: 'normal 1', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
-    const normalSecond = tasks.create({ prompt: 'normal 2', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
+    const low = await tasks.create({ prompt: 'low', workingDir: freshDir(), isolationMode: 'direct', priority: 'low' });
+    const high = await tasks.create({ prompt: 'high', workingDir: freshDir(), isolationMode: 'direct', priority: 'high' });
+    const normalFirst = await tasks.create({ prompt: 'normal 1', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
+    const normalSecond = await tasks.create({ prompt: 'normal 2', workingDir: freshDir(), isolationMode: 'direct', priority: 'normal' });
 
     const { ar, started } = build();
     ar.poke();
@@ -289,10 +305,10 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
   it('waitingSince (issue #125): starts a clock on the first House-Rule-blocked pass and clears it once unblocked', async () => {
     const busy = freshDir();
-    const occupant = directTask(busy, 'occupant');
-    tasks.setState(occupant.id, 'running');
-    const blocked = directTask(busy, 'same context');
-    const free = directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
+    const occupant = await directTask(busy, 'occupant');
+    await tasks.setState(occupant.id, 'running');
+    const blocked = await directTask(busy, 'same context');
+    const free = await directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
 
     const { ar, started } = build();
     ar.poke();
@@ -310,7 +326,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
     // The occupant frees the context — a later pass admits `blocked`, and its
     // clock is cleared (it's no longer in `contextSkipReasons`).
-    tasks.setState(occupant.id, 'completed');
+    await tasks.setState(occupant.id, 'completed');
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(blocked.id));
     expect(ar.waitingSince(blocked.id)).toBeUndefined();

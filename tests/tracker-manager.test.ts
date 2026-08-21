@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
@@ -33,6 +34,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   let repoA: string;
   let repoB: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let workspaces: WorkspaceService;
   let manager: TrackerPollerManager;
@@ -43,12 +45,13 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   /** Repos whose tracker won't resolve — the "enabled but unresolvable" gate (issue #83). */
   let unresolvable: Set<string>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-mgr-'));
     repoA = mkdtempSync(join(tmpdir(), 'harmonic-repoA-'));
     repoB = mkdtempSync(join(tmpdir(), 'harmonic-repoB-'));
     db = openDb(dataDir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dataDir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     workspaces = new WorkspaceService(db);
     polled = [];
     ticketsByRepo = new Map();
@@ -70,8 +73,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     };
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), resolveAdapter);
   });
-  afterEach(() => {
+  afterEach(async () => {
     manager.stopAll();
+    await asyncDb.close();
     for (const d of [dataDir, repoA, repoB]) rmSync(d, { recursive: true, force: true });
   });
 
@@ -94,9 +98,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const b = workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
     await manager.sync();
 
-    await waitFor(async () => tasks.list().length === 2 || undefined);
-    const inA = tasks.list({ workspaceId: a.id });
-    const inB = tasks.list({ workspaceId: b.id });
+    await waitFor(async () => (await tasks.list()).length === 2 || undefined);
+    const inA = await tasks.list({ workspaceId: a.id });
+    const inB = await tasks.list({ workspaceId: b.id });
     expect(inA).toHaveLength(1);
     expect(inB).toHaveLength(1);
     expect(inA[0]).toMatchObject({ trackerRef: 5, workspaceId: a.id });
@@ -112,13 +116,13 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     const b = workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
     await manager.sync();
-    await waitFor(async () => tasks.list().length === 2 || undefined);
+    await waitFor(async () => (await tasks.list()).length === 2 || undefined);
 
-    const all = manager.maps();
+    const all = await manager.maps();
     expect(all).toHaveLength(2); // one per Workspace, not one collapsed row
     expect(all.map((m) => m.workspaceId).sort()).toEqual([a.id, b.id].sort());
 
-    const scopedA = manager.maps(a.id);
+    const scopedA = await manager.maps(a.id);
     expect(scopedA).toHaveLength(1);
     expect(scopedA[0]).toMatchObject({ workspaceId: a.id, ref: 19, taskRefs: [30] });
   });
@@ -143,23 +147,23 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
 
   it('deleting a Workspace stops its loop and cascades its board', async () => {
     const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
-    tasks.create({ prompt: 'on A', workspaceId: a.id }); // a Task on the doomed board
+    await tasks.create({ prompt: 'on A', workspaceId: a.id }); // a Task on the doomed board
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeDefined();
 
     workspaces.delete(a.id);
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
-    expect(tasks.list({ workspaceId: a.id })).toHaveLength(0); // board went with it
+    expect(await tasks.list({ workspaceId: a.id })).toHaveLength(0); // board went with it
   });
 
-  it('delete refuses a running Task but allows the last Workspace (issue #61)', () => {
+  it('delete refuses a running Task but allows the last Workspace (issue #61)', async () => {
     const a = workspaces.create({ name: 'A', workingDir: repoA });
-    const running = tasks.create({ prompt: 'busy', workspaceId: a.id });
-    tasks.setState(running.id, 'running');
+    const running = await tasks.create({ prompt: 'busy', workspaceId: a.id });
+    await tasks.setState(running.id, 'running');
     expect(() => workspaces.delete(a.id)).toThrow(/running/);
 
-    tasks.setState(running.id, 'ready');
+    await tasks.setState(running.id, 'ready');
     workspaces.delete(a.id); // now allowed
     const last = workspaces.list();
     expect(last).toHaveLength(1);
@@ -173,7 +177,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     // A ticket appears after the loop started; a manual refresh mirrors it now.
     ticketsByRepo.set(repoA, [ticket(7)]);
     await manager.pollNow(a.id);
-    expect(tasks.list({ workspaceId: a.id }).map((t) => t.trackerRef)).toContain(7);
+    expect((await tasks.list({ workspaceId: a.id })).map((t) => t.trackerRef)).toContain(7);
 
     // The default (tracker-off) Workspace has no loop — pollNow resolves without polling it.
     const off = workspaces.list().find((w) => w.id !== a.id)!;
@@ -239,7 +243,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.pollNow(a.id);
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: true });
     expect(manager.coordinatorFor(a.id)).toBeDefined();
-    await waitFor(async () => tasks.list({ workspaceId: a.id }).some((t) => t.trackerRef === 9) || undefined);
+    await waitFor(async () => (await tasks.list({ workspaceId: a.id })).some((t) => t.trackerRef === 9) || undefined);
 
     // It breaks again; a refresh caches the failure and stops the loop.
     unresolvable.add(repoA);

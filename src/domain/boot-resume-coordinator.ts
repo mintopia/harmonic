@@ -76,7 +76,7 @@ export class BootResumeCoordinator {
       if (orphan.sessionRowId === null) continue; // narrowing; the query already excludes null
 
       const session = this.sessionStore.get(orphan.sessionRowId);
-      const task = this.taskService.get(orphan.taskId);
+      const task = await this.taskService.get(orphan.taskId);
       // The cwd / Work-Context axis compares two INDEPENDENT operands, each run
       // through `repoKey` (the canonicaliser the seam contract mandates): the
       // Session's recorded work-context identity vs. where the Task would execute
@@ -141,7 +141,7 @@ export class BootResumeCoordinator {
       // awaiting dispatch (the `resume-entry` marker keeps that Run, and this
       // `running` Task, from being re-orphaned on a later boot — see
       // `RunStore.markInterrupted` and the boot Task sweep in `app.ts`).
-      this.taskService.setState(orphan.taskId, 'running');
+      await this.taskService.setState(orphan.taskId, 'running');
     }
   }
 

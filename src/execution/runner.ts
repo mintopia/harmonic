@@ -559,12 +559,12 @@ export class Runner {
 
   /** Start a run for a ready task. Returns the created run immediately. */
   async start(taskId: number): Promise<RunRow> {
-    const task = this.taskService.get(taskId);
+    const task = await this.taskService.get(taskId);
     if (task.state !== 'ready') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
     const run = await this.beginRun(task);
-    this.taskService.setState(taskId, 'running');
+    await this.taskService.setState(taskId, 'running');
     return run;
   }
 
@@ -574,7 +574,7 @@ export class Runner {
    * spawn, so the flip lands before the tracker write, not with it (issue #32).
    */
   async launchClaimed(taskId: number): Promise<RunRow> {
-    const task = this.taskService.get(taskId);
+    const task = await this.taskService.get(taskId);
     if (task.state !== 'running') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to running`);
     }
@@ -837,12 +837,12 @@ export class Runner {
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
       handled = true;
-      await this.coordinateSettle(this.taskService.get(taskId), await this.runStore.get(active.runId), type, projection);
+      await this.coordinateSettle(await this.taskService.get(taskId), await this.runStore.get(active.runId), type, projection);
       this.kill(active);
     }
     if (handled) return;
     const parked = (await this.runStore.listForTask(taskId)).find((r) => r.state === 'running');
-    if (parked) await this.coordinateSettle(this.taskService.get(taskId), parked, type, projection);
+    if (parked) await this.coordinateSettle(await this.taskService.get(taskId), parked, type, projection);
   }
 
   /**
@@ -882,7 +882,7 @@ export class Runner {
       await this.tailer.stop(active.runId);
       this.readers.delete(active.runId);
       const run = await this.runStore.get(active.runId);
-      const task = this.taskService.get(taskId);
+      const task = await this.taskService.get(taskId);
       // Revert the premature close, then hand the Task to a human (#139).
       await this.autoDrive?.reopenTicket(task);
       await this.settleEscalated(task, run, 'ticket closed before verification and landing (reopened)', {});
@@ -892,11 +892,11 @@ export class Runner {
     // No agent is working this Task. Only act on a still-running Task with no
     // live Run in flight, so we never race a Run that is mid-spawn (its
     // ActiveRun not yet registered).
-    if (this.taskService.get(taskId).state !== 'running') return false;
+    if ((await this.taskService.get(taskId)).state !== 'running') return false;
     if ((await this.runStore.listForTask(taskId)).some((r) => r.state === 'running')) return false;
     // Reopen the premature close, then Escalate the orphaned Task directly (#139).
-    await this.autoDrive?.reopenTicket(this.taskService.get(taskId));
-    this.taskService.escalate(taskId);
+    await this.autoDrive?.reopenTicket(await this.taskService.get(taskId));
+    await this.taskService.escalate(taskId);
     return true;
   }
 
@@ -2044,7 +2044,7 @@ export class Runner {
    */
   async settleEscalatedForMember(member: MergeTrainMember, reason: string): Promise<void> {
     const run = await this.runStore.get(member.runId);
-    const task = this.taskService.get(member.taskId);
+    const task = await this.taskService.get(member.taskId);
     await this.settleEscalated(task, run, reason, {});
   }
 
@@ -3399,7 +3399,7 @@ export class Runner {
     const config = this.getConfig();
     for (const run of await this.runStore.listUsageBackfillCandidates()) {
       try {
-        const task = this.taskService.get(run.taskId);
+        const task = await this.taskService.get(run.taskId);
         const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
         if (!harness) continue;
         // Worktree runs executed (and logged) under the worktree path;
@@ -3473,8 +3473,8 @@ export class Runner {
    */
   private async parkForReview(task: TaskRow, run: RunRow, patch: Partial<RunRow>): Promise<void> {
     await this.reparkForReview(run, patch);
-    if (this.taskService.get(task.id).state === 'running') {
-      this.taskService.setState(task.id, 'awaiting-review');
+    if ((await this.taskService.get(task.id)).state === 'running') {
+      await this.taskService.setState(task.id, 'awaiting-review');
     }
   }
 
@@ -3543,8 +3543,8 @@ export class Runner {
    */
   private async parkEscalatedForReview(task: TaskRow, run: RunRow): Promise<void> {
     await this.reparkForReview(run);
-    this.taskService.setState(task.id, 'awaiting-review');
-    this.taskService.clearEscalated(task.id);
+    await this.taskService.setState(task.id, 'awaiting-review');
+    await this.taskService.clearEscalated(task.id);
   }
 
   /**
@@ -3568,7 +3568,7 @@ export class Runner {
     taskId: number,
     verb: string,
   ): Promise<{ task: TaskRow; run: RunRow; oid: string }> {
-    const task = this.taskService.get(taskId);
+    const task = await this.taskService.get(taskId);
     const run = (await this.runStore.listForTask(taskId)).at(-1);
     if (!run) throw new DomainError('conflict', `task ${taskId} has no runs to ${verb}`);
     if (!task.escalated) {

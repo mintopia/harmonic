@@ -80,7 +80,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mergetrain-adapters-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runs = new RunStore(asyncDb);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => defaultConfig());
   });
@@ -90,8 +90,8 @@ describe('Runner merge-train adapters (issue #163)', () => {
   });
 
   async function seed(): Promise<{ taskId: number; runId: number; member: MergeTrainMember }> {
-    const task = tasks.create({ prompt: 'do work' });
-    tasks.setState(task.id, 'running');
+    const task = await tasks.create({ prompt: 'do work' });
+    await tasks.setState(task.id, 'running');
     const run = await runs.create(task.id);
     return {
       taskId: task.id,
@@ -131,7 +131,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     expect(settledRun.reason).toContain('escalated to human');
     expect(settledRun.reason).toContain('rebase still conflicts after corrective turn');
 
-    const settledTask = tasks.get(taskId);
+    const settledTask = await tasks.get(taskId);
     expect(settledTask.state).toBe('ready');
     expect(settledTask.escalated).toBe(true);
     expect(settledTask.drive).toBe('hitl');
@@ -149,7 +149,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     // nothing flips back.
     await expect(runner.settleEscalatedForMember(member, 'integration branch missing')).resolves.toBeUndefined();
     expect((await runs.get(runId)).state).toBe('failed');
-    expect(tasks.get(taskId).escalated).toBe(true);
+    expect((await tasks.get(taskId)).escalated).toBe(true);
   });
 
   it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', async () => {
@@ -160,8 +160,8 @@ describe('Runner merge-train adapters (issue #163)', () => {
     const gated = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => defaultConfig(), {
       epicBaseNotReady: (t) => t.baseBranch === 'epic/1',
     });
-    const task = tasks.create({ prompt: 'member work' });
-    tasks.setBaseBranch(task.id, 'epic/1');
+    const task = await tasks.create({ prompt: 'member work' });
+    await tasks.setBaseBranch(task.id, 'epic/1');
 
     let err: unknown;
     try {
@@ -176,7 +176,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     // The gate fires before `beginRun` creates the row or flips the Task, so no
     // orphan run and the Task stays on the frontier for the next poll.
     expect(await runs.listForTask(task.id)).toHaveLength(0);
-    expect(tasks.get(task.id).state).toBe('ready');
+    expect((await tasks.get(task.id)).state).toBe('ready');
   });
 });
 
@@ -210,10 +210,10 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
   /** Launch a mirrored afk worktree Task whose base is an Epic integration branch. */
   async function launchEpicMember(epicBranch: string): Promise<{ taskId: number; runId: number; trackerRef: number }> {
     const trackerRef = ref++;
-    const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
+    const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
     expect(task.drive).toBe('afk');
-    server.app.ctx.tasks.setBaseBranch(task.id, epicBranch);
-    server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setBaseBranch(task.id, epicBranch);
+    await server.app.ctx.tasks.setState(task.id, 'running');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id, trackerRef };
   }
@@ -243,7 +243,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
 
     const completed = (taskId: number) =>
       waitFor(async () => {
-        const t = server.app.ctx.tasks.get(taskId);
+        const t = await server.app.ctx.tasks.get(taskId);
         if (t.escalated) throw new Error(`member ${taskId} escalated instead of landing`);
         return t.state === 'completed' ? t : undefined;
       });
@@ -314,7 +314,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     // coordinator's `escalate` (→ settleEscalatedForMember) is the sole settle
     // authority — no second heal, no second mutating turn.
     const settledTask = await waitFor(async () => {
-      const t = server.app.ctx.tasks.get(taskId);
+      const t = await server.app.ctx.tasks.get(taskId);
       return t.escalated ? t : undefined;
     });
     expect(settledTask.escalated).toBe(true);

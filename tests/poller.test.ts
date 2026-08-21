@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
@@ -49,16 +50,21 @@ function stubAdapter(tickets: Ticket[]) {
 describe('TrackerPoller.poll', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-poller-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     wsId = allWorkspaces(db)()[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('scans, mirrors 1:1 into its Workspace, and pokes downstream', async () => {
     const { adapter, scans } = stubAdapter([
@@ -71,8 +77,8 @@ describe('TrackerPoller.poll', () => {
     await poller.poll();
 
     expect(scans()).toBe(1);
-    expect(tasks.list()).toHaveLength(1); // map skipped
-    expect(tasks.list()[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
+    expect(await tasks.list()).toHaveLength(1); // map skipped
+    expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
     expect(pokes).toBe(1);
   });
 
@@ -108,7 +114,7 @@ describe('TrackerPoller.poll', () => {
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
     await poller.poll();
     await poller.poll();
-    expect(tasks.list()).toHaveLength(1);
+    expect(await tasks.list()).toHaveLength(1);
   });
 
   it('caches the scan: maps() rolls up by mapRef and urlFor() resolves a ref (issue #35)', async () => {
@@ -119,10 +125,10 @@ describe('TrackerPoller.poll', () => {
     ]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
-    expect(poller.maps()).toEqual([]); // empty before the first poll
+    expect(await poller.maps()).toEqual([]); // empty before the first poll
     await poller.poll();
 
-    const maps = poller.maps();
+    const maps = await poller.maps();
     expect(maps).toHaveLength(1);
     expect(maps[0]).toMatchObject({ ref: 19, title: 'Wayfinder' });
     expect(maps[0]!.taskRefs.sort()).toEqual([30, 31]);
@@ -153,8 +159,8 @@ describe('TrackerPoller.poll', () => {
       (id) => closed.push(id),
     );
     await poller.poll();
-    const task = tasks.list()[0]!;
-    tasks.setState(task.id, 'running'); // a live Run flipped it (Runner.start / launchClaimed)
+    const task = (await tasks.list())[0]!;
+    await tasks.setState(task.id, 'running'); // a live Run flipped it (Runner.start / launchClaimed)
     current = ticket({ number: 42, labels: ['ready-for-agent'], state: finalState });
     await poller.poll();
     return { closed, taskId: task.id };
@@ -164,7 +170,7 @@ describe('TrackerPoller.poll', () => {
     const { closed, taskId } = await pollThenReRunning('closed');
     expect(closed).toEqual([taskId]);
     // The poll itself never moves a Task off running — the Runner callback does.
-    expect(tasks.get(taskId).state).toBe('running');
+    expect((await tasks.get(taskId)).state).toBe('running');
   });
 
   it('does not report a running Task whose ticket is still open', async () => {
@@ -192,7 +198,7 @@ describe('TrackerPoller.poll', () => {
     state = 'closed';
     await poller.poll(); // resting → completed via upsert, not the backstop
     expect(closed).toEqual([]);
-    expect(tasks.list()[0]!.state).toBe('completed');
+    expect((await tasks.list())[0]!.state).toBe('completed');
   });
 
   it('runs epic integration between mirroring and the poke (issue #159)', async () => {
@@ -257,7 +263,7 @@ describe('TrackerPoller.poll', () => {
     await expect(poller.poll()).resolves.toBeUndefined();
 
     expect(pokes).toBe(1); // mirroring already committed; the poke still fires
-    expect(tasks.list()).toHaveLength(1);
+    expect(await tasks.list()).toHaveLength(1);
     expect(errors.some((e) => e.includes('epic integration'))).toBe(true);
   });
 });

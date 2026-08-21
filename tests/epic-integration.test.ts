@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
@@ -105,18 +106,23 @@ describe('parseIntegrationBranch (issue #163)', () => {
 describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
   const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
-  const baseOf = (ref: number) => tasks.list().find((t) => t.trackerRef === ref)?.baseBranch;
+  const baseOf = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === ref)?.baseBranch;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     wsId = allWorkspaces(db)()[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   /** An Epic ref 10 (a Spec) with two ready-for-agent member children 11, 12. */
   const epicTickets = (): Ticket[] => [
@@ -127,17 +133,17 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
 
   it('creates one integration branch cut from the default branch and points ready members at it', async () => {
     const tickets = epicTickets();
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
     expect(git.created).toEqual(['epic/10']);
-    expect(baseOf(11)).toBe('epic/10');
-    expect(baseOf(12)).toBe('epic/10');
+    expect(await baseOf(11)).toBe('epic/10');
+    expect(await baseOf(12)).toBe('epic/10');
     // The Epic ticket's own mirrored Task is never retargeted.
-    expect(baseOf(10)).toBeNull();
+    expect(await baseOf(10)).toBeNull();
   });
 
   it('is idempotent across polls: reuses the existing branch, never re-creates', async () => {
@@ -145,11 +151,11 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
-    await coord.reconcile(tickets, mscan(tickets));
-    await coord.reconcile(tickets, mscan(tickets));
+    await coord.reconcile(tickets, await mscan(tickets));
+    await coord.reconcile(tickets, await mscan(tickets));
 
     expect(git.created).toEqual(['epic/10']); // created once, reused thereafter
-    expect(baseOf(11)).toBe('epic/10');
+    expect(await baseOf(11)).toBe('epic/10');
   });
 
   it('creates no branch and sets no base branch when no Epic is derivable', async () => {
@@ -157,11 +163,11 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
-    await coord.reconcile(flat, mscan(flat));
+    await coord.reconcile(flat, await mscan(flat));
 
     expect(git.created).toEqual([]);
     expect(git.symbolicBranchCalls).toBe(0); // never even resolves the default branch
-    expect(baseOf(99)).toBeNull();
+    expect(await baseOf(99)).toBeNull();
   });
 
   it('retargets only the ready frontier, not blocked members', async () => {
@@ -179,21 +185,21 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
-    await coord.reconcile(tickets, mscan(tickets));
+    await coord.reconcile(tickets, await mscan(tickets));
 
     expect(git.created).toEqual(['epic/10']);
-    expect(baseOf(11)).toBe('epic/10');
-    expect(baseOf(12)).toBeNull(); // blocked ⇒ not yet retargeted
+    expect(await baseOf(11)).toBe('epic/10');
+    expect(await baseOf(12)).toBeNull(); // blocked ⇒ not yet retargeted
   });
 
   it('never overwrites the base branch of an already-spawned (running) member', async () => {
     const tickets = epicTickets();
-    mscan(tickets);
-    const m11 = tasks.list().find((t) => t.trackerRef === 11)!;
-    tasks.setState(m11.id, 'running');
+    await mscan(tickets);
+    const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
+    await tasks.setState(m11.id, 'running');
     // A fresh post-mirror snapshot carries the live 'running' state, as the poll
     // passes it (upsertMirrored keeps an already-spawned member running).
-    const mirrored = tasks.list();
+    const mirrored = await tasks.list();
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
@@ -201,8 +207,8 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
 
     // Branch still ensured (12 is ready), but the running member's base is frozen.
     expect(git.created).toEqual(['epic/10']);
-    expect(baseOf(11)).toBeNull();
-    expect(baseOf(12)).toBe('epic/10');
+    expect(await baseOf(11)).toBeNull();
+    expect(await baseOf(12)).toBe('epic/10');
   });
 
   it('creates no branch for an Epic with an empty ready frontier', async () => {
@@ -213,7 +219,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
-    await coord.reconcile(tickets, mscan(tickets));
+    await coord.reconcile(tickets, await mscan(tickets));
 
     expect(git.created).toEqual([]);
     expect(git.symbolicBranchCalls).toBe(0);
@@ -229,16 +235,16 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
-    await coord.reconcile(tickets, mscan(tickets));
+    await coord.reconcile(tickets, await mscan(tickets));
 
     expect(git.created.sort()).toEqual(['epic/10', 'epic/20']);
-    expect(baseOf(11)).toBe('epic/10');
-    expect(baseOf(21)).toBe('epic/20');
+    expect(await baseOf(11)).toBe('epic/10');
+    expect(await baseOf(21)).toBe('epic/20');
   });
 
   it('defers (no branch, members stay gated) when HEAD is detached', async () => {
     const tickets = epicTickets();
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     const git = new FakeGit([], null); // detached HEAD ⇒ symbolicBranch null
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
@@ -246,10 +252,10 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
 
     // No durable Epic branch anchored on a transient detached OID.
     expect(git.created).toEqual([]);
-    expect(baseOf(11)).toBeNull();
+    expect(await baseOf(11)).toBeNull();
     // The member is still recognised as base-pending, so the pick gate holds it
     // rather than letting it fork from the wrong base.
-    const m11 = tasks.list().find((t) => t.trackerRef === 11)!;
+    const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
     expect(coord.awaitsBase(m11)).toBe(true);
   });
 
@@ -258,15 +264,15 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
       ...epicTickets(),
       ticket({ number: 99, parent: null, labels: ['ready-for-agent'] }), // not an Epic member
     ];
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
     await coord.reconcile(tickets, mirrored);
 
-    const m11 = tasks.list().find((t) => t.trackerRef === 11)!;
-    const nonMember = tasks.list().find((t) => t.trackerRef === 99)!;
-    const native = tasks.create({ prompt: 'native task' });
+    const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
+    const nonMember = (await tasks.list()).find((t) => t.trackerRef === 99)!;
+    const native = await tasks.create({ prompt: 'native task' });
     expect(m11.baseBranch).toBe('epic/10');
     expect(coord.awaitsBase(m11)).toBe(false); // base set ⇒ gate open
     expect(coord.awaitsBase(nonMember)).toBe(false); // never an Epic member
@@ -281,14 +287,14 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const git = new FakeGit([], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
 
-    await coord.reconcile(tickets, mscan(tickets));
+    await coord.reconcile(tickets, await mscan(tickets));
 
-    const m11 = () => tasks.list().find((t) => t.trackerRef === 11)!;
-    const nonMember = tasks.list().find((t) => t.trackerRef === 99)!;
-    const native = tasks.create({ prompt: 'native task' });
+    const m11 = async () => (await tasks.list()).find((t) => t.trackerRef === 11)!;
+    const nonMember = (await tasks.list()).find((t) => t.trackerRef === 99)!;
+    const native = await tasks.create({ prompt: 'native task' });
     // Base set to epic/10 and the reconcile confirmed that branch live ⇒ open.
-    expect(m11().baseBranch).toBe('epic/10');
-    expect(coord.memberBaseNotReady(m11())).toBe(false);
+    expect((await m11()).baseBranch).toBe('epic/10');
+    expect(coord.memberBaseNotReady(await m11())).toBe(false);
     expect(coord.memberBaseNotReady(nonMember)).toBe(false); // ordinary Task base
     expect(coord.memberBaseNotReady(native)).toBe(false); // native ⇒ never gated
 
@@ -298,22 +304,22 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     // guarantee is there.
     const detached = new FakeGit(['epic/10'], null);
     const coordDetached = new EpicIntegrationCoordinator(tasks, dir, detached);
-    await coordDetached.reconcile(tickets, mscan(tickets));
-    expect(coordDetached.memberBaseNotReady(m11())).toBe(true);
+    await coordDetached.reconcile(tickets, await mscan(tickets));
+    expect(coordDetached.memberBaseNotReady(await m11())).toBe(true);
   });
 
-  it('memberBaseNotReady gates every member before the first reconcile confirms any branch live', () => {
+  it('memberBaseNotReady gates every member before the first reconcile confirms any branch live', async () => {
     const tickets = epicTickets();
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     // Point member 11 at epic/10 directly, as a durable base surviving a restart,
     // without ever running a reconcile (liveIntegrationRefs still empty).
     const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
-    tasks.setBaseBranch(m11Id, 'epic/10');
+    await tasks.setBaseBranch(m11Id, 'epic/10');
     const git = new FakeGit(['epic/10'], 'develop');
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     // No reconcile has run: the branch may exist on disk, but this coordinator
     // has confirmed nothing, so it fails closed and gates the member.
-    expect(coord.memberBaseNotReady(tasks.get(m11Id))).toBe(true);
+    expect(coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
   });
 });
 
@@ -338,17 +344,22 @@ describe('reduceMemberState (issue #161)', () => {
 describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
   const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-land-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     wsId = allWorkspaces(db)()[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   class FakeLand implements EpicLandTrigger {
     readonly calls: { ref: number; members: MemberLandState[]; force: boolean }[] = [];
@@ -363,18 +374,18 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
     ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }),
     ticket({ number: 12, parent: 10, labels: ['ready-for-agent'] }),
   ];
-  const memberTaskId = (ref: number) => tasks.list().find((t) => t.trackerRef === ref)!.id;
+  const memberTaskId = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === ref)!.id;
 
   it('offers each derived Epic for a land attempt with its members reduced from live Task state', async () => {
     const tickets = epicTickets();
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
     const land = new FakeLand();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachLandTrigger(land);
     // Both members have landed onto the integration branch (Task state completed).
-    tasks.setState(memberTaskId(11), 'completed');
-    tasks.setState(memberTaskId(12), 'completed');
+    await tasks.setState(await memberTaskId(11), 'completed');
+    await tasks.setState(await memberTaskId(12), 'completed');
 
     await coord.reconcile(tickets, mirrored);
 
@@ -383,13 +394,13 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
 
   it('reduces an escalated member to blocked in the land attempt', async () => {
     const tickets = epicTickets();
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
     const land = new FakeLand();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachLandTrigger(land);
-    tasks.setState(memberTaskId(11), 'completed');
-    tasks.escalate(memberTaskId(12)); // a member that cannot land
+    await tasks.setState(await memberTaskId(11), 'completed');
+    await tasks.escalate(await memberTaskId(12)); // a member that cannot land
 
     await coord.reconcile(tickets, mirrored);
 
@@ -399,13 +410,13 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
 
   it('runs the land pass even with an empty ready frontier (all members completed)', async () => {
     const tickets = epicTickets();
-    const mirrored = mscan(tickets);
+    const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
     const land = new FakeLand();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachLandTrigger(land);
-    tasks.setState(memberTaskId(11), 'completed');
-    tasks.setState(memberTaskId(12), 'completed');
+    await tasks.setState(await memberTaskId(11), 'completed');
+    await tasks.setState(await memberTaskId(12), 'completed');
 
     await coord.reconcile(tickets, mirrored);
     expect(land.calls).toHaveLength(1); // the empty-ready early return no longer fires with a trigger attached
@@ -415,14 +426,19 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
 describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-retire-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('deletes the branch when it exists and is idempotent when it is already gone', async () => {
     const git = new FakeGit(['epic/10']);
@@ -439,29 +455,34 @@ describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () =
 describe('TaskService.setBaseBranch (issue #159)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-setbase-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  it('sets the column and is an idempotent no-op when unchanged', () => {
-    const t = tasks.create({ prompt: 'do a thing' });
+  it('sets the column and is an idempotent no-op when unchanged', async () => {
+    const t = await tasks.create({ prompt: 'do a thing' });
     expect(t.baseBranch).toBeNull();
 
-    const set = tasks.setBaseBranch(t.id, 'epic/7');
+    const set = await tasks.setBaseBranch(t.id, 'epic/7');
     expect(set.baseBranch).toBe('epic/7');
 
     // Unchanged ⇒ updatedAt is not churned.
-    const before = tasks.get(t.id).updatedAt;
-    const again = tasks.setBaseBranch(t.id, 'epic/7');
+    const before = (await tasks.get(t.id)).updatedAt;
+    const again = await tasks.setBaseBranch(t.id, 'epic/7');
     expect(again.baseBranch).toBe('epic/7');
     expect(again.updatedAt).toBe(before);
 
     // Clearing back to inherit is a first-class edit.
-    expect(tasks.setBaseBranch(t.id, null).baseBranch).toBeNull();
+    expect((await tasks.setBaseBranch(t.id, null)).baseBranch).toBeNull();
   });
 });

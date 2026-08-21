@@ -65,7 +65,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     repo = makeRepo();
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
     runFacts = new RunFactStore(asyncDb);
@@ -87,12 +87,12 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
    * a land fact frozen (PONC) and an intent recorded for the `target-ref`
    * effect but NO result — died between intent and result. */
   async function seedMidLanding(branch: string, baseBranch: string): Promise<{ task: TaskRow; run: RunRow; idempotencyKey: string }> {
-    const created = tasks.create({ prompt: 'land me', state: 'ready', workingDir: repo });
-    tasks.setState(created.id, 'running');
+    const created = await tasks.create({ prompt: 'land me', state: 'ready', workingDir: repo });
+    await tasks.setState(created.id, 'running');
     let run = await runStore.create(created.id);
     run = await runStore.update(run.id, { phase: 'landing', branch, baseBranch });
-    tasks.setState(created.id, 'awaiting-review');
-    const task = tasks.get(created.id);
+    await tasks.setState(created.id, 'awaiting-review');
+    const task = await tasks.get(created.id);
 
     const idempotencyKey = `${baseBranch}<-${branch}`;
     const landFact = await runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'completed', reason: null });
@@ -129,7 +129,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     const landedRun = await runStore.get(run.id);
     expect(landedRun.state).toBe('completed');
     expect(landedRun.phase).toBe('terminal');
-    expect(tasks.get(run.taskId).state).toBe('completed');
+    expect((await tasks.get(run.taskId)).state).toBe('completed');
   });
 
   it('leaves the Run parked when the world says NOT merged and the real re-apply fails (no such branch to merge)', async () => {
@@ -151,7 +151,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     const parkedRun = await runStore.get(run.id);
     expect(parkedRun.state).toBe('running');
     expect(parkedRun.phase).toBe('landing');
-    expect(tasks.get(run.taskId).state).toBe('awaiting-review');
+    expect((await tasks.get(run.taskId)).state).toBe('awaiting-review');
   });
 });
 
@@ -186,7 +186,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     repo = makeRepo();
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
     runFacts = new RunFactStore(asyncDb);
@@ -210,9 +210,9 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     workingDir: string,
     isolationMode: 'direct' | 'worktree' = 'direct',
   ): Promise<{ task: TaskRow; run: RunRow; key: string }> {
-    const created = tasks.create({ prompt: 'own a work context', state: 'ready', workingDir, isolationMode });
+    const created = await tasks.create({ prompt: 'own a work context', state: 'ready', workingDir, isolationMode });
     const run = await runStore.create(created.id);
-    const task = tasks.get(created.id);
+    const task = await tasks.get(created.id);
     const key =
       isolationMode === 'direct'
         ? workContextKey({ isolationMode: 'direct', workingDir })
@@ -238,7 +238,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     expect(leases.getByKey(key)).toBeUndefined();
 
     // The freed key is admissible again.
-    const otherTask = tasks.create({ prompt: 'contend for the freed key', state: 'ready' });
+    const otherTask = await tasks.create({ prompt: 'contend for the freed key', state: 'ready' });
     const otherRun = await runStore.create(otherTask.id);
     expect(() => leases.acquire(key, otherRun.id, 'running')).not.toThrow();
   });
@@ -256,7 +256,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect');
 
-    const otherTask = tasks.create({ prompt: 'contend for a suspect key', state: 'ready' });
+    const otherTask = await tasks.create({ prompt: 'contend for a suspect key', state: 'ready' });
     const otherRun = await runStore.create(otherTask.id);
     let caught: unknown;
     try {
@@ -315,7 +315,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
 
     // Dirty the repo, then seed a second dead-owner lease on the same repo.
     writeFileSync(join(repo, 'x.txt'), 'x');
-    const secondTask = tasks.create({ prompt: 'own a dirty work context', state: 'ready', workingDir: repo, isolationMode: 'direct' });
+    const secondTask = await tasks.create({ prompt: 'own a dirty work context', state: 'ready', workingDir: repo, isolationMode: 'direct' });
     const secondRun = await runStore.create(secondTask.id);
     const dirtyKey = workContextKey({ isolationMode: 'direct', workingDir: repo });
     leases.acquire(dirtyKey, secondRun.id, 'running');

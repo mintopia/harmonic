@@ -216,7 +216,7 @@ export class TrackerPollerManager {
     const tickets = entry.poller.tickets();
     const titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     const taskByRef = new Map<number, TaskRow>();
-    for (const task of this.tasks.list({ workspaceId })) {
+    for (const task of await this.tasks.list({ workspaceId })) {
       if (task.trackerRef != null) taskByRef.set(task.trackerRef, task);
     }
     const facts = await this.epicFacts(entry, derived.ref);
@@ -271,9 +271,10 @@ export class TrackerPollerManager {
    * concatenated — Map refs that collide across repos stay disambiguated by
    * their `workspaceId`.
    */
-  maps(workspaceId?: number): DerivedMap[] {
+  async maps(workspaceId?: number): Promise<DerivedMap[]> {
     const entries = workspaceId === undefined ? [...this.entries.values()] : [this.entries.get(workspaceId)];
-    return entries.flatMap((e) => e?.poller.maps() ?? []);
+    const perEntry = await Promise.all(entries.map((e) => e?.poller.maps() ?? []));
+    return perEntry.flat();
   }
 
   /** The tracker URL for a mirrored Task's ref, scoped to its Workspace's last scan; null otherwise. */

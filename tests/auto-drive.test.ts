@@ -306,7 +306,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   const startMirrored = async (id: number) => {
-    tasks.setState(id, 'running'); // the afk pick's lock, before launchClaimed (issue #32)
+    await tasks.setState(id, 'running'); // the afk pick's lock, before launchClaimed (issue #32)
     await runner.launchClaimed(id);
   };
 
@@ -331,7 +331,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
-    tasks = new TaskService(db, () => cfg, allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(db));
     runs = new RunStore(asyncDb);
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
@@ -345,11 +345,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
   it('a Run blocking on a human prompt Escalates: stop, drive→hitl, ready + flag', async () => {
     // The Drive Prompt template IS what reaches the harness — script the stub there.
     build(config({ prompt: JSON.stringify({ requestPermission: { title: 'Write file' } }) }));
-    const task = tasks.upsertMirrored(mirroredAfk(7));
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
-    const settled = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const settled = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (t.state !== 'ready') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
@@ -364,11 +364,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
   it('an afk Run enters auto permission mode before prompting, then runs unattended', async () => {
     build(config({ prompt: JSON.stringify({ echoSetMode: true }) }));
-    const task = tasks.upsertMirrored(mirroredAfk(7));
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
-    const settled = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const settled = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (t.state === 'running') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
@@ -386,11 +386,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
     const cfg = config({ autoRetry: 0 });
     cfg.harnesses.claude.env = { STUB_MODES: '' }; // advertise no session modes
     build(cfg);
-    const task = tasks.upsertMirrored(mirroredAfk(8));
+    const task = await tasks.upsertMirrored(mirroredAfk(8));
     await startMirrored(task.id);
 
-    const settled = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const settled = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (t.state === 'running') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
@@ -404,12 +404,12 @@ describe('Runner auto-drive settle (issue #33)', () => {
   it('retries a failed afk Run within the cap, then Escalates when it is exhausted', async () => {
     // The Drive Prompt template reaches the harness; make it crash before responding.
     build(config({ autoRetry: 1, prompt: JSON.stringify({ exit: 'crash-before-response' }) }));
-    const task = tasks.upsertMirrored(mirroredAfk(7));
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
 
     // Attempt 1 fails → retry: ready, still afk, not yet escalated.
     await startMirrored(task.id);
-    const afterFirst = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const afterFirst = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (t.state !== 'ready') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
@@ -419,8 +419,8 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     // Attempt 2 fails → cap exhausted → Escalate: ready + hitl + flagged.
     await startMirrored(task.id);
-    const afterSecond = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const afterSecond = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (!t.escalated) throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
@@ -434,11 +434,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // closing the ticket — exactly the "parked / not done" case. autoRetry 0 so
     // the exhausted-continue unresolved path Escalates to a deterministic end.
     build(config({ continueAttempts: 2, autoRetry: 0 }), 'open');
-    const task = tasks.upsertMirrored(mirroredAfk(7));
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
-    const settled = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const settled = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (!t.escalated) throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
@@ -451,11 +451,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
   it('continueAttempts 0 keeps the old single-turn behaviour — no continue re-prompt', async () => {
     build(config({ continueAttempts: 0, autoRetry: 0 }), 'open');
-    const task = tasks.upsertMirrored(mirroredAfk(7));
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
-    await vi.waitFor(() => {
-      if (!tasks.get(task.id).escalated) throw new Error('not escalated yet');
+    await vi.waitFor(async () => {
+      if (!(await tasks.get(task.id)).escalated) throw new Error('not escalated yet');
     }, { timeout: 10_000 });
 
     const lastRun = (await runs.listForTask(task.id)).at(-1)!;
@@ -469,11 +469,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // unresolved. (The finish→verify→land→close happy path needs the MCP endpoint
     // and is covered at the execution seam.)
     build(config({ continueAttempts: 0, autoRetry: 0 }), 'closed');
-    const task = tasks.upsertMirrored(mirroredAfk(7));
+    const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
-    const settled = await vi.waitFor(() => {
-      const t = tasks.get(task.id);
+    const settled = await vi.waitFor(async () => {
+      const t = await tasks.get(task.id);
       if (!t.escalated) throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
@@ -510,7 +510,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     it('transfers a direct-mode lease to a successor sharing the Execution Chain, instead of conflicting', async () => {
       build(config());
-      const task = tasks.upsertMirrored(mirroredAfk(7));
+      const task = await tasks.upsertMirrored(mirroredAfk(7));
       const { predecessorId, key, leaseStore } = await seedPredecessorLease(task.id);
 
       // The predecessor holds the lease on this Task's own chain, so the
@@ -530,8 +530,8 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', async () => {
       build(config());
-      const otherTask = tasks.upsertMirrored(mirroredAfk(8));
-      const target = tasks.upsertMirrored(mirroredAfk(9));
+      const otherTask = await tasks.upsertMirrored(mirroredAfk(8));
+      const target = await tasks.upsertMirrored(mirroredAfk(9));
 
       // A predecessor Run on a DIFFERENT, unrelated Task (no reattempt link),
       // holding the SAME direct-mode key (same workspace workingDir).
@@ -541,7 +541,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       // resolveForTask mints it a fresh chain (branch 3) — different from the
       // predecessor's. sharesLineOfWork is false, so the funnel falls through
       // to acquire, which still hits the unique-key CAS.
-      tasks.setState(target.id, 'running');
+      await tasks.setState(target.id, 'running');
       let caught: unknown;
       try {
         await runner.launchClaimed(target.id);

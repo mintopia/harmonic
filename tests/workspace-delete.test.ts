@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { trackerDismissals, runs, runFacts } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 import { defaultConfig } from '../src/config.js';
@@ -17,16 +18,21 @@ import { allWorkspaces } from './helpers.js';
 describe('WorkspaceService.delete guards (issue #61)', () => {
   let dataDir: string;
   let db: Db;
+  // TaskService migrated to the async libsql Db (ADR-0029); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let workspaces: WorkspaceService;
   let tasks: TaskService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-del-'));
     db = openDb(dataDir); // backfills the single Default Workspace
+    asyncDb = await openAsyncDb(dataDir);
     workspaces = new WorkspaceService(db);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await asyncDb.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -38,10 +44,10 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     expect(workspaces.list()).toHaveLength(0);
   });
 
-  it('still refuses a Workspace with a running Task (409/conflict)', () => {
+  it('still refuses a Workspace with a running Task (409/conflict)', async () => {
     const ws = workspaces.list()[0]!;
-    const task = tasks.create({ prompt: 'busy' });
-    tasks.setState(task.id, 'running');
+    const task = await tasks.create({ prompt: 'busy' });
+    await tasks.setState(task.id, 'running');
 
     expect(() => workspaces.delete(ws.id)).toThrowError(/running task/);
     expect(workspaces.list()).toHaveLength(1); // untouched
@@ -57,9 +63,9 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     expect(db.select().from(trackerDismissals).all()).toHaveLength(0);
   });
 
-  it('purges the whole Run tree (run_facts), not just run_events, with no FK error (issue #162)', () => {
+  it('purges the whole Run tree (run_facts), not just run_events, with no FK error (issue #162)', async () => {
     const ws = workspaces.list()[0]!;
-    const task = tasks.create({ prompt: 'has a run with facts' });
+    const task = await tasks.create({ prompt: 'has a run with facts' });
     const runId = db
       .insert(runs)
       .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now() })

@@ -282,10 +282,10 @@ describe('runCritic (issue #136)', () => {
     // one-off local fixture (not the shared beforeEach pattern), so the async
     // connection is opened and closed inline within the test.
     const asyncDb = await openAsyncDb(dbDir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
     const store = new VerificationAttemptStore(db);
-    const runId = (await runStore.create(tasks.create({ prompt: 'verify me', state: 'ready' }).id)).id;
+    const runId = (await runStore.create((await tasks.create({ prompt: 'verify me', state: 'ready' })).id)).id;
 
     store.append(runId, criticAttemptToInput(attempt));
 

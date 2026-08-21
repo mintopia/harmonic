@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { MirrorCoordinator } from '../src/tracker/coordinator.js';
@@ -64,66 +65,71 @@ function fakeAdapter(opts: { claimThrows?: boolean } = {}) {
 describe('MirrorCoordinator (issue #32)', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-coord-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     wsId = allWorkspaces(db)()[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('foreignAssignee: true only for a mirrored Task an assignee Harmonic did not place', async () => {
-    const foreign = tasks.upsertMirrored(mirrored(1));
-    const ours = tasks.upsertMirrored(mirrored(2));
-    const unassigned = tasks.upsertMirrored(mirrored(3));
-    const native = tasks.create({ prompt: 'n', state: 'ready' });
+    const foreign = await tasks.upsertMirrored(mirrored(1));
+    const ours = await tasks.upsertMirrored(mirrored(2));
+    const unassigned = await tasks.upsertMirrored(mirrored(3));
+    const native = await tasks.create({ prompt: 'n', state: 'ready' });
 
     const { adapter } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);
     await coord.observe(adapter, [ticket(1, ['human']), ticket(2, ['me']), ticket(3, [])]);
 
-    expect(coord.foreignAssignee(tasks.get(foreign.id))).toBe(true);
-    expect(coord.foreignAssignee(tasks.get(ours.id))).toBe(false);
-    expect(coord.foreignAssignee(tasks.get(unassigned.id))).toBe(false);
-    expect(coord.foreignAssignee(tasks.get(native.id))).toBe(false);
+    expect(coord.foreignAssignee(await tasks.get(foreign.id))).toBe(true);
+    expect(coord.foreignAssignee(await tasks.get(ours.id))).toBe(false);
+    expect(coord.foreignAssignee(await tasks.get(unassigned.id))).toBe(false);
+    expect(coord.foreignAssignee(await tasks.get(native.id))).toBe(false);
   });
 
   it('recheckAndClaim: yields to a fresh foreign grab, otherwise claims — and proceeds through a failed claim', async () => {
-    const task = tasks.upsertMirrored(mirrored(7));
+    const task = await tasks.upsertMirrored(mirrored(7));
 
     const grabbed = fakeAdapter();
     grabbed.setRead(ticket(7, ['human']));
     const coordA = new MirrorCoordinator(tasks, wsId);
     await coordA.observe(grabbed.adapter, [ticket(7, [])]);
-    expect(await coordA.recheckAndClaim(tasks.get(task.id))).toBe('yield');
+    expect(await coordA.recheckAndClaim(await tasks.get(task.id))).toBe('yield');
     expect(grabbed.calls.claim).toEqual([]);
 
     const open = fakeAdapter();
     open.setRead(ticket(7, []));
     const coordB = new MirrorCoordinator(tasks, wsId);
     await coordB.observe(open.adapter, [ticket(7, [])]);
-    expect(await coordB.recheckAndClaim(tasks.get(task.id))).toBe('spawn');
+    expect(await coordB.recheckAndClaim(await tasks.get(task.id))).toBe('spawn');
     expect(open.calls.claim).toEqual([7]);
 
     const failing = fakeAdapter({ claimThrows: true });
     failing.setRead(ticket(7, []));
     const coordC = new MirrorCoordinator(tasks, wsId);
     await coordC.observe(failing.adapter, [ticket(7, [])]);
-    expect(await coordC.recheckAndClaim(tasks.get(task.id))).toBe('spawn'); // best-effort: spawn anyway
+    expect(await coordC.recheckAndClaim(await tasks.get(task.id))).toBe('spawn'); // best-effort: spawn anyway
   });
 
   it('reconcile: re-claims a running Task, releases an escalated one, leaves failed/foreign/completed alone', async () => {
-    const running = tasks.upsertMirrored(mirrored(10));
-    tasks.setState(running.id, 'running'); // claimed, but the scan shows it dropped
-    const escalated = tasks.upsertMirrored(mirrored(11));
-    tasks.escalate(escalated.id); // handed back to a human (retries exhausted / prompt), still ours
-    const retrying = tasks.upsertMirrored(mirrored(14));
-    tasks.setState(retrying.id, 'failed'); // mid Auto-Retry: bare failed is no longer a hand-back (issue #33)
-    tasks.upsertMirrored(mirrored(12)); // a person owns it — hands off
-    tasks.upsertMirrored(mirrored(13, { closed: true })); // completed → close path (D5), not us
+    const running = await tasks.upsertMirrored(mirrored(10));
+    await tasks.setState(running.id, 'running'); // claimed, but the scan shows it dropped
+    const escalated = await tasks.upsertMirrored(mirrored(11));
+    await tasks.escalate(escalated.id); // handed back to a human (retries exhausted / prompt), still ours
+    const retrying = await tasks.upsertMirrored(mirrored(14));
+    await tasks.setState(retrying.id, 'failed'); // mid Auto-Retry: bare failed is no longer a hand-back (issue #33)
+    await tasks.upsertMirrored(mirrored(12)); // a person owns it — hands off
+    await tasks.upsertMirrored(mirrored(13, { closed: true })); // completed → close path (D5), not us
 
     const { adapter, calls } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);

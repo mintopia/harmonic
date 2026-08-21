@@ -29,13 +29,13 @@ describe('VerificationAttemptStore (issue #136)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-verification-attempts-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
     attempts = new VerificationAttemptStore(db);
 
-    const task = tasks.create({ prompt: 'verify me', state: 'ready' });
+    const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
-    const otherTask = tasks.create({ prompt: 'separate log', state: 'ready' });
+    const otherTask = await tasks.create({ prompt: 'separate log', state: 'ready' });
     otherRunId = (await runStore.create(otherTask.id)).id;
   });
   afterEach(async () => {

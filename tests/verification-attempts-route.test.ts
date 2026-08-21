@@ -19,7 +19,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
 
   it("lists a run's verification attempts in seq order", async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'verification target' });
-    const task = ctx().tasks.get(created.body.id);
+    const task = await ctx().tasks.get(created.body.id);
     const run = await ctx().runs.create(task.id);
 
     ctx().verificationAttempts.append(run.id, {

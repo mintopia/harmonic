@@ -47,7 +47,7 @@ describe('LandingCoordinator (issue #115)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-coordinator-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
     runFacts = new RunFactStore(asyncDb);
@@ -64,12 +64,12 @@ describe('LandingCoordinator (issue #115)', () => {
    * `awaiting-review`, Run `running` in `phase:'review'` — the state
    * `ReviewService.accept` hands off in. */
   async function fixture(): Promise<{ task: TaskRow; run: RunRow }> {
-    const created = tasks.create({ prompt: 'land me', state: 'ready' });
-    tasks.setState(created.id, 'running');
+    const created = await tasks.create({ prompt: 'land me', state: 'ready' });
+    await tasks.setState(created.id, 'running');
     let run = await runStore.create(created.id);
     run = await runStore.update(run.id, { phase: 'review' });
-    tasks.setState(created.id, 'awaiting-review');
-    return { task: tasks.get(created.id), run };
+    await tasks.setState(created.id, 'awaiting-review');
+    return { task: await tasks.get(created.id), run };
   }
 
   function ok(observed: Record<string, unknown> = {}): Promise<LandingEffectOutcome> {
@@ -104,7 +104,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const landedRun = await runStore.get(run.id);
     expect(landedRun.state).toBe('completed');
     expect(landedRun.phase).toBe('terminal');
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('completed');
   });
 
   it('a merge-conflict-style failure stops the loop and leaves the Task awaiting-review (unsettled)', async () => {
@@ -122,7 +122,7 @@ describe('LandingCoordinator (issue #115)', () => {
     // Nothing settled: the Run never left `running`, the Task never left
     // `awaiting-review` — exactly today's merge-conflict behaviour.
     expect((await runStore.get(run.id)).state).toBe('running');
-    expect(tasks.get(task.id).state).toBe('awaiting-review');
+    expect((await tasks.get(task.id)).state).toBe('awaiting-review');
 
     const rows = journal.views(run.id);
     expect(rows.map((r) => r.kind)).toEqual(['ponc', 'intent', 'result']);
@@ -152,7 +152,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('completed');
 
     // The cancel fact is still in the log — audit, not decisive.
     const cancelFacts = (await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel');
@@ -194,7 +194,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const afterCancel = await runStore.get(run.id);
     expect(afterCancel.state).toBe('completed');
     expect(afterCancel.phase).toBe('terminal');
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('completed');
     expect((await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel')).toHaveLength(1);
 
     resolveApply({ ok: true, observed: {} });
@@ -267,7 +267,7 @@ describe('LandingCoordinator (issue #115)', () => {
     // operator-cancel fact within the frozen PONC window — the accept cannot
     // flip the Run back to completed.
     expect((await runStore.get(run.id)).state).toBe('cancelled');
-    expect(tasks.get(task.id).state).toBe('awaiting-review'); // taskAction 'none' on cancel left it here
+    expect((await tasks.get(task.id)).state).toBe('awaiting-review'); // taskAction 'none' on cancel left it here
   });
 
   it('an operator-accept still wins over a cancel appended AFTER the land\'s PONC (issue #191)', async () => {
@@ -289,7 +289,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
-    expect(tasks.get(task.id).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('completed');
 
     resolveApply({ ok: true, observed: {} });
     expect(await landPromise).toEqual({ ok: true });

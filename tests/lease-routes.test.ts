@@ -33,14 +33,14 @@ describe('Work Context lease operator surface (issue #125)', () => {
    * store-level fixture style other route tests use (`runKeyRows`, etc). */
   const seedLease = async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'lease target' });
-    let task = ctx().tasks.get(created.body.id);
+    let task = await ctx().tasks.get(created.body.id);
     const run = await ctx().runs.create(task.id);
     const key = workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
     const lease = ctx().leases.acquire(key, run.id, 'executing');
     // A Task genuinely occupying a context is `running` (Runner.beginRun flips
     // this before acquiring the lease) — matching that here keeps the Task
     // itself out of its own "waiting" count in the diagnostics view.
-    task = ctx().tasks.setState(task.id, 'running');
+    task = await ctx().tasks.setState(task.id, 'running');
     return { task, run, key, lease };
   };
   const ctx = () => server.app.ctx;
@@ -190,7 +190,7 @@ describe('Work Context lease MCP tools (issue #125)', () => {
     );
 
     const created = await server.api('POST', '/api/tasks', { prompt: 'mcp lease target' });
-    const task = server.app.ctx.tasks.get(created.body.id);
+    const task = await server.app.ctx.tasks.get(created.body.id);
     const run = await server.app.ctx.runs.create(task.id);
     const realKey = workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
     server.app.ctx.leases.acquire(realKey, run.id, 'executing');

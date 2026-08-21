@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { runs, runEvents, runFacts, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
@@ -18,15 +19,17 @@ import { allWorkspaces } from './helpers.js';
 describe('TaskService.delete (issue #162)', () => {
   let dataDir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasksSvc: TaskService;
   let removedIds: number[];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-task-del-'));
     db = openDb(dataDir);
+    asyncDb = await openAsyncDb(dataDir);
     removedIds = [];
     tasksSvc = new TaskService(
-      db,
+      asyncDb,
       () => defaultConfig(),
       allWorkspaces(db),
       () => {},
@@ -34,18 +37,19 @@ describe('TaskService.delete (issue #162)', () => {
       (id) => removedIds.push(id),
     );
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await asyncDb.close();
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('removes the tasks row for a native task', () => {
-    const task = tasksSvc.create({ prompt: 'delete me' });
-    tasksSvc.delete(task.id);
-    expect(() => tasksSvc.get(task.id)).toThrowError(/not found/);
+  it('removes the tasks row for a native task', async () => {
+    const task = await tasksSvc.create({ prompt: 'delete me' });
+    await tasksSvc.delete(task.id);
+    await expect(tasksSvc.get(task.id)).rejects.toThrow(/not found/);
   });
 
-  it('cascades Runs and their children (run_events, run_facts) with no FK error', () => {
-    const task = tasksSvc.create({ prompt: 'has runs' });
+  it('cascades Runs and their children (run_events, run_facts) with no FK error', async () => {
+    const task = await tasksSvc.create({ prompt: 'has runs' });
     const runId = db
       .insert(runs)
       .values({ taskId: task.id, attempt: 1, state: 'completed', startedAt: Date.now(), finishedAt: Date.now() })
@@ -54,23 +58,23 @@ describe('TaskService.delete (issue #162)', () => {
     db.insert(runEvents).values({ runId, seq: 1, ts: Date.now(), type: 'lifecycle', payload: '{}' }).run();
     db.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run();
 
-    expect(() => tasksSvc.delete(task.id)).not.toThrow();
+    await tasksSvc.delete(task.id);
 
     expect(db.select().from(runs).where(eq(runs.taskId, task.id)).all()).toHaveLength(0);
     expect(db.select().from(runEvents).where(eq(runEvents.runId, runId)).all()).toHaveLength(0);
     expect(db.select().from(runFacts).where(eq(runFacts.runId, runId)).all()).toHaveLength(0);
   });
 
-  it('removes dependency edges in both directions and re-derives a former dependent blocked→ready', () => {
-    const blocker = tasksSvc.create({ prompt: 'blocker' });
-    const dependent = tasksSvc.create({ prompt: 'dependent', dependsOn: [blocker.id] });
-    expect(tasksSvc.get(dependent.id).state).toBe('blocked');
+  it('removes dependency edges in both directions and re-derives a former dependent blocked→ready', async () => {
+    const blocker = await tasksSvc.create({ prompt: 'blocker' });
+    const dependent = await tasksSvc.create({ prompt: 'dependent', dependsOn: [blocker.id] });
+    expect((await tasksSvc.get(dependent.id)).state).toBe('blocked');
 
     // Also give the blocker a dependency of its own, to prove the taskId-side edge is removed too.
-    const grandBlocker = tasksSvc.create({ prompt: 'grand-blocker' });
-    tasksSvc.addDependency(blocker.id, grandBlocker.id);
+    const grandBlocker = await tasksSvc.create({ prompt: 'grand-blocker' });
+    await tasksSvc.addDependency(blocker.id, grandBlocker.id);
 
-    tasksSvc.delete(blocker.id);
+    await tasksSvc.delete(blocker.id);
 
     const remaining = db
       .select()
@@ -78,33 +82,33 @@ describe('TaskService.delete (issue #162)', () => {
       .all()
       .filter((r) => r.taskId === blocker.id || r.dependsOnId === blocker.id);
     expect(remaining).toHaveLength(0);
-    expect(tasksSvc.get(dependent.id).state).toBe('ready');
+    expect((await tasksSvc.get(dependent.id)).state).toBe('ready');
   });
 
-  it('nulls a re-attempt reattemptOf instead of deleting it when the original is deleted', () => {
-    const original = tasksSvc.create({ prompt: 'original' });
+  it('nulls a re-attempt reattemptOf instead of deleting it when the original is deleted', async () => {
+    const original = await tasksSvc.create({ prompt: 'original' });
     // reattempt requires a terminal state.
-    tasksSvc.setState(original.id, 'running');
-    tasksSvc.setState(original.id, 'failed');
-    const reattempt = tasksSvc.reattempt(original.id, 'try again');
+    await tasksSvc.setState(original.id, 'running');
+    await tasksSvc.setState(original.id, 'failed');
+    const reattempt = await tasksSvc.reattempt(original.id, 'try again');
     expect(reattempt.reattemptOf).toBe(original.id);
 
-    tasksSvc.delete(original.id);
+    await tasksSvc.delete(original.id);
 
-    expect(tasksSvc.get(reattempt.id).reattemptOf).toBeNull();
+    expect((await tasksSvc.get(reattempt.id)).reattemptOf).toBeNull();
   });
 
-  it('throws invalid_state for a running task and leaves it intact', () => {
-    const task = tasksSvc.create({ prompt: 'busy' });
-    tasksSvc.setState(task.id, 'running');
+  it('throws invalid_state for a running task and leaves it intact', async () => {
+    const task = await tasksSvc.create({ prompt: 'busy' });
+    await tasksSvc.setState(task.id, 'running');
 
-    expect(() => tasksSvc.delete(task.id)).toThrowError(/running/);
-    expect(tasksSvc.get(task.id).state).toBe('running');
+    await expect(tasksSvc.delete(task.id)).rejects.toThrow(/running/);
+    expect((await tasksSvc.get(task.id)).state).toBe('running');
   });
 
-  it('writes a tracker_dismissals row and removes the task for a mirrored delete; a second delete throws not_found', () => {
+  it('writes a tracker_dismissals row and removes the task for a mirrored delete; a second delete throws not_found', async () => {
     const workspace = allWorkspaces(db)()[0]!;
-    const mirrored = tasksSvc.upsertMirrored(
+    const mirrored = await tasksSvc.upsertMirrored(
       {
         trackerRef: 4242,
         prompt: 'mirrored issue',
@@ -117,7 +121,7 @@ describe('TaskService.delete (issue #162)', () => {
       workspace.id,
     );
 
-    tasksSvc.delete(mirrored.id);
+    await tasksSvc.delete(mirrored.id);
 
     const tombstones = db
       .select()
@@ -128,10 +132,10 @@ describe('TaskService.delete (issue #162)', () => {
     expect(tombstones[0]!.workspaceId).toBe(workspace.id);
     expect(db.select().from(tasks).where(eq(tasks.id, mirrored.id)).all()).toHaveLength(0);
 
-    expect(() => tasksSvc.delete(mirrored.id)).toThrowError(/not found/);
+    await expect(tasksSvc.delete(mirrored.id)).rejects.toThrow(/not found/);
   });
 
-  it('keeps a Session another Task still references, and removes it once orphaned', () => {
+  it('keeps a Session another Task still references, and removes it once orphaned', async () => {
     const sessionId = db
       .insert(sessions)
       .values({
@@ -145,8 +149,8 @@ describe('TaskService.delete (issue #162)', () => {
       })
       .returning({ id: sessions.id })
       .get()!.id;
-    const taskA = tasksSvc.create({ prompt: 'shares a session' });
-    const taskB = tasksSvc.create({ prompt: 'also shares it' });
+    const taskA = await tasksSvc.create({ prompt: 'shares a session' });
+    const taskB = await tasksSvc.create({ prompt: 'also shares it' });
     const mk = (taskId: number) =>
       db
         .insert(runs)
@@ -156,18 +160,18 @@ describe('TaskService.delete (issue #162)', () => {
     mk(taskB.id);
 
     // Deleting A must not FK-violate on the shared Session, and must leave it.
-    expect(() => tasksSvc.delete(taskA.id)).not.toThrow();
+    await tasksSvc.delete(taskA.id);
     expect(db.select().from(sessions).where(eq(sessions.id, sessionId)).all()).toHaveLength(1);
     expect(db.select().from(runs).where(eq(runs.taskId, taskB.id)).all()).toHaveLength(1);
 
     // Once B (the last referrer) goes, the now-orphaned Session is removed.
-    tasksSvc.delete(taskB.id);
+    await tasksSvc.delete(taskB.id);
     expect(db.select().from(sessions).where(eq(sessions.id, sessionId)).all()).toHaveLength(0);
   });
 
-  it('fires onRemoved with the deleted id', () => {
-    const task = tasksSvc.create({ prompt: 'watch me go' });
-    tasksSvc.delete(task.id);
+  it('fires onRemoved with the deleted id', async () => {
+    const task = await tasksSvc.create({ prompt: 'watch me go' });
+    await tasksSvc.delete(task.id);
     expect(removedIds).toEqual([task.id]);
   });
 });

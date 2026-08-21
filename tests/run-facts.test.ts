@@ -30,13 +30,13 @@ describe('RunFactStore (issue #112)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-run-facts-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
     facts = new RunFactStore(asyncDb);
 
-    const task = tasks.create({ prompt: 'emit facts', state: 'ready' });
+    const task = await tasks.create({ prompt: 'emit facts', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
-    const otherTask = tasks.create({ prompt: 'separate log', state: 'ready' });
+    const otherTask = await tasks.create({ prompt: 'separate log', state: 'ready' });
     otherRunId = (await runStore.create(otherTask.id)).id;
   });
   afterEach(async () => {

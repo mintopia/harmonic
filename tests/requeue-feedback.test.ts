@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
@@ -40,50 +41,55 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
 describe('requeue feedback — origin-aware placement', () => {
   let dir: string;
   let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-requeue-'));
     db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     wsId = allWorkspaces(db)()[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  it('bakes feedback into a native Task’s prompt, leaving the feedback column clear', () => {
-    const task = tasks.create({ prompt: 'original prompt' });
-    tasks.setState(task.id, 'running');
-    tasks.setState(task.id, 'failed');
+  it('bakes feedback into a native Task’s prompt, leaving the feedback column clear', async () => {
+    const task = await tasks.create({ prompt: 'original prompt' });
+    await tasks.setState(task.id, 'running');
+    await tasks.setState(task.id, 'failed');
 
-    const requeued = tasks.requeue(task.id, '  do it differently  ');
+    const requeued = await tasks.requeue(task.id, '  do it differently  ');
     expect(requeued.state).toBe('ready');
     expect(requeued.prompt).toContain('original prompt');
     expect(requeued.prompt).toContain('do it differently');
     expect(requeued.feedback).toBeNull();
   });
 
-  it('keeps a mirrored Task’s prompt pristine and carries feedback in the column', () => {
-    const [mirrored] = mirrorScan(tasks, [ticket({ number: 100 })], wsId);
+  it('keeps a mirrored Task’s prompt pristine and carries feedback in the column', async () => {
+    const [mirrored] = await mirrorScan(tasks, [ticket({ number: 100 })], wsId);
     const derivedPrompt = mirrored!.prompt;
-    tasks.setState(mirrored!.id, 'running');
-    tasks.setState(mirrored!.id, 'failed');
+    await tasks.setState(mirrored!.id, 'running');
+    await tasks.setState(mirrored!.id, 'failed');
 
-    const requeued = tasks.requeue(mirrored!.id, 'try harder');
+    const requeued = await tasks.requeue(mirrored!.id, 'try harder');
     expect(requeued.state).toBe('ready');
     expect(requeued.prompt).toBe(derivedPrompt); // untouched — no baked-in feedback
     expect(requeued.feedback).toBe('try harder');
   });
 
-  it('mirrored feedback survives a re-poll (upsertMirrored never clears the column)', () => {
-    const [mirrored] = mirrorScan(tasks, [ticket({ number: 100 })], wsId);
-    tasks.setState(mirrored!.id, 'running');
-    tasks.setState(mirrored!.id, 'failed');
-    tasks.requeue(mirrored!.id, 'try harder');
+  it('mirrored feedback survives a re-poll (upsertMirrored never clears the column)', async () => {
+    const [mirrored] = await mirrorScan(tasks, [ticket({ number: 100 })], wsId);
+    await tasks.setState(mirrored!.id, 'running');
+    await tasks.setState(mirrored!.id, 'failed');
+    await tasks.requeue(mirrored!.id, 'try harder');
 
     // The ticket is still open — the next poll re-derives the prompt but must
     // leave the operator's feedback (and the ready state) in place.
-    const [repolled] = mirrorScan(tasks, [ticket({ number: 100 })], wsId);
+    const [repolled] = await mirrorScan(tasks, [ticket({ number: 100 })], wsId);
     expect(repolled!.state).toBe('ready');
     expect(repolled!.feedback).toBe('try harder');
   });

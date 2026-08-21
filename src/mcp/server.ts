@@ -89,7 +89,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         dependsOn: z.array(z.number().int().positive()).optional(),
       },
     },
-    wrap((args) => ctx.tasks.withDeps(ctx.tasks.create(args))),
+    wrapAsync(async (args) => ctx.tasks.withDeps(await ctx.tasks.create(args))),
   );
 
   server.registerTool(
@@ -104,13 +104,13 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         priority: z.enum(PRIORITIES).optional(),
       },
     },
-    wrap((args) => ctx.tasks.listWithDeps(args)),
+    wrapAsync((args) => ctx.tasks.listWithDeps(args)),
   );
 
   server.registerTool(
     'get_task',
     { description: 'Get a Task with its dependencies and dependents.', inputSchema: taskId },
-    wrap(({ taskId }) => ctx.tasks.withDeps(ctx.tasks.get(taskId))),
+    wrapAsync(async ({ taskId }) => ctx.tasks.withDeps(await ctx.tasks.get(taskId))),
   );
 
   server.registerTool(
@@ -127,7 +127,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         priority: z.enum(PRIORITIES).optional(),
       },
     },
-    wrap(({ taskId, ...patch }) => ctx.tasks.withDeps(ctx.tasks.update(taskId, patch))),
+    wrapAsync(async ({ taskId, ...patch }) => ctx.tasks.withDeps(await ctx.tasks.update(taskId, patch))),
   );
 
   server.registerTool(
@@ -137,9 +137,9 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'Queue a Task for execution: promotes a draft to ready, or re-queues a failed Task (optionally with feedback appended to its prompt).',
       inputSchema: { ...taskId, feedback: z.string().optional() },
     },
-    wrap(({ taskId, feedback }) => {
-      const task = ctx.tasks.get(taskId);
-      const queued = task.state === 'failed' ? ctx.tasks.requeue(taskId, feedback) : ctx.tasks.promote(taskId);
+    wrapAsync(async ({ taskId, feedback }) => {
+      const task = await ctx.tasks.get(taskId);
+      const queued = task.state === 'failed' ? await ctx.tasks.requeue(taskId, feedback) : await ctx.tasks.promote(taskId);
       return ctx.tasks.withDeps(queued);
     }),
   );
@@ -150,13 +150,13 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: 'Cancel a Task (any non-terminal state); optionally cancel everything depending on it too.',
       inputSchema: { ...taskId, withDependents: z.boolean().optional() },
     },
-    wrap(({ taskId, withDependents }) => {
+    wrapAsync(async ({ taskId, withDependents }) => {
       if (withDependents) {
-        const cancelled = ctx.tasks.cancelWithDependents(taskId);
+        const cancelled = await ctx.tasks.cancelWithDependents(taskId);
         cancelled.forEach((id) => ctx.runner.cancelForTask(id));
         return { cancelled };
       }
-      const task = ctx.tasks.cancel(taskId);
+      const task = await ctx.tasks.cancel(taskId);
       ctx.runner.cancelForTask(taskId);
       return ctx.tasks.withDeps(task);
     }),
@@ -169,9 +169,9 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'Permanently delete a Task and its Runs, Usage, and Dependency edges (a mirrored Task is also dismissed so a re-poll will not re-create it). Distinct from cancel_task, which keeps the record. Rejected while the Task is running.',
       inputSchema: { ...taskId },
     },
-    wrap(({ taskId }) => {
+    wrapAsync(async ({ taskId }) => {
       ctx.runner.cancelForTask(taskId);
-      ctx.tasks.delete(taskId);
+      await ctx.tasks.delete(taskId);
       return { deleted: taskId };
     }),
   );
@@ -182,7 +182,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: 'Make a Task depend on another (dependent stays blocked until the dependency is completed). Cycles are rejected.',
       inputSchema: { ...taskId, dependsOnId: z.number().int().positive() },
     },
-    wrap(({ taskId, dependsOnId }) => ctx.tasks.addDependency(taskId, dependsOnId)),
+    wrapAsync(({ taskId, dependsOnId }) => ctx.tasks.addDependency(taskId, dependsOnId)),
   );
 
   server.registerTool(
@@ -191,14 +191,14 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: 'Remove a dependency edge from a Task.',
       inputSchema: { ...taskId, dependsOnId: z.number().int().positive() },
     },
-    wrap(({ taskId, dependsOnId }) => ctx.tasks.removeDependency(taskId, dependsOnId)),
+    wrapAsync(({ taskId, dependsOnId }) => ctx.tasks.removeDependency(taskId, dependsOnId)),
   );
 
   server.registerTool(
     'get_runs',
     { description: "List a Task's Runs with their results and usage; a retry is a new Run.", inputSchema: taskId },
     wrapAsync(async ({ taskId }) => {
-      ctx.tasks.get(taskId);
+      await ctx.tasks.get(taskId);
       return (await ctx.runs.listForTask(taskId)).map(serializeRun);
     }),
   );
@@ -223,8 +223,8 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'parked, and Harmonic will prompt you to continue.',
       inputSchema: { ...taskId, summary: z.string().optional().describe('Optional note on what was finished') },
     },
-    wrap(({ taskId }) => {
-      ctx.tasks.get(taskId); // 404s a bad id via DomainError
+    wrapAsync(async ({ taskId }) => {
+      await ctx.tasks.get(taskId); // 404s a bad id via DomainError
       return { acknowledged: true, running: ctx.runner.markAgentFinished(taskId) };
     }),
   );
@@ -238,8 +238,8 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'instead of guessing or idle-waiting. Include why in `reason`.',
       inputSchema: { ...taskId, reason: z.string().min(1).describe('Why a human is needed') },
     },
-    wrap(({ taskId, reason }) => {
-      ctx.tasks.get(taskId); // 404s a bad id via DomainError
+    wrapAsync(async ({ taskId, reason }) => {
+      await ctx.tasks.get(taskId); // 404s a bad id via DomainError
       return { acknowledged: true, running: ctx.runner.markEscalate(taskId, reason) };
     }),
   );
@@ -256,7 +256,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       return buildLeaseDiagnostics({
         leases: ctx.leases.listAll(),
         runs: await ctx.runs.listAll(),
-        tasks: ctx.tasks.list(),
+        tasks: await ctx.tasks.list(),
         waitingSince: (id) => ctx.autoRunner.waitingSince(id),
         now: Date.now(),
       });

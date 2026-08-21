@@ -60,8 +60,15 @@ export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
  * mirrored Task) is skipped outright: the tombstone means "stop mirroring this
  * issue here", so re-polling it here would defeat the delete.
  */
-export function mirrorScan(tasks: TaskService, tickets: Ticket[], workspaceId: number): TaskRow[] {
-  const issues = tickets.filter((t) => !t.isMap && !tasks.isDismissed(workspaceId, t.number));
+export async function mirrorScan(
+  tasks: TaskService,
+  tickets: Ticket[],
+  workspaceId: number,
+): Promise<TaskRow[]> {
+  const issues: Ticket[] = [];
+  for (const t of tickets) {
+    if (!t.isMap && !(await tasks.isDismissed(workspaceId, t.number))) issues.push(t);
+  }
   // An Epic is any ticket with children — a Map or a Spec — identified
   // structurally as the parent of some ticket in this scan. Epics are containers:
   // they neither run (drive forced hitl, below) nor block their children (a
@@ -69,17 +76,22 @@ export function mirrorScan(tasks: TaskService, tickets: Ticket[], workspaceId: n
   // that pre-date this rule, since reconcileMirroredDeps deletes edges not in
   // the desired set).
   const epicRefs = new Set(tickets.map((t) => t.parent).filter((p): p is number => p != null));
-  const rows = issues.map((t) => tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number)), workspaceId));
+  // Sequential upsert: the writes serialize through the single-writer queue
+  // anyway, and the reconcile pass below reads `idByRef` built from every row.
+  const rows: TaskRow[] = [];
+  for (const t of issues) {
+    rows.push(await tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number)), workspaceId));
+  }
   const idByRef = new Map(rows.map((r) => [r.trackerRef!, r.id]));
-  issues.forEach((t, i) => {
-    const blockerIds = t.blockedBy
+  for (let i = 0; i < issues.length; i++) {
+    const blockerIds = issues[i]!.blockedBy
       .filter((b) => !epicRefs.has(b.number))
       .map((b) => idByRef.get(b.number))
       .filter((id): id is number => id !== undefined);
-    tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
-  });
+    await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
+  }
   // Re-fetch: reconcile may have re-derived blocked⇄ready after the upsert snapshot.
-  return rows.map((r) => tasks.get(r.id));
+  return Promise.all(rows.map((r) => tasks.get(r.id)));
 }
 
 export interface DerivedMap {

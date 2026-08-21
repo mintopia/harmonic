@@ -124,7 +124,7 @@ describe('task authoring', () => {
 
   it('refuses to delete a running task with 409, leaving it intact (issue #162)', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'Busy' });
-    server.app.ctx.tasks.setState(created.body.id, 'running');
+    await server.app.ctx.tasks.setState(created.body.id, 'running');
 
     const deleted = await server.api('DELETE', `/api/tasks/${created.body.id}`);
     expect(deleted.status).toBe(409);
@@ -138,8 +138,8 @@ describe('task authoring', () => {
 
   it('deletes a mirrored task and tombstones its tracker ref so a re-poll cannot resurrect it (issue #162)', async () => {
     const seeded = await server.api('POST', '/api/tasks', { prompt: 'seed for workspaceId' });
-    const seededTask = server.app.ctx.tasks.get(seeded.body.id);
-    const mirrored = server.app.ctx.tasks.upsertMirrored(
+    const seededTask = await server.app.ctx.tasks.get(seeded.body.id);
+    const mirrored = await server.app.ctx.tasks.upsertMirrored(
       {
         trackerRef: 91234,
         prompt: 'mirrored issue',
@@ -329,7 +329,7 @@ describe('task skipReason (issue #171)', () => {
 
   it('reports the House-Rule skip reason on a ready Task blocked by an occupied direct-mode Work Context', async () => {
     const occupant = await server.api('POST', '/api/tasks', { prompt: 'occupant' });
-    server.app.ctx.tasks.setState(occupant.body.id, 'running');
+    await server.app.ctx.tasks.setState(occupant.body.id, 'running');
 
     const blocked = await server.api('POST', '/api/tasks', {
       prompt: 'blocked, same context',

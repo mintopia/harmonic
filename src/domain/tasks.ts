@@ -1,6 +1,6 @@
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Db } from '../db/index.js';
+import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import {
   tasks,
   taskDependencies,
@@ -23,7 +23,7 @@ import { resolve as resolveOverride } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { decideTaskDeletion } from './task-deletion.js';
-import { deleteRunsAndChildren } from './run-cascade.js';
+import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -146,7 +146,7 @@ export interface MirrorInput {
 
 export class TaskService {
   constructor(
-    private readonly db: Db,
+    private readonly db: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
     private readonly getWorkspaces: () => WorkspaceRow[],
     private readonly onChanged: (task: TaskRow) => void = () => {},
@@ -200,8 +200,8 @@ export class TaskService {
   }
 
   /** The raw stored row (four defaults nullable); TaskService-internal. */
-  private getRaw(id: number): RawTaskRow {
-    const row = this.db.select().from(tasks).where(eq(tasks.id, id)).get();
+  private async getRaw(id: number): Promise<RawTaskRow> {
+    const row = await this.db.read((db) => db.select().from(tasks).where(eq(tasks.id, id)).get());
     if (!row) throw new DomainError('not_found', `task ${id} not found`);
     return row;
   }
@@ -221,37 +221,48 @@ export class TaskService {
     }
   }
 
-  create(input: CreateTaskInput): TaskRow {
+  async create(input: CreateTaskInput): Promise<TaskRow> {
     const workspace = this.resolveWorkspace(input.workspaceId);
     this.assertHarnessConfigured(input.harness);
     const dependsOn = [...new Set(input.dependsOn ?? [])];
-    for (const depId of dependsOn) this.get(depId);
-    const state: TaskState =
-      input.state === 'draft' ? 'draft' : this.hasUnmet(dependsOn) ? 'blocked' : 'ready';
+    for (const depId of dependsOn) await this.get(depId);
     const now = Date.now();
-    // Store the operator's picks raw: an omitted default is `null` ⇒ inherit,
-    // resolved on every read. Working Directory is not inheritable — it is Task
-    // identity — so it is snapshotted from the Workspace at creation.
-    const row = this.db
-      .insert(tasks)
-      .values({
-        prompt: input.prompt,
-        workspaceId: workspace.id,
-        harness: input.harness ?? null,
-        model: input.model ?? null,
-        isolationMode: input.isolationMode ?? null,
-        priority: input.priority ?? null,
-        baseBranch: input.baseBranch ?? null,
-        workingDir: input.workingDir ?? workspace.workingDir,
-        state,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
-      .get();
-    if (dependsOn.length > 0) {
-      this.db.insert(taskDependencies).values(dependsOn.map((dependsOnId) => ({ taskId: row.id, dependsOnId }))).run();
-    }
+    // The initial-state read (unmet deps ⇒ blocked) and both inserts run as one
+    // write-queue unit (ADR-0029 §3): the sync driver ran the whole method with
+    // nothing interleaved, so a dependency completing between the state check and
+    // the insert — which would strand the new Task `blocked` with no re-derive
+    // trigger, since its edges don't exist yet — can't happen here either.
+    const row = await this.db.write(async (db) => {
+      const state: TaskState =
+        input.state === 'draft' ? 'draft' : (await this.depsUnmetVia(db, dependsOn)) ? 'blocked' : 'ready';
+      // Store the operator's picks raw: an omitted default is `null` ⇒ inherit,
+      // resolved on every read. Working Directory is not inheritable — it is Task
+      // identity — so it is snapshotted from the Workspace at creation.
+      const inserted = await db
+        .insert(tasks)
+        .values({
+          prompt: input.prompt,
+          workspaceId: workspace.id,
+          harness: input.harness ?? null,
+          model: input.model ?? null,
+          isolationMode: input.isolationMode ?? null,
+          priority: input.priority ?? null,
+          baseBranch: input.baseBranch ?? null,
+          workingDir: input.workingDir ?? workspace.workingDir,
+          state,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
+        .get();
+      if (dependsOn.length > 0) {
+        await db
+          .insert(taskDependencies)
+          .values(dependsOn.map((dependsOnId) => ({ taskId: inserted.id, dependsOnId })))
+          .run();
+      }
+      return inserted;
+    });
     const task = this.resolve(row);
     this.onChanged(task);
     this.onNotify('task.created', task);
@@ -274,74 +285,77 @@ export class TaskService {
    * the projected Dependency edges (see {@link reconcileMirroredDeps}, issue
    * #31). Mirrored Tasks never enter draft or awaiting-review.
    */
-  upsertMirrored(input: MirrorInput, workspaceId?: number): TaskRow {
+  async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
     // Each Workspace's poll loop passes its own id; the default-Workspace
     // fallback (ADR-0008) keeps callers that predate per-Workspace tracking working.
     const workspace = this.resolveWorkspace(workspaceId);
-    const existing = this.db
-      .select()
-      .from(tasks)
-      .where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef)))
-      .get();
-    const now = Date.now();
-    if (existing) {
-      const state: TaskState =
-        existing.state === 'running'
-          ? existing.state
-          : input.closed
-            ? 'completed'
-            : existing.state;
-      const row = this.db
-        .update(tasks)
-        .set({
+    // The (workspaceId, trackerRef) read and the update-or-insert branch run as
+    // one write-queue unit so the upsert stays atomic under the async driver.
+    const row = await this.db.write(async (db) => {
+      const existing = await db
+        .select()
+        .from(tasks)
+        .where(and(eq(tasks.workspaceId, workspace.id), eq(tasks.trackerRef, input.trackerRef)))
+        .get();
+      const now = Date.now();
+      if (existing) {
+        const state: TaskState =
+          existing.state === 'running'
+            ? existing.state
+            : input.closed
+              ? 'completed'
+              : existing.state;
+        // Re-poll never touches the four operator picks (harness/model/isolation/
+        // priority), so an operator's pin on a mirrored Task survives every scan.
+        return db
+          .update(tasks)
+          .set({
+            prompt: input.prompt,
+            state,
+            workflow: input.workflow,
+            wayfinderType: input.wayfinderType,
+            // Re-seed drive from the ticket's labels, so relabeling a mirrored
+            // issue flips Auto/You — except while escalated, where Harmonic's
+            // runtime hitl flip must survive a label that still reads afk.
+            drive: existing.escalated ? existing.drive : input.drive,
+            mapRef: input.mapRef,
+            updatedAt: now,
+          })
+          .where(eq(tasks.id, existing.id))
+          .returning()
+          .get();
+      }
+      // Each Workspace's poll loop mirrors into its own board (issue #45): the
+      // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
+      // the upsert so overlapping issue numbers across repos stay distinct.
+      return db
+        .insert(tasks)
+        .values({
           prompt: input.prompt,
-          state,
+          workspaceId: workspace.id,
+          // A mirrored Task has no operator picks: the four defaults inherit
+          // (null) and resolve to the Workspace/global defaults on read, so
+          // retargeting the board's model is a single Workspace-setting change.
+          harness: null,
+          model: null,
+          isolationMode: null,
+          priority: null,
+          workingDir: workspace.workingDir,
+          // Seed open Tasks ready; reconcileMirroredDeps re-derives blocked once
+          // edges are wired in the same poll.
+          state: input.closed ? 'completed' : 'ready',
+          origin: 'mirrored',
+          trackerRef: input.trackerRef,
           workflow: input.workflow,
           wayfinderType: input.wayfinderType,
-          // Re-seed drive from the ticket's labels, so relabeling a mirrored
-          // issue flips Auto/You — except while escalated, where Harmonic's
-          // runtime hitl flip must survive a label that still reads afk.
-          drive: existing.escalated ? existing.drive : input.drive,
+          drive: input.drive,
           mapRef: input.mapRef,
+          createdAt: now,
           updatedAt: now,
         })
-        .where(eq(tasks.id, existing.id))
         .returning()
-        .get()!;
-      // Re-poll never touches the four operator picks (harness/model/isolation/
-      // priority), so an operator's pin on a mirrored Task survives every scan.
-      return this.changed(row);
-    }
-    // Each Workspace's poll loop mirrors into its own board (issue #45): the
-    // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
-    // the upsert so overlapping issue numbers across repos stay distinct.
-    const row = this.db
-      .insert(tasks)
-      .values({
-        prompt: input.prompt,
-        workspaceId: workspace.id,
-        // A mirrored Task has no operator picks: the four defaults inherit
-        // (null) and resolve to the Workspace/global defaults on read, so
-        // retargeting the board's model is a single Workspace-setting change.
-        harness: null,
-        model: null,
-        isolationMode: null,
-        priority: null,
-        workingDir: workspace.workingDir,
-        // Seed open Tasks ready; reconcileMirroredDeps re-derives blocked once
-        // edges are wired in the same poll.
-        state: input.closed ? 'completed' : 'ready',
-        origin: 'mirrored',
-        trackerRef: input.trackerRef,
-        workflow: input.workflow,
-        wayfinderType: input.wayfinderType,
-        drive: input.drive,
-        mapRef: input.mapRef,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
-      .get();
+        .get();
+    });
     // No task.created notify: a mirrored Task is a projection, not an authored
     // Task, and a first poll would otherwise storm one notification per issue.
     return this.changed(row);
@@ -355,45 +369,59 @@ export class TaskService {
    * feature's refs onto new work, which the mirror (keyed on `trackerRef`) then
    * reads as already-seen. One `settings` row per Workspace holds the slug→index map.
    */
-  mdFeatureIndex(workspaceId: number, slug: string): number {
+  mdFeatureIndex(workspaceId: number, slug: string): Promise<number> {
     const key = `md-feature-index:${workspaceId}`;
-    const row = this.db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
-    const map: Record<string, number> = row ? JSON.parse(row.value) : {};
-    const existing = map[slug];
-    if (existing !== undefined) return existing;
-    const index = Object.keys(map).length;
-    map[slug] = index;
-    const value = JSON.stringify(map);
-    this.db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run();
-    return index;
+    // The read-map / assign-next-index / write-back is an assign-once CAS: two
+    // concurrent first-sightings of sibling slugs would otherwise read the same
+    // map and both claim the same index. Run it as one write-queue unit so the
+    // second sees the first's write (ADR-0029 §3).
+    return this.db.write(async (db) => {
+      const row = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, key)).get();
+      const map: Record<string, number> = row ? JSON.parse(row.value) : {};
+      const existing = map[slug];
+      if (existing !== undefined) return existing;
+      const index = Object.keys(map).length;
+      map[slug] = index;
+      const value = JSON.stringify(map);
+      await db
+        .insert(settings)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: settings.key, set: { value } })
+        .run();
+      return index;
+    });
   }
 
   /** Has this (workspaceId, trackerRef) been Dismissed (issue #162, ADR-0025)?
    * `mirrorScan` consults this before mirroring a ticket, so a re-poll can't
    * resurrect a Task an operator deleted. */
-  isDismissed(workspaceId: number, trackerRef: number): boolean {
-    return (
-      this.db
+  async isDismissed(workspaceId: number, trackerRef: number): Promise<boolean> {
+    const row = await this.db.read((db) =>
+      db
         .select({ id: trackerDismissals.id })
         .from(trackerDismissals)
         .where(and(eq(trackerDismissals.workspaceId, workspaceId), eq(trackerDismissals.trackerRef, trackerRef)))
-        .get() != null
+        .get(),
     );
+    return row != null;
   }
 
-  list(query: TaskListQuery = {}): TaskRow[] {
+  async list(query: TaskListQuery = {}): Promise<TaskRow[]> {
     // Only the non-inheritable columns (workspace, state) filter in SQL; harness
     // and priority can be inherited, so they filter on the resolved value below.
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state ? eq(tasks.state, query.state) : undefined,
     ].filter((f) => f !== undefined);
-    let rows = this.db
-      .select()
-      .from(tasks)
-      .where(filters.length > 0 ? and(...filters) : undefined)
-      .all()
-      .map((raw) => this.resolve(raw));
+    let rows = (
+      await this.db.read((db) =>
+        db
+          .select()
+          .from(tasks)
+          .where(filters.length > 0 ? and(...filters) : undefined)
+          .all(),
+      )
+    ).map((raw) => this.resolve(raw));
     if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
     if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
     if (query.sortBy) {
@@ -410,34 +438,36 @@ export class TaskService {
     return rows;
   }
 
-  get(id: number): TaskRow {
-    return this.resolve(this.getRaw(id));
+  async get(id: number): Promise<TaskRow> {
+    return this.resolve(await this.getRaw(id));
   }
 
-  update(id: number, input: UpdateTaskInput): TaskRow {
-    const task = this.get(id);
+  async update(id: number, input: UpdateTaskInput): Promise<TaskRow> {
+    const task = await this.get(id);
     if (!EDITABLE_STATES.includes(task.state)) {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only draft, ready, or blocked tasks can be edited`);
     }
     // A provided default of `null` clears the override back to inherit; an
     // omitted one is simply not in `input`, so the stored value is untouched.
     this.assertHarnessConfigured(input.harness);
-    const row = this.db
-      .update(tasks)
-      .set({ ...input, updatedAt: Date.now() })
-      .where(eq(tasks.id, id))
-      .returning()
-      .get()!;
-    return this.changed(row);
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ ...input, updatedAt: Date.now() })
+        .where(eq(tasks.id, id))
+        .returning()
+        .get(),
+    );
+    return this.changed(row!);
   }
 
   /** Promote a draft to ready (or blocked, when dependencies are unmet). */
-  promote(id: number): TaskRow {
-    const task = this.get(id);
+  async promote(id: number): Promise<TaskRow> {
+    const task = await this.get(id);
     if (task.state !== 'draft') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
     }
-    return this.setState(id, this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready');
+    return this.setState(id, (await this.hasUnmet(await this.dependsOn(id))) ? 'blocked' : 'ready');
   }
 
   /**
@@ -445,14 +475,14 @@ export class TaskService {
    * feedback is appended to the prompt so the retry learns from what
    * went wrong.
    */
-  requeue(id: number, feedback?: string): TaskRow {
-    const task = this.get(id);
+  async requeue(id: number, feedback?: string): Promise<TaskRow> {
+    const task = await this.get(id);
     if (task.state !== 'failed') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only failed tasks can be re-queued`);
     }
     const trimmed = feedback?.trim();
     const patch: Partial<TaskRow> = {
-      state: this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready',
+      state: (await this.hasUnmet(await this.dependsOn(id))) ? 'blocked' : 'ready',
       updatedAt: Date.now(),
       // Default: clear any stale re-attempt feedback (set below when supplied).
       feedback: null,
@@ -470,8 +500,10 @@ export class TaskService {
         patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
       }
     }
-    const row = this.db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get()!;
-    return this.changed(row);
+    const row = await this.db.write((db) =>
+      db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
+    );
+    return this.changed(row!);
   }
 
   /**
@@ -479,12 +511,12 @@ export class TaskService {
    * blocked when it has unmet dependencies — the inverse of {@link cancel},
    * and the transition behind dragging a card out of the Cancelled column.
    */
-  uncancel(id: number): TaskRow {
-    const task = this.get(id);
+  async uncancel(id: number): Promise<TaskRow> {
+    const task = await this.get(id);
     if (task.state !== 'cancelled') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
     }
-    return this.setState(id, this.hasUnmet(this.dependsOn(id)) ? 'blocked' : 'ready');
+    return this.setState(id, (await this.hasUnmet(await this.dependsOn(id))) ? 'blocked' : 'ready');
   }
 
   /**
@@ -500,54 +532,75 @@ export class TaskService {
    * `'condensed'` opts out of that bind so the re-attempt starts in a fresh
    * Session carrying only the feedback. Read later by the Runner.
    */
-  reattempt(originalId: number, feedback?: string, continuation?: 'full' | 'condensed'): TaskRow {
+  async reattempt(originalId: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     // Copy from the raw row so an inherited default (`null`) is re-attempted as
     // inherited, not frozen to the value it happened to resolve to today.
-    const original = this.getRaw(originalId);
+    const original = await this.getRaw(originalId);
     if (!TERMINAL_STATES.includes(original.state)) {
       throw new DomainError(
         'invalid_state',
         `task ${originalId} is ${original.state}; only a finished task (completed, failed, or cancelled) can be re-attempted`,
       );
     }
-    const dependsOn = this.dependsOn(originalId);
+    const dependsOn = await this.dependsOn(originalId);
+    // Snapshot the original's dependents before the write rewires (and thereby
+    // clears) the edges pointing at it.
+    const dependents = await this.dependents(originalId);
     const now = Date.now();
-    const row = this.db
-      .insert(tasks)
-      .values({
-        prompt: original.prompt,
-        workspaceId: original.workspaceId,
-        harness: original.harness,
-        model: original.model,
-        workingDir: original.workingDir,
-        isolationMode: original.isolationMode,
-        priority: original.priority,
-        // A re-attempt targets the same base branch as the original (issue #157).
-        baseBranch: original.baseBranch,
-        state: this.hasUnmet(dependsOn) ? 'blocked' : 'ready',
-        reattemptOf: originalId,
-        feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
-        continuationChoice: continuation ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
-      .get();
-    if (dependsOn.length > 0) {
-      this.db.insert(taskDependencies).values(dependsOn.map((dependsOnId) => ({ taskId: row.id, dependsOnId }))).run();
-    }
-    // Rewire the original's dependents onto this re-attempt so a pipeline
-    // waiting on the original advances once the re-attempt completes (the
-    // original stays failed as history, but nothing depends on it anymore).
-    for (const dependentId of this.dependents(originalId)) {
-      this.db
-        .delete(taskDependencies)
-        .where(and(eq(taskDependencies.taskId, dependentId), eq(taskDependencies.dependsOnId, originalId)))
-        .run();
-      this.db.insert(taskDependencies).values({ taskId: dependentId, dependsOnId: row.id }).onConflictDoNothing().run();
-      this.rederiveBlocked(dependentId);
+    // Insert the re-attempt, copy its dependency edges, and rewire the original's
+    // dependents onto it — all as one write-queue unit so the edge graph is never
+    // seen half-rewired (the sync driver ran the whole block with nothing between).
+    const row = await this.db.write(async (db) => {
+      const inserted = await db
+        .insert(tasks)
+        .values({
+          prompt: original.prompt,
+          workspaceId: original.workspaceId,
+          harness: original.harness,
+          model: original.model,
+          workingDir: original.workingDir,
+          isolationMode: original.isolationMode,
+          priority: original.priority,
+          // A re-attempt targets the same base branch as the original (issue #157).
+          baseBranch: original.baseBranch,
+          state: (await this.depsUnmetVia(db, dependsOn)) ? 'blocked' : 'ready',
+          reattemptOf: originalId,
+          feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
+          continuationChoice: continuation ?? null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
+        .get();
+      if (dependsOn.length > 0) {
+        await db
+          .insert(taskDependencies)
+          .values(dependsOn.map((dependsOnId) => ({ taskId: inserted.id, dependsOnId })))
+          .run();
+      }
+      // Rewire the original's dependents onto this re-attempt so a pipeline
+      // waiting on the original advances once the re-attempt completes (the
+      // original stays failed as history, but nothing depends on it anymore).
+      for (const dependentId of dependents) {
+        await db
+          .delete(taskDependencies)
+          .where(and(eq(taskDependencies.taskId, dependentId), eq(taskDependencies.dependsOnId, originalId)))
+          .run();
+        await db
+          .insert(taskDependencies)
+          .values({ taskId: dependentId, dependsOnId: inserted.id })
+          .onConflictDoNothing()
+          .run();
+      }
+      return inserted;
+    });
+    // Re-derive and emit for each rewired dependent after the edges are committed
+    // (rederiveBlocked / get issue their own queued ops, so they can't run inside
+    // the write unit above without deadlocking).
+    for (const dependentId of dependents) {
+      await this.rederiveBlocked(dependentId);
       // Emit even when the state didn't flip: blockedOnFailed changed.
-      this.onChanged(this.get(dependentId));
+      this.onChanged(await this.get(dependentId));
     }
     const task = this.resolve(row);
     this.onChanged(task);
@@ -562,14 +615,16 @@ export class TaskService {
    * Used both when a Run blocks on a human prompt and when Auto-Retry is
    * exhausted.
    */
-  escalate(id: number): TaskRow {
-    const row = this.db
-      .update(tasks)
-      .set({ state: 'ready', drive: 'hitl', escalated: true, updatedAt: Date.now() })
-      .where(eq(tasks.id, id))
-      .returning()
-      .get()!;
-    return this.changed(row);
+  async escalate(id: number): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ state: 'ready', drive: 'hitl', escalated: true, updatedAt: Date.now() })
+        .where(eq(tasks.id, id))
+        .returning()
+        .get(),
+    );
+    return this.changed(row!);
   }
 
   /**
@@ -579,19 +634,21 @@ export class TaskService {
    * task_changed→poke path re-picks it for an afk Run. The inverse of
    * {@link escalate}.
    */
-  unescalate(id: number): TaskRow {
-    const task = this.get(id);
+  async unescalate(id: number): Promise<TaskRow> {
+    const task = await this.get(id);
     if (task.origin !== 'mirrored') {
       throw new DomainError('conflict', `task ${id} is native; only mirrored Tasks escalate`);
     }
     if (!task.escalated) throw new DomainError('invalid_state', `task ${id} is not escalated`);
-    const row = this.db
-      .update(tasks)
-      .set({ drive: 'afk', escalated: false, updatedAt: Date.now() })
-      .where(eq(tasks.id, id))
-      .returning()
-      .get()!;
-    return this.changed(row);
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ drive: 'afk', escalated: false, updatedAt: Date.now() })
+        .where(eq(tasks.id, id))
+        .returning()
+        .get(),
+    );
+    return this.changed(row!);
   }
 
   /**
@@ -603,18 +660,20 @@ export class TaskService {
    * mirrored Tasks only. This has no such guard: the caller has already
    * checked `escalated` and moved `state` itself.
    */
-  clearEscalated(id: number): TaskRow {
-    const row = this.db
-      .update(tasks)
-      .set({ escalated: false, updatedAt: Date.now() })
-      .where(eq(tasks.id, id))
-      .returning()
-      .get()!;
-    return this.changed(row);
+  async clearEscalated(id: number): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ escalated: false, updatedAt: Date.now() })
+        .where(eq(tasks.id, id))
+        .returning()
+        .get(),
+    );
+    return this.changed(row!);
   }
 
-  cancel(id: number): TaskRow {
-    const task = this.get(id);
+  async cancel(id: number): Promise<TaskRow> {
+    const task = await this.get(id);
     if (!CANCELLABLE_STATES.includes(task.state)) {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}, which is terminal`);
     }
@@ -625,32 +684,31 @@ export class TaskService {
    * review gate (ADR-0002). Unblocks dependents like any completion. Pairs with
    * runner.completeForTask, which stops the still-running agent. Running only —
    * every other state has its own path to (or away from) completion. */
-  complete(id: number): TaskRow {
-    const task = this.get(id);
+  async complete(id: number): Promise<TaskRow> {
+    const task = await this.get(id);
     if (task.state !== 'running') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}, not running`);
     }
     return this.setState(id, 'completed');
   }
 
-  setState(id: number, state: TaskState): TaskRow {
-    const row = this.db
-      .update(tasks)
-      .set({ state, updatedAt: Date.now() })
-      .where(eq(tasks.id, id))
-      .returning()
-      .get()!;
-    const task = this.resolve(row);
+  async setState(id: number, state: TaskState): Promise<TaskRow> {
+    const row = await this.db.write((db) =>
+      db.update(tasks).set({ state, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
+    );
+    const task = this.resolve(row!);
     this.onChanged(task);
     const notification = STATE_NOTIFICATIONS[state];
     if (notification) this.onNotify(notification, task);
     // Completion is what satisfies dependents (accepted, not merely
-    // finished) — unblock any whose last unmet dependency this was.
+    // finished) — unblock any whose last unmet dependency this was. The cascade
+    // re-derives each dependent in its own queued op (idempotent under a
+    // concurrent sibling completion), so it runs after this write, not inside it.
     if (state === 'completed') {
-      for (const dependentId of this.dependents(id)) {
-        const dependent = this.get(dependentId);
-        if (dependent.state === 'blocked' && !this.hasUnmet(this.dependsOn(dependentId))) {
-          this.setState(dependentId, 'ready');
+      for (const dependentId of await this.dependents(id)) {
+        const dependent = await this.get(dependentId);
+        if (dependent.state === 'blocked' && !(await this.hasUnmet(await this.dependsOn(dependentId)))) {
+          await this.setState(dependentId, 'ready');
         }
       }
     }
@@ -669,46 +727,53 @@ export class TaskService {
    * responsible for only retargeting pre-spawn Tasks (a spawned Run's base is
    * already resolved and frozen).
    */
-  setBaseBranch(id: number, baseBranch: string | null): TaskRow {
-    const raw = this.getRaw(id);
+  async setBaseBranch(id: number, baseBranch: string | null): Promise<TaskRow> {
+    const raw = await this.getRaw(id);
     if (raw.baseBranch === baseBranch) return this.resolve(raw);
-    const row = this.db
-      .update(tasks)
-      .set({ baseBranch, updatedAt: Date.now() })
-      .where(eq(tasks.id, id))
-      .returning()
-      .get()!;
-    return this.changed(row);
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ baseBranch, updatedAt: Date.now() })
+        .where(eq(tasks.id, id))
+        .returning()
+        .get(),
+    );
+    return this.changed(row!);
   }
 
   // ---- Dependencies ----
 
-  dependsOn(taskId: number): number[] {
-    return this.db
-      .select({ id: taskDependencies.dependsOnId })
-      .from(taskDependencies)
-      .where(eq(taskDependencies.taskId, taskId))
-      .all()
-      .map((r) => r.id);
+  async dependsOn(taskId: number): Promise<number[]> {
+    return (
+      await this.db.read((db) =>
+        db
+          .select({ id: taskDependencies.dependsOnId })
+          .from(taskDependencies)
+          .where(eq(taskDependencies.taskId, taskId))
+          .all(),
+      )
+    ).map((r) => r.id);
   }
 
-  dependents(taskId: number): number[] {
-    return this.db
-      .select({ id: taskDependencies.taskId })
-      .from(taskDependencies)
-      .where(eq(taskDependencies.dependsOnId, taskId))
-      .all()
-      .map((r) => r.id);
+  async dependents(taskId: number): Promise<number[]> {
+    return (
+      await this.db.read((db) =>
+        db
+          .select({ id: taskDependencies.taskId })
+          .from(taskDependencies)
+          .where(eq(taskDependencies.dependsOnId, taskId))
+          .all(),
+      )
+    ).map((r) => r.id);
   }
 
   /** Task ids that re-attempt this one (reverse of the `reattemptOf` link). */
-  reattempts(taskId: number): number[] {
-    return this.db
-      .select({ id: tasks.id })
-      .from(tasks)
-      .where(eq(tasks.reattemptOf, taskId))
-      .all()
-      .map((r) => r.id);
+  async reattempts(taskId: number): Promise<number[]> {
+    return (
+      await this.db.read((db) =>
+        db.select({ id: tasks.id }).from(tasks).where(eq(tasks.reattemptOf, taskId)).all(),
+      )
+    ).map((r) => r.id);
   }
 
   /** A mirrored Task's blocking is the tracker's `blockedBy` projection — read-only
@@ -725,66 +790,77 @@ export class TaskService {
    * blocked⇄ready. Edges change for any Task, but the re-derive only flips a
    * resting Task: a running Run is never interrupted and nothing cascades.
    */
-  reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): void {
+  async reconcileMirroredDeps(taskId: number, dependsOnIds: number[]): Promise<void> {
     const desired = new Set(dependsOnIds.filter((id) => id !== taskId));
-    const current = new Set(this.dependsOn(taskId));
-    for (const id of desired) {
-      if (!current.has(id)) {
-        this.db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
+    const current = new Set(await this.dependsOn(taskId));
+    // Apply the edge diff as one write-queue unit, then re-derive after (the
+    // re-derive issues its own queued ops, so it can't run inside this unit).
+    await this.db.write(async (db) => {
+      for (const id of desired) {
+        if (!current.has(id)) {
+          await db.insert(taskDependencies).values({ taskId, dependsOnId: id }).onConflictDoNothing().run();
+        }
       }
-    }
-    for (const id of current) {
-      if (!desired.has(id)) {
-        this.db
-          .delete(taskDependencies)
-          .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
-          .run();
+      for (const id of current) {
+        if (!desired.has(id)) {
+          await db
+            .delete(taskDependencies)
+            .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, id)))
+            .run();
+        }
       }
-    }
-    this.rederiveBlocked(taskId);
+    });
+    await this.rederiveBlocked(taskId);
   }
 
-  private hasUnmet(depIds: number[]): boolean {
+  /** Unmet-dependency check on a given executor — shared so `create`/`reattempt`
+   * can run it inside their write unit (on the write's `db`) while the standalone
+   * {@link hasUnmet} runs it as a concurrent read. */
+  private async depsUnmetVia(db: AsyncDb, depIds: number[]): Promise<boolean> {
     if (depIds.length === 0) return false;
-    const states = this.db
-      .select({ state: tasks.state })
-      .from(tasks)
-      .where(inArray(tasks.id, depIds))
-      .all();
+    const states = await db.select({ state: tasks.state }).from(tasks).where(inArray(tasks.id, depIds)).all();
     return states.length < depIds.length || states.some((r) => r.state !== 'completed');
   }
 
-  addDependency(taskId: number, dependsOnId: number): TaskWithDeps {
-    const task = this.get(taskId);
+  private hasUnmet(depIds: number[]): Promise<boolean> {
+    return this.db.read((db) => this.depsUnmetVia(db, depIds));
+  }
+
+  async addDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
+    const task = await this.get(taskId);
     this.assertOperatorEditable(task);
-    this.get(dependsOnId);
+    await this.get(dependsOnId);
     if (!EDITABLE_STATES.includes(task.state) && task.state !== 'blocked') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft, ready, or blocked tasks`);
     }
-    if (taskId === dependsOnId || this.reaches(dependsOnId, taskId)) {
+    if (taskId === dependsOnId || (await this.reaches(dependsOnId, taskId))) {
       throw new DomainError('conflict', `dependency ${taskId} → ${dependsOnId} would create a cycle`);
     }
-    this.db.insert(taskDependencies).values({ taskId, dependsOnId }).onConflictDoNothing().run();
-    this.rederiveBlocked(taskId);
-    return this.withDeps(this.get(taskId));
+    await this.db.write((db) =>
+      db.insert(taskDependencies).values({ taskId, dependsOnId }).onConflictDoNothing().run(),
+    );
+    await this.rederiveBlocked(taskId);
+    return this.withDeps(await this.get(taskId));
   }
 
-  removeDependency(taskId: number, dependsOnId: number): TaskWithDeps {
-    this.assertOperatorEditable(this.get(taskId));
-    this.db
-      .delete(taskDependencies)
-      .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, dependsOnId)))
-      .run();
-    this.rederiveBlocked(taskId);
-    return this.withDeps(this.get(taskId));
+  async removeDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
+    this.assertOperatorEditable(await this.get(taskId));
+    await this.db.write((db) =>
+      db
+        .delete(taskDependencies)
+        .where(and(eq(taskDependencies.taskId, taskId), eq(taskDependencies.dependsOnId, dependsOnId)))
+        .run(),
+    );
+    await this.rederiveBlocked(taskId);
+    return this.withDeps(await this.get(taskId));
   }
 
   /** Cancel a task and everything that transitively depends on it. */
-  cancelWithDependents(id: number): number[] {
+  async cancelWithDependents(id: number): Promise<number[]> {
     const toCancel = [id];
     const seen = new Set(toCancel);
     for (let i = 0; i < toCancel.length; i++) {
-      for (const dep of this.dependents(toCancel[i]!)) {
+      for (const dep of await this.dependents(toCancel[i]!)) {
         if (!seen.has(dep)) {
           seen.add(dep);
           toCancel.push(dep);
@@ -793,9 +869,9 @@ export class TaskService {
     }
     const cancelled: number[] = [];
     for (const taskId of toCancel) {
-      const task = this.get(taskId);
+      const task = await this.get(taskId);
       if (taskId === id || CANCELLABLE_STATES.includes(task.state)) {
-        this.cancel(taskId);
+        await this.cancel(taskId);
         cancelled.push(taskId);
       }
     }
@@ -819,27 +895,29 @@ export class TaskService {
    * matching how every other edge change re-derives; `onRemoved` then lets a
    * live board drop the Task immediately instead of waiting on a re-list.
    */
-  delete(id: number): void {
-    const task = this.get(id);
+  async delete(id: number): Promise<void> {
+    const task = await this.get(id);
     const decision = decideTaskDeletion(task);
     if (!decision.ok) throw new DomainError('invalid_state', decision.reason!);
     // Snapshot before the transaction: once the row is gone, `dependents` would
     // return nothing to re-derive.
-    const formerDependents = this.dependents(id);
-    this.db.transaction((tx) => {
-      const runIds = tx.select({ id: runs.id }).from(runs).where(eq(runs.taskId, id)).all().map((r) => r.id);
+    const formerDependents = await this.dependents(id);
+    await this.db.transaction(async (tx) => {
+      const runIds = (await tx.select({ id: runs.id }).from(runs).where(eq(runs.taskId, id)).all()).map((r) => r.id);
       const sessionRowIds = [
         ...new Set(
-          tx
-            .select({ sid: runs.sessionRowId })
-            .from(runs)
-            .where(eq(runs.taskId, id))
-            .all()
+          (
+            await tx
+              .select({ sid: runs.sessionRowId })
+              .from(runs)
+              .where(eq(runs.taskId, id))
+              .all()
+          )
             .map((r) => r.sid)
             .filter((sid): sid is number => sid != null),
         ),
       ];
-      deleteRunsAndChildren(tx, runIds);
+      await deleteRunsAndChildrenAsync(tx, runIds);
       if (sessionRowIds.length > 0) {
         // Delete a Session only once *no* Run references it any more. A warm
         // continuation / lease transfer (#124) can share one Session across
@@ -847,26 +925,30 @@ export class TaskService {
         // FK-violate under foreign_keys=ON (aborting the whole delete), so keep
         // any Session another Task's surviving Run still points at.
         const stillReferenced = new Set(
-          tx
-            .select({ sid: runs.sessionRowId })
-            .from(runs)
-            .where(inArray(runs.sessionRowId, sessionRowIds))
-            .all()
+          (
+            await tx
+              .select({ sid: runs.sessionRowId })
+              .from(runs)
+              .where(inArray(runs.sessionRowId, sessionRowIds))
+              .all()
+          )
             .map((r) => r.sid)
             .filter((sid): sid is number => sid != null),
         );
         const orphaned = sessionRowIds.filter((sid) => !stillReferenced.has(sid));
-        if (orphaned.length > 0) tx.delete(sessions).where(inArray(sessions.id, orphaned)).run();
+        if (orphaned.length > 0) await tx.delete(sessions).where(inArray(sessions.id, orphaned)).run();
       }
-      tx.delete(taskChannels).where(eq(taskChannels.taskId, id)).run();
-      tx.delete(taskDependencies)
+      await tx.delete(taskChannels).where(eq(taskChannels.taskId, id)).run();
+      await tx
+        .delete(taskDependencies)
         .where(or(eq(taskDependencies.taskId, id), eq(taskDependencies.dependsOnId, id)))
         .run();
       // A re-attempt becomes standalone rather than dangling.
-      tx.update(tasks).set({ reattemptOf: null }).where(eq(tasks.reattemptOf, id)).run();
-      tx.delete(tasks).where(eq(tasks.id, id)).run();
+      await tx.update(tasks).set({ reattemptOf: null }).where(eq(tasks.reattemptOf, id)).run();
+      await tx.delete(tasks).where(eq(tasks.id, id)).run();
       if (decision.tombstone) {
-        tx.insert(trackerDismissals)
+        await tx
+          .insert(trackerDismissals)
           .values({
             workspaceId: decision.tombstone.workspaceId,
             trackerRef: decision.tombstone.trackerRef,
@@ -879,40 +961,40 @@ export class TaskService {
     for (const depId of formerDependents) {
       // The deleted task's own edges are gone with it; every other former
       // dependent still exists — re-derive it the same way any edge edit does.
-      this.rederiveBlocked(depId);
-      this.onChanged(this.get(depId));
+      await this.rederiveBlocked(depId);
+      this.onChanged(await this.get(depId));
     }
     this.onRemoved(id);
   }
 
-  withDeps(task: TaskRow): TaskWithDeps {
-    const dependsOn = this.dependsOn(task.id);
-    const depStates = dependsOn.map((depId) => this.get(depId).state);
+  async withDeps(task: TaskRow): Promise<TaskWithDeps> {
+    const dependsOn = await this.dependsOn(task.id);
+    const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
     return {
       ...task,
       dependsOn,
-      dependents: this.dependents(task.id),
+      dependents: await this.dependents(task.id),
       blockedOnFailed:
         task.state === 'blocked' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
-      reattempts: this.reattempts(task.id),
+      reattempts: await this.reattempts(task.id),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
-      overrides: this.overridesOf(this.getRaw(task.id)),
+      overrides: this.overridesOf(await this.getRaw(task.id)),
     };
   }
 
-  listWithDeps(query: TaskListQuery = {}): TaskWithDeps[] {
-    return this.list(query).map((task) => this.withDeps(task));
+  async listWithDeps(query: TaskListQuery = {}): Promise<TaskWithDeps[]> {
+    return Promise.all((await this.list(query)).map((task) => this.withDeps(task)));
   }
 
   /** Is `to` reachable from `from` following depends-on edges? */
-  private reaches(from: number, to: number): boolean {
+  private async reaches(from: number, to: number): Promise<boolean> {
     const queue = [from];
     const seen = new Set(queue);
     while (queue.length > 0) {
       const current = queue.shift()!;
       if (current === to) return true;
-      for (const next of this.dependsOn(current)) {
+      for (const next of await this.dependsOn(current)) {
         if (!seen.has(next)) {
           seen.add(next);
           queue.push(next);
@@ -923,11 +1005,11 @@ export class TaskService {
   }
 
   /** blocked ⇄ ready, re-derived after a dependency edit. */
-  private rederiveBlocked(taskId: number): void {
-    const task = this.get(taskId);
-    const unmet = this.hasUnmet(this.dependsOn(taskId));
-    if (task.state === 'ready' && unmet) this.setState(taskId, 'blocked');
-    else if (task.state === 'blocked' && !unmet) this.setState(taskId, 'ready');
+  private async rederiveBlocked(taskId: number): Promise<void> {
+    const task = await this.get(taskId);
+    const unmet = await this.hasUnmet(await this.dependsOn(taskId));
+    if (task.state === 'ready' && unmet) await this.setState(taskId, 'blocked');
+    else if (task.state === 'blocked' && !unmet) await this.setState(taskId, 'ready');
   }
 
 }

@@ -75,10 +75,10 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // Task's own prompt is wrapped under a `## ` header the stub can't parse, so
     // drive.prompt is the reliable seam.
     server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
-    const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
+    const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
-    server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'running');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
@@ -115,7 +115,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     });
 
     const task = await waitFor(async () => {
-      const t = server.app.ctx.tasks.get(taskId);
+      const t = await server.app.ctx.tasks.get(taskId);
       return t.escalated ? t : undefined;
     });
     expect(task.escalated).toBe(true);
