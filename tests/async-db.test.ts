@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { createClient } from '@libsql/client';
-import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
+import {
+  openAsyncDb,
+  QueryTimeoutError,
+  isQueryTimeout,
+  type AsyncDbHandle,
+} from '../src/db/async.js';
 import { openDb, type Db } from '../src/db/index.js';
 import { isUniqueViolation } from '../src/domain/work-context-leases.js';
 import { workContextLeases, runFacts, runs, tasks, workspaces } from '../src/db/schema.js';
@@ -212,6 +217,134 @@ describe('transactions as exclusive write-queue units (ADR-0029 §3)', () => {
     });
     await Promise.all([txP, writeP]);
     expect(order).toEqual(['tx-start', 'tx-end', 'write']);
+  });
+});
+
+describe('per-query wall-clock timeouts (ADR-0029 §5, #212)', () => {
+  let dir: string;
+  let h: AsyncDbHandle;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-async-timeout-'));
+    h = await openAsyncDb(dir);
+  });
+  afterEach(async () => {
+    await h.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('read() rejects with a QueryTimeoutError once the deadline passes', async () => {
+    let caught: unknown;
+    try {
+      await h.read(async () => {
+        await delay(60);
+        return 'never';
+      }, { timeoutMs: 10 });
+    } catch (err) {
+      caught = err;
+    }
+    expect(isQueryTimeout(caught)).toBe(true);
+    expect((caught as QueryTimeoutError).timeoutMs).toBe(10);
+  });
+
+  it('read() resolves normally when it finishes before the deadline', async () => {
+    const rows = await h.read((db) => db.select().from(workspaces).all(), { timeoutMs: 1000 });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('write() rejects with a QueryTimeoutError once the deadline passes', async () => {
+    await expect(
+      h.write(async () => {
+        await delay(60);
+      }, { timeoutMs: 10 }),
+    ).rejects.toBeInstanceOf(QueryTimeoutError);
+  });
+
+  it('transaction() is bounded by the timeout too, and labels the error as a transaction', async () => {
+    let caught: unknown;
+    try {
+      await h.transaction(async () => {
+        await delay(60);
+      }, { timeoutMs: 10 });
+    } catch (err) {
+      caught = err;
+    }
+    expect(isQueryTimeout(caught)).toBe(true);
+    expect((caught as QueryTimeoutError).message).toContain('transaction');
+  });
+
+  it('a per-call timeoutMs overrides the handle default', async () => {
+    // Handle default is generous; a tight per-call override still fires.
+    await expect(
+      h.read(async () => {
+        await delay(60);
+      }, { timeoutMs: 10 }),
+    ).rejects.toBeInstanceOf(QueryTimeoutError);
+    // And a generous per-call override lets a slow op through.
+    await expect(
+      h.read(async () => {
+        await delay(20);
+        return 7;
+      }, { timeoutMs: 1000 }),
+    ).resolves.toBe(7);
+  });
+
+  it('timeoutMs <= 0 disables the timeout for that call', async () => {
+    await expect(
+      h.read(async () => {
+        await delay(30);
+        return 'slow-but-allowed';
+      }, { timeoutMs: 0 }),
+    ).resolves.toBe('slow-but-allowed');
+  });
+
+  it('the handle default timeout applies when no per-call override is given', async () => {
+    const tightDir = mkdtempSync(join(tmpdir(), 'harmonic-async-timeout-default-'));
+    const tight = await openAsyncDb(tightDir, { queryTimeoutMs: 10 });
+    try {
+      await expect(
+        tight.read(async () => {
+          await delay(60);
+        }),
+      ).rejects.toBeInstanceOf(QueryTimeoutError);
+    } finally {
+      await tight.close();
+      rmSync(tightDir, { recursive: true, force: true });
+    }
+  });
+
+  it('bounds a caller queued behind an in-flight write (queue-wait is charged)', async () => {
+    // A holds the single writer for 60ms. B is submitted immediately behind A with
+    // a 20ms budget. Because the timeout bounds the caller's *total* wait from
+    // submission, B's caller is freed at 20ms while still queued behind A, rather
+    // than hanging for A's full (uncancellable) duration.
+    const a = h.write(async () => {
+      await delay(60);
+    });
+    await expect(
+      h.write(async () => {
+        /* would only run after A settles, well past B's deadline */
+      }, { timeoutMs: 20 }),
+    ).rejects.toBeInstanceOf(QueryTimeoutError);
+    await a;
+  });
+
+  it('a caller timeout does not break single-writer serialisation', async () => {
+    // A's caller times out at 10ms, but A's real work runs for 40ms and cannot be
+    // cancelled on the local libsql client. B must still wait for A's real work to
+    // finish before it starts — the single-writer invariant survives the timeout.
+    const events: string[] = [];
+    const a = h.write(async () => {
+      events.push('a-start');
+      await delay(40);
+      events.push('a-end');
+    }, { timeoutMs: 10 });
+    await expect(a).rejects.toBeInstanceOf(QueryTimeoutError);
+    // Submitted after A's caller rejected, while A's real work is still in flight.
+    await h.write(async () => {
+      events.push('b');
+    });
+    expect(events).toEqual(['a-start', 'a-end', 'b']);
   });
 });
 

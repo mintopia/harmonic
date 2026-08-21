@@ -27,6 +27,78 @@ export type AsyncTx = Parameters<Parameters<AsyncDb['transaction']>[0]>[0];
 const noop = (): void => {};
 
 /**
+ * Default per-query wall-clock ceiling (ADR-0029 §5, issue #212). Generous
+ * enough that a healthy local SQLite query never trips it, tight enough that a
+ * pathological one surfaces as an error instead of an unbounded caller wait.
+ */
+export const DEFAULT_QUERY_TIMEOUT_MS = 30_000;
+
+/**
+ * Raised when a facade call (`read`/`write`/`transaction`) outlives its
+ * wall-clock deadline. Detectable via {@link isQueryTimeout} the same way lease
+ * CAS losers are detected via `isUniqueViolation`, so callers and monitoring can
+ * tell a timeout apart from an ordinary query failure.
+ */
+export class QueryTimeoutError extends Error {
+  readonly timeoutMs: number;
+  constructor(kind: QueryKind, timeoutMs: number) {
+    super(`Async DB ${kind} exceeded its ${timeoutMs}ms wall-clock timeout`);
+    this.name = 'QueryTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/** Narrow an unknown error to a {@link QueryTimeoutError}. */
+export function isQueryTimeout(err: unknown): err is QueryTimeoutError {
+  return err instanceof QueryTimeoutError;
+}
+
+/** Which facade call a timeout is bounding — carried into the error message. */
+type QueryKind = 'read' | 'write' | 'transaction';
+
+/** Per-call override of the handle's default wall-clock timeout. */
+export interface QueryTimeoutOptions {
+  /**
+   * Wall-clock ceiling in ms for this call, overriding the handle default. A
+   * value `<= 0` disables the timeout for this call (for the rare genuinely
+   * unbounded operation).
+   */
+  timeoutMs?: number;
+}
+
+/**
+ * Race `work` against a wall-clock deadline. On expiry the returned promise
+ * rejects with a {@link QueryTimeoutError}; the timer is cleared the moment
+ * `work` settles and is `unref`'d so a pending query never keeps the process
+ * alive. `timeoutMs <= 0` disables the bound and returns `work` untouched.
+ *
+ * Note (ADR-0029 §5): the local libsql `file:` client exposes no per-query
+ * interrupt — only `client.close()` aborts, and that tears down the whole
+ * connection. So the deadline bounds the *caller's* wait and surfaces the
+ * pathology; the underlying statement is not forcibly cancelled and may still
+ * run to completion in the driver.
+ */
+function withTimeout<T>(work: Promise<T>, timeoutMs: number, kind: QueryKind): Promise<T> {
+  // `!(timeoutMs > 0)` also treats NaN as "disabled", so a bad config never arms a
+  // timer that can never clear.
+  if (!(timeoutMs > 0)) return work;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new QueryTimeoutError(kind, timeoutMs)), timeoutMs);
+    timer.unref?.();
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
  * The read/write queue facade over an async libsql {@link AsyncDb} (ADR-0029 §2).
  *
  * - `read(fn)` runs immediately and concurrently — WAL lets readers proceed
@@ -41,15 +113,32 @@ const noop = (): void => {};
  *
  * A failed write does not poison the queue: the tail is chained through a
  * swallowed continuation so the next write always runs.
+ *
+ * Every call is bounded by a per-query wall-clock timeout (ADR-0029 §5, #212):
+ * the handle default (see {@link DEFAULT_QUERY_TIMEOUT_MS}), overridable per call
+ * via {@link QueryTimeoutOptions}. The deadline bounds the *caller's* total wait —
+ * measured from submission, so for a write it includes any time spent queued
+ * behind other writes. That is the guarantee that matters: no caller waits on the
+ * DB past the deadline, even if a pathological write ahead of it holds the single
+ * writer. Because the local libsql statement cannot be cancelled, a timed-out
+ * write's real work still runs to completion and keeps holding the queue until it
+ * settles; the timeout frees the *caller* and flags the pathology, it never lets a
+ * second writer onto the connection ahead of the one in flight.
  */
 export class AsyncDbHandle {
   readonly db: AsyncDb;
   readonly #client: Client;
+  readonly #defaultTimeoutMs: number;
   #writeTail: Promise<unknown> = Promise.resolve();
 
-  constructor(db: AsyncDb, client: Client) {
+  constructor(db: AsyncDb, client: Client, defaultTimeoutMs: number = DEFAULT_QUERY_TIMEOUT_MS) {
     this.db = db;
     this.#client = client;
+    this.#defaultTimeoutMs = defaultTimeoutMs;
+  }
+
+  #timeoutFor(opts?: QueryTimeoutOptions): number {
+    return opts?.timeoutMs ?? this.#defaultTimeoutMs;
   }
 
   /**
@@ -57,20 +146,30 @@ export class AsyncDbHandle {
    * WAL is what lets a reader proceed while the single writer is in flight; this
    * facade's job is only to keep reads off the write queue.
    */
-  read<T>(fn: (db: AsyncDb) => Promise<T>): Promise<T> {
-    return fn(this.db);
+  read<T>(fn: (db: AsyncDb) => Promise<T>, opts?: QueryTimeoutOptions): Promise<T> {
+    return withTimeout(fn(this.db), this.#timeoutFor(opts), 'read');
   }
 
   /** Serialised single-writer write: one in flight at a time. */
-  write<T>(fn: (db: AsyncDb) => Promise<T>): Promise<T> {
-    const run = this.#writeTail.then(() => fn(this.db));
-    this.#writeTail = run.then(noop, noop);
-    return run;
+  write<T>(fn: (db: AsyncDb) => Promise<T>, opts?: QueryTimeoutOptions): Promise<T> {
+    return this.#enqueueWrite(fn, 'write', opts);
   }
 
   /** Exclusive write-queue unit wrapping a real DB transaction. */
-  transaction<T>(fn: (tx: AsyncTx) => Promise<T>): Promise<T> {
-    return this.write((db) => db.transaction(fn));
+  transaction<T>(fn: (tx: AsyncTx) => Promise<T>, opts?: QueryTimeoutOptions): Promise<T> {
+    return this.#enqueueWrite((db) => db.transaction(fn), 'transaction', opts);
+  }
+
+  #enqueueWrite<T>(fn: (db: AsyncDb) => Promise<T>, kind: QueryKind, opts?: QueryTimeoutOptions): Promise<T> {
+    // The real work. The queue tail chains on *this*, not on the timeout race, so
+    // the next write only starts once this write's statement has truly settled — a
+    // caller timeout never lets a second writer onto the single connection.
+    const real = this.#writeTail.then(() => fn(this.db));
+    this.#writeTail = real.then(noop, noop);
+    // Bound the caller's total wait, timed from submission, so a caller queued
+    // behind a pathological write is freed at the deadline instead of hanging for
+    // the upstream write's full (uncancellable) duration.
+    return withTimeout(real, this.#timeoutFor(opts), kind);
   }
 
   /** Drain the write queue, then close the underlying client. */
@@ -145,7 +244,10 @@ async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<voi
  * drizzle wraps each migration in), verify integrity with `foreign_key_check`,
  * then enforce FK for runtime.
  */
-export async function openAsyncDb(dataDir: string): Promise<AsyncDbHandle> {
+export async function openAsyncDb(
+  dataDir: string,
+  options: { queryTimeoutMs?: number } = {},
+): Promise<AsyncDbHandle> {
   mkdirSync(dataDir, { recursive: true });
   // `@libsql/client` against a local `file:` URL runs on a single connection, so
   // connection-level pragmas below (`foreign_keys`, `journal_mode`) apply to the
@@ -164,7 +266,7 @@ export async function openAsyncDb(dataDir: string): Promise<AsyncDbHandle> {
     );
   }
   await client.execute('PRAGMA foreign_keys = ON');
-  const handle = new AsyncDbHandle(db, client);
+  const handle = new AsyncDbHandle(db, client, options.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS);
   await backfillDefaultWorkspaceAsync(handle);
   return handle;
 }
