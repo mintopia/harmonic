@@ -88,8 +88,32 @@ function codexEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
   const payload = asRecord(record?.payload);
   if (!record || !payload) return [];
   const ts = timestamp(record.timestamp);
+  const events: TranscriptLogEvent[] = [];
+  const push = (update: Record<string, unknown>) => {
+    const id = firstId + events.length;
+    events.push({ id, seq: id, ts, type: 'session_update', payload: update });
+  };
+
   const message = record.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? contentText(payload.content) : record.type === 'event_msg' && payload.type === 'agent_message' ? contentText(payload.message) : null;
-  return message === null ? [] : [{ id: firstId, seq: firstId, ts, type: 'session_update', payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message } } }];
+  if (message !== null) push({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message } });
+
+  // Reasoning summaries only ever carry plaintext in `summary`; `encrypted_content` is opaque and never surfaced.
+  if (record.type === 'response_item' && payload.type === 'reasoning' && Array.isArray(payload.summary)) {
+    for (const part of payload.summary) {
+      const block = asRecord(part);
+      const text = block && (block.type === 'summary_text' || block.type === 'text') ? block.text : null;
+      if (typeof text === 'string' && text) push({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } });
+    }
+  }
+
+  if (record.type === 'response_item' && (payload.type === 'custom_tool_call' || payload.type === 'function_call')) {
+    const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
+    const title = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
+    const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : title;
+    push({ sessionUpdate: 'tool_call', toolCallId: callId, title, status: 'completed' });
+  }
+
+  return events;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
