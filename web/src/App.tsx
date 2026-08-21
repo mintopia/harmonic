@@ -640,7 +640,7 @@ export function App() {
           <button
             aria-expanded={menuOpen}
             aria-label="Menu"
-            className="ml-auto rounded-md px-2.5 py-1.5 font-medium text-muted hover:text-ink rail:hidden"
+            className="ml-auto inline-flex min-h-11 items-center rounded-md px-2.5 font-medium text-muted hover:text-ink rail:hidden"
             onClick={() => setMenuOpen((open) => !open)}
           >
             Menu

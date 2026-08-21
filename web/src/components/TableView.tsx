@@ -29,9 +29,17 @@ import { EmptyState } from './EmptyState';
 import { ArmedButton } from './ArmedButton';
 import { Icon } from './Icon';
 
-/** The Deck-language column grid (DESIGN.md § 6): a fixed 8-column template
- * so the header and every row — flat, banded or ungrouped — line up. */
-const GRID = 'grid grid-cols-[3rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
+/** The Deck-language column grid (DESIGN.md § 6): the header and every row —
+ * flat, banded or ungrouped — share one template so they line up. It sheds
+ * low-priority columns below the tablet tier instead of horizontal-scrolling
+ * like a phone (issue #226): base keeps #/Prompt/State, `md:` (≥768px) adds
+ * Priority/Cost/Created, `lg:` (≥1024px) restores the full 8 with Harness/Model.
+ * The dropped header + row cells hide together (`hidden md:*`/`hidden lg:*`) so
+ * the DOM cell count always matches the active track count and the ARIA grid
+ * stays valid at every width. Created (a wide timestamp) rides the `lg:` tier
+ * with Harness/Model so the Prompt column keeps real width at tablet. */
+const GRID =
+  'grid grid-cols-[3rem_minmax(0,1fr)_8rem] md:grid-cols-[3rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
 
 /** One band header + its member rows (issue #167, ADR-0026): title, #ref,
  * fold progress, an armed force-land control, and an expand/collapse
@@ -161,11 +169,13 @@ export function TableView({
     });
   };
 
-  const sortHeader = (key: SortKey, label: string, align?: 'right') => (
+  // Sortable headers hide below their column's tier in lockstep with the row
+  // cells (see GRID): Priority/Cost appear at `md:`, Created only at `lg:`.
+  const sortHeader = (key: SortKey, label: string, opts?: { align?: 'right'; tier?: 'md' | 'lg' }) => (
     <span
       role="columnheader"
       aria-sort={sortBy === key ? (order === 'asc' ? 'ascending' : 'descending') : undefined}
-      className={align === 'right' ? 'text-right' : ''}
+      className={`hidden ${opts?.tier === 'lg' ? 'lg:block' : 'md:block'} ${opts?.align === 'right' ? 'text-right' : ''}`}
     >
       {/* Buttons don't inherit text-transform, so restate the Label casing. */}
       <button
@@ -190,7 +200,7 @@ export function TableView({
     <div
       key={task.id}
       role="row"
-      className={`${GRID} cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 ${indent ? 'pl-7' : ''}`}
+      className={`${GRID} min-h-11 cursor-pointer py-2 transition-colors duration-150 hover:bg-raised/50 ${indent ? 'pl-7' : ''}`}
       onClick={() => onOpen(task)}
     >
       <div role="cell" className="flex items-center justify-end gap-1.5 tabular-nums text-muted">
@@ -209,6 +219,10 @@ export function TableView({
               openOriginal(task.reattemptOf!);
             }}
           >
+            {/* Secondary affordance: it stacks above the Prompt link inside a
+                dense two-line cell, so a 44px hit box can't fit without stealing
+                the neighbour's clicks — the row itself (min-h-11) carries the
+                floor for the primary open action (issue #226). */}
             ↻ re-attempt of <span className="tabular-nums normal-case">{taskKey(task.reattemptOf)}</span>
           </button>
         )}
@@ -227,20 +241,23 @@ export function TableView({
       <div role="cell">
         <span className={stateChip(task.state)}>{task.state}</span>
       </div>
-      <div role="cell" className="text-muted">
+      <div role="cell" className="hidden text-muted lg:block">
         {task.harness}
       </div>
-      <div role="cell" className="text-muted">
+      <div role="cell" className="hidden text-muted lg:block">
         {task.model}
       </div>
-      <div role="cell" className={task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}>
+      <div
+        role="cell"
+        className={`hidden md:block ${task.priority === 'high' ? 'font-semibold text-ink' : 'text-muted'}`}
+      >
         {task.priority}
       </div>
-      <div role="cell" className="text-right tabular-nums text-muted">
+      <div role="cell" className="hidden text-right tabular-nums text-muted md:block">
         <span className="sr-only">Cost: </span>
         {formatCost(task.cost) ?? '—'}
       </div>
-      <div role="cell" className="text-right tabular-nums text-muted">
+      <div role="cell" className="hidden text-right tabular-nums text-muted lg:block">
         <span className="sr-only">Created: </span>
         {new Date(task.createdAt).toLocaleString()}
       </div>
@@ -326,11 +343,15 @@ export function TableView({
             </span>
             <span role="columnheader">Prompt</span>
             <span role="columnheader">State</span>
-            <span role="columnheader">Harness</span>
-            <span role="columnheader">Model</span>
+            <span role="columnheader" className="hidden lg:block">
+              Harness
+            </span>
+            <span role="columnheader" className="hidden lg:block">
+              Model
+            </span>
             {sortHeader('priority', 'Priority')}
-            {sortHeader('cost', 'Cost', 'right')}
-            {sortHeader('createdAt', 'Created', 'right')}
+            {sortHeader('cost', 'Cost', { align: 'right' })}
+            {sortHeader('createdAt', 'Created', { align: 'right', tier: 'lg' })}
           </div>
         </div>
 
