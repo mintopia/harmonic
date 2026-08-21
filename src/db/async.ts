@@ -52,7 +52,11 @@ export class AsyncDbHandle {
     this.#client = client;
   }
 
-  /** Concurrent read (WAL). Does not queue behind pending writes. */
+  /**
+   * Concurrent read: runs immediately, without queueing behind pending writes.
+   * WAL is what lets a reader proceed while the single writer is in flight; this
+   * facade's job is only to keep reads off the write queue.
+   */
   read<T>(fn: (db: AsyncDb) => Promise<T>): Promise<T> {
     return fn(this.db);
   }
@@ -143,6 +147,10 @@ async function backfillDefaultWorkspaceAsync(handle: AsyncDbHandle): Promise<voi
  */
 export async function openAsyncDb(dataDir: string): Promise<AsyncDbHandle> {
   mkdirSync(dataDir, { recursive: true });
+  // `@libsql/client` against a local `file:` URL runs on a single connection, so
+  // connection-level pragmas below (`foreign_keys`, `journal_mode`) apply to the
+  // same connection drizzle then issues every query on — the FK on/off dance is
+  // sound. (A pooled client would need per-connection pragma setup instead.)
   const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
   await client.execute('PRAGMA journal_mode = WAL');
   await client.execute('PRAGMA foreign_keys = OFF');

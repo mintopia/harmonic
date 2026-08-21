@@ -140,18 +140,22 @@ describe('read/write queue facade (ADR-0029 §2)', () => {
     expect(order).toEqual([0, 1, 2]);
   });
 
-  it('read() runs concurrently without queueing behind a pending write', async () => {
-    const order: string[] = [];
-    const slowWrite = h.write(async () => {
-      await delay(40);
-      order.push('write');
-    });
-    const fastRead = h.read(async (db) => {
-      await db.select().from(workspaces).all();
-      order.push('read');
-    });
-    await Promise.all([slowWrite, fastRead]);
-    expect(order[0]).toBe('read');
+  it('read() is not queued behind a pending write (facade keeps reads off the write queue)', async () => {
+    // Proves the facade contract: a read issued while a write is in flight
+    // resolves without waiting for the write queue to drain. (True reader/writer
+    // concurrency under load is WAL's job in the driver, not this facade's.)
+    let writeSettled = false;
+    const slowWrite = h
+      .write(async () => {
+        await delay(40);
+      })
+      .then(() => {
+        writeSettled = true;
+      });
+    const rows = await h.read((db) => db.select().from(workspaces).all());
+    expect(writeSettled).toBe(false);
+    expect(rows).toHaveLength(1);
+    await slowWrite;
   });
 
   it('a failed write does not poison the queue', async () => {
