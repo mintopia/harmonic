@@ -22,7 +22,7 @@ Run a fleet of coding agents unattended — nothing merges without your review �
 
 ## Brand Personality
 
-Fast, dense, operator-grade. Quiet control-room energy: the interface carries a lot of state in little space, speaks in one cobalt accent (its only voice) over a small semantic state palette (amber running / green accepted / red failed / slate blocked / teal tooling) to mean things, and never performs excitement. The tool disappears into the task. (Accent updated 2026-07-16: "Ledger" and its indigo were retired for **Aurora** — accent cobalt `#2563EB` light / `#6E8BFF` dark, with Ready-green and Blocked-slate added to the state family. See DESIGN.md § 2.)
+Fast, dense, operator-grade. Quiet control-room energy: the interface carries a lot of state in little space and never performs excitement — the tool disappears into the task. It renders that restraint as a matte, low-chroma **"Paper"** world and speaks in **two deliberate voices** over a small semantic state palette: a **teal** action/tooling accent (the interface's own voice — primary actions, active nav, selection, focus, ready-to-run) and an **indigo** review voice reserved for the one thing that needs the operator (awaiting-review / "needs you"). Each voice stays ≤~10% of a screen. The state palette *means* things, never decorates: amber running · indigo awaiting-review · emerald merged · rose failed · slate blocked · teal ready & tooling. (Design world updated 2026-08-21: the cobalt single-accent era — "Ledger" → "Aurora" → "Deck" — was retired for **Paper**, teal `#0D7271` / `#33BDB4` with indigo `#4B4FA6` / `#9096E6` as the review voice. See DESIGN.md § 1–2.)
 
 ## Anti-references
 

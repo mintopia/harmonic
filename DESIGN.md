@@ -1,329 +1,326 @@
-<!-- CURRENT: the "Deck" operator redesign, chosen 2026-08-19, replacing the
-     "Aurora" content-first direction of 2026-07-16 (itself a restart of the
-     "Ledger" of 2026-07-15 and the terminal-native "Signal Console" of
-     2026-07-14). Aurora was sound in its parts (dual theme, real elevation,
-     one cobalt, AA floor, the state-signal family, Mono-Is-Code) but it was
-     still framed as a *premium-SaaS, content-first* console — calm floating
-     cards, generous air, a kanban Board, a docked Task-detail panel. The
-     ground-up brief (Jess, 2026-08-19) was to rethink the whole UI around the
-     ACTUAL workflow of Tasks and Epics, as a serious operator TOOL — "no
-     whimsy or costume, not just a subtle retheme."
+<!-- CURRENT: the "Paper" operator redesign, chosen 2026-08-21, replacing the
+     "Deck" direction of 2026-08-19 (itself replacing Aurora 2026-07-16 → Ledger
+     2026-07-15 → Signal Console 2026-07-14). Deck had the right *structure* —
+     attention-ordered surfaces, a full Ticket page with a run rail, workflow-
+     shaped IA — but its cobalt "premium-console" skin and panelled row-lists were
+     reworked from a throwaway "epic frontier DAG" sketch (Jess, 2026-08-21) that
+     read the fleet more clearly than the live UI.
 
-     Deck keeps everything of Aurora's that was discipline, not costume, and
-     changes four things:
-       · Identity/register: dense, structural, terminal-adjacent Linear-grade —
-         not premium-SaaS calm. Grouping is by floating PANELS (a panel holds a
-         group of rows), not by open air alone.
-       · IA of the home: the Board's kanban columns become the **Deck** — a
-         full-width, attention-ordered list of panelled sections
-         (Needs you → In flight → Landing → Queued → Recent). No drag-between-
-         columns (agent Tasks move by executing, not by dragging). Standalone
-         (non-Epic) Tasks and Epic members are BOTH first-class.
-       · The ticket: the docked Task-detail panel becomes a **full Ticket page**
-         you navigate into (its own route), with a task-level header and a
-         **run rail** that switches between a Task's Runs (retries), each Run
-         owning its own phases / verification / output / changes / cost / reason.
-       · Light neutrals retuned so panels lift off the canvas (the old #FBFBFD
-         canvas left white panels indistinct); dark neutrals unchanged.
+     Paper keeps everything of Deck's that was workflow truth and replaces the
+     visual world and the epic IA:
+       · World: cool matte "Paper" — a low-chroma paper canvas, a teal action
+         accent (not cobalt), a warm-neutral dark. Serious and restrained, never
+         a metaphor or costume: no paper texture, no skeuomorphism. "Paper" names
+         a quiet matte register, not a picture.
+       · Two voices, deliberately: teal is the interface's action/tooling voice;
+         indigo is reserved for the one state that needs the operator —
+         awaiting-review / "needs you." Deck's "awaiting-review = the accent" is
+         retired; in Paper the review state owns its own hue.
+       · Board (home): attention-ordered sections — Needs you → Active → Epics →
+         Standalone — as horizontal card strips (Needs you / Active) and
+         collapsible Epic bands that expand to a frontier-DAG (Frontier + Depth
+         columns), not panelled row-lists.
+       · Vocabulary: "merged" / "merging", never "landing" / "landed", on every
+         surface (code-internal landBranch / EpicLandCoordinator unaffected).
 
-     Retired with Aurora: the calm-sky metaphor and the "content leads, cut
-     until calm" framing as the prime directive — density is now a virtue, not
-     a risk to manage. Where running code and this file disagree, this file
-     wins for new work. The approved visual reference is `.scratch/redesign/
-     deck.html` (Deck + Ticket, both themes). -->
+     Retired with Deck: the cobalt one-accent framing, the panelled-list Deck
+     home, and every Deck token below. Where running code and this file disagree,
+     this file wins for new work; `web/src/index.css` still implements Deck and is
+     migrated to Paper as a separate step. The approved visual reference is
+     `.scratch/redesign/board-paper.html` (Board + Ticket, both themes, Soft/Bold).
+     Accessibility decisions from the 2026-08-21 audit are recorded inline in § 2;
+     the running-amber sub-AA exception is ADR-0033. -->
 
 ---
 name: Harmonic
-description: Operator console for running and reviewing autonomous coding agents — dense, structural, terminal-adjacent; workflow-shaped surfaces, signal-colour state
-designSystem: Deck
+description: Operator console for running and reviewing autonomous coding agents — matte "Paper" world, teal action voice, indigo review voice, workflow-shaped surfaces, frontier-DAG epics
+designSystem: Paper
 colors:
-  accent: "#2563EB"
-  accent-dark: "#6E8BFF"
-  accent-hover: "#1D4FD8"
-  accent-hover-dark: "#8AA1FF"
-  accent-tint-light: "#EAF1FE"
-  accent-tint-dark: "#1C2545"
+  accent: "#0D7271"
+  accent-dark: "#33BDB4"
+  accent-hover: "#0B6360"
+  accent-hover-dark: "#4CD0C7"
+  accent-tint-light: "#E0F0EF"
+  accent-tint-dark: "#123330"
   on-accent-light: "#FFFFFF"
-  on-accent-dark: "#0E1016"
-  canvas-light: "#F6F7FB"
-  canvas-dark: "#0E1016"
+  on-accent-dark: "#0E1413"
+  canvas-light: "#F1F2EF"
+  canvas-dark: "#15161A"
   shell-light: "#FFFFFF"
-  shell-dark: "#14161D"
+  shell-dark: "#1B1D22"
   surface-light: "#FFFFFF"
-  surface-dark: "#171A22"
-  raised-light: "#EEF0F6"
-  raised-dark: "#1F232D"
-  hairline-light: "#E7E9F1"
-  hairline-dark: "#242A35"
-  edge-light: "#D6D9E4"
-  edge-dark: "#2E3440"
-  switch-off-light: "#8B8D9C"
-  switch-off-dark: "#666980"
-  ink-light: "#141627"
-  ink-dark: "#EDEFF6"
-  muted-light: "#565A72"
-  muted-dark: "#9BA0B5"
-  faint-light: "#696D7E"
-  faint-dark: "#83899C"
-  running-text-light: "#A45606"
-  running-dot-light: "#E08A0E"
-  running-tint-light: "#FBEFD8"
-  running-text-dark: "#F0A93A"
-  running-tint-dark: "#3A2C12"
-  ready-text-light: "#14793A"
-  ready-dot-light: "#1BA35B"
-  ready-tint-light: "#DAF4E4"
-  ready-dot-dark: "#34D399"
-  ready-tint-dark: "#123026"
-  completed-text-light: "#067A55"
-  completed-dot-light: "#10B981"
-  completed-tint-light: "#D6F5E7"
-  completed-text-dark: "#34D399"
-  completed-tint-dark: "#123026"
-  failed-text-light: "#B9354B"
-  failed-dot-light: "#F0576E"
-  failed-tint-light: "#FDE3E8"
-  failed-text-dark: "#FB7185"
-  failed-tint-dark: "#3A1720"
-  blocked-slate-light: "#64687E"
-  blocked-tint-light: "#EDEEF3"
-  blocked-slate-dark: "#8A90A6"
-  blocked-tint-dark: "#22262F"
-  tool-text-light: "#0C7486"
-  tool-dot-light: "#16A6BE"
-  tool-tint-light: "#DAF3F8"
-  tool-text-dark: "#38BDF8"
-  tool-tint-dark: "#10303B"
+  surface-dark: "#202227"
+  raised-light: "#EEEFEB"
+  raised-dark: "#282B31"
+  sunken-light: "#FAFAF8"
+  sunken-dark: "#191B1F"
+  field-light: "#FFFFFF"
+  field-dark: "#1B1D22"
+  hairline-light: "#E6E7E2"
+  hairline-dark: "#2C2F36"
+  edge-light: "#D5D8D1"
+  edge-dark: "#3B3F47"
+  edge-strong-light: "#D5D8D1"
+  edge-strong-dark: "#454B54"
+  ink-light: "#1B1E24"
+  ink-dark: "#E8E9EC"
+  muted-light: "#656B73"
+  muted-dark: "#A3A8B0"
+  faint-light: "#61676F"
+  faint-dark: "#979BA2"
+  ready-text-light: "#0D7271"
+  ready-tint-light: "#DDEFEE"
+  ready-text-dark: "#33BDB4"
+  ready-tint-dark: "#123330"
+  await-text-light: "#4B4FA6"
+  await-tint-light: "#ECEDF7"
+  await-text-dark: "#9096E6"
+  await-tint-dark: "#25264C"
+  on-await-light: "#FFFFFF"
+  on-await-dark: "#15161A"
+  running-text-light: "#C0722A"
+  running-tint-light: "#F6EBDC"
+  running-text-dark: "#DE9A45"
+  running-tint-dark: "#3A2C16"
+  done-text-light: "#267356"
+  done-tint-light: "#E1F1EA"
+  done-text-dark: "#37C48E"
+  done-tint-dark: "#12302A"
+  on-done-light: "#FFFFFF"
+  on-done-dark: "#0E1413"
+  failed-text-light: "#AF3C52"
+  failed-tint-light: "#F9E4E8"
+  failed-text-dark: "#F0768A"
+  failed-tint-dark: "#3B1D24"
+  blocked-slate-light: "#6A7079"
+  blocked-tint-light: "#ECEDEA"
+  blocked-slate-dark: "#8A9099"
+  blocked-tint-dark: "#282B31"
+  tool-text-light: "#0D7271"
+  tool-tint-light: "#DDEFEE"
+  tool-text-dark: "#33BDB4"
+  tool-tint-dark: "#123330"
+  btn-go-fill-light: "#4B4FA6"
+  btn-go-fill-dark: "#5B60C2"
 typography:
   display:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "1.4375rem"
-    fontWeight: 750
-    lineHeight: 1.2
-    letterSpacing: "-0.025em"
-  hero:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "3.25rem"
-    fontWeight: 750
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "1.625rem"
+    fontWeight: 800
+    lineHeight: 1.15
     letterSpacing: "-0.03em"
   title:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "0.9375rem"
-    fontWeight: 600
-    lineHeight: 1.4
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 700
+    lineHeight: 1.3
   body:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
-    fontSize: "0.875rem"
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontSize: "0.90625rem"
     fontWeight: 400
     lineHeight: 1.5
   small:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 400
   label:
-    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
     fontSize: "0.625rem"
     fontWeight: 700
-    letterSpacing: "0.09em"
+    letterSpacing: "0.1em"
   code:
     fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
-    fontSize: "0.8125rem"
+    fontSize: "0.78125rem"
     fontWeight: 400
     lineHeight: 1.5
 rounded:
-  sm: "7px"
-  md: "8px"
-  lg: "11px"
-  xl: "12px"
+  sm: "8px"
+  md: "10px"
+  lg: "13px"
   pill: "999px"
+  bold-sm: "3px"
+  bold-md: "3px"
+  bold-lg: "4px"
 spacing:
   xs: "4px"
   sm: "8px"
   md: "12px"
   lg: "16px"
   xl: "22px"
-  "2xl": "32px"
+  "2xl": "30px"
 ---
 
-# Design System: Harmonic — "Deck"
+# Design System: Harmonic — "Paper"
 
 ## 1. Overview
 
-**North Star: "Deck."** Harmonic is an operator's console for running and reviewing a fleet of autonomous coding agents. The Deck is the operator's board — the one surface that reads the whole fleet at a glance and is ordered by *the operator's attention*, not by chart type. The register is a serious control-room tool: **dense, structural, terminal-adjacent, Linear-grade.** It carries a lot of state in little space, speaks in one cobalt accent over a semantic state palette, and never performs excitement (PRODUCT.md: "the tool disappears into the task"). No metaphor, no costume, no decoration that doesn't convey state.
+**North Star: "Paper."** Harmonic is an operator's console for running and reviewing a fleet of autonomous coding agents. The **Board** is the operator's home — the one surface that reads the whole fleet at a glance, ordered by *the operator's attention*, not by chart type. The register is a serious control-room tool rendered as a **calm, matte paper world**: a low-chroma near-neutral canvas, quiet real elevation, one teal action voice, and a small semantic state palette. It carries a lot of state in little space and never performs excitement (PRODUCT.md: "the tool disappears into the task").
 
-This is a redesign, not a retheme: the UI is reorganised around the real lifecycle — Tasks flow `draft → ready → running → verifying → review → landed`, escalate `afk→hitl` when they need a human, and Epics land as a batch through an integration branch and a merge train. The old kanban Board and docked detail panel are gone.
+**"Paper" is a register, not a picture.** No paper texture, no skeuomorphism, no costume — the name means *matte, low-chroma, tactile-but-flat, quiet*. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
 
-**The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: the review gate and escalations at the top of the Deck; the review gate as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter. If a surface reads as busy, the failure is missing structure, not too much information; add grouping before you cut content.
+This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tasks flow `draft → ready → running → verifying → review → merged`, escalate `afk → hitl` when they need a human, and Epics **merge** as a batch through an integration branch and a merge train. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
 
-**Grouping is by panel.** A related set of rows lives inside a floating **panel** (Surface fill, soft real shadow in light, a lightness-step + hairline in dark). Panels separate groups from each other by the canvas showing between them; rows inside a panel separate by a hairline inset from the panel's edges. This is the correction to two past failures at once: the Ledger drowned content in ruled rows and mono; Aurora over-corrected into calm floating cards and open air that read as under-structured on a dense operator surface. The Deck groups with panels and carries density with alignment.
+**The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: the review gate and escalations at the top of the Board; the review gate as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
 
-Both themes are first-class. **Dark is the canonical operator identity** (cool near-black #0E1016 → #171A22, depth from lightness steps); **Light** ships for bright rooms (cool near-white #F6F7FB canvas with white panels on soft shadows). Theme follows `prefers-color-scheme` with a manual override (System → Light → Dark) persisted in `localStorage` and stamped as `data-theme` on the root.
+Both themes are first-class. **Dark is the canonical operator identity** (warm-neutral near-black `#15161A` → `#202227`, depth from lightness steps); **Light** (the matte paper world, canvas `#F1F2EF` with white panels on soft shadows) ships for bright rooms. Theme follows `prefers-color-scheme` with a manual override persisted in `localStorage` and stamped as `data-theme` on the root. A **Soft ↔ Bold** density toggle is also first-class (§ 3). Which of Light/Dark and Soft/Bold ships as the default is **still open** — do not hardcode one away.
 
-Deck keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (panels + hierarchy, not a wall of widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), **kanban-tool sprawl** (the Deck is an attention queue with a review gate, not a project-management board).
+Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (structure + hierarchy, not a wall of widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), **kanban-tool sprawl** (the Board is an attention queue with a review gate, not a project-management board).
 
 **Key characteristics:**
 - Attention-ordered surfaces: what needs the operator now is first and loudest.
-- Dense and structural: grouping by panels, hierarchy by weight/size/colour-layer, alignment carries a lot of state per pixel.
-- One cobalt accent (the interface's voice, ≤10% of any screen) + a semantic state-signal family (the work's colours).
-- Monospace is reserved for **code** — file paths, branch refs, commit oids, shell commands, tool targets, inline code. Everything read as language or as a figure is sans with `tabular-nums`.
-- Terminal-adjacent, never a costume: no scanlines, no glow, no faux-CRT; the "terminal" feeling comes from density, mono code, and restraint.
-- True dual theme, AA contrast floor in both.
+- Matte, low-chroma, quiet: near-neutral grounds, quiet real elevation, generous but disciplined density.
+- **Two deliberate voices** — teal for actions/tooling, indigo for the review state — over a semantic state-signal family (§ 2). No third accent.
+- Monospace is reserved for **code** — file paths, branch refs, commit oids, shell commands, tool targets, session ids, inline code. Everything read as language or as a figure is sans with `tabular-nums`.
+- True dual theme + Soft/Bold density, **WCAG 2.1 AA** floor in both themes (one documented amber exception, § 2 / ADR-0033).
 
 ## 2. Colours
 
-One cobalt accent, a cool-neutral ground, and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme — text-on-tint state pills at ≥4.5:1, the Faint role at ≥4.5:1 where it labels metadata, and non-text affordances (the Switch off-track, dividers, seams) at ≥3:1 — in **both** themes. `tests/contrast.test.ts` computes every documented pairing from `web/src/index.css` and fails the build if any drops below its floor (issue #87). **The retuned light neutrals (canvas/raised/hairline/edge) and any new tint pairing introduced by the Deck redesign must be re-verified against that test before they ship — the test is the gate, this file is the intent.**
+Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes. The one deliberate exception is the running amber (below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper lands in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 non-exception failures across Light/Dark × Soft/Bold, 2026-08-21).
 
-### Accent (the interface's one voice)
-- **Cobalt Accent** (#2563EB light / #6E8BFF dark): primary actions, active nav, current selection, focus rings, the chart series, the run-rail's selected chip, and the *awaiting-review* state (the state that needs the operator is deliberately the accent). Filled buttons pair it with white in light / near-black (#0E1016) in dark. Hover: #1D4FD8 light, #8AA1FF dark.
-- **Accent Tint** (#EAF1FE / #1C2545): fill under active nav, the selected run chip, the operator's own chat message, the *awaiting-review* pill. The light tint holds AA under the accent text it carries.
+### The two voices
+- **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the `Accept & merge` gate button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
+- **Indigo Review** (`await` `#4B4FA6` light / `#9096E6` dark): reserved for the one state that needs the operator — **awaiting-review** pills, the **"Needs you"** section + count, the **Review →** button, and the **selected run chip**. **Await Tint** (`#ECEDF7` / `#25264C`): the awaiting-review pill, the selected run row, the review section header. This is the deliberate break from Deck: awaiting-review is **not** the action accent — the review state owns its own hue, so "needs you" never blurs into ordinary chrome.
 
-### Neutral (cool near-zero-chroma ground)
-- **Canvas** (#F6F7FB / #0E1016): the page field, and the gap between panels. Light is darkened from Aurora's #FBFBFD so white panels lift off it — the fix for "light reads indistinct."
-- **Shell** (#FFFFFF / #14161D): the rail, the status strip, the ticket crumb bar.
-- **Surface** (#FFFFFF / #171A22): panels, cards, dialogs.
-- **Raised** (#EEF0F6 / #1F232D): inset fills — count pills, hovers, neutral chips.
-- **Field** (#FFFFFF / #14161D): form controls only — read as a surface you type *into*. See `--hm-field` in `web/src/index.css`.
-- **Hairline** (#E7E9F1 / #242A35): shared-edge dividers and the inset row-separators *inside* a panel. **Edge** (#D6D9E4 / #2E3440): interactive borders (fields, ghost buttons, run chips). **Switch off-track** (#8B8D9C / #666980): pitched dark enough to hold ≥3:1 against both the white knob and the surface behind it.
-- **Ink** (#141627 / #EDEFF6): primary text. **Muted** (#565A72 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#696D7E / #83899C, the issue-#87 retune — light darkened, dark lightened from the original #767A8E / #7E8496 so it clears the floor on the retuned Raised): icon-only affordances, disabled text, and quiet metadata lines (branch names, ids, timestamps, zero counts, the dialog close ✕) — held at ≥4.5:1 on every neutral background.
+**The Two Voices Rule.** Teal means *action / tooling / ready-to-run*; indigo means *the operator's turn (review / needs-you)*. Never use teal for the review state, and never use indigo for a generic action. Each voice stays ≤~10% of any screen; if either is decorating something, it's wrong.
+
+### Neutral (low-chroma paper ground)
+- **Canvas** (`#F1F2EF` / `#15161A`): the page field and the gap between panels — a matte near-neutral, faintly warm in light, warm-neutral in dark.
+- **Shell** (`#FFFFFF` / `#1B1D22`): the rail (`<nav>`), the status strip (`<header>`), the ticket crumb bar.
+- **Surface** (`#FFFFFF` / `#202227`): cards, bands, dialogs, the ticket sidebar.
+- **Raised** (`#EEEFEB` / `#282B31`): inset fills — count pills, hovers, neutral chips.
+- **Sunken** (`#FAFAF8` / `#191B1F`): recessed wells — the diff file list, the changed-files list, band-header hover. (A token, not a raw hex — the 2026-08-21 audit tokenised the last hard-coded neutrals.)
+- **Field** (`#FFFFFF` / `#1B1D22`): form controls only — a surface you type *into*.
+- **Hairline** (`#E6E7E2` / `#2C2F36`): shared-edge dividers and inset row-separators. **Edge** (`#D5D8D1` / `#3B3F47`): interactive borders (fields, ghost buttons, run chips). **Edge-strong** (`= Edge` light / `#454B54` dark): the dark node-hover border.
+- **Ink** (`#1B1E24` / `#E8E9EC`): primary text. **Muted** (`#656B73` / `#A3A8B0`): secondary text — the informational floor, ≥4.5:1. **Faint** (`#61676F` / `#979BA2`): quiet metadata (branch names, ids, timestamps, zero counts) — held at ≥4.5:1 on every neutral background.
 
 ### State-signal family (belongs to the work, not the chrome)
-Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, and run-rail chip states:
-- **Running amber** (#A45606 / dot #E08A0E / tint #FBEFD8 · dark #F0A93A / tint #3A2C12): work in flight; also the escalation/attention register (see the Signal Rule carve-outs).
-- **Ready green** (#14793A / dot #1BA35B / tint #DAF4E4 · dark dot #34D399 / tint #123026): queued to run, in the ready frontier.
-- **Awaiting review = the cobalt accent** (it needs you — it's the accent, not a separate hue).
-- **Blocked slate** (#64687E / tint #EDEEF3 · dark #8A90A6 / tint #22262F): waiting on a dependency.
-- **Completed emerald** (#067A55 / dot #10B981 / tint #D6F5E7 · dark #34D399 / tint #123026): finished, accepted, folded.
-- **Failed rose** (#B9354B / dot #F0576E / tint #FDE3E8 · dark #FB7185 / tint #3A1720): failed, rejected, blocked member, destructive.
-- **Tooling cyan** (#0C7486 / dot #16A6BE / tint #DAF3F8 · dark #38BDF8 / tint #10303B): tool calls, branch/epic refs, harness metadata, the Epic kind badge.
-- **Draft** is neutral (Muted/Faint) — nothing is happening yet. Priority is typographic (a quiet Raised chip + weight), never a hue.
+Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, run-chip states, and merge-train segments:
+- **Running amber** (`#C0722A` / tint `#F6EBDC` · dark `#DE9A45` / tint `#3A2C16`): work in flight; also the escalation/attention register.
+- **Awaiting review = indigo** (see the two voices above) — the state that needs you.
+- **Ready = teal** (`#0D7271` / tint `#DDEFEE` · dark `#33BDB4` / tint `#123330`): queued to run, in the ready frontier — the same hue as the action accent, because *ready* is "actionable now."
+- **Merged emerald** (`#267356` / tint `#E1F1EA` · dark `#37C48E` / tint `#12302A`): finished, accepted, folded. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald).
+- **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
+- **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
+- **Tooling = teal** (`= accent`): tool calls, branch/epic refs, harness metadata, the Epic kind badge. Paper folds Deck's separate tooling-cyan into the teal voice.
 
-### Named rules
-**The One Cobalt Rule.** The accent appears on at most ~10% of any screen: primary action, active nav, selection, focus, the chart, the selected run chip, and the awaiting-review state. If cobalt is decorating something, it's wrong.
+### Named accessibility rules (2026-08-21 audit)
+**The Ink-Flip Rule.** The white-on-solid *await* and *merged* fills fail AA in the dark theme (white on the bright periwinkle/emerald measures ~2.7 / ~2.2:1). Do **not** darken the fills — that mutes the colour. Instead the glyph ink flips per theme via `--on-await` / `--on-done`: white in light, dark ink (`#15161A` / `#0E1413`) on the bright fills in dark. Any new white-on-state-fill pairing follows this.
 
-**The Signal Rule.** State colours mean states and live on the **state/signal layer** — a dot, a count pill, a state pill, a merge-train segment, a run-rail chip's state word — never smeared across content, never decorative. A colour the operator can't parse as a state is noise. Carve-outs (all retained): the API reference reuses the tints as a redundant second cue on HTTP-method / response-code pills; a mirrored Task's `escalated` tag reuses Running amber's tint/ink on every surface it appears (issue #34, #99), an afk→hitl escalation being "work in flight, now yours"; the reject dialog's continuation-cost chip colours only the *pricier* re-attempt path in Running amber, as harness-attention chrome, never a task state (issues #175, #177).
+**The Amber Exception (ADR-0033).** The running amber measures **3.1–3.7:1** at the ~10px sizes where it appears as text — below AA. It is an *accepted, bounded* exception because running state is **never carried by colour alone**: a pulsing dot, a text label, and structural position always accompany it. The amber stays vivid; we do not chase 4.5:1 at 10px. The constraint: if amber ever becomes the *sole* carrier of a state (no dot, label, or position), that usage must meet AA independently.
 
-**The Cool-Neutral Rule.** Neutrals carry no hue in either theme; warmth or coolness comes only from the accent and the state family.
+**The Cool-Neutral-ish Rule.** Neutrals stay low-chroma in both themes; the little warmth in the paper ground is deliberate and quiet — all real hue comes from the two voices and the state family.
 
 ## 3. Typography
 
-**Display / UI / Body:** system sans (ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto). Character comes from a deliberate scale, weight, and spacing — not an exotic face.
-**Code:** JetBrains Mono (ui-monospace fallback) — **code only.**
+**Display / UI / Body:** system sans (`system-ui, -apple-system, Segoe UI, Roboto, …`). The 2026-08-21 audit **dropped the Google-hosted Inter/JetBrains `<link>`s** — no external font requests; character comes from scale, weight, and spacing, not an exotic face.
+**Code:** JetBrains Mono (`ui-monospace` fallback) — **code only.**
 
-Three working weights: 400 body / 500–550 UI emphasis / 650–750 headings. `tabular-nums` is inherent everywhere digits appear, so numbers line up in sans without needing mono.
+Working weights: 400 body / 500–600 UI emphasis / 700–800 headings. `tabular-nums` is inherent everywhere digits appear, so numbers line up in sans without mono.
 
 ### Hierarchy
-- **Display** (750, ~1.44rem, −0.025em): the Ticket page title — the one place a real headline earns its size.
-- **Hero** (750, ~3.25rem, −0.03em): the single big figure on Stats (cost). Rare.
-- **Title** (600, 0.9375rem): panel and section-card headings, the Ticket sidebar card labels.
-- **Body** (400, 0.875rem/1.5): prose, agent messages, UI copy. Prose caps at ~72ch; streams and tables may run wider.
-- **Small** (0.75rem): metadata lines, notes, telemetry, run-chip sublines.
-- **Label** (700, 0.625rem, +0.09em, uppercase): section headers, field labels, sidebar-card labels, table headers. The only uppercase in the system.
-- **Code** (mono, 0.8125rem): file paths, shell commands, branch/epic refs, commit oids, tool targets, session ids, inline code tokens.
+- **Display** (800, ~1.625rem, −0.03em): the Ticket page title — the one real headline.
+- **Title** (600–700, ~1rem): band titles, run headers, sidebar-card labels.
+- **Body** (400, ~0.906rem/1.5): prose, agent messages, UI copy. Prose caps ~72–78ch; streams and diffs may run wider.
+- **Small** (~0.75rem): metadata lines, notes, telemetry, run-chip sublines.
+- **Label** (700, 0.625rem, +0.1em, uppercase): section headers, field labels, table headers. The only uppercase.
+- **Code** (mono, ~0.78rem): file paths, shell commands, branch/epic refs, commit oids, session ids, inline code.
 
 ### Named rules
-**The Mono Is Code Rule.** Monospace appears *only* where the operator reads genuine code or a code-identity token: file paths, shell commands, branch/epic refs, commit oids, tool-call targets, session ids, inline code. **Everything read as language or as a plain figure is sans** — model names, harness names, costs, token counts, ordinary Task ids, timestamps, statuses, telemetry — all sans with `tabular-nums`. A whole metadata line in mono is a regression (the Ledger's core mistake). Run-event timestamps beside code stay mono only where they read as log lines within a stream; a standalone timestamp is sans.
+**The Mono Is Code Rule.** Monospace appears *only* where the operator reads genuine code or a code-identity token. Everything read as language or a plain figure is sans with `tabular-nums` — model/harness names, costs, token counts, ordinary ids, timestamps, statuses. A whole metadata line in mono is a regression.
 
-**The Two Number Spaces Rule.** A task id and a tracker issue ref are different number spaces that collide as integers. A task id is never a bare `#n` — it reads `T-<id>` in compact slots (Deck rows, graph nodes, table cells) and `Task <id>` in prose and dialog titles; `#<n>` is reserved for a tracker (GitHub) issue ref, GitHub's own convention. Where both meet (the Ticket header) both show, disambiguated: `Task 174 · issue #185` (issue #192). The single formatter is `web/src/id-format.ts`.
+**The Two Number Spaces Rule.** A native Task id reads `T-<id>` in compact slots and `Task <id>` in prose/dialog titles; `#<n>` is reserved for a tracker (GitHub) issue ref. Where both meet (the Ticket header) both show: `Task 172 · issue #185`.
 
-**The Three Weights Rule.** 400 / 500–550 / 650 (750 for the Display title). If hierarchy needs more, fix the size or the colour layer, not the weight ramp.
+**The Three Weights Rule.** 400 / 500–600 / 700 (800 for the Display title). If hierarchy needs more, fix size or colour-layer, not the weight ramp.
+
+**Soft vs Bold (density).** A first-class toggle on the root (`.bold`). **Soft** is the calm default look: rounded corners (8/10/13px), state colour on dots + bars + pills only. **Bold** sharpens every corner (3/3/4px) and washes ready/running/await/merged cards and nodes with their state tint for a denser, higher-signal read. **Bold's density is locked** — do not restyle it or run `quieter` on it (Jess: "leave as is entirely"). Which of Soft/Bold ships as default is open.
 
 ## 4. Elevation & grouping
 
-Depth is real but quiet, declared once per element (never a border *and* a wide shadow — that ghost-card pairing is banned):
-- **Panels & cards — Light:** Surface fill on the canvas with a soft two-layer shadow (`0 1px 2px rgb(20 22 45 / .06), 0 6px 18px rgb(20 22 45 / .07)`). **Dark:** shadows fade on a dark field, so a panel is a lightness step (canvas #0E1016 → shell #14161D → surface #171A22 → raised #1F232D) with a 1px hairline ring standing in for the shadow.
-- **Floating elements** (dialogs, the review gate bar, the conversation dock, toasts): a stronger float shadow in light; in dark, a heavier shadow plus an Edge ring so they still separate.
-- **Grouping is the panel, not the rule.** A group of rows lives in one panel; groups separate by the canvas between panels. *Inside* a panel, rows may carry a hairline inset from the edges as a secondary separator — this is a list within a container, not the Ledger's ruled-rows-as-sole-structure. Never build a group out of bare `divide-y`/`border-t` rows on the canvas with no panel around them.
-- The focus ring is a 2px cobalt outline, offset 2px, on `:focus-visible`, everywhere.
+Depth is real but quiet, **declared once per element** (never a border *and* a wide shadow — that ghost-card pairing is banned):
+- **Cards, bands, dialogs — Light:** Surface fill on the canvas with a soft two-layer shadow. **Dark:** shadows fade on a dark field, so an element is a lightness step (canvas → shell → surface → raised) with a 1px hairline ring standing in for the shadow. This is the `border-color:transparent` trick: elevation is declared once — the shadow carries lift in light, the hairline ring in dark.
+- **Floating elements** (dialogs): a stronger float shadow in light; in dark, a heavier shadow plus an Edge ring.
+- **Cards carry a colored left accent bar** in their state's colour (`.card::before`, 4px / 5px in Bold). This is **Jess-directed and deliberately overrides** the craft-floor "no side-stripe borders" default — the bar is the fastest state read on a scannable strip.
+- The focus ring is a 2px teal outline, offset 2px, on `:focus-visible`, everywhere; `:focus{outline:none}` is paired with `:focus-visible` rules (not a bare removal).
 
 ## 5. Layout & Information Architecture
 
-**App shell.** A slim left **rail** (~208px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Deck / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as minimal line-icon + label rows (active = accent text on Accent Tint; a badge carries a count, cobalt when it's the "Needs you" count). A collapse toggle pins bottom; below ~900px the rail collapses to icons. A thin **status strip** across the top of the working area carries *status, not navigation* — the auto-runner master switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the theme-cycle, the global **Settings** icon (ADR 0012), Log out, and the one primary action (**New task**). The **shell is pinned; only the working area scrolls** — the rail and strip hold at every scroll position, and floating elements inset off the below-strip region rather than hardcoding its moving edge.
+**App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the "Needs you" count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the Soft/Bold toggle, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
 
-### The Deck (home / signature surface)
-The Deck replaces the kanban Board. It is **full-width, a single centered column (~860px max)** of panelled sections, ordered by attention, not by state-columns:
-- **Needs you** — the sacred core, always first: *awaiting-review* Tasks (with an at-a-glance verification verdict) and *escalated* Tasks (amber). Nothing that needs the operator is ever below the fold of this section.
-- **In flight** — running Runs, with a live phase pill (executing / validating / verifying) and elapsed; standalone Tasks only (an Epic member that is running shows inside its Epic band, not duplicated here).
-- **Landing** — each active **Epic** as one panel/band (see § 6): the merge-train segments, folded count, integration tip, whole-Epic verification, the blocking member, and Force-land. Collapsed by default to its status line; expands to the member roster.
-- **Queued** — the ready frontier + blocked Tasks, standalone Tasks first-class (native and mirrored), with the auto-runner's pick order implied and a `Run now` on each.
-- **Recent** — landed / failed today, collapsed to a count.
+### The Board (home / signature surface)
+Full-width, attention-ordered sections, top → bottom:
+- **Needs you** — the sacred core, always first: *awaiting-review* Tasks (with an at-a-glance verification verdict) and *escalated / HITL* Tasks (amber). A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
+- **Active** — the running Tasks, a card strip; the count matches "N running." A running Epic member shows in its Epic band, not duplicated here.
+- **Epics** — collapsible **bands**; each expands to a **frontier-DAG** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
+- **Standalone** — loose task cards on the canvas (not boxed in a band), their own frontier.
 
-**Standalone (non-Epic) work is first-class everywhere.** The Deck is not Epic-shaped: a native Task or an Epic-less mirrored issue is a plain row in its attention section, never demoted because it has no Epic. Epics are an additional grouping in the Landing section, not the organising axis.
-
-**No drag-between-columns.** Agent Tasks change state by executing, not by being dragged; the Deck row carries its state's forward action as a button (`Run now`, `Take over`, `Force-land`, `Open`). Editing happens on the Ticket, never by drop.
-
-**Rows are the summary.** A Deck row is one glanceable line: a state dot, the id (faint mono — a native Task reads `T-<id>`, a mirrored one its tracker issue `#<ref>`), the title (loud), at most two quiet facts (harness·model, or an escalation reason), and a right-aligned signal (phase pill, verdict, or the state's action). Clicking a row opens the full Ticket — the Deck never tries to be the detail.
+### The frontier-DAG (inside an Epic band)
+The one place the parallel-Epic machinery is legible at a glance:
+- **Column 0 = Frontier** (ready + running — actionable now), then **Depth 1..N** of blocked tasks by dependency depth. Horizontal scroll **inside** the panel; fixed ~300px node cards, never squashed to fit.
+- **Ready ≠ blocked.** A node is in the Frontier only if all blockers are satisfied; otherwise it sits in a Depth column. Never show "ready" inside a depth column.
+- **Merged members are hidden from the DAG entirely** (folded into the epic branch). An epic whose members all merged collapses to its merge-train + integration tip; empty columns drop out.
+- **Cross-epic dependencies are chips, never drawn lines.** No connector lines at all — column position + colour carry flow. Satisfied blockers are struck-through chips.
+- **Node state = the dot only** (plus an sr-only status word). No status text, no colored left bar on nodes; ready/running nodes get a subtle colored border, blocked = hairline.
+- **Merge-train pips = merge PROGRESS:** one green only — green merged, amber running, neutral grey everything not-yet-merged. Never give *ready* its own green.
+- Column headers terse: **Frontier / Depth 1 / Depth 2 …**
 
 ### The Ticket page (its own route)
-Reviewing a Task, or reading a Run in full, is a **full-width page you navigate into** (crumb: `Deck / Task 172 · issue #185` for a mirrored Task showing both identities; a native Task shows just `Deck / Task 172`, with a back control), not a docked panel. It separates **task-level** facts (constant) from **run-level** facts (per attempt):
-- **Task-level header:** Display title + state chip; one meta line (origin · priority · isolation · base branch · dependencies-met · notify); a **Brief** panel holding the prompt (Markdown for mirrored issues, plain for native).
-- **Run rail:** a row of run chips — `✗ Run 1 failed · ⟲ Run 2 rejected · ● Run 3 awaiting` — each showing state + cost + duration, selected chip on Accent Tint. Selecting a run switches the whole detail below; a note names session continuity ("Run 3 continued Run 2's session · warm").
-- **Run-level detail** (per selected run): a phase stepper for *this* run (a failed run stops with a rose ✗ at the phase it died in); a two-column body — **main** (underline tabs Output / Changes) and a **sidebar** (Verification card, then a This-run card: session warmth, usage, cost-by-model). A historical run leads with a result banner (failed: reason; rejected: reason + the feedback carried forward) and is read-only.
-- **Bottom bar:** on the *current* run it is the **review gate** (§ 6) — the loudest element; on a historical run it is a quiet read-only result bar ("Run 2 rejected · superseded by Run 3 · Go to current run"). The gate arms only on the current run so a stale run can never be accepted.
+A full-width page you navigate into. Crumb: `harmonic / Epic epic/166 / Task 172 · issue #185` (the epic crumb only when the task is in an epic). It separates **task-level** facts (constant) from **run-level** facts (per attempt):
+- **Task header:** Display title + state pill; a **flat metrics row** — Cost · Tokens · Elapsed · Runs · Diff — as non-card, hairline-separated figures (never stat-cards); a meta line (origin · priority · agent · deps · notify); a clamped Brief/description with Show-more.
+- **Run-centric body** (`.tkshell`): a full-height right **run rail** (`<aside>`) + a main pane that shows **Run OR Changes**, driven by the rail's selection:
+  - **Run rail** holds **Run attempts** (one selectable row per attempt: dot + `Run N` + `state · cost · duration`, selected on Await Tint + indigo ring), the **Worktree** (branch ref, base, isolation), and **Changed files** (per-file M/A badge + ± stat).
+  - **Run** view (a run attempt selected): a phase **stepper** for *this* run, the **Verification** block (Command / Critic mechanisms with pass/proceed verdicts), the **transcript** (native harness event stream), and a **per-agent usage table** (read/write/cached bars + cost per agent). A warm/continued run names its session continuity.
+  - **Changes** view (a changed file selected): the **run-agnostic worktree diff** — the cumulative diff of the worktree, not tied to any single run.
+- **Review gate:** pinned **actions** at the bottom of the rail — **Reject… (ghost)** then **Accept & merge (teal fill, last)** — the loudest element on the current run, and **sticky** so it stays reachable when the sidebar stacks below at narrow widths. On a historical / failed / rejected run the gate is a quiet read-only bar.
 
 ### Other surfaces
-Activity (instance-wide live processes), Table, Graph (dependency DAG), Stats, API, Workspace, Settings inherit the Deck system — panels, rows, the state layer, the type scale — and are reached from the rail. Their content-ranking is unchanged from prior intent: Stats leads with the hero figure + chart; Settings groups controls by air within section cards; Activity is a live tabular readout with real table semantics.
+Activity, Table, Graph (dependency DAG), Stats, API, Workspace, Settings inherit the Paper system — the two voices, the state layer, the type scale, panels/cards — and are reached from the rail.
 
 ## 6. Components
 
-### The Deck row
-State dot · faint mono id · loud title · ≤2 quiet meta facts · right-aligned signal (phase pill / verdict / action button / `when`). One line of content plus one quiet meta line; never a slab of chips. Hover raises the row within its panel; the whole row is the click target to the Ticket. Escalated and mirrored get their one meaningful chip (amber `escalated`, cyan `mirrored`/`epic ref`, neutral `afk`/`high`); native/normal carry none (the absence is the default).
+### Board card (Needs you / Active / Standalone strips)
+A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** (Needs you) put harness·model on its own line below the action-description line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right **HITL badge** (person icon + "HITL", amber) — HITL cards get **no** Run-now. Right-aligned action by state: **Review →** (indigo), **Take over** (ghost), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket.
 
-### Panel & section header
-A **section** is an uppercase Label header (`Needs you`, count, optional right-aligned sub) above one **panel** (Surface, 12px radius, elevation per § 4). The "Needs you" header is the one section whose label is accent, not faint.
+### Epic band + frontier-DAG node
+Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono), the title, the **merge-train** pips, a disclosure chevron. Expands to the frontier-DAG (§ 5). A **node**: state dot + mono id + title + dependency chips (satisfied = struck-through); ready frontier nodes get a teal ▷ **Run now**; blocked nodes carry their blocker chips. Merged nodes are hidden.
 
-### Epic band (Landing)
-One panel per Epic. Header: the **kind** badge (`Spec`/`Map`, cyan tint), the `epic/<ref>` (mono), the title, a disclosure chevron. Status row: the **merge-train** — a segment per member coloured by land status (done emerald / running amber / blocked rose / pending neutral) — then folded count, integration tip oid (mono), whole-Epic verification glyph, and, right-aligned, the blocking-member note (rose tint) + **Force-land subset**. Collapsed by default; expanding reveals member rows (each a Deck row, indented, deep-linking to the member's Ticket). This is the one place the parallel-Epic machinery (integration branch, ready frontier, merge train, land gate — ADR 0024/0026) is legible at a glance.
-
-### Run rail & run chip
-A horizontal, wrapping row of run chips at the top of the Ticket's run-level area. A chip: a state dot + `Run N` (Ink, 650), and a subline of `state · cost · duration` (state word in its colour: rose failed, amber rejected, accent awaiting, emerald completed). Selected chip = Accent Tint + a 1.5px cobalt ring. Scales to many retries by wrapping. A note below the rail states session reuse/warmth for the current run.
-
-### Phase stepper
-The Run's `executing → validating → verifying → review → landing` machine as a compact horizontal stepper: a done step is an emerald ✓ node, the current step a cobalt node, a pending step a hollow Edge node, a **failed** step a rose ✗ node (a failed Run stops there). Connectors fill emerald behind completed steps. Distinct from the Run's terminal state — a native Run is `state:running` while parked in `phase:review`.
-
-### Verification card (Ticket sidebar)
-Header: `Verification` label + the combined outcome (proceed emerald / block·escalate rose / not-reached faint). One row per mechanism (Command, Critic·model) with a pass/fail icon, a one-line summary, and a verdict word; a "N attempts · M self-heal" affordance for the full log. Fail-safe reads (inconclusive → escalate) never render as a silent pass.
+### Run rail, stepper & verification
+- **Run attempt row:** dot + `Run N` + `state · cost · duration`; selected on Await Tint + indigo ring.
+- **Phase stepper:** `executing → validating → verifying → review → merging`. Done = emerald ✓ node (ink flips per theme), current = indigo node, pending = hollow Edge node, **failed = rose ✕** (a failed run stops there); connectors fill emerald behind completed steps.
+- **Verification block:** a header verdict (proceed emerald / block·escalate rose) + one row per mechanism (Command, Critic·model) with a pass/fail icon, one-line summary, and verdict word. Fail-safe reads never render as a silent pass.
+- **Per-agent usage table:** one row per agent — role (+ `subagent` tag), model, a read/write/cached stacked bar with a legend, and cost. Flat rows, hairline-separated, never cards.
 
 ### Buttons
-- **Primary:** cobalt fill, white/near-black text, 8px radius, weight 600. One per surface (plus the review gate's Accept).
-- **Ghost:** Surface fill, 1px Edge border, ink text; hover darkens the border. The state's forward move (`Run now`, `Take over`, `Re-attempt`) and the run rail's `Go to current run`.
-- **Quiet:** Muted text link, weight 500, hover to Ink; destructive-quiet hovers to Failed rose.
-- **Solid destructive:** Failed-rose fill, on-fail label — reserved for the confirm *inside* a deliberate guard (type-the-name Workspace delete). Casual destructive stays Quiet so the loud red never becomes ambient. `--hm-on-fail` clears the text floor in both themes (`tests/contrast.test.ts`).
-- **Review gate:** two verbs, **Reject… (Ghost)** then **Accept & merge (cobalt, last)** — the affirmative holds the terminal position; nothing else belongs in the row. Accept is unguarded when the Verification verdict is *proceed*/absent, but **arms into a two-step confirm** ("Critic flagged — accept anyway?") when the verdict is *block*/*escalate* — a guard on overriding a red machine verdict, not on the review itself; the bar inlines the one-line verdict so the signal sits where Accept is clicked (issue #174, `TaskActions.tsx`).
-- **Cancel is not a gate action.** Once a Run has produced something to judge, *cancelled* and *failed* are one terminal fact; Cancel keeps meaning only pre-result (Draft/Blocked/Ready) or while running (an armed two-step button). No drag-to-cancel a Running Task.
-- **Hover/Focus:** 150ms ease-out; 2px cobalt `:focus-visible` outline. **Disabled:** 50% opacity.
+- **Primary:** teal fill, white / near-black text, weight 600. One per surface, plus the gate's Accept.
+- **Review / Go:** indigo (`btn-go`) — the review state's forward move (`Review →`), and Bold fills it solid indigo.
+- **Run:** teal on Accent Tint (`btn-run` / `Run now`).
+- **Ghost:** Surface fill, 1px Edge border, ink text; hover darkens the border (`Take over`, `Reject…`).
+- **Review gate:** **Reject… (ghost)** then **Accept & merge (teal, last)** — the affirmative holds the terminal position. The gate arms only on the current run so a stale run can never be accepted.
+- **Hit targets:** every interactive control gets a ≥44×44px hit area via an overlay pseudo-element (expand the hit box, not the visual). **Hover/Focus:** ~150ms ease; 2px teal `:focus-visible` outline.
 
-### Chips, dots & pills (the state layer)
-- **State dot:** a 7–8px dot in the state's colour — the lightest state signal, before a row title or a run-chip label. Running dots pulse (reduced-motion drops the pulse, never the figure).
-- **Count / state pill:** count or state text in its colour on its ~15% tint. Small (10–11px, weight 600–700).
-- **Merge-train segment:** a member's land status as a coloured bar segment — the Epic's colour lives here.
-- Metadata is one truncating line, never a slab of chips — except the mirrored card's role-badge row (drive/type/escalated) and the run chip's own state subline.
+### Dialogs & tooltips
+- **Native `<dialog>`** (`showModal()`): Surface fill, 13px radius, float shadow (Edge ring in dark), `::backdrop` at `rgb(0 0 0 / .42)`, explicit `margin:auto` centering, focus managed by the platform, Esc + backdrop-click close, focus restored to the invoker. Its heading is an `<h2>` (no `h1 → h3` skip).
+- **Tooltips** are on-demand (`data-tip`, hover/focus), no standing chrome — the dense shorthand explains itself on demand rather than carrying permanent hint text.
 
-### Conversation (docked panel)
-Full-height right-hand dock (insets off the below-strip region), a sibling to Task, never queued or reviewed. Header: title + rename + id + an "Active" dot; **telemetry is ONE quiet inline line** (`273.7K tokens · $0.38 · 41% context`), never a grid. Transcript is the content: operator message as a small right-aligned Accent-Tint bubble, agent prose in sans, folded tool lines quiet, a **permission prompt** as the one prominent element (amber-tint band — the harness is blocked — with Allow once / Allow always / Reject). Composer: a calm textarea + Send.
-
-### Stats & Settings
-- **Stats:** the Hero cost figure leads (no card-in-a-card) with a quiet stat row; a single-cobalt cost-per-day chart (2px line, soft area, faint grid, honest `≥` floor for partial days); a calm table below (state pills, tabular-nums, sparse hairline dividers).
-- **Settings:** section cards (Defaults / Harnesses / Notifications) grouped by air, ~22px padding, disclosure rows for harnesses; a **floating save bar** pins on dirty state (Discard / Save changes).
-
-### Dialogs & Toasts
-- Native `<dialog>`, Surface fill, 11–12px radius, float shadow (Edge ring in dark), backdrop `rgb(0 0 0 / 0.5)`, 150ms fade/scale with a reduced-motion instant alternative. One **X**, top-right, owned by `Modal` (Faint, hover Ink); a footer carries only outcomes — no "Close", no dismiss-meaning "Cancel", no second ✕.
-- A rejected operation never uses native `alert()`/`confirm()` — it announces in a top-right stack of Failed-tint toast cards (`aria-live`, Dismiss, ~6s auto-dismiss, `motion-safe` descend). A completed gate action drops a **neutral** acknowledgement card (Raised, ink, muted check — `Task #12 cancelled`), not accept-green, since an acknowledgement is not a state. The stack dodges an open Conversation dock. See `web/src/toast.tsx`.
+### Accessibility baseline (built in, verified 2026-08-21)
+Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions (polite for state transitions and the live "Needs you" count, assertive for the merge outcome) — a screen-reader operator hears a task reach awaiting-review; colour-only state dots carry `role="img"` + label; all decorative SVGs and separator glyphs are `aria-hidden`; icon-only controls have accessible names; `prefers-reduced-motion` drops every animation (dot pulse included) but never the figure; full keyboard paths with visible `:focus-visible`.
 
 ## 7. Do's and Don'ts
 
 ### Do
 - **Do** order every surface by the operator's attention — the review gate and escalations first, loudest.
-- **Do** group with panels; carry density with hierarchy and alignment, not clutter. If it reads busy, add structure before cutting content.
-- **Do** hold the One Cobalt Rule (≤10%: primary action, active nav, selection, focus, chart, selected run chip, awaiting-review) and the Signal Rule (state colour only on the state layer).
-- **Do** set everything read as language or a figure in sans with `tabular-nums`; reserve mono for genuine code and code-identity tokens (Mono Is Code).
-- **Do** declare elevation once (shadow *or* ring, never both); floor informational text at Muted (4.5:1); design every change in both themes; give every control default/hover/focus-visible/disabled and every animation a `prefers-reduced-motion` alternative.
-- **Do** give every interactive control a ≥44×44px hit area (expand the hit box, not necessarily the visual — `touchTarget`/`touchTargetInline`/`touchOverlay`), and give tabular readouts real table semantics with sr-only value labels.
-- **Do** keep standalone (non-Epic) Tasks first-class on every surface; keep the Deck row a summary and the Ticket page the detail.
+- **Do** keep the **two voices** clean: teal = action / tooling / ready; indigo = the operator's turn (review / needs-you). Each ≤~10% of a screen.
+- **Do** keep state colour on the state layer only (dot, count pill, state pill, merge-train segment, run-chip state word).
+- **Do** flip glyph ink per theme on the bright await/merged fills (`--on-await` / `--on-done`) to hold AA — never darken the fill.
+- **Do** set everything read as language or a figure in sans with `tabular-nums`; reserve mono for genuine code and code-identity tokens.
+- **Do** declare elevation once (shadow *or* ring); floor informational text at Muted (4.5:1); design every change in both themes **and** both densities; give every control default/hover/focus-visible/disabled and every animation a reduced-motion alternative; give every control a ≥44px hit area.
+- **Do** keep the card's colored left accent bar (Jess-directed) and standalone (non-Epic) Tasks first-class everywhere.
+- **Do** say **merged / merging** in all UI copy.
 
 ### Don't
-- **Don't** reintroduce a kanban Board with drag-between-columns, or a docked master/detail Task panel — the Deck is attention-ordered rows and the Ticket is its own page.
-- **Don't** carry a group's structure with bare ruled rows on the canvas (`divide-y`/`border-t` with no panel) — that was the Ledger's regression; group with a panel.
+- **Don't** say "landing" / "landed" anywhere in the UI (code-internal `landBranch` / `EpicLandCoordinator` are unaffected).
+- **Don't** use teal for the review state or indigo for a generic action; there is no third accent and no generic info-blue.
+- **Don't** give *ready* its own green — ready is teal, merged is emerald; two greens confused the operator.
+- **Don't** draw connector lines in the frontier-DAG (position + colour + chips carry flow), reintroduce a kanban board with drag-between-columns, or a docked master/detail Task panel.
 - **Don't** set prose, labels, model/harness names, costs, ordinary ids, or telemetry in monospace; a mono metadata line is a regression.
-- **Don't** use state colours decoratively or smear them across content; don't pair a border with a wide shadow (ghost-card), tint neutrals toward any hue, use gradient text, glassmorphism, side-stripe borders, or nested cards.
-- **Don't** let cobalt mean anything but the interface's voice — tooling metadata is cyan, there is no generic info blue, and no second accent exists.
-- **Don't** dress the tool as a terminal costume (scanlines, glow, faux-CRT, rotated rails) — the terminal register is density, mono code, and restraint, nothing theatrical. The Ledger, the Signal Console, and Aurora's calm-card premium-SaaS framing are all retired.
+- **Don't** darken the await/merged fills to chase AA (flip the ink), and **don't** restyle the Bold density (locked).
+- **Don't** pair a border with a wide shadow (ghost-card), tint neutrals toward a hue, use gradient text, glassmorphism, nested cards, or a faux-terminal costume (scanlines, glow, CRT). Paper is matte and quiet; the "terminal" feeling is density and mono code, nothing theatrical.
