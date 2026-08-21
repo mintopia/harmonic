@@ -1,4 +1,4 @@
-import type { TaskRow, TrackerContainerRow, TrackerFacts, WorkspaceRow } from '../db/schema.js';
+import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { AppConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
@@ -13,6 +13,8 @@ import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-lan
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
+import { persistedTickets } from './persisted.js';
+import { forEachYielding } from '../reliability/yield.js';
 
 interface Entry {
   poller: TrackerPoller;
@@ -27,57 +29,6 @@ interface Entry {
 }
 
 const sigOf = (ws: WorkspaceRow): string => `${ws.workingDir}|${ws.trackerPollIntervalSeconds * 1000}`;
-
-function persistedTicket(number: number, facts: TrackerFacts, isMap: boolean): Ticket {
-  return {
-    number,
-    ...facts,
-    isMap,
-    closedAt: null,
-    assignees: [],
-    blocking: [],
-    comments: [],
-  };
-}
-
-/** Rebuild the normalised tracker shape from complete persisted fact rows. */
-function persistedTickets(rows: TaskRow[], containers: TrackerContainerRow[]): Ticket[] {
-  const tickets: Ticket[] = [];
-  for (const row of rows) {
-    if (
-      row.origin !== 'mirrored' ||
-      row.trackerRef === null ||
-      row.trackerState === null ||
-      row.trackerBlockedBy === null ||
-      row.trackerLabels === null ||
-      row.trackerTitle === null ||
-      row.trackerBody === null ||
-      row.trackerUrl === null ||
-      row.trackerCreatedAt === null
-    ) continue;
-    tickets.push(persistedTicket(row.trackerRef, {
-      state: row.trackerState,
-      parent: row.trackerParent,
-      blockedBy: row.trackerBlockedBy,
-      labels: row.trackerLabels,
-      title: row.trackerTitle,
-      body: row.trackerBody,
-      url: row.trackerUrl,
-      createdAt: row.trackerCreatedAt,
-    }, false));
-  }
-  for (const row of containers) tickets.push(persistedTicket(row.trackerRef, {
-    state: row.trackerState,
-    parent: row.trackerParent,
-    blockedBy: row.trackerBlockedBy,
-    labels: row.trackerLabels,
-    title: row.trackerTitle,
-    body: row.trackerBody,
-    url: row.trackerUrl,
-    createdAt: row.trackerCreatedAt,
-  }, true));
-  return tickets;
-}
 
 /**
  * Owns the fleet of per-Workspace tracker poll loops (issue #45). One
@@ -236,7 +187,7 @@ export class TrackerPollerManager {
   async listEpics(workspaceId: number): Promise<Epic[]> {
     const entry = this.entries.get(workspaceId);
     const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
-    const tickets = persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
+    const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
     const derivedEpics = deriveEpics(tickets);
     return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored)));
   }
@@ -245,7 +196,7 @@ export class TrackerPollerManager {
   async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
     const entry = this.entries.get(workspaceId);
     const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
-    const tickets = persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
+    const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
     const derived = deriveEpics(tickets).find((e) => e.ref === epicRef);
     if (!derived) return null;
     return this.composeOne(entry, derived, tickets, mirrored);
@@ -322,18 +273,27 @@ export class TrackerPollerManager {
     const rows = await this.tasks.list(workspaceId === undefined ? {} : { workspaceId });
     const containers = await this.tasks.listTrackerContainers(workspaceId);
     const byWorkspace = new Map<number, TaskRow[]>();
-    for (const task of rows) {
-      if (task.origin !== 'mirrored' || task.workspaceId === null) continue;
+    await forEachYielding(rows, (task) => {
+      if (task.origin !== 'mirrored' || task.workspaceId === null) return;
       const workspaceRows = byWorkspace.get(task.workspaceId);
       if (workspaceRows) workspaceRows.push(task);
       else byWorkspace.set(task.workspaceId, [task]);
-    }
-    for (const container of containers) {
+    });
+    await forEachYielding(containers, (container) => {
       if (!byWorkspace.has(container.workspaceId)) byWorkspace.set(container.workspaceId, []);
-    }
-    return [...byWorkspace].flatMap(([id, mirrored]) =>
-      deriveMaps(persistedTickets(mirrored, containers.filter((container) => container.workspaceId === id)), mirrored, id),
-    );
+    });
+    const containersByWorkspace = new Map<number, typeof containers>();
+    await forEachYielding(containers, (container) => {
+      const workspaceContainers = containersByWorkspace.get(container.workspaceId);
+      if (workspaceContainers) workspaceContainers.push(container);
+      else containersByWorkspace.set(container.workspaceId, [container]);
+    });
+    const maps: DerivedMap[] = [];
+    await forEachYielding(byWorkspace, async ([id, mirrored]) => {
+      const tickets = await persistedTickets(mirrored, containersByWorkspace.get(id) ?? []);
+      maps.push(...deriveMaps(tickets, mirrored, id));
+    });
+    return maps;
   }
 
   /** The tracker URL for a mirrored Task's ref, scoped to its Workspace's last scan; null otherwise. */

@@ -227,11 +227,13 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('runs epic integration between mirroring and the poke (issue #159)', async () => {
-    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
+    const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'], assignees: ['someone'] })]);
     let pokes = 0;
     const calls: Array<{ tickets: number[]; mirrored: Array<number | null>; pokesAtCall: number }> = [];
+    let persistedAssignees: string[] | undefined;
     const epics = {
       reconcile: async (tickets: Ticket[], mirrored: { trackerRef: number | null }[]) => {
+        persistedAssignees = tickets[0]?.assignees;
         calls.push({
           tickets: tickets.map((t) => t.number),
           mirrored: mirrored.map((m) => m.trackerRef),
@@ -259,6 +261,7 @@ describe('TrackerPoller.poll', () => {
     expect(calls[0]!.tickets).toContain(42);
     expect(calls[0]!.mirrored).toContain(42);
     expect(calls[0]!.pokesAtCall).toBe(0); // reconcile ran before the poke
+    expect(persistedAssignees).toEqual([]); // reconstructed DB facts, not the assigned live-scan object (#234)
     expect(pokes).toBe(1);
   });
 

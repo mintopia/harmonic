@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import {
@@ -27,6 +27,7 @@ import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../con
 import { DomainError } from './errors.js';
 import { decideTaskDeletion } from './task-deletion.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
+import { forEachYielding } from '../reliability/yield.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -435,34 +436,29 @@ export class TaskService {
     return row != null;
   }
 
-  /** Persist a tracker container that has no executable Task row, currently a Map. */
-  async upsertTrackerContainer(workspaceId: number, trackerRef: number, facts: TrackerFacts): Promise<void> {
-    await this.db.write((db) =>
-      db.insert(trackerContainers).values({
-        workspaceId,
-        trackerRef,
-        trackerState: facts.state,
-        trackerParent: facts.parent,
-        trackerBlockedBy: facts.blockedBy,
-        trackerLabels: facts.labels,
-        trackerTitle: facts.title,
-        trackerBody: facts.body,
-        trackerUrl: facts.url,
-        trackerCreatedAt: facts.createdAt,
-      }).onConflictDoUpdate({
-        target: [trackerContainers.workspaceId, trackerContainers.trackerRef],
-        set: {
-          trackerState: facts.state,
-          trackerParent: facts.parent,
-          trackerBlockedBy: facts.blockedBy,
-          trackerLabels: facts.labels,
-          trackerTitle: facts.title,
-          trackerBody: facts.body,
-          trackerUrl: facts.url,
-          trackerCreatedAt: facts.createdAt,
-        },
-      }).run(),
-    );
+  /** Replace the persisted non-Task containers for one successful tracker scan. */
+  async syncTrackerContainers(
+    workspaceId: number,
+    containers: Array<{ trackerRef: number; facts: TrackerFacts }>,
+  ): Promise<void> {
+    const refs = containers.map((container) => container.trackerRef);
+    await this.db.transaction(async (tx) => {
+      await tx.delete(trackerContainers).where(
+        refs.length === 0
+          ? eq(trackerContainers.workspaceId, workspaceId)
+          : and(
+              eq(trackerContainers.workspaceId, workspaceId),
+              notInArray(trackerContainers.trackerRef, refs),
+            ),
+      ).run();
+      await forEachYielding(containers, async ({ trackerRef, facts }) => {
+        const columns = trackerFactColumns(facts);
+        await tx.insert(trackerContainers).values({ workspaceId, trackerRef, ...columns }).onConflictDoUpdate({
+          target: [trackerContainers.workspaceId, trackerContainers.trackerRef],
+          set: columns,
+        }).run();
+      });
+    });
   }
 
   async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {

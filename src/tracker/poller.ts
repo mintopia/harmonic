@@ -4,6 +4,7 @@ import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
+import { persistedTickets } from './persisted.js';
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
 export interface MirrorSync {
@@ -105,7 +106,11 @@ export class TrackerPoller {
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
     if (this.epics) {
       try {
-        await this.epics.reconcile(tickets, mirrored);
+        const persisted = await persistedTickets(
+          (await this.tasks.list({ workspaceId: this.workspaceId })).filter((task) => task.origin === 'mirrored'),
+          await this.tasks.listTrackerContainers(this.workspaceId),
+        );
+        await this.epics.reconcile(persisted, mirrored);
       } catch (err) {
         this.onError(`epic integration reconcile failed: ${String(err)}`);
       }

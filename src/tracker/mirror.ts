@@ -1,6 +1,7 @@
 import { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL, type Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { WAYFINDER_TYPES, type Drive, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
+import { forEachYielding } from '../reliability/yield.js';
 
 export interface MirroredRole {
   workflow: Workflow;
@@ -85,10 +86,12 @@ export async function mirrorScan(
   workspaceId: number,
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
-  for (const t of tickets) {
-    if (t.isMap) await tasks.upsertTrackerContainer(workspaceId, t.number, trackerFacts(t));
-    else if (!(await tasks.isDismissed(workspaceId, t.number))) issues.push(t);
-  }
+  const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
+  await forEachYielding(tickets, async (ticket) => {
+    if (ticket.isMap) containers.push({ trackerRef: ticket.number, facts: trackerFacts(ticket) });
+    else if (!(await tasks.isDismissed(workspaceId, ticket.number))) issues.push(ticket);
+  });
+  await tasks.syncTrackerContainers(workspaceId, containers);
   // An Epic is any ticket with children — a Map or a Spec — identified
   // structurally as the parent of some ticket in this scan. Epics are containers:
   // they neither run (drive forced hitl, below) nor block their children (a
@@ -99,17 +102,17 @@ export async function mirrorScan(
   // Sequential upsert: the writes serialize through the single-writer queue
   // anyway, and the reconcile pass below reads `idByRef` built from every row.
   const rows: TaskRow[] = [];
-  for (const t of issues) {
+  await forEachYielding(issues, async (t) => {
     rows.push(await tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number)), workspaceId));
-  }
+  });
   const idByRef = new Map(rows.map((r) => [r.trackerRef!, r.id]));
-  for (let i = 0; i < issues.length; i++) {
-    const blockerIds = issues[i]!.blockedBy
+  await forEachYielding(issues, async (issue, i) => {
+    const blockerIds = issue.blockedBy
       .filter((b) => !epicRefs.has(b.number))
       .map((b) => idByRef.get(b.number))
       .filter((id): id is number => id !== undefined);
     await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
-  }
+  });
   // Re-fetch: reconcile may have re-derived blocked⇄ready after the upsert snapshot.
   return Promise.all(rows.map((r) => tasks.get(r.id)));
 }

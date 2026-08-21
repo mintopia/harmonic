@@ -363,6 +363,15 @@ describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
     expect(row.trackerBlockedBy).toBeNull();
     expect(row.trackerLabels).toBeNull();
   });
+
+  it('removes a persisted Map container when the tracker no longer classifies it as a Map', async () => {
+    const map = ticket({ number: 19, isMap: true, labels: ['wayfinder:map'] });
+    await mirrorScan(tasks, [map], wsId);
+    expect(await tasks.listTrackerContainers(wsId)).toHaveLength(1);
+
+    await mirrorScan(tasks, [{ ...map, isMap: false, labels: ['ready-for-agent'] }], wsId);
+    expect(await tasks.listTrackerContainers(wsId)).toHaveLength(0);
+  });
 });
 
 describe('deriveMaps (query-time rollup)', () => {
