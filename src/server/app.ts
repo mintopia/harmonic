@@ -539,13 +539,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       ? undefined
       : new EventLoopMonitor({ probeMs: eventLoopTuning?.probeMs, stallMs: eventLoopTuning?.stallMs });
   // The advisory-assignment coordinator (issue #32) is per-Workspace (issue
-  // #45); the Auto-Runner routes a mirrored Task's pick filter + claim step to
+  // #45); the Auto-Runner routes a mirrored Task's advisory claim step to
   // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
-  // loop ⇒ don't gate: foreign=false, decision=spawn).
+  // loop ⇒ proceed without a tracker claim).
   const mirror: MirrorClaim = {
-    foreignAssignee: (task) => trackerManagerRef?.coordinatorFor(task.workspaceId)?.foreignAssignee(task) ?? false,
-    recheckAndClaim: async (task) =>
-      (await trackerManagerRef?.coordinatorFor(task.workspaceId)?.recheckAndClaim(task)) ?? 'spawn',
+    recheckAndClaim: async (task) => {
+      await trackerManagerRef?.coordinatorFor(task.workspaceId)?.recheckAndClaim(task);
+    },
   };
   const autoRunner = new AutoRunner(
     tasks,

@@ -4,8 +4,8 @@ import type { TaskService } from '../domain/tasks.js';
 
 /**
  * The tracker-facing half of afk mirrored-Task execution (issue #32). Owns the
- * advisory GitHub assignment: the pick-time foreign-assignee filter, the
- * flip→recheck→claim pre-spawn step, and the per-poll reconcile that drives the
+ * advisory GitHub assignment: the flip→recheck→claim pre-spawn step and the
+ * per-poll reconcile that drives the
  * tracker toward Harmonic's local intent (running ⇒ claimed, handed-back ⇒
  * un-assigned). The assignment is never a lock — the local ready→running flip
  * is (see the Auto-Runner) — so every write here is best-effort and idempotent,
@@ -23,27 +23,11 @@ export class MirrorCoordinator {
     private readonly workspaceId: number,
   ) {}
 
-  /** Cache the poll's adapter + scan and resolve our identity, before any pick reads {@link foreignAssignee}. */
+  /** Cache the poll's adapter + scan and resolve our identity for claim reconciliation. */
   async observe(adapter: TrackerAdapter, scan: Ticket[]): Promise<void> {
     this.adapter = adapter;
     this.byRef = new Map(scan.map((t) => [t.number, t]));
     if (this.me === null) this.me = await adapter.whoami().catch(() => null);
-  }
-
-  /**
-   * From the last scan: does this mirrored Task carry an assignee Harmonic
-   * didn't place? Native/unknown → false. Before our identity resolves, any
-   * assignee reads as foreign (skip rather than run something a human may own).
-   */
-  foreignAssignee(task: TaskRow): boolean {
-    if (task.origin !== 'mirrored' || task.trackerRef == null) return false;
-    const ticket = this.byRef.get(task.trackerRef);
-    return ticket ? this.foreign(ticket) : false;
-  }
-
-  /** An assignee Harmonic didn't place. Before our identity resolves, any assignee counts (skip, don't run a human's). */
-  private foreign(ticket: Ticket): boolean {
-    return ticket.assignees.some((a) => a !== this.me);
   }
 
   /** Harmonic holds the claim on this ticket. Unknowable until our identity resolves. */
@@ -52,22 +36,19 @@ export class MirrorCoordinator {
   }
 
   /**
-   * Pre-spawn step (mirrored afk): a fresh single read to catch a human who
-   * grabbed the ticket since the scan, then the advisory claim. 'yield' hands
-   * the ticket back to the human frontier (and refreshes the cache so the picker
-   * sees the grab); a failed claim still returns 'spawn' — reconcile retries.
+   * Pre-spawn step (mirrored afk): refresh the cached ticket, then place the
+   * advisory claim. Assignment is not an eligibility signal (issue #230,
+   * ADR-0030), and a failed claim does not block the locally claimed Task.
    */
-  async recheckAndClaim(task: TaskRow): Promise<'spawn' | 'yield'> {
-    if (!this.adapter || task.trackerRef == null) return 'spawn';
+  async recheckAndClaim(task: TaskRow): Promise<void> {
+    if (!this.adapter || task.trackerRef == null) return;
     const fresh = await this.adapter.readTicket({ number: task.trackerRef, title: task.prompt, state: 'open' });
     this.byRef.set(fresh.number, fresh);
-    if (this.foreign(fresh)) return 'yield';
     try {
       await this.adapter.claim(fresh);
     } catch {
       // Advisory only — proceed to spawn and let reconcile retry the assignment.
     }
-    return 'spawn';
   }
 
   /**

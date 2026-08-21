@@ -78,44 +78,28 @@ describe('MirrorCoordinator (issue #32)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('foreignAssignee: true only for a mirrored Task an assignee Harmonic did not place', async () => {
-    const foreign = await tasks.upsertMirrored(mirrored(1));
-    const ours = await tasks.upsertMirrored(mirrored(2));
-    const unassigned = await tasks.upsertMirrored(mirrored(3));
-    const native = await tasks.create({ prompt: 'n', state: 'ready' });
-
-    const { adapter } = fakeAdapter();
-    const coord = new MirrorCoordinator(tasks, wsId);
-    await coord.observe(adapter, [ticket(1, ['human']), ticket(2, ['me']), ticket(3, [])]);
-
-    expect(coord.foreignAssignee(await tasks.get(foreign.id))).toBe(true);
-    expect(coord.foreignAssignee(await tasks.get(ours.id))).toBe(false);
-    expect(coord.foreignAssignee(await tasks.get(unassigned.id))).toBe(false);
-    expect(coord.foreignAssignee(await tasks.get(native.id))).toBe(false);
-  });
-
-  it('recheckAndClaim: yields to a fresh foreign grab, otherwise claims — and proceeds through a failed claim', async () => {
+  it('recheckAndClaim: assignment never blocks a claim, and a failed claim still spawns', async () => {
     const task = await tasks.upsertMirrored(mirrored(7));
 
     const grabbed = fakeAdapter();
     grabbed.setRead(ticket(7, ['human']));
     const coordA = new MirrorCoordinator(tasks, wsId);
     await coordA.observe(grabbed.adapter, [ticket(7, [])]);
-    expect(await coordA.recheckAndClaim(await tasks.get(task.id))).toBe('yield');
-    expect(grabbed.calls.claim).toEqual([]);
+    await expect(coordA.recheckAndClaim(await tasks.get(task.id))).resolves.toBeUndefined();
+    expect(grabbed.calls.claim).toEqual([7]);
 
     const open = fakeAdapter();
     open.setRead(ticket(7, []));
     const coordB = new MirrorCoordinator(tasks, wsId);
     await coordB.observe(open.adapter, [ticket(7, [])]);
-    expect(await coordB.recheckAndClaim(await tasks.get(task.id))).toBe('spawn');
+    await expect(coordB.recheckAndClaim(await tasks.get(task.id))).resolves.toBeUndefined();
     expect(open.calls.claim).toEqual([7]);
 
     const failing = fakeAdapter({ claimThrows: true });
     failing.setRead(ticket(7, []));
     const coordC = new MirrorCoordinator(tasks, wsId);
     await coordC.observe(failing.adapter, [ticket(7, [])]);
-    expect(await coordC.recheckAndClaim(await tasks.get(task.id))).toBe('spawn'); // best-effort: spawn anyway
+    await expect(coordC.recheckAndClaim(await tasks.get(task.id))).resolves.toBeUndefined();
   });
 
   it('reconcile: re-claims a running Task, releases an escalated one, leaves failed/foreign/completed alone', async () => {

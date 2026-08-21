@@ -50,10 +50,8 @@ function occupiedDirectContexts(tasks: readonly TaskRow[]): Map<string, TaskRow>
  * pick-eligible as before.
  */
 export interface MirrorClaim {
-  /** Live pick filter: a mirrored Task carrying an assignee Harmonic didn't place is skipped. */
-  foreignAssignee(task: TaskRow): boolean;
-  /** Pre-spawn: readTicket recheck + advisory claim. 'yield' if a human grabbed it since the last scan. */
-  recheckAndClaim(task: TaskRow): Promise<'spawn' | 'yield'>;
+  /** Pre-spawn: refresh the ticket and place Harmonic's advisory claim. */
+  recheckAndClaim(task: TaskRow): Promise<void>;
 }
 
 /**
@@ -71,9 +69,10 @@ export interface MirrorClaim {
  * inherits it when unset.
  *
  * A mirrored afk Task's pick is more than a spawn: the predicate is
- * `drive ≠ hitl ∧ deps satisfied (ready) ∧ no foreign assignee`, and the
- * sequence is flip(ready→running) — the lock — then readTicket recheck and
- * advisory claim before spawning (issue #32).
+ * `drive ≠ hitl ∧ deps satisfied (ready)`, and the sequence is
+ * flip(ready→running) — the lock — then readTicket refresh and advisory claim
+ * before spawning (issues #32 and #230). Assignment is never an eligibility
+ * signal (ADR-0030).
  */
 export class AutoRunner {
   private scheduled = false;
@@ -176,7 +175,7 @@ export class AutoRunner {
         const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
         if (!master) return;
         const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
-        // Tasks parked this cycle (yielded to a human, or un-spawnable) so the
+        // Tasks parked this cycle because they are un-spawnable, so the
         // slow claim path can't spin re-picking the same one before a re-scan.
         const skip = new Set<number>();
         while ((await this.runStore.countRunning()) < ceiling) {
@@ -212,16 +211,10 @@ export class AutoRunner {
       return;
     }
     await this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write
-    let decision: 'spawn' | 'yield';
     try {
-      decision = await this.mirror.recheckAndClaim(await this.taskService.get(task.id));
+      await this.mirror.recheckAndClaim(await this.taskService.get(task.id));
     } catch {
-      decision = 'spawn'; // readTicket/claim failed — proceed; reconcile retries the assignment
-    }
-    if (decision === 'yield') {
-      await this.taskService.setState(task.id, 'ready'); // a human grabbed it — back to the frontier
-      skip.add(task.id);
-      return;
+      // readTicket/claim failed — proceed; reconcile retries the assignment.
     }
     try {
       await this.runner.launchClaimed(task.id);
@@ -232,8 +225,8 @@ export class AutoRunner {
   }
 
   /**
-   * Highest priority first; FIFO (creation time, then id) within. Skips hitl and
-   * foreign-claimed mirrored Tasks, and any parked this cycle. Also skips a Task
+   * Highest priority first; FIFO (creation time, then id) within. Skips hitl
+   * Tasks and any parked this cycle. Also skips a Task
    * whose Workspace is Auto-Runner-disabled (master is already on here, so an
    * inheriting Workspace counts as enabled) or already at its resolved cap — the
    * per-Workspace half of the two-level limit (ADR-0012, issue #60).
@@ -270,14 +263,13 @@ export class AutoRunner {
       await Promise.all(
         all
           // Same cheap exclusions the sync filter below applies, so a task that's
-          // skipped/hitl/foreign-claimed anyway doesn't cost a `branchExists` call.
+          // skipped or hitl doesn't cost a `branchExists` call.
           .filter(
             (t) =>
               t.state === 'ready' &&
               t.origin === 'mirrored' &&
               t.drive !== 'hitl' &&
-              !skip.has(t.id) &&
-              !this.mirror?.foreignAssignee(t),
+              !skip.has(t.id),
           )
           .map(async (t) => {
             epicGate.set(t.id, await gate(t));
@@ -287,7 +279,6 @@ export class AutoRunner {
     const picked = all
       .filter((t) => {
         if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
-        if (this.mirror?.foreignAssignee(t)) return false;
         if (epicGate.get(t.id)) return false;
         const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
         // Master is on (fill returned early otherwise), so an inheriting

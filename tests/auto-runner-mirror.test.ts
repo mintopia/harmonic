@@ -33,7 +33,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     // Worktree default so these Tasks are exempt from the Work Context House Rule
     // (issue #120): mirrored Tasks all inherit the one Workspace workingDir, and
     // in direct mode that shared context would serialize them — this test is about
-    // the mirrored *pick predicate* (foreign/yield/claim), not context occupancy.
+    // the mirrored pick and claim path, not context occupancy.
     tasks = new TaskService(
       asyncDb,
       () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
@@ -45,24 +45,19 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('picks drive≠hitl ∧ no-foreign-assignee, flips ready→running before claim, and spawns through a failed claim', async () => {
+  it('picks drive≠hitl regardless of assignment, flips ready→running before claim, and spawns through a failed claim', async () => {
     const native = await tasks.create({ prompt: 'native', state: 'ready' });
     const afk = await tasks.upsertMirrored(mirroredAfk(42));
     const hitl = await tasks.upsertMirrored(mirroredAfk(43, { drive: 'hitl' }));
-    const foreign = await tasks.upsertMirrored(mirroredAfk(44));
+    const assigned = await tasks.upsertMirrored(mirroredAfk(44));
     const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
-    const yielded = await tasks.upsertMirrored(mirroredAfk(46));
 
-    const foreignRefs = new Set([44]);
     const throwRefs = new Set([45]); // recheckAndClaim throws → must still spawn
-    const yieldRefs = new Set([46]); // a human grabbed it since the scan → hand back
     const rechecks: Array<{ ref: number | null; stateAtRecheck: string }> = [];
     const mirror: MirrorClaim = {
-      foreignAssignee: (t) => t.trackerRef != null && foreignRefs.has(t.trackerRef),
       recheckAndClaim: async (t) => {
         rechecks.push({ ref: t.trackerRef, stateAtRecheck: t.state });
         if (t.trackerRef != null && throwRefs.has(t.trackerRef)) throw new Error('claim exploded');
-        return t.trackerRef != null && yieldRefs.has(t.trackerRef) ? 'yield' : 'spawn';
       },
     };
 
@@ -84,25 +79,21 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), mirror);
     runner$.poke();
-    await vi.waitFor(() => expect(started).toHaveLength(3));
+    await vi.waitFor(() => expect(started).toHaveLength(4));
 
     const startedIds = started.map((s) => s.id);
-    // Picked: native (start), afk + failed-claim (launchClaimed).
+    // Picked: native (start), afk + assigned + failed-claim (launchClaimed).
     expect(startedIds).toContain(native.id);
     expect(started).toContainEqual({ id: afk.id, via: 'launchClaimed' });
+    expect(started).toContainEqual({ id: assigned.id, via: 'launchClaimed' });
     expect(started).toContainEqual({ id: failedClaim.id, via: 'launchClaimed' });
-    // Skipped: hitl (drive), foreign (assignee), yielded (human grabbed it).
+    // Skipped: hitl (drive). Assignment does not enter the predicate.
     expect(startedIds).not.toContain(hitl.id);
-    expect(startedIds).not.toContain(foreign.id);
-    expect(startedIds).not.toContain(yielded.id);
 
     // Every recheck saw the Task already flipped to running → flip precedes claim.
     expect(rechecks.length).toBeGreaterThan(0);
     for (const r of rechecks) expect(r.stateAtRecheck).toBe('running');
-    expect(rechecks.map((r) => r.ref).sort()).toEqual([42, 45, 46]);
-
-    // The yielded Task is handed back to the frontier, not stranded running.
-    expect((await tasks.get(yielded.id)).state).toBe('ready');
+    expect(rechecks.map((r) => r.ref).sort()).toEqual([42, 44, 45]);
   });
 });
 
