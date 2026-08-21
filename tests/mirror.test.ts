@@ -42,14 +42,17 @@ describe('deriveRole (labels → workflow/wayfinderType/drive)', () => {
     expect(deriveRole(ticket({ labels: ['wayfinder:prototype'] })).drive).toBe('hitl');
     expect(deriveRole(ticket({ labels: ['wayfinder:task'] })).drive).toBe('hitl');
   });
-  it('implement: ready-for-agent → afk, ready-for-human → hitl, bare → afk (unclear)', () => {
+  it('implement: ready-for-agent → afk, ready-for-human → hitl, bare/needs-triage → hitl (no opt-in)', () => {
     expect(deriveRole(ticket({ labels: ['ready-for-agent'] }))).toEqual({
       workflow: 'implement',
       wayfinderType: null,
       drive: 'afk',
     });
     expect(deriveRole(ticket({ labels: ['ready-for-human'] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: [] })).drive).toBe('afk');
+    expect(deriveRole(ticket({ labels: [] })).drive).toBe('hitl');
+    expect(deriveRole(ticket({ labels: ['needs-triage'] })).drive).toBe('hitl');
+    // ready-for-human wins even if ready-for-agent is also present
+    expect(deriveRole(ticket({ labels: ['ready-for-agent', 'ready-for-human'] })).drive).toBe('hitl');
   });
 });
 

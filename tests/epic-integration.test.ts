@@ -276,7 +276,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(coord.awaitsBase(native)).toBe(false); // native Task ⇒ never gated
   });
 
-  it('memberBaseNotReady opens once the reconcile confirms the base branch live, closes when a later poll cannot', async () => {
+  it('memberBaseNotReady tracks git branch existence, open when epic/<ref> exists, gated when it is gone — and a detached HEAD does not gate an existing branch (#231)', async () => {
     const tickets = [
       ...epicTickets(),
       ticket({ number: 99, parent: null, labels: ['ready-for-agent'] }), // not an Epic member
@@ -289,34 +289,42 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const m11 = async () => (await tasks.list()).find((t) => t.trackerRef === 11)!;
     const nonMember = (await tasks.list()).find((t) => t.trackerRef === 99)!;
     const native = await tasks.create({ prompt: 'native task' });
-    // Base set to epic/10 and the reconcile confirmed that branch live ⇒ open.
+    // Base set to epic/10 and the branch exists in git ⇒ open.
     expect((await m11()).baseBranch).toBe('epic/10');
-    expect(coord.memberBaseNotReady(await m11())).toBe(false);
-    expect(coord.memberBaseNotReady(nonMember)).toBe(false); // ordinary Task base
-    expect(coord.memberBaseNotReady(native)).toBe(false); // native ⇒ never gated
+    expect(await coord.memberBaseNotReady(await m11())).toBe(false);
+    expect(await coord.memberBaseNotReady(nonMember)).toBe(false); // ordinary Task base
+    expect(await coord.memberBaseNotReady(native)).toBe(false); // native ⇒ never gated
 
-    // The working dir goes detached (a concurrent afk-direct Run): this poll
-    // confirms nothing live, so the durable epic/10 base is no longer vouched for
-    // and the member is gated rather than allowed to fork off a branch we can't
-    // guarantee is there.
+    // A detached working dir (a concurrent afk-direct Run) no longer gates a
+    // member whose integration branch still exists: the gate reads branch
+    // existence straight from git, not from a per-poll set a detach empties.
     const detached = new FakeGit(['epic/10'], null);
     const coordDetached = new EpicIntegrationCoordinator(tasks, dir, detached);
     await coordDetached.reconcile(tickets, await mscan(tickets));
-    expect(coordDetached.memberBaseNotReady(await m11())).toBe(true);
+    expect(await coordDetached.memberBaseNotReady(await m11())).toBe(false);
+
+    // But once the branch is actually gone (retired, or lost to a restart before
+    // the reconcile re-cuts it), the member is gated — deferred (transient), so a
+    // later poll re-cuts epic/10 and the gate opens again.
+    const gone = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    expect(await gone.memberBaseNotReady(await m11())).toBe(true);
   });
 
-  it('memberBaseNotReady gates every member before the first reconcile confirms any branch live', async () => {
+  it('a member whose epic branch exists is spawnable even when the ready frontier is empty; a missing branch is deferred (#231)', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
-    // Point member 11 at epic/10 directly, as a durable base surviving a restart,
-    // without ever running a reconcile (liveIntegrationRefs still empty).
+    // Point member 11 at epic/10 as a durable base (as a prior reconcile would),
+    // then never run a reconcile that would repopulate a ready-frontier-derived
+    // liveness set. The ready frontier is empty for this coordinator, yet git is
+    // the ground truth: the branch exists, so the member is spawnable.
     const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
     await tasks.setBaseBranch(m11Id, 'epic/10');
-    const git = new FakeGit(['epic/10'], 'develop');
-    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
-    // No reconcile has run: the branch may exist on disk, but this coordinator
-    // has confirmed nothing, so it fails closed and gates the member.
-    expect(coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
+    const present = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
+    expect(await present.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
+
+    // The same member with the branch absent is deferred (gated), not escalated.
+    const missing = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
   });
 });
 

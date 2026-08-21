@@ -22,7 +22,7 @@ describe('fillSeries', () => {
       d3,
     );
     expect(out).toHaveLength(3);
-    expect(out[1]).toEqual({ day: d2, totalUsd: 0, incomplete: false, tokens: 0, runs: 0 });
+    expect(out[1]).toEqual({ day: d2, totalUsd: 0, incomplete: false, tokens: 0, runs: 0, fails: 0 });
   });
 
   it('preserves an unpriceable day instead of flattening it to $0', () => {

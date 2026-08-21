@@ -1,5 +1,6 @@
 import { mergeUsage, type RunUsage } from '../execution/usage.js';
 import type { Cost } from '../execution/pricing.js';
+import { isExecutionFailure } from '../domain/run-failure.js';
 
 /** One day's bucket in the Stats time series (by run start time). */
 export interface DaySeriesEntry {
@@ -13,6 +14,9 @@ export interface DaySeriesEntry {
   tokens: number;
   /** Count of runs started that day, whatever their state. */
   runs: number;
+  /** Execution failures started that day (failed-only, ADR-0028): the reliability
+   *  section's fails/day trend. Cancelled and review-rejected Runs are excluded. */
+  fails: number;
 }
 
 /** The minimum a run needs to be bucketed and aggregated here. */
@@ -21,6 +25,10 @@ export interface DaySeriesRun {
   startedAt: number;
   /** JSON-serialized `RunUsage`, or null when the run reported none. */
   usage: string | null;
+  /** The run's terminal `state`; omitted rows never count as a failure. */
+  state?: string;
+  /** The run's review decision ('rejected' keeps it out of the fails count). */
+  review?: string | null;
 }
 
 /**
@@ -55,12 +63,16 @@ export function buildDaySeries<T extends DaySeriesRun>(
         .filter((u): u is RunUsage => u !== null);
       const merged = mergeUsage(usages);
       const tokens = inputPlusOutput(merged);
+      const fails = dayRows.filter((r) =>
+        r.state === undefined ? false : isExecutionFailure({ state: r.state, review: r.review ?? null }),
+      ).length;
       return {
         day,
         totalUsd: cost?.totalUsd ?? null,
         incomplete: cost?.incomplete ?? false,
         tokens,
         runs: dayRows.length,
+        fails,
       };
     });
 }

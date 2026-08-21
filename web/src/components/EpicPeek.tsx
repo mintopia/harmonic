@@ -9,7 +9,7 @@ import {
   memberRailStatus,
   railSegments,
   rosterLanes,
-  statusLine,
+  statusLineParts,
 } from '../epic-model';
 import { toastError } from '../toast';
 import { btnQuiet, btnQuietDestructive, chip, escalatedChip, labelType, panelTitle } from '../ui';
@@ -191,7 +191,15 @@ export function EpicPeek({
         <div className="flex-1 overflow-y-auto p-4">
           <div className={`${labelType} mb-1.5 text-muted`}>Landing rail</div>
           <LandingRail epic={epic} />
-          <div className="mt-2 font-data text-small text-muted">{statusLine(epic)}</div>
+          {(() => {
+            const s = statusLineParts(epic);
+            return (
+              <div className="mt-2 text-small text-muted tabular-nums">
+                <span className="font-data">{s.ref}</span> @ <span className="font-data">{s.tip}</span> ·
+                verification {s.verification} · {s.foldedCount}/{s.memberCount} folded
+              </div>
+            );
+          })()}
 
           <div className="mt-6 flex flex-col gap-5">
             {ROSTER_LANES.map((lane) => {

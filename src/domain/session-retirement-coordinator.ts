@@ -2,6 +2,7 @@ import type { RunRow } from '../db/schema.js';
 import type { SessionStore } from './sessions.js';
 import type { RunStore } from './runs.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
+import { forEachYielding } from '../reliability/yield.js';
 import {
   decideRetirement,
   DEFAULT_RETENTION,
@@ -92,19 +93,25 @@ export class SessionRetirementCoordinator {
    * into `retiring`, then remove every `retiring` Session's builder worktree and
    * mark it `retired`. Returns how many Sessions it retired. Idempotent and safe
    * to call repeatedly — at boot, on a periodic tick, or after a settle.
+   *
+   * Both passes iterate with {@link forEachYielding} (issue #219): a large
+   * retiring backlog would otherwise run the DB writes and `git worktree remove`
+   * spawns back-to-back on the event loop, so yielding on a wall-clock budget
+   * both bounds the longest synchronous slice and spaces the git subprocess
+   * spawns instead of firing them in one uninterrupted burst.
    */
   async drain(now: number = this.clock()): Promise<number> {
     // 1. Retention deadlines: an idle Session whose window lapsed is owed removal.
-    for (const session of await this.sessions.listRetentionDue(now)) {
+    await forEachYielding(await this.sessions.listRetentionDue(now), async (session) => {
       await this.sessions.beginRetiring(session.id, session.retireReason ?? 'retention-ttl', now);
-    }
+    });
     // 2. Remove the worktree of every Session owed removal, then retire it.
     let retired = 0;
-    for (const session of await this.sessions.listRetiring()) {
+    await forEachYielding(await this.sessions.listRetiring(), async (session) => {
       // Lease coordination: never tear down a worktree a live Run still leases
       // (a continuation may hold/have-transferred it). Leave it `retiring` for a
       // later drain — the lease releases when that Run settles.
-      if (await this.leaseHeld(session.id)) continue;
+      if (await this.leaseHeld(session.id)) return;
       if (session.worktreePath && session.worktreeRepoDir) {
         // Best-effort: an already-gone worktree (crash between removal and the
         // `retired` write, or a manual cleanup) must not wedge retirement.
@@ -112,7 +119,7 @@ export class SessionRetirementCoordinator {
       }
       await this.sessions.markRetired(session.id, now);
       retired++;
-    }
+    });
     return retired;
   }
 

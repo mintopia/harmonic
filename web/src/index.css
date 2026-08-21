@@ -206,9 +206,11 @@
      now resolving to the same system sans as the rest of the UI.) */
   --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  /* Type roles (fixed rem scale). Weights: 400 body / 500 UI emphasis /
-     600 headings; 700 for display titles. tabular-nums lets figures line up
-     in sans, so numbers never need the code face. */
+  /* Type roles (fixed rem scale). Weights ride the Three Weights ramp
+     (DESIGN.md §3): 400 body / 500–550 UI emphasis / 650 headings, with 750
+     for the Display title, the Stats hero, and the wordmark (the
+     `font-display-weight` utility below). tabular-nums lets figures line up in
+     sans, so numbers never need the code face. */
   --text-hero: 3.25rem;
   --text-hero--line-height: 1;
   --text-hero--letter-spacing: -0.03em;
@@ -231,6 +233,15 @@
   --breakpoint-rail: 900px;
 
   --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The Display weight — the top of the Three Weights ramp (DESIGN.md §3: "750
+   for the Display title"). A named utility so the Display title, the Stats hero
+   figure, and the wordmark never fall back to Tailwind's stock font-bold (700).
+   Kept off the `--font-weight-*` theme namespace so it doesn't collide with the
+   `font-display` family utility (`--font-display`). */
+@utility font-display-weight {
+  font-weight: 750;
 }
 
 @layer base {

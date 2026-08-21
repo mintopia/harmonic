@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useState } from 'react';
 import { api, type LeaseDiagnostic } from '../api';
 import { formatCost } from '../cost';
 import type { ActivityProcess, AppConfig } from '../types';
@@ -280,13 +280,14 @@ function ExpandToggle({ expandable, expanded, onToggle }: { expandable: boolean;
   );
 }
 
-function ProcessRow({
+const ProcessRow = memo(function ProcessRow({
   process,
   now,
   pending,
   onAnswered,
   expandable,
   expanded,
+  rowKey,
   onToggleExpand,
 }: {
   process: ActivityProcess;
@@ -295,7 +296,8 @@ function ProcessRow({
   onAnswered: (reqId: string) => void;
   expandable: boolean;
   expanded: boolean;
-  onToggleExpand: () => void;
+  rowKey: string;
+  onToggleExpand: (key: string) => void;
 }) {
   const tokens = usageTotalTokens(process.usage);
   const cost = formatCost(process.cost);
@@ -305,7 +307,7 @@ function ProcessRow({
       {/* Process: the content — badge + title lead; metadata and the live activity line whisper below. */}
       <div role="cell" className="min-w-0">
         <div className="flex items-center gap-2">
-          <ExpandToggle expandable={expandable} expanded={expanded} onToggle={onToggleExpand} />
+          <ExpandToggle expandable={expandable} expanded={expanded} onToggle={() => onToggleExpand(rowKey)} />
           <StateDot process={process} />
           <span className={`${chip} bg-raised text-muted`}>{process.type === 'run' ? 'Run' : 'Chat'}</span>
           {process.escalated && <span className={escalatedChip}>escalated</span>}
@@ -356,7 +358,7 @@ function ProcessRow({
       <RowActions process={process} pending={pending} onAnswered={onAnswered} />
     </div>
   );
-}
+});
 
 /** One shared grid template for the leases table, on its own row of columns
  * (issue #125): context key, state, owner, wait queue, then actions. */
@@ -601,7 +603,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   // place (issue #55). The Harness blocks on one at a time, so at most one per
   // conversation is live; a row looks its up by conversationId.
   const [pending, setPending] = useState<PendingPermissions>(NO_PENDING_PERMISSIONS);
-  const answered = (reqId: string) => setPending((current) => removePendingPermission(current, reqId));
+  const answered = useCallback((reqId: string) => setPending((current) => removePendingPermission(current, reqId)), []);
   // Toolbar state (issue #54): what to show and how to order it. The view still
   // holds no data — these only shape the pure filter/sort of the live snapshot.
   const [filter, setFilter] = useState<ActivityFilter>(NO_ACTIVITY_FILTER);
@@ -609,6 +611,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   // Which row is drilled into its Process Tree (issue #53) — at most one open at
   // a time, keyed the same way the rows are. Runs with a tree only.
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const toggleExpand = useCallback((key: string) => setExpandedKey((cur) => (cur === key ? null : key)), []);
 
   // Initial snapshot + a slow poll to catch processes starting/ending; the
   // run_usage firehose keeps existing rows ticking live in between (ADR 0010).
@@ -801,7 +804,8 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                           onAnswered={answered}
                           expandable={expandable}
                           expanded={expanded}
-                          onToggleExpand={() => setExpandedKey((cur) => (cur === key ? null : key))}
+                          rowKey={key}
+                          onToggleExpand={toggleExpand}
                         />
                         {expanded && (
                           // Keep the row-group's children all rows: the drill-in is a

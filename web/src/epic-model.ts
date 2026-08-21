@@ -159,16 +159,29 @@ const VERIFICATION_GLYPH: Record<'pass' | 'fail' | 'pending', string> = {
   pending: '—',
 };
 
-/**
- * The peek's status line (ADR-0026): `epic/<ref> @ <tip|'—'> · verification
- * ✓/✗/— · X/Y folded`. `pending` and `null` verification both read as `—`
- * (pending mid-run, null unknown/not-run — neither is a hard yes/no, so
- * both fall back to the same neutral glyph rather than inventing a fourth).
- */
-export function statusLine(epic: Epic): string {
-  const tip = epic.integration.tip ?? '—';
-  const verification = VERIFICATION_GLYPH[epic.verification.status ?? 'pending'];
-  return `epic/${epic.ref} @ ${tip} · verification ${verification} · ${epic.foldedCount}/${epic.memberCount} folded`;
+/** The peek's status line broken into its render parts (ADR-0026):
+ * `epic/<ref> @ <tip|'—'> · verification ✓/✗/— · X/Y folded`. The caller sets
+ * `ref` and `tip` in mono (branch ref + commit oid are code-identity tokens)
+ * and everything else in sans with `tabular-nums` (Mono-Is-Code, DESIGN.md §3).
+ * `pending` and `null` verification both read as `—` (pending mid-run, null
+ * unknown/not-run — neither is a hard yes/no, so both fall back to the same
+ * neutral glyph rather than inventing a fourth). */
+export interface StatusLineParts {
+  ref: string;
+  tip: string;
+  verification: string;
+  foldedCount: number;
+  memberCount: number;
+}
+
+export function statusLineParts(epic: Epic): StatusLineParts {
+  return {
+    ref: `epic/${epic.ref}`,
+    tip: epic.integration.tip ?? '—',
+    verification: VERIFICATION_GLYPH[epic.verification.status ?? 'pending'],
+    foldedCount: epic.foldedCount,
+    memberCount: epic.memberCount,
+  };
 }
 
 /** Transient banner tone (ADR-0026: "surfaced as a transient banner mapping

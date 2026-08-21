@@ -371,6 +371,16 @@ describe('mergeRunUsage', () => {
     expect(after).toBe(input); // no Run matched (a chat has no runId) → same reference
     expect(after[0]!.activity).toBeNull(); // chat untouched
   });
+
+  it('preserves the object reference of every unchanged Run row (lets React.memo skip them)', () => {
+    const r1 = proc({ runId: 1 });
+    const r2 = proc({ runId: 2, activity: null });
+    const before = [r1, r2];
+    const after = mergeRunUsage(before, event({ runId: 2 }));
+    expect(after).not.toBe(before); // a match rebuilds the array
+    expect(after.find((p) => p.runId === 1)!).toBe(r1); // untouched row keeps its identity
+    expect(after.find((p) => p.runId === 2)!).not.toBe(r2); // only the matched row is a new object
+  });
 });
 
 describe('activitySummary', () => {

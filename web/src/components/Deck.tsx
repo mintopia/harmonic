@@ -9,7 +9,7 @@ import {
 } from '../epic-model';
 import { deckSections, startOfDay, type RecentSummary } from '../deck-model';
 import { issueRef, taskKey } from '../id-format.js';
-import { runningReadout, type RunningReadout } from '../board-model';
+import { runningReadout } from '../board-model';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError, toastLandOutcome } from '../toast';
@@ -151,9 +151,30 @@ function ReviewPill() {
   return <span className={`${chip} bg-accent-tint text-accent`}>awaiting review</span>;
 }
 
-/** A running row's live readout: elapsed · N tools, tabular figures, ticked by
- * the Deck's once-a-second `now` and the `run_usage` firehose (issue #100). */
-function RunningReadoutLine({ readout }: { readout: RunningReadout }) {
+/** A running row's live readout: elapsed · N tools, tabular figures. Self-
+ * contained (issue #222): it owns its once-a-second elapsed tick and subscribes
+ * to the `run_usage` firehose for *its own* run, so a usage tick re-renders only
+ * this leaf — never the whole Deck subtree. Renders nothing until the Task is a
+ * live run (mirrors `runningReadout`'s null). */
+function RunningReadoutLine({ task }: { task: Task }) {
+  const runId = task.runId;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  const [liveTools, setLiveTools] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (runId == null) return;
+    setLiveTools(undefined); // a new run falls back to task.toolCount until its first tick
+    return subscribe((msg) => {
+      if (msg.type === 'run_usage' && msg.runId === runId) {
+        setLiveTools(Object.values(msg.usage.toolCalls ?? {}).reduce((a, b) => a + b, 0));
+      }
+    });
+  }, [runId]);
+  const readout = runningReadout(task, now, liveTools);
+  if (!readout) return null;
   return (
     <span className="flex items-center gap-1.5 text-small tabular-nums text-muted">
       <span className="sr-only">Running, </span>
@@ -555,25 +576,20 @@ export function Deck({
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!hasRunning) return;
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    // `now` here only feeds Recent's midnight boundary (deckSections keys off
+    // startOfDay(now)); running readouts tick in their own leaf now (issue #222),
+    // so advance `now` only when the local day rolls over — the Deck no longer
+    // re-renders every second.
+    const timer = setInterval(() => {
+      const t = Date.now();
+      setNow((prev) => (startOfDay(t) !== startOfDay(prev) ? t : prev));
+    }, 1_000);
     return () => clearInterval(timer);
   }, [hasRunning]);
 
-  // Running rows' live tool count off the same `run_usage` firehose the Board
-  // and Activity view merge (ADR 0010), keyed by runId (issue #100).
-  const [liveTools, setLiveTools] = useState<Record<number, number>>({});
-  useEffect(() => {
-    return subscribe((msg) => {
-      if (msg.type === 'run_usage') {
-        const total = Object.values(msg.usage.toolCalls ?? {}).reduce((a, b) => a + b, 0);
-        setLiveTools((cur) => ({ ...cur, [msg.runId]: total }));
-      }
-    });
-  }, []);
-
   // Re-derive sections when the inputs or the *day bucket* change — not on every
   // one-second `now` tick. `now` only feeds Recent's midnight boundary inside
-  // `deckSections`; it still flows live to `runReadout` below (issue #182 review).
+  // `deckSections` (its sole consumer now that readouts self-tick — issue #222).
   const dayStart = startOfDay(now);
   const sections = useMemo(
     () => deckSections(tasks, epics, now),
@@ -608,9 +624,6 @@ export function Deck({
     needsYou.length === 0 && inFlight.length === 0 && landing.length === 0 && queued.length === 0 && recent.total === 0;
   if (nothingActive) return <AllClear />;
 
-  const runReadout = (task: Task): RunningReadout | null =>
-    runningReadout(task, now, task.runId != null ? liveTools[task.runId] : undefined);
-
   return (
     <div>
       <h1 className="sr-only">Deck</h1>
@@ -633,17 +646,16 @@ export function Deck({
       {inFlight.length > 0 && (
         <Section label="In flight" count={String(inFlight.length)}>
           <div className={`${panel} divide-y divide-hairline`}>
-            {inFlight.map((task) => {
-              const readout = runReadout(task);
-              return (
-                <DeckRow
-                  key={task.id}
-                  task={task}
-                  onOpen={() => onOpen(task)}
-                  aside={readout ? <RunningReadoutLine readout={readout} /> : null}
-                />
-              );
-            })}
+            {inFlight.map((task) => (
+              <DeckRow
+                key={task.id}
+                task={task}
+                onOpen={() => onOpen(task)}
+                aside={
+                  task.state === 'running' && task.runStartedAt != null ? <RunningReadoutLine task={task} /> : null
+                }
+              />
+            ))}
           </div>
         </Section>
       )}

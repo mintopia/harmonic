@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
@@ -9,12 +9,12 @@ import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
 import { EpicPeek } from './components/EpicPeek';
 import { subscribe } from './ws';
+import { debounce } from './debounce';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
-import { GraphView } from './components/GraphView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
@@ -43,6 +43,11 @@ import {
 } from './onboarding-model';
 import { btnPrimary, btnQuiet, railBadge, sectionLabel, touchTarget } from './ui';
 import { Toaster, toastError } from './toast';
+
+// The Dependency Graph is the only surface that pulls in elkjs (the app's single
+// heaviest asset), and it's rarely opened — so it's code-split out of the main
+// bundle and loads on first visit.
+const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
 // must not leak into the mobile drawer, so JS needs the same threshold.
@@ -289,6 +294,11 @@ export function App() {
     if (!authed || activeWorkspaceId === null) return;
     refresh();
     refreshEpics();
+    // A member land fires a burst of task_changed in quick succession, and each
+    // one used to trigger its own api.epics() round trip. Debounce them into a
+    // single trailing refetch so the firehose folds to one request per burst;
+    // the Task-list updates below still apply immediately, per event.
+    const debouncedRefreshEpics = debounce(refreshEpics, 250);
     // Live updates over WebSocket; slow polling as a reconnect safety net.
     // The active Workspace can't change out from under this subscription's
     // closure (each switch re-subscribes via the activeWorkspaceId dep), so
@@ -306,7 +316,7 @@ export function App() {
         // Keep the Epic peek + landing rail live (ADR-0026): a member's
         // task_changed is exactly the signal an Epic's fold/land/verification
         // state may have moved, so refetch alongside the Task-list update.
-        refreshEpics();
+        debouncedRefreshEpics();
       }
       // Hard-delete (issue #162): drop the Task from local state so the
       // board/graph lose it too — no workspaceId to filter on (the message
@@ -331,6 +341,7 @@ export function App() {
     return () => {
       unsubscribe();
       clearInterval(timer);
+      debouncedRefreshEpics.cancel();
     };
   }, [refresh, refreshEpics, authed, activeWorkspaceId]);
 
@@ -621,7 +632,7 @@ export function App() {
         >
           <BrandMark />
           <span
-            className={`whitespace-nowrap font-display text-title font-bold tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
+            className={`whitespace-nowrap font-display text-title font-display-weight tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
           >
             {instanceName}
           </span>
@@ -629,7 +640,7 @@ export function App() {
           <button
             aria-expanded={menuOpen}
             aria-label="Menu"
-            className="ml-auto rounded-md px-2.5 py-1.5 font-medium text-muted hover:text-ink rail:hidden"
+            className="ml-auto inline-flex min-h-11 items-center rounded-md px-2.5 font-medium text-muted hover:text-ink rail:hidden"
             onClick={() => setMenuOpen((open) => !open)}
           >
             Menu
@@ -862,11 +873,17 @@ export function App() {
                     />
                   )}
                   {view === 'graph' && (
-                    <GraphView
-                      tasks={taskList}
-                      loading={tasks === null}
-                      onOpen={openRow}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
+                      }
+                    >
+                      <GraphView
+                        tasks={taskList}
+                        loading={tasks === null}
+                        onOpen={openRow}
+                      />
+                    </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
                   {view === 'api' && <ApiPage />}

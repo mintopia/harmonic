@@ -8,6 +8,9 @@ export interface DayCost {
   tokens: number;
   /** Count of runs started that day. Always concrete, never null. */
   runs: number;
+  /** Execution failures started that day (failed-only). The server always sends
+   *  it; optional so older cached shapes and count-only test fixtures still fit. */
+  fails?: number;
 }
 
 /** Zero-fill the gaps between buckets so a quiet day reads as $0, not as
@@ -30,7 +33,7 @@ export function fillSeries(series: DayCost[], from: number, to: number): DayCost
     const d = new Date(start.getTime() + i * DAY + DAY / 2); // DST-safe: mid-day, then floor
     d.setHours(0, 0, 0, 0);
     const key = d.getTime();
-    out.push(byDay.get(key) ?? { day: key, totalUsd: 0, incomplete: false, tokens: 0, runs: 0 });
+    out.push(byDay.get(key) ?? { day: key, totalUsd: 0, incomplete: false, tokens: 0, runs: 0, fails: 0 });
   }
   return out;
 }
@@ -50,11 +53,12 @@ export function costFloor(series: DayCost[]): { total: number; isFloor: boolean 
   return { total, isFloor };
 }
 
-/** The daily-chart metric a day series can be plotted by. */
-export type StatMetric = 'usd' | 'tokens' | 'runs';
+/** The daily-chart metric a day series can be plotted by. The `usd`/`tokens`/`runs`
+ *  trio drives the toggle; `fails` is plotted on its own in the reliability section. */
+export type StatMetric = 'usd' | 'tokens' | 'runs' | 'fails';
 
 /** The metric's heading label ("Cost per day", the toggle button text). */
-export const METRIC_LABEL: Record<StatMetric, string> = { usd: 'Cost', tokens: 'Tokens', runs: 'Runs' };
+export const METRIC_LABEL: Record<StatMetric, string> = { usd: 'Cost', tokens: 'Tokens', runs: 'Runs', fails: 'Fails' };
 
 /** Compact figure formatting for token counts ("21.9k", "1.2M"). */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
@@ -79,6 +83,8 @@ export function metricValue(d: DayCost, metric: StatMetric): number | null {
       return d.tokens;
     case 'runs':
       return d.runs;
+    case 'fails':
+      return d.fails ?? 0;
   }
 }
 

@@ -79,6 +79,42 @@ describe('TrackerPoller.poll', () => {
     expect(pokes).toBe(1);
   });
 
+  it('single-flights overlapping polls so the timer and a manual pollNow never scan concurrently (issue #219)', async () => {
+    // A scan we can hold open, tracking how many run at once — the flood signal.
+    let scans = 0;
+    let inScan = 0;
+    let maxConcurrent = 0;
+    let release: (() => void) | undefined;
+    const gateFirst = new Promise<void>((r) => (release = r));
+    const adapter: TrackerAdapter = {
+      name: 'stub',
+      scan: async () => {
+        scans++;
+        inScan++;
+        maxConcurrent = Math.max(maxConcurrent, inScan);
+        if (scans === 1) await gateFirst; // hold the first pass open
+        inScan--;
+        return [ticket({ number: 9, labels: ['ready-for-agent'] })];
+      },
+      readTicket: async () => ticket({ number: 9 }),
+      claim: async () => {},
+      release: async () => {},
+      whoami: async () => 'harmonic-bot',
+      close: async () => {},
+      reopen: async () => {},
+    };
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+
+    const first = poller.poll(); // starts pass #1, now held in scan
+    const second = poller.poll(); // arrives mid-flight → must coalesce, not overlap
+    release?.();
+    await Promise.all([first, second]);
+
+    // The overlap collapsed to pass #1 plus one trailing rerun, run serially.
+    expect(maxConcurrent).toBe(1);
+    expect(scans).toBe(2);
+  });
+
   it('reports its Resolved Tracker each poll — success, then the failure when resolution breaks (issue #83)', async () => {
     const { adapter } = stubAdapter([ticket({ number: 7, labels: ['ready-for-agent'] })]);
     let broken = false;

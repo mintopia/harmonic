@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { coalesceEvents, isInterrupted, type StreamEvent, type ToolCallView } from '../event-stream-model';
+import { useMemo, type ReactNode } from 'react';
+import { coalesceTail, isInterrupted, type StreamEvent, type ToolCallView } from '../event-stream-model';
 import { guardrailDimensionLabel } from '../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../ui';
 
@@ -161,33 +161,50 @@ function renderEventLine(event: StreamEvent): ReactNode {
 }
 
 export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) {
+  // Coalescing is O(n) over its input, so recomputing it on every render — a
+  // parent re-renders on each task_changed, not just on a new event — is the
+  // O(n²) the operator feels as the panel stiffening late in a long turn.
+  // Memoizing on the `events` array (a fresh reference only when one is
+  // appended) plus capping the input to a bounded tail keeps it flat.
+  const { items, hidden } = useMemo(() => coalesceTail(events), [events]);
   // The stream carries two different textures: the agent's prose (message /
   // thought) reads in the Body sans face like any other copy, while machine
   // output — tool targets, model names, ids — answers in the Data face.
   // Keeping them distinct is what stops a turn reading as one flat mono wall.
-  const items = coalesceEvents(events);
-  const rendered = items.map((item) => {
-    if (item.kind === 'text') {
-      return (
-        <p
-          key={item.key}
-          className={
-            item.variant === 'thought'
-              ? 'whitespace-pre-wrap italic text-muted'
-              : 'whitespace-pre-wrap text-ink'
-          }
-        >
-          {item.text}
-        </p>
-      );
-    }
-    if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;
-    // Protocol/lifecycle noise renders nothing and leaves no gap behind.
-    const line = renderEventLine(item.event);
-    return line ? <div key={item.key}>{line}</div> : null;
-  });
+  // The rendered nodes are memoized on `items` too, so an unrelated parent
+  // re-render reuses them and React skips the whole transcript subtree.
+  const rendered = useMemo(
+    () =>
+      items.map((item) => {
+        if (item.kind === 'text') {
+          return (
+            <p
+              key={item.key}
+              className={
+                item.variant === 'thought'
+                  ? 'whitespace-pre-wrap italic text-muted'
+                  : 'whitespace-pre-wrap text-ink'
+              }
+            >
+              {item.text}
+            </p>
+          );
+        }
+        if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;
+        // Protocol/lifecycle noise renders nothing and leaves no gap behind.
+        const line = renderEventLine(item.event);
+        return line ? <div key={item.key}>{line}</div> : null;
+      }),
+    [items],
+  );
   return (
     <div className="space-y-2">
+      {hidden > 0 && (
+        <p className="text-muted">
+          <span className="tabular-nums">{hidden.toLocaleString()}</span> earlier{' '}
+          {hidden === 1 ? 'event' : 'events'} hidden
+        </p>
+      )}
       {rendered}
       {events.length === 0 && <p className="text-muted">No events.</p>}
     </div>

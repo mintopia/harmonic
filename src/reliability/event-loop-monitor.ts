@@ -1,5 +1,5 @@
 /**
- * Event-loop stall detector (issue #210, part of #201 / ADR-0029 §5).
+ * Event-loop stall detector (issue #200 / ADR-0029 §5).
  *
  * Synchronous better-sqlite3 and every HTTP handler share the one Node event
  * loop, so a slow query or a hot loop blocks *every* request at once. This
@@ -35,8 +35,7 @@ export interface EventLoopMonitorOptions {
   reportThrottleMs?: number | undefined;
   /** Sink for a detected stall. Default: a structured `console.warn`. */
   onStall?: ((info: StallInfo) => void) | undefined;
-  /** Monotonic clock in ms. Default `performance.now` (unaffected by system
-   * clock adjustments, so an NTP/DST jump can't fake or mask a stall). */
+  /** Monotonic clock in ms. Default `Date.now`. */
   now?: (() => number) | undefined;
   /**
    * Timer scheduler. Default `setTimeout` with the handle `.unref()`'d so the
@@ -53,13 +52,9 @@ function defaultSetTimer(fn: () => void, ms: number): unknown {
   return handle;
 }
 
-function defaultNow(): number {
-  return performance.now();
-}
-
 function defaultOnStall(info: StallInfo): void {
   console.warn(
-    `[event-loop] stalled ${Math.round(info.lagMs)}ms (probe delayed to ${Math.round(info.delayMs)}ms) — a sync query or a non-yielding loop blocked the event loop`,
+    `[event-loop] stalled ${info.lagMs}ms (probe delayed to ${info.delayMs}ms) — a sync query or a non-yielding loop blocked the event loop`,
   );
 }
 
@@ -83,7 +78,7 @@ export class EventLoopMonitor {
     this.stallMs = options.stallMs ?? 200;
     this.reportThrottleMs = options.reportThrottleMs ?? 5000;
     this.onStall = options.onStall ?? defaultOnStall;
-    this.now = options.now ?? defaultNow;
+    this.now = options.now ?? Date.now;
     this.setTimer = options.setTimer ?? defaultSetTimer;
     this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
@@ -124,12 +119,11 @@ export class EventLoopMonitor {
 
   private probe(): void {
     if (!this.running) return;
-    const at = this.now();
-    const delayMs = at - this.scheduledAt;
+    const delayMs = this.now() - this.scheduledAt;
     const lagMs = Math.max(0, delayMs - this.probeMs);
     this.lastLag = lagMs;
-    if (lagMs >= this.stallMs && at - this.lastReportAt >= this.reportThrottleMs) {
-      this.lastReportAt = at;
+    if (lagMs >= this.stallMs && this.now() - this.lastReportAt >= this.reportThrottleMs) {
+      this.lastReportAt = this.now();
       this.onStall({ lagMs, delayMs });
     }
     this.arm();

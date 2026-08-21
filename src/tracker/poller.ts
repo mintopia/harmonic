@@ -3,6 +3,7 @@ import type { TaskRow } from '../db/schema.js';
 import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
 import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
+import { singleFlight } from '../reliability/single-flight.js';
 
 /** The mirror coordinator's poll-side surface (issue #32): cache the scan for picks, then reconcile assignments. */
 export interface MirrorSync {
@@ -74,8 +75,19 @@ export class TrackerPoller {
    * Tracker surface refreshes every poll, not just on the manager's reconcile.
    * `observe` runs before the poke so a freshly-mirrored Task's pick sees the
    * current assignees; `reconcile` runs after so it settles against final state.
+   *
+   * Single-flighted (issue #219): the interval timer and a manual `pollNow`
+   * both call here, so a slow scan or a slow Epic-integration git op must not let
+   * the next tick start an overlapping pass that re-spawns git for the same work.
+   * An overlapping call coalesces into one trailing pass rather than stacking.
    */
-  async poll(): Promise<void> {
+  private readonly pollGate = singleFlight(() => this.pollOnce());
+
+  poll(): Promise<void> {
+    return this.pollGate();
+  }
+
+  private async pollOnce(): Promise<void> {
     let adapter: TrackerAdapter;
     try {
       adapter = await this.resolveAdapter(this.workingDir);

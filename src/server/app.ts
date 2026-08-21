@@ -46,6 +46,7 @@ import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
+import { singleFlight } from '../reliability/single-flight.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
@@ -82,10 +83,9 @@ export interface AppOptions {
   /** Work Context lease heartbeat/sweep cadence overrides (issue #122); absent
    * uses production defaults (~30s heartbeat, ~60s sweep). */
   leaseTuning?: { heartbeatMs?: number; sweepMs?: number } | undefined;
-  /** Event-loop stall monitor overrides (issue #210, part of #201).
-   * `enabled: false` turns the probe off (tests keep it off to avoid stall-log
-   * noise); otherwise production defaults apply (~1s probe, 200ms stall
-   * threshold). */
+  /** Event-loop stall monitor overrides (issue #200). `enabled: false` turns
+   * the probe off (tests keep it off to avoid stall-log noise); otherwise
+   * production defaults apply (~1s probe, 200ms stall threshold). */
   reliabilityTuning?: { eventLoop?: { enabled?: boolean; probeMs?: number; stallMs?: number } } | undefined;
   /** Test-only agent-critic drive override (issue #164): a fake
    * {@link CriticHarnessDrive} the wired critic uses instead of spawning a real
@@ -303,6 +303,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     leases,
     (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
   );
+  // Single-flight the retirement drain (issue #219): it is fired on every
+  // `run_changed`, so a burst of settling Runs would otherwise fan out
+  // overlapping drains that each re-observe the same `retiring` Sessions and
+  // spawn `git worktree remove` for them in parallel — a subprocess flood on the
+  // event loop. Coalescing collapses the burst into one pass plus a trailing
+  // rerun that sweeps anything that settled mid-pass.
+  const drainRetirement = singleFlight(() => sessionRetirement.drain());
   const landingJournal = new LandingJournalStore(asyncDb);
   const reviewSettle = new RunSettleCoordinator(
     runs,
@@ -438,11 +445,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     },
     mergeTrain,
     gitBreaker,
-    // Start-funnel gate (issue #159): refuse to spawn a worktree Run for an Epic
-    // member whose integration base isn't ready — set to an `epic/<ref>` branch
-    // the poll hasn't confirmed live, or still unresolved. Routed to the Task's
-    // own Workspace coordinator via the forward ref (like the Auto-Runner gate),
-    // so a hand-started member is blocked identically to an auto-picked one.
+    // Start-funnel gate (issue #159, git ground-truth #231): refuse to spawn a
+    // worktree Run for an Epic member whose integration base isn't ready — set to
+    // an `epic/<ref>` branch that doesn't currently exist in git, or still
+    // unresolved. Routed to the Task's own Workspace coordinator via the forward
+    // ref (like the Auto-Runner gate), so a hand-started member is blocked
+    // identically to an auto-picked one.
     epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
     worktreesDir: join(opts.dataDir, 'worktrees'),
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
@@ -504,7 +512,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // owed removal by a Session left `retiring` (a crash mid-removal) or an `idle`
   // Session whose retention deadline lapsed while the process was down. Runs
   // after the review sweep so a just-settled review-SLA Session is included.
-  await sessionRetirement.drain();
+  await drainRetirement();
   // Live periodic Work Context lease sweep (issue #122): flips a lapsed `held`
   // lease to `suspect` on a wall-clock cadence, independent of the Runner's own
   // coordinator heartbeat — this complements, not replaces, the boot-only
@@ -518,14 +526,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     void leases.sweepExpired().catch(() => {});
   }, opts.leaseTuning?.sweepMs ?? 60_000);
   leaseSweep.unref?.();
-  // Event-loop stall monitor (issue #210, part of #201 / ADR-0029 §5):
-  // synchronous SQLite shares the loop with every request, so a slow query or a
-  // non-yielding loop freezes the whole server. This probes loop delay and logs
-  // a stall as a legible event instead of a silent hang. Constructed here but
-  // *started* in the onListen hook below, once all synchronous boot work —
-  // migrate, reconcile, drain, and the route/OpenAPI schema registration that
-  // follows — is done, so startup CPU is never misread as a stall. Off in tests
-  // via reliabilityTuning.
+  // Event-loop stall monitor (issue #200 / ADR-0029 §5): synchronous SQLite
+  // shares the loop with every request, so a slow query or a non-yielding loop
+  // freezes the whole server. This probes loop delay and logs a stall as a
+  // legible event instead of a silent hang. Constructed here but *started* in
+  // the onListen hook below, once all synchronous boot work — migrate, reconcile,
+  // drain, and the route/OpenAPI schema registration that follows — is done, so
+  // startup CPU is never misread as a stall. Off in tests via reliabilityTuning.
   const eventLoopTuning = opts.reliabilityTuning?.eventLoop;
   const loopMonitor =
     eventLoopTuning?.enabled === false
@@ -583,7 +590,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // retention deadline is swept on the next run activity. Best-effort — a drain
   // hiccup must never break the event fan-out.
   bus.on('run_changed', () => {
-    void sessionRetirement.drain().catch(() => {});
+    void drainRetirement().catch(() => {});
   });
   // The boot-time poke happens in the onListen hook below, after the MCP
   // endpoint is known — so even the first auto-started run gets its

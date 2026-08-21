@@ -1,8 +1,14 @@
 ---
 Status: accepted
+Refined by: [ADR-0030](0030-local-db-source-of-truth-for-agent-work.md)
 ---
 
 # Parallel Epic execution: worktree Runs off a per-Epic integration branch, landed by a merge train
+
+> **Refined by [ADR-0030](0030-local-db-source-of-truth-for-agent-work.md):** two decisions
+> below are superseded — child **eligibility** is now the `ready-for-agent` label (not
+> "no assignee"), and Epic structure/frontier is derived from **persisted DB facts** (not
+> the live tracker scan). The integration-branch + merge-train design here stands unchanged.
 
 To implement a large feature faster, Harmonic runs the ready children of a
 **leaf-most Epic** (a Spec or a Map) **concurrently** in per-Run worktrees, then
