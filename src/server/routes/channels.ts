@@ -152,7 +152,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.tasks.get(req.params.id);
+      await ctx.tasks.get(req.params.id);
       ctx.channels.addOverride(req.params.id, req.body.channelId);
       return { channelIds: ctx.channels.channelIdsForTask(req.params.id) };
     },
@@ -196,7 +196,7 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.tasks.get(req.params.id);
+      await ctx.tasks.get(req.params.id);
       return { channelIds: ctx.channels.channelIdsForTask(req.params.id) };
     },
   );

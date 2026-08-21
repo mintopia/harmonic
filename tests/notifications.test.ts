@@ -101,6 +101,20 @@ describe('notification channels', () => {
     ).toBe(400);
   });
 
+  it('404s adding or listing per-task channel overrides for a task that does not exist', async () => {
+    const channel = await server.api('POST', '/api/channels', {
+      name: 'guard',
+      type: 'webhook',
+      config: { url: 'http://127.0.0.1:1/unused' },
+    });
+    // The existence guard is `await ctx.tasks.get(id)` (async since ADR-0029);
+    // an un-awaited guard would silently pass and 200 on a missing task.
+    expect(
+      (await server.api('POST', '/api/tasks/999999/channels', { channelId: channel.body.id })).status,
+    ).toBe(404);
+    expect((await server.api('GET', '/api/tasks/999999/channels')).status).toBe(404);
+  });
+
   it('delivers subscribed events to a generic webhook with a verifiable HMAC signature, and stays silent otherwise', async () => {
     const sink = await listen();
     const channel = await server.api('POST', '/api/channels', {
