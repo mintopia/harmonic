@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNo
 import { api } from '../api';
 import { nextTabIndex } from '../tablist-model';
 import { formatCost, formatCostByModel } from '../cost';
-import type { GuardrailEvent, Run, RunEvent, Task, VerificationAttempt } from '../types';
+import type { GuardrailEvent, Run, RunLogEvent, Task, VerificationAttempt } from '../types';
 import { EmptyState } from './EmptyState';
 import { EventStream } from './EventStream';
 import { coalesceEvents } from '../event-stream-model';
@@ -265,8 +265,9 @@ function GuardrailTrips({ events }: { events: GuardrailEvent[] }) {
   );
 }
 
-function OutputTab({ run, events }: { run: Run | undefined; events: RunEvent[] }) {
+function OutputTab({ run, events, unavailable }: { run: Run | undefined; events: RunLogEvent[]; unavailable: boolean }) {
   if (!run) return <NoRunsYet />;
+  if (unavailable) return <p className="text-muted">Log unavailable.</p>;
   return (
     <div>
       <EventStream events={events} />
@@ -354,7 +355,7 @@ function PromptTab({ run }: { run: Run | undefined }) {
  * read of how the run ended without opening the full Output stream. Thoughts
  * and tool calls are dropped; only assistant prose survives, last three folded
  * utterances shown newest-last. */
-function OutputSummary({ events }: { events: RunEvent[] }) {
+function OutputSummary({ events }: { events: RunLogEvent[] }) {
   const messages = coalesceEvents(events)
     .filter((item): item is Extract<typeof item, { kind: 'text' }> => item.kind === 'text' && item.variant === 'message')
     .map((item) => item.text.trim())
@@ -404,7 +405,7 @@ function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
  * — everything DetailsTab held that isn't now permanently visible in the
  * Ticket page's side aside (RunMeta and VerificationCard moved there, so this
  * tab no longer repeats them — issue #183). */
-function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunEvent[] }) {
+function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunLogEvent[] }) {
   return (
     <div className="flex flex-col">
       <OutputSummary events={events} />
@@ -591,7 +592,8 @@ export function TicketPage({
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
-  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [events, setEvents] = useState<RunLogEvent[]>([]);
+  const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
   const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
@@ -622,22 +624,21 @@ export function TicketPage({
   useEffect(() => {
     if (selectedRunId === null) return;
     let live = true;
-    // Clear the previous run's stream before replaying this one, so a run
-    // switch never shows (or interleaves live events into) the old output.
+    // The native JSONL is the output source of truth. Polling also makes a
+    // live transcript advance without reading the retired run_events stream.
     setEvents([]);
-    // Replay: load the persisted stream, then append live events as they
-    // arrive — one representation for both.
-    api.runEvents(selectedRunId).then(({ events }) => live && setEvents(events));
-    const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'run_event' && msg.event.runId === selectedRunId) {
-        setEvents((current) =>
-          current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event],
-        );
-      }
-    });
+    setLogUnavailable(false);
+    const load = () =>
+      api.runLog(selectedRunId).then((log) => {
+        if (!live) return;
+        setLogUnavailable(log.status === 'unavailable');
+        setEvents(log.status === 'available' ? log.events : []);
+      });
+    load();
+    const interval = window.setInterval(load, 1_000);
     return () => {
       live = false;
-      unsubscribe();
+      window.clearInterval(interval);
     };
   }, [selectedRunId]);
 
@@ -687,7 +688,7 @@ export function TicketPage({
   }, [selectedRunId]);
 
   const selectedRun = runs.find((r) => r.id === selectedRunId);
-  const phaseSteps = selectedRun ? phaseTimelineFromEvents(events, selectedRun.phase, selectedRun.state) : null;
+  const phaseSteps = selectedRun ? phaseTimelineFromEvents([], selectedRun.phase, selectedRun.state) : null;
 
   // Keep the Output panel pinned to the newest event as it streams — but only
   // while the operator is already at the bottom, so we never yank them up
@@ -767,11 +768,8 @@ export function TicketPage({
   // click. `null` when the string doesn't contain a `task <id>` to link.
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
 
-  // The one-time progress-nudge and the run-level next-attempt lookup are
-  // both scoped to the *selected* run, so they render alongside it (phases/
-  // runbanner), not in the task-level header above.
-  const progressNudge = events.find((e) => e.payload?.event === 'progress-nudge') ?? null;
-  const progressNudgePattern = progressNudge?.payload?.pattern as string | undefined;
+  // The next-attempt lookup is scoped to the selected run so it renders beside
+  // its result banner, not in the task-level header above.
   const nextRun = selectedRun ? runs.find((r) => r.attempt === selectedRun.attempt + 1) : undefined;
 
   // The bottom bar (issue #183): whether the selected run gets the live gate
@@ -885,15 +883,6 @@ export function TicketPage({
           {/* PER-RUN DETAIL */}
           <div className="mt-5">
             {selectedRun && <RunBanner run={selectedRun} nextRun={nextRun} />}
-            {selectedRun && progressNudge && (
-              <div className="mb-[18px] rounded-md bg-accent-tint px-2 py-1 text-small text-ink">
-                <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
-                <span>
-                  Redirected before a guardrail trip
-                  {progressNudgePattern ? ` — ${progressNudgePattern}` : ''}
-                </span>
-              </div>
-            )}
             {selectedRun && <GuardrailTrips events={guardrailEvents} />}
             {phaseSteps && (
               <div className={`${card} mb-[18px] flex items-center px-[18px] py-[15px]`}>
@@ -943,7 +932,7 @@ export function TicketPage({
                     tabs never discards in-progress state — notably a
                     dependency edit held in the Dependencies component. */}
                 <div role="tabpanel" id="ticket-panel-output" aria-labelledby="ticket-tab-output" hidden={tab !== 'output'}>
-                  <OutputTab run={selectedRun} events={events} />
+                  <OutputTab run={selectedRun} events={events} unavailable={logUnavailable} />
                 </div>
                 <div role="tabpanel" id="ticket-panel-changes" aria-labelledby="ticket-tab-changes" hidden={tab !== 'changes'}>
                   <ChangesTab run={selectedRun} diff={diff} />

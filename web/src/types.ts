@@ -338,6 +338,15 @@ export interface RunEvent {
   payload: any;
 }
 
+/** A renderer-compatible event parsed from a native harness transcript. */
+export interface RunLogEvent {
+  id: number;
+  seq: number;
+  ts: number;
+  type: 'session_update';
+  payload: unknown;
+}
+
 /**
  * A Conversation: an interactive, multi-turn live chat the operator drives
  * with an agent Harness over ACP — a sibling to Task, not a queued unit of

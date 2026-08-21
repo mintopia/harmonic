@@ -11,6 +11,7 @@ import type {
   PermissionRule,
   Run,
   RunEvent,
+  RunLogEvent,
   Task,
   VerificationAttempt,
   VerificationCommand,
@@ -184,6 +185,8 @@ export const api = {
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
   runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
+  runLog: (id: number) =>
+    request<{ status: 'available'; events: RunLogEvent[] } | { status: 'unavailable' }>('GET', `/api/runs/${id}/log`),
   // Guardrail-trip event log for a Run (issue #171): the REST surface over
   // `GuardrailEventStore.list`, mirroring `runEvents`'s shape and 404 behaviour.
   runGuardrailEvents: (id: number) =>

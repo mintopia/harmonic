@@ -206,6 +206,9 @@ export const codexAdapter: HarnessAdapter = {
   ],
 
   usage: {
+    resolveTranscriptPath({ sessionLogDir, sessionId }) {
+      return Promise.resolve(codexAdapter.usage!.sessionLogFile({ sessionLogDir, cwd: '', sessionId }));
+    },
     /**
      * Rollout parse into rolled-up Usage + Process Tree (ADR 0009), for the
      * one-shot run-end `collectUsage`. Returns null when the rollout has not

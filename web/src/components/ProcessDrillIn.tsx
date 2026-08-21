@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { subscribe } from '../ws';
-import type { ActivityProcess, RunEvent } from '../types';
+import type { ActivityProcess, RunLogEvent } from '../types';
 import { chip, labelType } from '../ui';
 import {
   findNode,
@@ -18,9 +17,8 @@ import { ProcessTree } from './ProcessTree';
  * The expanded drill-in for one Activity Run (issue #53): its Process Tree on
  * the left, the selected node's live transcript on the right. Selecting a node
  * reframes the shared `EventStream` on that agent/session — not the whole Task —
- * via `frameEvents`. The output is sourced exactly the way the Task detail's
- * Output tab is (replay `GET /api/runs/:id/events`, then append live
- * `run_event`s), so the pane streams live while the operator watches.
+ * via `frameEvents`. The output is parsed from the native transcript and
+ * refreshed while the operator watches; it never replays `run_events`.
  *
  * The idle lifecycle lives in the pure model: every tree snapshot (the 5s poll
  * and the `run_usage` firehose deltas the view already merges) is folded into a
@@ -32,7 +30,8 @@ export function ProcessDrillIn({ process, now }: { process: ActivityProcess; now
   const runId = process.runId;
   const [activity, setActivity] = useState<NodeActivityMap>(NO_NODE_ACTIVITY);
   const [selectedId, setSelectedId] = useState(tree.id);
-  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [events, setEvents] = useState<RunLogEvent[]>([]);
+  const [logUnavailable, setLogUnavailable] = useState(false);
 
   // Age off `now` (the prop), but stamp writes at the moment a snapshot lands —
   // so re-tracking only happens when the tree object actually changes, not once
@@ -43,21 +42,24 @@ export function ProcessDrillIn({ process, now }: { process: ActivityProcess; now
     setActivity((prev) => trackNodeActivity(prev, tree, nowRef.current));
   }, [tree]);
 
-  // Replay the persisted stream, then append live events — one representation
-  // for both, same as the Task detail Output tab.
+  // Poll the native JSONL while the pane is open. A transcript can appear just
+  // after session creation, so unavailable is deliberately rechecked too.
   useEffect(() => {
     if (runId === null) return;
     let live = true;
     setEvents([]);
-    api.runEvents(runId).then(({ events }) => live && setEvents(events));
-    const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'run_event' && msg.event.runId === runId) {
-        setEvents((current) => (current.some((e) => e.id === msg.event.id) ? current : [...current, msg.event]));
-      }
-    });
+    setLogUnavailable(false);
+    const load = () =>
+      api.runLog(runId).then((log) => {
+        if (!live) return;
+        setLogUnavailable(log.status === 'unavailable');
+        setEvents(log.status === 'available' ? log.events : []);
+      });
+    load();
+    const interval = window.setInterval(load, 1_000);
     return () => {
       live = false;
-      unsubscribe();
+      window.clearInterval(interval);
     };
   }, [runId]);
 
@@ -86,7 +88,9 @@ export function ProcessDrillIn({ process, now }: { process: ActivityProcess; now
           <span className={`${chip} shrink-0 bg-raised text-muted`}>{selected.model}</span>
         </div>
         <div className="max-h-96 overflow-y-auto rounded-md bg-surface p-3">
-          {framed.length > 0 ? (
+          {logUnavailable ? (
+            <p className="text-small text-muted">Log unavailable.</p>
+          ) : framed.length > 0 ? (
             <EventStream events={framed} />
           ) : (
             <p className="text-small text-muted">

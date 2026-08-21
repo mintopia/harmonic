@@ -19,6 +19,7 @@ import { RUN_PHASES } from '../../domain/run-phases.js';
 import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
+import { readTranscriptLog } from '../../execution/transcript-log.js';
 import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi } from '../serialize.js';
 import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
@@ -241,6 +242,10 @@ const runEventSchema = z.object({
 });
 
 const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
+const runLogResponseSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('available'), events: z.array(runEventSchema) }),
+  z.object({ status: z.literal('unavailable') }),
+]);
 
 /** A Guardrail-trip event as the REST API serves it (`domain/guardrail-events.ts` `GuardrailEventRow`, issue #171). */
 const guardrailEventSchema = z.object({
@@ -774,6 +779,35 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => runToApi(ctx, await ctx.runs.get(req.params.id)),
+  );
+
+  app.get(
+    '/runs/:id/log',
+    {
+      schema: {
+        tags: ['Runs'],
+        description: "Read a Run's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        params: idParamsSchema,
+        response: { 200: runLogResponseSchema.describe('The native transcript events, or an explicit unavailable state.') },
+      },
+    },
+    async (req) => {
+      const run = await ctx.runs.get(req.params.id);
+      if (run.sessionRowId === null) return { status: 'unavailable' as const };
+      let session;
+      try {
+        session = await ctx.sessions.get(run.sessionRowId);
+      } catch {
+        return { status: 'unavailable' as const };
+      }
+      const log = await readTranscriptLog({
+        harness: session.harness,
+        path: session.transcriptPath,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+      });
+      return log.status === 'available' ? { ...log, events: log.events.map((event) => ({ ...event, runId: run.id })) } : log;
+    },
   );
 
   app.get(
