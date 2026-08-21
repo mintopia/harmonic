@@ -162,7 +162,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       // The declared body schema is deliberately permissive (see above);
       // `ConfigStore.update`'s own re-parse through `appConfigSchema` is
       // the actual validation boundary, same as before this migration.
-      const updated = ctx.configStore.update(req.body as DeepPartial<AppConfig>);
+      const updated = await ctx.configStore.update(req.body as DeepPartial<AppConfig>);
       ctx.autoRunner.poke();
       return updated;
     },
@@ -185,7 +185,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const updated = ctx.configStore.replace(req.body as AppConfig);
+      const updated = await ctx.configStore.replace(req.body as AppConfig);
       ctx.autoRunner.poke();
       return updated;
     },

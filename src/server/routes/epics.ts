@@ -127,7 +127,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
       const epics = await ctx.trackerManager.listEpics(req.params.workspaceId);
       return { epics: epics.map(epicToApi) };
     },
@@ -150,7 +150,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
       const epic = await ctx.trackerManager.epicDetail(req.params.workspaceId, req.params.epicRef);
       if (!epic) {
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
@@ -178,7 +178,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
       const outcome = await ctx.trackerManager.forceLandEpic(req.params.workspaceId, req.params.epicRef);
       if (!outcome) {
         throw new DomainError(

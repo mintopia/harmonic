@@ -123,7 +123,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       const config = ctx.configStore.get();
       // Defaults to the earliest-created Workspace when omitted (ADR-0008), so
       // callers that predate Workspaces keep working unchanged.
-      const workspace = ctx.workspaces.resolve(req.body.workspaceId);
+      const workspace = await ctx.workspaces.resolve(req.body.workspaceId);
       // The chat default (ADR-0012), resolved like every other overridable
       // setting: an explicit request value wins, else this Workspace's chat
       // override, else the global chat default. Distinct from the Task defaults —

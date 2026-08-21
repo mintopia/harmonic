@@ -163,7 +163,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       taskId,
       title: firstLineTitle(task.prompt) ?? `Task ${taskId}`,
       workspaceId: atRestWorkspaceId(task.workspaceId),
-      workspaceName: workspaceNameOf(ctx, task.workspaceId),
+      workspaceName: await workspaceNameOf(ctx, task.workspaceId),
       harness: task.harness,
       model: task.model,
       state: run.state,
@@ -181,7 +181,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
     };
   }));
   if (!includeChats) return runs;
-  const chats: ApiActivityProcess[] = ctx.conversationDriver.activeConversationIds().map((id) => {
+  const chats: ApiActivityProcess[] = await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
     const convo = ctx.conversations.get(id);
     const usage = parseUsage(convo.usage);
     return {
@@ -191,7 +191,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       taskId: null,
       title: convo.title ?? firstLineTitle(ctx.conversations.firstTurnText(id)) ?? `Conversation #${id}`,
       workspaceId: atRestWorkspaceId(convo.workspaceId),
-      workspaceName: workspaceNameOf(ctx, convo.workspaceId),
+      workspaceName: await workspaceNameOf(ctx, convo.workspaceId),
       harness: convo.harness,
       model: convo.model,
       state: convo.state,
@@ -209,13 +209,13 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       tree: null,
       cost: costOfUsages([usage], prices),
     };
-  });
+  }));
   return [...runs, ...chats];
 }
 
 /** The Workspace's name for an at-rest workspaceId — every live process names its own Workspace (issue #52). */
-function workspaceNameOf(ctx: AppContext, workspaceId: number | null): string {
-  return ctx.workspaces.get(atRestWorkspaceId(workspaceId)).name;
+async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Promise<string> {
+  return (await ctx.workspaces.get(atRestWorkspaceId(workspaceId))).name;
 }
 
 /** A model's configured context window (exact id, then the undated base id), or null when unconfigured — mirrors `conversationToApi` (issue #52). */

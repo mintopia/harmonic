@@ -28,7 +28,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-del-'));
     db = openDb(dataDir); // backfills the single Default Workspace
     asyncDb = await openAsyncDb(dataDir);
-    workspaces = new WorkspaceService(db);
+    workspaces = new WorkspaceService(asyncDb);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
   });
   afterEach(async () => {
@@ -36,35 +36,35 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('deletes the last remaining Workspace (no more last-Workspace guard)', () => {
-    const only = workspaces.list()[0]!;
-    expect(workspaces.list()).toHaveLength(1);
+  it('deletes the last remaining Workspace (no more last-Workspace guard)', async () => {
+    const only = (await workspaces.list())[0]!;
+    expect(await workspaces.list()).toHaveLength(1);
 
-    expect(() => workspaces.delete(only.id)).not.toThrow();
-    expect(workspaces.list()).toHaveLength(0);
+    await expect(workspaces.delete(only.id)).resolves.toBeUndefined();
+    expect(await workspaces.list()).toHaveLength(0);
   });
 
   it('still refuses a Workspace with a running Task (409/conflict)', async () => {
-    const ws = workspaces.list()[0]!;
+    const ws = (await workspaces.list())[0]!;
     const task = await tasks.create({ prompt: 'busy' });
     await tasks.setState(task.id, 'running');
 
-    expect(() => workspaces.delete(ws.id)).toThrowError(/running task/);
-    expect(workspaces.list()).toHaveLength(1); // untouched
+    await expect(workspaces.delete(ws.id)).rejects.toThrowError(/running task/);
+    expect(await workspaces.list()).toHaveLength(1); // untouched
   });
 
-  it('deletes a Workspace that has a dismissal tombstone (issue #162 FK)', () => {
-    const ws = workspaces.list()[0]!;
+  it('deletes a Workspace that has a dismissal tombstone (issue #162 FK)', async () => {
+    const ws = (await workspaces.list())[0]!;
     // A Dismissed mirrored Task leaves a tombstone FK-bound to the Workspace;
     // deleting the Workspace must purge it first or foreign_keys=ON rejects it.
     db.insert(trackerDismissals).values({ workspaceId: ws.id, trackerRef: 42, dismissedAt: Date.now() }).run();
 
-    expect(() => workspaces.delete(ws.id)).not.toThrow();
+    await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
     expect(db.select().from(trackerDismissals).all()).toHaveLength(0);
   });
 
   it('purges the whole Run tree (run_facts), not just run_events, with no FK error (issue #162)', async () => {
-    const ws = workspaces.list()[0]!;
+    const ws = (await workspaces.list())[0]!;
     const task = await tasks.create({ prompt: 'has a run with facts' });
     const runId = db
       .insert(runs)
@@ -75,7 +75,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
     // row would FK-reject the runs delete under foreign_keys=ON.
     db.insert(runFacts).values({ runId, seq: 1, ts: Date.now(), type: 'failed', payload: '{}' }).run();
 
-    expect(() => workspaces.delete(ws.id)).not.toThrow();
+    await expect(workspaces.delete(ws.id)).resolves.toBeUndefined();
     expect(db.select().from(runFacts).where(eq(runFacts.runId, runId)).all()).toHaveLength(0);
   });
 });

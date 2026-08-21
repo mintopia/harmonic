@@ -78,7 +78,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
   /** Launch a mirrored afk/direct Run against `repo`. */
   async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
-    server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
+    await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);

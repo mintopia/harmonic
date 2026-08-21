@@ -67,7 +67,7 @@ describe('mirrorScan upsert', () => {
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    wsId = allWorkspaces(db)()[0]!.id;
+    wsId = (await allWorkspaces(db)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -260,7 +260,7 @@ describe('deriveMaps (query-time rollup)', () => {
     const db = openDb(dir);
     const asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    const wsId = allWorkspaces(db)()[0]!.id;
+    const wsId = (await allWorkspaces(db)())[0]!.id;
     const scan = [
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'] }),

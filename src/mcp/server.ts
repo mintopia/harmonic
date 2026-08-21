@@ -308,7 +308,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     },
     wrapAsync(async ({ workspaceId, epicRef }) => {
       requireOperator();
-      ctx.workspaces.get(workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.get(workspaceId); // 404s an unknown Workspace before touching the tracker
       const outcome = await ctx.trackerManager.forceLandEpic(workspaceId, epicRef);
       if (!outcome) {
         throw new DomainError(

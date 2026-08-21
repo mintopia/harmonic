@@ -103,7 +103,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         response: { 200: workspacesListResponseSchema.describe('Every Workspace, oldest first.') },
       },
     },
-    async () => ({ workspaces: ctx.workspaces.list().map(serialize) }),
+    async () => ({ workspaces: (await ctx.workspaces.list()).map(serialize) }),
   );
 
   app.post(
@@ -123,7 +123,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const workspace = ctx.workspaces.create(req.body);
+      const workspace = await ctx.workspaces.create(req.body);
       await ctx.trackerManager.sync(); // created with tracker on ⇒ resolve + start its poll loop now
       return reply.status(201).send(serialize(workspace));
     },
@@ -143,7 +143,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => serialize(ctx.workspaces.get(req.params.id)),
+    async (req) => serialize(await ctx.workspaces.get(req.params.id)),
   );
 
   app.patch(
@@ -175,7 +175,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
           throw new DomainError('validation', `guardrailBudget.costUsd: ${costCapMessage(unpriced)}`);
         }
       }
-      const workspace = ctx.workspaces.update(req.params.id, req.body);
+      const workspace = await ctx.workspaces.update(req.params.id, req.body);
       await ctx.trackerManager.sync(); // toggling tracker / repointing the repo / changing the interval takes effect now
       return serialize(workspace);
     },
@@ -198,7 +198,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      ctx.workspaces.delete(req.params.id);
+      await ctx.workspaces.delete(req.params.id);
       await ctx.trackerManager.sync(); // the deleted Workspace's poll loop stops here
       return reply.status(204).send(null);
     },
@@ -222,7 +222,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const ws = ctx.workspaces.get(req.params.id); // 404 if missing
+      const ws = await ctx.workspaces.get(req.params.id); // 404 if missing
       if (!ws.trackerEnabled) throw new DomainError('conflict', `tracking is not enabled for workspace ${ws.id}`);
       await ctx.trackerManager.pollNow(ws.id);
       return { ok: true as const };

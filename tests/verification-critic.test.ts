@@ -79,21 +79,21 @@ describe('agent critic end-to-end (issue #164)', () => {
     // Point the default Workspace at a real git repo so `validating` freezes a
     // candidate for the critic to review (the helper's default workdir is a
     // non-git temp dir).
-    const ws = server.app.ctx.workspaces.list()[0]!;
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
-    server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
     // Exercise the verify GATE in isolation: a fail Escalates directly rather
     // than heal→re-verify→escalate (two attempts). Self-heal has its own file.
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
   });
   afterAll(async () => {
     await server.close();
     rmSync(repoDir, { recursive: true, force: true });
   });
-  beforeEach(() => {
+  beforeEach(async () => {
     criticResult = { verdict: 'pass', summary: 'the change matches the ticket' };
     lastCriticHarnessId = undefined;
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
       verificationCommand: null,
       verificationCritic: null,
@@ -121,7 +121,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC1/AC2: a passing critic lets a native Run park for review; the attempt persists at the frozen candidate OID', async () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
-    server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
@@ -147,7 +147,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC3: a failing critic blocks and Escalates the Run — broken work never lands', async () => {
     criticResult = { verdict: 'fail', summary: 'the change breaks the contract' };
-    server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
     const { taskId, runId } = await createAndRun();
 
@@ -174,7 +174,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC3: an inconclusive critic Escalates the Run (infra doubt fails safe)', async () => {
     criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
-    server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const { taskId, runId } = await createAndRun();
 
     const run = await waitFor(async () => {
@@ -195,7 +195,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC1: the critic verdict combines with the command verdict — command pass + critic fail still Escalates', async () => {
     criticResult = { verdict: 'fail', summary: 'logic is wrong despite green tests' };
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
       verificationCritic: critic(),
     });
@@ -222,7 +222,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
   it('AC1: command pass + critic pass together lets the Run park for review (all verifiers passed)', async () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
       verificationCritic: critic(),
     });
@@ -246,7 +246,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     // Direct mode + a dirty tree skips the candidate snapshot, so there is
     // nothing frozen for the critic to review — infra doubt the gate Escalates
     // on, without ever spawning the critic drive.
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCritic: critic(),
     });
@@ -280,12 +280,12 @@ describe('agent critic end-to-end (issue #164)', () => {
     // A second configured harness so the critic can be pointed independently
     // of the builder's — native Runs default to task.harness 'claude'
     // (defaultConfig), so pinning the critic at 'codex' proves the override.
-    server.app.ctx.configStore.update({
+    await server.app.ctx.configStore.update({
       harnesses: {
         codex: { command: process.execPath, args: [], models: ['stub-model'], defaultModel: 'stub-model' },
       },
     });
-    server.app.ctx.workspaces.update(workspaceId, { verificationCritic: criticWithHarness('codex') });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: criticWithHarness('codex') });
     const { taskId } = await createAndRun();
 
     const task = await waitFor(async () => {

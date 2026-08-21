@@ -134,11 +134,11 @@ describe('Sessions (issue #141)', () => {
       ...overrides,
     });
 
-    beforeEach(() => {
+    beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-sessions-'));
       db = openDb(dir);
       store = new SessionStore(db);
-      workspaceId = allWorkspaces(db)()[0]!.id;
+      workspaceId = (await allWorkspaces(db)())[0]!.id;
     });
     afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

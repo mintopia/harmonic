@@ -62,7 +62,7 @@ describe('Session retirement (issue #148)', () => {
     runs = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    workspaceId = allWorkspaces(db)()[0]!.id;
+    workspaceId = (await allWorkspaces(db)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

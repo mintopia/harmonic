@@ -81,7 +81,7 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
   /** Launch a mirrored afk/direct Run against `repo` (mirrors #151/#152's harness). */
   async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
-    server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
+    await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
@@ -106,15 +106,15 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     const startOid = git(repo, 'rev-parse', 'HEAD');
 
     // A verifier that PASSES, so validation → verification passes before landing.
-    const wsId = server.app.ctx.workspaces.list()[0]!.id;
-    server.app.ctx.workspaces.update(wsId, {
+    const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+    await server.app.ctx.workspaces.update(wsId, {
       verificationCommand: verificationCommandSchema.parse({
         command: process.execPath,
         args: ['-e', 'process.exit(0)'],
         timeoutSeconds: 30,
       }),
     });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
 
     // The agent (detached at start by #152) edits a file and finishes — the
     // normal direct-mode footprint: HEAD detached on its own owned ref, a
@@ -166,7 +166,7 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     // ambiguous outcome falls straight through to the #151 escalate here rather
     // than attempting a corrective turn. The auto-merge re-merge fallback is
     // covered in branch-recovery-remerge.test.ts.
-    server.app.ctx.configStore.update({ drive: { mergeFate: 'open-PR' } });
+    await server.app.ctx.configStore.update({ drive: { mergeFate: 'open-PR' } });
 
     // The agent checks out a stray branch and commits — an unattributed ref
     // delta: ambiguous, never auto-recovered.

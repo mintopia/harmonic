@@ -148,7 +148,7 @@ export interface RunnerOptions {
    * absent → the snapshot resolves against global defaults only. */
   getWorkspace?: (
     workspaceId: number | null,
-  ) =>
+  ) => Promise<
     | Pick<
         WorkspaceRow,
         | 'guardrailBudget'
@@ -157,7 +157,8 @@ export interface RunnerOptions {
         | 'verificationCritic'
         | 'verificationAutoAccept'
       >
-    | undefined;
+    | undefined
+  >;
   /** Lands a native auto-accept Run (issue #138): the verifier passed and the
    * resolved verifier config sets auto-accept, so Harmonic lands the result via
    * the same journaled LandingCoordinator the human Accept uses (#115), skipping
@@ -600,7 +601,7 @@ export class Runner {
     const config = this.getConfig();
     const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
     if (!harness) throw new DomainError('validation', `harness '${task.harness}' is not configured`);
-    const ws = this.getWorkspace?.(task.workspaceId) ?? { guardrailBudget: null, guardrailProgress: null };
+    const ws = (await this.getWorkspace?.(task.workspaceId)) ?? { guardrailBudget: null, guardrailProgress: null };
     const snapshot: RunGuardrailSnapshot = {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
@@ -1358,7 +1359,7 @@ export class Runner {
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
     const config = this.getConfig();
-    const ws = this.getWorkspace?.(task.workspaceId);
+    const ws = await this.getWorkspace?.(task.workspaceId);
     const { command, critic, autoAccept } = resolveVerifiers(
       ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
       config,
@@ -2333,7 +2334,7 @@ export class Runner {
       // when the timer fires. The enforced limit is the immutable snapshot's
       // (issue #126); a live workspace lookup at fire time (possibly long after)
       // could attribute the snapshotted limit to a since-changed override.
-      const ws = this.getWorkspace?.(task.workspaceId);
+      const ws = await this.getWorkspace?.(task.workspaceId);
       const configSource = ws?.guardrailBudget ? 'workspace' : 'default';
       const remaining = Math.max(0, wallClockBudgetMs(budget) - (Date.now() - started.startedAt));
       guardrailTimer = setTimeout(async () => {
@@ -2416,7 +2417,7 @@ export class Runner {
       if (budget.tokens == null && budget.costUsd == null) return; // no spend caps configured
       const priceTable: PriceTable = started.priceTable ? (JSON.parse(started.priceTable) as PriceTable) : {};
       // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
-      const ws = this.getWorkspace?.(task.workspaceId);
+      const ws = await this.getWorkspace?.(task.workspaceId);
       const configSource: 'default' | 'workspace' = ws?.guardrailBudget ? 'workspace' : 'default';
       // Prior cumulative spend of this Run's Execution Chain (issue #129): the
       // token/cost already charged by the sibling Runs that continued the same
@@ -2580,7 +2581,7 @@ export class Runner {
       ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
       : null;
     const progressEnabled = progressSnapshot?.progress === true;
-    const progressConfigSource: 'default' | 'workspace' = this.getWorkspace?.(task.workspaceId)
+    const progressConfigSource: 'default' | 'workspace' = (await this.getWorkspace?.(task.workspaceId))
       ?.guardrailProgress
       ? 'workspace'
       : 'default';
@@ -3603,7 +3604,7 @@ export class Runner {
     const { task, run, oid } = await this.resolveEscalatedCandidateRun(taskId, 'reverify');
 
     const config = this.getConfig();
-    const ws = this.getWorkspace?.(task.workspaceId);
+    const ws = await this.getWorkspace?.(task.workspaceId);
     const { critic } = resolveVerifiers(
       ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
       config,

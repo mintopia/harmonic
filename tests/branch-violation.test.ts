@@ -74,7 +74,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // The stub agent runs the drive prompt as its scenario script; a mirrored
     // Task's own prompt is wrapped under a `## ` header the stub can't parse, so
     // drive.prompt is the reliable seam.
-    server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
+    await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
@@ -100,7 +100,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // ambiguous outcome Escalates immediately here — exactly the #151 detection
     // path this test pins. The auto-merge re-merge path is covered separately in
     // branch-recovery-remerge.test.ts.
-    server.app.ctx.configStore.update({ drive: { mergeFate: 'open-PR' } });
+    await server.app.ctx.configStore.update({ drive: { mergeFate: 'open-PR' } });
 
     // The agent (detached at start by #152) checks out a stray branch and
     // commits onto it, then signals finish — a branch-contract violation
@@ -145,15 +145,15 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // A failing verifier with self-heal disabled makes the Run settle terminally
     // *at verifying* — reaching verifying at all proves it passed the validating
     // branch check, and the escalation is a verification one, not a branch one.
-    const wsId = server.app.ctx.workspaces.list()[0]!.id;
-    server.app.ctx.workspaces.update(wsId, {
+    const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+    await server.app.ctx.workspaces.update(wsId, {
       verificationCommand: verificationCommandSchema.parse({
         command: process.execPath,
         args: ['-e', 'process.exit(1)'],
         timeoutSeconds: 30,
       }),
     });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
 
     // The agent edits a file (no branch/HEAD mischief) and finishes — the normal
     // direct-mode footprint (detached HEAD on its own line), a clean contract.

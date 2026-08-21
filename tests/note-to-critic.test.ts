@@ -63,19 +63,19 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
   beforeAll(async () => {
     repoDir = makeRepo();
     server = await startServer(stubHarness(), { criticDrive });
-    const ws = server.app.ctx.workspaces.list()[0]!;
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
-    server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
   });
   afterAll(async () => {
     await server.close();
     rmSync(repoDir, { recursive: true, force: true });
   });
-  beforeEach(() => {
+  beforeEach(async () => {
     criticResult = { verdict: 'fail', summary: 'not good enough yet' };
     lastCriticPrompt = undefined;
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
       verificationCommand: null,
       verificationCritic: null,
@@ -98,7 +98,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
   /** Drive a fresh task+run to escalation via a failing critic, waiting for
    * both the run and the task to settle. */
   async function escalateViaCriticFail(): Promise<{ taskId: number; runId: number }> {
-    server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const { taskId, runId } = await createAndRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
@@ -199,7 +199,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     it('409s invalid_state when the task is not escalated', async () => {
       // An ordinary awaiting-review task (a passing critic) is not escalated.
       criticResult = { verdict: 'pass', summary: 'looks correct' };
-      server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+      await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
       const { taskId } = await createAndRun();
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -215,7 +215,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     it('409s conflict when the escalated run never reached a candidate snapshot', async () => {
       // Direct mode + a dirty tree skips the candidate snapshot entirely
       // (mirrors tests/verification-critic.test.ts's equivalent case).
-      server.app.ctx.workspaces.update(workspaceId, {
+      await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
         verificationCritic: critic(),
       });
@@ -310,7 +310,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     });
 
     it('a prior command failure still blocks even when the re-reviewed critic passes', async () => {
-      server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
+      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
       criticResult = { verdict: 'fail', summary: 'original critic verdict' };
       const { taskId, runId } = await escalateViaCriticFail();
       expect(attempts(runId).map((a) => `${a.mechanism}:${a.verdict}`).sort()).toEqual(['command:fail', 'critic:fail']);
@@ -338,7 +338,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
 
     it('409s invalid_state when the task is not escalated', async () => {
       criticResult = { verdict: 'pass', summary: 'looks correct' };
-      server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
+      await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
       const { taskId } = await createAndRun();
       await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
@@ -351,7 +351,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     });
 
     it('409s conflict when the escalated run never reached a candidate snapshot', async () => {
-      server.app.ctx.workspaces.update(workspaceId, {
+      await server.app.ctx.workspaces.update(workspaceId, {
         isolationMode: 'direct',
         verificationCritic: critic(),
       });
@@ -382,10 +382,10 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     });
 
     it('409s invalid_state when no critic is configured for the workspace', async () => {
-      server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
+      await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
       const { taskId } = await escalateViaCriticFail(); // still uses a critic during escalation for a candidate
       // Now strip the critic before the operator's re-verify call.
-      server.app.ctx.workspaces.update(workspaceId, { verificationCritic: null });
+      await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: null });
 
       const res = await server.api('POST', `/api/tasks/${taskId}/note-to-critic`, { note: 'anything' });
       expect(res.status).toBe(409);

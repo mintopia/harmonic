@@ -74,7 +74,7 @@ describe('MirrorCoordinator (issue #32)', () => {
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    wsId = allWorkspaces(db)()[0]!.id;
+    wsId = (await allWorkspaces(db)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

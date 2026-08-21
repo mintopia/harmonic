@@ -19,8 +19,9 @@ export type AsyncDb = LibSQLDatabase<typeof schema>;
 
 /**
  * The transaction handle drizzle hands an async `db.transaction(async (tx) => …)`
- * callback — the async twin of {@link import('../domain/run-cascade.js').CascadeTx},
- * derived the same way so cascade-style helpers can run inside a write-queue unit.
+ * callback — structurally the same query surface as {@link AsyncDb}, extracted so
+ * cascade-style helpers (e.g. `deleteRunsAndChildrenAsync`) can run inside a
+ * write-queue unit.
  */
 export type AsyncTx = Parameters<Parameters<AsyncDb['transaction']>[0]>[0];
 

@@ -52,7 +52,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     db = openDb(dataDir);
     asyncDb = await openAsyncDb(dataDir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
-    workspaces = new WorkspaceService(db);
+    workspaces = new WorkspaceService(asyncDb);
     polled = [];
     ticketsByRepo = new Map();
     unresolvable = new Set();
@@ -81,11 +81,11 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
 
   it('starts a loop only for tracker-enabled Workspaces; a tracker-off one never polls', async () => {
     // Default (boot-time) Workspace: tracker off. A second, tracker-on Workspace.
-    const on = workspaces.create({ name: 'On', workingDir: repoA, trackerEnabled: true });
+    const on = await workspaces.create({ name: 'On', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.coordinatorFor(on.id)).toBeDefined();
     // The default Workspace has tracker off — its dir was never resolved.
-    const off = workspaces.list().find((w) => w.id !== on.id)!;
+    const off = (await workspaces.list()).find((w) => w.id !== on.id)!;
     expect(manager.coordinatorFor(off.id)).toBeUndefined();
     expect(polled).not.toContain(off.workingDir);
     expect(polled).toContain(repoA);
@@ -94,8 +94,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   it('mirrors each repo into its own board — overlapping issue numbers stay distinct', async () => {
     ticketsByRepo.set(repoA, [ticket(5)]);
     ticketsByRepo.set(repoB, [ticket(5)]); // same number, different repo
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
-    const b = workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const b = await workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
     await manager.sync();
 
     await waitFor(async () => (await tasks.list()).length === 2 || undefined);
@@ -113,8 +113,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const member = (n: number): Ticket => ({ ...ticket(n), parent: 19 });
     ticketsByRepo.set(repoA, [mapTicket, member(30)]);
     ticketsByRepo.set(repoB, [mapTicket, member(31)]); // same map ref #19, different repo
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
-    const b = workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const b = await workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: true });
     await manager.sync();
     await waitFor(async () => (await tasks.list()).length === 2 || undefined);
 
@@ -128,51 +128,51 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('toggling one Workspace starts/stops just its loop; others are unaffected', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
-    const b = workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: false });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const b = await workspaces.create({ name: 'B', workingDir: repoB, trackerEnabled: false });
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeDefined();
     expect(manager.coordinatorFor(b.id)).toBeUndefined();
 
-    workspaces.update(b.id, { trackerEnabled: true }); // enable B
+    await workspaces.update(b.id, { trackerEnabled: true }); // enable B
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeDefined(); // A untouched
     expect(manager.coordinatorFor(b.id)).toBeDefined();
 
-    workspaces.update(a.id, { trackerEnabled: false }); // disable A
+    await workspaces.update(a.id, { trackerEnabled: false }); // disable A
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined(); // only A's loop stopped
     expect(manager.coordinatorFor(b.id)).toBeDefined();
   });
 
   it('deleting a Workspace stops its loop and cascades its board', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await tasks.create({ prompt: 'on A', workspaceId: a.id }); // a Task on the doomed board
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeDefined();
 
-    workspaces.delete(a.id);
+    await workspaces.delete(a.id);
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
     expect(await tasks.list({ workspaceId: a.id })).toHaveLength(0); // board went with it
   });
 
   it('delete refuses a running Task but allows the last Workspace (issue #61)', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA });
     const running = await tasks.create({ prompt: 'busy', workspaceId: a.id });
     await tasks.setState(running.id, 'running');
-    expect(() => workspaces.delete(a.id)).toThrow(/running/);
+    await expect(workspaces.delete(a.id)).rejects.toThrow(/running/);
 
     await tasks.setState(running.id, 'ready');
-    workspaces.delete(a.id); // now allowed
-    const last = workspaces.list();
+    await workspaces.delete(a.id); // now allowed
+    const last = await workspaces.list();
     expect(last).toHaveLength(1);
-    workspaces.delete(last[0]!.id); // the last Workspace goes too — no more guard
-    expect(workspaces.list()).toHaveLength(0);
+    await workspaces.delete(last[0]!.id); // the last Workspace goes too — no more guard
+    expect(await workspaces.list()).toHaveLength(0);
   });
 
   it('pollNow forces an immediate re-poll for a Workspace; a tracker-off one is a no-op', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     // A ticket appears after the loop started; a manual refresh mirrors it now.
     ticketsByRepo.set(repoA, [ticket(7)]);
@@ -180,7 +180,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     expect((await tasks.list({ workspaceId: a.id })).map((t) => t.trackerRef)).toContain(7);
 
     // The default (tracker-off) Workspace has no loop — pollNow resolves without polling it.
-    const off = workspaces.list().find((w) => w.id !== a.id)!;
+    const off = (await workspaces.list()).find((w) => w.id !== a.id)!;
     const before = polled.length;
     await expect(manager.pollNow(off.id)).resolves.toBeUndefined();
     expect(polled).not.toContain(off.workingDir);
@@ -188,11 +188,11 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('repointing the repo or interval rebuilds the loop against the new value', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     const before = manager.coordinatorFor(a.id);
 
-    workspaces.update(a.id, { workingDir: repoB });
+    await workspaces.update(a.id, { workingDir: repoB });
     await manager.sync();
     const after = manager.coordinatorFor(a.id);
     expect(after).toBeDefined();
@@ -201,17 +201,17 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('caches the Resolved Tracker for a tracker-enabled Workspace (issue #83)', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.resolvedTracker(a.id)).toEqual({ ok: true, name: 'stub', label: 'stub' });
     // The tracker-off default Workspace has nothing to resolve.
-    const off = workspaces.list().find((w) => w.id !== a.id)!;
+    const off = (await workspaces.list()).find((w) => w.id !== a.id)!;
     expect(manager.resolvedTracker(off.id)).toBeNull();
   });
 
   it('an enabled but unresolvable tracker caches the reason and never starts a loop (issue #83)', async () => {
     unresolvable.add(repoA);
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined(); // no poll loop
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: false, code: 'no-declaration' });
@@ -221,11 +221,11 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   });
 
   it('disabling tracking drops the cached Resolved Tracker (issue #83)', async () => {
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: true });
 
-    workspaces.update(a.id, { trackerEnabled: false });
+    await workspaces.update(a.id, { trackerEnabled: false });
     await manager.sync();
     expect(manager.resolvedTracker(a.id)).toBeNull();
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
@@ -233,7 +233,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
 
   it('a manual refresh re-resolves: a fixed tracker starts the loop, a broken one tears it down (issue #83)', async () => {
     unresolvable.add(repoA);
-    const a = workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    const a = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
     await manager.sync();
     expect(manager.coordinatorFor(a.id)).toBeUndefined(); // enabled but unresolvable ⇒ no loop yet
 

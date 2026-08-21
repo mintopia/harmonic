@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { eq, ne, and, or, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import {
   workspaces,
   tasks,
@@ -15,7 +15,7 @@ import {
   type WorkspaceRow,
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
-import { deleteRunsAndChildren } from './run-cascade.js';
+import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import {
   verificationCommandOverrideSchema,
   verificationCriticOverrideSchema,
@@ -100,45 +100,47 @@ export function resolveWorkspace(list: WorkspaceRow[], id?: number): WorkspaceRo
  * Workspace or one with a running Task.
  */
 export class WorkspaceService {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
-  list(): WorkspaceRow[] {
-    return this.db.select().from(workspaces).orderBy(workspaces.createdAt).all();
+  list(): Promise<WorkspaceRow[]> {
+    return this.db.read((db) => db.select().from(workspaces).orderBy(workspaces.createdAt).all());
   }
 
-  get(id: number): WorkspaceRow {
-    const row = this.db.select().from(workspaces).where(eq(workspaces.id, id)).get();
+  async get(id: number): Promise<WorkspaceRow> {
+    const row = await this.db.read((db) => db.select().from(workspaces).where(eq(workspaces.id, id)).get());
     if (!row) throw new DomainError('not_found', `workspace ${id} not found`);
     return row;
   }
 
   /** {@link resolveWorkspace} over the current list — see its doc comment. */
-  resolve(id?: number): WorkspaceRow {
-    return resolveWorkspace(this.list(), id);
+  async resolve(id?: number): Promise<WorkspaceRow> {
+    return resolveWorkspace(await this.list(), id);
   }
 
-  create(input: CreateWorkspaceInput): WorkspaceRow {
+  async create(input: CreateWorkspaceInput): Promise<WorkspaceRow> {
     const workingDir = this.assertUsableDir(input.workingDir);
-    this.assertUniquePath(workingDir);
+    await this.assertUniquePath(workingDir);
     const now = Date.now();
-    return this.db
-      .insert(workspaces)
-      .values({
-        name: input.name,
-        workingDir,
-        trackerEnabled: input.trackerEnabled ?? false,
-        trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? 60,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
-      .get();
+    return this.db.write((db) =>
+      db
+        .insert(workspaces)
+        .values({
+          name: input.name,
+          workingDir,
+          trackerEnabled: input.trackerEnabled ?? false,
+          trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? 60,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
+        .get(),
+    );
   }
 
-  update(id: number, input: UpdateWorkspaceInput): WorkspaceRow {
-    const current = this.get(id);
+  async update(id: number, input: UpdateWorkspaceInput): Promise<WorkspaceRow> {
+    const current = await this.get(id);
     const workingDir = input.workingDir !== undefined ? this.assertUsableDir(input.workingDir) : current.workingDir;
-    if (workingDir !== current.workingDir) this.assertUniquePath(workingDir, id);
+    if (workingDir !== current.workingDir) await this.assertUniquePath(workingDir, id);
     // Overridable settings are nullable, so `null` (clear to inherit) and
     // `undefined` (field omitted) mean different things: `?? current` would
     // wrongly treat a clear as a keep. `patch` keeps a field only when it is
@@ -148,31 +150,34 @@ export class WorkspaceService {
     // the current column, null clears to inherit, an object is serialised.
     const patchJson = <T>(next: T | null | undefined, kept: string | null): string | null =>
       next === undefined ? kept : next === null ? null : JSON.stringify(next);
-    return this.db
-      .update(workspaces)
-      .set({
-        name: input.name ?? current.name,
-        workingDir,
-        trackerEnabled: input.trackerEnabled ?? current.trackerEnabled,
-        trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? current.trackerPollIntervalSeconds,
-        harness: patch(input.harness, current.harness),
-        model: patch(input.model, current.model),
-        chatHarness: patch(input.chatHarness, current.chatHarness),
-        chatModel: patch(input.chatModel, current.chatModel),
-        isolationMode: patch(input.isolationMode, current.isolationMode),
-        priority: patch(input.priority, current.priority),
-        maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
-        autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
-        verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
-        verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
-        verificationAutoAccept: patch(input.verificationAutoAccept, current.verificationAutoAccept),
-        guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
-        guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
-        updatedAt: Date.now(),
-      })
-      .where(eq(workspaces.id, id))
-      .returning()
-      .get()!;
+    return this.db.write(async (db) => {
+      const row = await db
+        .update(workspaces)
+        .set({
+          name: input.name ?? current.name,
+          workingDir,
+          trackerEnabled: input.trackerEnabled ?? current.trackerEnabled,
+          trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? current.trackerPollIntervalSeconds,
+          harness: patch(input.harness, current.harness),
+          model: patch(input.model, current.model),
+          chatHarness: patch(input.chatHarness, current.chatHarness),
+          chatModel: patch(input.chatModel, current.chatModel),
+          isolationMode: patch(input.isolationMode, current.isolationMode),
+          priority: patch(input.priority, current.priority),
+          maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
+          autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
+          verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
+          verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
+          verificationAutoAccept: patch(input.verificationAutoAccept, current.verificationAutoAccept),
+          guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
+          guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
+          updatedAt: Date.now(),
+        })
+        .where(eq(workspaces.id, id))
+        .returning()
+        .get();
+      return row!;
+    });
   }
 
   /**
@@ -185,41 +190,47 @@ export class WorkspaceService {
    * edges, Channel links) and Conversations (+ their events) go first, since no
    * FK declares ON DELETE CASCADE.
    */
-  delete(id: number): void {
-    this.get(id); // 404 if missing
-    const running = this.db
-      .select({ id: tasks.id })
-      .from(tasks)
-      .where(and(eq(tasks.workspaceId, id), eq(tasks.state, 'running')))
-      .get();
+  async delete(id: number): Promise<void> {
+    await this.get(id); // 404 if missing
+    const running = await this.db.read((db) =>
+      db
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(and(eq(tasks.workspaceId, id), eq(tasks.state, 'running')))
+        .get(),
+    );
     if (running) throw new DomainError('conflict', `workspace ${id} has a running task; stop it first`);
-    const taskIds = this.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.workspaceId, id)).all().map((r) => r.id);
-    const convIds = this.db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.workspaceId, id))
-      .all()
-      .map((r) => r.id);
-    this.db.transaction((tx) => {
+    const taskIds = (
+      await this.db.read((db) => db.select({ id: tasks.id }).from(tasks).where(eq(tasks.workspaceId, id)).all())
+    ).map((r) => r.id);
+    const convIds = (
+      await this.db.read((db) =>
+        db.select({ id: conversations.id }).from(conversations).where(eq(conversations.workspaceId, id)).all(),
+      )
+    ).map((r) => r.id);
+    await this.db.transaction(async (tx) => {
       if (taskIds.length > 0) {
-        const runIds = tx.select({ id: runs.id }).from(runs).where(inArray(runs.taskId, taskIds)).all().map((r) => r.id);
+        const runIds = (await tx.select({ id: runs.id }).from(runs).where(inArray(runs.taskId, taskIds)).all()).map(
+          (r) => r.id,
+        );
         // Purge the whole Run tree (every FK-to-runs child), not just run_events —
         // shared with TaskService.delete so the run-child set is enumerated once (issue #162).
-        deleteRunsAndChildren(tx, runIds);
-        tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();
-        tx.delete(taskDependencies)
+        await deleteRunsAndChildrenAsync(tx, runIds);
+        await tx.delete(taskChannels).where(inArray(taskChannels.taskId, taskIds)).run();
+        await tx
+          .delete(taskDependencies)
           .where(or(inArray(taskDependencies.taskId, taskIds), inArray(taskDependencies.dependsOnId, taskIds)))
           .run();
-        tx.delete(tasks).where(inArray(tasks.id, taskIds)).run();
+        await tx.delete(tasks).where(inArray(tasks.id, taskIds)).run();
       }
       if (convIds.length > 0) {
-        tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
-        tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
+        await tx.delete(conversationEvents).where(inArray(conversationEvents.conversationId, convIds)).run();
+        await tx.delete(conversations).where(inArray(conversations.id, convIds)).run();
       }
       // Dismissal tombstones (issue #162) are FK-bound to the Workspace, so they
       // must go before the row they reference or foreign_keys=ON rejects the delete.
-      tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
-      tx.delete(workspaces).where(eq(workspaces.id, id)).run();
+      await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
+      await tx.delete(workspaces).where(eq(workspaces.id, id)).run();
     });
   }
 
@@ -232,14 +243,16 @@ export class WorkspaceService {
     return resolved;
   }
 
-  private assertUniquePath(workingDir: string, excludeId?: number): void {
+  private async assertUniquePath(workingDir: string, excludeId?: number): Promise<void> {
     const filters = [eq(workspaces.workingDir, workingDir)];
     if (excludeId !== undefined) filters.push(ne(workspaces.id, excludeId));
-    const clash = this.db
-      .select()
-      .from(workspaces)
-      .where(and(...filters))
-      .get();
+    const clash = await this.db.read((db) =>
+      db
+        .select()
+        .from(workspaces)
+        .where(and(...filters))
+        .get(),
+    );
     if (clash) throw new DomainError('conflict', `a workspace already uses '${workingDir}'`);
   }
 }

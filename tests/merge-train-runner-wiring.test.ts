@@ -191,7 +191,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
       defaults: { isolationMode: 'worktree' },
       drive: { autoRetry: 0, continueAttempts: 0, mergeFate: 'auto-merge' },
     });
-    wsId = server.app.ctx.workspaces.list()[0]!.id;
+    wsId = (await server.app.ctx.workspaces.list())[0]!.id;
   });
   afterAll(async () => {
     await server.close();
@@ -224,11 +224,11 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     const repo = makeRepo();
     const epic = 'epic/1630';
     git(repo, 'branch', epic, 'main');
-    server.app.ctx.workspaces.update(wsId, { workingDir: repo });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     // `{ref}` is substituted per-Task (AutoDrive.prompt's buildDrivePrompt), so
     // one global template still gives each concurrently-landing member its own
     // distinct file — proving the two lands are genuinely independent work.
-    server.app.ctx.configStore.update({
+    await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'member-{ref}.txt': 'member {ref}\n' }, mcpFinish: true }) },
     });
     const countBefore = Number(git(repo, 'rev-list', '--count', epic));
@@ -273,11 +273,11 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     const repo = makeRepo();
     const epic = 'epic/1631';
     git(repo, 'branch', epic, 'main');
-    server.app.ctx.workspaces.update(wsId, { workingDir: repo });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     // Both the first turn and the one corrective turn touch the SAME file the
     // test independently advances on the integration branch below, so BOTH the
     // first land attempt and the corrective turn's re-attempt conflict.
-    server.app.ctx.configStore.update({
+    await server.app.ctx.configStore.update({
       drive: {
         prompt: JSON.stringify({
           turns: [

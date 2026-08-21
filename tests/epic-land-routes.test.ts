@@ -34,24 +34,24 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
   });
 
   const ctx = () => server.app.ctx;
-  const defaultWorkspaceId = () => ctx().workspaces.list()[0]!.id;
+  const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
 
   describe('POST /api/workspaces/:workspaceId/epics/:epicRef/force-land', () => {
     it('returns the outcome from TrackerPollerManager.forceLandEpic on a 200', async () => {
       const outcome: EpicLandOutcome = { status: 'landed', oid: 'deadbeef' };
       const spy = vi.spyOn(ctx().trackerManager, 'forceLandEpic').mockResolvedValue(outcome);
 
-      const res = await server.api('POST', `/api/workspaces/${defaultWorkspaceId()}/epics/42/force-land`);
+      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(outcome);
-      expect(spy).toHaveBeenCalledWith(defaultWorkspaceId(), 42);
+      expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
     });
 
     it('passes through a non-landed outcome (e.g. escalated) unchanged', async () => {
       const outcome: EpicLandOutcome = { status: 'escalated', reason: 'whole-Epic verification failed' };
       vi.spyOn(ctx().trackerManager, 'forceLandEpic').mockResolvedValue(outcome);
 
-      const res = await server.api('POST', `/api/workspaces/${defaultWorkspaceId()}/epics/42/force-land`);
+      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(outcome);
     });
@@ -62,13 +62,13 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
     });
 
     it('409s when the Workspace exists but has no active land coordinator (tracking off, the default in tests)', async () => {
-      const res = await server.api('POST', `/api/workspaces/${defaultWorkspaceId()}/epics/42/force-land`);
+      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`);
       expect(res.status).toBe(409);
     });
 
     it('400s on a non-numeric workspaceId or epicRef', async () => {
       expect((await server.api('POST', '/api/workspaces/abc/epics/42/force-land')).status).toBe(400);
-      expect((await server.api('POST', `/api/workspaces/${defaultWorkspaceId()}/epics/xyz/force-land`)).status).toBe(400);
+      expect((await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz/force-land`)).status).toBe(400);
     });
   });
 
@@ -84,7 +84,7 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
       });
       const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
 
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${defaultWorkspaceId()}/epics/42/force-land`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`, {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
       });
@@ -93,7 +93,7 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
 
     it('denies a read-scoped key', async () => {
       const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${defaultWorkspaceId()}/epics/42/force-land`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`, {
         method: 'POST',
         headers: { authorization: `Bearer ${body.token}` },
       });
@@ -119,7 +119,7 @@ describe('force_land_epic MCP tool (issue #161)', () => {
   });
 
   const ctx = () => server.app.ctx;
-  const defaultWorkspaceId = () => ctx().workspaces.list()[0]!.id;
+  const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
 
   it('is registered and returns the outcome to a full-scope operator key', async () => {
     const client = await mcpClient(server, operatorToken);
@@ -132,11 +132,11 @@ describe('force_land_epic MCP tool (issue #161)', () => {
     const result = parse(
       await client.callTool({
         name: 'force_land_epic',
-        arguments: { workspaceId: defaultWorkspaceId(), epicRef: 7 },
+        arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
       }),
     );
     expect(result).toEqual(outcome);
-    expect(spy).toHaveBeenCalledWith(defaultWorkspaceId(), 7);
+    expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 7);
 
     await client.close();
   });
@@ -145,7 +145,7 @@ describe('force_land_epic MCP tool (issue #161)', () => {
     const client = await mcpClient(server, operatorToken);
     const result = await client.callTool({
       name: 'force_land_epic',
-      arguments: { workspaceId: defaultWorkspaceId(), epicRef: 7 },
+      arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
     });
     expect(result.isError).toBe(true);
     expect((result.content as any)[0].text).toContain('no active whole-Epic land coordinator');
@@ -156,7 +156,7 @@ describe('force_land_epic MCP tool (issue #161)', () => {
     const client = await mcpClient(server, operatorToken);
     const result = await client.callTool({
       name: 'force_land_epic',
-      arguments: { workspaceId: defaultWorkspaceId() },
+      arguments: { workspaceId: (await defaultWorkspaceId()) },
     });
     expect(result.isError).toBe(true);
     expect((result.content as any)[0].text).toContain('epicRef');
@@ -177,7 +177,7 @@ describe('force_land_epic MCP tool (issue #161)', () => {
     const client = await mcpClient(server, runToken);
     const forbidden = await client.callTool({
       name: 'force_land_epic',
-      arguments: { workspaceId: defaultWorkspaceId(), epicRef: 7 },
+      arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
     });
     expect(forbidden.isError).toBe(true);
     expect((forbidden.content as any)[0].text).toContain('forbidden');

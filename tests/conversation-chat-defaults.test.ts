@@ -38,8 +38,8 @@ describe('Conversation chat defaults (ADR-0012)', () => {
   });
 
   it("a Workspace's chat override wins over the global chat default", async () => {
-    const ws = server.app.ctx.workspaces.resolve();
-    server.app.ctx.workspaces.update(ws.id, { chatHarness: 'claude', chatModel: 'claude-b' });
+    const ws = await server.app.ctx.workspaces.resolve();
+    await server.app.ctx.workspaces.update(ws.id, { chatHarness: 'claude', chatModel: 'claude-b' });
 
     const { body } = await server.api('POST', '/api/conversations', {});
     expect(body.harness).toBe('claude');
@@ -47,8 +47,8 @@ describe('Conversation chat defaults (ADR-0012)', () => {
   });
 
   it('an explicit request harness/model wins over both', async () => {
-    const ws = server.app.ctx.workspaces.resolve();
-    server.app.ctx.workspaces.update(ws.id, { chatHarness: 'claude', chatModel: 'claude-b' });
+    const ws = await server.app.ctx.workspaces.resolve();
+    await server.app.ctx.workspaces.update(ws.id, { chatHarness: 'claude', chatModel: 'claude-b' });
 
     const { body } = await server.api('POST', '/api/conversations', { harness: 'codex', model: 'codex-a' });
     expect(body.harness).toBe('codex');
@@ -58,8 +58,8 @@ describe('Conversation chat defaults (ADR-0012)', () => {
   it('rejects when the resolved chat harness is not configured on this instance', async () => {
     // A Workspace chat override is free text, so it can name a harness this
     // instance doesn't configure — the handler guards it at create time.
-    const ws = server.app.ctx.workspaces.resolve();
-    server.app.ctx.workspaces.update(ws.id, { chatHarness: 'ghost' });
+    const ws = await server.app.ctx.workspaces.resolve();
+    await server.app.ctx.workspaces.update(ws.id, { chatHarness: 'ghost' });
 
     const { status } = await server.api('POST', '/api/conversations', {});
     expect(status).toBe(400);

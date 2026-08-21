@@ -50,7 +50,7 @@ export class TrackerPollerManager {
 
   constructor(
     private readonly tasks: TaskService,
-    private readonly getWorkspaces: () => WorkspaceRow[],
+    private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
     private readonly resolveAdapter: (
       repoRoot: string,
       featureIndex?: FeatureIndex,
@@ -78,7 +78,7 @@ export class TrackerPollerManager {
    * poller's `onResolved`), and a manual {@link pollNow} forces it immediately.
    */
   async sync(): Promise<void> {
-    const wsById = new Map(this.getWorkspaces().map((w) => [w.id, w]));
+    const wsById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
     // Stop pollers whose Workspace is gone, disabled tracking, or changed its repo/interval.
     for (const [id, entry] of this.entries) {
       const ws = wsById.get(id);
@@ -121,11 +121,11 @@ export class TrackerPollerManager {
     if (getConfig) {
       epicLand = new EpicLandCoordinator({
         repoDir: ws.workingDir,
-        verify: ({ repoDir, candidateOid }) => {
+        verify: async ({ repoDir, candidateOid }) => {
           // Resolve verifiers against the *live* Workspace row (its verifier
           // override columns can change without rebuilding the loop — sig tracks
           // only dir/interval) and the current global config.
-          const live = this.getWorkspaces().find((w) => w.id === ws.id) ?? ws;
+          const live = (await this.getWorkspaces()).find((w) => w.id === ws.id) ?? ws;
           return verifyEpicIntegration({ repoDir, candidateOid, verifiers: resolveVerifiers(live, getConfig()) });
         },
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
@@ -298,7 +298,7 @@ export class TrackerPollerManager {
    *   background loop, which swallows) so a manual refresh surfaces it.
    */
   async pollNow(workspaceId: number): Promise<void> {
-    const ws = this.getWorkspaces().find((w) => w.id === workspaceId);
+    const ws = (await this.getWorkspaces()).find((w) => w.id === workspaceId);
     if (!ws || !ws.trackerEnabled) return;
     const resolved = await resolveTracker(ws.workingDir, this.resolveAdapter);
     this.resolved.set(ws.id, resolved);

@@ -235,8 +235,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // batch until the sync `db` is deleted in the contract step.
   const asyncDb = await openAsyncDb(opts.dataDir);
   const bus = new EventBus();
-  const configStore = new ConfigStore(db, opts.configOverrides);
-  const workspaces = new WorkspaceService(db);
+  const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
+  const workspaces = new WorkspaceService(asyncDb);
   const channels = new ChannelService(db);
   const notifier = new Notifier(channels, (msg) => console.error(msg));
   const tasks = new TaskService(
@@ -451,10 +451,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (runId) => auth.deleteKeysForRun(runId),
     },
     autoDrive,
-    getWorkspace: (id) => {
+    getWorkspace: async (id) => {
       if (id == null) return undefined;
       try {
-        return workspaces.get(id);
+        return await workspaces.get(id);
       } catch {
         return undefined;
       }

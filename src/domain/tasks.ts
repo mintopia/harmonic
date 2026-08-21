@@ -148,7 +148,7 @@ export class TaskService {
   constructor(
     private readonly db: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
-    private readonly getWorkspaces: () => WorkspaceRow[],
+    private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
     private readonly onChanged: (task: TaskRow) => void = () => {},
     private readonly onNotify: (event: TaskNotification, task: TaskRow) => void = () => {},
     /** Fired once a Task's row is actually gone (issue #162), so a live board
@@ -157,8 +157,8 @@ export class TaskService {
   ) {}
 
   /** {@link resolveWorkspace} over this service's Workspace list — see its doc comment. */
-  private resolveWorkspace(workspaceId?: number): WorkspaceRow {
-    return resolveWorkspace(this.getWorkspaces(), workspaceId);
+  private async resolveWorkspace(workspaceId?: number): Promise<WorkspaceRow> {
+    return resolveWorkspace(await this.getWorkspaces(), workspaceId);
   }
 
   /**
@@ -185,8 +185,8 @@ export class TaskService {
 
   /** Fill a raw row's four inheritable defaults with their resolved values —
    * the sole boundary where a `RawTaskRow` becomes the public `TaskRow`. */
-  private resolve(raw: RawTaskRow): TaskRow {
-    const workspace = this.resolveWorkspace(raw.workspaceId ?? undefined);
+  private async resolve(raw: RawTaskRow): Promise<TaskRow> {
+    const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
     return { ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) };
   }
 
@@ -208,8 +208,8 @@ export class TaskService {
 
   /** Resolve a just-written raw row, fire onChanged with it, and return it —
    * every mutation's exit, so downstream always sees effective values. */
-  private changed(raw: RawTaskRow): TaskRow {
-    const task = this.resolve(raw);
+  private async changed(raw: RawTaskRow): Promise<TaskRow> {
+    const task = await this.resolve(raw);
     this.onChanged(task);
     return task;
   }
@@ -222,7 +222,7 @@ export class TaskService {
   }
 
   async create(input: CreateTaskInput): Promise<TaskRow> {
-    const workspace = this.resolveWorkspace(input.workspaceId);
+    const workspace = await this.resolveWorkspace(input.workspaceId);
     this.assertHarnessConfigured(input.harness);
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     for (const depId of dependsOn) await this.get(depId);
@@ -263,7 +263,7 @@ export class TaskService {
       }
       return inserted;
     });
-    const task = this.resolve(row);
+    const task = await this.resolve(row);
     this.onChanged(task);
     this.onNotify('task.created', task);
     return task;
@@ -288,7 +288,7 @@ export class TaskService {
   async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
     // Each Workspace's poll loop passes its own id; the default-Workspace
     // fallback (ADR-0008) keeps callers that predate per-Workspace tracking working.
-    const workspace = this.resolveWorkspace(workspaceId);
+    const workspace = await this.resolveWorkspace(workspaceId);
     // The (workspaceId, trackerRef) read and the update-or-insert branch run as
     // one write-queue unit so the upsert stays atomic under the async driver.
     const row = await this.db.write(async (db) => {
@@ -358,7 +358,7 @@ export class TaskService {
     });
     // No task.created notify: a mirrored Task is a projection, not an authored
     // Task, and a first poll would otherwise storm one notification per issue.
-    return this.changed(row);
+    return await this.changed(row);
   }
 
   /**
@@ -413,15 +413,17 @@ export class TaskService {
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state ? eq(tasks.state, query.state) : undefined,
     ].filter((f) => f !== undefined);
-    let rows = (
-      await this.db.read((db) =>
-        db
-          .select()
-          .from(tasks)
-          .where(filters.length > 0 ? and(...filters) : undefined)
-          .all(),
-      )
-    ).map((raw) => this.resolve(raw));
+    let rows = await Promise.all(
+      (
+        await this.db.read((db) =>
+          db
+            .select()
+            .from(tasks)
+            .where(filters.length > 0 ? and(...filters) : undefined)
+            .all(),
+        )
+      ).map((raw) => this.resolve(raw)),
+    );
     if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
     if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
     if (query.sortBy) {
@@ -439,7 +441,7 @@ export class TaskService {
   }
 
   async get(id: number): Promise<TaskRow> {
-    return this.resolve(await this.getRaw(id));
+    return await this.resolve(await this.getRaw(id));
   }
 
   async update(id: number, input: UpdateTaskInput): Promise<TaskRow> {
@@ -458,7 +460,7 @@ export class TaskService {
         .returning()
         .get(),
     );
-    return this.changed(row!);
+    return await this.changed(row!);
   }
 
   /** Promote a draft to ready (or blocked, when dependencies are unmet). */
@@ -503,7 +505,7 @@ export class TaskService {
     const row = await this.db.write((db) =>
       db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
     );
-    return this.changed(row!);
+    return await this.changed(row!);
   }
 
   /**
@@ -602,7 +604,7 @@ export class TaskService {
       // Emit even when the state didn't flip: blockedOnFailed changed.
       this.onChanged(await this.get(dependentId));
     }
-    const task = this.resolve(row);
+    const task = await this.resolve(row);
     this.onChanged(task);
     this.onNotify('task.created', task);
     return task;
@@ -624,7 +626,7 @@ export class TaskService {
         .returning()
         .get(),
     );
-    return this.changed(row!);
+    return await this.changed(row!);
   }
 
   /**
@@ -648,7 +650,7 @@ export class TaskService {
         .returning()
         .get(),
     );
-    return this.changed(row!);
+    return await this.changed(row!);
   }
 
   /**
@@ -669,7 +671,7 @@ export class TaskService {
         .returning()
         .get(),
     );
-    return this.changed(row!);
+    return await this.changed(row!);
   }
 
   async cancel(id: number): Promise<TaskRow> {
@@ -696,7 +698,7 @@ export class TaskService {
     const row = await this.db.write((db) =>
       db.update(tasks).set({ state, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
     );
-    const task = this.resolve(row!);
+    const task = await this.resolve(row!);
     this.onChanged(task);
     const notification = STATE_NOTIFICATIONS[state];
     if (notification) this.onNotify(notification, task);
@@ -729,7 +731,7 @@ export class TaskService {
    */
   async setBaseBranch(id: number, baseBranch: string | null): Promise<TaskRow> {
     const raw = await this.getRaw(id);
-    if (raw.baseBranch === baseBranch) return this.resolve(raw);
+    if (raw.baseBranch === baseBranch) return await this.resolve(raw);
     const row = await this.db.write((db) =>
       db
         .update(tasks)
@@ -738,7 +740,7 @@ export class TaskService {
         .returning()
         .get(),
     );
-    return this.changed(row!);
+    return await this.changed(row!);
   }
 
   // ---- Dependencies ----

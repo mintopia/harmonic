@@ -48,14 +48,14 @@ describe('command verifier end-to-end (issue #135)', () => {
     server = await startServer(stubHarness());
     // Point the default Workspace at a real git repo so `validating` freezes a
     // candidate to verify (the helper's default workdir is a non-git temp dir).
-    const ws = server.app.ctx.workspaces.list()[0]!;
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
-    server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
     // This file exercises the #135 verify GATE in isolation: a fail Escalates
     // directly. Self-heal (#137) is on by default (maxSelfHeals: 1) and would
     // turn a fail into heal→re-verify→escalate (two attempts); disable it here so
     // these assertions stay a clean gate test. Self-heal has its own file.
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
   });
   afterAll(async () => {
     await server.close();
@@ -79,7 +79,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       .map((e: any) => e.payload);
 
   it('AC1/AC3/AC4/AC5: a passing command lets a native Run park for review, attempt records the frozen candidate OID', async () => {
-    server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(0) });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(0) });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
@@ -104,7 +104,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   });
 
   it('AC2/AC4: a failing command Escalates the Run and never lands (broken work never lands)', async () => {
-    server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
     const { taskId, runId } = await createAndRun();
 
     // The Run terminates failed rather than parking for review or landing.
@@ -128,7 +128,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   });
 
   it('AC2/AC4: a missing command is inconclusive → Escalates (infra doubt fails safe)', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: verificationCommandSchema.parse({
         command: 'definitely-not-a-real-command-xyzzy',
         args: [],
@@ -158,7 +158,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     // Direct mode + a dirty working tree means `validating` skips the snapshot
     // (`snapshotCandidate` → 'dirty-direct-context'), so there is no candidate
     // to verify — infra doubt the gate must Escalate on, not silently pass.
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCommand: exitCommand(0),
     });
@@ -200,9 +200,9 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
   beforeAll(async () => {
     repoDir = makeRepo();
     server = await startServer(stubHarness());
-    const ws = server.app.ctx.workspaces.list()[0]!;
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
-    server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
   });
   afterAll(async () => {
     await server.close();
@@ -222,7 +222,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
 
   it('row 2 (regression): auto-accept OFF + a pass still parks for review', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
       verificationAutoAccept: false,
     });
@@ -239,7 +239,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
   });
 
   it('row 3 (NEW): auto-accept ON + a pass lands directly, never parking for review', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
       verificationAutoAccept: true,
     });
@@ -271,7 +271,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
   });
 
   it('safety: auto-accept ON + a fail still Escalates — auto-accept never rescues a red verdict', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(1),
       verificationAutoAccept: true,
     });
@@ -292,7 +292,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
   });
 
   it('row 1: auto-accept ON but NO verifier configured still parks for review (nothing to auto-accept)', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
       verificationAutoAccept: true,
     });
@@ -313,7 +313,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
   });
 
   it('a worktree auto-accept lands the merge into the base branch (no human gate)', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
       verificationAutoAccept: true,
     });

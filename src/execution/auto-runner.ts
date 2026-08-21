@@ -108,7 +108,7 @@ export class AutoRunner {
     private readonly runStore: RunStore,
     private readonly runner: Runner,
     private readonly getConfig: () => AppConfig,
-    private readonly getWorkspaces: () => WorkspaceRow[],
+    private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
     private readonly mirror?: MirrorClaim,
     /**
      * Pick gate for parallel-Epic members (issue #159): true while a mirrored
@@ -174,7 +174,7 @@ export class AutoRunner {
         // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
         const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
         if (!master) return;
-        const workspacesById = new Map(this.getWorkspaces().map((w) => [w.id, w]));
+        const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
         // Tasks parked this cycle (yielded to a human, or un-spawnable) so the
         // slow claim path can't spin re-picking the same one before a re-scan.
         const skip = new Set<number>();

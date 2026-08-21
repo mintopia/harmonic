@@ -282,7 +282,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     // scenario JSON at the head of the drive prompt (the same trick auto-drive
     // tests use). A mirrored Task's own prompt is wrapped under a `## ` header,
     // where the stub can't parse it, so drive.prompt is the reliable seam.
-    server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
+    await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
@@ -329,15 +329,15 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
 
     // A verifier that always fails → turn 1 blocks → one self-heal turn → still
     // fails → budget exhausted → Escalate. No landing, so main must stay put.
-    const wsId = server.app.ctx.workspaces.list()[0]!.id;
-    server.app.ctx.workspaces.update(wsId, {
+    const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+    await server.app.ctx.workspaces.update(wsId, {
       verificationCommand: verificationCommandSchema.parse({
         command: process.execPath,
         args: ['-e', 'process.exit(1)'],
         timeoutSeconds: 30,
       }),
     });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
 
     // Turn 1 writes a.txt; the heal turn writes only b.txt. If the continuation
     // rematerialises turn 1's candidate, the rebuilt candidate carries BOTH; if

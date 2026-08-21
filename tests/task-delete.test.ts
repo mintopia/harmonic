@@ -107,7 +107,7 @@ describe('TaskService.delete (issue #162)', () => {
   });
 
   it('writes a tracker_dismissals row and removes the task for a mirrored delete; a second delete throws not_found', async () => {
-    const workspace = allWorkspaces(db)()[0]!;
+    const workspace = (await allWorkspaces(db)())[0]!;
     const mirrored = await tasksSvc.upsertMirrored(
       {
         trackerRef: 4242,

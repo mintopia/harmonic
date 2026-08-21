@@ -10,11 +10,13 @@ import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { Db } from '../src/db/index.js';
 import { workspaces } from '../src/db/schema.js';
 
-/** A `TaskService`/`ConversationStore`-shaped `getWorkspaces` callback over
+/** A `TaskService`/`AutoRunner`-shaped `getWorkspaces` callback over
  * whatever Workspaces already exist in `db` (openDb's boot-time backfill
  * seeds a default one) — the plumbing every domain test that constructs
- * `TaskService` by hand needs, without repeating the select everywhere. */
-export const allWorkspaces = (db: Db) => () => db.select().from(workspaces).all();
+ * `TaskService` by hand needs, without repeating the select everywhere.
+ * Async (`() => Promise<WorkspaceRow[]>`) to match the migrated
+ * `TaskService`/`AutoRunner` `getWorkspaces` contract (ADR-0029). */
+export const allWorkspaces = (db: Db) => () => Promise.resolve(db.select().from(workspaces).all());
 
 const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 

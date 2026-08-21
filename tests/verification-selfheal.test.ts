@@ -61,21 +61,21 @@ describe('verification self-heal end-to-end (issue #137)', () => {
   beforeAll(async () => {
     repoDir = makeRepo();
     server = await startServer(stubHarness());
-    const ws = server.app.ctx.workspaces.list()[0]!;
+    const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
-    server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
   });
   afterAll(async () => {
     await server.close();
     rmSync(repoDir, { recursive: true, force: true });
   });
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset per-test verifier config + heal budget; each test sets its own.
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
       verificationAutoAccept: null,
     });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
   });
 
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
@@ -95,7 +95,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
   }
 
   it('AC1/AC2/AC5: an actionable fail heals once, re-verifies the full suite, and lands (fail→heal→pass)', async () => {
-    server.app.ctx.workspaces.update(workspaceId, {
+    await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: markerCommand('ok'),
       verificationAutoAccept: true,
     });
@@ -145,7 +145,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
   });
 
   it('AC4: an inconclusive verdict never heals — it Escalates immediately with cause, no self-heal turn', async () => {
-    server.app.ctx.workspaces.update(workspaceId, { verificationCommand: inconclusiveCommand() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: inconclusiveCommand() });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
 
@@ -169,8 +169,8 @@ describe('verification self-heal end-to-end (issue #137)', () => {
   });
 
   it('AC3: self-heal is bounded — an actionable fail that never heals exhausts the budget and Escalates', async () => {
-    server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
@@ -193,8 +193,8 @@ describe('verification self-heal end-to-end (issue #137)', () => {
   });
 
   it('maxSelfHeals: 0 disables self-heal — an actionable fail Escalates on the first turn, no heal turn', async () => {
-    server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
-    server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
+    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 

@@ -21,7 +21,7 @@ describe('Epic read model operator surface (issue #167)', () => {
   });
 
   const ctx = () => server.app.ctx;
-  const defaultWorkspaceId = () => ctx().workspaces.list()[0]!.id;
+  const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
 
   const epic = (over: Partial<Epic> = {}): Epic => ({
     ref: 42,
@@ -53,15 +53,15 @@ describe('Epic read model operator surface (issue #167)', () => {
       const list = [epic()];
       const spy = vi.spyOn(ctx().trackerManager, 'listEpics').mockResolvedValue(list);
 
-      const res = await server.api('GET', `/api/workspaces/${defaultWorkspaceId()}/epics`);
+      const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ epics: list });
-      expect(spy).toHaveBeenCalledWith(defaultWorkspaceId());
+      expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()));
     });
 
     it('returns an empty list rather than erroring when no Epic is derived', async () => {
       vi.spyOn(ctx().trackerManager, 'listEpics').mockResolvedValue([]);
-      const res = await server.api('GET', `/api/workspaces/${defaultWorkspaceId()}/epics`);
+      const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ epics: [] });
     });
@@ -81,15 +81,15 @@ describe('Epic read model operator surface (issue #167)', () => {
       const one = epic();
       const spy = vi.spyOn(ctx().trackerManager, 'epicDetail').mockResolvedValue(one);
 
-      const res = await server.api('GET', `/api/workspaces/${defaultWorkspaceId()}/epics/42`);
+      const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(one);
-      expect(spy).toHaveBeenCalledWith(defaultWorkspaceId(), 42);
+      expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
     });
 
     it('404s when epicDetail resolves null (no such derived Epic)', async () => {
       vi.spyOn(ctx().trackerManager, 'epicDetail').mockResolvedValue(null);
-      const res = await server.api('GET', `/api/workspaces/${defaultWorkspaceId()}/epics/42`);
+      const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42`);
       expect(res.status).toBe(404);
     });
 
@@ -100,7 +100,7 @@ describe('Epic read model operator surface (issue #167)', () => {
 
     it('400s on a non-numeric workspaceId or epicRef', async () => {
       expect((await server.api('GET', '/api/workspaces/abc/epics/42')).status).toBe(400);
-      expect((await server.api('GET', `/api/workspaces/${defaultWorkspaceId()}/epics/xyz`)).status).toBe(400);
+      expect((await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz`)).status).toBe(400);
     });
   });
 
@@ -116,7 +116,7 @@ describe('Epic read model operator surface (issue #167)', () => {
       });
       const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
 
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${defaultWorkspaceId()}/epics`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics`, {
         headers: { authorization: `Bearer ${token}` },
       });
       expect(res.status).toBe(403);
@@ -133,7 +133,7 @@ describe('Epic read model operator surface (issue #167)', () => {
       });
       const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
 
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${defaultWorkspaceId()}/epics/42`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42`, {
         headers: { authorization: `Bearer ${token}` },
       });
       expect(res.status).toBe(403);
@@ -141,7 +141,7 @@ describe('Epic read model operator surface (issue #167)', () => {
 
     it('denies a read-scoped key on GET /api/workspaces/:id/epics (operator required, not just read)', async () => {
       const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${defaultWorkspaceId()}/epics`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics`, {
         headers: { authorization: `Bearer ${body.token}` },
       });
       expect(res.status).toBe(403);
@@ -149,7 +149,7 @@ describe('Epic read model operator surface (issue #167)', () => {
 
     it('denies a read-scoped key on GET /api/workspaces/:id/epics/:ref (operator required, not just read)', async () => {
       const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${defaultWorkspaceId()}/epics/42`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42`, {
         headers: { authorization: `Bearer ${body.token}` },
       });
       expect(res.status).toBe(403);
