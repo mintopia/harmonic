@@ -20,7 +20,7 @@ We want a guarantee that **nothing — slow query or background loop — can blo
 2. **Single-writer async queue; reads concurrent.** All writes serialize through one queue (one write in flight at a time); reads run concurrently under WAL. Call sites are classified read vs write.
 3. **Atomicity stays DB-enforced.** The coordination spine's exactly-one-winner guarantees (Work Context lease `acquire`, `run_facts` `seq` monotonicity) come from **UNIQUE-index rejection of the loser** (a single guarded INSERT), not from JS running synchronously — so they survive async unchanged. The 6 existing `.transaction()` sites become async transactions that run as exclusive units within the write queue.
 4. **Migrate incrementally, expand-contract, per store/domain module.** Introduce the async `Db` + queue facade alongside the sync one; migrate store by store keeping CI green; flip routes and the runner; delete the sync path last.
-5. **#200 owns the general guarantee**, beyond the driver swap: an event-loop watchdog, a rule+helper that background loops chunk and yield, per-query wall-clock timeouts, and routing heavy aggregates through the async/off-thread path.
+5. **#200 owns the general guarantee**, beyond the driver swap: an event-loop watchdog, a rule+helper that background loops chunk and yield (shipped as `src/reliability/yield.ts` — `forEachYielding`/`yieldToEventLoop` — with the convention in `AGENTS.md`; issue #211), per-query wall-clock timeouts, and routing heavy aggregates through the async/off-thread path.
 
 No validation spike — libsql behavioural compatibility (the FK off/on boot dance + `foreign_key_check`, `.pragma()` usage, WAL semantics, async transactions) is proven in the Expand step and fixed as it surfaces.
 

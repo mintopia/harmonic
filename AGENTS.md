@@ -46,6 +46,19 @@ is long gone. Telling readers to distrust the spec is worse than saying nothing:
 if DESIGN.md and the code ever disagree again, that is a bug in one of them to
 be reconciled and written down, not a standing caveat to route around.)
 
+## Coding conventions
+
+### Background loops must yield
+
+Harmonic runs every HTTP handler and every background loop on one Node event
+loop. Any background loop — boot sweep, periodic poll, reconcile pass, the
+Auto-Runner fill — that iterates a collection whose size grows with the database
+or the workload MUST chunk its synchronous work and yield the loop between
+chunks, so it can never freeze the process (issue #200, ADR-0029 §5). Use
+`forEachYielding` / `yieldToEventLoop` from `src/reliability/yield.ts`. This is
+distinct from bounding retries/subprocess spawns (#219) and routing heavy
+aggregate reads off the loop (#213).
+
 ## Code Exploration Policy
 
 Always use jCodeMunch-MCP for code navigation. Never fall back to Read, Grep, Glob, or Bash for code exploration.
