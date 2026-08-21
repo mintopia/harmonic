@@ -15,6 +15,7 @@ Subagents must use an appropriate model, defaults:
  - Reasoning and Planning: Opus
  - Trivial, Documentation: Haiku
 
+Explicitly specify the model when starting a subagent.
 Subagents must use an appropriate subagent type.
 
 ## Agent skills
