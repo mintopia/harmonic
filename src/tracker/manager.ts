@@ -1,13 +1,13 @@
-import type { TaskRow, WorkspaceRow } from '../db/schema.js';
+import type { TaskRow, TrackerContainerRow, TrackerFacts, WorkspaceRow } from '../db/schema.js';
 import type { AppConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
-import type { ResolvedTracker, TrackerAdapter } from './adapter.js';
+import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
 import type { FeatureIndex } from './local-markdown.js';
 import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
-import type { DerivedMap } from './mirror.js';
+import { deriveMaps, type DerivedMap } from './mirror.js';
 import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
 import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
@@ -27,6 +27,57 @@ interface Entry {
 }
 
 const sigOf = (ws: WorkspaceRow): string => `${ws.workingDir}|${ws.trackerPollIntervalSeconds * 1000}`;
+
+function persistedTicket(number: number, facts: TrackerFacts, isMap: boolean): Ticket {
+  return {
+    number,
+    ...facts,
+    isMap,
+    closedAt: null,
+    assignees: [],
+    blocking: [],
+    comments: [],
+  };
+}
+
+/** Rebuild the normalised tracker shape from complete persisted fact rows. */
+function persistedTickets(rows: TaskRow[], containers: TrackerContainerRow[]): Ticket[] {
+  const tickets: Ticket[] = [];
+  for (const row of rows) {
+    if (
+      row.origin !== 'mirrored' ||
+      row.trackerRef === null ||
+      row.trackerState === null ||
+      row.trackerBlockedBy === null ||
+      row.trackerLabels === null ||
+      row.trackerTitle === null ||
+      row.trackerBody === null ||
+      row.trackerUrl === null ||
+      row.trackerCreatedAt === null
+    ) continue;
+    tickets.push(persistedTicket(row.trackerRef, {
+      state: row.trackerState,
+      parent: row.trackerParent,
+      blockedBy: row.trackerBlockedBy,
+      labels: row.trackerLabels,
+      title: row.trackerTitle,
+      body: row.trackerBody,
+      url: row.trackerUrl,
+      createdAt: row.trackerCreatedAt,
+    }, false));
+  }
+  for (const row of containers) tickets.push(persistedTicket(row.trackerRef, {
+    state: row.trackerState,
+    parent: row.trackerParent,
+    blockedBy: row.trackerBlockedBy,
+    labels: row.trackerLabels,
+    title: row.trackerTitle,
+    body: row.trackerBody,
+    url: row.trackerUrl,
+    createdAt: row.trackerCreatedAt,
+  }, true));
+  return tickets;
+}
 
 /**
  * Owns the fleet of per-Workspace tracker poll loops (issue #45). One
@@ -181,42 +232,38 @@ export class TrackerPollerManager {
     return (await this.entryFor(task.workspaceId)?.epics.memberBaseNotReady(task)) ?? false;
   }
 
-  /**
-   * Every derived Epic for a Workspace's last poll scan (issue #167, ADR-0026)
-   * — the operator read endpoint's list surface. Empty when the Workspace has
-   * no running poll loop (tracking off) or its last scan derived none, not an
-   * error: the caller 200s `{ epics: [] }` either way.
-   */
+  /** Every Epic derived from this Workspace's persisted tracker facts. */
   async listEpics(workspaceId: number): Promise<Epic[]> {
     const entry = this.entries.get(workspaceId);
-    if (!entry) return [];
-    const derivedEpics = deriveEpics(entry.poller.tickets());
-    return Promise.all(derivedEpics.map((derived) => this.composeOne(workspaceId, entry, derived)));
+    const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const tickets = persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
+    const derivedEpics = deriveEpics(tickets);
+    return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored)));
   }
 
-  /**
-   * One derived Epic by ref for a Workspace's last poll scan (issue #167,
-   * ADR-0026) — the operator read endpoint's detail surface. `null` when the
-   * Workspace has no running loop or its last scan doesn't derive `epicRef` as
-   * a leaf-most Epic; the route maps that to a 404.
-   */
+  /** One Epic derived by ref from this Workspace's persisted tracker facts. */
   async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
     const entry = this.entries.get(workspaceId);
-    if (!entry) return null;
-    const derived = deriveEpics(entry.poller.tickets()).find((e) => e.ref === epicRef);
+    const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const tickets = persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
+    const derived = deriveEpics(tickets).find((e) => e.ref === epicRef);
     if (!derived) return null;
-    return this.composeOne(workspaceId, entry, derived);
+    return this.composeOne(entry, derived, tickets, mirrored);
   }
 
   /** Shared plumbing for {@link listEpics}/{@link epicDetail}: match member
-   * refs to this Workspace's mirrored Task rows and titles from the same scan,
+   * refs to mirrored Task rows and titles from the same persisted facts,
    * gather the git/coordinator facts, and fold everything through the pure
    * {@link composeEpicView}. */
-  private async composeOne(workspaceId: number, entry: Entry, derived: DerivedEpic): Promise<Epic> {
-    const tickets = entry.poller.tickets();
+  private async composeOne(
+    entry: Entry | undefined,
+    derived: DerivedEpic,
+    tickets: Ticket[],
+    mirrored: TaskRow[],
+  ): Promise<Epic> {
     const titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     const taskByRef = new Map<number, TaskRow>();
-    for (const task of await this.tasks.list({ workspaceId })) {
+    for (const task of mirrored) {
       if (task.trackerRef != null) taskByRef.set(task.trackerRef, task);
     }
     const facts = await this.epicFacts(entry, derived.ref);
@@ -237,9 +284,9 @@ export class TrackerPollerManager {
    *    flight, `pass`/`fail` for the last verdict, `null` when none has run for
    *    the current integration branch (or no land coordinator is active).
    */
-  private async epicFacts(entry: Entry, epicRef: number): Promise<EpicFacts> {
+  private async epicFacts(entry: Entry | undefined, epicRef: number): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef);
-    const epicLand = entry.epicLand;
+    const epicLand = entry?.epicLand;
     const integration = epicLand ? await epicLand.integrationFacts(epicRef) : { exists: false, tip: null };
     return {
       integration: { branch, ...integration },
@@ -272,9 +319,21 @@ export class TrackerPollerManager {
    * their `workspaceId`.
    */
   async maps(workspaceId?: number): Promise<DerivedMap[]> {
-    const entries = workspaceId === undefined ? [...this.entries.values()] : [this.entries.get(workspaceId)];
-    const perEntry = await Promise.all(entries.map((e) => e?.poller.maps() ?? []));
-    return perEntry.flat();
+    const rows = await this.tasks.list(workspaceId === undefined ? {} : { workspaceId });
+    const containers = await this.tasks.listTrackerContainers(workspaceId);
+    const byWorkspace = new Map<number, TaskRow[]>();
+    for (const task of rows) {
+      if (task.origin !== 'mirrored' || task.workspaceId === null) continue;
+      const workspaceRows = byWorkspace.get(task.workspaceId);
+      if (workspaceRows) workspaceRows.push(task);
+      else byWorkspace.set(task.workspaceId, [task]);
+    }
+    for (const container of containers) {
+      if (!byWorkspace.has(container.workspaceId)) byWorkspace.set(container.workspaceId, []);
+    }
+    return [...byWorkspace].flatMap(([id, mirrored]) =>
+      deriveMaps(persistedTickets(mirrored, containers.filter((container) => container.workspaceId === id)), mirrored, id),
+    );
   }
 
   /** The tracker URL for a mirrored Task's ref, scoped to its Workspace's last scan; null otherwise. */

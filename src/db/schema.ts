@@ -39,8 +39,7 @@ export type Drive = (typeof DRIVES)[number];
  * normalised shape of a mirrored issue's last successful scan, persisted so the
  * facts survive a restart instead of living only in the ephemeral in-memory
  * scan. Field-for-field a subset of the tracker `Ticket` — persisted verbatim.
- * WRITE-ONLY for now: nothing reads these yet (derivation still runs off the
- * live scan; the read-path is a later member of the epic).
+ * Epic and Map derivation read these persisted facts (issue #234).
  */
 export interface TrackerFacts {
   state: TicketState;
@@ -201,8 +200,7 @@ export const tasks = sqliteTable('tasks', {
   // --- Durable tracker facts (issue #233, ADR-0030 "expand"). The last
   // successful scan's normalised facts, upserted every poll so they survive a
   // restart. Null on native Tasks (and on mirrored rows written before this
-  // migration). WRITE-ONLY: no consumer reads these yet — the live-scan
-  // derivation is unchanged; the read-path is a later member of the epic. ---
+  // migration). Epic and Map derivation read these columns (issue #234). ---
   /** The ticket's open/closed axis at last scan. Distinct from `state`, which is the Task's execution state. */
   trackerState: text('tracker_state').$type<TicketState>(),
   /** The ticket's parent pointer at last scan (the raw `#<n>` fact; `mapRef` is the derived Map rollup key). */
@@ -550,6 +548,22 @@ export type TaskRow = Omit<RawTaskRow, 'harness' | 'model' | 'isolationMode' | '
   isolationMode: string;
   priority: string;
 };
+
+/** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */
+export const trackerContainers = sqliteTable('tracker_containers', {
+  workspaceId: integer('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  trackerRef: integer('tracker_ref').notNull(),
+  trackerState: text('tracker_state').$type<TicketState>().notNull(),
+  trackerParent: integer('tracker_parent'),
+  trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>().notNull(),
+  trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>().notNull(),
+  trackerTitle: text('tracker_title').notNull(),
+  trackerBody: text('tracker_body').notNull(),
+  trackerUrl: text('tracker_url').notNull(),
+  trackerCreatedAt: text('tracker_created_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.workspaceId, t.trackerRef] })]);
+export type TrackerContainerRow = typeof trackerContainers.$inferSelect;
+
 export type RunRow = typeof runs.$inferSelect;
 export type RunEventRow = typeof runEvents.$inferSelect;
 

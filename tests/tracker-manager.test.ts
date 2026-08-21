@@ -7,6 +7,8 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TrackerPollerManager } from '../src/tracker/manager.js';
+import { deriveEpics } from '../src/domain/epic-derivation.js';
+import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { TrackerResolutionError } from '../src/tracker/adapter.js';
 import { allWorkspaces, waitFor } from './helpers.js';
@@ -121,6 +123,48 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     const scopedA = await manager.maps(a.id);
     expect(scopedA).toHaveLength(1);
     expect(scopedA[0]).toMatchObject({ workspaceId: a.id, ref: 19, taskRefs: [30] });
+  });
+
+  it('derives epics, maps, and the ready frontier from persisted facts before any post-restart poll (#234)', async () => {
+    const fixture: Ticket[] = [
+      { ...ticket(10), title: 'Spec epic', labels: [] },
+      { ...ticket(11), title: 'Ready member', parent: 10 },
+      { ...ticket(12), title: 'Human member', parent: 10, labels: [] },
+      { ...ticket(13), title: 'Blocked member', parent: 10, blockedBy: [{ number: 99, title: 'Open blocker', state: 'open' }] },
+      { ...ticket(19), title: 'Delivery map', labels: ['wayfinder:map'], isMap: true },
+      { ...ticket(20), title: 'Map member', parent: 19 },
+      { ...ticket(99), title: 'Open blocker', labels: [] },
+    ];
+    ticketsByRepo.set(repoA, fixture);
+    const workspace = await workspaces.create({ name: 'A', workingDir: repoA, trackerEnabled: true });
+    await manager.sync();
+    await manager.pollNow(workspace.id);
+
+    const mirrored = (await tasks.list({ workspaceId: workspace.id })).filter((task) => task.origin === 'mirrored');
+    const legacyEpics = deriveEpics(fixture);
+    const legacyMaps = deriveMaps(fixture, mirrored, workspace.id);
+    const beforeRestart = await manager.listEpics(workspace.id);
+    expect(beforeRestart.map((epic) => ({
+      ref: epic.ref,
+      title: epic.title,
+      kind: epic.kind,
+      members: epic.members.map((member) => member.ref),
+      ready: epic.ready,
+    }))).toEqual(legacyEpics);
+    expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
+
+    manager.stopAll();
+    await asyncDb.close();
+    asyncDb = await openAsyncDb(dataDir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    workspaces = new WorkspaceService(asyncDb);
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
+      throw new Error('restart query must not resolve or poll the tracker');
+    });
+
+    expect(await manager.listEpics(workspace.id)).toEqual(beforeRestart);
+    expect(await manager.epicDetail(workspace.id, 10)).toEqual(beforeRestart.find((epic) => epic.ref === 10));
+    expect(await manager.maps(workspace.id)).toEqual(legacyMaps);
   });
 
   it('toggling one Workspace starts/stops just its loop; others are unaffected', async () => {

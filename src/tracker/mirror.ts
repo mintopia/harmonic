@@ -1,6 +1,6 @@
 import { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL, type Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
-import { WAYFINDER_TYPES, type Drive, type TaskRow, type WayfinderType, type Workflow } from '../db/schema.js';
+import { WAYFINDER_TYPES, type Drive, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
 
 export interface MirroredRole {
   workflow: Workflow;
@@ -33,6 +33,17 @@ export function deriveRole(ticket: Ticket): MirroredRole {
 
 const mirrorPrompt = (t: Ticket): string => (t.body.trim() ? `${t.title}\n\n${t.body.trim()}` : t.title);
 
+const trackerFacts = (ticket: Ticket): TrackerFacts => ({
+  state: ticket.state,
+  parent: ticket.parent,
+  blockedBy: ticket.blockedBy,
+  labels: ticket.labels,
+  title: ticket.title,
+  body: ticket.body,
+  url: ticket.url,
+  createdAt: ticket.createdAt,
+});
+
 /**
  * The upsert input for one ticket — role derived, open/closed axis resolved.
  * An Epic (a ticket with children) is a container, never auto-run: its drive is
@@ -51,17 +62,8 @@ export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
     mapRef: ticket.parent,
     closed: ticket.state === 'closed',
     // Persist the normalised facts verbatim so they survive a restart (issue
-    // #233, ADR-0030 "expand"). Write-only for now — no consumer reads them.
-    facts: {
-      state: ticket.state,
-      parent: ticket.parent,
-      blockedBy: ticket.blockedBy,
-      labels: ticket.labels,
-      title: ticket.title,
-      body: ticket.body,
-      url: ticket.url,
-      createdAt: ticket.createdAt,
-    },
+    // #233, ADR-0030 "expand"). Derivation reads them after restart (#234).
+    facts: trackerFacts(ticket),
   };
 }
 
@@ -84,7 +86,8 @@ export async function mirrorScan(
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
   for (const t of tickets) {
-    if (!t.isMap && !(await tasks.isDismissed(workspaceId, t.number))) issues.push(t);
+    if (t.isMap) await tasks.upsertTrackerContainer(workspaceId, t.number, trackerFacts(t));
+    else if (!(await tasks.isDismissed(workspaceId, t.number))) issues.push(t);
   }
   // An Epic is any ticket with children — a Map or a Spec — identified
   // structurally as the parent of some ticket in this scan. Epics are containers:
@@ -124,8 +127,8 @@ export interface DerivedMap {
 /**
  * Query-time Map rollup (D2): each `wayfinder:map` ticket paired with the
  * mirrored Tasks that point at it via mapRef, stamped with the polling
- * Workspace. Not stored — recomputed from a poll's scan and the current
- * mirrored Tasks.
+ * Workspace. The caller may supply either a live scan or reconstructed
+ * persisted facts; the rollup itself stays pure.
  */
 export function deriveMaps(tickets: Ticket[], mirrored: TaskRow[], workspaceId: number): DerivedMap[] {
   return tickets

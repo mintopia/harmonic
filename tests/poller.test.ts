@@ -148,7 +148,7 @@ describe('TrackerPoller.poll', () => {
     expect(await tasks.list()).toHaveLength(1);
   });
 
-  it('caches the scan: maps() rolls up by mapRef and urlFor() resolves a ref (issue #35)', async () => {
+  it('caches presentation lookups for tracker urls and map titles (issue #35)', async () => {
     const { adapter } = stubAdapter([
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'], url: 'https://x/30' }),
@@ -156,14 +156,8 @@ describe('TrackerPoller.poll', () => {
     ]);
     const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
-    expect(await poller.maps()).toEqual([]); // empty before the first poll
     await poller.poll();
 
-    const maps = await poller.maps();
-    expect(maps).toHaveLength(1);
-    expect(maps[0]).toMatchObject({ ref: 19, title: 'Wayfinder' });
-    expect(maps[0]!.taskRefs.sort()).toEqual([30, 31]);
-    expect(maps[0]!.counts).toEqual({ ready: 1, completed: 1 });
     expect(poller.urlFor(30)).toBe('https://x/30');
     expect(poller.urlFor(999)).toBeNull(); // unknown ref
     expect(poller.urlFor(null)).toBeNull(); // native Task

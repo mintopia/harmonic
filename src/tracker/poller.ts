@@ -2,7 +2,7 @@ import type { TaskService } from '../domain/tasks.js';
 import type { TaskRow } from '../db/schema.js';
 import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './adapter.js';
-import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
+import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
@@ -33,8 +33,7 @@ export interface EpicIntegrationSync {
  */
 export class TrackerPoller {
   private timer: NodeJS.Timeout | undefined;
-  /** The last poll's scan — the "polled tracker" the Map rollup and Task urls read (D7). Empty before the first poll. */
-  private lastScan: Ticket[] = [];
+  /** Last-poll presentation lookups. Structural derivation reads persisted Task facts. */
   private urlByRef = new Map<number, string>();
   private titleByRef = new Map<number, string>();
 
@@ -97,7 +96,6 @@ export class TrackerPoller {
     }
     this.onResolved(resolutionSuccess(adapter));
     const tickets = await adapter.scan();
-    this.lastScan = tickets;
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter);
@@ -127,18 +125,6 @@ export class TrackerPoller {
     await this.mirror?.reconcile();
   }
 
-  /**
-   * Query-time Map rollup (D7): each Map from the last scan paired with the
-   * mirrored Tasks that point at it. Not stored — recomputed per call from the
-   * last poll's scan and this Workspace's mirrored Tasks. Empty before the first poll.
-   */
-  async maps(): Promise<DerivedMap[]> {
-    const mirrored = (await this.tasks.list({ workspaceId: this.workspaceId })).filter(
-      (t) => t.origin === 'mirrored',
-    );
-    return deriveMaps(this.lastScan, mirrored, this.workspaceId);
-  }
-
   /** The tracker URL for a mirrored Task's ref, from the last scan; null for native Tasks or before a poll. */
   urlFor(ref: number | null): string | null {
     return ref === null ? null : (this.urlByRef.get(ref) ?? null);
@@ -147,16 +133,6 @@ export class TrackerPoller {
   /** The Map ticket's title for a mirrored Task's mapRef, from the last scan; null when unmapped or before a poll (issue #34). */
   titleForMap(ref: number | null): string | null {
     return ref === null ? null : (this.titleByRef.get(ref) ?? null);
-  }
-
-  /**
-   * The last poll's raw scan (issue #167) — the same `Ticket[]` `maps()`
-   * already reads {@link lastScan} for internally, exposed so a caller can
-   * derive its own query-time roll-up (`deriveEpics`) over it. Empty before
-   * the first poll.
-   */
-  tickets(): Ticket[] {
-    return this.lastScan;
   }
 
   /**

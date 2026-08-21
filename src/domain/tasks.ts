@@ -9,6 +9,7 @@ import {
   sessions,
   settings,
   trackerDismissals,
+  trackerContainers,
   TASK_STATES,
   type TaskRow,
   type RawTaskRow,
@@ -18,6 +19,7 @@ import {
   type Drive,
   type WorkspaceRow,
   type TrackerFacts,
+  type TrackerContainerRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
 import { resolve as resolveOverride } from './setting-override.js';
@@ -147,7 +149,7 @@ export interface MirrorInput {
    * The last-scan normalised tracker facts, persisted verbatim to the per-issue
    * record (issue #233, ADR-0030 "expand"). Optional: the real poll path always
    * supplies it (via {@link toMirrorInput}); omitting it leaves the durable fact
-   * columns untouched. WRITE-ONLY — nothing reads these yet.
+   * columns untouched. Epic and Map derivation read the persisted values.
    */
   facts?: TrackerFacts;
 }
@@ -431,6 +433,44 @@ export class TaskService {
         .get(),
     );
     return row != null;
+  }
+
+  /** Persist a tracker container that has no executable Task row, currently a Map. */
+  async upsertTrackerContainer(workspaceId: number, trackerRef: number, facts: TrackerFacts): Promise<void> {
+    await this.db.write((db) =>
+      db.insert(trackerContainers).values({
+        workspaceId,
+        trackerRef,
+        trackerState: facts.state,
+        trackerParent: facts.parent,
+        trackerBlockedBy: facts.blockedBy,
+        trackerLabels: facts.labels,
+        trackerTitle: facts.title,
+        trackerBody: facts.body,
+        trackerUrl: facts.url,
+        trackerCreatedAt: facts.createdAt,
+      }).onConflictDoUpdate({
+        target: [trackerContainers.workspaceId, trackerContainers.trackerRef],
+        set: {
+          trackerState: facts.state,
+          trackerParent: facts.parent,
+          trackerBlockedBy: facts.blockedBy,
+          trackerLabels: facts.labels,
+          trackerTitle: facts.title,
+          trackerBody: facts.body,
+          trackerUrl: facts.url,
+          trackerCreatedAt: facts.createdAt,
+        },
+      }).run(),
+    );
+  }
+
+  async listTrackerContainers(workspaceId?: number): Promise<TrackerContainerRow[]> {
+    return this.db.read((db) =>
+      db.select().from(trackerContainers)
+        .where(workspaceId === undefined ? undefined : eq(trackerContainers.workspaceId, workspaceId))
+        .all(),
+    );
   }
 
   async list(query: TaskListQuery = {}): Promise<TaskRow[]> {

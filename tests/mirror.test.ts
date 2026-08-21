@@ -276,19 +276,27 @@ describe('mirrorScan upsert', () => {
 
 describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
   let dir: string;
-  let db: Db;
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let wsId: number;
-  const rawRow = (d: Db, ref: number) =>
-    d.select().from(tasksTable).where(eq(tasksTable.trackerRef, ref)).get()!;
+  const rawRow = async (ref: number) => {
+    const row = await asyncDb.read((db) =>
+      db.select().from(tasksTable).where(eq(tasksTable.trackerRef, ref)).get(),
+    );
+    if (!row) throw new Error(`missing mirrored task ${ref}`);
+    return row;
+  };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-facts-'));
-    db = openDb(dir);
-    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    wsId = allWorkspaces(db)()[0]!.id;
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   const rich = ticket({
     number: 233,
@@ -302,9 +310,9 @@ describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
     url: 'https://github.com/mintopia/harmonic/issues/233',
   });
 
-  it('upserts the full normalised shape and it round-trips verbatim', () => {
-    mirrorScan(tasks, [rich], wsId);
-    const row = rawRow(db, 233);
+  it('upserts the full normalised shape and it round-trips verbatim', async () => {
+    await mirrorScan(tasks, [rich], wsId);
+    const row = await rawRow(233);
     expect(row.trackerState).toBe('open');
     expect(row.trackerParent).toBe(229);
     expect(row.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
@@ -315,20 +323,21 @@ describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
     expect(row.trackerCreatedAt).toBe('2026-08-20T09:30:00Z');
   });
 
-  it('refreshes the facts on every re-poll', () => {
-    mirrorScan(tasks, [rich], wsId);
-    mirrorScan(tasks, [{ ...rich, title: 'Retitled', state: 'closed', labels: ['done'], closedAt: '2026-08-21T00:00:00Z' }], wsId);
-    const row = rawRow(db, 233);
+  it('refreshes the facts on every re-poll', async () => {
+    await mirrorScan(tasks, [rich], wsId);
+    await mirrorScan(tasks, [{ ...rich, title: 'Retitled', state: 'closed', labels: ['done'], closedAt: '2026-08-21T00:00:00Z' }], wsId);
+    const row = await rawRow(233);
     expect(row.trackerTitle).toBe('Retitled');
     expect(row.trackerState).toBe('closed');
     expect(row.trackerLabels).toEqual(['done']);
   });
 
-  it('last-known-good facts survive a restart with no fresh poll', () => {
-    mirrorScan(tasks, [rich], wsId);
+  it('last-known-good facts survive a restart with no fresh poll', async () => {
+    await mirrorScan(tasks, [rich], wsId);
+    await asyncDb.close();
     // Reopen the same on-disk DB — a restart, no poll has run against it.
-    const db2 = openDb(dir);
-    const row = rawRow(db2, 233);
+    asyncDb = await openAsyncDb(dir);
+    const row = await rawRow(233);
     expect(row.trackerState).toBe('open');
     expect(row.trackerParent).toBe(229);
     expect(row.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
@@ -336,19 +345,20 @@ describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
     expect(row.trackerCreatedAt).toBe('2026-08-20T09:30:00Z');
   });
 
-  it('an upsert with no facts leaves the last-known-good facts untouched', () => {
-    mirrorScan(tasks, [rich], wsId);
+  it('an upsert with no facts leaves the last-known-good facts untouched', async () => {
+    await mirrorScan(tasks, [rich], wsId);
     const { facts, ...withoutFacts } = toMirrorInput(rich);
     void facts;
-    tasks.upsertMirrored(withoutFacts, wsId); // e.g. a legacy/native caller
-    const row = rawRow(db, 233);
+    await tasks.upsertMirrored(withoutFacts, wsId); // e.g. a legacy/native caller
+    const row = await rawRow(233);
     expect(row.trackerTitle).toBe('Persist tracker facts'); // preserved, not nulled
     expect(row.trackerState).toBe('open');
   });
 
-  it('native Tasks carry null facts (columns are nullable)', () => {
-    const native = tasks.create({ prompt: 'native' });
-    const row = db.select().from(tasksTable).where(eq(tasksTable.id, native.id)).get()!;
+  it('native Tasks carry null facts (columns are nullable)', async () => {
+    const native = await tasks.create({ prompt: 'native' });
+    const row = await asyncDb.read((db) => db.select().from(tasksTable).where(eq(tasksTable.id, native.id)).get());
+    if (!row) throw new Error(`missing native task ${native.id}`);
     expect(row.trackerState).toBeNull();
     expect(row.trackerBlockedBy).toBeNull();
     expect(row.trackerLabels).toBeNull();

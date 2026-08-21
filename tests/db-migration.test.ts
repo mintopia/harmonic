@@ -407,28 +407,30 @@ describe('landing_journal table (issue #115)', () => {
 });
 
 describe('durable tracker facts migration (issue #233, ADR-0030 expand)', () => {
-  it('adds nullable fact columns; a pre-0040 mirrored row survives and reads them null', () => {
+  it('adds nullable fact columns; a pre-0043 mirrored row survives and reads them null', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-tracker-facts-migrate-'));
-    const migrationsFolder = migrationsFolderBefore('0040');
+    const migrationsFolder = migrationsFolderBefore('0043');
 
-    // A pre-facts install: migrate up to just before 0040 and seed a mirrored
+    // A pre-facts install: migrate up to just before 0043 and seed a mirrored
     // Task the way an upgraded instance would have one — none of the tracker
     // fact columns exist yet, so it is seeded via raw SQL over the legacy shape.
-    const sqlite = new Database(join(dataDir, 'harmonic.db'));
-    sqlite.pragma('foreign_keys = ON');
-    migrate(drizzle(sqlite, { schema }), { migrationsFolder });
+    const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await client.execute('PRAGMA foreign_keys = ON');
+    await migrate(drizzle(client, { schema }), { migrationsFolder });
     const now = Date.now();
-    sqlite
-      .prepare(
-        `insert into tasks (prompt, working_dir, state, origin, tracker_ref, escalated, created_at, updated_at)
-         values ('Legacy mirrored', '/tmp/legacy-project', 'ready', 'mirrored', 233, 0, ?, ?)`,
-      )
-      .run(now, now);
-    sqlite.close();
+    await client.execute({
+      sql: `insert into tasks (prompt, working_dir, state, origin, tracker_ref, escalated, created_at, updated_at)
+        values ('Legacy mirrored', '/tmp/legacy-project', 'ready', 'mirrored', 233, 0, ?, ?)`,
+      args: [now, now],
+    });
+    client.close();
 
-    // Boot to head applies 0040 and leaves the existing row's facts null.
-    const db = openDb(dataDir);
-    const legacy = db.select().from(schema.tasks).where(eq(schema.tasks.trackerRef, 233)).get()!;
+    // Boot to head applies 0043 and leaves the existing row's facts null.
+    const db = await openAsyncDb(dataDir);
+    const legacy = await db.read((database) =>
+      database.select().from(schema.tasks).where(eq(schema.tasks.trackerRef, 233)).get(),
+    );
+    if (!legacy) throw new Error('missing migrated tracker task 233');
     expect(legacy).toMatchObject({ prompt: 'Legacy mirrored', origin: 'mirrored' });
     expect(legacy.trackerState).toBeNull();
     expect(legacy.trackerParent).toBeNull();
@@ -441,21 +443,24 @@ describe('durable tracker facts migration (issue #233, ADR-0030 expand)', () => 
 
     // The migrated columns are real and usable: a subsequent poll's facts write
     // and round-trip through them (JSON columns included).
-    db.update(schema.tasks)
-      .set({
+    await db.write((database) =>
+      database.update(schema.tasks).set({
         trackerState: 'open',
         trackerParent: 229,
         trackerBlockedBy: [{ number: 230, title: 'eligibility', state: 'closed' }],
         trackerLabels: ['ready-for-agent'],
-      })
-      .where(eq(schema.tasks.id, legacy.id))
-      .run();
-    const updated = db.select().from(schema.tasks).where(eq(schema.tasks.id, legacy.id)).get()!;
+      }).where(eq(schema.tasks.id, legacy.id)).run(),
+    );
+    const updated = await db.read((database) =>
+      database.select().from(schema.tasks).where(eq(schema.tasks.id, legacy.id)).get(),
+    );
+    if (!updated) throw new Error('missing updated tracker task 233');
     expect(updated.trackerState).toBe('open');
     expect(updated.trackerParent).toBe(229);
     expect(updated.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
     expect(updated.trackerLabels).toEqual(['ready-for-agent']);
 
+    await db.close();
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(migrationsFolder, { recursive: true, force: true });
   });
