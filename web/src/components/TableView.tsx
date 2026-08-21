@@ -213,16 +213,14 @@ export function TableView({
           <button
             type="button"
             title={`Open the original, task ${task.reattemptOf}`}
-            className="mb-1 inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted transition-colors duration-150 hover:text-ink"
+            className="mb-1 inline-flex min-h-11 items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted transition-colors duration-150 hover:text-ink"
             onClick={(e) => {
               e.stopPropagation();
               openOriginal(task.reattemptOf!);
             }}
           >
-            {/* Secondary affordance: it stacks above the Prompt link inside a
-                dense two-line cell, so a 44px hit box can't fit without stealing
-                the neighbour's clicks — the row itself (min-h-11) carries the
-                floor for the primary open action (issue #228). */}
+            {/* This opens a distinct original Task, so its own hit area carries
+                the 44px touch floor instead of inheriting the row's target. */}
             ↻ re-attempt of <span className="tabular-nums normal-case">{taskKey(task.reattemptOf)}</span>
           </button>
         )}
