@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coalesceEvents } from '../web/src/event-stream-model.js';
+import { coalesceEvents, coalesceTail, MAX_STREAM_EVENTS } from '../web/src/event-stream-model.js';
 import type { RunEvent } from '../web/src/types.js';
 
 const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
@@ -106,5 +106,66 @@ describe('coalesceEvents', () => {
   it('tolerates chunks with missing text', () => {
     const items = coalesceEvents([chunk(1, 'a'), evt(2, 'session_update', { sessionUpdate: 'agent_message_chunk' })]);
     expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'a', key: 1 }]);
+  });
+});
+
+describe('coalesceTail', () => {
+  const perm = (id: number): RunEvent => evt(id, 'permission_request', { request: {}, outcome: {} });
+
+  it('coalesces the whole array and hides nothing when under the cap', () => {
+    const events = [perm(1), perm(2), perm(3)];
+    expect(coalesceTail(events, 10)).toEqual({ hidden: 0, items: coalesceEvents(events) });
+  });
+
+  it('caps to the most recent events, reporting how many were hidden', () => {
+    const events = [perm(1), perm(2), perm(3), perm(4), perm(5)];
+    const { hidden, items } = coalesceTail(events, 2);
+    expect(hidden).toBe(3);
+    // Order preserved, only the ancient head dropped — the last two survive.
+    expect(items.map((i) => i.key)).toEqual([4, 5]);
+  });
+
+  it('folds within the tail exactly as coalesceEvents does over that slice', () => {
+    const events = [chunk(1, 'old'), chunk(2, 'ancient'), chunk(3, 'live '), chunk(4, 'tail')];
+    const { items } = coalesceTail(events, 2);
+    expect(items).toEqual(coalesceEvents(events.slice(2)));
+    expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'live tail', key: 3 }]);
+  });
+
+  it('bounds a multi-thousand-event run to the cap without reordering', () => {
+    const events = Array.from({ length: 5000 }, (_, i) => perm(i + 1));
+    const { hidden, items } = coalesceTail(events);
+    expect(hidden).toBe(5000 - MAX_STREAM_EVENTS);
+    expect(items.length).toBe(MAX_STREAM_EVENTS);
+    expect(items.map((i) => i.key)).toEqual(Array.from({ length: MAX_STREAM_EVENTS }, (_, i) => hidden + 1 + i));
+  });
+
+  it('defaults the cap to MAX_STREAM_EVENTS', () => {
+    const events = Array.from({ length: MAX_STREAM_EVENTS + 1 }, (_, i) => perm(i + 1));
+    expect(coalesceTail(events).hidden).toBe(1);
+  });
+
+  it('renders a degraded-but-intact tool row when the opening tool_call aged out of the tail', () => {
+    // A long-running tool whose `tool_call` fell before the cut: only its later
+    // `tool_call_update` (status-only) survives, so title/kind can't be merged
+    // back. The row must still render safely — ToolLine falls back to
+    // 'Tool call'/'tool' — not vanish or crash. Bounded fidelity, never loss.
+    const call = evt(1, 'session_update', {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't',
+      kind: 'read',
+      title: 'big.log',
+      status: 'pending',
+    });
+    const update = evt(2, 'session_update', { sessionUpdate: 'tool_call_update', toolCallId: 't', status: 'completed' });
+    const { hidden, items } = coalesceTail([call, update], 1);
+    expect(hidden).toBe(1);
+    expect(items).toEqual([
+      {
+        kind: 'tool',
+        tool: { toolCallId: 't', toolKind: undefined, title: undefined, status: 'completed', subagent: false },
+        key: 2,
+      },
+    ]);
   });
 });

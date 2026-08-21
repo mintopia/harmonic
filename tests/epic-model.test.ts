@@ -6,7 +6,7 @@ import {
   memberRailStatus,
   railSegments,
   rosterLanes,
-  statusLine,
+  statusLineParts,
   ROSTER_LANES,
 } from '../web/src/epic-model.js';
 import type { Epic, EpicLandOutcome, EpicMember } from '../web/src/epic-model.js';
@@ -140,7 +140,7 @@ describe('rosterLanes', () => {
   });
 });
 
-describe('statusLine', () => {
+describe('statusLineParts', () => {
   it('renders tip, pass verification, and the fold count', () => {
     const m1 = member({ ref: 1, landStatus: 'completed' });
     const m2 = member({ ref: 2, landStatus: 'pending' });
@@ -150,7 +150,13 @@ describe('statusLine', () => {
       integration: { branch: 'epic/7', exists: true, tip: 'abc1234' },
       verification: { status: 'pass' },
     });
-    expect(statusLine(e)).toBe('epic/7 @ abc1234 · verification ✓ · 1/2 folded');
+    expect(statusLineParts(e)).toEqual({
+      ref: 'epic/7',
+      tip: 'abc1234',
+      verification: '✓',
+      foldedCount: 1,
+      memberCount: 2,
+    });
   });
 
   it('renders a dash tip when the branch is absent', () => {
@@ -160,7 +166,13 @@ describe('statusLine', () => {
       integration: { branch: 'epic/9', exists: false, tip: null },
       verification: { status: null },
     });
-    expect(statusLine(e)).toBe('epic/9 @ — · verification — · 0/0 folded');
+    expect(statusLineParts(e)).toEqual({
+      ref: 'epic/9',
+      tip: '—',
+      verification: '—',
+      foldedCount: 0,
+      memberCount: 0,
+    });
   });
 
   it('renders a fail verdict', () => {
@@ -170,7 +182,13 @@ describe('statusLine', () => {
       integration: { branch: 'epic/3', exists: true, tip: 'deadbee' },
       verification: { status: 'fail' },
     });
-    expect(statusLine(e)).toBe('epic/3 @ deadbee · verification ✗ · 0/0 folded');
+    expect(statusLineParts(e)).toEqual({
+      ref: 'epic/3',
+      tip: 'deadbee',
+      verification: '✗',
+      foldedCount: 0,
+      memberCount: 0,
+    });
   });
 
   it('renders a pending verdict the same as a null (unknown) one', () => {
@@ -186,8 +204,14 @@ describe('statusLine', () => {
       integration: { branch: 'epic/4', exists: true, tip: 'cafefee' },
       verification: { status: null },
     });
-    expect(statusLine(pending)).toBe('epic/4 @ cafefee · verification — · 0/0 folded');
-    expect(statusLine(pending)).toBe(statusLine(unknown));
+    expect(statusLineParts(pending)).toEqual({
+      ref: 'epic/4',
+      tip: 'cafefee',
+      verification: '—',
+      foldedCount: 0,
+      memberCount: 0,
+    });
+    expect(statusLineParts(pending)).toEqual(statusLineParts(unknown));
   });
 });
 

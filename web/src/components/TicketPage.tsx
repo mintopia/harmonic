@@ -296,9 +296,12 @@ function SteerBox({ taskId }: { taskId: number }) {
   };
   return (
     <div className="mt-3 border-t border-hairline pt-3">
-      <div className={`${labelType} mb-1 text-muted`}>Steer this run</div>
+      <label htmlFor="steer-run-message" className={`${labelType} mb-1 block text-muted`}>
+        Steer this run
+      </label>
       <div className="flex items-end gap-2">
         <textarea
+          id="steer-run-message"
           value={text}
           onChange={(e) => setText(e.target.value)}
           // Enter sends; Shift+Enter for a newline — the chat-input convention.
@@ -341,9 +344,9 @@ function PromptTab({ run }: { run: Run | undefined }) {
     );
   }
   return (
-    <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 font-data text-data text-ink">
+    <div className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 text-body text-ink tabular-nums">
       {run.prompt}
-    </pre>
+    </div>
   );
 }
 
