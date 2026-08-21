@@ -11,19 +11,23 @@ export interface MirroredRole {
 /**
  * Derive a mirrored issue's role from its labels (issue #30, per CONTEXT.md).
  * `workflow` = wayfinder when any `wayfinder:<type>` label is present, else
- * implement. Drive seeding: ready-for-human / grilling / prototype / bare-task
- * → hitl; ready-for-agent / research → afk; unclear → afk (attempt optimistically).
+ * implement. Drive seeding: `ready-for-agent` is the positive opt-in to AFK —
+ * present (and not a hitl kind) → afk; everything else → hitl. So ready-for-human
+ * / grilling / prototype / task, AND any ticket lacking `ready-for-agent`
+ * (unlabelled / needs-triage / needs-info / wontfix) stay hitl: a human may drive
+ * them, but Harmonic never auto-runs them. `ready-for-agent` = can be done AFK.
  */
 export function deriveRole(ticket: Ticket): MirroredRole {
   const labels = new Set(ticket.labels);
   const wayfinderType = WAYFINDER_TYPES.find((t) => labels.has(`wayfinder:${t}`)) ?? null;
   const workflow: Workflow = wayfinderType ? 'wayfinder' : 'implement';
-  const hitl =
+  const forcedHitl =
     labels.has('ready-for-human') ||
     wayfinderType === 'grilling' ||
     wayfinderType === 'prototype' ||
     wayfinderType === 'task';
-  return { workflow, wayfinderType, drive: hitl ? 'hitl' : 'afk' };
+  const afk = labels.has('ready-for-agent') && !forcedHitl;
+  return { workflow, wayfinderType, drive: afk ? 'afk' : 'hitl' };
 }
 
 const mirrorPrompt = (t: Ticket): string => (t.body.trim() ? `${t.title}\n\n${t.body.trim()}` : t.title);
