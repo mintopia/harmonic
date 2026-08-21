@@ -296,9 +296,12 @@ function SteerBox({ taskId }: { taskId: number }) {
   };
   return (
     <div className="mt-3 border-t border-hairline pt-3">
-      <div className={`${labelType} mb-1 text-muted`}>Steer this run</div>
+      <label htmlFor="steer-run-message" className={`${labelType} mb-1 block text-muted`}>
+        Steer this run
+      </label>
       <div className="flex items-end gap-2">
         <textarea
+          id="steer-run-message"
           value={text}
           onChange={(e) => setText(e.target.value)}
           // Enter sends; Shift+Enter for a newline — the chat-input convention.

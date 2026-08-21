@@ -118,7 +118,12 @@ export function ApiPage() {
           <ConnectionRow label="MCP endpoint" value={mcpUrl} />
           <div className="flex items-center gap-2">
             <span className={`${labelType} w-28 shrink-0 text-muted`}>Example</span>
-            <code className="flex-1 overflow-x-auto whitespace-pre font-data text-data text-ink">
+            <code
+              tabIndex={0}
+              role="region"
+              aria-label="Example request"
+              className="flex-1 overflow-x-auto whitespace-pre font-data text-data text-ink"
+            >
               {curlExample}
             </code>
             <CopyButton value={curlExample} />
@@ -171,7 +176,7 @@ export function ApiPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="API keys" className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className={tableHead}>
               <tr>

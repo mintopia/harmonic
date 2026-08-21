@@ -70,7 +70,12 @@ function statusStyle(status: string): string {
 function SchemaView({ node }: { node: SchemaNode }) {
   if (node.kind === 'raw') {
     return (
-      <pre className="overflow-x-auto rounded-md bg-canvas p-2 font-data text-data text-muted">
+      <pre
+        tabIndex={0}
+        role="group"
+        aria-label="Schema"
+        className="overflow-x-auto rounded-md bg-canvas p-2 font-data text-data text-muted"
+      >
         {JSON.stringify(node.raw, null, 2)}
       </pre>
     );
@@ -225,7 +230,12 @@ function PaneTab({ label, active, onClick }: { label: string; active: boolean; o
 function SchemaBody({ schema, pane }: { schema: SchemaNode; pane: 'example' | 'schema' }) {
   if (pane === 'schema') return <SchemaView node={schema} />;
   return (
-    <pre className="overflow-x-auto rounded-md bg-canvas p-2 font-data text-data text-muted">
+    <pre
+      tabIndex={0}
+      role="group"
+      aria-label="Example payload"
+      className="overflow-x-auto rounded-md bg-canvas p-2 font-data text-data text-muted"
+    >
       {JSON.stringify(exampleFor(schema), null, 2)}
     </pre>
   );

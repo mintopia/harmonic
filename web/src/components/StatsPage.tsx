@@ -264,7 +264,11 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               {modelBars.length === 0 ? (
                 <p className="text-muted">No per-model data in range.</p>
               ) : (
-                <BarChart bars={modelBars} ariaLabel="Tokens per model" />
+                <BarChart
+                  bars={modelBars}
+                  ariaLabel={'Tokens & cost per model'}
+                  columns={{ label: 'Model', value: 'Tokens & cost' }}
+                />
               )}
             </section>
 
