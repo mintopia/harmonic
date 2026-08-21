@@ -1,5 +1,5 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import {
   verificationAttempts,
   type VerificationAttemptRow,
@@ -36,47 +36,57 @@ export interface VerificationAttemptInput {
  * read; there is no update or delete path, by design.
  */
 export class VerificationAttemptStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Append a Verification attempt to `runId`'s log, assigning the next
    * monotonic `seq` as `max(seq)+1` (1-based) — same recipe, and the same
    * cross-process integrity backstop (the `(run_id, seq)` unique index
    * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
-   * corrupting the log's total order), as `RunFactStore.append`.
+   * corrupting the log's total order), as `RunFactStore.append`. The read of
+   * `max(seq)` and the insert run as a single `this.db.write()` unit (ADR-0029
+   * §3): the async single-writer queue now stands in for better-sqlite3's
+   * synchrony, so no concurrent append can interleave between them and steal
+   * the `seq`.
    */
-  append(runId: number, attempt: VerificationAttemptInput, now: number = Date.now()): VerificationAttemptRow {
-    const seq =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${verificationAttempts.seq}), 0)` })
-        .from(verificationAttempts)
-        .where(eq(verificationAttempts.runId, runId))
-        .get()?.n ?? 0) + 1;
-    return this.db
-      .insert(verificationAttempts)
-      .values({
-        runId,
-        seq,
-        ts: now,
-        mechanism: attempt.mechanism,
-        inputOid: attempt.inputOid,
-        verdict: attempt.verdict,
-        summary: attempt.summary,
-        output: attempt.output,
-        phase: attempt.phase ?? 'verifying',
-        mutated: attempt.mutated,
-      })
-      .returning()
-      .get();
+  append(runId: number, attempt: VerificationAttemptInput, now: number = Date.now()): Promise<VerificationAttemptRow> {
+    return this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${verificationAttempts.seq}), 0)` })
+            .from(verificationAttempts)
+            .where(eq(verificationAttempts.runId, runId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(verificationAttempts)
+        .values({
+          runId,
+          seq,
+          ts: now,
+          mechanism: attempt.mechanism,
+          inputOid: attempt.inputOid,
+          verdict: attempt.verdict,
+          summary: attempt.summary,
+          output: attempt.output,
+          phase: attempt.phase ?? 'verifying',
+          mutated: attempt.mutated,
+        })
+        .returning()
+        .get();
+    });
   }
 
   /** A Run's Verification attempt log in `seq` order. */
-  list(runId: number): VerificationAttemptRow[] {
-    return this.db
-      .select()
-      .from(verificationAttempts)
-      .where(eq(verificationAttempts.runId, runId))
-      .orderBy(asc(verificationAttempts.seq))
-      .all();
+  list(runId: number): Promise<VerificationAttemptRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(verificationAttempts)
+        .where(eq(verificationAttempts.runId, runId))
+        .orderBy(asc(verificationAttempts.seq))
+        .all(),
+    );
   }
 }

@@ -72,7 +72,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
+  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
   const verdictEvents = async (runId: number) =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
@@ -93,7 +93,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(run.candidateOid).toBeTruthy();
 
     // AC3/AC5: the attempt is persisted at exactly the frozen candidate OID.
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
     expect(rows[0]!.inputOid).toBe(run.candidateOid);
@@ -122,7 +122,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.state).not.toBe('awaiting-review');
     expect(task.escalated).toBe(true);
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ mechanism: 'command', verdict: 'fail', inputOid: run.candidateOid });
   });
@@ -147,7 +147,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).not.toBe('awaiting-review');
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.verdict).toBe('inconclusive');
   });
@@ -176,7 +176,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).not.toBe('awaiting-review');
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
   });
@@ -219,7 +219,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
+  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
 
   it('row 2 (regression): auto-accept OFF + a pass still parks for review', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
@@ -257,7 +257,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     expect(run.phase).toBe('terminal');
     expect(run.finishedAt).not.toBeNull();
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
 
@@ -309,7 +309,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     expect(run.state).toBe('running'); // parked, not settled
 
     // No verifier ran at all — the attempt log is empty.
-    expect(attempts(runId)).toHaveLength(0);
+    expect(await attempts(runId)).toHaveLength(0);
   });
 
   it('a worktree auto-accept lands the merge into the base branch (no human gate)', async () => {

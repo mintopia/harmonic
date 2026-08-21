@@ -113,7 +113,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
+  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
   const verdictEvents = async (runId: number) =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
@@ -135,7 +135,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(run.candidateOid).toBeTruthy();
 
     // AC2: a critic attempt persisted during a real Run, at exactly the frozen OID.
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', summary: 'looks correct' });
     expect(rows[0]!.inputOid).toBe(run.candidateOid);
@@ -164,7 +164,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(task.state).not.toBe('awaiting-review');
     expect(task.escalated).toBe(true);
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'fail', inputOid: run.candidateOid });
 
@@ -188,7 +188,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).not.toBe('awaiting-review');
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive' });
   });
@@ -215,7 +215,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     // Both verifiers ran and persisted: the command passed, the critic failed —
     // the fail is what combineVerdicts blocked on.
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'critic:fail']);
   });
@@ -237,7 +237,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.phase).toBe('review');
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'critic:pass']);
   });
@@ -268,7 +268,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(run.phase).not.toBe('review');
     expect(run.candidateOid).toBeNull();
 
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive', inputOid: '' });
 

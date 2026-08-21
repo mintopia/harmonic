@@ -262,7 +262,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   );
   const runs = new RunStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
-  const verificationAttempts = new VerificationAttemptStore(db);
+  const verificationAttempts = new VerificationAttemptStore(asyncDb);
   const leases = new WorkContextLeaseStore(asyncDb);
   const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
@@ -437,7 +437,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // skips a Task whose base repo is in the resulting backoff window), so a
   // doomed context is escalated/backed off instead of being re-spawned forever.
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(runs, tasks, leases, db, asyncDb, () => configStore.get(), {
+  const runner = new Runner(runs, tasks, leases, asyncDb, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunFinished: (run) => bus.emit('run_changed', run),

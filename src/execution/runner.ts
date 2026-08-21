@@ -88,7 +88,6 @@ import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
 import { landBranch } from './branch-landing.js';
 import { parseIntegrationBranch } from './epic-integration.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
-import type { Db } from '../db/index.js';
 import type { AsyncDbHandle } from '../db/async.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
@@ -481,7 +480,6 @@ export class Runner {
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
     private readonly leaseStore: WorkContextLeaseStore,
-    private readonly db: Db,
     private readonly asyncDb: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
     options: RunnerOptions = {},
@@ -500,10 +498,10 @@ export class Runner {
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
     this.runFacts = new RunFactStore(this.asyncDb);
-    this.verificationAttempts = new VerificationAttemptStore(this.db);
+    this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.turnQueue = new TurnQueueStore(this.asyncDb);
-    this.chainStore = new ExecutionChainStore(this.db);
+    this.chainStore = new ExecutionChainStore(this.asyncDb);
     this.sessionStore = new SessionStore(this.asyncDb);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
@@ -610,7 +608,7 @@ export class Runner {
     // (issue #129): inherited from the line of work this Run continues (a
     // same-Task new attempt, or a reattempt's linked Task), or a fresh chain
     // when it starts a new line.
-    const chainId = this.chainStore.resolveForTask(task);
+    const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
     const key = this.workContextKeyFor(task, created);
     // Resolved ahead of the claim: look up whoever holds the Work Context key and
@@ -1305,12 +1303,12 @@ export class Runner {
    * silently passing work it never verified. Shared by every verifier branch in
    * {@link runVerification} so a new verifier can't diverge on this fail-safe.
    */
-  private noCandidateVerdict(
+  private async noCandidateVerdict(
     runId: number,
     mechanism: 'command' | 'critic',
     record: (type: 'lifecycle', payload: unknown) => void,
-  ): VerifierVerdict {
-    this.verificationAttempts.append(runId, {
+  ): Promise<VerifierVerdict> {
+    await this.verificationAttempts.append(runId, {
       mechanism,
       inputOid: '',
       verdict: 'inconclusive',
@@ -1375,7 +1373,7 @@ export class Runner {
 
     if (command) {
       if (!oid) {
-        verdicts.push(this.noCandidateVerdict(run.id, 'command', record));
+        verdicts.push(await this.noCandidateVerdict(run.id, 'command', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         const attempt = await runCommandVerifier({
@@ -1388,7 +1386,7 @@ export class Runner {
           command,
           signal,
         });
-        this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
+        await this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
         record('lifecycle', {
           event: 'verification',
           mechanism: 'command',
@@ -1406,7 +1404,7 @@ export class Runner {
       // `${oid}^` — exactly what `snapshotCandidate` committed it against) from a
       // disposable read-only worktree, and never runs against the live checkout.
       if (!oid) {
-        verdicts.push(this.noCandidateVerdict(run.id, 'critic', record));
+        verdicts.push(await this.noCandidateVerdict(run.id, 'critic', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         // The critic's own harness (issue #174 FIX 2): reuses the builder's
@@ -1434,7 +1432,7 @@ export class Runner {
           // real `createAcpCriticDrive`.
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
         });
-        this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+        await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
         record('lifecycle', {
           event: 'verification',
           mechanism: 'critic',
@@ -2428,8 +2426,9 @@ export class Runner {
       // retroactively change what a past Run cost. A member with no recorded
       // usage contributes a 0 floor (see `sumPriorSpend`); self-heal turns need
       // no accounting here because they run inside this same Run.
+      const chainMembers = started.chainId == null ? [] : await this.chainStore.listForChain(started.chainId);
       const priorSpend = sumPriorSpend(
-        (started.chainId == null ? [] : this.chainStore.listForChain(started.chainId))
+        chainMembers
           .filter((member) => member.id !== run.id)
           .map((member): ChainSpend => {
             const usage = member.usage ? (JSON.parse(member.usage) as RunUsage) : null;
@@ -3094,7 +3093,7 @@ export class Runner {
           // verifier's output as corrective feedback. `finalize()` already
           // committed this turn's work onto the Run's branch and the candidate ref
           // holds it, so the self-heal turn resumes and fixes it.
-          const attempts = this.verificationAttempts.list(run.id);
+          const attempts = await this.verificationAttempts.list(run.id);
           const output = attempts[attempts.length - 1]?.output ?? '';
           record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
           return { kind: 'actionable-fail', reason: decision.reason, output };
@@ -3632,14 +3631,13 @@ export class Runner {
       operatorNote: note,
       ...(this.criticDrive ? { drive: this.criticDrive } : {}),
     });
-    this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+    await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
 
     // Re-fold latest-per-verifier (mirrors `latestVerdicts`,
     // `web/src/verification-attempts-model.ts`): the fresh critic verdict plus
     // the latest stored `command` attempt, if this Run ever had one — an
     // original command failure still blocks even if the critic now passes.
-    const priorCommand = this.verificationAttempts
-      .list(run.id)
+    const priorCommand = (await this.verificationAttempts.list(run.id))
       .filter((a) => a.mechanism === 'command')
       .at(-1);
     const verdicts: VerifierVerdict[] = [{ verifier: 'critic', verdict: attempt.verdict }];

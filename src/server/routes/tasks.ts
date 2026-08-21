@@ -829,7 +829,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.runs.get(req.params.id); // 404 on unknown run
-      return { verificationAttempts: ctx.verificationAttempts.list(req.params.id) };
+      return { verificationAttempts: await ctx.verificationAttempts.list(req.params.id) };
     },
   );
 

@@ -284,12 +284,12 @@ describe('runCritic (issue #136)', () => {
     const asyncDb = await openAsyncDb(dbDir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
-    const store = new VerificationAttemptStore(db);
+    const store = new VerificationAttemptStore(asyncDb);
     const runId = (await runStore.create((await tasks.create({ prompt: 'verify me', state: 'ready' })).id)).id;
 
-    store.append(runId, criticAttemptToInput(attempt));
+    await store.append(runId, criticAttemptToInput(attempt));
 
-    const [row, ...rest] = store.list(runId);
+    const [row, ...rest] = await store.list(runId);
     expect(rest).toHaveLength(0);
     expect(row).toMatchObject({
       mechanism: 'critic',

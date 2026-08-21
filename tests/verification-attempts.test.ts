@@ -31,7 +31,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
     asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
-    attempts = new VerificationAttemptStore(db);
+    attempts = new VerificationAttemptStore(asyncDb);
 
     const task = await tasks.create({ prompt: 'verify me', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
@@ -43,8 +43,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('appends a critic attempt and reads it back, seq 1, phase defaulted to verifying', () => {
-    const row = attempts.append(runId, {
+  it('appends a critic attempt and reads it back, seq 1, phase defaulted to verifying', async () => {
+    const row = await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
       verdict: 'pass',
@@ -63,12 +63,12 @@ describe('VerificationAttemptStore (issue #136)', () => {
       mutated: false,
     });
 
-    const [back] = attempts.list(runId);
+    const [back] = await attempts.list(runId);
     expect(back).toEqual(row);
   });
 
-  it('assigns a 1-based monotonic seq per Run, sequencing each Run independently', () => {
-    attempts.append(runId, {
+  it('assigns a 1-based monotonic seq per Run, sequencing each Run independently', async () => {
+    await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
       verdict: 'pass',
@@ -76,7 +76,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
       output: 'o1',
       mutated: false,
     });
-    const second = attempts.append(runId, {
+    const second = await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'b'.repeat(40),
       verdict: 'fail',
@@ -86,7 +86,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
     });
     expect(second.seq).toBe(2);
 
-    const other = attempts.append(otherRunId, {
+    const other = await attempts.append(otherRunId, {
       mechanism: 'critic',
       inputOid: 'c'.repeat(40),
       verdict: 'inconclusive',
@@ -97,8 +97,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     expect(other.seq).toBe(1); // a fresh Run starts at 1 regardless of other Runs
   });
 
-  it("list returns a Run's attempts in seq order, and only that Run's", () => {
-    attempts.append(runId, {
+  it("list returns a Run's attempts in seq order, and only that Run's", async () => {
+    await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
       verdict: 'pass',
@@ -106,7 +106,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
       output: 'o1',
       mutated: false,
     });
-    attempts.append(runId, {
+    await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
       verdict: 'fail',
@@ -114,7 +114,7 @@ describe('VerificationAttemptStore (issue #136)', () => {
       output: 'o2',
       mutated: false,
     });
-    attempts.append(otherRunId, {
+    await attempts.append(otherRunId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
       verdict: 'pass',
@@ -123,13 +123,13 @@ describe('VerificationAttemptStore (issue #136)', () => {
       mutated: false,
     });
 
-    const log = attempts.list(runId);
+    const log = await attempts.list(runId);
     expect(log.map((a) => a.seq)).toEqual([1, 2]);
     expect(log.map((a) => a.verdict)).toEqual(['pass', 'fail']);
   });
 
-  it('the (run_id, seq) unique index rejects a duplicate seq (append-only integrity)', () => {
-    attempts.append(runId, {
+  it('the (run_id, seq) unique index rejects a duplicate seq (append-only integrity)', async () => {
+    await attempts.append(runId, {
       mechanism: 'critic',
       inputOid: 'a'.repeat(40),
       verdict: 'pass',
@@ -156,8 +156,8 @@ describe('VerificationAttemptStore (issue #136)', () => {
     sqlite.close();
   });
 
-  it('mechanism reserves the "command" value for the sibling verifier ticket', () => {
-    const row = attempts.append(runId, {
+  it('mechanism reserves the "command" value for the sibling verifier ticket', async () => {
+    const row = await attempts.append(runId, {
       mechanism: 'command',
       inputOid: 'a'.repeat(40),
       verdict: 'fail',

@@ -22,7 +22,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
     const task = await ctx().tasks.get(created.body.id);
     const run = await ctx().runs.create(task.id);
 
-    ctx().verificationAttempts.append(run.id, {
+    await ctx().verificationAttempts.append(run.id, {
       mechanism: 'command',
       inputOid: 'oid1',
       verdict: 'pass',
@@ -30,7 +30,7 @@ describe('GET /api/runs/:id/verification-attempts (issue #169)', () => {
       output: '',
       mutated: false,
     });
-    ctx().verificationAttempts.append(run.id, {
+    await ctx().verificationAttempts.append(run.id, {
       mechanism: 'critic',
       inputOid: 'oid2',
       verdict: 'fail',

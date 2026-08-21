@@ -78,7 +78,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
   });
 
-  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
+  const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
   const selfHealTurns = (runId: number) =>
     server.app.ctx.db.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all();
 
@@ -124,7 +124,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
 
     // AC2: the FULL suite reran — two attempts against two candidates: the first
     // fail, then the heal's pass (not just the failed check re-run).
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass']);
     expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid); // a fresh candidate per turn
 
@@ -161,7 +161,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(run.phase).not.toBe('landing');
 
     // Exactly one verifier attempt (inconclusive) — no heal was attempted.
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.verdict).toBe('inconclusive');
     // And no self-heal turn was ever enqueued.
@@ -187,7 +187,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
 
     // Budget of 1: the first turn fails, one heal turn runs and also fails, then
     // the Run Escalates — exactly two attempts and exactly one self-heal turn.
-    const rows = attempts(runId);
+    const rows = await attempts(runId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'fail']);
     expect(selfHealTurns(runId)).toHaveLength(1);
   });
@@ -207,7 +207,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.escalated).toBe(true);
 
-    expect(attempts(runId).map((r) => r.verdict)).toEqual(['fail']);
+    expect((await attempts(runId)).map((r) => r.verdict)).toEqual(['fail']);
     expect(selfHealTurns(runId)).toHaveLength(0);
   });
 });
