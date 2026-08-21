@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -18,7 +18,7 @@ import { workspaces } from '../src/db/schema.js';
  * `TaskService`/`AutoRunner` `getWorkspaces` contract (ADR-0029). */
 export const allWorkspaces = (db: AsyncDbHandle) => () => db.read((d) => d.select().from(workspaces).all());
 
-const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
+export const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
 /** Config overrides registering the stub ACP agent as the given harness. */
 export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'): DeepPartial<AppConfig> {
@@ -109,6 +109,27 @@ export interface TestServer {
   /** Same, but sends no credentials. */
   anonApi: (method: string, path: string, body?: unknown) => Promise<{ status: number; body: any }>;
   close: () => Promise<void>;
+}
+
+/**
+ * Start a native Run and capture the value of env vars injected into the harness
+ * (e.g. the raw run-scoped `HARMONIC_API_KEY`). ACP session updates are no longer
+ * persisted (ADR-0031), so the stub writes the requested env to a file this reads
+ * instead of the defunct `/events` session_update echo. Defaults to `exit:'hang'`
+ * so the Run (and its Run Key) stay live while the caller asserts on the token.
+ */
+export async function captureRunEnv(
+  server: TestServer,
+  envKeys: string[],
+  { exit = 'hang' }: { exit?: 'clean' | 'hang' } = {},
+): Promise<{ taskId: number; runId: number; env: Record<string, string | null> }> {
+  const echoEnvFile = join(mkdtempSync(join(tmpdir(), 'harmonic-echo-')), 'env.json');
+  const created = await server.api('POST', '/api/tasks', {
+    prompt: JSON.stringify({ echoEnv: envKeys, echoEnvFile, exit }),
+  });
+  const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+  const env = await waitFor(async () => (existsSync(echoEnvFile) ? JSON.parse(readFileSync(echoEnvFile, 'utf8')) : undefined));
+  return { taskId: created.body.id as number, runId: started.body.id as number, env };
 }
 
 export async function startServer(

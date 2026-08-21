@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, captureRunEnv, type TestServer } from './helpers.js';
 import type { Epic } from '../src/domain/epic-view.js';
 
 /**
@@ -106,15 +106,8 @@ describe('Epic read model operator surface (issue #167)', () => {
 
   describe('operator-only gating', () => {
     it('denies a run-scoped Run Key on GET /api/workspaces/:id/epics', async () => {
-      const created = await server.api('POST', '/api/tasks', {
-        prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-      });
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      const echo = await waitFor(async () => {
-        const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-        return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-      });
-      const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+      const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
+      const token = env.HARMONIC_API_KEY as string;
 
       const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics`, {
         headers: { authorization: `Bearer ${token}` },
@@ -123,15 +116,8 @@ describe('Epic read model operator surface (issue #167)', () => {
     });
 
     it('denies a run-scoped Run Key on GET /api/workspaces/:id/epics/:ref', async () => {
-      const created = await server.api('POST', '/api/tasks', {
-        prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-      });
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      const echo = await waitFor(async () => {
-        const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-        return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-      });
-      const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+      const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
+      const token = env.HARMONIC_API_KEY as string;
 
       const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42`, {
         headers: { authorization: `Bearer ${token}` },

@@ -78,11 +78,11 @@ describe('review: accept / reject (direct mode)', () => {
     const second = await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
 
-    // The stub echoes the prompt it received: the retry ran the appended one.
-    const events = await server.api('GET', `/api/runs/${second.body.id}/events`);
-    const echo = events.body.events.find((e: any) => e.payload?.content?.text?.startsWith('prompt-received:'));
-    expect(echo.payload.content.text).toContain('original prompt');
-    expect(echo.payload.content.text).toContain('not good enough');
+    // The retry ran the appended prompt: the Run records the exact text sent to
+    // the harness (ACP session updates are no longer persisted, ADR-0031).
+    const run = await server.api('GET', `/api/runs/${second.body.id}`);
+    expect(run.body.prompt).toContain('original prompt');
+    expect(run.body.prompt).toContain('not good enough');
   });
 
   it('a rejected task requeued and re-run continues in the SAME Session (issue #147)', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, captureRunEnv, type TestServer } from './helpers.js';
 import type { EpicLandOutcome } from '../src/execution/epic-land-coordinator.js';
 
 async function mcpClient(server: TestServer, token: string): Promise<Client> {
@@ -74,15 +74,8 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
 
   describe('operator-only gating', () => {
     it('denies a run-scoped Run Key on POST /api/workspaces/:id/epics/:ref/force-land', async () => {
-      const created = await server.api('POST', '/api/tasks', {
-        prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-      });
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      const echo = await waitFor(async () => {
-        const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-        return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-      });
-      const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+      const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
+      const token = env.HARMONIC_API_KEY as string;
 
       const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`, {
         method: 'POST',
@@ -164,15 +157,8 @@ describe('force_land_epic MCP tool (issue #161)', () => {
   });
 
   it('rejects a run-scoped Run Key with a forbidden domain error, even though /mcp itself admits it', async () => {
-    const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-    });
-    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    const echo = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-      return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-    });
-    const runToken = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+    const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
+    const runToken = env.HARMONIC_API_KEY as string;
 
     const client = await mcpClient(server, runToken);
     const forbidden = await client.callTool({

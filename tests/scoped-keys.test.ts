@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, captureRunEnv, type TestServer } from './helpers.js';
 
 describe('run-scoped key restrictions', () => {
   let server: TestServer;
@@ -10,17 +10,10 @@ describe('run-scoped key restrictions', () => {
 
   beforeAll(async () => {
     server = await startServer(stubHarness());
-    // Capture a scoped key by having a hanging run echo its env, then keep
-    // the run alive so the key stays valid while we probe with it.
-    const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-    });
-    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    const echo = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-      return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-    });
-    scopedToken = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+    // Capture a scoped key from a hanging run, kept alive so the key stays valid
+    // while we probe with it.
+    const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY'], { exit: 'hang' });
+    scopedToken = env.HARMONIC_API_KEY as string;
   });
   afterAll(async () => {
     await server.close();
@@ -171,15 +164,8 @@ describe('read-scoped key (issue #35)', () => {
 describe('scoped key crash recovery', () => {
   it('revokes scoped keys of interrupted runs at boot', async () => {
     const own = await startServer(stubHarness());
-    const created = await own.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-    });
-    const started = await own.api('POST', `/api/tasks/${created.body.id}/run`);
-    const echo = await waitFor(async () => {
-      const { body } = await own.api('GET', `/api/runs/${started.body.id}/events`);
-      return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-    });
-    const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+    const { env } = await captureRunEnv(own, ['HARMONIC_API_KEY'], { exit: 'hang' });
+    const token = env.HARMONIC_API_KEY as string;
 
     await own.app.close();
     const reopened = await startServer(stubHarness(), { dataDir: own.dataDir });

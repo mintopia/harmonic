@@ -199,6 +199,12 @@ async function handlePrompt(msg) {
       sessionId: msg.params.sessionId,
       update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: JSON.stringify(values) } },
     });
+    // ACP session updates are no longer persisted (ADR-0031), so a test that
+    // needs the injected value reads it from this file instead of run_events.
+    if (scenario.echoEnvFile) {
+      mkdirSync(dirname(scenario.echoEnvFile), { recursive: true });
+      writeFileSync(scenario.echoEnvFile, JSON.stringify(values));
+    }
   }
 
   if (scenario.requestPermission) {

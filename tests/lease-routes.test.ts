@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, captureRunEnv, type TestServer } from './helpers.js';
 import { workContextKey } from '../src/domain/work-context-key.js';
 
 async function mcpClient(server: TestServer, token: string): Promise<Client> {
@@ -139,15 +139,8 @@ describe('Work Context lease operator surface (issue #125)', () => {
 
   describe('operator-only gating', () => {
     it('denies a run-scoped Run Key on GET/POST /api/leases*', async () => {
-      const created = await server.api('POST', '/api/tasks', {
-        prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-      });
-      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-      const echo = await waitFor(async () => {
-        const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-        return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-      });
-      const token = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+      const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
+      const token = env.HARMONIC_API_KEY as string;
 
       const asAgent = (method: string, path: string, body?: unknown) =>
         fetch(server.baseUrl + path, {
@@ -213,15 +206,8 @@ describe('Work Context lease MCP tools (issue #125)', () => {
   });
 
   it('rejects a run-scoped Run Key calling the lease tools with a forbidden domain error, even though /mcp itself admits it', async () => {
-    const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY'], exit: 'hang' }),
-    });
-    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    const echo = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${started.body.id}/events`);
-      return body.events.find((e: any) => e.payload?.content?.text?.startsWith('{'));
-    });
-    const runToken = JSON.parse(echo.payload.content.text).HARMONIC_API_KEY;
+    const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
+    const runToken = env.HARMONIC_API_KEY as string;
 
     const client = await mcpClient(server, runToken);
     // The agent surface still works — /mcp itself admits a Run Key.
