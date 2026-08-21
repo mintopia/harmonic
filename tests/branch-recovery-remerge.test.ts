@@ -76,14 +76,14 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
   });
 
   /** Launch a mirrored afk/direct Run against `repo`. */
-  function launchAfkDirect(repo: string, scenario: object): { taskId: number; runId: number } {
+  async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
     server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
 
@@ -114,7 +114,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     // ref delta → ambiguous). Turn 1 (the bounded re-merge) re-homes the SAME
     // work with no branch mischief — its candidate reproduces the recorded tree,
     // so the allowed-set gate lands it.
-    const { taskId, runId } = launchAfkDirect(repo, {
+    const { taskId, runId } = await launchAfkDirect(repo, {
       mcpFinish: true,
       stopReason: 'end_turn',
       turns: [
@@ -156,7 +156,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     // Turn 1 introduces work BEYOND what turn 0 produced (an extra file), so its
     // candidate tree diverges from the recorded artifact → the allowed-set gate
     // rejects it. Exactly one corrective turn is issued, then the Run Escalates.
-    const { taskId, runId } = launchAfkDirect(repo, {
+    const { taskId, runId } = await launchAfkDirect(repo, {
       mcpFinish: true,
       stopReason: 'end_turn',
       turns: [

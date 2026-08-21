@@ -144,7 +144,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     expect(tasks.get(taskId).escalated).toBe(true);
   });
 
-  it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', () => {
+  it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', async () => {
     // The shared start funnel consults the injected gate: a hand-started member
     // (REST/MCP) whose `epic/<ref>` base the poll hasn't confirmed live must be
     // rejected before a run is created — the same gate the Auto-Runner's pick
@@ -157,7 +157,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
 
     let err: unknown;
     try {
-      gated.start(task.id);
+      await gated.start(task.id);
     } catch (e) {
       err = e;
     }
@@ -200,13 +200,13 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
   });
 
   /** Launch a mirrored afk worktree Task whose base is an Epic integration branch. */
-  function launchEpicMember(epicBranch: string): { taskId: number; runId: number; trackerRef: number } {
+  async function launchEpicMember(epicBranch: string): Promise<{ taskId: number; runId: number; trackerRef: number }> {
     const trackerRef = ref++;
     const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
     expect(task.drive).toBe('afk');
     server.app.ctx.tasks.setBaseBranch(task.id, epicBranch);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id, trackerRef };
   }
 
@@ -228,8 +228,8 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     // Submitted without awaiting the first — the merge train, not the test,
     // must impose the serial order (mirrors merge-train-coordinator.test.ts's
     // own near-simultaneous case, but through the real Runner this time).
-    const m1 = launchEpicMember(epic);
-    const m2 = launchEpicMember(epic);
+    const m1 = await launchEpicMember(epic);
+    const m2 = await launchEpicMember(epic);
 
     const completed = (taskId: number) =>
       waitFor(async () => {
@@ -278,7 +278,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
       },
     });
 
-    const { taskId, runId } = launchEpicMember(epic);
+    const { taskId, runId } = await launchEpicMember(epic);
 
     // Wait until the member's worktree has forked from the integration
     // branch's CURRENT tip (prepareWorkspace sets `run.branch` only after the

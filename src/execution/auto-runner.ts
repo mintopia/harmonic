@@ -114,15 +114,16 @@ export class AutoRunner {
      * Pick gate for parallel-Epic members (issue #159): true while a mirrored
      * Task is an Epic member not yet safe to fork a worktree from — its
      * integration-branch base is unresolved (the reconcile hasn't set it), or set
-     * to an `epic/<ref>` branch the poll hasn't confirmed live (never cut, or
-     * transiently gone after a restart/retire). Skips it — without this, the
+     * to an `epic/<ref>` branch that does not currently exist in git (never cut,
+     * or gone after a retire/restart — asked of git directly, #231). Skips it —
+     * without this, the
      * mirror insert's `ready` poke could spawn the member before its base is
      * resolved, forking it from the working dir's branch instead of `epic/<ref>`,
      * or off a missing integration branch. The same gate the Runner's start funnel
      * consults, so hand-started and auto-picked members are held identically.
      * Absent (native-only server / no live poll loop) ⇒ never gated.
      */
-    private readonly epicBaseNotReady?: (task: TaskRow) => boolean,
+    private readonly epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>,
     /**
      * The per-context git circuit breaker (issue #199), shared with the Runner
      * that records failures into it. A ready Task whose base repo is in a git
@@ -182,7 +183,7 @@ export class AutoRunner {
           // Recomputed each iteration: startPicked adds a running Run, so a
           // Workspace can reach its own cap mid-fill while the ceiling has room.
           const runningByWorkspace = this.runStore.countRunningByWorkspace();
-          const next = this.pickNext(skip, workspacesById, runningByWorkspace, ceiling);
+          const next = await this.pickNext(skip, workspacesById, runningByWorkspace, ceiling);
           if (!next) break;
           await this.startPicked(next, skip);
         }
@@ -202,7 +203,7 @@ export class AutoRunner {
   private async startPicked(task: TaskRow, skip: Set<number>): Promise<void> {
     if (task.origin !== 'mirrored' || !this.mirror) {
       try {
-        this.runner.start(task.id);
+        await this.runner.start(task.id);
       } catch {
         // Work Context busy (or another start failure): leave the Task ready and
         // skip it this cycle; a later poke retries once the occupant settles.
@@ -223,7 +224,7 @@ export class AutoRunner {
       return;
     }
     try {
-      this.runner.launchClaimed(task.id);
+      await this.runner.launchClaimed(task.id);
     } catch {
       this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
       skip.add(task.id);
@@ -248,25 +249,46 @@ export class AutoRunner {
    * context. Occupancy is recomputed each pass, so a Task started earlier this
    * fill correctly blocks a same-context sibling picked later.
    */
-  private pickNext(
+  private async pickNext(
     skip: Set<number>,
     workspacesById: Map<number, WorkspaceRow>,
     runningByWorkspace: Map<number, number>,
     ceiling: number,
-  ): TaskRow | undefined {
+  ): Promise<TaskRow | undefined> {
     const all = this.taskService.list();
     const occupied = occupiedDirectContexts(all);
     this.contextSkipReasons.clear();
+    // Parallel-Epic pick gate (issue #159, git ground-truth #231): a ready Epic
+    // member isn't spawnable until its integration branch exists in git and its
+    // base is set. The check hits git, so resolve it for the mirrored ready
+    // candidates up front and read the verdicts in the sync filter below.
+    // Transient (a reconcile cuts the branch and re-pokes), so it isn't recorded
+    // as a wait-clock skip.
+    const epicGate = new Map<number, boolean>();
+    if (this.epicBaseNotReady) {
+      const gate = this.epicBaseNotReady;
+      await Promise.all(
+        all
+          // Same cheap exclusions the sync filter below applies, so a task that's
+          // skipped/hitl/foreign-claimed anyway doesn't cost a `branchExists` call.
+          .filter(
+            (t) =>
+              t.state === 'ready' &&
+              t.origin === 'mirrored' &&
+              t.drive !== 'hitl' &&
+              !skip.has(t.id) &&
+              !this.mirror?.foreignAssignee(t),
+          )
+          .map(async (t) => {
+            epicGate.set(t.id, await gate(t));
+          }),
+      );
+    }
     const picked = all
       .filter((t) => {
         if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
         if (this.mirror?.foreignAssignee(t)) return false;
-        // Parallel-Epic pick gate (issue #159): a ready Epic member isn't
-        // spawnable until this poll's reconcile has cut its integration branch
-        // (and confirmed it live) and set its base. Transient (the reconcile
-        // sets it within the same poll and re-pokes), so it isn't recorded as a
-        // wait-clock skip.
-        if (this.epicBaseNotReady?.(t)) return false;
+        if (epicGate.get(t.id)) return false;
         const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
         // Master is on (fill returned early otherwise), so an inheriting
         // Workspace (null) is enabled; only an explicit `false` opts out.

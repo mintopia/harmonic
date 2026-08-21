@@ -728,7 +728,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-      const run = ctx.runner.start(req.params.id);
+      const run = await ctx.runner.start(req.params.id);
       return reply.status(201).send(runToApi(ctx, run));
     },
   );

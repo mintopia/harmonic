@@ -195,12 +195,13 @@ export interface RunnerOptions {
   gitBreaker?: GitCircuitBreaker;
   /** Start-funnel gate for parallel-Epic members (issue #159): true while a
    * mirrored Task is an Epic member whose integration base isn't ready to fork
-   * from — unresolved, or set to an `epic/<ref>` branch the poll hasn't confirmed
-   * live. {@link Runner.beginRun} refuses to spawn such a Run (a `DomainError`
-   * the REST/MCP start surface returns as 409, the Auto-Runner catches and leaves
-   * the Task ready), so no member forks off a missing integration branch — the
-   * hand-started counterpart to the Auto-Runner's pick gate. Absent → not gated. */
-  epicBaseNotReady?: (task: TaskRow) => boolean;
+   * from — unresolved, or set to an `epic/<ref>` branch that does not currently
+   * exist in git (#231). {@link Runner.beginRun} refuses to spawn such a Run (a
+   * `DomainError` the REST/MCP start surface returns as 409, the Auto-Runner
+   * catches and leaves the Task ready), so no member forks off a missing
+   * integration branch — the hand-started counterpart to the Auto-Runner's pick
+   * gate. Async (the branch-existence check hits git). Absent → not gated. */
+  epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
 }
 
 interface Workspace {
@@ -556,12 +557,12 @@ export class Runner {
   }
 
   /** Start a run for a ready task. Returns the created run immediately. */
-  start(taskId: number): RunRow {
+  async start(taskId: number): Promise<RunRow> {
     const task = this.taskService.get(taskId);
     if (task.state !== 'ready') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
-    const run = this.beginRun(task);
+    const run = await this.beginRun(task);
     this.taskService.setState(taskId, 'running');
     return run;
   }
@@ -571,7 +572,7 @@ export class Runner {
    * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
    * spawn, so the flip lands before the tracker write, not with it (issue #32).
    */
-  launchClaimed(taskId: number): RunRow {
+  async launchClaimed(taskId: number): Promise<RunRow> {
     const task = this.taskService.get(taskId);
     if (task.state !== 'running') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to running`);
@@ -580,7 +581,7 @@ export class Runner {
   }
 
   /** Validate the harness, snapshot Guardrails, create the run row, and drive it. Shared by start / launchClaimed. */
-  private beginRun(task: TaskRow): RunRow {
+  private async beginRun(task: TaskRow): Promise<RunRow> {
     // Parallel-Epic start-funnel gate (issue #159): an Epic member whose
     // integration base isn't ready to fork from must not spawn — its `epic/<ref>`
     // branch is unresolved or not confirmed live this poll, so `git worktree add`
@@ -588,7 +589,7 @@ export class Runner {
     // Run (REST/MCP `start` → 409) is blocked identically to an auto-picked one
     // (the Auto-Runner's `launchClaimed` catch leaves the Task ready). The
     // reconcile re-cuts the branch and re-marks it live, opening the gate.
-    if (this.epicBaseNotReady?.(task)) {
+    if (await this.epicBaseNotReady?.(task)) {
       throw new DomainError(
         'invalid_state',
         `task ${task.id} is an Epic member whose integration branch (${task.baseBranch ?? 'unassigned'}) is not ready yet; ` +

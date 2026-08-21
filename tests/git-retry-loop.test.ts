@@ -42,7 +42,7 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
       isolationMode: 'worktree',
     });
 
-    const run = server.app.ctx.runner.start(task.id);
+    const run = await server.app.ctx.runner.start(task.id);
 
     // The Run settles terminally...
     await waitFor(async () => {
