@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { and, eq, gte, lte } from 'drizzle-orm';
 import type { App } from '../app.js';
 import { runFacts, runs, tasks } from '../../db/schema.js';
+import { totalsForRange } from '../../domain/tool-call-aggregates.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
 import { buildDaySeries } from '../stats-series.js';
@@ -160,11 +161,11 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // the concurrent libsql read connection (ADR-0029 §5), so a big scan can
       // never freeze in-flight HTTP the way a synchronous better-sqlite3 `.all()`
       // would. Reads see the last committed WAL snapshot of the sync writer.
-      // All three heavy range reads share one concurrent read-connection scope
-      // (#213): the runs scan plus the two run_facts joins the KPI bands need, so
-      // the whole blocking read phase is one `.read(...)` on the libsql read
-      // sibling rather than several round-trips on it.
-      const { rows, factRows, failFactRows } = await ctx.asyncReadDb.read(async (db) => {
+      // All four heavy range reads share one concurrent read-connection scope
+      // (#213): the runs scan, two run_facts joins, and native tool-call
+      // aggregate stay in one `.read(...)` on the libsql read sibling rather
+      // than several round-trips on it.
+      const { rows, factRows, failFactRows, toolTotals } = await ctx.asyncReadDb.read(async (db) => {
         const rows =
           workspaceId === undefined
             ? await db
@@ -245,7 +246,8 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
                 )
                 .all();
 
-        return { rows, factRows, failFactRows };
+        const toolTotals = await totalsForRange(db, { from, to, ...(workspaceId === undefined ? {} : { workspaceId }) });
+        return { rows, factRows, failFactRows, toolTotals };
       });
 
       const agentFinishTs = new Map<number, number>();
@@ -269,6 +271,10 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))
         .filter((u): u is RunUsage => u !== null);
       const merged = mergeUsage(usages);
+      const toolCalls: Record<string, number> = {};
+      for (const totals of Object.values(toolTotals.byTask)) {
+        for (const [toolName, count] of Object.entries(totals)) toolCalls[toolName] = (toolCalls[toolName] ?? 0) + count;
+      }
 
       const runsByState: Record<string, number> = {};
       for (const run of rows) runsByState[run.state] = (runsByState[run.state] ?? 0) + 1;
@@ -331,7 +337,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         totals: merged?.totals ?? null,
         models: merged?.models ?? {},
         agents: merged?.agents ?? {},
-        toolCalls: merged?.toolCalls ?? {},
+        toolCalls,
         cost: flooredCost,
         series,
       };

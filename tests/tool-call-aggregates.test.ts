@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
-import { runToolCalls, tasks, workspaces } from '../src/db/schema.js';
+import { runToolCalls, runs, tasks, workspaces } from '../src/db/schema.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { ToolCallAggregateStore } from '../src/domain/tool-call-aggregates.js';
+import { ToolCallAggregateStore, totalsForRange } from '../src/domain/tool-call-aggregates.js';
 import { defaultConfig } from '../src/config.js';
 import { allWorkspaces } from './helpers.js';
 
@@ -21,6 +21,7 @@ describe('ToolCallAggregateStore (issue #241)', () => {
   let siblingTaskId: number;
   let standaloneTaskId: number;
   let otherWorkspaceTaskId: number;
+  let runIds: number[];
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-tool-call-aggregates-'));
@@ -78,6 +79,7 @@ describe('ToolCallAggregateStore (issue #241)', () => {
       runStore.create(standaloneTaskId),
       runStore.create(otherWorkspaceTaskId),
     ]);
+    runIds = runs.map((run) => run.id);
     await db.write((d) =>
       d.insert(runToolCalls).values([
         { runId: runs[0]!.id, toolName: 'Bash', count: 2 },
@@ -110,6 +112,24 @@ describe('ToolCallAggregateStore (issue #241)', () => {
     await expect(toolCalls.totalsForWorkspace(otherWorkspaceId)).resolves.toEqual({
       byTask: { [otherWorkspaceTaskId]: { Bash: 99 } },
       byEpic: {},
+    });
+  });
+
+  it('rolls an inclusive Stats range into Task and Epic totals without crossing Workspaces', async () => {
+    await db.write(async (d) => {
+      await d.update(runs).set({ startedAt: 10_000 }).where(eq(runs.id, runIds[0]!)).run();
+      await d.update(runs).set({ startedAt: 20_000 }).where(eq(runs.id, runIds[1]!)).run();
+      await d.update(runs).set({ startedAt: 15_000 }).where(eq(runs.id, runIds[2]!)).run();
+      await d.update(runs).set({ startedAt: 9_999 }).where(eq(runs.id, runIds[3]!)).run();
+      await d.update(runs).set({ startedAt: 15_000 }).where(eq(runs.id, runIds[4]!)).run();
+    });
+
+    await expect(db.read((d) => totalsForRange(d, { from: 10_000, to: 20_000, workspaceId }))).resolves.toEqual({
+      byTask: {
+        [epicTaskId]: { Bash: 5, Read: 1 },
+        [siblingTaskId]: { Read: 4 },
+      },
+      byEpic: { 701: { Bash: 5, Read: 5 } },
     });
   });
 });

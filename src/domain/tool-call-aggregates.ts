@@ -1,10 +1,16 @@
-import { eq, sql } from 'drizzle-orm';
-import type { AsyncDbHandle } from '../db/async.js';
+import { and, eq, gte, lte, sql } from 'drizzle-orm';
+import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import { runToolCalls, runs, tasks } from '../db/schema.js';
 
 export interface ToolCallTotals {
   byTask: Record<number, Record<string, number>>;
   byEpic: Record<number, Record<string, number>>;
+}
+
+export interface ToolCallRange {
+  from: number;
+  to: number;
+  workspaceId?: number;
 }
 
 /**
@@ -39,6 +45,50 @@ export class ToolCallAggregateStore {
     }
     return totals;
   }
+}
+
+/**
+ * Read a Stats range from the native tool-call aggregate. This accepts an
+ * already-open database so the Stats route can include it in its one
+ * concurrent-read snapshot (ADR-0029 §5).
+ */
+export async function totalsForRange(db: AsyncDb, range: ToolCallRange): Promise<ToolCallTotals> {
+  const { from, to, workspaceId } = range;
+  const rows =
+    workspaceId === undefined
+      ? await db
+          .select({
+            taskId: tasks.id,
+            epicRef: tasks.mapRef,
+            toolName: runToolCalls.toolName,
+            count: sql<number>`sum(${runToolCalls.count})`,
+          })
+          .from(runToolCalls)
+          .innerJoin(runs, eq(runToolCalls.runId, runs.id))
+          .innerJoin(tasks, eq(runs.taskId, tasks.id))
+          .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to)))
+          .groupBy(tasks.id, tasks.mapRef, runToolCalls.toolName)
+          .all()
+      : await db
+          .select({
+            taskId: tasks.id,
+            epicRef: tasks.mapRef,
+            toolName: runToolCalls.toolName,
+            count: sql<number>`sum(${runToolCalls.count})`,
+          })
+          .from(runToolCalls)
+          .innerJoin(runs, eq(runToolCalls.runId, runs.id))
+          .innerJoin(tasks, eq(runs.taskId, tasks.id))
+          .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to), eq(tasks.workspaceId, workspaceId)))
+          .groupBy(tasks.id, tasks.mapRef, runToolCalls.toolName)
+          .all();
+
+  const totals: ToolCallTotals = { byTask: {}, byEpic: {} };
+  for (const row of rows) {
+    addTotal(totals.byTask, row.taskId, row.toolName, row.count);
+    if (row.epicRef !== null) addTotal(totals.byEpic, row.epicRef, row.toolName, row.count);
+  }
+  return totals;
 }
 
 function addTotal(totals: Record<number, Record<string, number>>, dimension: number, toolName: string, count: number): void {

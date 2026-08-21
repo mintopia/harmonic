@@ -81,18 +81,19 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
-    toolCount: running ? runningToolCount(running) : null,
+    toolCount: running ? await runningToolCount(ctx, running) : null,
     runId: running?.id ?? null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     candidateRef: runs.at(-1)?.candidateRef ?? null,
   };
 }
 
-/** Total tool calls of a running run, from its freshest live snapshot (falls back to the persisted usage) — the board card's "· N tools" (issue #100). */
-function runningToolCount(run: RunRow): number {
-  const usage = run.liveUsage ? (JSON.parse(run.liveUsage) as RunUsageSnapshot).usage : parseUsage(run.usage);
-  if (!usage) return 0;
-  return Object.values(usage.toolCalls ?? {}).reduce((a, b) => a + b, 0);
+/** Total tool calls of a running run from its native aggregate (ADR-0031). */
+async function runningToolCount(ctx: AppContext, run: RunRow): Promise<number> {
+  const totals = await ctx.runs.listToolCalls(run.id);
+  let count = 0;
+  for (const total of totals.values()) count += total;
+  return count;
 }
 
 /** Cost of an arbitrary set of runs against the live price table. */

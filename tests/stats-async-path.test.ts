@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 import { AsyncDbHandle } from '../src/db/async.js';
-import { runs, tasks, workspaces } from '../src/db/schema.js';
+import { runToolCalls, runs, tasks, workspaces } from '../src/db/schema.js';
 
 /**
  * #213 (ADR-0029 §5): the Stats range scan — the one genuine heavy DB aggregate
@@ -22,7 +22,7 @@ describe('Stats heavy aggregate routes through the async read path (#213)', () =
     expect(server.app.ctx.asyncReadDb).toBeInstanceOf(AsyncDbHandle);
   });
 
-  it('serves /api/stats by reading through ctx.asyncReadDb.read, seeing the sync writer’s rows', async () => {
+  it('serves /api/stats by reading through ctx.asyncReadDb.read, with tool calls from their aggregate store', async () => {
     server = await startServer(stubHarness());
     const { ctx } = server.app;
 
@@ -36,7 +36,7 @@ describe('Stats heavy aggregate routes through the async read path (#213)', () =
         .returning()
         .get(),
     );
-    await ctx.asyncDb.write((d) =>
+    const run = await ctx.asyncDb.write((d) =>
       d
         .insert(runs)
         .values({
@@ -46,8 +46,10 @@ describe('Stats heavy aggregate routes through the async read path (#213)', () =
           startedAt: now,
           usage: JSON.stringify({ models: {}, totals: null, toolCalls: { Bash: 2 }, source: 'session-log' }),
         })
-        .run(),
+        .returning()
+        .get(),
     );
+    await ctx.asyncDb.write((d) => d.insert(runToolCalls).values({ runId: run.id, toolName: 'Read', count: 3 }).run());
 
     // …and the aggregate is served off the async read connection, seeing it.
     const readSpy = vi.spyOn(ctx.asyncReadDb, 'read');
@@ -57,7 +59,7 @@ describe('Stats heavy aggregate routes through the async read path (#213)', () =
     expect(readSpy).toHaveBeenCalledTimes(1);
     expect(res.body.runCount).toBe(1);
     expect(res.body.runsByState).toEqual({ completed: 1 });
-    expect(res.body.toolCalls).toEqual({ Bash: 2 });
+    expect(res.body.toolCalls).toEqual({ Read: 3 });
   });
 
   it('scopes by workspace through the async read path (tasks join)', async () => {
