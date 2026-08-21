@@ -9,14 +9,29 @@ import {
 import { DomainError } from './errors.js';
 import { DEFAULT_LEASE_TTL, leaseExpiryFor, type LeaseTtl } from './lease-ttl.js';
 
-/** Matches better-sqlite3's message for a violated UNIQUE constraint, as a
- * fallback when the driver's `.code` isn't populated (e.g. wrapped errors). */
+/** Matches the SQLite message for a violated UNIQUE constraint, as a fallback
+ * when the driver's `.code` isn't populated (e.g. wrapped errors). */
 const UNIQUE_VIOLATION_MESSAGE = /UNIQUE constraint failed/;
 
-function isUniqueViolation(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as { code?: string }).code;
-  return code === 'SQLITE_CONSTRAINT_UNIQUE' || UNIQUE_VIOLATION_MESSAGE.test(err.message);
+/**
+ * Detect a UNIQUE-constraint violation across both DB drivers (ADR-0029).
+ * better-sqlite3 throws a `SqliteError` whose top-level `.code` is
+ * `SQLITE_CONSTRAINT_UNIQUE`; drizzle-libsql wraps the driver error in a
+ * `DrizzleQueryError` whose `.message` is `"Failed query: …"` (no
+ * "UNIQUE constraint failed") and whose `.code` is undefined — the real code
+ * (`.code === 'SQLITE_CONSTRAINT'`, `.extendedCode === 'SQLITE_CONSTRAINT_UNIQUE'`)
+ * and message live on `.cause`. So walk the cause chain and check `.code`,
+ * `.extendedCode`, and the message at every level.
+ */
+export function isUniqueViolation(err: unknown): boolean {
+  for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
+    const { code, extendedCode } = e as { code?: string; extendedCode?: string };
+    if (code === 'SQLITE_CONSTRAINT_UNIQUE' || extendedCode === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return true;
+    }
+    if (UNIQUE_VIOLATION_MESSAGE.test(e.message)) return true;
+  }
+  return false;
 }
 
 /**
