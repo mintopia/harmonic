@@ -336,7 +336,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter, okGit);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => cfg, { autoDrive: drive });
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => cfg, { autoDrive: drive });
   }
 
   const continueEvents = async (runId: number) =>

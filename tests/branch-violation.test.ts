@@ -83,8 +83,8 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     return { taskId: task.id, runId: run.id };
   }
 
-  const branchViolationFact = (runId: number) =>
-    new RunFactStore(server.app.ctx.db).list(runId).find((f) => f.type === 'branch-violation');
+  const branchViolationFact = async (runId: number) =>
+    (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).find((f) => f.type === 'branch-violation');
 
   const phaseEvents = async (runId: number): Promise<string[]> =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
@@ -122,7 +122,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
 
     // A structured branch-violation run_fact was appended, carrying the verdict
     // and the offending unattributed ref delta.
-    const fact = branchViolationFact(runId);
+    const fact = await branchViolationFact(runId);
     expect(fact).toBeDefined();
     const payload = JSON.parse(fact!.payload);
     expect(payload.outcome).toBe('ambiguous');
@@ -171,6 +171,6 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // It reached verifying — validation passed — and no branch-violation fact
     // was ever written.
     expect(await phaseEvents(runId)).toContain('verifying');
-    expect(branchViolationFact(runId)).toBeUndefined();
+    expect(await branchViolationFact(runId)).toBeUndefined();
   });
 });

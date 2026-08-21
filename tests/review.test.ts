@@ -45,7 +45,7 @@ describe('review: accept / reject (direct mode)', () => {
     expect(accepted.status).toBe(200);
     expect(accepted.body.state).toBe('completed');
 
-    const facts = new RunFactStore(server.app.ctx.db).list(runId);
+    const facts = await new RunFactStore(server.app.ctx.asyncDb).list(runId);
     expect(facts.some((f) => f.type === 'operator-accept')).toBe(true);
     expect(facts.some((f) => f.type === 'agent-finish/unresolved')).toBe(false);
   });

@@ -72,7 +72,7 @@ export class BootResumeCoordinator {
   async resume(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
     for (const orphan of await this.runStore.listResumableInterrupted()) {
-      if (this.alreadyHandled(orphan.id)) continue; // once-only (AC3)
+      if (await this.alreadyHandled(orphan.id)) continue; // once-only (AC3)
       if (orphan.sessionRowId === null) continue; // narrowing; the query already excludes null
 
       const session = this.sessionStore.get(orphan.sessionRowId);
@@ -117,7 +117,7 @@ export class BootResumeCoordinator {
             harnessSessionId: session.harnessSessionId,
           },
           candidate: { oid: orphan.candidateOid, status: orphan.reason },
-          facts: this.runFacts.list(orphan.id),
+          facts: await this.runFacts.list(orphan.id),
           events: await this.runStore.listEvents(orphan.id),
           trackerLinks: [],
         });
@@ -133,8 +133,8 @@ export class BootResumeCoordinator {
       // The idempotency ledger (AC3): the interrupted Run records the new Run it
       // resumed into; the new Run records the interrupted Run it continues. Either
       // marker makes a Run un-resumable on a later boot.
-      this.runFacts.append(orphan.id, 'session-resumed', { resumedAsRunId: resumeRun.id, action: eligibility.eligible ? 'resume-same-session' : 'fail-forward' }, ts);
-      this.runFacts.append(resumeRun.id, 'resume-entry', { resumedFromRunId: orphan.id }, ts);
+      await this.runFacts.append(orphan.id, 'session-resumed', { resumedAsRunId: resumeRun.id, action: eligibility.eligible ? 'resume-same-session' : 'fail-forward' }, ts);
+      await this.runFacts.append(resumeRun.id, 'resume-entry', { resumedFromRunId: orphan.id }, ts);
 
       // The Task continues as live work rather than staying failed from the boot
       // orphan-fail sweep — the resume Run is its live attempt now, parked
@@ -148,8 +148,8 @@ export class BootResumeCoordinator {
   /** Whether `runId` is already part of a resume — it was resumed
    * (`session-resumed`) or it *is* a resume re-entry (`resume-entry`). Either way
    * it must not be resumed again (AC3). */
-  private alreadyHandled(runId: number): boolean {
-    return this.runFacts.list(runId).some((fact) => fact.type === 'session-resumed' || fact.type === 'resume-entry');
+  private async alreadyHandled(runId: number): Promise<boolean> {
+    return (await this.runFacts.list(runId)).some((fact) => fact.type === 'session-resumed' || fact.type === 'resume-entry');
   }
 }
 

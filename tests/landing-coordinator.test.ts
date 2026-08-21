@@ -50,7 +50,7 @@ describe('LandingCoordinator (issue #115)', () => {
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
-    runFacts = new RunFactStore(db);
+    runFacts = new RunFactStore(asyncDb);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
     coordinator = new LandingCoordinator(runStore, runFacts, journal, settle);
@@ -155,7 +155,7 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(tasks.get(task.id).state).toBe('completed');
 
     // The cancel fact is still in the log — audit, not decisive.
-    const cancelFacts = runFacts.list(run.id).filter((f) => f.type === 'operator-cancel');
+    const cancelFacts = (await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel');
     expect(cancelFacts).toHaveLength(1);
 
     // The effect now finishes; `land`'s own deferred settle call idempotently
@@ -195,7 +195,7 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(afterCancel.state).toBe('completed');
     expect(afterCancel.phase).toBe('terminal');
     expect(tasks.get(task.id).state).toBe('completed');
-    expect(runFacts.list(run.id).filter((f) => f.type === 'operator-cancel')).toHaveLength(1);
+    expect((await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel')).toHaveLength(1);
 
     resolveApply({ ok: true, observed: {} });
     expect(await landPromise).toEqual({ ok: true });
@@ -207,7 +207,7 @@ describe('LandingCoordinator (issue #115)', () => {
     // Simulate the crash directly against the journal: `land` got as far as
     // recording intent for the merge but the process died before `apply()`
     // resolved (or before the result was recorded) — no result row exists.
-    journal.writePonc(run.id, runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION }).seq);
+    journal.writePonc(run.id, (await runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION })).seq);
     journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey: 'main@crash', expected: { branch: 'harmonic/task-1-run-1' } });
 
     // A FRESH coordinator instance — the "restarted process" — reconciles.
@@ -228,7 +228,7 @@ describe('LandingCoordinator (issue #115)', () => {
 
   it('simulated mid-landing crash with observed=absent -> apply exactly once', async () => {
     const { run } = await fixture();
-    journal.writePonc(run.id, runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION }).seq);
+    journal.writePonc(run.id, (await runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION })).seq);
     journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey: 'main@crash2', expected: {} });
 
     const freshCoordinator = new LandingCoordinator(runStore, runFacts, journal, settle);
@@ -248,7 +248,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
     expect(outcome).toEqual({ ok: true });
     expect((await runStore.get(run.id)).state).toBe('completed');
-    const types = runFacts.list(run.id).map((f) => f.type);
+    const types = (await runFacts.list(run.id)).map((f) => f.type);
     expect(types).toContain('operator-accept');
     expect(types).not.toContain('agent-finish/unresolved');
   });

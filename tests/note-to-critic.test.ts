@@ -114,7 +114,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
   }
 
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.db).list(runId);
-  const facts = (runId: number) => new RunFactStore(server.app.ctx.db).list(runId);
+  const facts = (runId: number) => new RunFactStore(server.app.ctx.asyncDb).list(runId);
 
   describe('adoptForReview / POST /tasks/:id/adopt-review', () => {
     it('parks the existing candidate at awaiting-review, non-terminal, with the escalated flag cleared', async () => {
@@ -164,7 +164,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       // The winning disposition is the new `operator-accept` fact, not the
       // retained `escalate` — both are on the log, but precedence now
       // resolves to the accept.
-      const runFacts = facts(runId);
+      const runFacts = await facts(runId);
       expect(runFacts.some((f) => f.type === 'escalate')).toBe(true);
       expect(runFacts.some((f) => f.type === 'operator-accept')).toBe(true);
 
@@ -290,7 +290,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('completed');
       expect(run.phase).toBe('terminal');
-      expect(facts(runId).some((f) => f.type === 'operator-accept')).toBe(true);
+      expect((await facts(runId)).some((f) => f.type === 'operator-accept')).toBe(true);
     });
 
     it('an inconclusive re-reviewed critic leaves the task escalated, with the attempt recorded', async () => {

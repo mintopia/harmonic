@@ -82,7 +82,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runs = new RunStore(asyncDb);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig());
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => defaultConfig());
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -157,7 +157,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     // (REST/MCP) whose `epic/<ref>` base the poll hasn't confirmed live must be
     // rejected before a run is created — the same gate the Auto-Runner's pick
     // side uses, so neither path forks off a missing integration branch.
-    const gated = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig(), {
+    const gated = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => defaultConfig(), {
       epicBaseNotReady: (t) => t.baseBranch === 'epic/1',
     });
     const task = tasks.create({ prompt: 'member work' });

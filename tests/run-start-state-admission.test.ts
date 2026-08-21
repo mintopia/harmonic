@@ -81,10 +81,9 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     return { taskId: task.id, runId: run.id };
   }
 
-  const facts = () => new RunFactStore(server.app.ctx.db);
-  const startStateFact = (runId: number) =>
-    facts()
-      .list(runId)
+  const facts = () => new RunFactStore(server.app.ctx.asyncDb);
+  const startStateFact = async (runId: number) =>
+    (await facts().list(runId))
       .find((f) => f.type === 'run-start-state');
 
   it('records a run-start-state fact at admission on a clean context, with the real branch, HEAD OID, worktree path, repo root, and a fingerprint', async () => {
@@ -95,7 +94,7 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     const { runId } = await launchAfkDirect(repo);
 
     // The fact lands during workspace preparation, before any agent turn.
-    const fact = await waitFor(async () => startStateFact(runId));
+    const fact = await waitFor(async () => await startStateFact(runId));
     const payload = JSON.parse(fact.payload) as {
       startBranch: string;
       startCommit: string;
@@ -143,7 +142,7 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     expect(task.drive).toBe('hitl');
 
     // A rejected context records NO start-state fact.
-    expect(startStateFact(runId)).toBeUndefined();
+    expect(await startStateFact(runId)).toBeUndefined();
   });
 
   it('escalates a context containing a nested git repository, recording no run-start-state fact', async () => {
@@ -166,6 +165,6 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     // more actionable reason surfaces.
     expect((run.reason ?? '').toLowerCase()).toContain('nested git repository');
 
-    expect(startStateFact(runId)).toBeUndefined();
+    expect(await startStateFact(runId)).toBeUndefined();
   });
 });

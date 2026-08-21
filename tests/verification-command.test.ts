@@ -265,7 +265,7 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     // keep appending the default `agent-finish/unresolved` land fact (issue
     // #191), never the operator-only `operator-accept` disposition, so the
     // audit log stays honest about who actually accepted the work.
-    const factTypes = new RunFactStore(server.app.ctx.db).list(runId).map((f) => f.type);
+    const factTypes = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).map((f) => f.type);
     expect(factTypes).toContain('agent-finish/unresolved');
     expect(factTypes).not.toContain('operator-accept');
   });

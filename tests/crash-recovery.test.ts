@@ -68,7 +68,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
-    runFacts = new RunFactStore(db);
+    runFacts = new RunFactStore(asyncDb);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
     landing = new LandingCoordinator(runStore, runFacts, journal, settle);
@@ -95,7 +95,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     const task = tasks.get(created.id);
 
     const idempotencyKey = `${baseBranch}<-${branch}`;
-    const landFact = runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'completed', reason: null });
+    const landFact = await runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'completed', reason: null });
     journal.writePonc(run.id, landFact.seq);
     journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
     // No result row: the process died before `apply()` resolved.
@@ -189,7 +189,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
-    runFacts = new RunFactStore(db);
+    runFacts = new RunFactStore(asyncDb);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
     landing = new LandingCoordinator(runStore, runFacts, journal, settle);

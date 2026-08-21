@@ -46,7 +46,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
     sessions = new SessionStore(db);
-    runFacts = new RunFactStore(db);
+    runFacts = new RunFactStore(asyncDb);
     turnQueue = new TurnQueueStore(db);
   });
 
@@ -77,7 +77,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     });
     await runStore.update(run.id, { sessionId: session.harnessSessionId, sessionRowId: session.id });
     // What `markInterrupted` writes for a generic orphan.
-    runFacts.append(run.id, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
+    await runFacts.append(run.id, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
     const failed = await runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
     tasks.setState(created.id, 'failed');
     return { task: tasks.get(created.id), run: failed, session };
@@ -118,8 +118,8 @@ describe('BootResumeCoordinator (issue #146)', () => {
     expect(queue[0]).toMatchObject({ runId: resumeRun.id, purpose: 'crash-recovery', status: 'queued' });
 
     // Idempotency ledger + Task re-driven.
-    expect(runFacts.list(run.id).some((f) => f.type === 'session-resumed')).toBe(true);
-    expect(runFacts.list(resumeRun.id).some((f) => f.type === 'resume-entry')).toBe(true);
+    expect((await runFacts.list(run.id)).some((f) => f.type === 'session-resumed')).toBe(true);
+    expect((await runFacts.list(resumeRun.id)).some((f) => f.type === 'resume-entry')).toBe(true);
     expect(tasks.get(task.id).state).toBe('running');
   });
 

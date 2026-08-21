@@ -18,8 +18,9 @@ import { allWorkspaces } from './helpers.js';
 describe('RunFactStore (issue #112)', () => {
   let dir: string;
   let db: Db;
-  // RunStore migrated to the async libsql Db (ADR-0029 #203); RunFactStore is
-  // still on the sync Db, so this fixture runs both connections on the one file.
+  // RunStore and RunFactStore both migrated to the async libsql Db (ADR-0029
+  // #203); `db` (sync) still backs TaskService and the raw sqlite duplicate-seq
+  // check below, so this fixture runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
   let facts: RunFactStore;
   let runId: number;
@@ -31,7 +32,7 @@ describe('RunFactStore (issue #112)', () => {
     asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
-    facts = new RunFactStore(db);
+    facts = new RunFactStore(asyncDb);
 
     const task = tasks.create({ prompt: 'emit facts', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
@@ -43,35 +44,35 @@ describe('RunFactStore (issue #112)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('assigns a 1-based monotonic seq per Run and stores the fact', () => {
-    const first = facts.append(runId, 'agent-finish/unresolved', { note: 'done' });
+  it('assigns a 1-based monotonic seq per Run and stores the fact', async () => {
+    const first = await facts.append(runId, 'agent-finish/unresolved', { note: 'done' });
     expect(first).toMatchObject({ runId, seq: 1, type: 'agent-finish/unresolved' });
     expect(JSON.parse(first.payload)).toEqual({ note: 'done' });
 
-    const second = facts.append(runId, 'failed');
+    const second = await facts.append(runId, 'failed');
     expect(second.seq).toBe(2);
     expect(second.payload).toBe('{}'); // default empty payload
   });
 
-  it('sequences each Run independently', () => {
-    facts.append(runId, 'escalate');
-    const other = facts.append(otherRunId, 'operator-cancel');
+  it('sequences each Run independently', async () => {
+    await facts.append(runId, 'escalate');
+    const other = await facts.append(otherRunId, 'operator-cancel');
     expect(other.seq).toBe(1); // a fresh Run starts at 1 regardless of other Runs
-    expect(facts.append(runId, 'process-death').seq).toBe(2);
+    expect((await facts.append(runId, 'process-death')).seq).toBe(2);
   });
 
-  it("list returns a Run's facts in seq order, and only that Run's", () => {
-    facts.append(runId, 'failed');
-    facts.append(runId, 'escalate');
-    facts.append(otherRunId, 'operator-cancel');
+  it("list returns a Run's facts in seq order, and only that Run's", async () => {
+    await facts.append(runId, 'failed');
+    await facts.append(runId, 'escalate');
+    await facts.append(otherRunId, 'operator-cancel');
 
-    const log = facts.list(runId);
+    const log = await facts.list(runId);
     expect(log.map((f) => f.seq)).toEqual([1, 2]);
     expect(log.map((f) => f.type)).toEqual(['failed', 'escalate']);
   });
 
-  it('the (run_id, seq) unique index rejects a duplicate seq (append-only integrity)', () => {
-    facts.append(runId, 'failed'); // seq 1
+  it('the (run_id, seq) unique index rejects a duplicate seq (append-only integrity)', async () => {
+    await facts.append(runId, 'failed'); // seq 1
     // Force a raw duplicate seq against the same file — the store never does
     // this, but the index must guarantee no two facts share a seq in a Run.
     const sqlite = new Database(join(dir, 'harmonic.db'));
@@ -82,11 +83,11 @@ describe('RunFactStore (issue #112)', () => {
     sqlite.close();
   });
 
-  it('feeds computeDisposition: the persisted log resolves to the winning disposition', () => {
-    facts.append(runId, 'process-death');
-    facts.append(runId, 'escalate');
-    facts.append(runId, 'agent-finish/unresolved');
-    const log = facts.list(runId);
+  it('feeds computeDisposition: the persisted log resolves to the winning disposition', async () => {
+    await facts.append(runId, 'process-death');
+    await facts.append(runId, 'escalate');
+    await facts.append(runId, 'agent-finish/unresolved');
+    const log = await facts.list(runId);
     expect(computeDisposition(log, log.length)).toBe('escalate');
   });
 
@@ -98,7 +99,7 @@ describe('RunFactStore (issue #112)', () => {
     // The Run row is failed/interrupted…
     expect((await runStore.get(runId)).state).toBe('failed');
     // …and that terminal is reconstructable from run_facts alone.
-    const log = facts.list(runId);
+    const log = await facts.list(runId);
     expect(log.map((f) => f.type)).toEqual(['process-death']);
     expect(JSON.parse(log[0]!.payload)).toEqual({
       runState: 'failed',

@@ -89,6 +89,7 @@ import { landBranch } from './branch-landing.js';
 import { parseIntegrationBranch } from './epic-integration.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
@@ -480,6 +481,7 @@ export class Runner {
     private readonly taskService: TaskService,
     private readonly leaseStore: WorkContextLeaseStore,
     private readonly db: Db,
+    private readonly asyncDb: AsyncDbHandle,
     private readonly getConfig: () => AppConfig,
     options: RunnerOptions = {},
   ) {
@@ -496,7 +498,7 @@ export class Runner {
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
-    this.runFacts = new RunFactStore(this.db);
+    this.runFacts = new RunFactStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     this.guardrailEvents = new GuardrailEventStore(this.db);
     this.turnQueue = new TurnQueueStore(this.db);
@@ -763,7 +765,7 @@ export class Runner {
       // audit trail, then fall through to a cold dispatch. Only a human-reject
       // `offer-choice` is condensable; automated `silent-continue` always binds.
       if (plan.mode === 'offer-choice' && task.continuationChoice === 'condensed') {
-        appendFact('condensed', false);
+        await appendFact('condensed', false);
         return run;
       }
 
@@ -776,7 +778,7 @@ export class Runner {
       } catch {
         /* best-effort; reactivate is a no-op unless the Session is idle */
       }
-      appendFact(plan.mode === 'offer-choice' ? 'full' : 'silent', true);
+      await appendFact(plan.mode === 'offer-choice' ? 'full' : 'silent', true);
       return bound;
     } catch {
       return run; // never let a continuation attempt block a dispatch
@@ -1086,7 +1088,7 @@ export class Runner {
           const refsAtStart = await Git.forEachRef(task.workingDir)
             .then(parseRefLines)
             .catch(() => undefined);
-          this.runFacts.append(
+          await this.runFacts.append(
             run.id,
             'run-start-state',
             // Spread into a fresh object literal to satisfy the store's
@@ -1122,7 +1124,7 @@ export class Runner {
       // start-state or candidate (the snapshot was skipped/failed) leaves the
       // turn to the best-effort capture below — nothing to rematerialise.
       if (afk && resume) {
-        const start = this.startStateOf(run.id);
+        const start = await this.startStateOf(run.id);
         const candidateOid = (await this.runStore.get(run.id)).candidateOid;
         if (start && candidateOid) {
           await rematerializeCandidate(task.workingDir, candidateOid);
@@ -1210,8 +1212,8 @@ export class Runner {
    * restores to (issue #152). Returns null when no fact was recorded (a native
    * Run, or a non-git context), so the caller falls back to best-effort capture.
    */
-  private startStateOf(runId: number): RunStartState | null {
-    const fact = this.runFacts.list(runId).find((f) => f.type === 'run-start-state');
+  private async startStateOf(runId: number): Promise<RunStartState | null> {
+    const fact = (await this.runFacts.list(runId)).find((f) => f.type === 'run-start-state');
     return fact ? (JSON.parse(fact.payload) as RunStartState) : null;
   }
 
@@ -1562,7 +1564,7 @@ export class Runner {
     run: RunRow,
     workspace: Workspace,
   ): Promise<{ observation: BranchContractObservation; verdict: BranchClassification } | null> {
-    const start = this.startStateOf(run.id);
+    const start = await this.startStateOf(run.id);
     if (!workspace.directIsolation || !start || !start.refsAtStart) return null;
     const dir = task.workingDir;
     try {
@@ -1632,7 +1634,7 @@ export class Runner {
     // untouched, so a recovery land would contradict the fate. Same source of
     // truth `onCompleted` applies (issue #154).
     if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return 'skip';
-    const start = this.startStateOf(run.id);
+    const start = await this.startStateOf(run.id);
     const candidateOid = (await this.runStore.get(run.id)).candidateOid;
     if (!start || !candidateOid) return 'skip';
     const dir = task.workingDir;
@@ -1668,7 +1670,7 @@ export class Runner {
         record('lifecycle', { event: 'recovery-landing-failed', reason: outcome.detail });
         return 'escalate';
       }
-      this.runFacts.append(run.id, 'branch-recovery', {
+      await this.runFacts.append(run.id, 'branch-recovery', {
         reason: plan.reason,
         baseBranch: plan.baseBranch,
         landCommit: plan.landCommit,
@@ -1715,16 +1717,16 @@ export class Runner {
     remergeCtx: ReMergeContext,
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<'landed' | 'escalate'> {
-    const start = this.startStateOf(run.id);
+    const start = await this.startStateOf(run.id);
     const candidateOid = (await this.runStore.get(run.id)).candidateOid;
     const dir = task.workingDir;
-    const reject = (reason: string, detail: string): 'escalate' => {
-      this.runFacts.append(run.id, 'branch-violation', { via: 're-merge', reason, detail });
+    const reject = async (reason: string, detail: string): Promise<'escalate'> => {
+      await this.runFacts.append(run.id, 'branch-violation', { via: 're-merge', reason, detail });
       record('lifecycle', { event: 'branch-remerge-rejected', reason, detail });
       return 'escalate';
     };
     if (!start || !candidateOid) {
-      return reject('no-candidate', 'the re-merge turn left no start-state or candidate to land');
+      return await reject('no-candidate', 'the re-merge turn left no start-state or candidate to land');
     }
     // `landReMerge` is only reached for the #155 fallback, whose `remergeCtx`
     // always carries the recorded allowed-set tree; a merge-train member's
@@ -1733,7 +1735,7 @@ export class Runner {
     // narrowed and the impossible case fails closed rather than landing blind.
     const recordedCandidateTree = remergeCtx.allowedTree;
     if (recordedCandidateTree === undefined) {
-      return reject('no-candidate', 'the re-merge turn recorded no allowed-set tree to land against');
+      return await reject('no-candidate', 'the re-merge turn recorded no allowed-set tree to land against');
     }
     try {
       const [correctiveTree, candidateDescendsFromStart, intendedContainsStart] = await Promise.all([
@@ -1749,14 +1751,14 @@ export class Runner {
         intendedContainsStart,
       });
       if (judgment.verdict === 'escalate') {
-        return reject(judgment.reason, judgment.detail);
+        return await reject(judgment.reason, judgment.detail);
       }
       // Re-verify the start OID before mutating (reliability-design Unit D): the
       // intended branch must still be exactly where the Run started. A branch that
       // advanced (a concurrent land) is not safe to ff over → Escalate.
       const currentBase = await Git.revParse(dir, start.startBranch);
       if (currentBase !== start.startCommit) {
-        return reject('branch-diverged', `intended branch '${start.startBranch}' advanced from the recorded start commit`);
+        return await reject('branch-diverged', `intended branch '${start.startBranch}' advanced from the recorded start commit`);
       }
       const outcome = await landBranch({
         repoDir: dir,
@@ -1765,9 +1767,9 @@ export class Runner {
         leaseHeld: true,
       });
       if (!outcome.ok) {
-        return reject('land-failed', outcome.detail);
+        return await reject('land-failed', outcome.detail);
       }
-      this.runFacts.append(run.id, 'branch-recovery', {
+      await this.runFacts.append(run.id, 'branch-recovery', {
         via: 're-merge',
         reason: 'agent-remerge',
         baseBranch: start.startBranch,
@@ -1778,7 +1780,7 @@ export class Runner {
       record('lifecycle', { event: 'recovery-landed', reason: 'agent-remerge', oid: outcome.oid, mode: outcome.mode });
       return 'landed';
     } catch (err) {
-      return reject('land-failed', err instanceof Error ? err.message : String(err));
+      return await reject('land-failed', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -2864,7 +2866,7 @@ export class Runner {
         // it — WITHOUT extra branches or new changes (the allowed-set gate rejects
         // a divergent tree). Marked `agent re-merge 1` so the run is one bounded
         // corrective turn.
-        const intended = this.startStateOf(run.id)?.startBranch ?? 'the branch the task started on';
+        const intended = (await this.startStateOf(run.id))?.startBranch ?? 'the branch the task started on';
         promptText =
           `${promptText}\n\n## Branch consolidation required (agent re-merge 1)\n` +
           `Your previous turn left the repository in a branch state Harmonic cannot land: ${remergeCtx.detail}\n\n` +
@@ -3003,7 +3005,7 @@ export class Runner {
             // An **ambiguous** outcome Harmonic cannot silently verify or land:
             // emit the structured branch-violation fact, retain the refs as
             // evidence, and Escalate through the shared tail below.
-            this.runFacts.append(run.id, 'branch-violation', {
+            await this.runFacts.append(run.id, 'branch-violation', {
               outcome: verdict.outcome,
               reason: verdict.reason,
               detail: verdict.detail,

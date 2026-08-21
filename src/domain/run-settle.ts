@@ -70,23 +70,34 @@ export class RunSettleCoordinator {
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
   ): Promise<void> {
+    // The winning disposition BEFORE this signal — so we can tell whether this
+    // signal actually changes the coordinator's decision. Captured before our
+    // own append.
+    const priorFacts = await this.coordinatorFacts(run.id);
+
+    await this.runFacts.append(run.id, type, { ...projection });
+
     // The PONC freeze (issue #115, reliability-design §0.3): if a landing has
     // already frozen this Run's disposition cutoff, no fact appended after it
-    // — including the very signal this call is settling — can move the
-    // decision past that point. Read once per call so both the prior and
-    // post-append cutoffs below clamp against the same value.
+    // — including the very signal this call just appended — can move the
+    // decision past that point.
+    //
+    // Read *after* our own append (ADR-0029): under the async single-writer
+    // queue, a landing that reserved a lower `seq` than ours enqueued its
+    // `run_facts` append ahead of this one, so by strict write-queue FIFO its
+    // land fact has resolved — and `LandingCoordinator.land` has run its
+    // (synchronous) `writePonc` in that append's continuation — by the time our
+    // own append resolves here. Reading the PONC before the append (as the sync
+    // path could) would instead observe `null` in that race window and let this
+    // signal wrongly win. Read once so both cutoffs below clamp against the same
+    // value.
     const poncCutoffSeq = this.landingJournal?.ponc(run.id) ?? null;
 
-    // The winning disposition BEFORE this signal — so we can tell whether this
-    // signal actually changes the coordinator's decision.
-    const priorFacts = this.coordinatorFacts(run.id);
     const priorDisposition = priorFacts.length
       ? computeDisposition(priorFacts, this.clampCutoff(priorFacts[priorFacts.length - 1]!.seq, poncCutoffSeq))
       : null;
 
-    this.runFacts.append(run.id, type, { ...projection });
-
-    const facts = this.coordinatorFacts(run.id);
+    const facts = await this.coordinatorFacts(run.id);
     // The cutoff is the log's latest seq — clamped to the PONC when one is
     // frozen (issue #115): a Run only appends a disposition fact at a settle
     // decision point, so "the whole log decides, up to the freeze" holds even
@@ -166,8 +177,8 @@ export class RunSettleCoordinator {
   }
 
   /** A Run's fact log decoded into the coordinator's projection-carrying shape. */
-  private coordinatorFacts(runId: number): CoordinatorFact[] {
-    return this.runFacts.list(runId).map((f) => ({
+  private async coordinatorFacts(runId: number): Promise<CoordinatorFact[]> {
+    return (await this.runFacts.list(runId)).map((f) => ({
       seq: f.seq,
       type: f.type,
       projection: JSON.parse(f.payload) as SettleProjection,

@@ -87,8 +87,8 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     return { taskId: task.id, runId: run.id };
   }
 
-  const facts = (runId: number) => new RunFactStore(server.app.ctx.db).list(runId);
-  const factOfType = (runId: number, type: string) => facts(runId).find((f) => f.type === type);
+  const facts = (runId: number) => new RunFactStore(server.app.ctx.asyncDb).list(runId);
+  const factOfType = async (runId: number, type: string) => (await facts(runId)).find((f) => f.type === type);
   const remergeTurns = (runId: number) =>
     server.app.ctx.db.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all();
 
@@ -132,11 +132,11 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     expect(git(repo, 'show', 'main:feature.txt')).toBe('the work');
 
     // A branch-recovery fact records the re-merge land; no branch-violation.
-    const recovery = factOfType(runId, 'branch-recovery');
+    const recovery = await factOfType(runId, 'branch-recovery');
     expect(recovery).toBeDefined();
     expect(JSON.parse(recovery!.payload).via).toBe('re-merge');
     expect(JSON.parse(recovery!.payload).reason).toBe('agent-remerge');
-    expect(factOfType(runId, 'branch-violation')).toBeUndefined();
+    expect(await factOfType(runId, 'branch-violation')).toBeUndefined();
 
     // Exactly ONE corrective turn, dispatched single-flight on this Session's queue.
     const turns = remergeTurns(runId);
@@ -172,8 +172,8 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     // Rejected, not landed: the intended branch never moved and no recovery fact
     // was written; the branch-violation fact records the re-merge rejection.
     expect(git(repo, 'rev-parse', 'main')).toBe(startOid);
-    expect(factOfType(runId, 'branch-recovery')).toBeUndefined();
-    const violation = factOfType(runId, 'branch-violation');
+    expect(await factOfType(runId, 'branch-recovery')).toBeUndefined();
+    const violation = await factOfType(runId, 'branch-violation');
     expect(violation).toBeDefined();
     expect(JSON.parse(violation!.payload).via).toBe('re-merge');
     expect(JSON.parse(violation!.payload).reason).toBe('tree-diverged');

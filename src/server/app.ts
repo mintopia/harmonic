@@ -16,7 +16,7 @@ import { landBranch } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openDb, type Db } from '../db/index.js';
-import { openAsyncDb } from '../db/async.js';
+import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
@@ -195,6 +195,7 @@ function requestIsOperator(req: FastifyRequest, auth: AuthService): boolean {
 
 export interface AppContext {
   db: Db;
+  asyncDb: AsyncDbHandle;
   configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
@@ -301,12 +302,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runs,
     tasks,
     leases,
-    new RunFactStore(db),
+    new RunFactStore(asyncDb),
     (run) => bus.emit('run_changed', run),
     landingJournal,
     sessionRetirement,
   );
-  const landing = new LandingCoordinator(runs, new RunFactStore(db), landingJournal, reviewSettle);
+  const landing = new LandingCoordinator(runs, new RunFactStore(asyncDb), landingJournal, reviewSettle);
   // Crash recovery before anything can execute (issue #117): one sweep
   // reconciles `run_facts`, `landing_journal`, and `turn_queue` together, so a
   // restart reconstructs one consistent picture instead of several independent
@@ -351,7 +352,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // the Task's current working directory). Whether the reload succeeds or the
   // compatibility matrix forces a fresh summarized Session, the decision is
   // idempotent across repeat boots.
-  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(db), new RunFactStore(db), (session) => ({
+  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(db), new RunFactStore(asyncDb), (session) => ({
     harness: session.harness,
     adapterVersion: adapterVersion(session.harness),
     model: session.model,
@@ -423,7 +424,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // skips a Task whose base repo is in the resulting backoff window), so a
   // doomed context is escalated/backed off instead of being re-spawned forever.
   const gitBreaker = new GitCircuitBreaker();
-  const runner = new Runner(runs, tasks, leases, db, () => configStore.get(), {
+  const runner = new Runner(runs, tasks, leases, db, asyncDb, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunFinished: (run) => bus.emit('run_changed', run),
@@ -599,7 +600,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       .catch(() => {});
   });
 
-  const ctx: AppContext = { db, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
+  const ctx: AppContext = { db, asyncDb, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

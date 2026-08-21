@@ -1,5 +1,5 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import { runFacts, type RunFactRow, type RunFactType } from '../db/schema.js';
 
 /**
@@ -14,45 +14,48 @@ import { runFacts, type RunFactRow, type RunFactType } from '../db/schema.js';
  * update or delete path, by design.
  */
 export class RunFactStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Append an ending-signal fact to `runId`'s log, assigning the next monotonic
    * `seq` as `max(seq)+1` (1-based). This reads the current max and inserts —
-   * two statements, but `better-sqlite3` is synchronous, so within a process
-   * nothing interleaves between them, and a Run's facts have a single owner by
-   * design (ADR-0022, the Work Context lease). The `(run_id, seq)` unique index
-   * is the integrity backstop: a cross-process racing append that computed the
-   * same `seq` is rejected loudly (a raw UNIQUE violation) rather than
-   * corrupting the log's total order — mirroring `RunStore.appendEvent` but with
-   * the added index guarantee. `payload` is signal-specific detail, JSON-encoded.
+   * two statements wrapped as a single write-queue unit (ADR-0029 §3): the
+   * async single-writer queue is what now stands in for better-sqlite3's
+   * synchrony, so no concurrent append can interleave between the read and the
+   * insert and steal the `seq`. A Run's facts also have a single owner by design
+   * (ADR-0022, the Work Context lease). The `(run_id, seq)` unique index remains
+   * the cross-process integrity backstop: a racing append that computed the same
+   * `seq` is rejected loudly (a raw UNIQUE violation) rather than corrupting the
+   * log's total order — mirroring `RunStore.appendEvent` but with the added index
+   * guarantee. `payload` is signal-specific detail, JSON-encoded.
    */
   append(
     runId: number,
     type: RunFactType,
     payload: Record<string, unknown> = {},
     now: number = Date.now(),
-  ): RunFactRow {
-    const seq =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
-        .from(runFacts)
-        .where(eq(runFacts.runId, runId))
-        .get()?.n ?? 0) + 1;
-    return this.db
-      .insert(runFacts)
-      .values({ runId, seq, ts: now, type, payload: JSON.stringify(payload) })
-      .returning()
-      .get();
+  ): Promise<RunFactRow> {
+    return this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
+            .from(runFacts)
+            .where(eq(runFacts.runId, runId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(runFacts)
+        .values({ runId, seq, ts: now, type, payload: JSON.stringify(payload) })
+        .returning()
+        .get();
+    });
   }
 
   /** A Run's fact log in `seq` order — the input to `computeDisposition`. */
-  list(runId: number): RunFactRow[] {
-    return this.db
-      .select()
-      .from(runFacts)
-      .where(eq(runFacts.runId, runId))
-      .orderBy(asc(runFacts.seq))
-      .all();
+  list(runId: number): Promise<RunFactRow[]> {
+    return this.db.read((db) =>
+      db.select().from(runFacts).where(eq(runFacts.runId, runId)).orderBy(asc(runFacts.seq)).all(),
+    );
   }
 }

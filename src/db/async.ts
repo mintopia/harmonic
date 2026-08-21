@@ -164,6 +164,16 @@ export class AsyncDbHandle {
     // The real work. The queue tail chains on *this*, not on the timeout race, so
     // the next write only starts once this write's statement has truly settled — a
     // caller timeout never lets a second writer onto the single connection.
+    //
+    // INVARIANT (relied on by the landing PONC race, run-settle.ts /
+    // landing-coordinator.ts): writes run strictly in enqueue order, and a later
+    // write's real work does not begin until an earlier write has fully settled.
+    // `RunSettleCoordinator.settle` reads the PONC *after* its own `run_facts`
+    // append precisely because this FIFO ordering guarantees a landing that
+    // enqueued its land-fact append first has already resolved — and run its
+    // synchronous `writePonc` — by the time the racing settle's append resolves.
+    // Reordering the chaining below (or letting a later write start before an
+    // earlier one settles) would silently break that invariant.
     const real = this.#writeTail.then(() => fn(this.db));
     this.#writeTail = real.then(noop, noop);
     // Bound the caller's total wait, timed from submission, so a caller queued

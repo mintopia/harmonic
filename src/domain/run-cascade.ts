@@ -14,7 +14,16 @@ import {
 
 /** The transaction handle drizzle hands a `db.transaction((tx) => …)` callback —
  * structurally the same query surface as {@link Db}, extracted so a cascade
- * helper can run inside either service's transaction. */
+ * helper can run inside either service's transaction.
+ *
+ * Deliberately still the SYNC `Db` transaction type through the ADR-0029 #204
+ * batch (RunFactStore + run-settle/disposition): `deleteRunsAndChildren` deletes
+ * `run_facts` rows directly by table, and its only callers — `TaskService.delete`
+ * and `WorkspaceService.delete` — are themselves still on the sync `Db` in this
+ * batch, so nothing here awaits or touches the async handle yet. `AsyncTx`
+ * (src/db/async.ts) is the pre-staged async twin this helper will take once those
+ * two services migrate; until then, converting run-cascade would be a change with
+ * no caller. */
 export type CascadeTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /**

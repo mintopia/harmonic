@@ -105,14 +105,20 @@ export class LandingCoordinator {
   ): Promise<LandingOutcome> {
     const now = this.opts.now ?? Date.now;
 
-    // Steps 2 + 3 (the PONC freeze) run FIRST, synchronously, before this
-    // method's first `await`: the land fact reserves its seq and the PONC freezes
-    // the cutoff at it, so no concurrent settle can steal that seq or decide the
-    // disposition ahead of the land. Both stores here are the sync Db. The
-    // phase-transition writes below moved to the async RunStore (ADR-0029 #203);
-    // awaiting them ahead of this freeze reopened the exact race this ordering
-    // exists to prevent, so the freeze now precedes the phase record.
-    const landFact = this.runFacts.append(run.id, landFactType, { ...landProjection }, now());
+    // Steps 2 + 3 (the PONC freeze) run FIRST, before any other work: append the
+    // land fact, then immediately freeze the PONC at its seq. `RunFactStore` is
+    // now on the async Db (ADR-0029), so the append is awaited — but the PONC
+    // invariant survives because `RunSettleCoordinator.settle` reads the PONC
+    // *after* its own `run_facts` append. Under the single-writer queue's strict
+    // FIFO, a racing settle whose fact lands at a higher seq than this land fact
+    // enqueued its append behind ours, so by the time its append resolves this
+    // append has already resolved and the `writePonc` below (synchronous, in this
+    // append's continuation) has already run — the racing settle observes the
+    // freeze and is clamped to audit-only. `journal` (LandingJournalStore) is
+    // still the sync Db; the phase-transition writes below are on the async
+    // RunStore and run only after the freeze, so a concurrent settle during those
+    // awaits already sees the PONC frozen.
+    const landFact = await this.runFacts.append(run.id, landFactType, { ...landProjection }, now());
     this.journal.writePonc(run.id, landFact.seq, now());
 
     // Step 1: record the landing phase + a lifecycle event. Now that RunStore is

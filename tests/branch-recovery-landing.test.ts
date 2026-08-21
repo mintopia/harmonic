@@ -90,8 +90,8 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     return { taskId: task.id, runId: run.id };
   }
 
-  const facts = (runId: number) => new RunFactStore(server.app.ctx.db).list(runId);
-  const factOfType = (runId: number, type: string) => facts(runId).find((f) => f.type === type);
+  const facts = (runId: number) => new RunFactStore(server.app.ctx.asyncDb).list(runId);
+  const factOfType = async (runId: number, type: string) => (await facts(runId)).find((f) => f.type === type);
 
   const lifecycleEvents = async (runId: number): Promise<Array<{ event: string; [k: string]: unknown }>> =>
     (await server.api('GET', `/api/runs/${runId}/events`)).body.events
@@ -145,11 +145,11 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
 
     // Structured evidence: a `branch-recovery` fact + `recovery-landed` event,
     // and NO `branch-violation` (this was recoverable, not ambiguous).
-    const recovery = factOfType(runId, 'branch-recovery');
+    const recovery = await factOfType(runId, 'branch-recovery');
     expect(recovery).toBeDefined();
     expect(JSON.parse(recovery!.payload).reason).toBe('head-detached-on-owned-ref');
     expect((await lifecycleEvents(runId)).some((e) => e.event === 'recovery-landed')).toBe(true);
-    expect(factOfType(runId, 'branch-violation')).toBeUndefined();
+    expect(await factOfType(runId, 'branch-violation')).toBeUndefined();
 
     // Deterministic: a single forward pass validating → verifying → landing,
     // with no second executing turn — recovery was git, not an agent re-merge.
@@ -187,8 +187,8 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     // Escalated via the #151 fallback, and never deterministically recovered:
     // the intended branch never moved and no recovery fact/event was written.
     expect(server.app.ctx.tasks.get(taskId).escalated).toBe(true);
-    expect(factOfType(runId, 'branch-violation')).toBeDefined();
-    expect(factOfType(runId, 'branch-recovery')).toBeUndefined();
+    expect(await factOfType(runId, 'branch-violation')).toBeDefined();
+    expect(await factOfType(runId, 'branch-recovery')).toBeUndefined();
     expect((await lifecycleEvents(runId)).some((e) => e.event === 'recovery-landed')).toBe(false);
     expect(git(repo, 'rev-parse', 'main')).toBe(startOid);
   });
