@@ -92,10 +92,12 @@ export const searchField =
  * (0.05em), so don't add `tracking-*` on top of it, same as `displayTitle`. */
 export const labelType = 'text-label font-semibold uppercase';
 
-/** Page-level heading (Display role) — one per view. Weight 700; the tracking
- * comes from the `--text-display` token (-0.015em), so don't add `tracking-*`
- * on top of it — that's what the retired Ledger did. */
-export const displayTitle = 'font-display text-display font-bold';
+/** Page-level heading (Display role) — one per view. Weight 750 (the top of the
+ * Three Weights ramp, DESIGN.md §3) via `font-display-weight`, not an ad-hoc
+ * `font-bold` (700); the tracking comes from the `--text-display` token
+ * (-0.015em), so don't add `tracking-*` on top of it — that's what the retired
+ * Ledger did. */
+export const displayTitle = 'font-display text-display font-display-weight';
 
 /** The title of a dialog or a floating panel — its own view, so the Display
  * role, same as a page title. Pair with the surface's own bottom margin, e.g.

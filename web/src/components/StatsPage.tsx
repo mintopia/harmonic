@@ -215,7 +215,9 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
               § Stats), big sans + tabular-nums, never mono (Mono Is Code). */}
           <div className="mb-5">
             <StatLabel>Cost · {range}</StatLabel>
-            <div className={`text-hero font-bold tabular-nums ${costText == null ? 'text-faint' : 'text-ink'}`}>
+            <div
+              className={`text-hero font-display-weight tabular-nums ${costText == null ? 'text-faint' : 'text-ink'}`}
+            >
               {costText ?? '—'}
             </div>
           </div>

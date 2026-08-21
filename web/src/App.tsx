@@ -632,7 +632,7 @@ export function App() {
         >
           <BrandMark />
           <span
-            className={`whitespace-nowrap font-display text-title font-bold tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
+            className={`whitespace-nowrap font-display text-title font-display-weight tracking-tight ${railCollapsed ? 'rail:hidden' : ''}`}
           >
             {instanceName}
           </span>

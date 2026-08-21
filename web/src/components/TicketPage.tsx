@@ -344,9 +344,9 @@ function PromptTab({ run }: { run: Run | undefined }) {
     );
   }
   return (
-    <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 font-data text-data text-ink">
+    <div className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 text-body text-ink tabular-nums">
       {run.prompt}
-    </pre>
+    </div>
   );
 }
 

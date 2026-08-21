@@ -63,8 +63,8 @@ colors:
   ink-dark: "#EDEFF6"
   muted-light: "#565A72"
   muted-dark: "#9BA0B5"
-  faint-light: "#767A8E"
-  faint-dark: "#7E8496"
+  faint-light: "#696D7E"
+  faint-dark: "#83899C"
   running-text-light: "#A45606"
   running-dot-light: "#E08A0E"
   running-tint-light: "#FBEFD8"
@@ -184,7 +184,7 @@ One cobalt accent, a cool-neutral ground, and a semantic state-signal family. Ev
 - **Raised** (#EEF0F6 / #1F232D): inset fills — count pills, hovers, neutral chips.
 - **Field** (#FFFFFF / #14161D): form controls only — read as a surface you type *into*. See `--hm-field` in `web/src/index.css`.
 - **Hairline** (#E7E9F1 / #242A35): shared-edge dividers and the inset row-separators *inside* a panel. **Edge** (#D6D9E4 / #2E3440): interactive borders (fields, ghost buttons, run chips). **Switch off-track** (#8B8D9C / #666980): pitched dark enough to hold ≥3:1 against both the white knob and the surface behind it.
-- **Ink** (#141627 / #EDEFF6): primary text. **Muted** (#565A72 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#767A8E / #7E8496): icon-only affordances, disabled text, and quiet metadata lines (branch names, ids, timestamps, zero counts, the dialog close ✕) — held at ≥4.5:1 on every neutral background.
+- **Ink** (#141627 / #EDEFF6): primary text. **Muted** (#565A72 / #9BA0B5): secondary text — the informational floor, ≥4.5:1. **Faint** (#696D7E / #83899C, the issue-#87 retune — light darkened, dark lightened from the original #767A8E / #7E8496 so it clears the floor on the retuned Raised): icon-only affordances, disabled text, and quiet metadata lines (branch names, ids, timestamps, zero counts, the dialog close ✕) — held at ≥4.5:1 on every neutral background.
 
 ### State-signal family (belongs to the work, not the chrome)
 Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, and run-rail chip states:
