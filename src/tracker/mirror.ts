@@ -98,14 +98,20 @@ export async function mirrorScan(
   // `Blocked by: #<epic>` edge is never projected; a re-poll also removes any
   // that pre-date this rule, since reconcileMirroredDeps deletes edges not in
   // the desired set).
-  const epicRefs = new Set(tickets.map((t) => t.parent).filter((p): p is number => p != null));
+  const epicRefs = new Set<number>();
+  await forEachYielding(tickets, (ticket) => {
+    if (ticket.parent !== null) epicRefs.add(ticket.parent);
+  });
   // Sequential upsert: the writes serialize through the single-writer queue
   // anyway, and the reconcile pass below reads `idByRef` built from every row.
   const rows: TaskRow[] = [];
   await forEachYielding(issues, async (t) => {
     rows.push(await tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number)), workspaceId));
   });
-  const idByRef = new Map(rows.map((r) => [r.trackerRef!, r.id]));
+  const idByRef = new Map<number, number>();
+  await forEachYielding(rows, (row) => {
+    if (row.trackerRef !== null) idByRef.set(row.trackerRef, row.id);
+  });
   await forEachYielding(issues, async (issue, i) => {
     const blockerIds = issue.blockedBy
       .filter((b) => !epicRefs.has(b.number))
@@ -114,7 +120,11 @@ export async function mirrorScan(
     await tasks.reconcileMirroredDeps(rows[i]!.id, blockerIds);
   });
   // Re-fetch: reconcile may have re-derived blocked⇄ready after the upsert snapshot.
-  return Promise.all(rows.map((r) => tasks.get(r.id)));
+  const refreshed: TaskRow[] = [];
+  await forEachYielding(rows, async (row) => {
+    refreshed.push(await tasks.get(row.id));
+  });
+  return refreshed;
 }
 
 export interface DerivedMap {

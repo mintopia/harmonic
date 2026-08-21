@@ -441,7 +441,10 @@ export class TaskService {
     workspaceId: number,
     containers: Array<{ trackerRef: number; facts: TrackerFacts }>,
   ): Promise<void> {
-    const refs = containers.map((container) => container.trackerRef);
+    const refs: number[] = [];
+    await forEachYielding(containers, (container) => {
+      refs.push(container.trackerRef);
+    });
     await this.db.transaction(async (tx) => {
       await tx.delete(trackerContainers).where(
         refs.length === 0

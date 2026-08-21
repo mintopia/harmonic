@@ -107,7 +107,7 @@ export class TrackerPoller {
     if (this.epics) {
       try {
         const persisted = await persistedTickets(
-          (await this.tasks.list({ workspaceId: this.workspaceId })).filter((task) => task.origin === 'mirrored'),
+          await this.tasks.list({ workspaceId: this.workspaceId }),
           await this.tasks.listTrackerContainers(this.workspaceId),
         );
         await this.epics.reconcile(persisted, mirrored);
