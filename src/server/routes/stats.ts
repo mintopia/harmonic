@@ -99,21 +99,28 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const to = req.query.to ?? Date.now();
       // runs carries no workspaceId of its own (it inherits via its Task —
       // ADR-0008), so scoping by Workspace means joining tasks.
-      const rows = (
-        workspaceId === undefined
-          ? ctx.db
-              .select()
-              .from(runs)
-              .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to)))
-              .all()
-          : ctx.db
-              .select({ runs })
-              .from(runs)
-              .innerJoin(tasks, eq(runs.taskId, tasks.id))
-              .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to), eq(tasks.workspaceId, workspaceId)))
-              .all()
-              .map((r) => r.runs)
-      );
+      //
+      // This range scan over the (large, growing) runs table is the heavy
+      // aggregate #213 routes off the event-loop-blocking sync path: it runs on
+      // the concurrent libsql read connection (ADR-0029 §5), so a big scan can
+      // never freeze in-flight HTTP the way a synchronous better-sqlite3 `.all()`
+      // would. Reads see the last committed WAL snapshot of the sync writer.
+      const rows = await ctx.asyncReadDb.read(async (db) => {
+        if (workspaceId === undefined) {
+          return db
+            .select()
+            .from(runs)
+            .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to)))
+            .all();
+        }
+        const joined = await db
+          .select({ runs })
+          .from(runs)
+          .innerJoin(tasks, eq(runs.taskId, tasks.id))
+          .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to), eq(tasks.workspaceId, workspaceId)))
+          .all();
+        return joined.map((r) => r.runs);
+      });
 
       const usages = rows
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))

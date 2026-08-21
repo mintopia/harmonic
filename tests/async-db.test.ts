@@ -6,6 +6,7 @@ import { eq, sql } from 'drizzle-orm';
 import { createClient } from '@libsql/client';
 import {
   openAsyncDb,
+  openAsyncReadHandle,
   QueryTimeoutError,
   isQueryTimeout,
   type AsyncDbHandle,
@@ -100,6 +101,34 @@ describe('openAsyncDb boot (ADR-0029 Expand)', () => {
       expect(all).toHaveLength(1);
     } finally {
       await again.close();
+    }
+  });
+});
+
+describe('openAsyncReadHandle — concurrent-read attach (#213, ADR-0029 §5)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-async-read-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('attaches to an already-booted DB and reads rows the sync writer committed', async () => {
+    // The sync driver owns boot (migrate + backfill) and writes a run…
+    const sync = openDb(dir);
+    const runId = seedRunSync(sync);
+
+    // …and a plain read-attach connection sees that committed row over WAL,
+    // having run no migrate/backfill of its own.
+    const read = openAsyncReadHandle(dir);
+    try {
+      const seen = await read.read((db) => db.select().from(runs).where(eq(runs.id, runId)).all());
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ id: runId, state: 'running' });
+    } finally {
+      await read.close();
     }
   });
 });
