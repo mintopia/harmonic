@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cacheHitRate, failureRate, orderedRunStates, subagentShare, usageBars } from '../web/src/stats-model.js';
+import {
+  cacheHitRate,
+  failureRate,
+  orderedFailureReasons,
+  orderedRunStates,
+  reliabilityStates,
+  subagentShare,
+  usageBars,
+} from '../web/src/stats-model.js';
 import { formatAvgCostPerRun } from '../web/src/cost.js';
 import type { Cost } from '../web/src/types.js';
 
@@ -129,5 +137,48 @@ describe('orderedRunStates', () => {
 
   it('returns [] when every state has a zero count', () => {
     expect(orderedRunStates({ draft: 0, running: 0 })).toEqual([]);
+  });
+});
+
+describe('reliabilityStates', () => {
+  it('splits review-rejected out of the folded-in failed count, after failed, in canonical order', () => {
+    // runsByState.failed folds in the 2 rejections; failedRuns is failed-only (3).
+    const segments = reliabilityStates({ completed: 5, failed: 5, cancelled: 1 }, 3, 2);
+    expect(segments).toEqual([
+      { state: 'completed', count: 5 },
+      { state: 'failed', count: 3 },
+      { state: 'rejected', count: 2 },
+      { state: 'cancelled', count: 1 },
+    ]);
+  });
+
+  it('drops the failed slice when every failure was a rejection, still showing rejected', () => {
+    const segments = reliabilityStates({ completed: 2, failed: 1 }, 0, 1);
+    expect(segments).toEqual([
+      { state: 'completed', count: 2 },
+      { state: 'rejected', count: 1 },
+    ]);
+  });
+
+  it('omits the rejected slice entirely when there are no rejections', () => {
+    const segments = reliabilityStates({ completed: 2, failed: 1 }, 1, 0);
+    expect(segments).toEqual([
+      { state: 'completed', count: 2 },
+      { state: 'failed', count: 1 },
+    ]);
+  });
+});
+
+describe('orderedFailureReasons', () => {
+  it('orders buckets largest-first, ties by reason key, dropping zeros', () => {
+    expect(orderedFailureReasons({ failed: 4, escalate: 1, 'guardrail-trip': 1, unknown: 0 })).toEqual([
+      { reason: 'failed', count: 4 },
+      { reason: 'escalate', count: 1 },
+      { reason: 'guardrail-trip', count: 1 },
+    ]);
+  });
+
+  it('returns [] for an empty breakdown', () => {
+    expect(orderedFailureReasons({})).toEqual([]);
   });
 });

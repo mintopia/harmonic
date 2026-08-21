@@ -10,6 +10,8 @@ import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema } from '../schemas.js';
 import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
+import { failuresByReason, isExecutionFailure, isReviewRejected } from '../../domain/run-failure.js';
+import type { DispositionFact } from '../../domain/run-disposition.js';
 
 /**
  * Aggregating this range is synchronous JS on the shared event loop (issue
@@ -51,6 +53,8 @@ const daySeriesEntrySchema = z.object({
   tokens: z.number().meta({ example: 21850 }),
   /** Count of runs started that day, whatever their state. */
   runs: z.number().meta({ example: 3 }),
+  /** Execution failures started that day (failed-only, ADR-0028); the fails/day trend. */
+  fails: z.number().meta({ example: 1 }),
 });
 
 const statsResponseSchema = z.object({
@@ -69,6 +73,21 @@ const statsResponseSchema = z.object({
    * rejected Runs stay out of.
    */
   failedRuns: z.number().meta({ example: 1 }),
+  /**
+   * Review-rejected Run count (ADR-0028): Runs whose `review` is `rejected`. A
+   * rejection settles the Run to `state:'failed'`, so `runsByState.failed` folds
+   * these in — this count lets the reliability breakdown split them back out as
+   * their own slice, kept out of the failure numerator (a reviewer's judgment
+   * call, not an execution failure).
+   */
+  rejectedRuns: z.number().meta({ example: 1 }),
+  /**
+   * Execution failures (failed-only) bucketed by reason: the winning terminal
+   * disposition (`failed`, `escalate`, `guardrail-trip`, `process-death`, …),
+   * with an `unknown` bucket for a bare failure carrying no fact or reason.
+   * Empty when nothing failed in the range.
+   */
+  failuresByReason: z.record(z.string(), z.number()).meta({ example: { failed: 4, escalate: 1, 'process-death': 1 } }),
   /**
    * p50 / p95 active-execution duration (ms) over the range's Runs — `agent-finish`
    * run_fact ts minus Run start, excluding review-park + landing wait, with a
@@ -192,6 +211,42 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         if (prev === undefined || f.ts < prev) agentFinishTs.set(f.runId, f.ts);
       }
 
+      // Every fact of the range's failed Runs, for the by-reason breakdown below:
+      // the winning terminal disposition (issue #197) is derived from these, not
+      // from the high-cardinality free-text `runs.reason`. Bounded to failed Runs
+      // (`runs.state = 'failed'`) so a wide range doesn't drag in the whole log,
+      // and read here — before the #200 yield fence — alongside the other blocking
+      // reads. Same range-join predicate as above (an "All time" range can hold
+      // more Runs than SQLite's bound-parameter limit).
+      const failFactRows =
+        workspaceId === undefined
+          ? ctx.db
+              .select({ runId: runFacts.runId, seq: runFacts.seq, type: runFacts.type })
+              .from(runFacts)
+              .innerJoin(runs, eq(runFacts.runId, runs.id))
+              .where(and(eq(runs.state, 'failed'), gte(runs.startedAt, from), lte(runs.startedAt, to)))
+              .all()
+          : ctx.db
+              .select({ runId: runFacts.runId, seq: runFacts.seq, type: runFacts.type })
+              .from(runFacts)
+              .innerJoin(runs, eq(runFacts.runId, runs.id))
+              .innerJoin(tasks, eq(runs.taskId, tasks.id))
+              .where(
+                and(
+                  eq(runs.state, 'failed'),
+                  gte(runs.startedAt, from),
+                  lte(runs.startedAt, to),
+                  eq(tasks.workspaceId, workspaceId),
+                ),
+              )
+              .all();
+      const factsByRun = new Map<number, DispositionFact[]>();
+      for (const f of failFactRows) {
+        const list = factsByRun.get(f.runId);
+        if (list) list.push({ seq: f.seq, type: f.type });
+        else factsByRun.set(f.runId, [{ seq: f.seq, type: f.type }]);
+      }
+
       // Hand the loop back between the blocking reads and the heavy JS
       // aggregation below (issue #200), so a large Stats request interleaves
       // with other in-flight work instead of blocking it start-to-finish.
@@ -208,7 +263,15 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // Failure rate numerator (ADR-0028): failed-only. A review rejection writes
       // `state:'failed'` together with `review:'rejected'`, so filtering by state
       // alone silently counts rejections as execution failures — exclude them.
-      const failedRuns = rows.filter((r) => r.state === 'failed' && r.review !== 'rejected').length;
+      const failures = rows.filter(isExecutionFailure);
+      const failedRuns = failures.length;
+      // Review rejections, split back out from the folded-in `runsByState.failed`
+      // so the reliability breakdown shows them as their own (non-failure) slice.
+      const rejectedRuns = rows.filter(isReviewRejected).length;
+      // Execution failures bucketed by their winning terminal disposition (#197).
+      const failReasons = failuresByReason(
+        failures.map((r) => ({ facts: factsByRun.get(r.id) ?? [], reason: r.reason })),
+      );
 
       // Active-execution duration (ADR-0028), from the agent-finish facts read
       // above: the fact ts − Run start, with a wall-clock fallback.
@@ -249,6 +312,8 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         runCount: rows.length,
         runsByState,
         failedRuns,
+        rejectedRuns,
+        failuresByReason: failReasons,
         durationMs,
         totals: merged?.totals ?? null,
         models: merged?.models ?? {},

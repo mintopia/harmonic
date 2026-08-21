@@ -25,6 +25,13 @@ const usageJson = (input: number, output: number, cacheRead = 0, cacheWrite = 0)
   } satisfies RunUsage);
 
 const run = (startedAt: number, usage: string | null): DaySeriesRun => ({ startedAt, usage });
+// A run carrying its terminal state/review, for the per-day fails count.
+const outcome = (startedAt: number, state: string, review: string | null = null): DaySeriesRun => ({
+  startedAt,
+  usage: null,
+  state,
+  review,
+});
 
 // A pricing stub that just tallies $1 per run in the bucket — enough to prove
 // the injected pricer is called once per day with that day's rows.
@@ -88,5 +95,28 @@ describe('buildDaySeries', () => {
 
   it('returns an empty series for no runs', () => {
     expect(buildDaySeries([], perRunDollar)).toEqual([]);
+  });
+
+  it('counts failed-only runs per day, excluding rejected/cancelled/completed (ADR-0028)', () => {
+    const series = buildDaySeries(
+      [
+        outcome(at(2026, 0, 10, 8), 'failed'), // genuine failure
+        outcome(at(2026, 0, 10, 9), 'failed', 'rejected'), // review rejection — not a fail
+        outcome(at(2026, 0, 10, 10), 'cancelled'), // operator cancel — not a fail
+        outcome(at(2026, 0, 10, 11), 'completed'),
+        outcome(at(2026, 0, 11, 8), 'failed'),
+        outcome(at(2026, 0, 11, 9), 'failed'),
+      ],
+      perRunDollar,
+    );
+    expect(series.map((s) => s.day)).toEqual([midnight(2026, 0, 10), midnight(2026, 0, 11)]);
+    expect(series.map((s) => s.fails)).toEqual([1, 2]);
+    // Every day still counts every run for the run total, whatever its state.
+    expect(series.map((s) => s.runs)).toEqual([4, 2]);
+  });
+
+  it('reports 0 fails for a day whose rows omit state (usage-only callers)', () => {
+    const series = buildDaySeries([run(at(2026, 0, 10, 8), usageJson(10, 1))], perRunDollar);
+    expect(series[0]?.fails).toBe(0);
   });
 });

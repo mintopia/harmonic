@@ -22,6 +22,50 @@ export function orderedRunStates(runsByState: Record<string, number>): RunStateC
   return [...known, ...unknown];
 }
 
+/**
+ * The run-states breakdown regrouped for the reliability donut (ADR-0028):
+ * `runsByState.failed` folds review-rejected Runs in with genuine execution
+ * failures, so split it back apart — `failed` becomes the failed-only count and
+ * a distinct `rejected` slice carries the rejections. Cancelled stays its own
+ * slice (already a distinct state). Everything is shown so the failure rate can
+ * be reconciled against the whole picture, never a hidden number. Zero-count
+ * slices are dropped, canonical order preserved with `rejected` following
+ * `failed`.
+ */
+export function reliabilityStates(
+  runsByState: Record<string, number>,
+  failedRuns: number,
+  rejectedRuns: number,
+): RunStateCount[] {
+  const regrouped: Record<string, number> = { ...runsByState, failed: failedRuns };
+  const ordered = orderedRunStates(regrouped);
+  if (rejectedRuns <= 0) return ordered;
+  const out: RunStateCount[] = [];
+  for (const s of ordered) {
+    out.push(s);
+    if (s.state === 'failed') out.push({ state: 'rejected', count: rejectedRuns });
+  }
+  // A run set with rejections but no failed-only Runs has no `failed` slice to
+  // trail — append the rejected slice so it is never dropped.
+  if (!ordered.some((s) => s.state === 'failed')) out.push({ state: 'rejected', count: rejectedRuns });
+  return out;
+}
+
+/** One reason bucket of the failures-by-reason breakdown. */
+export interface FailureReasonCount {
+  reason: string;
+  count: number;
+}
+
+/** The failures-by-reason breakdown ordered largest-first (ties by reason key),
+ *  zero-count buckets dropped — the shape the reliability bar chart renders. */
+export function orderedFailureReasons(byReason: Record<string, number>): FailureReasonCount[] {
+  return Object.entries(byReason)
+    .filter(([, count]) => count > 0)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
+}
+
 /** The root-session bucket in a per-agent breakdown; everything else is a Subagent. */
 export const ROOT_AGENT = 'root';
 
