@@ -81,6 +81,33 @@ function mergeToolView(prev: ToolCallView, next: ToolCallView): ToolCallView {
   };
 }
 
+/**
+ * The transcript renders a bounded tail, not the whole run. A long run streams
+ * many thousands of chunk-level events, and coalescing the entire array on every
+ * new event is O(n²) over the run — the cost the operator feels as the panel
+ * stiffening late in a long turn. Capping the coalesce input to the most recent
+ * `MAX_STREAM_EVENTS` makes each update O(cap) regardless of run length, and
+ * bounds the rendered node count with it. The operator watches the live tail, so
+ * dropping the ancient head costs nothing they're reading.
+ */
+export const MAX_STREAM_EVENTS = 2000;
+
+/**
+ * Coalesce only the most recent `cap` events, reporting how many older events
+ * were dropped so the caller can surface the elision. Order and per-id folding
+ * within the tail are identical to {@link coalesceEvents} over the full array;
+ * the only difference is a tool call whose opening event fell before the cut
+ * renders from its first surviving update instead of merging into a hidden row.
+ */
+export function coalesceTail<E extends StreamEvent>(
+  events: E[],
+  cap: number = MAX_STREAM_EVENTS,
+): { hidden: number; items: StreamItem<E>[] } {
+  const hidden = Math.max(0, events.length - cap);
+  const items = coalesceEvents(hidden > 0 ? events.slice(hidden) : events);
+  return { hidden, items };
+}
+
 export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E>[] {
   const items: StreamItem<E>[] = [];
   // toolCallId → index in `items`, so an update folds into its call's row.
