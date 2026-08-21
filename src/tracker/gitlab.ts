@@ -184,18 +184,14 @@ export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGla
       };
     },
 
-    async claim(ticket: Ticket) {
+    async claim(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
       await reassign(ticket.number, (ids) => ids.add(uid));
     },
 
-    async release(ticket: Ticket) {
+    async release(ticket: TicketRef) {
       const uid = (await ensureMe()).id;
       await reassign(ticket.number, (ids) => ids.delete(uid));
-    },
-
-    async whoami() {
-      return (await ensureMe()).username;
     },
 
     async close(ticket: TicketRef, comment: string) {

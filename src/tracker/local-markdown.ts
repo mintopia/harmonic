@@ -1,11 +1,7 @@
-import { execFile } from 'node:child_process';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { basename, join } from 'node:path';
-import { promisify } from 'node:util';
 import { type Ticket, type TicketRef, type TicketState, type TrackerAdapter } from './adapter.js';
-
-const execFileAsync = promisify(execFile);
 
 /** A `**Status:**` word that means the ticket is done. Read-only: we never write it. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
@@ -93,10 +89,8 @@ async function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): Promis
  */
 export function localMarkdownAdapter(
   dir: string,
-  opts: { identity?: string; featureIndex?: FeatureIndex } = {},
+  opts: { featureIndex?: FeatureIndex } = {},
 ): TrackerAdapter {
-  let identity: string | undefined = opts.identity;
-
   return {
     name: 'local-markdown',
 
@@ -117,14 +111,10 @@ export function localMarkdownAdapter(
     async close() {},
     async reopen() {},
 
-    async whoami() {
-      if (identity !== undefined) return identity;
-      return (identity = await gitUser(dir));
-    },
   };
 }
 
-// --- id + git identity ---
+// --- ids ---
 
 const idOf = (name: string): number => parseInt(name, 10);
 
@@ -134,20 +124,6 @@ const slugTitle = (path: string): string =>
     .replace(/^\d+[-_.]?/, '')
     .replace(/[-_]/g, ' ')
     .trim();
-
-/** Harmonic's login on this tracker, for the foreign-assignee filter. Read-only, so no assignee is ever written; falls back to `harmonic`. */
-async function gitUser(cwd: string): Promise<string> {
-  for (const key of ['user.email', 'user.name']) {
-    try {
-      const { stdout } = await execFileAsync('git', ['config', key], { cwd });
-      const v = stdout.trim();
-      if (v) return v;
-    } catch {
-      /* not a repo / unset — try the next key */
-    }
-  }
-  return 'harmonic';
-}
 
 // --- directory resolution ---
 

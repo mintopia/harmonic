@@ -1,10 +1,11 @@
-import type { Ticket, TrackerAdapter } from './adapter.js';
+import type { TicketRef, TrackerAdapter } from './adapter.js';
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
+import { forEachYielding } from '../reliability/yield.js';
 
 /**
  * The tracker-facing half of afk mirrored-Task execution (issue #32). Owns the
- * advisory GitHub assignment: the flip→recheck→claim pre-spawn step and the
+ * advisory tracker assignment: the post-lock claim advertisement and the
  * per-poll reconcile that drives the
  * tracker toward Harmonic's local intent (running ⇒ claimed, handed-back ⇒
  * un-assigned). The assignment is never a lock — the local ready→running flip
@@ -13,39 +14,27 @@ import type { TaskService } from '../domain/tasks.js';
  */
 export class MirrorCoordinator {
   private adapter: TrackerAdapter | null = null;
-  private byRef = new Map<number, Ticket>();
-  /** Harmonic's own tracker login — the assignee `claim` places; resolved once. Null until then. */
-  private me: string | null = null;
 
-  /** One coordinator per tracker-enabled Workspace (issue #45): its scan cache and reconcile see that Workspace's Tasks only. */
+  /** One coordinator per tracker-enabled Workspace (issue #45), scoped to that Workspace's Tasks and adapter. */
   constructor(
     private readonly tasks: TaskService,
     private readonly workspaceId: number,
   ) {}
 
-  /** Cache the poll's adapter + scan and resolve our identity for claim reconciliation. */
-  async observe(adapter: TrackerAdapter, scan: Ticket[]): Promise<void> {
+  /** Remember the adapter used for best-effort assignment writes. */
+  async observe(adapter: TrackerAdapter): Promise<void> {
     this.adapter = adapter;
-    this.byRef = new Map(scan.map((t) => [t.number, t]));
-    if (this.me === null) this.me = await adapter.whoami().catch(() => null);
-  }
-
-  /** Harmonic holds the claim on this ticket. Unknowable until our identity resolves. */
-  private mine(ticket: Ticket): boolean {
-    return this.me !== null && ticket.assignees.includes(this.me);
   }
 
   /**
-   * Pre-spawn step (mirrored afk): refresh the cached ticket, then place the
-   * advisory claim. Assignment is not an eligibility signal (issue #230,
-   * ADR-0030), and a failed claim does not block the locally claimed Task.
+   * Post-lock step for a mirrored afk Task: advertise the local claim. No
+   * tracker read participates in the pick (issue #232, ADR-0030), and a failed
+   * write does not block the locally claimed Task.
    */
-  async recheckAndClaim(task: TaskRow): Promise<void> {
+  async advertiseClaim(task: TaskRow): Promise<void> {
     if (!this.adapter || task.trackerRef == null) return;
-    const fresh = await this.adapter.readTicket({ number: task.trackerRef, title: task.prompt, state: 'open' });
-    this.byRef.set(fresh.number, fresh);
     try {
-      await this.adapter.claim(fresh);
+      await this.adapter.claim(ticketRef(task, task.trackerRef));
     } catch {
       // Advisory only — proceed to spawn and let reconcile retry the assignment.
     }
@@ -58,18 +47,22 @@ export class MirrorCoordinator {
    * fails orphaned runs at boot). Completion is left to the close path (D5).
    */
   async reconcile(): Promise<void> {
-    if (!this.adapter) return;
-    for (const task of await this.tasks.list({ workspaceId: this.workspaceId })) {
-      if (task.origin !== 'mirrored' || task.trackerRef == null) continue;
-      const ticket = this.byRef.get(task.trackerRef);
-      if (!ticket) continue;
-      if (task.state === 'running' && !this.mine(ticket)) {
-        await this.adapter.claim(ticket).catch(() => {});
-      } else if (handedBack(task) && this.mine(ticket)) {
-        await this.adapter.release(ticket).catch(() => {});
+    const adapter = this.adapter;
+    if (!adapter) return;
+    await forEachYielding(await this.tasks.list({ workspaceId: this.workspaceId }), async (task) => {
+      if (task.origin !== 'mirrored' || task.trackerRef == null) return;
+      const ticket = ticketRef(task, task.trackerRef);
+      if (task.state === 'running') {
+        await adapter.claim(ticket).catch(() => {});
+      } else if (handedBack(task)) {
+        await adapter.release(ticket).catch(() => {});
       }
-    }
+    });
   }
+}
+
+function ticketRef(task: TaskRow, number: number): TicketRef {
+  return { number, title: task.prompt, state: 'open' };
 }
 
 /**

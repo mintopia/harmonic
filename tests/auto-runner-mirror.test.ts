@@ -52,11 +52,11 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     const assigned = await tasks.upsertMirrored(mirroredAfk(44));
     const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
 
-    const throwRefs = new Set([45]); // recheckAndClaim throws → must still spawn
-    const rechecks: Array<{ ref: number | null; stateAtRecheck: string }> = [];
+    const throwRefs = new Set([45]); // advertiseClaim throws → must still spawn
+    const claims: Array<{ ref: number | null; stateAtClaim: string }> = [];
     const mirror: MirrorClaim = {
-      recheckAndClaim: async (t) => {
-        rechecks.push({ ref: t.trackerRef, stateAtRecheck: t.state });
+      advertiseClaim: async (t) => {
+        claims.push({ ref: t.trackerRef, stateAtClaim: t.state });
         if (t.trackerRef != null && throwRefs.has(t.trackerRef)) throw new Error('claim exploded');
       },
     };
@@ -91,9 +91,9 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     expect(startedIds).not.toContain(hitl.id);
 
     // Every recheck saw the Task already flipped to running → flip precedes claim.
-    expect(rechecks.length).toBeGreaterThan(0);
-    for (const r of rechecks) expect(r.stateAtRecheck).toBe('running');
-    expect(rechecks.map((r) => r.ref).sort()).toEqual([42, 44, 45]);
+    expect(claims.length).toBeGreaterThan(0);
+    for (const claim of claims) expect(claim.stateAtClaim).toBe('running');
+    expect(claims.map((claim) => claim.ref).sort()).toEqual([42, 44, 45]);
   });
 });
 

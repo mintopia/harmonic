@@ -50,8 +50,8 @@ function occupiedDirectContexts(tasks: readonly TaskRow[]): Map<string, TaskRow>
  * pick-eligible as before.
  */
 export interface MirrorClaim {
-  /** Pre-spawn: refresh the ticket and place Harmonic's advisory claim. */
-  recheckAndClaim(task: TaskRow): Promise<void>;
+  /** Post-lock: advertise Harmonic's local claim without reading tracker ownership. */
+  advertiseClaim(task: TaskRow): Promise<void>;
 }
 
 /**
@@ -70,9 +70,9 @@ export interface MirrorClaim {
  *
  * A mirrored afk Task's pick is more than a spawn: the predicate is
  * `drive ≠ hitl ∧ deps satisfied (ready)`, and the sequence is
- * flip(ready→running) — the lock — then readTicket refresh and advisory claim
- * before spawning (issues #32 and #230). Assignment is never an eligibility
- * signal (ADR-0030).
+ * flip(ready→running) — the lock — then best-effort advisory claim before
+ * spawning (issues #32, #230, and #232). Assignment is never read as an
+ * eligibility or ownership signal (ADR-0030).
  */
 export class AutoRunner {
   private scheduled = false;
@@ -196,7 +196,7 @@ export class AutoRunner {
 
   /**
    * Start one picked Task. Native: flip + spawn atomically (unchanged). Mirrored
-   * afk: flip (the lock) → recheck → advisory claim → spawn, awaited so the run
+   * afk: flip (the lock) → advisory claim → spawn, awaited so the run
    * exists before the loop re-checks the slot count.
    */
   private async startPicked(task: TaskRow, skip: Set<number>): Promise<void> {
@@ -212,9 +212,9 @@ export class AutoRunner {
     }
     await this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write
     try {
-      await this.mirror.recheckAndClaim(await this.taskService.get(task.id));
+      await this.mirror.advertiseClaim(await this.taskService.get(task.id));
     } catch {
-      // readTicket/claim failed — proceed; reconcile retries the assignment.
+      // Advisory claim failed — proceed; reconcile retries the assignment.
     }
     try {
       await this.runner.launchClaimed(task.id);

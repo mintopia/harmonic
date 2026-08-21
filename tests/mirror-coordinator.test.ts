@@ -54,7 +54,6 @@ function fakeAdapter(opts: { claimThrows?: boolean } = {}) {
     release: async (t) => {
       calls.release.push(t.number);
     },
-    whoami: async () => 'me',
     close: async () => {},
     reopen: async () => {},
   };
@@ -78,53 +77,49 @@ describe('MirrorCoordinator (issue #32)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('recheckAndClaim: assignment never blocks a claim, and a failed claim still spawns', async () => {
+  it('advertiseClaim: writes the claim without reading ticket assignment or identity', async () => {
     const task = await tasks.upsertMirrored(mirrored(7));
 
     const grabbed = fakeAdapter();
     grabbed.setRead(ticket(7, ['human']));
     const coordA = new MirrorCoordinator(tasks, wsId);
-    await coordA.observe(grabbed.adapter, [ticket(7, [])]);
-    await expect(coordA.recheckAndClaim(await tasks.get(task.id))).resolves.toBeUndefined();
+    await coordA.observe(grabbed.adapter);
+    await expect(coordA.advertiseClaim(await tasks.get(task.id))).resolves.toBeUndefined();
     expect(grabbed.calls.claim).toEqual([7]);
+    expect(grabbed.calls.read).toEqual([]);
 
     const open = fakeAdapter();
     open.setRead(ticket(7, []));
     const coordB = new MirrorCoordinator(tasks, wsId);
-    await coordB.observe(open.adapter, [ticket(7, [])]);
-    await expect(coordB.recheckAndClaim(await tasks.get(task.id))).resolves.toBeUndefined();
+    await coordB.observe(open.adapter);
+    await expect(coordB.advertiseClaim(await tasks.get(task.id))).resolves.toBeUndefined();
     expect(open.calls.claim).toEqual([7]);
 
     const failing = fakeAdapter({ claimThrows: true });
     failing.setRead(ticket(7, []));
     const coordC = new MirrorCoordinator(tasks, wsId);
-    await coordC.observe(failing.adapter, [ticket(7, [])]);
-    await expect(coordC.recheckAndClaim(await tasks.get(task.id))).resolves.toBeUndefined();
+    await coordC.observe(failing.adapter);
+    await expect(coordC.advertiseClaim(await tasks.get(task.id))).resolves.toBeUndefined();
   });
 
-  it('reconcile: re-claims a running Task, releases an escalated one, leaves failed/foreign/completed alone', async () => {
+  it('reconcile: derives advisory writes from local Task state only', async () => {
     const running = await tasks.upsertMirrored(mirrored(10));
     await tasks.setState(running.id, 'running'); // claimed, but the scan shows it dropped
     const escalated = await tasks.upsertMirrored(mirrored(11));
     await tasks.escalate(escalated.id); // handed back to a human (retries exhausted / prompt), still ours
     const retrying = await tasks.upsertMirrored(mirrored(14));
     await tasks.setState(retrying.id, 'failed'); // mid Auto-Retry: bare failed is no longer a hand-back (issue #33)
-    await tasks.upsertMirrored(mirrored(12)); // a person owns it — hands off
+    await tasks.upsertMirrored(mirrored(12)); // ready locally, so no ownership write
     await tasks.upsertMirrored(mirrored(13, { closed: true })); // completed → close path (D5), not us
 
     const { adapter, calls } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);
-    await coord.observe(adapter, [
-      ticket(10, []), // running but unassigned → re-claim
-      ticket(11, ['me']), // escalated but still ours → release
-      ticket(14, ['me']), // failed (retrying) but still ours → hold the claim
-      ticket(12, ['human']), // foreign → untouched
-      ticket(13, ['me']), // completed → untouched
-    ]);
+    await coord.observe(adapter);
     await coord.reconcile();
 
     expect(calls.claim).toEqual([10]);
     expect(calls.release).toEqual([11]);
+    expect(calls.read).toEqual([]);
     expect(calls.release).not.toContain(14);
     expect(calls.claim).not.toContain(12);
     expect(calls.release).not.toContain(12);

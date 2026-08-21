@@ -39,7 +39,6 @@ function stubAdapter(tickets: Ticket[]) {
     readTicket: async () => tickets[0]!,
     claim: async () => {},
     release: async () => {},
-    whoami: async () => 'harmonic-bot',
     close: async () => {},
     reopen: async () => {},
   };
@@ -99,7 +98,6 @@ describe('TrackerPoller.poll', () => {
       readTicket: async () => ticket({ number: 9 }),
       claim: async () => {},
       release: async () => {},
-      whoami: async () => 'harmonic-bot',
       close: async () => {},
       reopen: async () => {},
     };

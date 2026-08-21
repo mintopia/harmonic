@@ -73,7 +73,6 @@ function fakeAdapter(ticketState: 'open' | 'closed' = 'open') {
     },
     claim: async () => {},
     release: async () => {},
-    whoami: async () => 'me',
     close: async (t) => {
       calls.close.push(t.number);
     },

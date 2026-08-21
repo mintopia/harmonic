@@ -88,14 +88,12 @@ export interface TrackerAdapter {
   readonly name: string;
   /** Whole tracker, one read. Poll = call on an interval; frontier/board derive from the array. */
   scan(): Promise<Ticket[]>;
-  /** Fresh single read for the pick-time recheck (scan → pick → readTicket → claim). */
+  /** Fresh single-ticket read for consumers that need current tracker details. */
   readTicket(ref: TicketRef): Promise<Ticket>;
-  /** Assign the ambient identity — the pre-spawn reservation. */
-  claim(ticket: Ticket): Promise<void>;
-  /** Un-assign the ambient identity — the hand-back when Harmonic drops drive (escalation / failure). */
-  release(ticket: Ticket): Promise<void>;
-  /** Harmonic's own login on this tracker (the assignee `claim` places), for the foreign-assignee filter. */
-  whoami(): Promise<string>;
+  /** Advertise local ownership by assigning the ambient identity. Best-effort; never a lock. */
+  claim(ticket: TicketRef): Promise<void>;
+  /** Remove the advisory assignment when Harmonic hands the Task back. */
+  release(ticket: TicketRef): Promise<void>;
   /**
    * Close the ticket with a comment — the landing step Harmonic runs itself
    * after verify + land (issue #139). Only the ticket's portable identity

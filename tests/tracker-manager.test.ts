@@ -63,7 +63,6 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         readTicket: async (r) => ticket(r.number),
         claim: async () => {},
         release: async () => {},
-        whoami: async () => 'me',
         close: async () => {},
         reopen: async () => {},
       };

@@ -83,8 +83,6 @@ ticket-local, so the `**Blocked by:** 01, 02` prose resolves directly against th
 
 The mattpocock format carries no assignee or closed field, so Harmonic's
 reservation/accept writes have nowhere to land: `claim`, `release`, and `close`
-**no-op**. Harmonic still tracks the reservation and accept in its own DB — they
-just don't persist back to the file. `whoami` returns the ambient git identity
-(`user.email`, else `user.name`, else `harmonic`) for the foreign-assignee
-filter, which is a pass-through since no assignee is ever written. There is no PR
-concept, so no `openPR`.
+**no-op**. Harmonic still tracks the reservation and accept in its own DB. They
+just don't persist back to the file. The scheduler does not read an assignee or
+identity for eligibility or ownership. There is no PR concept, so no `openPR`.

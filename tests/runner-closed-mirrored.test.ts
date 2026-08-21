@@ -55,7 +55,6 @@ function reopenSpy() {
     }),
     claim: async () => {},
     release: async () => {},
-    whoami: async () => 'me',
     close: async () => {},
     reopen: async (t) => {
       reopened.push(t.number);

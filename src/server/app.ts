@@ -543,8 +543,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // the coordinator of the Task's own Workspace poll loop (undefined ⇒ no live
   // loop ⇒ proceed without a tracker claim).
   const mirror: MirrorClaim = {
-    recheckAndClaim: async (task) => {
-      await trackerManagerRef?.coordinatorFor(task.workspaceId)?.recheckAndClaim(task);
+    advertiseClaim: async (task) => {
+      await trackerManagerRef?.coordinatorFor(task.workspaceId)?.advertiseClaim(task);
     },
   };
   const autoRunner = new AutoRunner(

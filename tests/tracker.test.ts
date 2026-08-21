@@ -347,7 +347,7 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
   it('is read-only: claim/release/close never touch the files', async () => {
     const root = mkTree();
     try {
-      const md = localMarkdownAdapter(root, { identity: 'jess' });
+      const md = localMarkdownAdapter(root);
       const file = join(root, 'harmonic-v1', 'issues', '02-local-markdown.md');
       const before = readFileSync(file, 'utf8');
       const ticket = await md.readTicket({ number: 2, title: '', state: 'open' });
@@ -515,7 +515,6 @@ describe('gitlab tracker adapter', () => {
     const gl = gitlabAdapter(cfg, run);
     await gl.claim({ number: 36 } as any);
     await gl.close({ number: 36 } as any, 'done');
-    expect(await gl.whoami()).toBe('harmonic-bot');
     const put = writes.find((w) => w.method === 'PUT' && w.path.includes('assignee_ids'))!;
     expect(put.path).toContain('7'); // our user id assigned
     expect(writes.some((w) => w.method === 'POST' && /\/issues\/36\/notes\?body=done/.test(w.path))).toBe(true);

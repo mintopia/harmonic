@@ -5,9 +5,9 @@ import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './a
 import { deriveMaps, mirrorScan, type DerivedMap } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 
-/** The mirror coordinator's poll-side surface (issue #32): cache the scan for picks, then reconcile assignments. */
+/** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
 export interface MirrorSync {
-  observe(adapter: TrackerAdapter, scan: Ticket[]): Promise<void>;
+  observe(adapter: TrackerAdapter): Promise<void>;
   reconcile(): Promise<void>;
 }
 
@@ -69,12 +69,12 @@ export class TrackerPoller {
   ) {}
 
   /**
-   * One poll cycle: resolve → scan → cache for picks → mirror 1:1 into this
-   * Workspace → poke → reconcile assignments (issue #32). The resolution is
+   * One poll cycle: resolve → scan → mirror 1:1 into this Workspace → poke →
+   * reconcile advisory assignments (issues #32 and #232). The resolution is
    * reported to {@link onResolved} either way (issue #83) so the Resolved
    * Tracker surface refreshes every poll, not just on the manager's reconcile.
-   * `observe` runs before the poke so a freshly-mirrored Task's pick sees the
-   * current assignees; `reconcile` runs after so it settles against final state.
+   * `observe` runs before the poke so a freshly mirrored Task can advertise a
+   * claim through the current adapter. `reconcile` runs after the local state settles.
    *
    * Single-flighted (issue #219): the interval timer and a manual `pollNow`
    * both call here, so a slow scan or a slow Epic-integration git op must not let
@@ -100,7 +100,7 @@ export class TrackerPoller {
     this.lastScan = tickets;
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
-    await this.mirror?.observe(adapter, tickets);
+    await this.mirror?.observe(adapter);
     const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId);
     // Set each ready Epic member's base branch before the poke (issue #159), so
     // the Auto-Runner forks its worktree Run from the Epic's integration branch.

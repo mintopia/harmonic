@@ -11,6 +11,20 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
+## Ownership and human reclaim
+
+Harmonic decides whether it owns work from the local Task and Run state. Tracker
+assignment is only a courtesy signal. Harmonic may add `@me`, but it never reads
+the assignee to decide whether a ticket can run or whether Harmonic owns it.
+
+To reclaim a queued ticket for a human, remove its `ready-for-agent` label before
+taking it over. For a running ticket, remove the label and wait until its current
+Run stops before taking over. Harmonic does not interrupt in-flight work during
+a tracker poll. Assigning yourself while leaving the label in place does not
+stop Harmonic from picking it. This intentionally differs from the upstream
+skills convention where `assignee = claim`. Do not run the raw skills as a
+second agent executor against tickets that remain labelled `ready-for-agent`.
+
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
 ## Pull requests as a triage surface
