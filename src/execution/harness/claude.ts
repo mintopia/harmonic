@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
@@ -190,6 +190,32 @@ function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): Pa
 
 const emptyTranscript = (): Transcript => ({ models: {}, contextTokens: null, completed: new Set<string>() });
 
+function claudeProjectsDir(sessionLogDir: string | undefined): string {
+  if (!sessionLogDir) return join(homedir(), '.claude', 'projects');
+  return resolve(sessionLogDir === '~' ? homedir() : sessionLogDir.replace(/^~\//, `${homedir()}/`));
+}
+
+/** Find Claude's actual transcript, avoiding its unstable cwd-slug convention. */
+async function resolveTranscriptPath(sessionLogDir: string | undefined, sessionId: string): Promise<string | null> {
+  const root = claudeProjectsDir(sessionLogDir);
+  try {
+    const projects = await readdir(root, { withFileTypes: true });
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      const candidate = join(root, project.name, `${sessionId}.jsonl`);
+      try {
+        await access(candidate);
+        return await realpath(candidate);
+      } catch {
+        // This project is not the Session's transcript directory.
+      }
+    }
+  } catch {
+    // No transcript root yet, or the harness has not flushed its log.
+  }
+  return null;
+}
+
 interface SubEntry {
   id: string;
   jsonlPath?: string;
@@ -318,6 +344,9 @@ export const claudeAdapter: HarnessAdapter = {
   ],
 
   usage: {
+    resolveTranscriptPath({ sessionLogDir, sessionId }) {
+      return resolveTranscriptPath(sessionLogDir, sessionId);
+    },
     /**
      * Parse the session transcript plus every Subagent under
      * `<sessionId>/subagents/` (recursively — nested spawns and

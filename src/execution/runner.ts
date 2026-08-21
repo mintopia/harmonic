@@ -2750,12 +2750,18 @@ export class Runner {
       const persistSession = async (harnessSessionId: string) => {
         void this.runStore.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
         try {
+          const transcriptResolver = adapterFor(task.harness).usage?.resolveTranscriptPath;
+          const transcriptPath = await transcriptResolver?.({
+            sessionLogDir: harness.sessionLogDir,
+            sessionId: harnessSessionId,
+          });
           const session = await this.sessionStore.recordDispatch({
             harness: task.harness,
             harnessSessionId,
             model: task.model,
             cwd: workspace.cwd,
             workspaceId: task.workspaceId,
+            ...(transcriptPath !== undefined ? { transcriptPath } : {}),
             mcpTemplates: mcpServers,
             capabilities: sessionInit,
             adapterVersion: adapterVersion(task.harness),
@@ -2763,6 +2769,9 @@ export class Runner {
           });
           sessionRowId = session.id;
           void this.runStore.update(run.id, { sessionRowId: session.id }).catch(() => {});
+          if (transcriptPath === null && transcriptResolver) {
+            void this.captureTranscriptPath({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
+          }
         } catch {
           /* best-effort; the Session is additive, the Run proceeds regardless */
         }
@@ -3320,6 +3329,25 @@ export class Runner {
     const reader = collector.createTailReader?.(input) ?? wholeFileReader(collector, input);
     this.readers.set(runId, reader);
     return reader;
+  }
+
+  /** Claude can create its JSONL just after `session/new`; retry a few times
+   * without holding up the Run, then leave the Session transcript-less. */
+  private async captureTranscriptPath(input: {
+    sessionId: string;
+    sessionRowId: number;
+    sessionLogDir: string | undefined;
+    transcriptResolver: (input: { sessionLogDir?: string | undefined; sessionId: string }) => Promise<string | null>;
+  }): Promise<void> {
+    for (const delayMs of [100, 500, 2_000]) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      const transcriptPath = await input.transcriptResolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }).catch(
+        () => null,
+      );
+      if (!transcriptPath) continue;
+      await this.sessionStore.setTranscriptPath(input.sessionRowId, transcriptPath, Date.now()).catch(() => {});
+      return;
+    }
   }
 
   /**

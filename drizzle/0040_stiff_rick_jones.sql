@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `transcript_path` text;

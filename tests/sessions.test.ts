@@ -155,6 +155,7 @@ describe('Sessions (issue #141)', () => {
           harnessSessionId: 'sess-1',
           model: 'claude-model',
           cwd: '/tmp/work',
+          transcriptPath: null,
           lastActiveAt: now,
           createdAt: now,
           updatedAt: now,
@@ -217,15 +218,16 @@ describe('Sessions (issue #141)', () => {
 
     describe('recordDispatch — upsert path', () => {
       it('a repeat dispatch on the same (harness, harnessSessionId) updates the existing row, not a new one', async () => {
-        const first = await store.recordDispatch(baseInput({ model: 'model-a' }));
+        const first = await store.recordDispatch(baseInput({ model: 'model-a', transcriptPath: '/logs/first.jsonl' }));
         const later = now + 60_000;
-        const second = await store.recordDispatch(baseInput({ model: 'model-b', now: later }));
+        const second = await store.recordDispatch(baseInput({ model: 'model-b', transcriptPath: null, now: later }));
 
         expect(second.id).toBe(first.id);
         expect(second.model).toBe('model-b');
         expect(second.lastActiveAt).toBe(later);
         expect(second.updatedAt).toBe(later);
         expect(second.createdAt).toBe(first.createdAt);
+        expect(second.transcriptPath).toBe('/logs/first.jsonl');
       });
 
       it('does not create a second row for the same key', async () => {
@@ -251,6 +253,15 @@ describe('Sessions (issue #141)', () => {
         expect(updated.permissionMode).toBe('bypassPermissions');
         expect(updated.updatedAt).toBe(now + 5000);
         expect(updated.id).toBe(created.id);
+      });
+    });
+
+    describe('setTranscriptPath', () => {
+      it('records a transcript discovered after the initial dispatch', async () => {
+        const created = await store.recordDispatch(baseInput());
+        const updated = await store.setTranscriptPath(created.id, '/logs/discovered.jsonl', now + 5000);
+        expect(updated.transcriptPath).toBe('/logs/discovered.jsonl');
+        expect(updated.updatedAt).toBe(now + 5000);
       });
     });
 

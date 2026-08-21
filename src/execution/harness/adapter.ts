@@ -51,6 +51,9 @@ export interface SessionTailReader {
  * come from the generic ACP `usage` path in usage.ts.
  */
 export interface UsageCollector {
+  /** Discover the actual native transcript a Harness wrote for a Session.
+   * Unlike {@link sessionLogFile}, this must not reconstruct a path from cwd. */
+  resolveTranscriptPath?(input: { sessionLogDir?: string | undefined; sessionId: string }): Promise<string | null>;
   /**
    * Parse a session's native logs into rolled-up Usage plus its Process
    * Tree (ADR 0009) — the source that replaces the ACP-result/OTel reads

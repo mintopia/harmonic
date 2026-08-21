@@ -406,6 +406,19 @@ describe('harness adapters', () => {
     );
     expect(usage.sessionLogFile({ sessionLogDir: '/logs', cwd: '/w', sessionId: null })).toBeNull();
   });
+
+  it('discovers Claude transcripts from the actual projects directory, without recreating the cwd slug', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'claude-projects-'));
+    const actualDir = join(root, 'claude-chose-this-name');
+    mkdirSync(actualDir);
+    const transcript = join(actualDir, 'abc-123.jsonl');
+    writeFileSync(transcript, '[]');
+
+    await expect(adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: 'abc-123' })).resolves.toBe(
+      transcript,
+    );
+    await expect(adapterFor('claude').usage!.resolveTranscriptPath!({ sessionLogDir: root, sessionId: 'missing' })).resolves.toBeNull();
+  });
 });
 
 describe("claude's incremental session-log tail reader (#217)", () => {

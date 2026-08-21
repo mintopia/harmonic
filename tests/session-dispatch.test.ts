@@ -74,6 +74,9 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     expect(session.harness).toBe('claude'); // stubHarness() registers the stub as 'claude' by default
     expect(session.model).toBe('stub-model'); // stubHarness()'s only/default model
     expect(session.cwd).toBe(workspace.workingDir);
+    // The stub writes no native Claude JSONL. Dispatch remains healthy and
+    // records the absence rather than inventing a path from the cwd slug.
+    expect(session.transcriptPath).toBeNull();
 
     const allSessions = await asyncDb.read((d) => d.select().from(sessions).all());
     expect(allSessions).toHaveLength(1);

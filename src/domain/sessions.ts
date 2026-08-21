@@ -121,6 +121,8 @@ export interface DispatchSessionInput {
   model: string;
   cwd: string;
   workspaceId: number | null;
+  /** Absolute native transcript path found at dispatch, or null when absent. */
+  transcriptPath?: string | null;
   mcpTemplates: unknown;
   permissionMode?: string | null;
   capabilities: AcpInitializeResult | undefined;
@@ -144,7 +146,8 @@ export class SessionStore {
    * Persist the Session for a dispatch, upserting on `(harness,
    * harnessSessionId)`. A fresh dispatch inserts; a reused harness session
    * (when resume lands) refreshes the capability snapshot, model/cwd, templates
-   * and `lastActiveAt` and re-marks it `active`. Credentials are stripped from
+   * and `lastActiveAt` and re-marks it `active`. A transiently absent transcript
+   * never replaces a path discovered on an earlier dispatch. Credentials are stripped from
    * `mcpTemplates` and never stored; `capabilitySnapshot` holds the whole
    * `initialize` result and `supportsLoadSession` is mined from it.
    */
@@ -166,6 +169,7 @@ export class SessionStore {
             model: input.model,
             cwd: input.cwd,
             workspaceId: input.workspaceId,
+            ...(input.transcriptPath ? { transcriptPath: input.transcriptPath } : {}),
             mcpTemplates,
             ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
             capabilitySnapshot,
@@ -188,6 +192,7 @@ export class SessionStore {
           model: input.model,
           cwd: input.cwd,
           workspaceId: input.workspaceId,
+          transcriptPath: input.transcriptPath ?? null,
           mcpTemplates,
           permissionMode: input.permissionMode ?? null,
           capabilitySnapshot,
@@ -212,6 +217,18 @@ export class SessionStore {
       db
         .update(sessions)
         .set({ permissionMode, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get(),
+    ))!;
+  }
+
+  /** Record a native transcript discovered after the harness has flushed it. */
+  async setTranscriptPath(id: number, transcriptPath: string, now: number): Promise<SessionRow> {
+    return (await this.db.write((db) =>
+      db
+        .update(sessions)
+        .set({ transcriptPath, updatedAt: now })
         .where(eq(sessions.id, id))
         .returning()
         .get(),

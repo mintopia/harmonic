@@ -172,6 +172,7 @@ describe('assessResumeEligibility (issue #142)', () => {
         model: 'claude-opus-4-8',
         cwd: '/work/repo',
         workspaceId: 1,
+        transcriptPath: null,
         mcpTemplates: '[]',
         permissionMode: 'auto',
         capabilitySnapshot: '{}',

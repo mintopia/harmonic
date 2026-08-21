@@ -967,6 +967,9 @@ export const sessions = sqliteTable(
     /** The owning Workspace (ADR-0008); nullable at the SQL level for the same
      * reason as `tasks.workspaceId`, set on every real dispatch. */
     workspaceId: integer('workspace_id').references(() => workspaces.id),
+    /** Absolute native JSONL path discovered at dispatch. Null when the
+     * harness has not written a transcript or does not expose one. */
+    transcriptPath: text('transcript_path'),
     /** JSON array: the **credential-free** MCP server templates for this
      * Session — the `session/new` mcpServers shape with every secret (bearer
      * tokens, auth headers, env) stripped. Credentials are never persisted;
