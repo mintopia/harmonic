@@ -67,7 +67,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(db);
+    leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
@@ -188,7 +188,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(db);
+    leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
@@ -222,7 +222,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
             worktreePath: join(workingDir, 'wt'),
             branch: 'harmonic/task-x-run-1',
           });
-    leases.acquire(key, run.id, 'running');
+    await leases.acquire(key, run.id, 'running');
     return { task, run, key };
   }
 
@@ -235,12 +235,12 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     });
     await coord.reconcile();
 
-    expect(leases.getByKey(key)).toBeUndefined();
+    expect(await leases.getByKey(key)).toBeUndefined();
 
     // The freed key is admissible again.
     const otherTask = await tasks.create({ prompt: 'contend for the freed key', state: 'ready' });
     const otherRun = await runStore.create(otherTask.id);
-    expect(() => leases.acquire(key, otherRun.id, 'running')).not.toThrow();
+    await expect(leases.acquire(key, otherRun.id, 'running')).resolves.not.toThrow();
   });
 
   it('direct + not provably clean → suspect, still held, and still blocks acquires', async () => {
@@ -252,7 +252,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     });
     await coord.reconcile();
 
-    const lease = leases.getByKey(key);
+    const lease = await leases.getByKey(key);
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect');
 
@@ -260,7 +260,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     const otherRun = await runStore.create(otherTask.id);
     let caught: unknown;
     try {
-      leases.acquire(key, otherRun.id, 'running');
+      await leases.acquire(key, otherRun.id, 'running');
     } catch (err) {
       caught = err;
     }
@@ -277,7 +277,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     });
     await coord.reconcile();
 
-    const lease = leases.getByKey(key);
+    const lease = await leases.getByKey(key);
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect');
   });
@@ -290,7 +290,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
       isDirectContextClean: async () => false,
     });
     await firstBoot.reconcile();
-    expect(leases.getByKey(key)?.state).toBe('suspect');
+    expect((await leases.getByKey(key))?.state).toBe('suspect');
 
     const secondBoot = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, {
       now: () => 2_000_000,
@@ -298,7 +298,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     });
     await secondBoot.reconcile();
 
-    const lease = leases.getByKey(key);
+    const lease = await leases.getByKey(key);
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect'); // never auto-released on a later boot
   });
@@ -311,17 +311,17 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
       // no isDirectContextClean override — exercises the real Git.isDirty/symbolicBranch
     });
     await coord.reconcile();
-    expect(leases.getByKey(cleanKey)).toBeUndefined();
+    expect(await leases.getByKey(cleanKey)).toBeUndefined();
 
     // Dirty the repo, then seed a second dead-owner lease on the same repo.
     writeFileSync(join(repo, 'x.txt'), 'x');
     const secondTask = await tasks.create({ prompt: 'own a dirty work context', state: 'ready', workingDir: repo, isolationMode: 'direct' });
     const secondRun = await runStore.create(secondTask.id);
     const dirtyKey = workContextKey({ isolationMode: 'direct', workingDir: repo });
-    leases.acquire(dirtyKey, secondRun.id, 'running');
+    await leases.acquire(dirtyKey, secondRun.id, 'running');
 
     await coord.reconcile();
-    expect(leases.getByKey(dirtyKey)?.state).toBe('suspect');
+    expect((await leases.getByKey(dirtyKey))?.state).toBe('suspect');
   });
 
   it('direct + clean tree but DETACHED HEAD → suspect (a mid-flight crash before #152 restored the live checkout is not safe to free)', async () => {
@@ -338,7 +338,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     });
     await coord.reconcile();
 
-    const lease = leases.getByKey(key);
+    const lease = await leases.getByKey(key);
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect');
   });
@@ -352,7 +352,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     });
     await coord.reconcile();
 
-    const lease = leases.getByKey(key);
+    const lease = await leases.getByKey(key);
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect');
   });

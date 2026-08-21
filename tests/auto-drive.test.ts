@@ -336,7 +336,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter, okGit);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => cfg, { autoDrive: drive });
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), db, asyncDb, () => cfg, { autoDrive: drive });
   }
 
   const continueEvents = async (runId: number) =>
@@ -499,12 +499,12 @@ describe('Runner auto-drive settle (issue #33)', () => {
     async function seedPredecessorLease(
       taskId: number,
     ): Promise<{ predecessorId: number; key: string; leaseStore: WorkContextLeaseStore }> {
-      const leaseStore = new WorkContextLeaseStore(db);
+      const leaseStore = new WorkContextLeaseStore(asyncDb);
       const chainId = new ExecutionChainStore(db).create();
       const predecessor = await runs.create(taskId, undefined, chainId);
       await runs.update(predecessor.id, { state: 'failed' });
       const key = workContextKey({ isolationMode: 'direct', workingDir: workDir });
-      leaseStore.acquire(key, predecessor.id, 'running');
+      await leaseStore.acquire(key, predecessor.id, 'running');
       return { predecessorId: predecessor.id, key, leaseStore };
     }
 
@@ -524,8 +524,8 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
       const successor = (await runs.listForTask(task.id)).at(-1)!;
       expect(successor.id).not.toBe(predecessorId);
-      expect(leaseStore.getByKey(key)).toMatchObject({ ownerRunId: successor.id });
-      expect(leaseStore.getByOwner(predecessorId)).toBeUndefined();
+      expect(await leaseStore.getByKey(key)).toMatchObject({ ownerRunId: successor.id });
+      expect(await leaseStore.getByOwner(predecessorId)).toBeUndefined();
     });
 
     it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', async () => {
@@ -551,7 +551,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       expect(caught).toBeInstanceOf(DomainError);
       expect((caught as DomainError).code).toBe('conflict');
 
-      expect(leaseStore.getByKey(key)).toMatchObject({ ownerRunId: predecessorId });
+      expect(await leaseStore.getByKey(key)).toMatchObject({ ownerRunId: predecessorId });
     });
   });
 });

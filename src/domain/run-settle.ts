@@ -131,7 +131,7 @@ export class RunSettleCoordinator {
       reason: winner.reason,
       finishedAt: before.finishedAt ?? Date.now(),
     });
-    this.releaseLease(run.id);
+    await this.releaseLease(run.id);
     // Session retirement (issue #148, reliability-design Unit C): the moment the
     // lease is released, record the intent for this Run's Session — retire now
     // (a land/abandon/cancel) or retain under a deadline (a reject / other
@@ -224,9 +224,9 @@ export class RunSettleCoordinator {
    * `review` already released its lease at review entry (#114 releases at that
    * seam; holding it across the review window awaits the phase-specific lease
    * TTLs of #122), so for those this is a harmless idempotent no-op. */
-  private releaseLease(runId: number): void {
+  private async releaseLease(runId: number): Promise<void> {
     try {
-      this.leaseStore.releaseByOwner(runId);
+      await this.leaseStore.releaseByOwner(runId);
     } catch {
       // best-effort; boot reconciliation is the backstop
     }

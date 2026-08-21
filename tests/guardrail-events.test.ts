@@ -31,7 +31,7 @@ describe('GuardrailEventStore (issue #127)', () => {
     asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     const runStore = new RunStore(asyncDb);
-    events = new GuardrailEventStore(db);
+    events = new GuardrailEventStore(asyncDb);
 
     const task = await tasks.create({ prompt: 'trip me', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
@@ -43,8 +43,8 @@ describe('GuardrailEventStore (issue #127)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('appends a wall-clock trip and reads it back, seq 1, fields persisted', () => {
-    const row = events.append(runId, {
+  it('appends a wall-clock trip and reads it back, seq 1, fields persisted', async () => {
+    const row = await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'executing',
       limitValue: 3_600_000,
@@ -62,12 +62,12 @@ describe('GuardrailEventStore (issue #127)', () => {
       payload: '{}',
     });
 
-    const [back] = events.list(runId);
+    const [back] = await events.list(runId);
     expect(back).toEqual(row);
   });
 
-  it('payload round-trips through JSON.stringify, defaulting to {} when omitted', () => {
-    const row = events.append(runId, {
+  it('payload round-trips through JSON.stringify, defaulting to {} when omitted', async () => {
+    const row = await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'validating',
       limitValue: 1000,
@@ -77,7 +77,7 @@ describe('GuardrailEventStore (issue #127)', () => {
     });
     expect(JSON.parse(row.payload)).toEqual({ note: 'evidence', elapsedMs: 1500 });
 
-    const withoutPayload = events.append(runId, {
+    const withoutPayload = await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'verifying',
       limitValue: 2000,
@@ -87,15 +87,15 @@ describe('GuardrailEventStore (issue #127)', () => {
     expect(withoutPayload.payload).toBe('{}');
   });
 
-  it('assigns a 1-based monotonic seq per Run, sequencing each Run independently', () => {
-    events.append(runId, {
+  it('assigns a 1-based monotonic seq per Run, sequencing each Run independently', async () => {
+    await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'executing',
       limitValue: 100,
       observedValue: 101,
       configSource: 'default',
     });
-    const second = events.append(runId, {
+    const second = await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'executing',
       limitValue: 100,
@@ -104,7 +104,7 @@ describe('GuardrailEventStore (issue #127)', () => {
     });
     expect(second.seq).toBe(2);
 
-    const other = events.append(otherRunId, {
+    const other = await events.append(otherRunId, {
       dimension: 'wall-clock',
       phase: 'executing',
       limitValue: 100,
@@ -114,22 +114,22 @@ describe('GuardrailEventStore (issue #127)', () => {
     expect(other.seq).toBe(1); // a fresh Run starts at 1 regardless of other Runs
   });
 
-  it("list returns a Run's events in seq order, and only that Run's", () => {
-    events.append(runId, {
+  it("list returns a Run's events in seq order, and only that Run's", async () => {
+    await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'executing',
       limitValue: 100,
       observedValue: 101,
       configSource: 'default',
     });
-    events.append(runId, {
+    await events.append(runId, {
       dimension: 'wall-clock',
       phase: 'validating',
       limitValue: 100,
       observedValue: 102,
       configSource: 'default',
     });
-    events.append(otherRunId, {
+    await events.append(otherRunId, {
       dimension: 'wall-clock',
       phase: 'executing',
       limitValue: 100,
@@ -137,7 +137,7 @@ describe('GuardrailEventStore (issue #127)', () => {
       configSource: 'default',
     });
 
-    const log = events.list(runId);
+    const log = await events.list(runId);
     expect(log.map((e) => e.seq)).toEqual([1, 2]);
     expect(log.map((e) => e.phase)).toEqual(['executing', 'validating']);
   });

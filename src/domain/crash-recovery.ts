@@ -95,13 +95,13 @@ export class CrashRecoveryCoordinator {
    */
   private async reconcileLeases(): Promise<void> {
     const isClean = this.opts.isDirectContextClean ?? directContextProvablyClean;
-    for (const lease of this.leaseStore.listAll()) {
+    for (const lease of await this.leaseStore.listAll()) {
       if (lease.state === 'suspect') continue; // already reconciled — idempotent
       const run = await this.runStore.get(lease.ownerRunId);
       const task = await this.taskService.get(run.taskId);
       const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
-      if (releasable) this.leaseStore.release(lease.key);
-      else this.leaseStore.markSuspect(lease.key);
+      if (releasable) await this.leaseStore.release(lease.key);
+      else await this.leaseStore.markSuspect(lease.key);
     }
   }
 

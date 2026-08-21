@@ -118,6 +118,9 @@ export class SessionRetirementCoordinator {
   /** Whether any Run of the Session still holds a Work Context lease — the gate
    * that keeps `drain` from removing a worktree with a live owner. */
   private async leaseHeld(sessionRowId: number): Promise<boolean> {
-    return (await this.runs.listForSession(sessionRowId)).some((run) => this.leases.getByOwner(run.id) !== undefined);
+    for (const run of await this.runs.listForSession(sessionRowId)) {
+      if ((await this.leases.getByOwner(run.id)) !== undefined) return true;
+    }
+    return false;
   }
 }

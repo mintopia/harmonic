@@ -60,7 +60,7 @@ describe('Session retirement (issue #148)', () => {
     asyncDb = await openAsyncDb(dir);
     sessions = new SessionStore(db);
     runs = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(db);
+    leases = new WorkContextLeaseStore(asyncDb);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     workspaceId = allWorkspaces(db)()[0]!.id;
   });
@@ -202,7 +202,7 @@ describe('Session retirement (issue #148)', () => {
       const s = dispatch();
       sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       const run = await runForSession(s.id);
-      leases.acquire('worktree:/wt/run-1::branch', run.id, 'running'); // still held
+      await leases.acquire('worktree:/wt/run-1::branch', run.id, 'running'); // still held
       sessions.beginRetiring(s.id, 'landed', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
@@ -214,7 +214,7 @@ describe('Session retirement (issue #148)', () => {
       expect(sessions.get(s.id).status).toBe('retiring'); // left for a later drain
 
       // Once the lease releases, a later drain completes the retirement.
-      leases.releaseByOwner(run.id);
+      await leases.releaseByOwner(run.id);
       await coord.drain(now + 1);
       expect(removeWorktree).toHaveBeenCalledOnce();
       expect(sessions.get(s.id).status).toBe('retired');
@@ -265,13 +265,13 @@ describe('Session retirement (issue #148)', () => {
       const s = dispatch();
       const first = await runForSession(s.id);
       const second = await runForSession(s.id);
-      leases.acquire('worktree:/wt/run-1::branch', first.id, 'running');
+      await leases.acquire('worktree:/wt/run-1::branch', first.id, 'running');
 
-      const moved = leases.transfer(first.id, second.id, now);
+      const moved = await leases.transfer(first.id, second.id, now);
 
       expect(moved).toMatchObject({ ownerRunId: second.id });
-      expect(leases.getByOwner(first.id)).toBeUndefined();
-      expect(leases.getByOwner(second.id)).toMatchObject({ key: 'worktree:/wt/run-1::branch' });
+      expect(await leases.getByOwner(first.id)).toBeUndefined();
+      expect(await leases.getByOwner(second.id)).toMatchObject({ key: 'worktree:/wt/run-1::branch' });
     });
   });
 });

@@ -500,7 +500,7 @@ export class Runner {
     this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
     this.runFacts = new RunFactStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
-    this.guardrailEvents = new GuardrailEventStore(this.db);
+    this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.turnQueue = new TurnQueueStore(this.db);
     this.chainStore = new ExecutionChainStore(this.db);
     this.sessionStore = new SessionStore(this.db);
@@ -612,37 +612,36 @@ export class Runner {
     const chainId = this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
     const key = this.workContextKeyFor(task, created);
-    // Resolved ahead of the transaction (RunStore is now async, but
-    // `this.db.transaction`'s callback — the sync Db the lease store still uses —
-    // is not): look up whoever holds the Work Context key and whether they share
-    // this Run's line of work, exactly what `sharesLineOfWork` computed from
-    // inside the transaction before RunStore moved to the async Db (ADR-0029).
-    const existingLease = this.leaseStore.getByKey(key);
+    // Resolved ahead of the claim: look up whoever holds the Work Context key and
+    // whether they share this Run's line of work, exactly what `sharesLineOfWork`
+    // computed inside the single run+lease transaction before RunStore (ADR-0029
+    // #203) and the lease store (#206) moved to the async Db.
+    const existingLease = await this.leaseStore.getByKey(key);
     const existingOwner = existingLease ? await this.runStore.get(existingLease.ownerRunId) : null;
     const sharesLine = this.sharesLineOfWork(existingOwner, created);
     // Claim the Work Context lease: the unique-key CAS (#118) rejects a second
     // afk Run into an already-owned context. Enforced HERE, the shared funnel, so
     // REST / MCP / Auto-Runner / a second process are blocked identically — not
-    // only pickNext. The Run row (async Db) and the lease (sync Db) can no longer
-    // roll back together during the expand-contract migration, so a rejected
-    // claim compensates by deleting the just-created Run — no orphan is left, as
-    // the old single-transaction rollback guaranteed. The atomic run+lease claim
-    // returns once the lease store migrates and both rejoin one async transaction.
+    // only pickNext. `acquireOrTransfer` is itself one async write-queue
+    // transaction (its read-then-write is atomic), but the Run row and the lease
+    // are still separate write units — RunStore.create predates a shared-tx API —
+    // so a rejected claim compensates by deleting the just-created Run rather than
+    // rolling both back together. No orphan is left, as the old single-transaction
+    // rollback guaranteed.
+    //
+    // A same-line-of-work predecessor's retained lease is handed off rather than
+    // conflicting (issue #124): if `created` continues the Execution Chain of the
+    // current key holder, acquireOrTransfer re-points the lease instead of
+    // throwing; an unrelated holder still hits the unique-key CAS. The predicate
+    // is pinned to the holder observed above — if it changed under the await, fall
+    // back to "don't transfer" and let the CAS decide.
     try {
-      this.db.transaction(() => {
-        // A same-line-of-work predecessor's retained lease is handed off rather
-        // than conflicting (issue #124): if `created` continues the Execution
-        // Chain of the current key holder, acquireOrTransfer re-points the lease
-        // instead of throwing; an unrelated holder still hits the unique-key CAS.
-        // The predicate is pinned to the holder observed above — if it changed
-        // under the await, fall back to "don't transfer" and let the CAS decide.
-        this.leaseStore.acquireOrTransfer(
-          key,
-          created.id,
-          'running',
-          (existingOwnerRunId) => existingOwnerRunId === existingLease?.ownerRunId && sharesLine,
-        );
-      });
+      await this.leaseStore.acquireOrTransfer(
+        key,
+        created.id,
+        'running',
+        (existingOwnerRunId) => existingOwnerRunId === existingLease?.ownerRunId && sharesLine,
+      );
     } catch (err) {
       // Swallow the compensating delete's own error so the original lease-CAS
       // conflict is always what propagates (a delete failure leaves at most an
@@ -2353,7 +2352,7 @@ export class Runner {
         const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, phase: now.phase ?? null, budget });
         if (!trip) return; // fired in a non-counted phase, or not actually over budget
         // Structured evidence first — the card reason derives from this row.
-        this.guardrailEvents.append(now.id, {
+        await this.guardrailEvents.append(now.id, {
           dimension: trip.dimension,
           phase: now.phase ?? 'executing',
           limitValue: trip.limitMs,
@@ -2397,7 +2396,7 @@ export class Runner {
       },
       reason: string,
     ) => {
-      this.guardrailEvents.append(now.id, event);
+      await this.guardrailEvents.append(now.id, event);
       record('lifecycle', { event: 'guardrail-tripped', dimension: event.dimension, reason });
       active.externallySettled = true;
       await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
@@ -2549,7 +2548,7 @@ export class Runner {
         if (active.externallySettled) return;
         const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return;
-        this.leaseStore.heartbeat(key, Date.now(), now.phase ?? 'executing');
+        await this.leaseStore.heartbeat(key, Date.now(), now.phase ?? 'executing');
       };
       await beat(); // set expiry immediately, before the first interval tick
       leaseHeartbeatTimer = setInterval(beat, this.leaseHeartbeatMs);
@@ -2601,7 +2600,7 @@ export class Runner {
       evidence: { dimension: 'progress' | 'tool-timeout'; limitValue: number; observedValue: number; payload: unknown },
       reason: string,
     ) => {
-      this.guardrailEvents.append(now.id, {
+      await this.guardrailEvents.append(now.id, {
         dimension: evidence.dimension,
         phase: now.phase ?? 'executing',
         limitValue: evidence.limitValue,
@@ -3522,7 +3521,7 @@ export class Runner {
       reason: null,
     });
     try {
-      this.leaseStore.releaseByOwner(run.id);
+      await this.leaseStore.releaseByOwner(run.id);
     } catch {
       // best-effort; boot reconciliation is the backstop
     }

@@ -85,7 +85,7 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
     const spy = reopenSpy();
     reopened = spy.reopened;
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => spy.adapter);
-    runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, asyncDb, () => defaultConfig(), { autoDrive: drive });
+    runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), db, asyncDb, () => defaultConfig(), { autoDrive: drive });
   });
   afterEach(async () => {
     await asyncDb.close();

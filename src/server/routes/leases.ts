@@ -77,7 +77,7 @@ export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async () => ({
       leases: buildLeaseDiagnostics({
-        leases: ctx.leases.listAll(),
+        leases: await ctx.leases.listAll(),
         runs: await ctx.runs.listAll(),
         tasks: await ctx.tasks.list(),
         waitingSince: (id) => ctx.autoRunner.waitingSince(id),
@@ -103,7 +103,7 @@ export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.runs.get(req.body.runId); // 404s an unknown Run before touching the lease
-      ctx.leases.supersede(req.body.key, req.body.runId);
+      await ctx.leases.supersede(req.body.key, req.body.runId);
       ctx.autoRunner.poke();
       return { ok: true } as const;
     },
@@ -125,7 +125,7 @@ export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      ctx.leases.forceRelease(req.body.key);
+      await ctx.leases.forceRelease(req.body.key);
       ctx.autoRunner.poke();
       return { ok: true } as const;
     },

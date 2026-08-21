@@ -248,9 +248,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (id) => bus.emit('task_removed', { id }),
   );
   const runs = new RunStore(asyncDb);
-  const guardrailEvents = new GuardrailEventStore(db);
+  const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(db);
-  const leases = new WorkContextLeaseStore(db);
+  const leases = new WorkContextLeaseStore(asyncDb);
   const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
   const auth = new AuthService(db);
@@ -507,11 +507,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // first heartbeat). Best-effort: a sweep hiccup just means the next tick
   // retries, never a reason to crash the process.
   const leaseSweep = setInterval(() => {
-    try {
-      leases.sweepExpired();
-    } catch {
-      /* best-effort; next tick retries */
-    }
+    // Fire-and-forget now that sweepExpired is async (ADR-0029): a swallowed
+    // rejection keeps a DB hiccup off the loop, and the next tick retries.
+    void leases.sweepExpired().catch(() => {});
   }, opts.leaseTuning?.sweepMs ?? 60_000);
   leaseSweep.unref?.();
   // Event-loop stall monitor (issue #210, part of #201 / ADR-0029 §5):

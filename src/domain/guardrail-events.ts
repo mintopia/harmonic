@@ -1,5 +1,5 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import {
   guardrailEvents,
   type GuardrailEventRow,
@@ -35,7 +35,7 @@ export interface GuardrailEventInput {
  * appended and read; there is no update or delete path, by design.
  */
 export class GuardrailEventStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Append a Guardrail-trip event to `runId`'s log, assigning the next
@@ -43,38 +43,49 @@ export class GuardrailEventStore {
    * cross-process integrity backstop (the `(run_id, seq)` unique index
    * rejects a racing duplicate `seq` with a raw UNIQUE violation rather than
    * corrupting the log's total order), as `VerificationAttemptStore.append`.
+   *
+   * The `max(seq)` read and the insert run as one write-queue unit (ADR-0029 §3):
+   * the async single-writer queue now stands in for better-sqlite3's synchrony,
+   * so no concurrent append can interleave between the read and the insert and
+   * steal the `seq` — mirroring `RunFactStore.append`.
    */
-  append(runId: number, event: GuardrailEventInput, now: number = Date.now()): GuardrailEventRow {
-    const seq =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${guardrailEvents.seq}), 0)` })
-        .from(guardrailEvents)
-        .where(eq(guardrailEvents.runId, runId))
-        .get()?.n ?? 0) + 1;
-    return this.db
-      .insert(guardrailEvents)
-      .values({
-        runId,
-        seq,
-        ts: now,
-        dimension: event.dimension,
-        phase: event.phase,
-        limitValue: event.limitValue,
-        observedValue: event.observedValue,
-        configSource: event.configSource,
-        payload: JSON.stringify(event.payload ?? {}),
-      })
-      .returning()
-      .get();
+  append(runId: number, event: GuardrailEventInput, now: number = Date.now()): Promise<GuardrailEventRow> {
+    return this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${guardrailEvents.seq}), 0)` })
+            .from(guardrailEvents)
+            .where(eq(guardrailEvents.runId, runId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(guardrailEvents)
+        .values({
+          runId,
+          seq,
+          ts: now,
+          dimension: event.dimension,
+          phase: event.phase,
+          limitValue: event.limitValue,
+          observedValue: event.observedValue,
+          configSource: event.configSource,
+          payload: JSON.stringify(event.payload ?? {}),
+        })
+        .returning()
+        .get();
+    });
   }
 
   /** A Run's Guardrail-trip event log in `seq` order. */
-  list(runId: number): GuardrailEventRow[] {
-    return this.db
-      .select()
-      .from(guardrailEvents)
-      .where(eq(guardrailEvents.runId, runId))
-      .orderBy(asc(guardrailEvents.seq))
-      .all();
+  list(runId: number): Promise<GuardrailEventRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(guardrailEvents)
+        .where(eq(guardrailEvents.runId, runId))
+        .orderBy(asc(guardrailEvents.seq))
+        .all(),
+    );
   }
 }

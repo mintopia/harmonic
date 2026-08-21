@@ -254,7 +254,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     wrapAsync(async () => {
       requireOperator();
       return buildLeaseDiagnostics({
-        leases: ctx.leases.listAll(),
+        leases: await ctx.leases.listAll(),
         runs: await ctx.runs.listAll(),
         tasks: await ctx.tasks.list(),
         waitingSince: (id) => ctx.autoRunner.waitingSince(id),
@@ -273,7 +273,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     wrapAsync(async ({ key, runId }) => {
       requireOperator();
       await ctx.runs.get(runId); // 404s an unknown Run before touching the lease
-      const lease = ctx.leases.supersede(key, runId);
+      const lease = await ctx.leases.supersede(key, runId);
       ctx.autoRunner.poke();
       return { ok: true, lease };
     }),
@@ -285,9 +285,9 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: 'Operator only. Force-release a Work Context lease outright, freeing its key for a fresh acquire.',
       inputSchema: { key: z.string().min(1).describe('The Work Context key') },
     },
-    wrap(({ key }) => {
+    wrapAsync(async ({ key }) => {
       requireOperator();
-      ctx.leases.forceRelease(key);
+      await ctx.leases.forceRelease(key);
       ctx.autoRunner.poke();
       return { ok: true };
     }),

@@ -36,7 +36,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
     let task = await ctx().tasks.get(created.body.id);
     const run = await ctx().runs.create(task.id);
     const key = workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
-    const lease = ctx().leases.acquire(key, run.id, 'executing');
+    const lease = await ctx().leases.acquire(key, run.id, 'executing');
     // A Task genuinely occupying a context is `running` (Runner.beginRun flips
     // this before acquiring the lease) — matching that here keeps the Task
     // itself out of its own "waiting" count in the diagnostics view.
@@ -96,8 +96,8 @@ describe('Work Context lease operator surface (issue #125)', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
 
-      expect(ctx().leases.getByKey(key)).toMatchObject({ ownerRunId: target.id, state: 'held' });
-      const dispositions = ctx().leases.listDispositions();
+      expect(await ctx().leases.getByKey(key)).toMatchObject({ ownerRunId: target.id, state: 'held' });
+      const dispositions = await ctx().leases.listDispositions();
       expect(dispositions).toHaveLength(1);
       expect(dispositions[0]).toMatchObject({ key, action: 'supersede', targetRunId: target.id });
     });
@@ -113,7 +113,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
       const { key, run } = await seedLease();
       const res = await server.api('POST', '/api/leases/supersede', { key, runId: 999999 });
       expect(res.status).toBe(404);
-      expect(ctx().leases.getByKey(key)).toMatchObject({ ownerRunId: run.id });
+      expect(await ctx().leases.getByKey(key)).toMatchObject({ ownerRunId: run.id });
     });
   });
 
@@ -125,8 +125,8 @@ describe('Work Context lease operator surface (issue #125)', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
 
-      expect(ctx().leases.getByKey(key)).toBeUndefined();
-      const dispositions = ctx().leases.listDispositions();
+      expect(await ctx().leases.getByKey(key)).toBeUndefined();
+      const dispositions = await ctx().leases.listDispositions();
       expect(dispositions).toHaveLength(1);
       expect(dispositions[0]).toMatchObject({ key, action: 'unlock' });
     });
@@ -193,7 +193,7 @@ describe('Work Context lease MCP tools (issue #125)', () => {
     const task = await server.app.ctx.tasks.get(created.body.id);
     const run = await server.app.ctx.runs.create(task.id);
     const realKey = workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
-    server.app.ctx.leases.acquire(realKey, run.id, 'executing');
+    await server.app.ctx.leases.acquire(realKey, run.id, 'executing');
 
     const listed = parse(await client.callTool({ name: 'list_leases', arguments: {} }));
     expect(listed.find((l: any) => l.key === realKey)).toMatchObject({ ownerRunId: run.id });
@@ -203,11 +203,11 @@ describe('Work Context lease MCP tools (issue #125)', () => {
       await client.callTool({ name: 'supersede_lease', arguments: { key: realKey, runId: target.id } }),
     );
     expect(superseded.ok).toBe(true);
-    expect(server.app.ctx.leases.getByKey(realKey)).toMatchObject({ ownerRunId: target.id });
+    expect(await server.app.ctx.leases.getByKey(realKey)).toMatchObject({ ownerRunId: target.id });
 
     const unlocked = parse(await client.callTool({ name: 'unlock_lease', arguments: { key: realKey } }));
     expect(unlocked).toEqual({ ok: true });
-    expect(server.app.ctx.leases.getByKey(realKey)).toBeUndefined();
+    expect(await server.app.ctx.leases.getByKey(realKey)).toBeUndefined();
 
     await client.close();
   });

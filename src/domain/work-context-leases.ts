@@ -1,5 +1,5 @@
 import { and, asc, eq, isNotNull, lte } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import {
   workContextLeases,
   workContextLeaseDispositions,
@@ -8,6 +8,24 @@ import {
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { DEFAULT_LEASE_TTL, leaseExpiryFor, type LeaseTtl } from './lease-ttl.js';
+
+/** The row an `acquire`/`acquireOrTransfer` INSERT persists — shared by the
+ * standalone `acquire` (its own write unit) and the `acquireOrTransfer`
+ * transaction so the guarded-INSERT values stay identical across both paths. */
+function newLeaseValues(key: string, ownerRunId: number, phase: string, now: number) {
+  return {
+    key,
+    phase,
+    ownerRunId,
+    heartbeat: now,
+    // TTL-bounded from birth (issue #122): a spawn that dies before its first
+    // heartbeat still has a non-null expiry, so the periodic sweep catches it
+    // rather than holding the key forever on a null expiry.
+    expiry: leaseExpiryFor(phase, now),
+    state: 'held' as const,
+    acquiredAt: now,
+  };
+}
 
 /** Matches the SQLite message for a violated UNIQUE constraint, as a fallback
  * when the driver's `.code` isn't populated (e.g. wrapped errors). */
@@ -52,32 +70,24 @@ export function isUniqueViolation(err: unknown): boolean {
  * before its first heartbeat, or predates this machinery).
  */
 export class WorkContextLeaseStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Acquire a lease on `key` for `ownerRunId`. Throws `DomainError('conflict')`
    * if the key is already held (or suspect) — the existing row is left
    * untouched.
+   *
+   * The single guarded INSERT is the compare-and-set (ADR-0029 §3): the
+   * `work_context_leases_key_unique` index rejects the loser's row, so
+   * exactly-one-winner is DB-enforced and survives the async single-writer queue
+   * unchanged — the loser's rejection surfaces as a `DomainError('conflict')`.
    */
-  acquire(key: string, ownerRunId: number, phase: string): WorkContextLeaseRow {
+  async acquire(key: string, ownerRunId: number, phase: string): Promise<WorkContextLeaseRow> {
     const now = Date.now();
     try {
-      return this.db
-        .insert(workContextLeases)
-        .values({
-          key,
-          phase,
-          ownerRunId,
-          heartbeat: now,
-          // TTL-bounded from birth (issue #122): a spawn that dies before its
-          // first heartbeat still has a non-null expiry, so the periodic sweep
-          // catches it rather than holding the key forever on a null expiry.
-          expiry: leaseExpiryFor(phase, now),
-          state: 'held',
-          acquiredAt: now,
-        })
-        .returning()
-        .get();
+      return await this.db.write((db) =>
+        db.insert(workContextLeases).values(newLeaseValues(key, ownerRunId, phase, now)).returning().get(),
+      );
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new DomainError('conflict', `Work Context lease already held for key "${key}"`);
@@ -87,13 +97,15 @@ export class WorkContextLeaseStore {
   }
 
   /** Frees `key`; a no-op if nothing holds it. */
-  release(key: string): void {
-    this.db.delete(workContextLeases).where(eq(workContextLeases.key, key)).run();
+  async release(key: string): Promise<void> {
+    await this.db.write((db) => db.delete(workContextLeases).where(eq(workContextLeases.key, key)).run());
   }
 
   /** Frees whatever `ownerRunId` holds, if anything; idempotent. */
-  releaseByOwner(ownerRunId: number): void {
-    this.db.delete(workContextLeases).where(eq(workContextLeases.ownerRunId, ownerRunId)).run();
+  async releaseByOwner(ownerRunId: number): Promise<void> {
+    await this.db.write((db) =>
+      db.delete(workContextLeases).where(eq(workContextLeases.ownerRunId, ownerRunId)).run(),
+    );
   }
 
   /**
@@ -110,13 +122,19 @@ export class WorkContextLeaseStore {
    * coordination today is the passive gate in `SessionRetirementCoordinator.drain`
    * — it never removes a worktree while any Run of the Session still holds a
    * lease; this is the transactional primitive that gate is built to survive. */
-  transfer(fromRunId: number, toRunId: number, now: number = Date.now()): WorkContextLeaseRow | undefined {
-    return this.db
-      .update(workContextLeases)
-      .set({ ownerRunId: toRunId, heartbeat: now })
-      .where(eq(workContextLeases.ownerRunId, fromRunId))
-      .returning()
-      .get();
+  async transfer(
+    fromRunId: number,
+    toRunId: number,
+    now: number = Date.now(),
+  ): Promise<WorkContextLeaseRow | undefined> {
+    return this.db.write((db) =>
+      db
+        .update(workContextLeases)
+        .set({ ownerRunId: toRunId, heartbeat: now })
+        .where(eq(workContextLeases.ownerRunId, fromRunId))
+        .returning()
+        .get(),
+    );
   }
 
   /**
@@ -145,18 +163,46 @@ export class WorkContextLeaseStore {
    * work" means and passes the answer in as a predicate over the existing
    * owner's Run id.
    */
-  acquireOrTransfer(
+  async acquireOrTransfer(
     key: string,
     ownerRunId: number,
     phase: string,
     sharesLineOfWork: (existingOwnerRunId: number) => boolean,
-  ): WorkContextLeaseRow {
-    const existing = this.getByKey(key);
-    if (existing && sharesLineOfWork(existing.ownerRunId)) {
-      const moved = this.transfer(existing.ownerRunId, ownerRunId);
-      if (moved) return moved;
+  ): Promise<WorkContextLeaseRow> {
+    const now = Date.now();
+    // One write-queue transaction unit (ADR-0029 §3): the read-then-conditional-
+    // write runs without any other writer interleaving between the holder lookup
+    // and the transfer/acquire, exactly as the sync path relied on better-sqlite3's
+    // synchrony for. The guarded INSERT on the fall-through still hits the
+    // unique-key CAS, so an unrelated holder is rejected as a `conflict`.
+    try {
+      return await this.db.transaction(async (tx) => {
+        const existing = await tx
+          .select()
+          .from(workContextLeases)
+          .where(eq(workContextLeases.key, key))
+          .get();
+        if (existing && sharesLineOfWork(existing.ownerRunId)) {
+          const moved = await tx
+            .update(workContextLeases)
+            .set({ ownerRunId, heartbeat: now })
+            .where(eq(workContextLeases.ownerRunId, existing.ownerRunId))
+            .returning()
+            .get();
+          if (moved) return moved;
+        }
+        return await tx
+          .insert(workContextLeases)
+          .values(newLeaseValues(key, ownerRunId, phase, now))
+          .returning()
+          .get();
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new DomainError('conflict', `Work Context lease already held for key "${key}"`);
+      }
+      throw err;
     }
-    return this.acquire(key, ownerRunId, phase);
   }
 
   /**
@@ -169,27 +215,36 @@ export class WorkContextLeaseStore {
    * keeps the pre-#122 behaviour: bump the timestamp only, expiry untouched
    * — callers that don't yet know (or care about) TTL scoping are unaffected.
    */
-  heartbeat(key: string, now: number = Date.now(), phase?: string, ttl: LeaseTtl = DEFAULT_LEASE_TTL): void {
+  async heartbeat(
+    key: string,
+    now: number = Date.now(),
+    phase?: string,
+    ttl: LeaseTtl = DEFAULT_LEASE_TTL,
+  ): Promise<void> {
     const patch: Partial<typeof workContextLeases.$inferInsert> = { heartbeat: now };
     if (phase !== undefined) {
       patch.phase = phase;
       patch.expiry = leaseExpiryFor(phase, now, ttl);
     }
-    this.db.update(workContextLeases).set(patch).where(eq(workContextLeases.key, key)).run();
+    await this.db.write((db) =>
+      db.update(workContextLeases).set(patch).where(eq(workContextLeases.key, key)).run(),
+    );
   }
 
-  getByKey(key: string): WorkContextLeaseRow | undefined {
-    return this.db.select().from(workContextLeases).where(eq(workContextLeases.key, key)).get();
+  getByKey(key: string): Promise<WorkContextLeaseRow | undefined> {
+    return this.db.read((db) => db.select().from(workContextLeases).where(eq(workContextLeases.key, key)).get());
   }
 
-  getByOwner(ownerRunId: number): WorkContextLeaseRow | undefined {
-    return this.db.select().from(workContextLeases).where(eq(workContextLeases.ownerRunId, ownerRunId)).get();
+  getByOwner(ownerRunId: number): Promise<WorkContextLeaseRow | undefined> {
+    return this.db.read((db) =>
+      db.select().from(workContextLeases).where(eq(workContextLeases.ownerRunId, ownerRunId)).get(),
+    );
   }
 
   /** Every lease row currently persisted — the boot reconciliation sweep
    * (#123) reads this to reconcile leases a crash left behind. */
-  listAll(): WorkContextLeaseRow[] {
-    return this.db.select().from(workContextLeases).all();
+  listAll(): Promise<WorkContextLeaseRow[]> {
+    return this.db.read((db) => db.select().from(workContextLeases).all());
   }
 
   /**
@@ -200,8 +255,10 @@ export class WorkContextLeaseStore {
    * operator disposition; it is never auto-released. A no-op if `key` holds
    * nothing.
    */
-  markSuspect(key: string): void {
-    this.db.update(workContextLeases).set({ state: 'suspect' }).where(eq(workContextLeases.key, key)).run();
+  async markSuspect(key: string): Promise<void> {
+    await this.db.write((db) =>
+      db.update(workContextLeases).set({ state: 'suspect' }).where(eq(workContextLeases.key, key)).run(),
+    );
   }
 
   /**
@@ -219,25 +276,29 @@ export class WorkContextLeaseStore {
    * not the boot reconciliation backstop (#123) that covers the null-expiry
    * gap. Returns the swept rows in their post-flip `state: 'suspect'` shape.
    */
-  sweepExpired(now: number = Date.now()): WorkContextLeaseRow[] {
-    return this.db
-      .update(workContextLeases)
-      .set({ state: 'suspect' })
-      .where(
-        and(
-          eq(workContextLeases.state, 'held'),
-          isNotNull(workContextLeases.expiry),
-          lte(workContextLeases.expiry, now),
-        ),
-      )
-      .returning()
-      .all();
+  sweepExpired(now: number = Date.now()): Promise<WorkContextLeaseRow[]> {
+    return this.db.write((db) =>
+      db
+        .update(workContextLeases)
+        .set({ state: 'suspect' })
+        .where(
+          and(
+            eq(workContextLeases.state, 'held'),
+            isNotNull(workContextLeases.expiry),
+            lte(workContextLeases.expiry, now),
+          ),
+        )
+        .returning()
+        .all(),
+    );
   }
 
   /** Every lease currently `suspect` (issue #122): feeds boot reconciliation
    * (#123) and operator diagnostics — the queryable surface for AC4. */
-  listSuspect(): WorkContextLeaseRow[] {
-    return this.db.select().from(workContextLeases).where(eq(workContextLeases.state, 'suspect')).all();
+  listSuspect(): Promise<WorkContextLeaseRow[]> {
+    return this.db.read((db) =>
+      db.select().from(workContextLeases).where(eq(workContextLeases.state, 'suspect')).all(),
+    );
   }
 
   /**
@@ -251,11 +312,14 @@ export class WorkContextLeaseStore {
    * transaction, so a crash between them can never leave a superseded lease
    * without its disposition record (or vice versa).
    */
-  supersede(key: string, targetRunId: number, now: number = Date.now()): WorkContextLeaseRow {
-    const existing = this.getByKey(key);
-    if (!existing) throw new DomainError('not_found', `no Work Context lease held for key "${key}"`);
-    return this.db.transaction(() => {
-      const updated = this.db
+  supersede(key: string, targetRunId: number, now: number = Date.now()): Promise<WorkContextLeaseRow> {
+    // The existence check reads *inside* the transaction so it and the
+    // row-mutation + audit append are one atomic write-queue unit: a `not_found`
+    // throw rolls the (empty) transaction back and writes nothing.
+    return this.db.transaction(async (tx) => {
+      const existing = await tx.select().from(workContextLeases).where(eq(workContextLeases.key, key)).get();
+      if (!existing) throw new DomainError('not_found', `no Work Context lease held for key "${key}"`);
+      const updated = (await tx
         .update(workContextLeases)
         .set({
           ownerRunId: targetRunId,
@@ -265,8 +329,8 @@ export class WorkContextLeaseStore {
         })
         .where(eq(workContextLeases.key, key))
         .returning()
-        .get()!;
-      this.db
+        .get())!;
+      await tx
         .insert(workContextLeaseDispositions)
         .values({
           key,
@@ -289,12 +353,14 @@ export class WorkContextLeaseStore {
    * The delete and the audit append happen in one transaction, matching
    * `supersede`'s atomicity guarantee.
    */
-  forceRelease(key: string, now: number = Date.now()): void {
-    const existing = this.getByKey(key);
-    if (!existing) throw new DomainError('not_found', `no Work Context lease held for key "${key}"`);
-    this.db.transaction(() => {
-      this.db.delete(workContextLeases).where(eq(workContextLeases.key, key)).run();
-      this.db
+  async forceRelease(key: string, now: number = Date.now()): Promise<void> {
+    // Existence check inside the transaction, matching `supersede`: a `not_found`
+    // throw rolls back before the delete + audit append and writes nothing.
+    await this.db.transaction(async (tx) => {
+      const existing = await tx.select().from(workContextLeases).where(eq(workContextLeases.key, key)).get();
+      if (!existing) throw new DomainError('not_found', `no Work Context lease held for key "${key}"`);
+      await tx.delete(workContextLeases).where(eq(workContextLeases.key, key)).run();
+      await tx
         .insert(workContextLeaseDispositions)
         .values({
           key,
@@ -311,7 +377,9 @@ export class WorkContextLeaseStore {
   /** The full operator-disposition audit log (issue #125), oldest first —
    * every `supersede`/`unlock` ever issued, surviving whatever later happened
    * to the lease row itself. */
-  listDispositions(): WorkContextLeaseDispositionRow[] {
-    return this.db.select().from(workContextLeaseDispositions).orderBy(asc(workContextLeaseDispositions.id)).all();
+  listDispositions(): Promise<WorkContextLeaseDispositionRow[]> {
+    return this.db.read((db) =>
+      db.select().from(workContextLeaseDispositions).orderBy(asc(workContextLeaseDispositions.id)).all(),
+    );
   }
 }

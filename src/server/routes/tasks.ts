@@ -798,9 +798,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.runs.get(req.params.id); // 404 on unknown run
       return {
-        guardrailEvents: ctx.guardrailEvents
-          .list(req.params.id)
-          .map((r) => ({ ...r, payload: JSON.parse(r.payload) as unknown })),
+        guardrailEvents: (await ctx.guardrailEvents.list(req.params.id)).map((r) => ({
+          ...r,
+          payload: JSON.parse(r.payload) as unknown,
+        })),
       };
     },
   );

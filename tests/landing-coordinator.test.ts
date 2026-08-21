@@ -49,7 +49,7 @@ describe('LandingCoordinator (issue #115)', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
-    leases = new WorkContextLeaseStore(db);
+    leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
