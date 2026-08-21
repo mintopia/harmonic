@@ -9,7 +9,7 @@
  * and ready frontier. No database, no clock, no I/O: the same seam as
  * `run-disposition.ts`.
  */
-import { type Ticket, type TicketRef } from '../tracker/adapter.js';
+import { READY_FOR_AGENT_LABEL, type Ticket, type TicketRef } from '../tracker/adapter.js';
 
 export type EpicKind = 'map' | 'spec';
 
@@ -21,7 +21,11 @@ export interface DerivedEpic {
   kind: EpicKind;
   /** All direct child refs (the members), ascending. */
   members: number[];
-  /** The ready frontier: members that are open, unassigned, and free of any open blocker. Ascending. */
+  /**
+   * The ready frontier: members that carry `ready-for-agent`, are open, and
+   * are free of any open blocker. Assignment is not an eligibility signal.
+   * Ascending.
+   */
   ready: number[];
 }
 
@@ -31,15 +35,17 @@ function blockerOpen(edge: TicketRef, byRef: ReadonlyMap<number, Ticket>): boole
 }
 
 /**
- * A member is ready when it is open, has no assignee at all (any assignee
- * excludes — stricter than `foreignAssignee`), and has no open blocker.
- * A blocker whose target is itself an Epic ref is containment, not a real
- * dependency, and is ignored (mirror.ts:70 applies the same filter).
+ * A member is ready when it carries `ready-for-agent` — the same positive
+ * opt-in gate `deriveRole` applies (issue #230): a member without the label is
+ * never auto-run, so it must not enter the frontier either — and is open with
+ * no open blocker. Assignment is never consulted (ADR-0030). A blocker whose
+ * target is itself an Epic ref is containment, not a real dependency, and is
+ * ignored (mirror.ts applies the same filter).
  */
 function isReady(child: Ticket, epicRefs: ReadonlySet<number>, byRef: ReadonlyMap<number, Ticket>): boolean {
   return (
+    child.labels.includes(READY_FOR_AGENT_LABEL) &&
     child.state === 'open' &&
-    child.assignees.length === 0 &&
     child.blockedBy.filter((b) => !epicRefs.has(b.number)).every((b) => !blockerOpen(b, byRef))
   );
 }

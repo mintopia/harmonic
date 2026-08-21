@@ -42,17 +42,27 @@ describe('deriveRole (labels → workflow/wayfinderType/drive)', () => {
     expect(deriveRole(ticket({ labels: ['wayfinder:prototype'] })).drive).toBe('hitl');
     expect(deriveRole(ticket({ labels: ['wayfinder:task'] })).drive).toBe('hitl');
   });
-  it('implement: ready-for-agent → afk, ready-for-human → hitl, bare/needs-triage → hitl (no opt-in)', () => {
+  it('implement: ready-for-agent is the positive afk gate; its absence ⇒ hitl (issue #230)', () => {
     expect(deriveRole(ticket({ labels: ['ready-for-agent'] }))).toEqual({
       workflow: 'implement',
       wayfinderType: null,
       drive: 'afk',
     });
+    // ready-for-human wins even when ready-for-agent is also present.
+    expect(deriveRole(ticket({ labels: ['ready-for-agent', 'ready-for-human'] })).drive).toBe('hitl');
     expect(deriveRole(ticket({ labels: ['ready-for-human'] })).drive).toBe('hitl');
+  });
+  it('no ready-for-agent ⇒ hitl regardless of any other label (opt-in, not opt-out)', () => {
+    // Unlabelled, needs-triage, needs-info, wontfix — none opt into afk.
     expect(deriveRole(ticket({ labels: [] })).drive).toBe('hitl');
     expect(deriveRole(ticket({ labels: ['needs-triage'] })).drive).toBe('hitl');
-    // ready-for-human wins even if ready-for-agent is also present
-    expect(deriveRole(ticket({ labels: ['ready-for-agent', 'ready-for-human'] })).drive).toBe('hitl');
+    expect(deriveRole(ticket({ labels: ['needs-info'] })).drive).toBe('hitl');
+    expect(deriveRole(ticket({ labels: ['wontfix'] })).drive).toBe('hitl');
+    // wayfinder:research is not a hitl kind, but still needs the opt-in to run afk.
+    expect(deriveRole(ticket({ labels: ['wayfinder:research'] })).drive).toBe('hitl');
+  });
+  it('assignment is never consulted: an assigned ready-for-agent ticket is still afk (issue #208)', () => {
+    expect(deriveRole(ticket({ labels: ['ready-for-agent'], assignees: ['octocat'] })).drive).toBe('afk');
   });
 });
 
@@ -151,6 +161,16 @@ describe('mirrorScan upsert', () => {
     const child = results.find((t) => t.trackerRef === 201)!;
     expect(epic.drive).toBe('hitl'); // Epic → not auto-run despite ready-for-agent
     expect(child.drive).toBe('afk'); // leaf child still afk
+  });
+
+  it('an unlabelled parent that is momentarily childless mirrors hitl by the rule (issue #229/#230)', async () => {
+    // The create-before-children window: an Epic is created, then its members.
+    // While childless it is not yet an Epic (epicRefs is empty), so the
+    // isEpic→hitl override does not fire. The opt-in rule alone must still keep
+    // it hitl — under the old opt-out polarity it defaulted to afk and was
+    // auto-driven (task 226 / run 275).
+    const [parent] = await mscan([ticket({ number: 229, labels: [] })]);
+    expect(parent!.drive).toBe('hitl');
   });
 
   it('an Epic parent is never a blocker: a child "Blocked by" its parent gets no edge', async () => {

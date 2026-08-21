@@ -1,4 +1,4 @@
-import type { Ticket } from './adapter.js';
+import { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL, type Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { WAYFINDER_TYPES, type Drive, type TaskRow, type WayfinderType, type Workflow } from '../db/schema.js';
 
@@ -11,22 +11,23 @@ export interface MirroredRole {
 /**
  * Derive a mirrored issue's role from its labels (issue #30, per CONTEXT.md).
  * `workflow` = wayfinder when any `wayfinder:<type>` label is present, else
- * implement. Drive seeding: `ready-for-agent` is the positive opt-in to AFK —
- * present (and not a hitl kind) → afk; everything else → hitl. So ready-for-human
- * / grilling / prototype / task, AND any ticket lacking `ready-for-agent`
- * (unlabelled / needs-triage / needs-info / wontfix) stay hitl: a human may drive
- * them, but Harmonic never auto-runs them. `ready-for-agent` = can be done AFK.
+ * implement. Drive seeding is opt-*in* (issue #230): `ready-for-agent` is the
+ * positive gate to AFK — present (and not a hitl kind) → afk; everything else →
+ * hitl. So ready-for-human / grilling / prototype / task, AND any ticket lacking
+ * `ready-for-agent` (unlabelled / needs-triage / needs-info / wontfix) stay hitl:
+ * a human may drive them, but Harmonic never auto-runs them. Assignment is never
+ * consulted — an assigned `ready-for-agent` ticket is still afk (issue #208).
  */
 export function deriveRole(ticket: Ticket): MirroredRole {
   const labels = new Set(ticket.labels);
   const wayfinderType = WAYFINDER_TYPES.find((t) => labels.has(`wayfinder:${t}`)) ?? null;
   const workflow: Workflow = wayfinderType ? 'wayfinder' : 'implement';
   const forcedHitl =
-    labels.has('ready-for-human') ||
+    labels.has(READY_FOR_HUMAN_LABEL) ||
     wayfinderType === 'grilling' ||
     wayfinderType === 'prototype' ||
     wayfinderType === 'task';
-  const afk = labels.has('ready-for-agent') && !forcedHitl;
+  const afk = labels.has(READY_FOR_AGENT_LABEL) && !forcedHitl;
   return { workflow, wayfinderType, drive: afk ? 'afk' : 'hitl' };
 }
 

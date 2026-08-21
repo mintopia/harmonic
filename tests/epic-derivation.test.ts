@@ -7,6 +7,9 @@ import { describe, expect, it } from 'vitest';
 import { deriveEpics } from '../src/domain/epic-derivation.js';
 import { type Ticket } from '../src/tracker/adapter.js';
 
+// Members default to `ready-for-agent` — the positive afk opt-in the frontier
+// now requires (issue #230). Parent/Map tickets carry it too, harmlessly: a
+// parent's own labels never enter readiness (Epic-ness is structural).
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
   title: 'A ticket',
@@ -14,7 +17,7 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   body: '',
   createdAt: '2026-08-07T00:00:00Z',
   closedAt: null,
-  labels: [],
+  labels: ['ready-for-agent'],
   assignees: [],
   parent: null,
   blockedBy: [],
@@ -69,14 +72,14 @@ describe('deriveEpics', () => {
     expect(result[0]?.ready).toEqual([12]);
   });
 
-  it('5. assigned member excluded from ready', () => {
+  it('5. assigned ready-for-agent member stays on the ready frontier', () => {
     const tickets = [
       ticket({ number: 10, title: 'Spec' }),
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10, assignees: ['alice'] }),
     ];
     const result = deriveEpics(tickets);
-    expect(result[0]?.ready).toEqual([11]);
+    expect(result[0]?.ready).toEqual([11, 12]);
   });
 
   it('6. leaf-most selection over a spine: only the leaf-most Epic is derived', () => {
@@ -171,5 +174,17 @@ describe('deriveEpics', () => {
     expect(result.map((e) => e.ref)).toEqual([20]);
     // Containment holds: #21 stays on the ready frontier.
     expect(result.find((e) => e.ref === 20)?.ready).toEqual([21]);
+  });
+
+  it('14. a member without ready-for-agent is a member but never on the ready frontier (issue #230)', () => {
+    const tickets = [
+      ticket({ number: 10, title: 'Spec' }),
+      ticket({ number: 11, parent: 10 }), // ready-for-agent (builder default)
+      ticket({ number: 12, parent: 10, labels: [] }), // no opt-in — not auto-runnable
+      ticket({ number: 13, parent: 10, labels: ['needs-triage'] }), // some other label, still no opt-in
+    ];
+    const result = deriveEpics(tickets);
+    expect(result[0]?.members).toEqual([11, 12, 13]);
+    expect(result[0]?.ready).toEqual([11]);
   });
 });

@@ -170,12 +170,14 @@ Workflow, never a Wayfinder Type.
 **Drive**:
 Who drives a mirrored Task — **afk** (Harmonic auto-runs it) or **hitl** (a
 human drives it via the mattpocock skills; Harmonic surfaces it but never
-runs it). Stored, and **re-synced from the ticket's labels on every re-poll**
-(ready-for-human / grilling / prototype / bare-task → hitl; ready-for-agent /
-research → afk; an **unclear** signal → *afk*, attempt optimistically), so
-relabeling a mirrored issue flips its drive — **except while the Task is
-escalated**, where Harmonic's runtime afk→hitl flip is preserved (a stale
-ready-for-agent label must not undo it). The Auto-Runner's
+runs it). Stored, and **re-synced from the ticket's labels on every re-poll**.
+Drive is opt-*in* (issue #230): **`ready-for-agent` is the positive gate to afk**
+— present → afk; its absence → hitl, regardless of any other label (unlabelled /
+needs-triage / needs-info / wontfix, and ready-for-human / grilling / prototype /
+bare-task, all → hitl). Assignment is never consulted (an assigned
+`ready-for-agent` ticket is still afk). Relabeling a mirrored issue flips its
+drive — **except while the Task is escalated**, where Harmonic's runtime afk→hitl
+flip is preserved (a stale ready-for-agent label must not undo it). The Auto-Runner's
 whole predicate: pick-eligible iff `drive ≠ hitl`. Mirrored Tasks bypass the
 review gate entirely — closure is a tracker act (the agent via its skill, or a
 human), never an Accept/Reject. A clean Run is not success: the agent-via-skill
@@ -238,7 +240,8 @@ with its siblings, each in its own worktree cut from the Integration branch.
 _Avoid_: child task, subtask
 
 **Ready frontier**:
-The subset of an Epic's Members currently runnable — *open*, unassigned, and
+The subset of an Epic's Members currently runnable — carrying `ready-for-agent`
+(the same afk opt-in the **Drive** rule applies, issue #230), *open*, unassigned, and
 free of any open non-Epic blocker — recomputed every poll; the true width of
 parallelism, not the whole Epic at once. Informally a **wave**: the next wave is
 the frontier re-derived after blockers clear. Never a stored or numbered entity.
