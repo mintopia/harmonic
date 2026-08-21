@@ -19,7 +19,7 @@ export interface RunUsage {
   agents?: Record<string, ModelUsage>;
   /** Aggregate token counts; null when no source reported tokens. */
   totals: (ModelUsage & { totalTokens: number | null }) | null;
-  /** Tool-call tallies from the run's events. */
+  /** Tool-call tallies from the Run's aggregate store. */
   toolCalls: Record<string, number>;
   source: 'acp' | 'session-log' | 'combined' | null;
 }
@@ -137,7 +137,8 @@ export interface CollectUsageInput {
   sessionId: string | null;
   /** The ACP session/prompt result, when the run finished cleanly. */
   promptResult?: { usage?: Record<string, unknown>; _meta?: unknown } | undefined;
-  events: PersistedRunEvent[];
+  /** Conversation-only ACP events, retained while Conversations still persist their transcript. */
+  events?: PersistedRunEvent[] | undefined;
 }
 
 /**
@@ -176,7 +177,7 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
     }
   }
   const agents = parsed ? agentsFromTree(parsed.tree) : undefined;
-  const toolCalls = tallyToolCalls(input.events, (payload) => collector?.toolName(payload) ?? null);
+  const toolCalls = tallyToolCalls(input.events ?? [], (payload) => collector?.toolName(payload) ?? null);
 
   if (!acpTotals && Object.keys(models).length === 0) return null;
   return {

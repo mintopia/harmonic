@@ -53,6 +53,53 @@ function migrationsFolderBefore(boundary: string): string {
   return dir;
 }
 
+describe('run event firehose pruning (issue #245)', () => {
+  it('removes historical session updates while retaining structured run events', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-firehose-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0042');
+    const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    const db = drizzle(client, { schema });
+
+    await migrate(db, { migrationsFolder });
+    await client.execute(
+      `insert into tasks (prompt, working_dir, state, created_at, updated_at) values ('legacy', '/tmp/legacy', 'ready', 1, 1)`,
+    );
+    await client.execute(`insert into runs (task_id, attempt, state, started_at) values (1, 1, 'completed', 1)`);
+    await client.execute({
+      sql: `insert into run_events (run_id, seq, ts, type, payload) values
+        (1, 1, 1, 'session_update', '{"sessionUpdate":"agent_message_chunk"}'),
+        (1, 2, 2, 'lifecycle', '{"event":"finished"}'),
+        (1, 3, 3, 'permission_request', '{}')`,
+    });
+    await client.execute({
+      sql: `with recursive sequence(n) as (values(4) union all select n + 1 from sequence where n < 64)
+        insert into run_events (run_id, seq, ts, type, payload)
+        select 1, n, n, 'session_update', hex(zeroblob(50000)) from sequence`,
+    });
+    const pagesBefore = Number((await client.execute('PRAGMA page_count')).rows[0]?.page_count);
+
+    client.close();
+    const upgraded = await openAsyncDb(dataDir);
+
+    const events = await upgraded.read((database) =>
+      database.select({ type: schema.runEvents.type }).from(schema.runEvents).orderBy(schema.runEvents.seq).all(),
+    );
+    expect(events.map((event) => event.type)).toEqual(['lifecycle', 'permission_request']);
+
+    await upgraded.close();
+    const compacted = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    const pagesAfter = Number((await compacted.execute('PRAGMA page_count')).rows[0]?.page_count);
+    const markers = await compacted.execute(
+      "select 1 from sqlite_master where type = 'table' and name = 'run_event_firehose_pruning'",
+    );
+    compacted.close();
+    expect(pagesAfter).toBeLessThan(pagesBefore);
+    expect(markers.rows).toHaveLength(0);
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});
+
 describe('Setting Override migration (ADR-0012, issue #59)', () => {
   it('adds nullable override columns; an existing Workspace reads them as inherit (null)', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-override-migrate-'));

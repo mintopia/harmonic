@@ -3459,7 +3459,6 @@ export class Runner {
         cwd: workspace.cwd,
         sessionId: (await this.runStore.get(run.id)).sessionId,
         promptResult,
-        events: await this.runStore.listEvents(run.id),
       });
       return usage
         ? { ...usage, toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))) }
@@ -3503,7 +3502,6 @@ export class Runner {
           harness,
           cwd,
           sessionId: run.sessionId,
-          events: await this.runStore.listEvents(run.id),
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
         fresh.toolCalls = Object.fromEntries(await this.runStore.listToolCalls(run.id));

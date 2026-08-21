@@ -296,6 +296,15 @@ export async function openAsyncDb(
   const db = drizzle(client, { schema });
   const migrationsFolder = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle');
   await migrate(db, { migrationsFolder });
+  // 0042 drops a historical firehose. Its marker makes compaction retryable if
+  // the process dies after migration commits but before VACUUM completes.
+  const firehosePruning = await client.execute(
+    "select 1 from sqlite_master where type = 'table' and name = 'run_event_firehose_pruning'",
+  );
+  if (firehosePruning.rows.length > 0) {
+    await client.execute('VACUUM');
+    await client.execute('DROP TABLE run_event_firehose_pruning');
+  }
   const violations = await client.execute('PRAGMA foreign_key_check');
   if (violations.rows.length > 0) {
     throw new Error(
