@@ -68,6 +68,11 @@ export function deriveEpics(tickets: Ticket[]): DerivedEpic[] {
     const epic = byRef.get(ref);
     if (!epic) continue; // dangling parent ref: not resolvable in this scan
 
+    // A closed Epic is done: deriving it would re-probe/re-attempt a finished
+    // Epic every poll (recurring epic-land noise). Keep it in `epicRefs` above
+    // so it still counts as containment for `isReady`, but do not surface it.
+    if (epic.state !== 'open') continue;
+
     const children = childrenOf.get(ref) ?? [];
     if (children.some((c) => epicRefs.has(c.number))) continue; // not leaf-most: a spine parent
 

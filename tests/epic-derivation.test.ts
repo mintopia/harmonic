@@ -153,4 +153,23 @@ describe('deriveEpics', () => {
     expect(result.map((e) => e.ref)).toEqual([11]);
     expect(result[0]?.members).toEqual([99]);
   });
+
+  it('13. closed Epic is not derived, but still counts as containment for members', () => {
+    const tickets = [
+      // #10 is a closed, finished Epic with a child (so #10 is in epicRefs).
+      ticket({ number: 10, title: 'Closed Spec', state: 'closed', closedAt: '2026-08-10T00:00:00Z' }),
+      ticket({ number: 11, parent: 10 }),
+      // #20 is an open sibling Epic of the same shape — still derived.
+      ticket({ number: 20, title: 'Open Spec' }),
+      // #21 is blocked only by the closed Epic ref #10. That ref is containment
+      // (not a real dependency), so #21 is still ready — proving #10 was NOT
+      // removed from epicRefs when it was skipped as a derived Epic.
+      ticket({ number: 21, parent: 20, blockedBy: [{ number: 10, title: 'Closed Spec', state: 'closed' }] }),
+    ];
+    const result = deriveEpics(tickets);
+    // The closed Epic is absent; only the open sibling is derived.
+    expect(result.map((e) => e.ref)).toEqual([20]);
+    // Containment holds: #21 stays on the ready frontier.
+    expect(result.find((e) => e.ref === 20)?.ready).toEqual([21]);
+  });
 });
