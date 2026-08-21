@@ -130,6 +130,9 @@ export async function startServer(
     runnerTuning: opts.runnerTuning,
     leaseTuning: opts.leaseTuning,
     criticDrive: opts.criticDrive,
+    // The event-loop stall monitor (issue #210) is process-health noise in
+    // tests: heavy synchronous test setup can trip a stall warning. Keep it off.
+    reliabilityTuning: { eventLoop: { enabled: false } },
   });
   // A test server must never operate on the developer's real checkout: the
   // Default Workspace seeds its workingDir from process.cwd(), and direct-mode
