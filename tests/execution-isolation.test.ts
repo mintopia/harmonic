@@ -276,7 +276,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
   /** Launch a mirrored afk/direct Run against `repo`, mirroring the Auto-Runner
    * pick: point the single Workspace at `repo`, flip the Task to running, then
    * launchClaimed spawns the Run through the shared funnel. */
-  function launchAfkDirect(repo: string, scenario: object): { taskId: number; runId: number } {
+  async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
     // The stub agent runs the *drive prompt* as its scenario script — so put the
     // scenario JSON at the head of the drive prompt (the same trick auto-drive
@@ -287,7 +287,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
 
@@ -299,14 +299,14 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     // turn without signalling finish. With continue/retry disabled that settles
     // the Run terminally as unresolved (Escalate) WITHOUT landing, so the target
     // branch legitimately never moves and we can assert the restore.
-    const { runId } = launchAfkDirect(repo, {
+    const { runId } = await launchAfkDirect(repo, {
       writeFiles: { 'agent-feature.txt': 'made by the afk agent\n' },
       stopReason: 'end_turn',
     });
 
     // Wait for the Run row to reach a terminal state (finalize → restore ran).
     await waitFor(async () => {
-      const r = server.app.ctx.runs.get(runId);
+      const r = await server.app.ctx.runs.get(runId);
       return r.state !== 'running' ? r : undefined;
     });
 
@@ -342,7 +342,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     // Turn 1 writes a.txt; the heal turn writes only b.txt. If the continuation
     // rematerialises turn 1's candidate, the rebuilt candidate carries BOTH; if
     // it restarted from a swept checkout it would carry only b.txt.
-    const { taskId, runId } = launchAfkDirect(repo, {
+    const { taskId, runId } = await launchAfkDirect(repo, {
       turns: [
         { writeFiles: { 'a.txt': 'first\n' }, mcpFinish: true, stopReason: 'end_turn' },
         { writeFiles: { 'b.txt': 'second\n' }, mcpFinish: true, stopReason: 'end_turn' },
@@ -361,7 +361,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     expect(git(repo, 'status', '--porcelain')).toBe('');
 
     // The heal turn resumed turn 1's work: the final candidate carries both files.
-    const run = server.app.ctx.runs.get(runId);
+    const run = await server.app.ctx.runs.get(runId);
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
     expect(git(repo, 'show', `${run.candidateOid}:a.txt`)).toBe('first');
     expect(git(repo, 'show', `${run.candidateOid}:b.txt`)).toBe('second');

@@ -105,15 +105,23 @@ export class LandingCoordinator {
   ): Promise<LandingOutcome> {
     const now = this.opts.now ?? Date.now;
 
-    if (run.phase !== 'landing') {
-      this.runStore.update(run.id, { phase: 'landing' });
-      this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'landing' } });
-    }
-
-    // Step 2 + 3: freeze the PONC before the first irreversible effect. See
-    // the doc comment above for exactly why this ordering is race-safe.
+    // Steps 2 + 3 (the PONC freeze) run FIRST, synchronously, before this
+    // method's first `await`: the land fact reserves its seq and the PONC freezes
+    // the cutoff at it, so no concurrent settle can steal that seq or decide the
+    // disposition ahead of the land. Both stores here are the sync Db. The
+    // phase-transition writes below moved to the async RunStore (ADR-0029 #203);
+    // awaiting them ahead of this freeze reopened the exact race this ordering
+    // exists to prevent, so the freeze now precedes the phase record.
     const landFact = this.runFacts.append(run.id, landFactType, { ...landProjection }, now());
     this.journal.writePonc(run.id, landFact.seq, now());
+
+    // Step 1: record the landing phase + a lifecycle event. Now that RunStore is
+    // async these are awaited, so a concurrent settle during this await already
+    // sees the PONC frozen above and is clamped to audit-only.
+    if (run.phase !== 'landing') {
+      await this.runStore.update(run.id, { phase: 'landing' });
+      await this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'landing' } });
+    }
 
     const timeoutMs = this.opts.timeoutMs ?? LANDING_OP_TIMEOUT_MS;
     for (const effect of effects) {
@@ -138,7 +146,7 @@ export class LandingCoordinator {
       }
     }
 
-    this.settle.settle(task, run, landFactType, landProjection, patch);
+    await this.settle.settle(task, run, landFactType, landProjection, patch);
     return { ok: true };
   }
 

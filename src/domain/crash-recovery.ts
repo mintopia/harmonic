@@ -69,7 +69,7 @@ export class CrashRecoveryCoordinator {
     // already resolved anything more specific about a `running` Run. Lease
     // disposition is no longer done here (an unconditional release would wrongly
     // free a dirty dead-owner context) — Pass D owns it.
-    this.runStore.markInterrupted();
+    await this.runStore.markInterrupted();
     // Pass D: reconcile the Work Context leases a crash left behind (#123).
     await this.reconcileLeases();
   }
@@ -97,7 +97,7 @@ export class CrashRecoveryCoordinator {
     const isClean = this.opts.isDirectContextClean ?? directContextProvablyClean;
     for (const lease of this.leaseStore.listAll()) {
       if (lease.state === 'suspect') continue; // already reconciled — idempotent
-      const run = this.runStore.get(lease.ownerRunId);
+      const run = await this.runStore.get(lease.ownerRunId);
       const task = this.taskService.get(run.taskId);
       const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
       if (releasable) this.leaseStore.release(lease.key);
@@ -107,14 +107,14 @@ export class CrashRecoveryCoordinator {
 
   /** Pass A: resolve every Run mid-landing when the process died. */
   private async reconcileLandingOrphans(now: number): Promise<void> {
-    for (const run of this.runStore.listLandingOrphans()) {
+    for (const run of await this.runStore.listLandingOrphans()) {
       const task = this.taskService.get(run.taskId);
       const poncSeq = this.landingJournal.ponc(run.id);
       if (poncSeq === null) {
         // Died before the PONC ever froze — no irreversible effect could have
         // started (see landing.ts's module doc comment). Settle it as an
         // interrupted orphan, the same disposition the generic sweep would use.
-        this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
+        await this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
         continue;
       }
 
@@ -154,7 +154,7 @@ export class CrashRecoveryCoordinator {
         // Same fact type + projection + patch as `land()`'s finishing settle
         // call — the only "land" signal today (landing-coordinator.ts's
         // `LAND_FACT_TYPE` doc comment, `ReviewService.accept`'s call site).
-        this.settle.settle(
+        await this.settle.settle(
           task,
           run,
           'agent-finish/unresolved',
@@ -190,7 +190,7 @@ export class CrashRecoveryCoordinator {
       // its effect is unknown, so the Run escalates to a human rather than
       // silently continuing as if nothing happened.
       if (isMutating(row.purpose)) {
-        const run = this.runStore.get(row.runId);
+        const run = await this.runStore.get(row.runId);
         // Only a still-live Run escalates: if pass A (or a prior fact) already
         // drove this Run terminal, the stale in_flight turn is audit-only —
         // settling the turn below is enough. Re-opening a settled disposition
@@ -199,7 +199,7 @@ export class CrashRecoveryCoordinator {
         // winning disposition changes even when `state !== 'running'`.
         if (run.state === 'running') {
           const task = this.taskService.get(run.taskId);
-          this.settle.settle(task, run, 'escalate', {
+          await this.settle.settle(task, run, 'escalate', {
             runState: 'failed',
             taskAction: 'escalate',
             reason: `unresolved ${row.purpose} turn interrupted by restart`,

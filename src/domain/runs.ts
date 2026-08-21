@@ -1,8 +1,7 @@
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import { runs, runEvents, runFacts, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
-import { RunFactStore } from './run-facts.js';
 import { isParkedPhase } from './run-phases.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import type { PriceTable } from '../execution/pricing.js';
@@ -34,100 +33,134 @@ export interface PersistedRunEvent {
 }
 
 export class RunStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
-  create(taskId: number, snapshot?: RunGuardrailSnapshot, chainId?: number): RunRow {
-    const attempt =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${runs.attempt}), 0)` })
-        .from(runs)
-        .where(eq(runs.taskId, taskId))
-        .get()?.n ?? 0) + 1;
-    return this.db
-      .insert(runs)
-      .values({
-        taskId,
-        attempt,
-        state: 'running',
-        // A Run enters the phase machine at `executing` the moment it is created
-        // (issue #114); the drive loop advances it from here.
-        phase: 'executing',
-        startedAt: Date.now(),
-        guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
-        priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
-        // The Execution Chain (issue #129) this Run joins; null on a caller
-        // that hasn't resolved one yet (pre-feature / not-yet-wired paths).
-        chainId: chainId ?? null,
-      })
-      .returning()
-      .get();
+  async create(taskId: number, snapshot?: RunGuardrailSnapshot, chainId?: number): Promise<RunRow> {
+    // read-then-insert as one write-queue unit: under the async single-writer
+    // queue the attempt# CAS would otherwise race a concurrent create for the
+    // same Task (ADR-0029 §3; the sync driver gave this for free).
+    return this.db.write(async (db) => {
+      const attempt =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${runs.attempt}), 0)` })
+            .from(runs)
+            .where(eq(runs.taskId, taskId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(runs)
+        .values({
+          taskId,
+          attempt,
+          state: 'running',
+          // A Run enters the phase machine at `executing` the moment it is created
+          // (issue #114); the drive loop advances it from here.
+          phase: 'executing',
+          startedAt: Date.now(),
+          guardrailConfig: snapshot ? JSON.stringify(snapshot.guardrailConfig) : null,
+          priceTable: snapshot ? JSON.stringify(snapshot.priceTable) : null,
+          // The Execution Chain (issue #129) this Run joins; null on a caller
+          // that hasn't resolved one yet (pre-feature / not-yet-wired paths).
+          chainId: chainId ?? null,
+        })
+        .returning()
+        .get();
+    });
   }
 
-  get(id: number): RunRow {
-    const row = this.db.select().from(runs).where(eq(runs.id, id)).get();
+  async get(id: number): Promise<RunRow> {
+    const row = await this.db.read((db) => db.select().from(runs).where(eq(runs.id, id)).get());
     if (!row) throw new DomainError('not_found', `run ${id} not found`);
     return row;
   }
 
-  listForTask(taskId: number): RunRow[] {
-    return this.db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(asc(runs.attempt)).all();
+  listForTask(taskId: number): Promise<RunRow[]> {
+    return this.db.read((db) =>
+      db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(asc(runs.attempt)).all(),
+    );
   }
 
   /** Every Run row, unfiltered — the lease diagnostics surface (issue #125)
    * joins this against `leases.listAll()` in memory to resolve each lease's
    * owning Run/Task. */
-  listAll(): RunRow[] {
-    return this.db.select().from(runs).all();
+  listAll(): Promise<RunRow[]> {
+    return this.db.read((db) => db.select().from(runs).all());
   }
 
   /** Every Run bound to one durable Session (issue #148), oldest first — the
    * Runs that share the Session's builder worktree across a retry / reject
    * continuation. Session retirement uses this to check no live Run still leases
    * the worktree before removing it. */
-  listForSession(sessionRowId: number): RunRow[] {
-    return this.db
-      .select()
-      .from(runs)
-      .where(eq(runs.sessionRowId, sessionRowId))
-      .orderBy(asc(runs.attempt))
-      .all();
+  listForSession(sessionRowId: number): Promise<RunRow[]> {
+    return this.db.read((db) =>
+      db.select().from(runs).where(eq(runs.sessionRowId, sessionRowId)).orderBy(asc(runs.attempt)).all(),
+    );
   }
 
-  update(id: number, patch: Partial<RunRow>): RunRow {
-    return this.db.update(runs).set(patch).where(eq(runs.id, id)).returning().get()!;
+  update(id: number, patch: Partial<RunRow>): Promise<RunRow> {
+    return this.db.write((db) =>
+      db.update(runs).set(patch).where(eq(runs.id, id)).returning().get(),
+    ) as Promise<RunRow>;
+  }
+
+  /**
+   * Remove a Run row. Used only to compensate a failed claim: `Runner.beginRun`
+   * creates the Run before acquiring its Work Context lease, and — now that the
+   * Run row (async Db) and the lease (sync Db) no longer share one transaction
+   * during the expand-contract migration (ADR-0029) — deletes the just-created
+   * Run if the lease CAS rejects it, so a losing claim still leaves no orphan.
+   * Safe because such a Run has no events/facts/lease pointing at it yet.
+   */
+  async delete(id: number): Promise<void> {
+    await this.db.write((db) => db.delete(runs).where(eq(runs.id, id)).run());
   }
 
   /** Terminal transition; ignored if the run already left `running` (e.g. cancelled). */
-  finish(id: number, state: Exclude<RunState, 'running'>, patch: Partial<RunRow> = {}): RunRow {
-    const current = this.get(id);
-    if (current.state !== 'running') return current;
-    return this.update(id, { ...patch, state, finishedAt: Date.now() });
+  async finish(id: number, state: Exclude<RunState, 'running'>, patch: Partial<RunRow> = {}): Promise<RunRow> {
+    // The read-guard-then-update runs as one write-queue unit so the terminal
+    // transition can't race another writer between the state check and the write.
+    return this.db.write(async (db) => {
+      const current = await db.select().from(runs).where(eq(runs.id, id)).get();
+      if (!current) throw new DomainError('not_found', `run ${id} not found`);
+      if (current.state !== 'running') return current;
+      return db
+        .update(runs)
+        .set({ ...patch, state, finishedAt: Date.now() })
+        .where(eq(runs.id, id))
+        .returning()
+        .get();
+    });
   }
 
-  appendEvent(runId: number, event: RunEventInput): PersistedRunEvent {
-    const seq =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${runEvents.seq}), 0)` })
-        .from(runEvents)
-        .where(eq(runEvents.runId, runId))
-        .get()?.n ?? 0) + 1;
-    const row = this.db
-      .insert(runEvents)
-      .values({ runId, seq, ts: Date.now(), type: event.type, payload: JSON.stringify(event.payload) })
-      .returning()
-      .get();
+  async appendEvent(runId: number, event: RunEventInput): Promise<PersistedRunEvent> {
+    // read-then-insert as one write-queue unit — the `seq` CAS mirrors
+    // RunFactStore.append and would collide under naive concurrent appends
+    // (ADR-0029 §3).
+    const row = await this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${runEvents.seq}), 0)` })
+            .from(runEvents)
+            .where(eq(runEvents.runId, runId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(runEvents)
+        .values({ runId, seq, ts: Date.now(), type: event.type, payload: JSON.stringify(event.payload) })
+        .returning()
+        .get();
+    });
     return deserializeEvent(row);
   }
 
-  listEvents(runId: number): PersistedRunEvent[] {
-    this.get(runId); // 404 on unknown run
-    return this.db
-      .select()
-      .from(runEvents)
-      .where(eq(runEvents.runId, runId))
-      .orderBy(asc(runEvents.seq))
-      .all()
-      .map(deserializeEvent);
+  async listEvents(runId: number): Promise<PersistedRunEvent[]> {
+    await this.get(runId); // 404 on unknown run
+    const rows = await this.db.read((db) =>
+      db.select().from(runEvents).where(eq(runEvents.runId, runId)).orderBy(asc(runEvents.seq)).all(),
+    );
+    return rows.map(deserializeEvent);
   }
 
   /**
@@ -141,14 +174,15 @@ export class RunStore {
    */
   private readonly notReviewParked = or(isNull(runs.phase), ne(runs.phase, 'review'));
 
-  countRunning(): number {
-    return (
-      this.db
+  async countRunning(): Promise<number> {
+    const row = await this.db.read((db) =>
+      db
         .select({ n: sql<number>`count(*)` })
         .from(runs)
         .where(and(eq(runs.state, 'running'), this.notReviewParked))
-        .get()?.n ?? 0
+        .get(),
     );
+    return row?.n ?? 0;
   }
 
   /**
@@ -159,14 +193,16 @@ export class RunStore {
    * tallies and the Machine-Ceiling total can never disagree. Workspaces with no
    * running Run are absent (read as 0).
    */
-  countRunningByWorkspace(): Map<number, number> {
-    const rows = this.db
-      .select({ workspaceId: tasks.workspaceId, n: sql<number>`count(*)` })
-      .from(runs)
-      .innerJoin(tasks, eq(runs.taskId, tasks.id))
-      .where(and(eq(runs.state, 'running'), this.notReviewParked))
-      .groupBy(tasks.workspaceId)
-      .all();
+  async countRunningByWorkspace(): Promise<Map<number, number>> {
+    const rows = await this.db.read((db) =>
+      db
+        .select({ workspaceId: tasks.workspaceId, n: sql<number>`count(*)` })
+        .from(runs)
+        .innerJoin(tasks, eq(runs.taskId, tasks.id))
+        .where(and(eq(runs.state, 'running'), this.notReviewParked))
+        .groupBy(tasks.workspaceId)
+        .all(),
+    );
     const counts = new Map<number, number>();
     for (const row of rows) if (row.workspaceId != null) counts.set(row.workspaceId, row.n);
     return counts;
@@ -184,24 +220,24 @@ export class RunStore {
    * any Run that is not terminal-`running`-mid-execution — i.e. non-running rows
    * plus review-parked ones.
    */
-  listUsageBackfillCandidates(): RunRow[] {
-    return this.db
-      .select()
-      .from(runs)
-      .where(and(ne(runs.state, 'running'), isNotNull(runs.sessionId)))
-      .all()
-      .concat(
-        this.db
-          .select()
-          .from(runs)
-          .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.sessionId)))
-          .all(),
-      )
-      .filter((run) => {
+  listUsageBackfillCandidates(): Promise<RunRow[]> {
+    return this.db.read(async (db) => {
+      const finished = await db
+        .select()
+        .from(runs)
+        .where(and(ne(runs.state, 'running'), isNotNull(runs.sessionId)))
+        .all();
+      const reviewParked = await db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.sessionId)))
+        .all();
+      return finished.concat(reviewParked).filter((run) => {
         if (!run.usage) return true;
         const models = (JSON.parse(run.usage) as { models?: Record<string, unknown> }).models;
         return !models || Object.keys(models).length === 0;
       });
+    });
   }
 
   /**
@@ -227,9 +263,15 @@ export class RunStore {
    * (domain/crash-recovery.ts) reconciles it against its landing journal
    * instead, ahead of this sweep running.
    */
-  markInterrupted(): RunRow[] {
-    const facts = new RunFactStore(this.db);
-    const running = this.db.select().from(runs).where(eq(runs.state, 'running')).all();
+  async markInterrupted(): Promise<RunRow[]> {
+    // Boot-only invariant: the sync predecessor was atomic across the whole
+    // sweep; the async version reads the `running` set once, then fails each
+    // orphan in its own transaction, so a concurrent writer could in principle
+    // mutate a row between the read and its compensating write. Safe today
+    // because the sole caller (`CrashRecoveryCoordinator.reconcile`) runs once at
+    // boot, before any dispatch starts. A periodic caller would need a re-read
+    // guard (only fail a run still `running`) added here.
+    const running = await this.db.read((db) => db.select().from(runs).where(eq(runs.state, 'running')).all());
     // A resume re-entry Run (issue #146) is parked awaiting its `crash-recovery`
     // turn to be dispatched — "running, no live process, by design," exactly like
     // a review-parked Run (`isParkedPhase`) but marked by a `resume-entry` fact
@@ -239,20 +281,49 @@ export class RunStore {
     // are. The boot resume sweep's `resume-entry` marker is the single source of
     // this fact — see `BootResumeCoordinator`.
     const resumeEntries = new Set(
-      this.db.select({ runId: runFacts.runId }).from(runFacts).where(eq(runFacts.type, 'resume-entry')).all().map((r) => r.runId),
+      (
+        await this.db.read((db) =>
+          db.select({ runId: runFacts.runId }).from(runFacts).where(eq(runFacts.type, 'resume-entry')).all(),
+        )
+      ).map((r) => r.runId),
     );
     const orphans = running.filter(
       (run) => !isParkedPhase(run.phase) && run.phase !== 'landing' && !resumeEntries.has(run.id),
     );
     for (const run of orphans) {
       // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
-      // failed/interrupted terminal stays reconstructable from the log alone.
-      facts.append(run.id, 'process-death', {
-        runState: 'failed',
-        taskAction: 'failed',
-        reason: 'interrupted',
+      // failed/interrupted terminal stays reconstructable from the log alone. The
+      // fact-append and the run update run as one exclusive transaction so a crash
+      // can never leave the row failed without its explanatory fact (or vice
+      // versa). The `seq` CAS is inlined here rather than via RunFactStore because
+      // run-facts is a separate migration batch still on the sync Db — this write
+      // must go through the same async connection as the run update. `run_facts`
+      // ownership consolidates when that batch migrates.
+      await this.db.transaction(async (tx) => {
+        const seq =
+          ((
+            await tx
+              .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
+              .from(runFacts)
+              .where(eq(runFacts.runId, run.id))
+              .get()
+          )?.n ?? 0) + 1;
+        await tx
+          .insert(runFacts)
+          .values({
+            runId: run.id,
+            seq,
+            ts: Date.now(),
+            type: 'process-death',
+            payload: JSON.stringify({ runState: 'failed', taskAction: 'failed', reason: 'interrupted' }),
+          })
+          .run();
+        await tx
+          .update(runs)
+          .set({ state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() })
+          .where(eq(runs.id, run.id))
+          .run();
       });
-      this.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
     }
     return orphans;
   }
@@ -264,13 +335,15 @@ export class RunStore {
    * each to a terminal disposition via the coordinator (a `review-sla-expiry`
    * `run_fact`). A null `reviewDeadline` never expires.
    */
-  listReviewParkedOverdue(now: number): RunRow[] {
-    return this.db
-      .select()
-      .from(runs)
-      .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.reviewDeadline)))
-      .all()
-      .filter((run) => run.reviewDeadline != null && run.reviewDeadline <= now);
+  async listReviewParkedOverdue(now: number): Promise<RunRow[]> {
+    const rows = await this.db.read((db) =>
+      db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.state, 'running'), eq(runs.phase, 'review'), isNotNull(runs.reviewDeadline)))
+        .all(),
+    );
+    return rows.filter((run) => run.reviewDeadline != null && run.reviewDeadline <= now);
   }
 
   /**
@@ -281,12 +354,10 @@ export class RunStore {
    * `CrashRecoveryCoordinator` (domain/crash-recovery.ts) is the sole caller:
    * it reconciles each of these against its landing journal instead.
    */
-  listLandingOrphans(): RunRow[] {
-    return this.db
-      .select()
-      .from(runs)
-      .where(and(eq(runs.state, 'running'), eq(runs.phase, 'landing')))
-      .all();
+  listLandingOrphans(): Promise<RunRow[]> {
+    return this.db.read((db) =>
+      db.select().from(runs).where(and(eq(runs.state, 'running'), eq(runs.phase, 'landing'))).all(),
+    );
   }
 
   /**
@@ -304,12 +375,14 @@ export class RunStore {
    * the durable idempotency ledger stays in one place (the fact log) rather than
    * split between an SQL predicate and a fact check.
    */
-  listResumableInterrupted(): RunRow[] {
-    return this.db
-      .select()
-      .from(runs)
-      .where(and(eq(runs.state, 'failed'), eq(runs.reason, 'interrupted'), isNotNull(runs.sessionRowId)))
-      .all();
+  listResumableInterrupted(): Promise<RunRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.state, 'failed'), eq(runs.reason, 'interrupted'), isNotNull(runs.sessionRowId)))
+        .all(),
+    );
   }
 }
 

@@ -56,18 +56,18 @@ export class ReviewService {
     private readonly landingEffects: LandingEffectsHook = () => [],
   ) {}
 
-  private reviewable(taskId: number): { task: TaskRow; run: RunRow } {
+  private async reviewable(taskId: number): Promise<{ task: TaskRow; run: RunRow }> {
     const task = this.taskService.get(taskId);
     if (task.state !== 'awaiting-review') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only awaiting-review tasks can be reviewed`);
     }
-    const run = this.runStore.listForTask(taskId).at(-1);
+    const run = (await this.runStore.listForTask(taskId)).at(-1);
     if (!run) throw new DomainError('conflict', `task ${taskId} has no runs to review`);
     return { task, run };
   }
 
   async accept(taskId: number): Promise<TaskRow> {
-    const { task, run } = this.reviewable(taskId);
+    const { task, run } = await this.reviewable(taskId);
     if (run.state === 'running') {
       // #114-era parked Run: land it through the journaled, PONC-guarded
       // coordinator (issue #115). `land` itself records the `review →
@@ -94,7 +94,7 @@ export class ReviewService {
         // Merge conflict (or any other effect failure): surface it and leave
         // the task in awaiting-review — identical to the pre-#115 behaviour,
         // now driven by the effect loop instead of a single accept hook call.
-        this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
+        await this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
         throw new DomainError('conflict', outcome.detail ?? 'merge conflict on accept');
       }
       return this.taskService.get(taskId);
@@ -105,20 +105,20 @@ export class ReviewService {
     // doc comment).
     const outcome = await this.acceptHook(task, run);
     if (!outcome.ok) {
-      this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
+      await this.runStore.update(run.id, { reviewFeedback: outcome.detail ?? 'merge conflict' });
       throw new DomainError('conflict', outcome.detail ?? 'merge conflict on accept');
     }
-    this.runStore.update(run.id, { review: 'accepted', reviewedAt: Date.now() });
+    await this.runStore.update(run.id, { review: 'accepted', reviewedAt: Date.now() });
     return this.taskService.setState(taskId, 'completed');
   }
 
-  reject(taskId: number, feedback?: string): TaskRow {
-    const { task, run } = this.reviewable(taskId);
+  async reject(taskId: number, feedback?: string): Promise<TaskRow> {
+    const { task, run } = await this.reviewable(taskId);
     const reason = feedback ? `rejected: ${feedback}` : 'rejected';
     if (run.state === 'running') {
       // #114-era parked Run: settle it `failed` (the work was rejected) through
       // the coordinator; the Task moves to `failed`.
-      this.settle.settle(
+      await this.settle.settle(
         task,
         run,
         'failed',
@@ -128,7 +128,7 @@ export class ReviewService {
       return this.taskService.get(taskId);
     }
     // Legacy Run already settled at agent-finish (pre-#114).
-    this.runStore.update(run.id, { review: 'rejected', reviewFeedback: feedback ?? null, reviewedAt: Date.now() });
+    await this.runStore.update(run.id, { review: 'rejected', reviewFeedback: feedback ?? null, reviewedAt: Date.now() });
     return this.taskService.setState(taskId, 'failed');
   }
 
@@ -141,12 +141,12 @@ export class ReviewService {
    * boot reconciliation and safe to call repeatedly; a Task no longer in
    * `awaiting-review` (a race already moved it) is skipped.
    */
-  sweepExpiredReviews(now: number = Date.now()): number {
+  async sweepExpiredReviews(now: number = Date.now()): Promise<number> {
     let swept = 0;
-    for (const run of this.runStore.listReviewParkedOverdue(now)) {
+    for (const run of await this.runStore.listReviewParkedOverdue(now)) {
       const task = this.taskService.get(run.taskId);
       if (task.state !== 'awaiting-review') continue;
-      this.settle.settle(task, run, 'review-sla-expiry', {
+      await this.settle.settle(task, run, 'review-sla-expiry', {
         runState: 'failed',
         taskAction: 'failed',
         reason: 'review SLA expired (unreviewed)',

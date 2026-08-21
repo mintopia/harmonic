@@ -103,7 +103,7 @@ export class SessionRetirementCoordinator {
       // Lease coordination: never tear down a worktree a live Run still leases
       // (a continuation may hold/have-transferred it). Leave it `retiring` for a
       // later drain — the lease releases when that Run settles.
-      if (this.leaseHeld(session.id)) continue;
+      if (await this.leaseHeld(session.id)) continue;
       if (session.worktreePath && session.worktreeRepoDir) {
         // Best-effort: an already-gone worktree (crash between removal and the
         // `retired` write, or a manual cleanup) must not wedge retirement.
@@ -117,7 +117,7 @@ export class SessionRetirementCoordinator {
 
   /** Whether any Run of the Session still holds a Work Context lease — the gate
    * that keeps `drain` from removing a worktree with a live owner. */
-  private leaseHeld(sessionRowId: number): boolean {
-    return this.runs.listForSession(sessionRowId).some((run) => this.leases.getByOwner(run.id) !== undefined);
+  private async leaseHeld(sessionRowId: number): Promise<boolean> {
+    return (await this.runs.listForSession(sessionRowId)).some((run) => this.leases.getByOwner(run.id) !== undefined);
   }
 }

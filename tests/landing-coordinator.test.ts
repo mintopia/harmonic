@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -30,6 +31,10 @@ const CANCEL_PROJECTION: SettleProjection = { runState: 'cancelled', taskAction:
 describe('LandingCoordinator (issue #115)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); the other stores
+  // here are still on the sync Db, so this fixture runs both connections on
+  // the one file (same pattern as tests/run-facts.test.ts).
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
   let leases: WorkContextLeaseStore;
@@ -38,27 +43,31 @@ describe('LandingCoordinator (issue #115)', () => {
   let settle: RunSettleCoordinator;
   let coordinator: LandingCoordinator;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-coordinator-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    runStore = new RunStore(db);
+    runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
     runFacts = new RunFactStore(db);
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
     coordinator = new LandingCoordinator(runStore, runFacts, journal, settle);
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   /** A Task+Run pair parked exactly where `land` expects to find them: Task
    * `awaiting-review`, Run `running` in `phase:'review'` — the state
    * `ReviewService.accept` hands off in. */
-  function fixture(): { task: TaskRow; run: RunRow } {
+  async function fixture(): Promise<{ task: TaskRow; run: RunRow }> {
     const created = tasks.create({ prompt: 'land me', state: 'ready' });
     tasks.setState(created.id, 'running');
-    let run = runStore.create(created.id);
-    run = runStore.update(run.id, { phase: 'review' });
+    let run = await runStore.create(created.id);
+    run = await runStore.update(run.id, { phase: 'review' });
     tasks.setState(created.id, 'awaiting-review');
     return { task: tasks.get(created.id), run };
   }
@@ -68,7 +77,7 @@ describe('LandingCoordinator (issue #115)', () => {
   }
 
   it('each effect writes intent -> apply -> result, keyed by idempotency identity', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     let applied = 0;
     const effect: LandingEffectExec = {
       effect: 'target-ref',
@@ -92,14 +101,14 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(poncRow!.payload['cutoffSeq']).toEqual(expect.any(Number));
 
     // The Run actually landed.
-    const landedRun = runStore.get(run.id);
+    const landedRun = await runStore.get(run.id);
     expect(landedRun.state).toBe('completed');
     expect(landedRun.phase).toBe('terminal');
     expect(tasks.get(task.id).state).toBe('completed');
   });
 
   it('a merge-conflict-style failure stops the loop and leaves the Task awaiting-review (unsettled)', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     const effect: LandingEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@conflict',
@@ -112,7 +121,7 @@ describe('LandingCoordinator (issue #115)', () => {
 
     // Nothing settled: the Run never left `running`, the Task never left
     // `awaiting-review` — exactly today's merge-conflict behaviour.
-    expect(runStore.get(run.id).state).toBe('running');
+    expect((await runStore.get(run.id)).state).toBe('running');
     expect(tasks.get(task.id).state).toBe('awaiting-review');
 
     const rows = journal.views(run.id);
@@ -121,7 +130,7 @@ describe('LandingCoordinator (issue #115)', () => {
   });
 
   it('a cancel fact appended after the PONC is audit-only: the land still wins and settles the Run "completed"', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     let resolveApply!: (v: LandingEffectOutcome) => void;
     const effect: LandingEffectExec = {
       effect: 'target-ref',
@@ -135,12 +144,12 @@ describe('LandingCoordinator (issue #115)', () => {
     // Mid-landing: an operator-cancel races in on a SEPARATE settle call —
     // exactly the scenario the PONC exists for. It must not be able to flip
     // the Run to cancelled once the land fact is frozen in.
-    settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
+    await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
     // The racing cancel's OWN settle call is forced by the PONC clamp to see
     // the land fact (already at/under the frozen cutoff) as decisive — the
     // Run is landed by the time the cancel's settle call returns.
-    const afterCancelRace = runStore.get(run.id);
+    const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
     expect(tasks.get(task.id).state).toBe('completed');
@@ -154,7 +163,7 @@ describe('LandingCoordinator (issue #115)', () => {
     resolveApply({ ok: true, observed: {} });
     const outcome = await landPromise;
     expect(outcome).toEqual({ ok: true });
-    expect(runStore.get(run.id).state).toBe('completed'); // unchanged, still landed
+    expect((await runStore.get(run.id)).state).toBe('completed'); // unchanged, still landed
   });
 
   it('a cancel racing through a SEPARATE PONC-aware coordinator (the Runner\'s) is still audit-only', async () => {
@@ -168,7 +177,7 @@ describe('LandingCoordinator (issue #115)', () => {
     // this cancel would flip the Run to `cancelled` and "un-land" a merge.)
     const runnerSettle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, new LandingJournalStore(db));
 
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     let resolveApply!: (v: LandingEffectOutcome) => void;
     const effect: LandingEffectExec = {
       effect: 'target-ref',
@@ -180,9 +189,9 @@ describe('LandingCoordinator (issue #115)', () => {
     const landPromise = coordinator.land(task, run, LAND_PROJECTION, [effect]);
 
     // The cancel arrives through the Runner's own coordinator instance.
-    runnerSettle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
+    await runnerSettle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
-    const afterCancel = runStore.get(run.id);
+    const afterCancel = await runStore.get(run.id);
     expect(afterCancel.state).toBe('completed');
     expect(afterCancel.phase).toBe('terminal');
     expect(tasks.get(task.id).state).toBe('completed');
@@ -190,11 +199,11 @@ describe('LandingCoordinator (issue #115)', () => {
 
     resolveApply({ ok: true, observed: {} });
     expect(await landPromise).toEqual({ ok: true });
-    expect(runStore.get(run.id).state).toBe('completed');
+    expect((await runStore.get(run.id)).state).toBe('completed');
   });
 
   it('simulated mid-landing crash: intent written, no result — a fresh coordinator reconciles', async () => {
-    const { run } = fixture();
+    const { run } = await fixture();
     // Simulate the crash directly against the journal: `land` got as far as
     // recording intent for the merge but the process died before `apply()`
     // resolved (or before the result was recorded) — no result row exists.
@@ -218,7 +227,7 @@ describe('LandingCoordinator (issue #115)', () => {
   });
 
   it('simulated mid-landing crash with observed=absent -> apply exactly once', async () => {
-    const { run } = fixture();
+    const { run } = await fixture();
     journal.writePonc(run.id, runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION }).seq);
     journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey: 'main@crash2', expected: {} });
 
@@ -235,34 +244,34 @@ describe('LandingCoordinator (issue #115)', () => {
   });
 
   it('an operator-accept land (issue #191) settles under `operator-accept`, not the default `agent-finish/unresolved`', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
     expect(outcome).toEqual({ ok: true });
-    expect(runStore.get(run.id).state).toBe('completed');
+    expect((await runStore.get(run.id)).state).toBe('completed');
     const types = runFacts.list(run.id).map((f) => f.type);
     expect(types).toContain('operator-accept');
     expect(types).not.toContain('agent-finish/unresolved');
   });
 
   it('an operator-accept loses to a racing operator-cancel appended BEFORE the land\'s PONC (issue #191)', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     // The cancel is already settled on this Run's log before `land` is ever
     // called — e.g. a cancel that raced in and fully resolved just ahead of
     // the operator's accept request reaching this coordinator.
-    settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
-    expect(runStore.get(run.id).state).toBe('cancelled');
+    await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
+    expect((await runStore.get(run.id)).state).toBe('cancelled');
 
     const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
     expect(outcome).toEqual({ ok: true }); // effects still applied; the loop doesn't check prior disposition
     // But the disposition replay still finds the earlier, higher-precedence
     // operator-cancel fact within the frozen PONC window — the accept cannot
     // flip the Run back to completed.
-    expect(runStore.get(run.id).state).toBe('cancelled');
+    expect((await runStore.get(run.id)).state).toBe('cancelled');
     expect(tasks.get(task.id).state).toBe('awaiting-review'); // taskAction 'none' on cancel left it here
   });
 
   it('an operator-accept still wins over a cancel appended AFTER the land\'s PONC (issue #191)', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     let resolveApply!: (v: LandingEffectOutcome) => void;
     const effect: LandingEffectExec = {
       effect: 'target-ref',
@@ -275,20 +284,20 @@ describe('LandingCoordinator (issue #115)', () => {
 
     // Mid-landing: a cancel races in on a separate settle call, after this
     // land's PONC has already frozen the cutoff at the operator-accept fact.
-    settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
+    await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
-    const afterCancelRace = runStore.get(run.id);
+    const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
     expect(tasks.get(task.id).state).toBe('completed');
 
     resolveApply({ ok: true, observed: {} });
     expect(await landPromise).toEqual({ ok: true });
-    expect(runStore.get(run.id).state).toBe('completed'); // unchanged, still landed
+    expect((await runStore.get(run.id)).state).toBe('completed'); // unchanged, still landed
   });
 
   it('reconcile after a completed landing is a no-op (all already-applied, no executor calls)', async () => {
-    const { task, run } = fixture();
+    const { task, run } = await fixture();
     let applied = 0;
     const effect: LandingEffectExec = {
       effect: 'target-ref',

@@ -15,6 +15,7 @@ import { defaultConfig, type HarnessConfig } from '../src/config.js';
 import { combineVerdicts } from '../web/src/verification-model.js';
 import type { VerifierVerdict } from '../web/src/verification-model.js';
 import { openDb } from '../src/db/index.js';
+import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
@@ -277,10 +278,14 @@ describe('runCritic (issue #136)', () => {
     const dbDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-persist-db-'));
     tmpDirs.push(dbDir);
     const db = openDb(dbDir);
+    // RunStore migrated to the async libsql Db (ADR-0029 #203); this is a
+    // one-off local fixture (not the shared beforeEach pattern), so the async
+    // connection is opened and closed inline within the test.
+    const asyncDb = await openAsyncDb(dbDir);
     const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    const runStore = new RunStore(db);
+    const runStore = new RunStore(asyncDb);
     const store = new VerificationAttemptStore(db);
-    const runId = runStore.create(tasks.create({ prompt: 'verify me', state: 'ready' }).id).id;
+    const runId = (await runStore.create(tasks.create({ prompt: 'verify me', state: 'ready' }).id)).id;
 
     store.append(runId, criticAttemptToInput(attempt));
 
@@ -298,6 +303,8 @@ describe('runCritic (issue #136)', () => {
     // The persisted row — not the in-memory attempt — feeds the combiner.
     const verifierVerdict: VerifierVerdict = { verifier: row!.mechanism, verdict: row!.verdict as VerifierVerdict['verdict'] };
     expect(combineVerdicts([verifierVerdict])).toEqual({ outcome: 'block', reason: expect.any(String) });
+
+    await asyncDb.close();
   });
 });
 

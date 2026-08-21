@@ -197,9 +197,9 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
   server.registerTool(
     'get_runs',
     { description: "List a Task's Runs with their results and usage; a retry is a new Run.", inputSchema: taskId },
-    wrap(({ taskId }) => {
+    wrapAsync(async ({ taskId }) => {
       ctx.tasks.get(taskId);
-      return ctx.runs.listForTask(taskId).map(serializeRun);
+      return (await ctx.runs.listForTask(taskId)).map(serializeRun);
     }),
   );
 
@@ -209,7 +209,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: "Read a Run's full event stream (every ACP session/update, permission grants, lifecycle).",
       inputSchema: { runId: z.number().int().positive() },
     },
-    wrap(({ runId }) => ctx.runs.listEvents(runId)),
+    wrapAsync(({ runId }) => ctx.runs.listEvents(runId)),
   );
 
   server.registerTool(
@@ -251,11 +251,11 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'Operator only. List every Work Context lease with diagnostics: owner Run/Task, TTL state, and the ready Tasks queued behind it.',
       inputSchema: {},
     },
-    wrap(() => {
+    wrapAsync(async () => {
       requireOperator();
       return buildLeaseDiagnostics({
         leases: ctx.leases.listAll(),
-        runs: ctx.runs.listAll(),
+        runs: await ctx.runs.listAll(),
         tasks: ctx.tasks.list(),
         waitingSince: (id) => ctx.autoRunner.waitingSince(id),
         now: Date.now(),
@@ -270,9 +270,9 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
         'Operator only. Re-point a stuck Work Context lease to a Run you name, re-admitting it as held with a fresh TTL.',
       inputSchema: { key: z.string().min(1).describe('The Work Context key'), runId: z.number().int().positive() },
     },
-    wrap(({ key, runId }) => {
+    wrapAsync(async ({ key, runId }) => {
       requireOperator();
-      ctx.runs.get(runId); // 404s an unknown Run before touching the lease
+      await ctx.runs.get(runId); // 404s an unknown Run before touching the lease
       const lease = ctx.leases.supersede(key, runId);
       ctx.autoRunner.poke();
       return { ok: true, lease };

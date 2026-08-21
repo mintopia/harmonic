@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -67,22 +68,29 @@ function reopenSpy() {
 describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runs: RunStore;
   let runner: Runner;
   let reopened: number[];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-ccm-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    runs = new RunStore(db);
+    runs = new RunStore(asyncDb);
     const spy = reopenSpy();
     reopened = spy.reopened;
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => spy.adapter);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig(), { autoDrive: drive });
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('reopens the ticket and Escalates a still-running Task with no Run in flight', async () => {
     const task = tasks.upsertMirrored(mirrored(7));
@@ -111,7 +119,7 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   it('leaves a Task with a live Run row alone (a Run is mid-spawn)', async () => {
     const task = tasks.upsertMirrored(mirrored(5));
     tasks.setState(task.id, 'running');
-    runs.create(task.id); // Run row exists (state running); its ActiveRun not yet registered
+    await runs.create(task.id); // Run row exists (state running); its ActiveRun not yet registered
 
     expect(await runner.reopenClosedMirrored(task.id)).toBe(false);
     expect(tasks.get(task.id).state).toBe('running');
@@ -121,8 +129,8 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
   it('reopens + Escalates once the in-flight Run row has finished without settling', async () => {
     const task = tasks.upsertMirrored(mirrored(9));
     tasks.setState(task.id, 'running');
-    const run = runs.create(task.id);
-    runs.finish(run.id, 'failed'); // Run ended but the Task was left running
+    const run = await runs.create(task.id);
+    await runs.finish(run.id, 'failed'); // Run ended but the Task was left running
 
     expect(await runner.reopenClosedMirrored(task.id)).toBe(true);
     expect(tasks.get(task.id).escalated).toBe(true);

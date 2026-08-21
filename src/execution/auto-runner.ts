@@ -178,10 +178,10 @@ export class AutoRunner {
         // Tasks parked this cycle (yielded to a human, or un-spawnable) so the
         // slow claim path can't spin re-picking the same one before a re-scan.
         const skip = new Set<number>();
-        while (this.runStore.countRunning() < ceiling) {
+        while ((await this.runStore.countRunning()) < ceiling) {
           // Recomputed each iteration: startPicked adds a running Run, so a
           // Workspace can reach its own cap mid-fill while the ceiling has room.
-          const runningByWorkspace = this.runStore.countRunningByWorkspace();
+          const runningByWorkspace = await this.runStore.countRunningByWorkspace();
           const next = this.pickNext(skip, workspacesById, runningByWorkspace, ceiling);
           if (!next) break;
           await this.startPicked(next, skip);
@@ -202,7 +202,7 @@ export class AutoRunner {
   private async startPicked(task: TaskRow, skip: Set<number>): Promise<void> {
     if (task.origin !== 'mirrored' || !this.mirror) {
       try {
-        this.runner.start(task.id);
+        await this.runner.start(task.id);
       } catch {
         // Work Context busy (or another start failure): leave the Task ready and
         // skip it this cycle; a later poke retries once the occupant settles.
@@ -223,7 +223,7 @@ export class AutoRunner {
       return;
     }
     try {
-      this.runner.launchClaimed(task.id);
+      await this.runner.launchClaimed(task.id);
     } catch {
       this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
       skip.add(task.id);

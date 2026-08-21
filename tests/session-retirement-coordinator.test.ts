@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -21,6 +22,9 @@ import { allWorkspaces } from './helpers.js';
 describe('Session retirement (issue #148)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let sessions: SessionStore;
   let runs: RunStore;
   let leases: WorkContextLeaseStore;
@@ -44,22 +48,26 @@ describe('Session retirement (issue #148)', () => {
     });
 
   /** A running Run bound to `sessionRowId`. */
-  const runForSession = (sessionRowId: number): RunRow => {
+  const runForSession = async (sessionRowId: number): Promise<RunRow> => {
     const task = tasks.create({ prompt: 'p', state: 'ready' });
-    const run = runs.create(task.id);
+    const run = await runs.create(task.id);
     return runs.update(run.id, { sessionRowId });
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-retire-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     sessions = new SessionStore(db);
-    runs = new RunStore(db);
+    runs = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(db);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
     workspaceId = allWorkspaces(db)()[0]!.id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   describe('SessionStore transitions', () => {
     it('binds the builder worktree it owns', () => {
@@ -113,16 +121,16 @@ describe('Session retirement (issue #148)', () => {
     const makeCoord = (removeWorktree = vi.fn(async () => {})) =>
       new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
-    it('marks the Session retiring on a landed disposition', () => {
+    it('marks the Session retiring on a landed disposition', async () => {
       const s = dispatch();
-      const run = runForSession(s.id);
+      const run = await runForSession(s.id);
       makeCoord().onRunSettled(run, 'landed', now);
       expect(sessions.get(s.id)).toMatchObject({ status: 'retiring', retireReason: 'landed' });
     });
 
-    it('marks the Session idle under the reject-continuation deadline on a reject', () => {
+    it('marks the Session idle under the reject-continuation deadline on a reject', async () => {
       const s = dispatch();
-      const run = runForSession(s.id);
+      const run = await runForSession(s.id);
       makeCoord().onRunSettled(run, 'rejected', now);
       expect(sessions.get(s.id)).toMatchObject({
         status: 'idle',
@@ -131,30 +139,30 @@ describe('Session retirement (issue #148)', () => {
       });
     });
 
-    it('retires immediately on review-SLA and operator-cancel', () => {
+    it('retires immediately on review-SLA and operator-cancel', async () => {
       const a = dispatch({ harnessSessionId: 'a' });
       const b = dispatch({ harnessSessionId: 'b' });
-      makeCoord().onRunSettled(runForSession(a.id), 'review-sla', now);
-      makeCoord().onRunSettled(runForSession(b.id), 'operator-cancel', now);
+      makeCoord().onRunSettled(await runForSession(a.id), 'review-sla', now);
+      makeCoord().onRunSettled(await runForSession(b.id), 'operator-cancel', now);
       expect(sessions.get(a.id)).toMatchObject({ status: 'retiring', retireReason: 'review-abandonment-sla' });
       expect(sessions.get(b.id)).toMatchObject({ status: 'retiring', retireReason: 'operator-disposition' });
     });
 
-    it('retains under the retention-TTL backstop on any other ending', () => {
+    it('retains under the retention-TTL backstop on any other ending', async () => {
       const s = dispatch();
-      makeCoord().onRunSettled(runForSession(s.id), 'other', now);
+      makeCoord().onRunSettled(await runForSession(s.id), 'other', now);
       expect(sessions.get(s.id)).toMatchObject({ status: 'idle', retireReason: 'retention-ttl', retireDeadline: now + cfg.retentionTtlMs });
     });
 
-    it('is a no-op for a Run with no Session', () => {
+    it('is a no-op for a Run with no Session', async () => {
       const task = tasks.create({ prompt: 'p', state: 'ready' });
-      const run = runs.create(task.id); // sessionRowId null
+      const run = await runs.create(task.id); // sessionRowId null
       expect(() => makeCoord().onRunSettled(run, 'landed', now)).not.toThrow();
     });
 
-    it('does not re-decide a Session already retiring', () => {
+    it('does not re-decide a Session already retiring', async () => {
       const s = dispatch();
-      const run = runForSession(s.id);
+      const run = await runForSession(s.id);
       const coord = makeCoord();
       coord.onRunSettled(run, 'landed', now);
       coord.onRunSettled(run, 'rejected', now + 1); // later reject must not un-retire it
@@ -193,7 +201,7 @@ describe('Session retirement (issue #148)', () => {
     it('does NOT remove a worktree a live Run still leases (coordinated with the lease)', async () => {
       const s = dispatch();
       sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      const run = runForSession(s.id);
+      const run = await runForSession(s.id);
       leases.acquire('worktree:/wt/run-1::branch', run.id, 'running'); // still held
       sessions.beginRetiring(s.id, 'landed', now);
       const removeWorktree = vi.fn(async () => {});
@@ -253,10 +261,10 @@ describe('Session retirement (issue #148)', () => {
   });
 
   describe('lease transfer (continuation substrate)', () => {
-    it('re-points a lease from one Run to the next sharing the Session', () => {
+    it('re-points a lease from one Run to the next sharing the Session', async () => {
       const s = dispatch();
-      const first = runForSession(s.id);
-      const second = runForSession(s.id);
+      const first = await runForSession(s.id);
+      const second = await runForSession(s.id);
       leases.acquire('worktree:/wt/run-1::branch', first.id, 'running');
 
       const moved = leases.transfer(first.id, second.id, now);

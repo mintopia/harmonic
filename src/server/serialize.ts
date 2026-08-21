@@ -68,8 +68,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
 };
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
-export function taskToApi(ctx: AppContext, task: TaskWithDeps): ApiTask {
-  const runs = ctx.runs.listForTask(task.id);
+export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
+  const runs = await ctx.runs.listForTask(task.id);
   const usages = runs.map((run) => parseUsage(run.usage));
   const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
   return {
@@ -151,10 +151,10 @@ export interface ApiActivityProcess {
  * only, mirroring the firehose filter that hides Conversation traffic from
  * Read Keys.
  */
-export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiActivityProcess[] {
+export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const prices = pricesOf(ctx);
-  const runs: ApiActivityProcess[] = ctx.runner.activeSnapshots().map(({ runId, taskId, snapshot }) => {
-    const run = ctx.runs.get(runId);
+  const runs: ApiActivityProcess[] = await Promise.all((await ctx.runner.activeSnapshots()).map(async ({ runId, taskId, snapshot }) => {
+    const run = await ctx.runs.get(runId);
     const task = ctx.tasks.get(taskId);
     return {
       type: 'run',
@@ -179,7 +179,7 @@ export function activitySnapshot(ctx: AppContext, includeChats: boolean): ApiAct
       tree: snapshot?.tree ?? null,
       cost: snapshot ? costOfUsages([snapshot.usage], prices) : null,
     };
-  });
+  }));
   if (!includeChats) return runs;
   const chats: ApiActivityProcess[] = ctx.conversationDriver.activeConversationIds().map((id) => {
     const convo = ctx.conversations.get(id);

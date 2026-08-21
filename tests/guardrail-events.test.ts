@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -17,23 +18,30 @@ import { allWorkspaces } from './helpers.js';
 describe('GuardrailEventStore (issue #127)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let events: GuardrailEventStore;
   let runId: number;
   let otherRunId: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-guardrail-events-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    const runStore = new RunStore(db);
+    const runStore = new RunStore(asyncDb);
     events = new GuardrailEventStore(db);
 
     const task = tasks.create({ prompt: 'trip me', state: 'ready' });
-    runId = runStore.create(task.id).id;
+    runId = (await runStore.create(task.id)).id;
     const otherTask = tasks.create({ prompt: 'separate log', state: 'ready' });
-    otherRunId = runStore.create(otherTask.id).id;
+    otherRunId = (await runStore.create(otherTask.id)).id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('appends a wall-clock trip and reads it back, seq 1, fields persisted', () => {
     const row = events.append(runId, {

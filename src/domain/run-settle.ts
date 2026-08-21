@@ -63,13 +63,13 @@ export class RunSettleCoordinator {
    * same winner and no-ops; a higher-precedence signal arriving late overrides the
    * Run row to the new winner.
    */
-  settle(
+  async settle(
     task: TaskRow,
     run: RunRow,
     type: RunFactType,
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
-  ): void {
+  ): Promise<void> {
     // The PONC freeze (issue #115, reliability-design §0.3): if a landing has
     // already frozen this Run's disposition cutoff, no fact appended after it
     // — including the very signal this call is settling — can move the
@@ -101,7 +101,7 @@ export class RunSettleCoordinator {
     const winner = disposition === null ? null : projectSettle(facts, cutoff);
     if (!winner) return; // unreachable — we just appended a fact
 
-    const before = this.runStore.get(run.id);
+    const before = await this.runStore.get(run.id);
     // Idempotency keys on the winning DISPOSITION, not the Run state: a
     // lower-or-equal-precedence straggler leaves the winner unchanged and no-ops
     // (settle exactly once), while a higher-precedence signal arriving late
@@ -113,7 +113,7 @@ export class RunSettleCoordinator {
     // matching today's semantics — a losing straggler never decorates the row
     // another disposition won. `phase: 'terminal'` marks the Run settled: it has
     // left every in-flight/parked phase (issue #114).
-    this.runStore.update(run.id, {
+    await this.runStore.update(run.id, {
       ...patch,
       state: winner.runState,
       phase: 'terminal',
@@ -128,7 +128,7 @@ export class RunSettleCoordinator {
     // gone before its fate is decided (removal is coordinated with the lease).
     // Sync + best-effort: it only marks the Session's status; the async worktree
     // removal is a separate drain, and a hiccup must never crash settle.
-    const finished = this.runStore.get(run.id);
+    const finished = await this.runStore.get(run.id);
     try {
       this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner, patch));
     } catch {

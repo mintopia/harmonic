@@ -42,11 +42,11 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
       isolationMode: 'worktree',
     });
 
-    const run = server.app.ctx.runner.start(task.id);
+    const run = await server.app.ctx.runner.start(task.id);
 
     // The Run settles terminally...
     await waitFor(async () => {
-      const r = server.app.ctx.runs.get(run.id);
+      const r = await server.app.ctx.runs.get(run.id);
       return r.state !== 'running' ? r : undefined;
     });
 
@@ -60,7 +60,7 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
     // And crucially there was no respawn flood: exactly one Run was ever created
     // for this Task. An escalated Task is `hitl`, which `AutoRunner.pickNext`
     // skips, so no further git is spawned for it.
-    const runs = server.app.ctx.runs.listForTask(task.id);
+    const runs = await server.app.ctx.runs.listForTask(task.id);
     expect(runs.length).toBe(1);
   });
 });

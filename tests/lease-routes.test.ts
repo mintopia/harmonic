@@ -34,7 +34,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
   const seedLease = async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'lease target' });
     let task = ctx().tasks.get(created.body.id);
-    const run = ctx().runs.create(task.id);
+    const run = await ctx().runs.create(task.id);
     const key = workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
     const lease = ctx().leases.acquire(key, run.id, 'executing');
     // A Task genuinely occupying a context is `running` (Runner.beginRun flips
@@ -90,7 +90,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
   describe('POST /api/leases/supersede', () => {
     it('re-points the lease to the named Run and pokes the Auto-Runner', async () => {
       const { task, key } = await seedLease();
-      const target = ctx().runs.create(task.id);
+      const target = await ctx().runs.create(task.id);
 
       const res = await server.api('POST', '/api/leases/supersede', { key, runId: target.id });
       expect(res.status).toBe(200);
@@ -104,7 +104,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
 
     it('404s when the key holds no lease', async () => {
       const { task } = await seedLease();
-      const target = ctx().runs.create(task.id);
+      const target = await ctx().runs.create(task.id);
       const res = await server.api('POST', '/api/leases/supersede', { key: 'direct:/no/such/lease', runId: target.id });
       expect(res.status).toBe(404);
     });
@@ -191,14 +191,14 @@ describe('Work Context lease MCP tools (issue #125)', () => {
 
     const created = await server.api('POST', '/api/tasks', { prompt: 'mcp lease target' });
     const task = server.app.ctx.tasks.get(created.body.id);
-    const run = server.app.ctx.runs.create(task.id);
+    const run = await server.app.ctx.runs.create(task.id);
     const realKey = workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
     server.app.ctx.leases.acquire(realKey, run.id, 'executing');
 
     const listed = parse(await client.callTool({ name: 'list_leases', arguments: {} }));
     expect(listed.find((l: any) => l.key === realKey)).toMatchObject({ ownerRunId: run.id });
 
-    const target = server.app.ctx.runs.create(task.id);
+    const target = await server.app.ctx.runs.create(task.id);
     const superseded = parse(
       await client.callTool({ name: 'supersede_lease', arguments: { key: realKey, runId: target.id } }),
     );

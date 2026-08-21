@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -17,23 +18,30 @@ import { allWorkspaces } from './helpers.js';
 describe('RunFactStore (issue #112)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); RunFactStore is
+  // still on the sync Db, so this fixture runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let facts: RunFactStore;
   let runId: number;
   let otherRunId: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-run-facts-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    const runStore = new RunStore(db);
+    const runStore = new RunStore(asyncDb);
     facts = new RunFactStore(db);
 
     const task = tasks.create({ prompt: 'emit facts', state: 'ready' });
-    runId = runStore.create(task.id).id;
+    runId = (await runStore.create(task.id)).id;
     const otherTask = tasks.create({ prompt: 'separate log', state: 'ready' });
-    otherRunId = runStore.create(otherTask.id).id;
+    otherRunId = (await runStore.create(otherTask.id)).id;
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('assigns a 1-based monotonic seq per Run and stores the fact', () => {
     const first = facts.append(runId, 'agent-finish/unresolved', { note: 'done' });
@@ -82,13 +90,13 @@ describe('RunFactStore (issue #112)', () => {
     expect(computeDisposition(log, log.length)).toBe('escalate');
   });
 
-  it('boot crash recovery records a process-death fact — the orphan terminal is reconstructable from the log (issue #113)', () => {
-    const runStore = new RunStore(db);
-    const orphans = runStore.markInterrupted(); // runId + otherRunId are still `running`
+  it('boot crash recovery records a process-death fact — the orphan terminal is reconstructable from the log (issue #113)', async () => {
+    const runStore = new RunStore(asyncDb);
+    const orphans = await runStore.markInterrupted(); // runId + otherRunId are still `running`
     expect(orphans.map((r) => r.id).sort()).toEqual([runId, otherRunId].sort());
 
     // The Run row is failed/interrupted…
-    expect(runStore.get(runId).state).toBe('failed');
+    expect((await runStore.get(runId)).state).toBe('failed');
     // …and that terminal is reconstructable from run_facts alone.
     const log = facts.list(runId);
     expect(log.map((f) => f.type)).toEqual(['process-death']);

@@ -79,14 +79,14 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
   });
 
   /** Launch a mirrored afk/direct Run against `repo` (mirrors #151/#152's harness). */
-  function launchAfkDirect(repo: string, scenario: object): { taskId: number; runId: number } {
+  async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
     server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
 
@@ -119,14 +119,14 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     // The agent (detached at start by #152) edits a file and finishes — the
     // normal direct-mode footprint: HEAD detached on its own owned ref, a
     // *recoverable* (not ambiguous) contract state.
-    const { taskId, runId } = launchAfkDirect(repo, {
+    const { taskId, runId } = await launchAfkDirect(repo, {
       writeFiles: { 'agent-feature.txt': 'landed by recovery\n' },
       mcpFinish: true,
       stopReason: 'end_turn',
     });
 
     const run = await waitFor(async () => {
-      const r = server.app.ctx.runs.get(runId);
+      const r = await server.app.ctx.runs.get(runId);
       return r.state !== 'running' ? r : undefined;
     });
 
@@ -170,7 +170,7 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
 
     // The agent checks out a stray branch and commits — an unattributed ref
     // delta: ambiguous, never auto-recovered.
-    const { taskId, runId } = launchAfkDirect(repo, {
+    const { taskId, runId } = await launchAfkDirect(repo, {
       gitExec: [
         ['checkout', '-b', 'stray'],
         ['commit', '--allow-empty', '-m', 'agent stray work'],

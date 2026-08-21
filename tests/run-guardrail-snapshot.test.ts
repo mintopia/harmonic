@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -18,18 +19,25 @@ import { allWorkspaces } from './helpers.js';
 describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    runStore = new RunStore(db);
+    runStore = new RunStore(asyncDb);
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  it('captures the effective Guardrail config + price table onto the Run at start', () => {
+  it('captures the effective Guardrail config + price table onto the Run at start', async () => {
     const task = tasks.create({ prompt: 'snapshot me', state: 'ready' });
     const config = defaultConfig();
     const snapshot = {
@@ -37,13 +45,13 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
       priceTable: resolvePrices(config.prices),
     };
 
-    const run = runStore.create(task.id, snapshot);
+    const run = await runStore.create(task.id, snapshot);
 
     expect(JSON.parse(run.guardrailConfig!).budget.wallClockMinutes).toBe(60);
     expect(JSON.parse(run.priceTable!)['claude-sonnet-5']).toBeDefined();
   });
 
-  it('is frozen: a later config change does not retroactively alter the stored snapshot', () => {
+  it('is frozen: a later config change does not retroactively alter the stored snapshot', async () => {
     const task = tasks.create({ prompt: 'frozen snapshot', state: 'ready' });
     const config = defaultConfig();
     const originalSnapshot = {
@@ -51,7 +59,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
       priceTable: resolvePrices(config.prices),
     };
 
-    const run = runStore.create(task.id, originalSnapshot);
+    const run = await runStore.create(task.id, originalSnapshot);
     const originalPriceTable = run.priceTable;
 
     // A later config change — a mid-Run price edit — resolves a different price table...
@@ -59,7 +67,7 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
     expect(laterPrices['claude-sonnet-5']).not.toEqual(resolvePrices(config.prices)['claude-sonnet-5']);
 
     // ...but the already-created Run's stored snapshot is unaffected.
-    const refetched = runStore.get(run.id);
+    const refetched = await runStore.get(run.id);
     expect(refetched.priceTable).toBe(originalPriceTable);
     expect(JSON.parse(refetched.priceTable!)['claude-sonnet-5']).toEqual(resolvePrices(config.prices)['claude-sonnet-5']);
   });

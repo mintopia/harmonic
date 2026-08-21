@@ -67,7 +67,7 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
    * Task to running (the lock the pick holds), then `launchClaimed` spawns the
    * Run through the same funnel REST/MCP/Auto-Runner all share.
    */
-  function launchAfkDirect(repo: string): { taskId: number; runId: number } {
+  async function launchAfkDirect(repo: string): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
     const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++));
     // Sanity: mirrored Tasks resolve to the global `direct` isolation default,
@@ -77,7 +77,7 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
     expect(task.workingDir).toBe(repo);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
 
@@ -92,7 +92,7 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     const head = git(repo, 'rev-parse', 'HEAD');
     const toplevel = git(repo, 'rev-parse', '--show-toplevel');
 
-    const { runId } = launchAfkDirect(repo);
+    const { runId } = await launchAfkDirect(repo);
 
     // The fact lands during workspace preparation, before any agent turn.
     const fact = await waitFor(async () => startStateFact(runId));
@@ -126,11 +126,11 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     // An uncommitted (untracked) file makes the working tree dirty.
     writeFileSync(join(repo, 'stray.txt'), 'work Harmonic did not produce\n');
 
-    const { taskId, runId } = launchAfkDirect(repo);
+    const { taskId, runId } = await launchAfkDirect(repo);
 
     // The gate rejects → driveOnce settles the Run Escalated (failed).
     const run = await waitFor(async () => {
-      const r = server.app.ctx.runs.get(runId);
+      const r = await server.app.ctx.runs.get(runId);
       return r.state === 'failed' ? r : undefined;
     });
     // Operator-legible reason, prefixed by settleEscalated.
@@ -155,10 +155,10 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     execFileSync('git', ['init', '-b', 'main', nested], { encoding: 'utf8' });
     writeFileSync(join(nested, 'file.txt'), 'nested\n');
 
-    const { runId } = launchAfkDirect(repo);
+    const { runId } = await launchAfkDirect(repo);
 
     const run = await waitFor(async () => {
-      const r = server.app.ctx.runs.get(runId);
+      const r = await server.app.ctx.runs.get(runId);
       return r.state === 'failed' ? r : undefined;
     });
     expect(run.reason ?? '').toMatch(/^escalated to human: /);

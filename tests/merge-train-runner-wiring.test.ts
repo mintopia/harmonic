@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -68,23 +69,30 @@ afterAll(() => {
 describe('Runner merge-train adapters (issue #163)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runs: RunStore;
   let runner: Runner;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mergetrain-adapters-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    runs = new RunStore(db);
+    runs = new RunStore(asyncDb);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => defaultConfig());
   });
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  function seed(): { taskId: number; runId: number; member: MergeTrainMember } {
+  async function seed(): Promise<{ taskId: number; runId: number; member: MergeTrainMember }> {
     const task = tasks.create({ prompt: 'do work' });
     tasks.setState(task.id, 'running');
-    const run = runs.create(task.id);
+    const run = await runs.create(task.id);
     return {
       taskId: task.id,
       runId: run.id,
@@ -99,10 +107,10 @@ describe('Runner merge-train adapters (issue #163)', () => {
     };
   }
 
-  it('enqueueReMergeForMember records exactly one re-merge turn on the member\'s Session queue and stashes its row id', () => {
-    const { runId, member } = seed();
+  it('enqueueReMergeForMember records exactly one re-merge turn on the member\'s Session queue and stashes its row id', async () => {
+    const { runId, member } = await seed();
 
-    runner.enqueueReMergeForMember(member);
+    await runner.enqueueReMergeForMember(member);
 
     // The observable contract: exactly one in-flight `re-merge` turn on the
     // member's Session queue. The stashed row id (a private field) is not peeked
@@ -113,12 +121,12 @@ describe('Runner merge-train adapters (issue #163)', () => {
     expect(rows[0]).toMatchObject({ purpose: 're-merge', status: 'in_flight', sessionId: `run-${runId}` });
   });
 
-  it('settleEscalatedForMember settles the member\'s Run failed and hands the Task back to a human, escalated', () => {
-    const { taskId, runId, member } = seed();
+  it('settleEscalatedForMember settles the member\'s Run failed and hands the Task back to a human, escalated', async () => {
+    const { taskId, runId, member } = await seed();
 
-    runner.settleEscalatedForMember(member, 'rebase still conflicts after corrective turn');
+    await runner.settleEscalatedForMember(member, 'rebase still conflicts after corrective turn');
 
-    const settledRun = runs.get(runId);
+    const settledRun = await runs.get(runId);
     expect(settledRun.state).toBe('failed');
     expect(settledRun.reason).toContain('escalated to human');
     expect(settledRun.reason).toContain('rebase still conflicts after corrective turn');
@@ -129,22 +137,22 @@ describe('Runner merge-train adapters (issue #163)', () => {
     expect(settledTask.drive).toBe('hitl');
   });
 
-  it('settleEscalatedForMember is the sole settle authority: driveOnce never re-settles what it already resolved', () => {
+  it('settleEscalatedForMember is the sole settle authority: driveOnce never re-settles what it already resolved', async () => {
     // Structural check that the adapter resolves task/run purely from the
     // member's ids (not from any Runner in-memory "active" bookkeeping) — the
     // same lookup driveOnce relies on to skip its own settle after an
     // escalate (issue #163's "no double settle" invariant).
-    const { taskId, runId, member } = seed();
-    runner.settleEscalatedForMember(member, 'integration branch missing');
+    const { taskId, runId, member } = await seed();
+    await runner.settleEscalatedForMember(member, 'integration branch missing');
     // Calling it again (as a defensive double-invocation would) is a no-op:
     // the run's already `failed`, task already `escalated` — nothing throws,
     // nothing flips back.
-    expect(() => runner.settleEscalatedForMember(member, 'integration branch missing')).not.toThrow();
-    expect(runs.get(runId).state).toBe('failed');
+    await expect(runner.settleEscalatedForMember(member, 'integration branch missing')).resolves.toBeUndefined();
+    expect((await runs.get(runId)).state).toBe('failed');
     expect(tasks.get(taskId).escalated).toBe(true);
   });
 
-  it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', () => {
+  it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', async () => {
     // The shared start funnel consults the injected gate: a hand-started member
     // (REST/MCP) whose `epic/<ref>` base the poll hasn't confirmed live must be
     // rejected before a run is created — the same gate the Auto-Runner's pick
@@ -157,7 +165,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
 
     let err: unknown;
     try {
-      gated.start(task.id);
+      await gated.start(task.id);
     } catch (e) {
       err = e;
     }
@@ -167,7 +175,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
 
     // The gate fires before `beginRun` creates the row or flips the Task, so no
     // orphan run and the Task stays on the frontier for the next poll.
-    expect(runs.listForTask(task.id)).toHaveLength(0);
+    expect(await runs.listForTask(task.id)).toHaveLength(0);
     expect(tasks.get(task.id).state).toBe('ready');
   });
 });
@@ -200,13 +208,13 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
   });
 
   /** Launch a mirrored afk worktree Task whose base is an Epic integration branch. */
-  function launchEpicMember(epicBranch: string): { taskId: number; runId: number; trackerRef: number } {
+  async function launchEpicMember(epicBranch: string): Promise<{ taskId: number; runId: number; trackerRef: number }> {
     const trackerRef = ref++;
     const task = server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
     expect(task.drive).toBe('afk');
     server.app.ctx.tasks.setBaseBranch(task.id, epicBranch);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id, trackerRef };
   }
 
@@ -228,8 +236,10 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     // Submitted without awaiting the first — the merge train, not the test,
     // must impose the serial order (mirrors merge-train-coordinator.test.ts's
     // own near-simultaneous case, but through the real Runner this time).
-    const m1 = launchEpicMember(epic);
-    const m2 = launchEpicMember(epic);
+    const m1Promise = launchEpicMember(epic);
+    const m2Promise = launchEpicMember(epic);
+    const m1 = await m1Promise;
+    const m2 = await m2Promise;
 
     const completed = (taskId: number) =>
       waitFor(async () => {
@@ -278,14 +288,14 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
       },
     });
 
-    const { taskId, runId } = launchEpicMember(epic);
+    const { taskId, runId } = await launchEpicMember(epic);
 
     // Wait until the member's worktree has forked from the integration
     // branch's CURRENT tip (prepareWorkspace sets `run.branch` only after the
     // `git worktree add` that resolves the fork point has completed) — only
     // then does advancing the integration branch independently guarantee a
     // genuine divergence (a real rebase conflict), rather than racing the fork.
-    await waitFor(async () => (server.app.ctx.runs.get(runId).branch ? true : undefined));
+    await waitFor(async () => ((await server.app.ctx.runs.get(runId)).branch ? true : undefined));
     const scratch = tmpPath('harmonic-mergetrain-conflict-');
     git(repo, 'worktree', 'add', scratch, epic);
     writeFileSync(join(scratch, 'README.md'), 'integration advanced independently\n');
@@ -311,7 +321,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     expect(settledTask.state).toBe('ready');
     expect(settledTask.drive).toBe('hitl');
 
-    const settledRun = server.app.ctx.runs.get(runId);
+    const settledRun = await server.app.ctx.runs.get(runId);
     expect(settledRun.state).toBe('failed');
     expect(settledRun.reason).toMatch(/rebase still conflicts after corrective turn/);
 

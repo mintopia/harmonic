@@ -72,7 +72,7 @@ export type MergeTrainOutcome =
 export class MergeTrainCoordinator {
   private readonly git: MergeTrainGit;
   private readonly dispatchHeal: (member: MergeTrainMember) => Promise<void>;
-  private readonly escalateFn: (member: MergeTrainMember, reason: string) => void;
+  private readonly escalateFn: (member: MergeTrainMember, reason: string) => Promise<void>;
 
   /** Runs (by runId) that have already had their one bounded corrective turn
    * dispatched for their current conflict — the #155 "no second mutating
@@ -91,8 +91,9 @@ export class MergeTrainCoordinator {
      * across this await, so awaiting the whole turn would stall other ready
      * members on the same branch (the head-of-line blocking this design avoids). */
     dispatchHeal: (member: MergeTrainMember) => Promise<void>;
-    /** #161 wires this to `Runner.settleEscalated`. */
-    escalate: (member: MergeTrainMember, reason: string) => void;
+    /** #161 wires this to `Runner.settleEscalated` (async: settling writes the
+     * escalate fact + Run row through the async Db — ADR-0029 #203). */
+    escalate: (member: MergeTrainMember, reason: string) => Promise<void>;
   }) {
     this.git = deps.git ?? Git;
     this.dispatchHeal = deps.dispatchHeal;
@@ -192,14 +193,14 @@ export class MergeTrainCoordinator {
         if (checkedOutAt !== null) {
           const reason = 'integration branch unexpectedly checked out';
           this.healAttempted.delete(runId);
-          this.escalateFn(member, reason);
+          await this.escalateFn(member, reason);
           return { status: 'escalated', reason };
         }
         const cas = await this.git.casUpdateRef(repoDir, integrationBranch, decision.toOid, integrationTip!);
         if (!cas.ok) {
           const reason = cas.detail ?? 'integration branch advanced concurrently';
           this.healAttempted.delete(runId);
-          this.escalateFn(member, reason);
+          await this.escalateFn(member, reason);
           return { status: 'escalated', reason };
         }
         this.healAttempted.delete(runId);
@@ -214,7 +215,7 @@ export class MergeTrainCoordinator {
         return { status: 'healing' };
       case 'escalate':
         this.healAttempted.delete(runId);
-        this.escalateFn(member, decision.reason);
+        await this.escalateFn(member, decision.reason);
         return { status: 'escalated', reason: decision.reason };
       default: {
         const exhaustive: never = decision;

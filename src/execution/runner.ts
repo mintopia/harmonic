@@ -526,11 +526,9 @@ export class Runner {
         emit: (runId, snapshot) => this.events.onRunUsage?.({ runId, snapshot }),
         // A live snapshot is decoration; a DB hiccup must never fail a run.
         persist: (runId, snapshot) => {
-          try {
-            this.runStore.update(runId, { liveUsage: JSON.stringify(snapshot) });
-          } catch {
-            /* best-effort; the next tick or the finish flush retries */
-          }
+          // Fire-and-forget now that update is async: a swallowed rejection keeps
+          // a DB hiccup off the run, and the next tick or finish flush retries.
+          void this.runStore.update(runId, { liveUsage: JSON.stringify(snapshot) }).catch(() => {});
         },
       },
       options.tailerCadence,
@@ -547,21 +545,23 @@ export class Runner {
    * tailer's cached `latestSnapshot` (#217) — the ~1s tick keeps it current
    * without this endpoint re-parsing the whole log on every poll.
    */
-  activeSnapshots(): { runId: number; taskId: number; snapshot: RunUsageSnapshot | null }[] {
-    return [...this.active.values()].map((a) => ({
-      runId: a.runId,
-      taskId: a.taskId,
-      snapshot: this.latestSnapshot(a.runId),
-    }));
+  async activeSnapshots(): Promise<{ runId: number; taskId: number; snapshot: RunUsageSnapshot | null }[]> {
+    return Promise.all(
+      [...this.active.values()].map(async (a) => ({
+        runId: a.runId,
+        taskId: a.taskId,
+        snapshot: await this.latestSnapshot(a.runId),
+      })),
+    );
   }
 
   /** Start a run for a ready task. Returns the created run immediately. */
-  start(taskId: number): RunRow {
+  async start(taskId: number): Promise<RunRow> {
     const task = this.taskService.get(taskId);
     if (task.state !== 'ready') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
-    const run = this.beginRun(task);
+    const run = await this.beginRun(task);
     this.taskService.setState(taskId, 'running');
     return run;
   }
@@ -571,7 +571,7 @@ export class Runner {
    * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
    * spawn, so the flip lands before the tracker write, not with it (issue #32).
    */
-  launchClaimed(taskId: number): RunRow {
+  async launchClaimed(taskId: number): Promise<RunRow> {
     const task = this.taskService.get(taskId);
     if (task.state !== 'running') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to running`);
@@ -580,7 +580,7 @@ export class Runner {
   }
 
   /** Validate the harness, snapshot Guardrails, create the run row, and drive it. Shared by start / launchClaimed. */
-  private beginRun(task: TaskRow): RunRow {
+  private async beginRun(task: TaskRow): Promise<RunRow> {
     // Parallel-Epic start-funnel gate (issue #159): an Epic member whose
     // integration base isn't ready to fork from must not spawn — its `epic/<ref>`
     // branch is unresolved or not confirmed live this poll, so `git worktree add`
@@ -603,38 +603,58 @@ export class Runner {
       guardrailConfig: resolveGuardrails(ws, config),
       priceTable: resolvePrices(config.prices),
     };
-    // Claim the Work Context lease transactionally with the Run row: the
-    // unique-key CAS (#118) rejects a second afk Run into an already-owned
-    // context, and a rejected claim rolls back the run row so no orphan is
-    // left. Enforced HERE, the shared funnel, so REST / MCP / Auto-Runner /
-    // a second process are all blocked identically — not only pickNext.
-    const run = this.db.transaction(() => {
-      // The Execution Chain this Run charges its cumulative budget against
-      // (issue #129): inherited from the line of work this Run continues (a
-      // same-Task new attempt, or a reattempt's linked Task), or a fresh chain
-      // when it starts a new line. Resolved inside the transaction so the chain
-      // identity and the Run row commit together.
-      const chainId = this.chainStore.resolveForTask(task);
-      const created = this.runStore.create(task.id, snapshot, chainId);
-      // A same-line-of-work predecessor's retained lease is handed off
-      // transactionally rather than conflicting (issue #124): if `created`
-      // continues the Execution Chain of whoever currently holds this Work
-      // Context key, acquireOrTransfer re-points the lease instead of
-      // throwing; an unrelated holder still hits the unique-key CAS.
-      this.leaseStore.acquireOrTransfer(
-        this.workContextKeyFor(task, created),
-        created.id,
-        'running',
-        (existingOwnerRunId) => this.sharesLineOfWork(existingOwnerRunId, created),
-      );
-      return created;
-    });
+    // The Execution Chain this Run charges its cumulative budget against
+    // (issue #129): inherited from the line of work this Run continues (a
+    // same-Task new attempt, or a reattempt's linked Task), or a fresh chain
+    // when it starts a new line.
+    const chainId = this.chainStore.resolveForTask(task);
+    const created = await this.runStore.create(task.id, snapshot, chainId);
+    const key = this.workContextKeyFor(task, created);
+    // Resolved ahead of the transaction (RunStore is now async, but
+    // `this.db.transaction`'s callback — the sync Db the lease store still uses —
+    // is not): look up whoever holds the Work Context key and whether they share
+    // this Run's line of work, exactly what `sharesLineOfWork` computed from
+    // inside the transaction before RunStore moved to the async Db (ADR-0029).
+    const existingLease = this.leaseStore.getByKey(key);
+    const existingOwner = existingLease ? await this.runStore.get(existingLease.ownerRunId) : null;
+    const sharesLine = this.sharesLineOfWork(existingOwner, created);
+    // Claim the Work Context lease: the unique-key CAS (#118) rejects a second
+    // afk Run into an already-owned context. Enforced HERE, the shared funnel, so
+    // REST / MCP / Auto-Runner / a second process are blocked identically — not
+    // only pickNext. The Run row (async Db) and the lease (sync Db) can no longer
+    // roll back together during the expand-contract migration, so a rejected
+    // claim compensates by deleting the just-created Run — no orphan is left, as
+    // the old single-transaction rollback guaranteed. The atomic run+lease claim
+    // returns once the lease store migrates and both rejoin one async transaction.
+    try {
+      this.db.transaction(() => {
+        // A same-line-of-work predecessor's retained lease is handed off rather
+        // than conflicting (issue #124): if `created` continues the Execution
+        // Chain of the current key holder, acquireOrTransfer re-points the lease
+        // instead of throwing; an unrelated holder still hits the unique-key CAS.
+        // The predicate is pinned to the holder observed above — if it changed
+        // under the await, fall back to "don't transfer" and let the CAS decide.
+        this.leaseStore.acquireOrTransfer(
+          key,
+          created.id,
+          'running',
+          (existingOwnerRunId) => existingOwnerRunId === existingLease?.ownerRunId && sharesLine,
+        );
+      });
+    } catch (err) {
+      // Swallow the compensating delete's own error so the original lease-CAS
+      // conflict is always what propagates (a delete failure leaves at most an
+      // orphan `running` row the boot-time markInterrupted sweep reclaims).
+      await this.runStore.delete(created.id).catch(() => {});
+      throw err;
+    }
+    const run = created;
     // Retry & reject continuation (issue #147): if this Run continues a prior
     // rejected, Session-bound Run, bind it to that same Session so dispatch
     // reloads the conversation (`session/load`) instead of a cold `session/new`.
     // Done outside the claim transaction (like `drive`), so a continuation that
     // can't bind still dispatches fresh — never blocked.
-    const bound = this.bindContinuationIfEligible(task, run);
+    const bound = await this.bindContinuationIfEligible(task, run);
     void this.drive(task, bound, harness).catch(() => {});
     return bound;
   }
@@ -648,10 +668,9 @@ export class Runner {
    * `sessionRowId` is not yet known at claim time; #110 will bind this to the
    * Session row once a successor carries its predecessor's `sessionRowId`
    * forward. */
-  private sharesLineOfWork(existingOwnerRunId: number, successor: RunRow): boolean {
+  private sharesLineOfWork(existingOwner: RunRow | null, successor: RunRow): boolean {
     if (successor.chainId == null) return false;
-    const owner = this.runStore.get(existingOwnerRunId);
-    return owner?.chainId != null && owner.chainId === successor.chainId;
+    return existingOwner?.chainId != null && existingOwner.chainId === successor.chainId;
   }
 
   /**
@@ -665,11 +684,11 @@ export class Runner {
    * producer today: the verify/self-heal path re-drives the *same* Run and
    * automatic-retry has no trigger, so both stay latent in the seam.
    */
-  private resolveContinuationSource(
+  private async resolveContinuationSource(
     task: TaskRow,
-  ): { prior: RunRow; session: SessionRow; trigger: ContinuationTrigger } | null {
+  ): Promise<{ prior: RunRow; session: SessionRow; trigger: ContinuationTrigger } | null> {
     const sourceTaskId = task.reattemptOf ?? task.id;
-    const priors = this.runStore.listForTask(sourceTaskId); // ordered by attempt asc
+    const priors = await this.runStore.listForTask(sourceTaskId); // ordered by attempt asc
     for (let i = priors.length - 1; i >= 0; i--) {
       const prior = priors[i]!;
       if (prior.sessionRowId === null) continue;
@@ -701,9 +720,9 @@ export class Runner {
    * way for the audit trail. Best-effort and total: any failure falls through to
    * a cold dispatch, never blocking the Run.
    */
-  private bindContinuationIfEligible(task: TaskRow, run: RunRow): RunRow {
+  private async bindContinuationIfEligible(task: TaskRow, run: RunRow): Promise<RunRow> {
     try {
-      const src = this.resolveContinuationSource(task);
+      const src = await this.resolveContinuationSource(task);
       if (!src) return run;
       const env: ResumeEnvironment = {
         harness: src.session.harness,
@@ -748,7 +767,7 @@ export class Runner {
         return run;
       }
 
-      const bound = this.runStore.update(run.id, {
+      const bound = await this.runStore.update(run.id, {
         sessionRowId: src.session.id,
         sessionId: src.session.harnessSessionId,
       });
@@ -784,8 +803,8 @@ export class Runner {
    * SIGKILL triggers can still append its own fact, but the coordinator keeps the
    * Run `cancelled`. The Task was already cancelled by the caller, so the
    * projection leaves it untouched (taskAction none). */
-  cancelForTask(taskId: number): void {
-    this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
+  async cancelForTask(taskId: number): Promise<void> {
+    await this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
   }
 
   /**
@@ -798,8 +817,8 @@ export class Runner {
    * already `completed`, so the projection leaves it untouched (taskAction none);
    * the post-SIGKILL harness-exit fact loses to this agent-finish.
    */
-  completeForTask(taskId: number): void {
-    this.settleTaskRun(taskId, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'none', reason: null });
+  async completeForTask(taskId: number): Promise<void> {
+    await this.settleTaskRun(taskId, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'none', reason: null });
   }
 
   /**
@@ -811,17 +830,17 @@ export class Runner {
    * it releases its lease and prevents an operator action on an awaiting-review
    * Task from wedging the Work Context.
    */
-  private settleTaskRun(taskId: number, type: RunFactType, projection: SettleProjection): void {
+  private async settleTaskRun(taskId: number, type: RunFactType, projection: SettleProjection): Promise<void> {
     let handled = false;
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
       handled = true;
-      this.coordinateSettle(this.taskService.get(taskId), this.runStore.get(active.runId), type, projection);
+      await this.coordinateSettle(this.taskService.get(taskId), await this.runStore.get(active.runId), type, projection);
       this.kill(active);
     }
     if (handled) return;
-    const parked = this.runStore.listForTask(taskId).find((r) => r.state === 'running');
-    if (parked) this.coordinateSettle(this.taskService.get(taskId), parked, type, projection);
+    const parked = (await this.runStore.listForTask(taskId)).find((r) => r.state === 'running');
+    if (parked) await this.coordinateSettle(this.taskService.get(taskId), parked, type, projection);
   }
 
   /**
@@ -860,11 +879,11 @@ export class Runner {
       // that path always running).
       await this.tailer.stop(active.runId);
       this.readers.delete(active.runId);
-      const run = this.runStore.get(active.runId);
+      const run = await this.runStore.get(active.runId);
       const task = this.taskService.get(taskId);
       // Revert the premature close, then hand the Task to a human (#139).
       await this.autoDrive?.reopenTicket(task);
-      this.settleEscalated(task, run, 'ticket closed before verification and landing (reopened)', {});
+      await this.settleEscalated(task, run, 'ticket closed before verification and landing (reopened)', {});
       this.kill(active); // stop the parked agent; drive() finalizes the worktree + keys
       return true;
     }
@@ -872,7 +891,7 @@ export class Runner {
     // live Run in flight, so we never race a Run that is mid-spawn (its
     // ActiveRun not yet registered).
     if (this.taskService.get(taskId).state !== 'running') return false;
-    if (this.runStore.listForTask(taskId).some((r) => r.state === 'running')) return false;
+    if ((await this.runStore.listForTask(taskId)).some((r) => r.state === 'running')) return false;
     // Reopen the premature close, then Escalate the orphaned Task directly (#139).
     await this.autoDrive?.reopenTicket(this.taskService.get(taskId));
     this.taskService.escalate(taskId);
@@ -930,7 +949,7 @@ export class Runner {
         const res = await active.driver.steer([{ type: 'text', text }], { steering: { idleBehavior: 'promptRequired' } });
         if (res.outcome === 'injected') {
           active.steerSupported = true;
-          const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
+          const event = await this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_injected', text } });
           this.events.onRunEvent?.(event);
           return true;
         }
@@ -947,7 +966,7 @@ export class Runner {
     // harness). Re-check the gate: a settle may have begun during the RPC await.
     if (!active.steerable) return false;
     active.steerQueue.push(text);
-    const event = this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
+    const event = await this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.events.onRunEvent?.(event);
     return true;
   }
@@ -1104,7 +1123,7 @@ export class Runner {
       // turn to the best-effort capture below — nothing to rematerialise.
       if (afk && resume) {
         const start = this.startStateOf(run.id);
-        const candidateOid = this.runStore.get(run.id).candidateOid;
+        const candidateOid = (await this.runStore.get(run.id)).candidateOid;
         if (start && candidateOid) {
           await rematerializeCandidate(task.workingDir, candidateOid);
           workspace.baseRev = start.startCommit;
@@ -1147,7 +1166,7 @@ export class Runner {
       // `addWorktreeCheckout` fails on an already-present path / already-checked-
       // out branch. The candidate is re-parented on the SAME validated base the
       // first turn recorded, so the re-verify judges the full diff.
-      const persisted = this.runStore.get(run.id);
+      const persisted = await this.runStore.get(run.id);
       const branch = persisted.branch ?? `harmonic/task-${task.id}-run-${run.attempt}`;
       // The base the first turn already validated against wins; otherwise a
       // resumed Run resolves the same base a fresh one would (issue #157).
@@ -1171,7 +1190,7 @@ export class Runner {
     }
     const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
     await Git.addWorktree(task.workingDir, path, branch, baseBranch);
-    this.runStore.update(run.id, { branch, baseBranch });
+    await this.runStore.update(run.id, { branch, baseBranch });
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
@@ -1265,7 +1284,7 @@ export class Runner {
         record('lifecycle', { event: 'candidate', status: 'skipped', reason: result.reason });
         return;
       }
-      this.runStore.update(run.id, { candidateOid: result.oid, candidateRef: result.ref });
+      await this.runStore.update(run.id, { candidateOid: result.oid, candidateRef: result.ref });
       record('lifecycle', { event: 'candidate', status: 'created', oid: result.oid, mutated: result.mutated });
     } catch (err) {
       record('lifecycle', {
@@ -1350,7 +1369,7 @@ export class Runner {
     // (dirty direct context) or failed (#134): a configured verifier then has
     // nothing to characterize, which every branch below treats as infra doubt
     // → inconclusive → Escalate, never a silent pass.
-    const oid = this.runStore.get(run.id).candidateOid;
+    const oid = (await this.runStore.get(run.id)).candidateOid;
 
     if (command) {
       if (!oid) {
@@ -1472,7 +1491,7 @@ export class Runner {
     // now rather than leak it. This is the only builder-worktree removal outside
     // retirement, and it fires solely for a worktree retirement structurally
     // cannot own; the invariant "retained ⇔ bound ⇔ retirement owns removal" holds.
-    const sessionRowId = this.runStore.get(run.id).sessionRowId;
+    const sessionRowId = (await this.runStore.get(run.id)).sessionRowId;
     let retained = false;
     if (sessionRowId != null) {
       try {
@@ -1614,7 +1633,7 @@ export class Runner {
     // truth `onCompleted` applies (issue #154).
     if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return 'skip';
     const start = this.startStateOf(run.id);
-    const candidateOid = this.runStore.get(run.id).candidateOid;
+    const candidateOid = (await this.runStore.get(run.id)).candidateOid;
     if (!start || !candidateOid) return 'skip';
     const dir = task.workingDir;
     try {
@@ -1697,7 +1716,7 @@ export class Runner {
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<'landed' | 'escalate'> {
     const start = this.startStateOf(run.id);
-    const candidateOid = this.runStore.get(run.id).candidateOid;
+    const candidateOid = (await this.runStore.get(run.id)).candidateOid;
     const dir = task.workingDir;
     const reject = (reason: string, detail: string): 'escalate' => {
       this.runFacts.append(run.id, 'branch-violation', { via: 're-merge', reason, detail });
@@ -1842,17 +1861,17 @@ export class Runner {
         // has already spent its re-merge — or has no recorded candidate to derive
         // the allowed set from — Escalates as #151 would have, rather than issuing
         // a second mutating turn.
-        const escalateBranchViolation = () =>
+        const escalateBranchViolation = async () =>
           this.settleEscalated(
             task,
-            this.runStore.get(run.id),
+            await this.runStore.get(run.id),
             `branch contract violated (${outcome.reason}): ${outcome.detail}`,
             {},
           );
         // `driveOnce` only signals `remerge-needed` on the first ambiguous outcome,
         // so this `remerges >= 1` guard is the durable backstop across a crash-resume.
         if (remerges >= 1) {
-          escalateBranchViolation();
+          await escalateBranchViolation();
           return;
         }
         // The allowed set is derived from the recorded artifact — the tree of the
@@ -1860,13 +1879,13 @@ export class Runner {
         // re-snapshots over it.
         const allowedTree = await this.candidateTree(task, run);
         if (allowedTree === null) {
-          escalateBranchViolation();
+          await escalateBranchViolation();
           return;
         }
         remerges += 1;
         remergeCtx = { reason: outcome.reason, detail: outcome.detail, allowedTree };
         healCtx = undefined; // the corrective turn is a re-merge, not a heal
-        inFlightTurn = this.enqueueReMerge(run, sessionKey);
+        inFlightTurn = await this.enqueueReMerge(run, sessionKey);
         // The next `driveOnce(remergeCtx)` resets the phase pointer to
         // `executing`, resumes the work, prompts the agent to re-home it cleanly,
         // and re-enters `validating` — where the allowed-set gate lands or
@@ -1877,9 +1896,9 @@ export class Runner {
       // NO further mutating turn is issued (issue #155): a verification fail on
       // the corrective re-merge turn Escalates rather than self-healing.
       if (remerges >= 1) {
-        this.settleEscalated(
+        await this.settleEscalated(
           task,
-          this.runStore.get(run.id),
+          await this.runStore.get(run.id),
           `verification failed on the corrective re-merge turn: ${outcome.reason}`,
           {},
         );
@@ -1893,13 +1912,13 @@ export class Runner {
           heals === 0
             ? `verification failed: ${outcome.reason}`
             : `verification failed after ${heals} self-heal attempt(s): ${outcome.reason}`;
-        this.settleEscalated(task, this.runStore.get(run.id), reason, {});
+        await this.settleEscalated(task, await this.runStore.get(run.id), reason, {});
         return;
       }
       heals += 1;
       healCtx = { reason: outcome.reason, output: outcome.output, attempt: heals };
       remergeCtx = undefined;
-      inFlightTurn = this.enqueueSelfHeal(run, sessionKey, heals);
+      inFlightTurn = await this.enqueueSelfHeal(run, sessionKey, heals);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
       // reconstructable from the event log.
@@ -1915,7 +1934,7 @@ export class Runner {
    * `null`, which the caller treats as "cannot re-merge" and Escalates.
    */
   private async candidateTree(task: TaskRow, run: RunRow): Promise<string | null> {
-    const candidateOid = this.runStore.get(run.id).candidateOid;
+    const candidateOid = (await this.runStore.get(run.id)).candidateOid;
     if (!candidateOid) return null;
     try {
       return await Git.revParse(task.workingDir, `${candidateOid}^{tree}`);
@@ -1935,9 +1954,9 @@ export class Runner {
    * heal still runs (this in-process loop is the dispatch; the row is an audit
    * record), so an audit-write hiccup never blocks the fix.
    */
-  private enqueueSelfHeal(run: RunRow, sessionKey: string, attempt: number): number | null {
+  private async enqueueSelfHeal(run: RunRow, sessionKey: string, attempt: number): Promise<number | null> {
     try {
-      const oid = this.runStore.get(run.id).candidateOid ?? '';
+      const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
       const now = Date.now();
       const row = this.turnQueue.enqueue(
         sessionKey,
@@ -1971,9 +1990,9 @@ export class Runner {
    * turn finishes, or `null` if the queue write failed (the corrective turn still
    * runs — this in-process loop is the dispatch; the row is an audit record).
    */
-  private enqueueReMerge(run: RunRow, sessionKey: string): number | null {
+  private async enqueueReMerge(run: RunRow, sessionKey: string): Promise<number | null> {
     try {
-      const oid = this.runStore.get(run.id).candidateOid ?? '';
+      const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
       const now = Date.now();
       const row = this.turnQueue.enqueue(
         sessionKey,
@@ -2007,9 +2026,9 @@ export class Runner {
    * which reads the stashed row id back from {@link pendingMemberReMerge} to
    * settle it once the corrective turn has run.
    */
-  enqueueReMergeForMember(member: MergeTrainMember): void {
-    const run = this.runStore.get(member.runId);
-    const rowId = this.enqueueReMerge(run, `run-${member.runId}`);
+  async enqueueReMergeForMember(member: MergeTrainMember): Promise<void> {
+    const run = await this.runStore.get(member.runId);
+    const rowId = await this.enqueueReMerge(run, `run-${member.runId}`);
     if (rowId !== null) this.pendingMemberReMerge.set(member.runId, rowId);
   }
 
@@ -2021,10 +2040,10 @@ export class Runner {
    * the SOLE settle authority on a merge-train escalate: `driveOnce` only records
    * the `escalated` outcome and stops, so the Run is never settled twice.
    */
-  settleEscalatedForMember(member: MergeTrainMember, reason: string): void {
-    const run = this.runStore.get(member.runId);
+  async settleEscalatedForMember(member: MergeTrainMember, reason: string): Promise<void> {
+    const run = await this.runStore.get(member.runId);
     const task = this.taskService.get(member.taskId);
-    this.settleEscalated(task, run, reason, {});
+    await this.settleEscalated(task, run, reason, {});
   }
 
   /**
@@ -2070,13 +2089,14 @@ export class Runner {
     remergeCtx?: ReMergeContext,
   ): Promise<TurnOutcome> {
     const record = (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => {
-      const event = this.runStore.appendEvent(run.id, { type, payload });
       // Feed the live-usage tailer's current-activity line (ADR 0010).
       if (type === 'session_update') {
         const line = activityLine(payload);
         if (line) active.activity = line;
       }
-      this.events.onRunEvent?.(event);
+      void this.runStore.appendEvent(run.id, { type, payload }).then((event) => {
+        this.events.onRunEvent?.(event);
+      });
     };
 
     // Advance the Run through the phase machine (issue #114) up to and including
@@ -2085,10 +2105,10 @@ export class Runner {
     // on the API + card) and recorded as a lifecycle event, so the *sequence* of
     // phases the Run passed through survives a restart and is reconstructable
     // from the event log — never inferred from Task columns.
-    const advancePhase = (to: RunPhase, gate: ReviewGate) => {
-      const from = this.runStore.get(run.id).phase ?? 'executing';
+    const advancePhase = async (to: RunPhase, gate: ReviewGate) => {
+      const from = (await this.runStore.get(run.id)).phase ?? 'executing';
       for (const phase of phasePath(from, to, gate)) {
-        this.runStore.update(run.id, { phase });
+        await this.runStore.update(run.id, { phase });
         record('lifecycle', { event: 'phase', phase });
       }
     };
@@ -2108,7 +2128,7 @@ export class Runner {
     // isn't built), so the prior failure/violation is carried forward as the
     // corrective prompt below rather than as conversation history.
     if (healCtx || remergeCtx) {
-      this.runStore.update(run.id, { phase: 'executing' });
+      await this.runStore.update(run.id, { phase: 'executing' });
       record('lifecycle', { event: 'phase', phase: 'executing' });
     }
 
@@ -2178,7 +2198,7 @@ export class Runner {
         // failed but hand the Task back to `ready` (not escalate) so it re-runs
         // once the reconcile re-cuts the branch — the start-funnel gate holds it
         // there in the meantime. No breaker arm: this isn't a git-fork storm.
-        this.coordinateSettle(task, run, 'failed', {
+        await this.coordinateSettle(task, run, 'failed', {
           runState: 'failed',
           taskAction: 'ready',
           reason: err.reason,
@@ -2189,7 +2209,7 @@ export class Runner {
         // the afk-direct admission gate (issue #149), or a worktree Run whose
         // base cannot be resolved to a real branch because a prior landing left
         // the base repo detached (issue #198). Both are operator-fixable.
-        this.settleEscalated(task, run, err.reason, {});
+        await this.settleEscalated(task, run, err.reason, {});
       } else if (err instanceof GitError) {
         // A git workspace-prep failure (issue #199). Record it against the
         // per-context circuit breaker (keyed on the base repo, so colliding
@@ -2207,12 +2227,12 @@ export class Runner {
         const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
         const failure = this.gitBreaker?.recordFailure(repoKey(task.workingDir));
         if (cls === 'permanent' || failure?.opened) {
-          this.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
+          await this.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
         } else {
-          this.settle(task, run, 'failed', err.message);
+          await this.settle(task, run, 'failed', err.message);
         }
       } else {
-        this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
+        await this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
       }
       return { kind: 'terminal' };
     }
@@ -2301,8 +2321,8 @@ export class Runner {
     // the Run through the coordinator by precedence — `guardrail-trip` →
     // Escalation (afk→hitl), never a direct settle, never a new terminal state.
     let guardrailTimer: ReturnType<typeof setTimeout> | null = null;
-    const armGuardrail = () => {
-      const started = this.runStore.get(run.id);
+    const armGuardrail = async () => {
+      const started = await this.runStore.get(run.id);
       const budget = started.guardrailConfig
         ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
         : null;
@@ -2315,10 +2335,10 @@ export class Runner {
       const ws = this.getWorkspace?.(task.workspaceId);
       const configSource = ws?.guardrailBudget ? 'workspace' : 'default';
       const remaining = Math.max(0, wallClockBudgetMs(budget) - (Date.now() - started.startedAt));
-      guardrailTimer = setTimeout(() => {
+      guardrailTimer = setTimeout(async () => {
         guardrailTimer = null;
         if (active.externallySettled) return; // already ended some other way
-        const now = this.runStore.get(run.id);
+        const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return; // settled/terminal — nothing to trip
         // Phase-scoped (issue #127, reliability-design Unit A): a trip only
         // counts when observed inside an execution phase. `now - startedAt` is
@@ -2343,7 +2363,7 @@ export class Runner {
         // Claim the settle so the drive loop's own settle path (unwinding from
         // the killed harness) no-ops instead of finishing the Run twice.
         active.externallySettled = true;
-        this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+        await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
         // Interrupt whatever is in flight so `driver.prompt()` / the verifier
         // unwinds and `driveOnce` returns through its `externallySettled` guards.
         active.verifyAbort.abort();
@@ -2363,7 +2383,7 @@ export class Runner {
     // `guardrail_events` row + `guardrail-trip` run_fact + coordinator-settle
     // path as every other Guardrail dimension.
     let spendTimer: ReturnType<typeof setInterval> | null = null;
-    const tripSpend = (
+    const tripSpend = async (
       now: RunRow,
       event: {
         dimension: 'tokens' | 'cost';
@@ -2378,7 +2398,7 @@ export class Runner {
       this.guardrailEvents.append(now.id, event);
       record('lifecycle', { event: 'guardrail-tripped', dimension: event.dimension, reason });
       active.externallySettled = true;
-      this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+      await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
       active.verifyAbort.abort();
       this.kill(active);
       if (spendTimer) {
@@ -2386,8 +2406,8 @@ export class Runner {
         spendTimer = null;
       }
     };
-    const armSpendGuardrail = () => {
-      const started = this.runStore.get(run.id);
+    const armSpendGuardrail = async () => {
+      const started = await this.runStore.get(run.id);
       const budget = started.guardrailConfig
         ? (JSON.parse(started.guardrailConfig) as ResolvedGuardrails).budget
         : null;
@@ -2434,7 +2454,7 @@ export class Runner {
         void (async () => {
           try {
             if (active.externallySettled) return;
-            const now = this.runStore.get(run.id);
+            const now = await this.runStore.get(run.id);
             if (now.state !== 'running') return;
             const snap = await this.sampleSnapshot(run.id);
             const observedTokens = snap ? totalTokensOf(snap.usage) : null;
@@ -2469,7 +2489,7 @@ export class Runner {
               const reason = formatUnmeasurableReason(outcome.dimension);
               const limitValue =
                 outcome.dimension === 'tokens' ? (budget.tokens ?? 0) : toMicroUsd(budget.costUsd ?? 0);
-              tripSpend(
+              await tripSpend(
                 now,
                 {
                   dimension: outcome.dimension,
@@ -2505,7 +2525,7 @@ export class Runner {
                     payload: { limitUsd: trip.limitUsd, observedUsd: trip.observedUsd, scope },
                   };
             const reason = formatBudgetReason(trip);
-            tripSpend(now, event, reason);
+            await tripSpend(now, event, reason);
           } finally {
             spendSampling = false;
           }
@@ -2521,15 +2541,15 @@ export class Runner {
     // the Run's current phase sets the expiry budget, so the review gate rides
     // a far longer window than the execution phases.
     let leaseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    const armLeaseHeartbeat = () => {
+    const armLeaseHeartbeat = async () => {
       const key = this.workContextKeyFor(task, run);
-      const beat = () => {
+      const beat = async () => {
         if (active.externallySettled) return;
-        const now = this.runStore.get(run.id);
+        const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return;
         this.leaseStore.heartbeat(key, Date.now(), now.phase ?? 'executing');
       };
-      beat(); // set expiry immediately, before the first interval tick
+      await beat(); // set expiry immediately, before the first interval tick
       leaseHeartbeatTimer = setInterval(beat, this.leaseHeartbeatMs);
       leaseHeartbeatTimer.unref?.();
     };
@@ -2554,7 +2574,7 @@ export class Runner {
     //     wall-clock both fire, both append `guardrail-trip` facts and the
     //     coordinator's earliest-fact precedence (`projectSettle`) picks the
     //     primary reason — no dimension-priority table needed.
-    const progressStart = this.runStore.get(run.id);
+    const progressStart = await this.runStore.get(run.id);
     const progressSnapshot = progressStart.guardrailConfig
       ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
       : null;
@@ -2574,7 +2594,7 @@ export class Runner {
     // verifier/prompt in flight (the tool-timeout path fires from a timer that
     // can race an in-flight turn); the boundary stall path passes it too and it
     // is a harmless no-op when nothing is in flight.
-    const tripProgressGuardrail = (
+    const tripProgressGuardrail = async (
       now: RunRow,
       evidence: { dimension: 'progress' | 'tool-timeout'; limitValue: number; observedValue: number; payload: unknown },
       reason: string,
@@ -2589,7 +2609,7 @@ export class Runner {
       });
       record('lifecycle', { event: 'guardrail-tripped', dimension: evidence.dimension, reason });
       active.externallySettled = true;
-      this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
+      await this.coordinateSettle(task, now, 'guardrail-trip', { runState: 'failed', taskAction: 'escalate', reason }, {});
     };
 
     // Tool-call liveness, fed from the ACP `session/update` stream (below). A
@@ -2622,9 +2642,9 @@ export class Runner {
       // Poll at a fraction of the bound (capped) so a hang is caught within a
       // small fraction of the timeout without a per-tool timer.
       const period = Math.max(1_000, Math.min(toolTimeoutMs, 30_000));
-      toolTimeoutTimer = setInterval(() => {
+      toolTimeoutTimer = setInterval(async () => {
         if (active.externallySettled) return;
-        const now = this.runStore.get(run.id);
+        const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return;
         // Only an execution phase counts (reliability-design Unit A) — the same
         // phase scoping as the wall-clock budget.
@@ -2641,7 +2661,7 @@ export class Runner {
           title: oldest.title,
         });
         if (!trip) return;
-        tripProgressGuardrail(
+        await tripProgressGuardrail(
           now,
           {
             dimension: 'tool-timeout',
@@ -2664,12 +2684,12 @@ export class Runner {
     // turn). First stall → one nudge via the steer channel; a stall that
     // survives the nudge turn → trip → Escalate. Returns true when it tripped,
     // so the caller breaks the loop to settle.
-    const checkProgressAtBoundary = (): boolean => {
+    const checkProgressAtBoundary = async (): Promise<boolean> => {
       // Off, already settled, or the agent has signalled finish/escalate — in
       // the last case the Run is completing this turn, so a lingering pre-finish
       // stall tail must not nudge or (worse) trip it: honour the finish.
       if (!progressEnabled || active.externallySettled || active.agentFinished || active.escalateReason) return false;
-      const report = detectStall(toProgressEvents(this.runStore.listEvents(run.id)), { enabled: true });
+      const report = detectStall(toProgressEvents(await this.runStore.listEvents(run.id)), { enabled: true });
       if (!report) return false; // progressing, or a tool is outstanding (suspend guard)
       if (!progressNudged) {
         // One nudge, delivered as the next turn by the steer drain just below in
@@ -2684,9 +2704,9 @@ export class Runner {
       // (drained from the queue) and a turn has run — otherwise the same
       // pre-nudge tail would trip before the agent ever saw the nudge.
       if (active.steerQueue.length > 0) return false;
-      const now = this.runStore.get(run.id);
+      const now = await this.runStore.get(run.id);
       if (now.state !== 'running') return false;
-      tripProgressGuardrail(
+      await tripProgressGuardrail(
         now,
         {
           dimension: 'progress',
@@ -2719,7 +2739,7 @@ export class Runner {
       // written *alongside* the Run, so a Session persistence hiccup never fails
       // a dispatch that would otherwise proceed (AC: in-flight Run unchanged).
       const persistSession = (harnessSessionId: string) => {
-        this.runStore.update(run.id, { sessionId: harnessSessionId });
+        void this.runStore.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
         try {
           const session = this.sessionStore.recordDispatch({
             harness: task.harness,
@@ -2733,7 +2753,7 @@ export class Runner {
             now: Date.now(),
           });
           sessionRowId = session.id;
-          this.runStore.update(run.id, { sessionRowId: session.id });
+          void this.runStore.update(run.id, { sessionRowId: session.id }).catch(() => {});
         } catch {
           /* best-effort; the Session is additive, the Run proceeds regardless */
         }
@@ -2779,16 +2799,16 @@ export class Runner {
       // The session id is persisted; start tailing its native log (ADR 0010).
       this.tailer.start(run.id);
       // Arm the wall-clock Guardrail now the Run is genuinely executing.
-      armGuardrail();
+      await armGuardrail();
       // Arm the hard tool-timeout watchdog alongside it (issue #131; a no-op
       // when the progress Guardrail is off). The stall detector is evaluated at
       // turn boundaries in the loop below, not on a timer.
       armToolTimeout();
       // Arm the token/cost spend Guardrail poll (issue #128; a no-op when
       // neither `tokens` nor `costUsd` is configured on the Run's frozen budget).
-      armSpendGuardrail();
+      await armSpendGuardrail();
       // Arm the Work Context lease heartbeat (issue #122).
-      armLeaseHeartbeat();
+      await armLeaseHeartbeat();
 
       // An afk Run executes unattended, so put the harness into an auto
       // permission mode: Claude's 'auto' classifier auto-approves safe tools
@@ -2856,7 +2876,7 @@ export class Runner {
       // native or mirrored — without re-deriving a template that may since have
       // changed (the "Prompt" tab reads this column). Steer/continue turns are
       // recorded as lifecycle events, not folded into this initial prompt.
-      this.runStore.update(run.id, { prompt: promptText });
+      await this.runStore.update(run.id, { prompt: promptText });
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
       active.idle = true; // turn ended → parked; the backstop may Escalate a prematurely-closed ticket here
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
@@ -2873,7 +2893,7 @@ export class Runner {
         // nudge (drained as the next turn just below); a stall that survives that
         // nudge trips → Escalate, and we break to unwind through the
         // `externallySettled` guards.
-        if (checkProgressAtBoundary()) break;
+        if (await checkProgressAtBoundary()) break;
         // A queued operator steer takes the next turn — for native and afk Runs
         // alike — ahead of any continue nudge, without spending continue budget.
         const steer = active.steerQueue.shift();
@@ -2943,7 +2963,7 @@ export class Runner {
       // escalating Run (never reaches `verifying`, #134) and for an
       // afkUnresolved Run (no completion to verify).
       if (!escalating && !afkUnresolved) {
-        advancePhase('validating', autoDriven ? 'auto' : 'human');
+        await advancePhase('validating', autoDriven ? 'auto' : 'human');
         await this.runCandidateSnapshot(
           task,
           run,
@@ -2976,7 +2996,7 @@ export class Runner {
             autoDriven &&
             !!workspace.directIsolation &&
             this.autoDrive?.mergeFateFor(task) === 'auto-merge' &&
-            this.runStore.get(run.id).candidateOid != null;
+            (await this.runStore.get(run.id)).candidateOid != null;
           if (remergeEligible) {
             remergeNeeded = { reason: verdict.reason, detail: verdict.detail };
           } else {
@@ -3008,14 +3028,14 @@ export class Runner {
       const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
-        this.settleEscalated(task, run, escalating, patch);
+        await this.settleEscalated(task, run, escalating, patch);
       } else if (afkUnresolved) {
         // Clean turn(s) ended but the agent never signalled `finish_task` — not
         // success. Treat as a failure: Auto-Retry within cap, else Escalate. The
         // branch is never merged and the ticket is never closed, so half-done
         // work never lands (#139).
         record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal' });
-        this.settleFailedOrRetry(
+        await this.settleFailedOrRetry(
           task,
           run,
           'run ended without an execution-complete (finish_task) signal',
@@ -3044,7 +3064,7 @@ export class Runner {
         // bounded self-heal; an **inconclusive** (`escalate`) never heals and
         // Escalates in place with its cause — so broken work never lands, but a
         // flaky environment is never mistaken for a code defect.
-        advancePhase('verifying', autoDriven ? 'auto' : 'human');
+        await advancePhase('verifying', autoDriven ? 'auto' : 'human');
         const { decision, ran, autoAccept } = await this.runVerification(
           task,
           run,
@@ -3082,7 +3102,7 @@ export class Runner {
           // never heals — Escalate immediately with its cause (issue #137).
           const reason = `verification ${decision.outcome}: ${decision.reason}`;
           record('lifecycle', { event: 'escalated', reason });
-          this.settleEscalated(task, run, reason, patch);
+          await this.settleEscalated(task, run, reason, patch);
         } else if (autoDriven) {
           // A mirrored Run has no human gate, so it runs the auto branch:
           // executing → validating → verifying → landing → terminal. The Merge
@@ -3115,7 +3135,7 @@ export class Runner {
           // — instead of `onCompleted`'s unordered plain merge. This is the one
           // path where two members finishing at once land serially rather than
           // the second one's non-fast-forward merge racing (or falling back).
-          const member = this.epicMemberFor(task, this.runStore.get(run.id), workspace);
+          const member = this.epicMemberFor(task, await this.runStore.get(run.id), workspace);
           if (member) {
             const trainOutcome = remergeCtx
               ? await this.mergeTrain!.onHealComplete(member)
@@ -3143,10 +3163,10 @@ export class Runner {
             // merge, not the close.
             if (!(await this.autoDrive!.closeCompleted(task))) {
               record('lifecycle', { event: 'escalated', reason: 'ticket close failed after merge-train land' });
-              this.settleEscalated(task, run, 'ticket close failed after merge-train land', patch);
+              await this.settleEscalated(task, run, 'ticket close failed after merge-train land', patch);
             } else {
-              advancePhase('landing', 'auto');
-              this.settleAutoCompleted(task, run, patch);
+              await advancePhase('landing', 'auto');
+              await this.settleAutoCompleted(task, run, patch);
             }
             return { kind: 'terminal' };
           }
@@ -3159,17 +3179,17 @@ export class Runner {
               ? 'agent re-merge did not resolve the branch ambiguity'
               : 'deterministic recovery landing failed';
             record('lifecycle', { event: 'escalated', reason });
-            this.settleEscalated(task, run, reason, patch);
+            await this.settleEscalated(task, run, reason, patch);
           } else {
-            const outcome = await this.autoDrive!.onCompleted(task, this.runStore.get(run.id));
+            const outcome = await this.autoDrive!.onCompleted(task, await this.runStore.get(run.id));
             if (outcome === 'escalate') {
               record('lifecycle', { event: 'escalated', reason: 'landing failed' });
-              this.settleEscalated(task, run, 'landing failed', patch);
+              await this.settleEscalated(task, run, 'landing failed', patch);
             } else {
               // The Merge Fate landed in onCompleted → record `landing`, then settle
               // terminal (the coordinator marks the Run `phase:'terminal'`).
-              advancePhase('landing', 'auto');
-              this.settleAutoCompleted(task, run, patch);
+              await advancePhase('landing', 'auto');
+              await this.settleAutoCompleted(task, run, patch);
             }
           }
         } else if (ran && autoAccept && this.autoAcceptLand) {
@@ -3181,13 +3201,13 @@ export class Runner {
           // verifier configured `combineVerdicts([])` is also `proceed`, but
           // there's nothing verified to auto-accept, so that case falls through
           // to the human-gated branch below instead.
-          advancePhase('landing', 'auto');
+          await advancePhase('landing', 'auto');
           // Re-fetch: `run` (the drive-loop's original parameter) predates
           // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
           // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
           // afk branch above already uses, so `landingEffectsFor` sees the real
           // branch to merge rather than a stale null.
-          const landed = await this.autoAcceptLand(task, this.runStore.get(run.id), patch);
+          const landed = await this.autoAcceptLand(task, await this.runStore.get(run.id), patch);
           if (!landed.ok) {
             // CRITICAL: `LandingCoordinator.land` writes the land fact + PONC
             // BEFORE the (possibly failing) merge (#115). Calling any settle here
@@ -3200,7 +3220,7 @@ export class Runner {
             // the half-applied effect), or the review-SLA sweep (#114) collects
             // it. No silent pass, no lease left wedged.
             record('lifecycle', { event: 'auto-accept-landing-failed', reason: landed.detail ?? 'landing failed' });
-            this.parkForReview(task, run, {
+            await this.parkForReview(task, run, {
               ...patch,
               reviewFeedback: `auto-accept landing failed: ${landed.detail ?? 'merge conflict'}`,
               stat: await this.diffstatFor(task, run.id),
@@ -3216,10 +3236,10 @@ export class Runner {
           // non-terminal, holding its Work Context lease — until the human
           // accepts (lands) or rejects it, or its review SLA lapses (#114). It
           // does NOT settle here.
-          advancePhase('review', 'human');
+          await advancePhase('review', 'human');
           // Snapshot the diffstat once, here, so the awaiting-review board card can
           // show it without an N+1 git spawn per refresh (issue #36).
-          this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
+          await this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
         }
       }
       // The turn settled or parked above (escalate / auto-land / auto-accept /
@@ -3246,12 +3266,12 @@ export class Runner {
       const patch = { usage: usage ? JSON.stringify(usage) : null };
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
-        this.settleEscalated(task, run, escalating, patch);
+        await this.settleEscalated(task, run, escalating, patch);
       } else if (autoDriven) {
         // Error failure: Auto-Retry within cap, else Escalate (issue #33).
-        this.settleFailedOrRetry(task, run, reason, patch, 'failed');
+        await this.settleFailedOrRetry(task, run, reason, patch, 'failed');
       } else {
-        this.settle(task, run, 'failed', reason, patch);
+        await this.settle(task, run, 'failed', reason, patch);
       }
       // An error failure is terminal — the heal loop does not retry an execution
       // error (only an actionable verification fail heals).
@@ -3278,12 +3298,12 @@ export class Runner {
    * (`wholeFileReader`). null before a session id, or for a harness with no
    * Usage Collector. Reused across ticks so the byte cursor persists.
    */
-  private readerFor(runId: number): SessionTailReader | null {
+  private async readerFor(runId: number): Promise<SessionTailReader | null> {
     const existing = this.readers.get(runId);
     if (existing) return existing;
     const active = this.active.get(runId);
     if (!active) return null;
-    const sessionId = this.runStore.get(runId).sessionId;
+    const sessionId = (await this.runStore.get(runId)).sessionId;
     if (!sessionId) return null;
     const collector = adapterFor(active.harnessId).usage;
     if (!collector) return null;
@@ -3300,9 +3320,9 @@ export class Runner {
    * the tailer tick; the on-demand callers read `latestSnapshot`.
    */
   private async sampleSnapshot(runId: number): Promise<RunUsageSnapshot | null> {
-    const reader = this.readerFor(runId);
+    const reader = await this.readerFor(runId);
     if (!reader) return null;
-    return this.decorateSnapshot(runId, await reader.sample());
+    return await this.decorateSnapshot(runId, await reader.sample());
   }
 
   /**
@@ -3311,8 +3331,8 @@ export class Runner {
    * tailer's ~1s cadence instead of re-parsing the whole log themselves (#217).
    * null before the tailer's first sample.
    */
-  private latestSnapshot(runId: number): RunUsageSnapshot | null {
-    return this.decorateSnapshot(runId, this.readers.get(runId)?.latest() ?? null);
+  private async latestSnapshot(runId: number): Promise<RunUsageSnapshot | null> {
+    return await this.decorateSnapshot(runId, this.readers.get(runId)?.latest() ?? null);
   }
 
   /**
@@ -3322,11 +3342,11 @@ export class Runner {
    * events here, and fold the per-agent breakdown in for parity with the
    * settle-time Usage. The current-activity line comes off the active Run.
    */
-  private decorateSnapshot(runId: number, parsed: ParsedSession | null): RunUsageSnapshot | null {
+  private async decorateSnapshot(runId: number, parsed: ParsedSession | null): Promise<RunUsageSnapshot | null> {
     if (!parsed) return null;
     const active = this.active.get(runId);
     const collector = active ? adapterFor(active.harnessId).usage : null;
-    const toolCalls = tallyToolCalls(this.runStore.listEvents(runId), (payload) => collector?.toolName(payload) ?? null);
+    const toolCalls = tallyToolCalls(await this.runStore.listEvents(runId), (payload) => collector?.toolName(payload) ?? null);
     const agents = agentsFromTree(parsed.tree);
     const usage: RunUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
     return { usage, contextTokens: parsed.tree.contextTokens, activity: active?.activity ?? null, tree: parsed.tree };
@@ -3345,9 +3365,9 @@ export class Runner {
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
-        sessionId: this.runStore.get(run.id).sessionId,
+        sessionId: (await this.runStore.get(run.id)).sessionId,
         promptResult,
-        events: this.runStore.listEvents(run.id),
+        events: await this.runStore.listEvents(run.id),
       });
     } catch {
       return null;
@@ -3373,9 +3393,9 @@ export class Runner {
    * usage has no per-model split get one more read of the (now settled)
    * session log. Stored ACP totals win over re-derived ones.
    */
-  backfillUsage(): void {
+  async backfillUsage(): Promise<void> {
     const config = this.getConfig();
-    for (const run of this.runStore.listUsageBackfillCandidates()) {
+    for (const run of await this.runStore.listUsageBackfillCandidates()) {
       try {
         const task = this.taskService.get(run.taskId);
         const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
@@ -3388,14 +3408,14 @@ export class Runner {
           harness,
           cwd,
           sessionId: run.sessionId,
-          events: this.runStore.listEvents(run.id),
+          events: await this.runStore.listEvents(run.id),
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
         const stored = run.usage ? (JSON.parse(run.usage) as RunUsage) : null;
         const healed: RunUsage = stored?.totals
           ? { ...fresh, totals: stored.totals, source: 'combined' }
           : fresh;
-        this.runStore.update(run.id, { usage: JSON.stringify(healed) });
+        await this.runStore.update(run.id, { usage: JSON.stringify(healed) });
       } catch {
         // Healing is best-effort; the run keeps its stored usage.
       }
@@ -3405,7 +3425,7 @@ export class Runner {
   /** The run's `git diff --stat` at settle time, or null (direct mode, or a
    * git failure — the stat is decoration and must never fail the run). */
   private async diffstatFor(task: TaskRow, runId: number): Promise<string | null> {
-    const run = this.runStore.get(runId);
+    const run = await this.runStore.get(runId);
     if (!run.branch || !run.baseBranch) return null;
     try {
       return await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
@@ -3421,14 +3441,14 @@ export class Runner {
    * gate and the review-SLA sweep settle Runs through the *same* coordinator,
    * with identical race-safety, rather than racing the Runner around the Run row.
    */
-  private coordinateSettle(
+  private async coordinateSettle(
     task: TaskRow,
     run: RunRow,
     type: RunFactType,
     projection: SettleProjection,
     patch: Partial<RunRow> = {},
-  ): void {
-    this.settleCoordinator.settle(task, run, type, projection, patch);
+  ): Promise<void> {
+    await this.settleCoordinator.settle(task, run, type, projection, patch);
   }
 
   /**
@@ -3449,8 +3469,8 @@ export class Runner {
    * diffstat decoration. Only a still-running Task is moved — a racing cancel
    * that already transitioned it wins.
    */
-  private parkForReview(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
-    this.reparkForReview(run, patch);
+  private async parkForReview(task: TaskRow, run: RunRow, patch: Partial<RunRow>): Promise<void> {
+    await this.reparkForReview(run, patch);
     if (this.taskService.get(task.id).state === 'running') {
       this.taskService.setState(task.id, 'awaiting-review');
     }
@@ -3487,11 +3507,11 @@ export class Runner {
    * above `escalate` — an explicit operator Accept wins over the retained
    * escalate, so accept and the record agree.
    */
-  private reparkForReview(run: RunRow, patch: Partial<RunRow> = {}): void {
+  private async reparkForReview(run: RunRow, patch: Partial<RunRow> = {}): Promise<void> {
     // Single write: the caller's decoration (`parkForReview`'s usage/stat
     // `patch`) layered under the review-phase reset, so `phase`/`reviewDeadline`
     // always win and the board sees one update, not two.
-    this.runStore.update(run.id, {
+    await this.runStore.update(run.id, {
       ...patch,
       state: 'running',
       phase: 'review',
@@ -3506,7 +3526,7 @@ export class Runner {
     }
     // Push the updated Run (phase/stat) to the board; the Task transition (if
     // any) already emitted its own change event.
-    this.events.onRunFinished?.(this.runStore.get(run.id));
+    this.events.onRunFinished?.(await this.runStore.get(run.id));
   }
 
   /**
@@ -3519,8 +3539,8 @@ export class Runner {
    * only moves a still-`running` Task (see its doc comment), which an
    * already-escalated (`ready`) Task never is.
    */
-  private parkEscalatedForReview(task: TaskRow, run: RunRow): void {
-    this.reparkForReview(run);
+  private async parkEscalatedForReview(task: TaskRow, run: RunRow): Promise<void> {
+    await this.reparkForReview(run);
     this.taskService.setState(task.id, 'awaiting-review');
     this.taskService.clearEscalated(task.id);
   }
@@ -3542,9 +3562,12 @@ export class Runner {
    * only shapes the error message ("adopt" / "reverify"). Returns the resolved
    * Task, Run, and non-null candidate OID so callers skip the null-recheck.
    */
-  private resolveEscalatedCandidateRun(taskId: number, verb: string): { task: TaskRow; run: RunRow; oid: string } {
+  private async resolveEscalatedCandidateRun(
+    taskId: number,
+    verb: string,
+  ): Promise<{ task: TaskRow; run: RunRow; oid: string }> {
     const task = this.taskService.get(taskId);
-    const run = this.runStore.listForTask(taskId).at(-1);
+    const run = (await this.runStore.listForTask(taskId)).at(-1);
     if (!run) throw new DomainError('conflict', `task ${taskId} has no runs to ${verb}`);
     if (!task.escalated) {
       throw new DomainError('invalid_state', `task ${taskId} is not escalated; nothing to ${verb}`);
@@ -3555,9 +3578,9 @@ export class Runner {
     return { task, run, oid: run.candidateOid };
   }
 
-  adoptForReview(taskId: number): void {
-    const { task, run } = this.resolveEscalatedCandidateRun(taskId, 'adopt');
-    this.parkEscalatedForReview(task, run);
+  async adoptForReview(taskId: number): Promise<void> {
+    const { task, run } = await this.resolveEscalatedCandidateRun(taskId, 'adopt');
+    await this.parkEscalatedForReview(task, run);
   }
 
   /**
@@ -3576,7 +3599,7 @@ export class Runner {
    * appended attempt is the only operator-visible result.
    */
   async reverifyWithNote(taskId: number, note: string): Promise<void> {
-    const { task, run, oid } = this.resolveEscalatedCandidateRun(taskId, 'reverify');
+    const { task, run, oid } = await this.resolveEscalatedCandidateRun(taskId, 'reverify');
 
     const config = this.getConfig();
     const ws = this.getWorkspace?.(task.workspaceId);
@@ -3621,21 +3644,21 @@ export class Runner {
     if (priorCommand) verdicts.push({ verifier: 'command', verdict: priorCommand.verdict });
 
     if (dispositionAfterNote(combineVerdicts(verdicts)) === 'park-review') {
-      this.parkEscalatedForReview(task, run);
+      await this.parkEscalatedForReview(task, run);
     } else {
       // Stays escalated: the appended attempt is the operator-visible
       // result — push the Run's fresh verdict to the board.
-      this.events.onRunFinished?.(this.runStore.get(run.id));
+      this.events.onRunFinished?.(await this.runStore.get(run.id));
     }
   }
 
-  private settle(
+  private async settle(
     task: TaskRow,
     run: RunRow,
     state: 'completed' | 'failed',
     reason: string | null,
     patch: Partial<RunRow> = {},
-  ): void {
+  ): Promise<void> {
     // A native clean completion is the agent ending its turn (→ awaiting-review);
     // a bare failure is the `failed` disposition (→ Task failed).
     const projection: SettleProjection =
@@ -3643,7 +3666,7 @@ export class Runner {
         ? { runState: 'completed', taskAction: 'awaiting-review', reason }
         : { runState: 'failed', taskAction: 'failed', reason };
     const type: RunFactType = state === 'completed' ? 'agent-finish/unresolved' : 'failed';
-    this.coordinateSettle(task, run, type, projection, patch);
+    await this.coordinateSettle(task, run, type, projection, patch);
   }
 
   /**
@@ -3653,8 +3676,8 @@ export class Runner {
    * closed-ticket reconcile confirms it). Only settle a still-running Task — a
    * racing cancel wins.
    */
-  private settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): void {
-    this.coordinateSettle(
+  private async settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): Promise<void> {
+    await this.coordinateSettle(
       task,
       run,
       'agent-finish/unresolved',
@@ -3670,21 +3693,21 @@ export class Runner {
    * distinguishes a clean-but-unresolved exit (`agent-finish/unresolved`) from
    * an error failure (`failed`) in the fact log; the Task outcome is identical.
    */
-  private settleFailedOrRetry(
+  private async settleFailedOrRetry(
     task: TaskRow,
     run: RunRow,
     reason: string,
     patch: Partial<RunRow>,
     type: RunFactType,
-  ): void {
-    const decision = this.autoDrive!.onFailed(task, this.runStore.get(run.id));
+  ): Promise<void> {
+    const decision = this.autoDrive!.onFailed(task, await this.runStore.get(run.id));
     const taskAction: SettleTaskAction = decision === 'retry' ? 'ready' : 'escalate';
-    this.coordinateSettle(task, run, type, { runState: 'failed', taskAction, reason }, patch);
+    await this.coordinateSettle(task, run, type, { runState: 'failed', taskAction, reason }, patch);
   }
 
   /** Stop an afk Run and hand the Task back to a human (issue #33): Run failed, Task ready + escalated + drive hitl. */
-  private settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): void {
-    this.coordinateSettle(task, run, 'escalate', {
+  private async settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): Promise<void> {
+    await this.coordinateSettle(task, run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',
       reason: `escalated to human: ${reason}`,

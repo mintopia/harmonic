@@ -69,9 +69,9 @@ export class BootResumeCoordinator {
 
   /** Resume every interrupted, Session-bound Run not already resumed. Safe to
    * call repeatedly (idempotent — see the class doc comment). */
-  resume(now?: number): void {
+  async resume(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
-    for (const orphan of this.runStore.listResumableInterrupted()) {
+    for (const orphan of await this.runStore.listResumableInterrupted()) {
       if (this.alreadyHandled(orphan.id)) continue; // once-only (AC3)
       if (orphan.sessionRowId === null) continue; // narrowing; the query already excludes null
 
@@ -89,12 +89,12 @@ export class BootResumeCoordinator {
 
       // The new Run is a fresh attempt of the same Task, on the same Execution
       // Chain (#129) so a resume can't reset the cumulative spend budget.
-      const resumeRun = this.runStore.create(orphan.taskId, undefined, orphan.chainId ?? undefined);
+      const resumeRun = await this.runStore.create(orphan.taskId, undefined, orphan.chainId ?? undefined);
 
       if (eligibility.eligible) {
         // Resume the same Session: bind the new Run to it and enqueue the
         // re-entry turn on its harness session id, for a later `session/load`.
-        this.runStore.update(resumeRun.id, {
+        await this.runStore.update(resumeRun.id, {
           sessionRowId: session.id,
           sessionId: session.harnessSessionId,
           prompt: CRASH_RECOVERY_PROMPT,
@@ -118,10 +118,10 @@ export class BootResumeCoordinator {
           },
           candidate: { oid: orphan.candidateOid, status: orphan.reason },
           facts: this.runFacts.list(orphan.id),
-          events: this.runStore.listEvents(orphan.id),
+          events: await this.runStore.listEvents(orphan.id),
           trackerLinks: [],
         });
-        this.runStore.update(resumeRun.id, { prompt: summary });
+        await this.runStore.update(resumeRun.id, { prompt: summary });
         // A Session-less Run anchors its turn queue on its globally-unique Run id
         // (`run-<id>`), the same convention the drive loop uses (`runner.ts`'s
         // `sessionKey`), so a later dispatch finds this queue where it looks for

@@ -16,6 +16,7 @@ import { landBranch } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openDb, type Db } from '../db/index.js';
+import { openAsyncDb } from '../db/async.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
@@ -225,6 +226,13 @@ export type App = FastifyInstance & { ctx: AppContext; registeredRoutes: Registe
 
 export async function buildApp(opts: AppOptions): Promise<App> {
   const db = openDb(opts.dataDir);
+  // The async libsql path runs alongside the sync Db during the expand-contract
+  // migration (ADR-0029): RunStore is the first store ported to it. Both open the
+  // same `harmonic.db` in WAL — a second connection, safe because better-sqlite3's
+  // synchronous writes never overlap a libsql write on the one event loop, and its
+  // default busy timeout absorbs the reverse. Stores migrate to `asyncDb` batch by
+  // batch until the sync `db` is deleted in the contract step.
+  const asyncDb = await openAsyncDb(opts.dataDir);
   const bus = new EventBus();
   const configStore = new ConfigStore(db, opts.configOverrides);
   const workspaces = new WorkspaceService(db);
@@ -238,7 +246,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (event, task) => notifier.notify(event, task),
     (id) => bus.emit('task_removed', { id }),
   );
-  const runs = new RunStore(db);
+  const runs = new RunStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(db);
   const verificationAttempts = new VerificationAttemptStore(db);
   const leases = new WorkContextLeaseStore(db);
@@ -327,7 +335,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // sweep, so this only ever spares a resume Task; a Task with no Run row (the
   // mid-launch crash) has no running Run and is still failed.
   for (const orphan of tasks.list({ state: 'running' })) {
-    if (runs.listForTask(orphan.id).some((run) => run.state === 'running')) continue;
+    if ((await runs.listForTask(orphan.id)).some((run) => run.state === 'running')) continue;
     tasks.setState(orphan.id, 'failed');
   }
   // Resume: a restart-interrupted Run that was mid-conversation on a durable
@@ -343,7 +351,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // the Task's current working directory). Whether the reload succeeds or the
   // compatibility matrix forces a fresh summarized Session, the decision is
   // idempotent across repeat boots.
-  new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(db), new RunFactStore(db), (session) => ({
+  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(db), new RunFactStore(db), (session) => ({
     harness: session.harness,
     adapterVersion: adapterVersion(session.harness),
     model: session.model,
@@ -407,10 +415,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // must be constructed with a forward reference to the other.
   let runnerRef: Runner | undefined;
   const mergeTrain = new MergeTrainCoordinator({
-    dispatchHeal: (member) => {
-      runnerRef!.enqueueReMergeForMember(member);
-      return Promise.resolve();
-    },
+    dispatchHeal: (member) => runnerRef!.enqueueReMergeForMember(member),
     escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
   });
   // Per-context git circuit breaker (issue #199): shared by the Runner (which
@@ -471,7 +476,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   runnerRef = runner;
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
-  runner.backfillUsage();
+  await runner.backfillUsage();
   const review = new ReviewService(
     runs,
     tasks,
@@ -487,7 +492,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Review-SLA sweep at boot (issue #114): a Run left parked in `review` past its
   // deadline by a previous instance is settled to a terminal disposition now, so
   // an abandoned review never wedges its Work Context lease across a restart.
-  review.sweepExpiredReviews();
+  await review.sweepExpiredReviews();
   // Session-retirement drain at boot (issue #148): reclaim any builder worktree
   // owed removal by a Session left `retiring` (a crash mid-removal) or an `idle`
   // Session whose retention deadline lapsed while the process was down. Runs
@@ -584,13 +589,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // drain — matching the pre-phase-machine behaviour where a native Run left
   // `running` at agent-finish. `countRunning()` already excludes review-parked.
   bus.on('run_changed', (run) => {
-    if (
-      (run.state !== 'running' || run.phase === 'review') &&
-      runs.countRunning() === 0 &&
-      tasks.list({ state: 'ready' }).length === 0
-    ) {
-      notifier.notify('queue.idle');
-    }
+    if (run.state === 'running' && run.phase !== 'review') return;
+    if (tasks.list({ state: 'ready' }).length !== 0) return;
+    void runs
+      .countRunning()
+      .then((running) => {
+        if (running === 0) notifier.notify('queue.idle');
+      })
+      .catch(() => {});
   });
 
   const ctx: AppContext = { db, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
@@ -613,6 +619,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     conversationDriver.shutdown();
     clearInterval(leaseSweep);
     loopMonitor?.stop();
+    // The async libsql client is deliberately NOT closed here, mirroring the
+    // sync `db` (better-sqlite3, also never explicitly closed): shutdown races
+    // best-effort background reads (autoRunner poke, the queue-idle probe below)
+    // that a closed client would reject as unhandled `CLIENT_CLOSED`. The client
+    // is released on process exit, exactly as the sync connection is.
   });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);

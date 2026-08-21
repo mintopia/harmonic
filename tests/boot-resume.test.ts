@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -28,35 +29,41 @@ import { allWorkspaces } from './helpers.js';
 describe('BootResumeCoordinator (issue #146)', () => {
   let dir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); the other stores
+  // here are still on the sync Db, so this fixture runs both connections on
+  // the one file (same pattern as tests/run-facts.test.ts).
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
   let sessions: SessionStore;
   let runFacts: RunFactStore;
   let turnQueue: TurnQueueStore;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-boot-resume-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
-    runStore = new RunStore(db);
+    runStore = new RunStore(asyncDb);
     sessions = new SessionStore(db);
     runFacts = new RunFactStore(db);
     turnQueue = new TurnQueueStore(db);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });
 
   /** An interrupted Run bound to a durable Session, exactly as the boot
    * orphan-fail sweep (`RunStore.markInterrupted`) leaves one. */
-  function seedInterrupted(opts: { supportsLoadSession?: boolean; adapterVersion?: string; sessionCwd?: string } = {}): {
+  async function seedInterrupted(opts: { supportsLoadSession?: boolean; adapterVersion?: string; sessionCwd?: string } = {}): Promise<{
     task: ReturnType<TaskService['get']>;
     run: RunRow;
     session: SessionRow;
-  } {
+  }> {
     const created = tasks.create({ prompt: 'resume me', state: 'ready', workingDir: '/tmp/repo' });
-    const run = runStore.create(created.id);
+    const run = await runStore.create(created.id);
     const session = sessions.recordDispatch({
       harness: 'claude',
       harnessSessionId: `hsid-${run.id}`,
@@ -68,10 +75,10 @@ describe('BootResumeCoordinator (issue #146)', () => {
       adapterVersion: opts.adapterVersion ?? 'claude@1',
       now: Date.now(),
     });
-    runStore.update(run.id, { sessionId: session.harnessSessionId, sessionRowId: session.id });
+    await runStore.update(run.id, { sessionId: session.harnessSessionId, sessionRowId: session.id });
     // What `markInterrupted` writes for a generic orphan.
     runFacts.append(run.id, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
-    const failed = runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
+    const failed = await runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
     tasks.setState(created.id, 'failed');
     return { task: tasks.get(created.id), run: failed, session };
   }
@@ -93,12 +100,12 @@ describe('BootResumeCoordinator (issue #146)', () => {
     return new BootResumeCoordinator(runStore, tasks, sessions, turnQueue, runFacts, resolveCaps);
   }
 
-  it('compatible → resumes the SAME Session as a new Run + a crash-recovery turn on its harness id', () => {
-    const { task, run, session } = seedInterrupted();
+  it('compatible → resumes the SAME Session as a new Run + a crash-recovery turn on its harness id', async () => {
+    const { task, run, session } = await seedInterrupted();
 
-    coordinator(capsFor()).resume();
+    await coordinator(capsFor()).resume();
 
-    const runsForTask = runStore.listForTask(task.id).filter((r) => r.id !== run.id);
+    const runsForTask = (await runStore.listForTask(task.id)).filter((r) => r.id !== run.id);
     expect(runsForTask).toHaveLength(1);
     const resumeRun = runsForTask[0]!;
     expect(resumeRun.sessionRowId).toBe(session.id); // same Session
@@ -116,12 +123,12 @@ describe('BootResumeCoordinator (issue #146)', () => {
     expect(tasks.get(task.id).state).toBe('running');
   });
 
-  it('incompatible (session/load unsupported) → fails forward: new Session, summarized prompt, reason recorded', () => {
-    const { task, run, session } = seedInterrupted({ supportsLoadSession: false });
+  it('incompatible (session/load unsupported) → fails forward: new Session, summarized prompt, reason recorded', async () => {
+    const { task, run, session } = await seedInterrupted({ supportsLoadSession: false });
 
-    coordinator(capsFor()).resume();
+    await coordinator(capsFor()).resume();
 
-    const resumeRun = runStore.listForTask(task.id).find((r) => r.id !== run.id)!;
+    const resumeRun = (await runStore.listForTask(task.id)).find((r) => r.id !== run.id)!;
     expect(resumeRun.sessionRowId).toBeNull(); // NOT the dead Session — fresh on dispatch
     expect(resumeRun.sessionId).toBeNull();
     expect(resumeRun.prompt).toContain('# Resumed Session (Harmonic summary)');
@@ -137,48 +144,48 @@ describe('BootResumeCoordinator (issue #146)', () => {
     expect(queue[0]).toMatchObject({ purpose: 'crash-recovery', status: 'queued' });
   });
 
-  it('incompatible (cwd / work-context moved) → fails forward with the cwd-mismatch reason', () => {
+  it('incompatible (cwd / work-context moved) → fails forward with the cwd-mismatch reason', async () => {
     // The Session ran in a different working tree than the Task points at now
     // (Task.workingDir is '/tmp/repo'); the cwd axis compares the two.
-    const { session, task, run } = seedInterrupted({ sessionCwd: '/tmp/moved-away' });
+    const { session, task, run } = await seedInterrupted({ sessionCwd: '/tmp/moved-away' });
 
-    coordinator(capsFor()).resume();
+    await coordinator(capsFor()).resume();
 
-    const resumeRun = runStore.listForTask(task.id).find((r) => r.id !== run.id)!;
+    const resumeRun = (await runStore.listForTask(task.id)).find((r) => r.id !== run.id)!;
     expect(resumeRun.sessionRowId).toBeNull();
     expect(sessions.get(session.id).resumeIncompatibilityReason).toBe('cwd-mismatch');
   });
 
-  it('incompatible (adapter version drift) → fails forward with the adapter-version reason', () => {
-    const { session, task, run } = seedInterrupted({ adapterVersion: 'claude@1' });
+  it('incompatible (adapter version drift) → fails forward with the adapter-version reason', async () => {
+    const { session, task, run } = await seedInterrupted({ adapterVersion: 'claude@1' });
 
     // A harness/adapter upgrade across the restart: the current adapter version
     // differs from the one the Session was dispatched under.
-    coordinator(capsFor({ adapterVersion: 'claude@2' })).resume();
+    await coordinator(capsFor({ adapterVersion: 'claude@2' })).resume();
 
-    const resumeRun = runStore.listForTask(task.id).find((r) => r.id !== run.id)!;
+    const resumeRun = (await runStore.listForTask(task.id)).find((r) => r.id !== run.id)!;
     expect(resumeRun.sessionRowId).toBeNull();
     expect(sessions.get(session.id).resumeIncompatibilityReason).toBe('adapter-version-mismatch');
   });
 
-  it('is idempotent — a second recovery pass creates no duplicate Run or turn (AC3)', () => {
-    const { task, run, session } = seedInterrupted();
+  it('is idempotent — a second recovery pass creates no duplicate Run or turn (AC3)', async () => {
+    const { task, run, session } = await seedInterrupted();
     const coord = coordinator(capsFor());
 
-    coord.resume();
-    coord.resume(); // repeat recovery
+    await coord.resume();
+    await coord.resume(); // repeat recovery
 
-    expect(runStore.listForTask(task.id).filter((r) => r.id !== run.id)).toHaveLength(1);
+    expect((await runStore.listForTask(task.id)).filter((r) => r.id !== run.id)).toHaveLength(1);
     expect(turnQueue.listForSession(session.harnessSessionId)).toHaveLength(1);
   });
 
-  it('leaves an interrupted Run with no Session alone (nothing to resume)', () => {
+  it('leaves an interrupted Run with no Session alone (nothing to resume)', async () => {
     const created = tasks.create({ prompt: 'no session', state: 'ready', workingDir: '/tmp/repo' });
-    const run = runStore.create(created.id);
-    runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
+    const run = await runStore.create(created.id);
+    await runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
 
-    coordinator(capsFor()).resume();
+    await coordinator(capsFor()).resume();
 
-    expect(runStore.listForTask(created.id)).toHaveLength(1); // no resume Run
+    expect(await runStore.listForTask(created.id)).toHaveLength(1); // no resume Run
   });
 });

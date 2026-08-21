@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig, UNATTENDED_REMINDER, type AppConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
@@ -288,6 +289,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
   let dir: string;
   let workDir: string;
   let db: Db;
+  // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
+  // runs both connections on the one file.
+  let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runs: RunStore;
   let runner: Runner;
@@ -301,14 +305,15 @@ describe('Runner auto-drive settle (issue #33)', () => {
     drive: { ...defaultConfig().drive, prompt: '{skill} #{ref}', ...over },
   });
 
-  const startMirrored = (id: number) => {
+  const startMirrored = async (id: number) => {
     tasks.setState(id, 'running'); // the afk pick's lock, before launchClaimed (issue #32)
-    runner.launchClaimed(id);
+    await runner.launchClaimed(id);
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     db = openDb(dir);
+    asyncDb = await openAsyncDb(dir);
     // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
     // Harmonic repo during a test run. The afk-direct admission gate (issue
     // #149) rejects a dirty git context, which is irrelevant to these
@@ -318,29 +323,30 @@ describe('Runner auto-drive settle (issue #33)', () => {
     workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
     db.update(workspaces).set({ workingDir: workDir }).run();
   });
-  afterEach(() => {
+  afterEach(async () => {
     runner.shutdown();
+    await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
     rmSync(workDir, { recursive: true, force: true });
   });
 
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
     tasks = new TaskService(db, () => cfg, allWorkspaces(db));
-    runs = new RunStore(db);
+    runs = new RunStore(asyncDb);
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.
     const drive = new AutoDrive(() => cfg, () => 'https://x/7', async () => fakeAdapter(ticketState).adapter, okGit);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(db), db, () => cfg, { autoDrive: drive });
   }
 
-  const continueEvents = (runId: number) =>
-    runs.listEvents(runId).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
+  const continueEvents = async (runId: number) =>
+    (await runs.listEvents(runId)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
 
   it('a Run blocking on a human prompt Escalates: stop, drive→hitl, ready + flag', async () => {
     // The Drive Prompt template IS what reaches the harness — script the stub there.
     build(config({ prompt: JSON.stringify({ requestPermission: { title: 'Write file' } }) }));
     const task = tasks.upsertMirrored(mirroredAfk(7));
-    startMirrored(task.id);
+    await startMirrored(task.id);
 
     const settled = await vi.waitFor(() => {
       const t = tasks.get(task.id);
@@ -351,7 +357,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     expect(settled.state).toBe('ready');
     expect(settled.drive).toBe('hitl');
     expect(settled.escalated).toBe(true);
-    const last = runs.listForTask(task.id).at(-1)!;
+    const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.state).toBe('failed');
     expect(last.reason).toContain('escalated to human');
   });
@@ -359,7 +365,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   it('an afk Run enters auto permission mode before prompting, then runs unattended', async () => {
     build(config({ prompt: JSON.stringify({ echoSetMode: true }) }));
     const task = tasks.upsertMirrored(mirroredAfk(7));
-    startMirrored(task.id);
+    await startMirrored(task.id);
 
     const settled = await vi.waitFor(() => {
       const t = tasks.get(task.id);
@@ -369,10 +375,10 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     expect(settled.escalated).toBe(false); // ran to completion, not escalated on a prompt
     expect(settled.drive).toBe('afk');
-    const last = runs.listForTask(task.id).at(-1)!;
-    const modeSet = runs
-      .listEvents(last.id)
-      .find((e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set');
+    const last = (await runs.listForTask(task.id)).at(-1)!;
+    const modeSet = (await runs.listEvents(last.id)).find(
+      (e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set',
+    );
     expect((modeSet?.payload as any)?.mode).toBe('auto'); // session/set_mode auto went over the wire
   });
 
@@ -381,7 +387,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     cfg.harnesses.claude.env = { STUB_MODES: '' }; // advertise no session modes
     build(cfg);
     const task = tasks.upsertMirrored(mirroredAfk(8));
-    startMirrored(task.id);
+    await startMirrored(task.id);
 
     const settled = await vi.waitFor(() => {
       const t = tasks.get(task.id);
@@ -389,7 +395,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
 
-    const last = runs.listForTask(task.id).at(-1)!;
+    const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.state).toBe('failed');
     expect(last.reason).toMatch(/unattended permission mode/);
     expect(settled.escalated).toBe(true); // autoRetry 0 → escalates on the first failure
@@ -401,7 +407,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     const task = tasks.upsertMirrored(mirroredAfk(7));
 
     // Attempt 1 fails → retry: ready, still afk, not yet escalated.
-    startMirrored(task.id);
+    await startMirrored(task.id);
     const afterFirst = await vi.waitFor(() => {
       const t = tasks.get(task.id);
       if (t.state !== 'ready') throw new Error(`still ${t.state}`);
@@ -409,10 +415,10 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
     expect(afterFirst.drive).toBe('afk');
     expect(afterFirst.escalated).toBe(false);
-    expect(runs.listForTask(task.id)).toHaveLength(1);
+    expect(await runs.listForTask(task.id)).toHaveLength(1);
 
     // Attempt 2 fails → cap exhausted → Escalate: ready + hitl + flagged.
-    startMirrored(task.id);
+    await startMirrored(task.id);
     const afterSecond = await vi.waitFor(() => {
       const t = tasks.get(task.id);
       if (!t.escalated) throw new Error('not escalated yet');
@@ -420,7 +426,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
     expect(afterSecond.state).toBe('ready');
     expect(afterSecond.drive).toBe('hitl');
-    expect(runs.listForTask(task.id)).toHaveLength(2);
+    expect(await runs.listForTask(task.id)).toHaveLength(2);
   });
 
   it('re-prompts an unfinished (ticket-open) Run continueAttempts times, then treats it as unresolved', async () => {
@@ -429,7 +435,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // the exhausted-continue unresolved path Escalates to a deterministic end.
     build(config({ continueAttempts: 2, autoRetry: 0 }), 'open');
     const task = tasks.upsertMirrored(mirroredAfk(7));
-    startMirrored(task.id);
+    await startMirrored(task.id);
 
     const settled = await vi.waitFor(() => {
       const t = tasks.get(task.id);
@@ -437,8 +443,8 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
 
-    const lastRun = runs.listForTask(task.id).at(-1)!;
-    expect(continueEvents(lastRun.id)).toHaveLength(2); // re-prompted exactly continueAttempts times
+    const lastRun = (await runs.listForTask(task.id)).at(-1)!;
+    expect(await continueEvents(lastRun.id)).toHaveLength(2); // re-prompted exactly continueAttempts times
     expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
     expect(settled.escalated).toBe(true);
   });
@@ -446,14 +452,14 @@ describe('Runner auto-drive settle (issue #33)', () => {
   it('continueAttempts 0 keeps the old single-turn behaviour — no continue re-prompt', async () => {
     build(config({ continueAttempts: 0, autoRetry: 0 }), 'open');
     const task = tasks.upsertMirrored(mirroredAfk(7));
-    startMirrored(task.id);
+    await startMirrored(task.id);
 
     await vi.waitFor(() => {
       if (!tasks.get(task.id).escalated) throw new Error('not escalated yet');
     }, { timeout: 10_000 });
 
-    const lastRun = runs.listForTask(task.id).at(-1)!;
-    expect(continueEvents(lastRun.id)).toHaveLength(0); // straight to the unresolved path
+    const lastRun = (await runs.listForTask(task.id)).at(-1)!;
+    expect(await continueEvents(lastRun.id)).toHaveLength(0); // straight to the unresolved path
   });
 
   it('a closed ticket alone no longer completes a Run — finish_task is the signal (#139)', async () => {
@@ -464,7 +470,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // and is covered at the execution seam.)
     build(config({ continueAttempts: 0, autoRetry: 0 }), 'closed');
     const task = tasks.upsertMirrored(mirroredAfk(7));
-    startMirrored(task.id);
+    await startMirrored(task.id);
 
     const settled = await vi.waitFor(() => {
       const t = tasks.get(task.id);
@@ -473,7 +479,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     }, { timeout: 10_000 });
 
     expect(settled.state).not.toBe('completed'); // a closed ticket did not complete it
-    const lastRun = runs.listForTask(task.id).at(-1)!;
+    const lastRun = (await runs.listForTask(task.id)).at(-1)!;
     expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
   });
 
@@ -490,20 +496,22 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // driving the predecessor async) so the test is deterministic. The chain is
     // fresh per call; whether a later successor SHARES it is decided by
     // resolveForTask from `taskId`, not here.
-    function seedPredecessorLease(taskId: number): { predecessorId: number; key: string; leaseStore: WorkContextLeaseStore } {
+    async function seedPredecessorLease(
+      taskId: number,
+    ): Promise<{ predecessorId: number; key: string; leaseStore: WorkContextLeaseStore }> {
       const leaseStore = new WorkContextLeaseStore(db);
       const chainId = new ExecutionChainStore(db).create();
-      const predecessor = runs.create(taskId, undefined, chainId);
-      runs.update(predecessor.id, { state: 'failed' });
+      const predecessor = await runs.create(taskId, undefined, chainId);
+      await runs.update(predecessor.id, { state: 'failed' });
       const key = workContextKey({ isolationMode: 'direct', workingDir: workDir });
       leaseStore.acquire(key, predecessor.id, 'running');
       return { predecessorId: predecessor.id, key, leaseStore };
     }
 
-    it('transfers a direct-mode lease to a successor sharing the Execution Chain, instead of conflicting', () => {
+    it('transfers a direct-mode lease to a successor sharing the Execution Chain, instead of conflicting', async () => {
       build(config());
       const task = tasks.upsertMirrored(mirroredAfk(7));
-      const { predecessorId, key, leaseStore } = seedPredecessorLease(task.id);
+      const { predecessorId, key, leaseStore } = await seedPredecessorLease(task.id);
 
       // The predecessor holds the lease on this Task's own chain, so the
       // successor's beginRun resolves the SAME Execution Chain (resolveForTask
@@ -512,22 +520,22 @@ describe('Runner auto-drive settle (issue #33)', () => {
       // claim commits inside beginRun's transaction synchronously, before the
       // async drive starts, so this asserts right after start returns rather
       // than waiting on the drive.
-      expect(() => startMirrored(task.id)).not.toThrow();
+      await expect(startMirrored(task.id)).resolves.toBeUndefined();
 
-      const successor = runs.listForTask(task.id).at(-1)!;
+      const successor = (await runs.listForTask(task.id)).at(-1)!;
       expect(successor.id).not.toBe(predecessorId);
       expect(leaseStore.getByKey(key)).toMatchObject({ ownerRunId: successor.id });
       expect(leaseStore.getByOwner(predecessorId)).toBeUndefined();
     });
 
-    it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', () => {
+    it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', async () => {
       build(config());
       const otherTask = tasks.upsertMirrored(mirroredAfk(8));
       const target = tasks.upsertMirrored(mirroredAfk(9));
 
       // A predecessor Run on a DIFFERENT, unrelated Task (no reattempt link),
       // holding the SAME direct-mode key (same workspace workingDir).
-      const { predecessorId, key, leaseStore } = seedPredecessorLease(otherTask.id);
+      const { predecessorId, key, leaseStore } = await seedPredecessorLease(otherTask.id);
 
       // `target` has no chained Run of its own and no reattempt ancestry, so
       // resolveForTask mints it a fresh chain (branch 3) — different from the
@@ -536,7 +544,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       tasks.setState(target.id, 'running');
       let caught: unknown;
       try {
-        runner.launchClaimed(target.id);
+        await runner.launchClaimed(target.id);
       } catch (err) {
         caught = err;
       }

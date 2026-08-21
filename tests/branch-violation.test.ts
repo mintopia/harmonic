@@ -69,7 +69,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
 
   /** Launch a mirrored afk/direct Run against `repo`, mirroring the Auto-Runner
    * pick (see issue #152's isolation integration test). */
-  function launchAfkDirect(repo: string, scenario: object): { taskId: number; runId: number } {
+  async function launchAfkDirect(repo: string, scenario: object): Promise<{ taskId: number; runId: number }> {
     server.app.ctx.db.update(workspaces).set({ workingDir: repo }).run();
     // The stub agent runs the drive prompt as its scenario script; a mirrored
     // Task's own prompt is wrapped under a `## ` header the stub can't parse, so
@@ -79,7 +79,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
     server.app.ctx.tasks.setState(task.id, 'running');
-    const run = server.app.ctx.runner.launchClaimed(task.id);
+    const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
 
@@ -105,7 +105,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // The agent (detached at start by #152) checks out a stray branch and
     // commits onto it, then signals finish — a branch-contract violation
     // ("Harmonic owns branching") that must be caught in validating.
-    const { taskId, runId } = launchAfkDirect(repo, {
+    const { taskId, runId } = await launchAfkDirect(repo, {
       gitExec: [
         ['checkout', '-b', 'stray'],
         ['commit', '--allow-empty', '-m', 'agent stray work'],
@@ -157,14 +157,14 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
 
     // The agent edits a file (no branch/HEAD mischief) and finishes — the normal
     // direct-mode footprint (detached HEAD on its own line), a clean contract.
-    const { runId } = launchAfkDirect(repo, {
+    const { runId } = await launchAfkDirect(repo, {
       writeFiles: { 'agent-feature.txt': 'clean work\n' },
       mcpFinish: true,
       stopReason: 'end_turn',
     });
 
     await waitFor(async () => {
-      const r = server.app.ctx.runs.get(runId);
+      const r = await server.app.ctx.runs.get(runId);
       return r.state !== 'running' ? r : undefined;
     });
 
