@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
@@ -15,7 +15,6 @@ import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
-import { GraphView } from './components/GraphView';
 import { ActivityView } from './components/ActivityView';
 import { BrandMark } from './components/BrandMark';
 import { Icon, type IconName } from './components/Icon';
@@ -44,6 +43,11 @@ import {
 } from './onboarding-model';
 import { btnPrimary, btnQuiet, railBadge, sectionLabel, touchTarget } from './ui';
 import { Toaster, toastError } from './toast';
+
+// The Dependency Graph is the only surface that pulls in elkjs (the app's single
+// heaviest asset), and it's rarely opened — so it's code-split out of the main
+// bundle and loads on first visit.
+const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })));
 
 // Mirrors --breakpoint-rail (index.css): collapsed-only a11y attributes
 // must not leak into the mobile drawer, so JS needs the same threshold.
@@ -869,11 +873,17 @@ export function App() {
                     />
                   )}
                   {view === 'graph' && (
-                    <GraphView
-                      tasks={taskList}
-                      loading={tasks === null}
-                      onOpen={openRow}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
+                      }
+                    >
+                      <GraphView
+                        tasks={taskList}
+                        loading={tasks === null}
+                        onOpen={openRow}
+                      />
+                    </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
                   {view === 'api' && <ApiPage />}
