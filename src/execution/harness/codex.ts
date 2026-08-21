@@ -190,7 +190,12 @@ export const codexAdapter: HarnessAdapter = {
   spawnEnv: ({ model }) => {
     const { base, effort } = splitModelId(model);
     return {
-      CODEX_CONFIG: JSON.stringify({ model: base, ...(effort ? { model_reasoning_effort: effort } : {}) }),
+      // `approval_policy: on-request` is the safe default: Codex asks before a
+      // privileged action rather than running full-auto. Under afk the Runner
+      // auto-grants and remembers these (allow_always), so an unattended Run
+      // still proceeds. An operator who wants YOLO overrides it through the
+      // harness command-line options (CLI args win over CODEX_CONFIG).
+      CODEX_CONFIG: JSON.stringify({ approval_policy: 'on-request', model: base, ...(effort ? { model_reasoning_effort: effort } : {}) }),
     };
   },
 

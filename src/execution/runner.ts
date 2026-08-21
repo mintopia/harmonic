@@ -107,6 +107,15 @@ const PROGRESS_NUDGE_TEXT =
  * harnesses without 'auto'. Set via session/set_mode after the handshake. */
 const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
 
+/** Harnesses whose afk permission model is "ask-then-remember": they advertise
+ * no {@link AFK_PERMISSION_MODES} mode and instead request permission per action
+ * (Codex `approval_policy: on-request`). An afk Run auto-grants those with
+ * `allow_always` rather than Escalating, so the unattended Run proceeds and the
+ * grant is remembered. The action boundary is the harness sandbox, tightened via
+ * the harness command-line options; there is no ACP mode to force here. */
+const AFK_AUTO_GRANT_HARNESSES = ['codex'] as const;
+const afkAutoGrants = (harness: string): boolean => (AFK_AUTO_GRANT_HARNESSES as readonly string[]).includes(harness);
+
 /**
  * Default review SLA (issue #114): how long a native Run may sit parked in
  * `phase:'review'` awaiting a human accept/reject before the review-SLA sweep
@@ -2318,28 +2327,31 @@ export class Runner {
       },
       onRequest: async (method, params) => {
         if (method === 'session/request_permission') {
+          const options = (params as any)?.options ?? [];
+          const grant = () => {
+            const pick =
+              options.find((o: any) => o.kind === 'allow_always') ??
+              options.find((o: any) => o.kind === 'allow_once') ??
+              options[0];
+            const outcome = pick ? { outcome: 'selected', optionId: pick.optionId } : { outcome: 'cancelled' };
+            record('permission_request', { request: params, outcome });
+            return { outcome };
+          };
           // In auto mode the harness only asks on a genuinely risky tool (safe
           // ones are auto-approved and never reach here), so a request from an
           // afk Run means "needs a human decision" → Escalate: decline, stop the
           // turn, and flag it for the settle path to hand the Task back (issue
-          // #33). Without auto mode the Run has already failed closed upstream.
-          if (autoDriven) {
+          // #33). A harness that asks per-action instead (Codex on-request) has
+          // no such triage, so an afk Run auto-grants (allow_always) and keeps
+          // going rather than Escalating on every call.
+          if (autoDriven && !afkAutoGrants(task.harness)) {
             escalating = (params as any)?.toolCall?.title ?? 'permission request';
             const outcome = { outcome: 'cancelled' };
             record('permission_request', { request: params, outcome });
             driver.cancel();
             return { outcome };
           }
-          const options = (params as any)?.options ?? [];
-          const pick =
-            options.find((o: any) => o.kind === 'allow_always') ??
-            options.find((o: any) => o.kind === 'allow_once') ??
-            options[0];
-          const outcome = pick
-            ? { outcome: 'selected', optionId: pick.optionId }
-            : { outcome: 'cancelled' };
-          record('permission_request', { request: params, outcome });
-          return { outcome };
+          return grant();
         }
         // Advertise no fs/terminal capabilities; anything else gets null.
         return null;
@@ -2893,23 +2905,32 @@ export class Runner {
       if (autoDriven) {
         const mode = AFK_PERMISSION_MODES.find((m) => driver.availableModes.includes(m));
         if (!mode) {
-          throw new Error(
-            `harness '${task.harness}' offers no unattended permission mode ` +
-              `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
-          );
-        }
-        await driver.setMode(mode);
-        record('lifecycle', { event: 'mode_set', mode });
-        // Unit C (#141): the Session's permission mode is only resolved here,
-        // after the handshake — record it onto the durable Session row.
-        // Best-effort for the same reason as the Session write above. (Native
-        // Runs set no ACP mode, so their Session's permissionMode stays null —
-        // an accurate "Harmonic set no mode", not a missing capture.)
-        if (sessionRowId !== undefined) {
-          try {
-            await this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
-          } catch {
-            /* best-effort; additive */
+          // A Codex-style harness governs unattended permissions through its own
+          // approval policy (set at spawn, operator-overridable) plus the
+          // auto-grant in `onRequest` above — there is no ACP mode to force, and
+          // forcing one would clobber the operator's command-line override. Any
+          // other harness with no auto mode fails closed rather than prompting on
+          // every tool and Escalating immediately (issue #33 follow-up).
+          if (!afkAutoGrants(task.harness)) {
+            throw new Error(
+              `harness '${task.harness}' offers no unattended permission mode ` +
+                `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
+            );
+          }
+        } else {
+          await driver.setMode(mode);
+          record('lifecycle', { event: 'mode_set', mode });
+          // Unit C (#141): the Session's permission mode is only resolved here,
+          // after the handshake — record it onto the durable Session row.
+          // Best-effort for the same reason as the Session write above. (Native
+          // Runs set no ACP mode, so their Session's permissionMode stays null —
+          // an accurate "Harmonic set no mode", not a missing capture.)
+          if (sessionRowId !== undefined) {
+            try {
+              await this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
+            } catch {
+              /* best-effort; additive */
+            }
           }
         }
       }

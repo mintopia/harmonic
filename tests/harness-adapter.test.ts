@@ -29,10 +29,12 @@ describe('harness adapters', () => {
     // Spike (issue 22): CODEX_CONFIG is a JSON object merged into the
     // session config; modelId grammar is `<model>[<effort>]`.
     expect(JSON.parse(adapterFor('codex').spawnEnv(spawnInput('gpt-5.4-mini[low]')).CODEX_CONFIG!)).toEqual({
+      approval_policy: 'on-request',
       model: 'gpt-5.4-mini',
       model_reasoning_effort: 'low',
     });
     expect(JSON.parse(adapterFor('codex').spawnEnv(spawnInput('gpt-5.6-sol')).CODEX_CONFIG!)).toEqual({
+      approval_policy: 'on-request',
       model: 'gpt-5.6-sol',
     });
   });
