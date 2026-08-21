@@ -46,6 +46,7 @@ import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
+import { singleFlight } from '../reliability/single-flight.js';
 import { AutoDrive } from '../execution/auto-drive.js';
 import { TrackerPollerManager } from '../tracker/manager.js';
 import type { MirrorClaim } from '../execution/auto-runner.js';
@@ -287,6 +288,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     leases,
     (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
   );
+  // Single-flight the retirement drain (issue #219): it is fired on every
+  // `run_changed`, so a burst of settling Runs would otherwise fan out
+  // overlapping drains that each re-observe the same `retiring` Sessions and
+  // spawn `git worktree remove` for them in parallel — a subprocess flood on the
+  // event loop. Coalescing collapses the burst into one pass plus a trailing
+  // rerun that sweeps anything that settled mid-pass.
+  const drainRetirement = singleFlight(() => sessionRetirement.drain());
   const landingJournal = new LandingJournalStore(db);
   const reviewSettle = new RunSettleCoordinator(
     runs,
@@ -491,7 +499,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // owed removal by a Session left `retiring` (a crash mid-removal) or an `idle`
   // Session whose retention deadline lapsed while the process was down. Runs
   // after the review sweep so a just-settled review-SLA Session is included.
-  await sessionRetirement.drain();
+  await drainRetirement();
   // Live periodic Work Context lease sweep (issue #122): flips a lapsed `held`
   // lease to `suspect` on a wall-clock cadence, independent of the Runner's own
   // coordinator heartbeat — this complements, not replaces, the boot-only
@@ -571,7 +579,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // retention deadline is swept on the next run activity. Best-effort — a drain
   // hiccup must never break the event fan-out.
   bus.on('run_changed', () => {
-    void sessionRetirement.drain().catch(() => {});
+    void drainRetirement().catch(() => {});
   });
   // The boot-time poke happens in the onListen hook below, after the MCP
   // endpoint is known — so even the first auto-started run gets its
