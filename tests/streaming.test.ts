@@ -13,7 +13,7 @@ async function connectWs(server: TestServer): Promise<{ messages: any[]; close: 
   return { messages, close: () => ws.close() };
 }
 
-describe('live run event streaming and replay', () => {
+describe('live structured run event streaming and replay', () => {
   let server: TestServer;
 
   beforeAll(async () => {
@@ -23,7 +23,7 @@ describe('live run event streaming and replay', () => {
     await server.close();
   });
 
-  it('broadcasts run events over WebSocket in order, live while the task is still running', async () => {
+  it('keeps the ACP stream out of WebSocket events and replay', async () => {
     const updates = [
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'one' } },
       { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'hmm' } },
@@ -38,11 +38,6 @@ describe('live run event streaming and replay', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     const runId = started.body.id;
 
-    // First event arrives while the task is still running — that's "live".
-    await waitFor(async () => ws.messages.some((m) => m.type === 'run_event' && m.event.runId === runId));
-    const taskMidRun = await server.api('GET', `/api/tasks/${created.body.id}`);
-    expect(taskMidRun.body.state).toBe('running');
-
     // A native Run parks non-terminal in `phase:'review'` at agent-finish
     // (issue #114) — it stays `state:'running'`, so "done executing" is the
     // run_changed that carries the review phase, not a non-running state.
@@ -50,22 +45,14 @@ describe('live run event streaming and replay', () => {
       ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.phase === 'review'),
     );
 
-    const streamed = ws.messages
-      .filter((m) => m.type === 'run_event' && m.event.runId === runId && m.event.type === 'session_update')
-      .map((m) => m.event);
-    expect(streamed.map((e) => e.payload.sessionUpdate)).toEqual([
-      'agent_message_chunk',
-      'agent_thought_chunk',
-      'tool_call',
-      'plan',
-    ]);
-    expect(streamed.map((e) => e.seq)).toEqual([...streamed.map((e) => e.seq)].sort((a, b) => a - b));
+    const streamed = ws.messages.filter(
+      (m) => m.type === 'run_event' && m.event.runId === runId && m.event.type === 'session_update',
+    );
+    expect(streamed).toEqual([]);
 
-    // Replay renders from the same persisted records: the REST event list
-    // must equal what was streamed.
     const replay = await server.api('GET', `/api/runs/${runId}/events`);
     const replayUpdates = replay.body.events.filter((e: any) => e.type === 'session_update');
-    expect(replayUpdates).toEqual(streamed);
+    expect(replayUpdates).toEqual([]);
 
     ws.close();
   });

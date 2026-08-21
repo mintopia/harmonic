@@ -68,12 +68,6 @@ describe('steering a running task', () => {
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')?.payload.text).toBe('reread the tests first');
       expect(lifecycle.find((e: any) => e.payload.event === 'steer_injected')).toBeUndefined();
 
-      // The stub echoed the steer text back as its own turn — proof the message
-      // was sent as a prompt, not just recorded.
-      const chunks = body.events
-        .filter((e: any) => e.type === 'session_update' && e.payload.sessionUpdate === 'agent_message_chunk')
-        .map((e: any) => e.payload.content?.text);
-      expect(chunks).toContain('prompt-received:reread the tests first');
     } finally {
       await noSteerServer.close();
     }
@@ -88,17 +82,9 @@ describe('steering a running task', () => {
     expect(started.status).toBe(201);
     const runId = started.body.id;
 
-    // Wait for the turn to actually be streaming — not just the ActiveRun
-    // registered — so the steer lands after the harness's session/prompt has
-    // gone out, past the ACP handshake window, and is genuinely mid-turn.
-    await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}/events`);
-      return body.events.some(
-        (e: any) => e.type === 'session_update' && e.payload.sessionUpdate === 'agent_message_chunk',
-      )
-        ? true
-        : undefined;
-    });
+    // Let the stub enter its first delayed update. ACP output is intentionally
+    // no longer persisted, so the lifecycle event cannot act as this probe.
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
     // Steer once the run is active (the task flips running before the
     // ActiveRun registers, so a steer can 409 briefly — retry until it lands).
@@ -121,11 +107,6 @@ describe('steering a running task', () => {
     );
     expect(lifecycle.find((e: any) => e.payload.event === 'steer_delivered')).toBeUndefined();
 
-    // The stub streamed the steer text as injected output on the running turn.
-    const chunks = body.events
-      .filter((e: any) => e.type === 'session_update' && e.payload.sessionUpdate === 'agent_message_chunk')
-      .map((e: any) => e.payload.content?.text);
-    expect(chunks).toContain('steer-injected:switch to the other approach');
   });
 
   it('409s a steer after the run has fully settled, never a 200 that vanishes', async () => {

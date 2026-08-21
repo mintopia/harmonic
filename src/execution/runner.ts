@@ -13,7 +13,7 @@ import {
   rematerializeCandidate,
 } from './execution-isolation.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, tallyToolCalls, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -54,6 +54,7 @@ import { ExecutionChainStore } from '../domain/execution-chain-store.js';
 import { sumPriorSpend, chainObserved, combineSpendOutcomes, type ChainSpend } from '../domain/execution-chain.js';
 import { detectStall } from '../domain/stall-detector.js';
 import { toProgressEvents, formatProgressReason } from '../domain/guardrail-progress.js';
+import type { ProgressEvent } from '../domain/stall-detector.js';
 import {
   toolTimeoutBudgetMs,
   toolTimeoutTrip,
@@ -299,8 +300,8 @@ interface ActiveRun {
 }
 
 /**
- * Spawns a task's harness, drives it over ACP, persists every
- * session/update as a run event, and settles the task's state from the
+ * Spawns a task's harness, drives it over ACP, persists its small structured
+ * facts and an overwritten tool-call snapshot, and settles the task's state from the
  * outcome. A Run is one or more builder turns: the first turn plus, when an
  * actionable verification fails, a bounded run of self-heal turns (issue #137).
  */
@@ -463,6 +464,15 @@ export class Runner {
    *  its cached `latest()`. Created lazily once a session id exists, dropped on
    *  `tailer.stop`. */
   private readonly readers = new Map<number, SessionTailReader>();
+  /** Bounded per-Run ACP rollups, retained across corrective turns. */
+  private readonly toolCallTotals = new Map<number, Map<string, number>>();
+  /** Reduced, bounded progress traces. Raw ACP payloads are discarded at
+   * ingest, so neither memory nor detector work grows with a Run. */
+  private readonly progressEvents = new Map<number, ProgressEvent[]>();
+  private readonly progressSequences = new Map<number, number>();
+  /** The latest unpaired tool action is retained even when its surrounding
+   * trace ages out, preserving the progress guardrail's slow-tool suspension. */
+  private readonly outstandingProgressActions = new Map<number, ProgressEvent>();
   /** Spend-Guardrail (issue #128) poll cadence in ms; how often the live token/
    * cost usage snapshot is checked against a Run's frozen budget. */
   private readonly spendPollMs: number;
@@ -1824,7 +1834,8 @@ export class Runner {
     // The turn_queue row id of the corrective turn currently being driven, so it
     // is settled once its turn completes (kept single-flight: at most one).
     let inFlightTurn: number | null = null;
-    for (;;) {
+    try {
+      for (;;) {
       const outcome = await this.driveOnce(task, run, harness, healCtx, remergeCtx);
       if (inFlightTurn !== null) {
         // The corrective turn we dispatched has run its course — settle its queue
@@ -1923,6 +1934,12 @@ export class Runner {
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
       // reconstructable from the event log.
+      }
+    } finally {
+      this.toolCallTotals.delete(run.id);
+      this.progressEvents.delete(run.id);
+      this.progressSequences.delete(run.id);
+      this.outstandingProgressActions.delete(run.id);
     }
   }
 
@@ -2089,16 +2106,19 @@ export class Runner {
     healCtx?: HealContext,
     remergeCtx?: ReMergeContext,
   ): Promise<TurnOutcome> {
-    const record = (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => {
-      // Feed the live-usage tailer's current-activity line (ADR 0010).
-      if (type === 'session_update') {
-        const line = activityLine(payload);
-        if (line) active.activity = line;
-      }
+    const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       void this.runStore.appendEvent(run.id, { type, payload }).then((event) => {
         this.events.onRunEvent?.(event);
       });
     };
+    const toolCalls = this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id));
+    this.toolCallTotals.set(run.id, toolCalls);
+    const progressEvents = this.progressEvents.get(run.id) ?? [];
+    this.progressEvents.set(run.id, progressEvents);
+    const flushToolCalls = async () => {
+      await this.runStore.replaceToolCalls(run.id, toolCalls);
+    };
+    let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
 
     // Advance the Run through the phase machine (issue #114) up to and including
     // `to`, following `gate` at the verifying branch. Each intermediate phase is
@@ -2253,6 +2273,8 @@ export class Runner {
       // flushes the final snapshot to the row (ADR 0010: always on finish).
       // Awaited so the reader's last async read finishes before teardown (#217).
       await this.tailer.stop(run.id);
+      if (toolCallFlushTimer) clearInterval(toolCallFlushTimer);
+      await flushToolCalls().catch(() => {});
       this.readers.delete(run.id);
       this.kill(active);
       try {
@@ -2264,8 +2286,34 @@ export class Runner {
     };
 
     const driver = new AcpDriver(child, {
-      onSessionUpdate: (update) => {
-        record('session_update', update);
+      onSessionUpdate: (update, replay) => {
+        if (replay) return;
+        const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
+        this.progressSequences.set(run.id, seq);
+        const progress = toProgressEvents([{ seq, type: 'session_update', payload: update }]);
+        if (progress.length > 0) {
+          const event = progress[0]!;
+          if (event.kind === 'action') {
+            this.outstandingProgressActions.set(run.id, event);
+          } else if (event.kind === 'result' || event.kind === 'error') {
+            const outstanding = this.outstandingProgressActions.get(run.id);
+            if (outstanding && (event.ref === undefined || outstanding.ref === undefined || event.ref === outstanding.ref)) {
+              this.outstandingProgressActions.delete(run.id);
+            }
+          }
+          progressEvents.push(event);
+          if (progressEvents.length > 64) progressEvents.shift();
+        }
+        const line = activityLine(update);
+        if (line) active.activity = line;
+        if (update.sessionUpdate === 'tool_call') {
+          const name =
+            adapterFor(task.harness).usage?.toolName(update) ??
+            (typeof update.title === 'string' ? update.title : null) ??
+            (typeof update.kind === 'string' ? update.kind : null) ??
+            'unknown';
+          toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
+        }
         observeTool(update); // feed the tool-timeout watchdog (issue #131)
       },
       onRequest: async (method, params) => {
@@ -2316,6 +2364,10 @@ export class Runner {
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
+    // This remains independent of the usage tailer because a harness may have
+    // no native transcript. The overwrite cadence prevents write amplification.
+    toolCallFlushTimer = setInterval(() => void flushToolCalls().catch(() => {}), 10_000);
+    toolCallFlushTimer.unref?.();
 
     // Wall-clock Guardrail watchdog (issue #127, ADR-0019). Armed once the
     // session is live (below) for the Run's *remaining* execution budget; a
@@ -2698,7 +2750,11 @@ export class Runner {
       // the last case the Run is completing this turn, so a lingering pre-finish
       // stall tail must not nudge or (worse) trip it: honour the finish.
       if (!progressEnabled || active.externallySettled || active.agentFinished || active.escalateReason) return false;
-      const report = detectStall(toProgressEvents(await this.runStore.listEvents(run.id)), { enabled: true });
+      const outstanding = this.outstandingProgressActions.get(run.id);
+      const progressTrace = outstanding && !progressEvents.some((event) => event.seq === outstanding.seq)
+        ? [outstanding, ...progressEvents]
+        : progressEvents;
+      const report = detectStall(progressTrace, { enabled: true });
       if (!report) return false; // progressing, or a tool is outstanding (suspend guard)
       if (!progressNudged) {
         // One nudge, delivered as the next turn by the steer drain just below in
@@ -3374,16 +3430,15 @@ export class Runner {
 
   /**
    * `parse`/the reader yield the per-model roll-up and tree but no tool tally
-   * (that lives in the event stream) — so the live "· N tools" figure the Board
+   * (computed from the in-memory ACP rollup) — so the live "· N tools" figure the Board
    * ticks off `run_usage` (issue #100) would be stuck at zero. Tally the run's
-   * events here, and fold the per-agent breakdown in for parity with the
+   * rollup here, and fold the per-agent breakdown in for parity with the
    * settle-time Usage. The current-activity line comes off the active Run.
    */
   private async decorateSnapshot(runId: number, parsed: ParsedSession | null): Promise<RunUsageSnapshot | null> {
     if (!parsed) return null;
     const active = this.active.get(runId);
-    const collector = active ? adapterFor(active.harnessId).usage : null;
-    const toolCalls = tallyToolCalls(await this.runStore.listEvents(runId), (payload) => collector?.toolName(payload) ?? null);
+    const toolCalls = Object.fromEntries(this.toolCallTotals.get(runId) ?? (await this.runStore.listToolCalls(runId)));
     const agents = agentsFromTree(parsed.tree);
     const usage: RunUsage = { ...parsed.usage, toolCalls, ...(Object.keys(agents).length > 0 ? { agents } : {}) };
     return { usage, contextTokens: parsed.tree.contextTokens, activity: active?.activity ?? null, tree: parsed.tree };
@@ -3398,7 +3453,7 @@ export class Runner {
     promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
   ): Promise<RunUsage | null> {
     try {
-      return await collectUsageWithRetry({
+      const usage = await collectUsageWithRetry({
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
@@ -3406,6 +3461,9 @@ export class Runner {
         promptResult,
         events: await this.runStore.listEvents(run.id),
       });
+      return usage
+        ? { ...usage, toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))) }
+        : null;
     } catch {
       return null;
     }
@@ -3419,7 +3477,7 @@ export class Runner {
   private noteModelMismatch(
     task: TaskRow,
     usage: RunUsage | null,
-    record: (type: 'session_update' | 'permission_request' | 'lifecycle', payload: unknown) => void,
+    record: (type: 'permission_request' | 'lifecycle', payload: unknown) => void,
   ): void {
     const observed = usage ? observedModelMismatch(task.model, usage.models) : null;
     if (observed) record('lifecycle', { event: 'model_mismatch', expected: task.model, observed });
@@ -3448,6 +3506,7 @@ export class Runner {
           events: await this.runStore.listEvents(run.id),
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
+        fresh.toolCalls = Object.fromEntries(await this.runStore.listToolCalls(run.id));
         const stored = run.usage ? (JSON.parse(run.usage) as RunUsage) : null;
         const healed: RunUsage = stored?.totals
           ? { ...fresh, totals: stored.totals, source: 'combined' }

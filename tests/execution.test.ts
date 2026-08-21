@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { guardrailEvents, runs, executionChains } from '../src/db/schema.js';
+import { guardrailEvents, runs, executionChains, runToolCalls } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
 const scenario = (s: object) => JSON.stringify(s);
@@ -27,7 +27,7 @@ describe('run execution over ACP (direct mode)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  it('runs a ready task to awaiting-review, persisting every session/update as a run event', async () => {
+  it('runs a ready task to awaiting-review, persisting tool-call aggregates but no session/update events', async () => {
     const updates = [
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'working…' } },
       {
@@ -64,13 +64,11 @@ describe('run execution over ACP (direct mode)', () => {
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
-    const persisted = events.body.events.filter((e: any) => e.type === 'session_update');
-    expect(persisted.map((e: any) => e.payload.sessionUpdate)).toEqual([
-      'agent_message_chunk',
-      'tool_call',
-      'tool_call_update',
-      'agent_message_chunk',
-    ]);
+    expect(events.body.events.filter((e: any) => e.type === 'session_update')).toEqual([]);
+    const toolCalls = await server.app.ctx.asyncDb.read((db) =>
+      db.select().from(runToolCalls).where(eq(runToolCalls.runId, runId)).all(),
+    );
+    expect(toolCalls).toEqual([{ runId, toolName: 'Write file', count: 1 }]);
     // seq is a stable per-run ordering
     expect(events.body.events.map((e: any) => e.seq)).toEqual(
       [...events.body.events.map((e: any) => e.seq)].sort((a: number, b: number) => a - b),
@@ -209,11 +207,8 @@ describe('run execution over ACP (direct mode)', () => {
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     const types = events.body.events.map((e: any) => e.type);
     expect(types).toContain('permission_request');
-    // The stub echoes the outcome we returned — proving the grant went over the wire.
-    const echo = events.body.events.find(
-      (e: any) => e.type === 'session_update' && e.payload.content?.text?.startsWith('permission:'),
-    );
-    expect(echo.payload.content.text).toContain('selected');
+    const permission = events.body.events.find((e: any) => e.type === 'permission_request');
+    expect(permission.payload.outcome).toMatchObject({ outcome: 'selected' });
   });
 
   it('an unauthenticated codex spawn fails the run with a legible reason', async () => {
@@ -299,10 +294,7 @@ describe('run execution over ACP (direct mode)', () => {
     }
   });
 
-  it('copilot pins the model via ACP session/set_model before the prompt — sent even for auto', async () => {
-    // Spike (issue 25): --model/COPILOT_MODEL are dead in --acp mode, and
-    // an unpinned session inherits the operator's persisted settings.json
-    // model — so the pin must go over session/set_model on every run.
+  it('does not persist session-update echoes from model pinning', async () => {
     const copilotServer = await startServer(stubHarness('copilot'));
     const setModelEcho = async (srv: TestServer, harness: string, model: string) => {
       const created = await srv.api('POST', '/api/tasks', {
@@ -315,17 +307,12 @@ describe('run execution over ACP (direct mode)', () => {
         async () => (await srv.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
       );
       const events = await srv.api('GET', `/api/runs/${started.body.id}/events`);
-      const echo = events.body.events.find((e: any) =>
-        e.payload?.content?.text?.startsWith?.('set-model:'),
-      );
-      return JSON.parse(echo.payload.content.text.slice('set-model:'.length));
+      return events.body.events.find((e: any) => e.type === 'session_update') ?? null;
     };
     try {
-      expect(await setModelEcho(copilotServer, 'copilot', 'claude-haiku-4.5')).toMatchObject({
-        modelId: 'claude-haiku-4.5',
-      });
-      expect(await setModelEcho(copilotServer, 'copilot', 'auto')).toMatchObject({ modelId: 'auto' });
-      // Claude pins at spawn time; no set_model goes over the wire.
+      expect(await setModelEcho(copilotServer, 'copilot', 'claude-haiku-4.5')).toBeNull();
+      expect(await setModelEcho(copilotServer, 'copilot', 'auto')).toBeNull();
+      // Session-update echoes are intentionally not persisted for any harness.
       expect(await setModelEcho(server, 'claude', 'claude-sonnet-5')).toBeNull();
     } finally {
       await copilotServer.close();

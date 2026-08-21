@@ -1,13 +1,14 @@
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { runs, runEvents, runFacts, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
+import { runs, runEvents, runFacts, runToolCalls, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { isParkedPhase } from './run-phases.js';
 import type { ResolvedGuardrails } from './setting-override.js';
 import type { PriceTable } from '../execution/pricing.js';
 
 export interface RunEventInput {
-  type: 'session_update' | 'permission_request' | 'lifecycle';
+  /** ACP transcript updates are deliberately never durable. See ADR-0031. */
+  type: 'permission_request' | 'lifecycle';
   payload: unknown;
 }
 
@@ -161,6 +162,23 @@ export class RunStore {
       db.select().from(runEvents).where(eq(runEvents.runId, runId)).orderBy(asc(runEvents.seq)).all(),
     );
     return rows.map(deserializeEvent);
+  }
+
+  /** Per-Run tool-call snapshot, overwritten by the Runner's in-memory rollup
+   * on the ADR-0010 coarse cadence and when a turn finishes (ADR-0031). */
+  async replaceToolCalls(runId: number, totals: ReadonlyMap<string, number>): Promise<void> {
+    await this.db.write(async (db) => {
+      await db.delete(runToolCalls).where(eq(runToolCalls.runId, runId)).run();
+      const rows = [...totals].map(([toolName, count]) => ({ runId, toolName, count }));
+      if (rows.length > 0) await db.insert(runToolCalls).values(rows).run();
+    });
+  }
+
+  async listToolCalls(runId: number): Promise<Map<string, number>> {
+    const rows = await this.db.read((db) =>
+      db.select({ toolName: runToolCalls.toolName, count: runToolCalls.count }).from(runToolCalls).where(eq(runToolCalls.runId, runId)).all(),
+    );
+    return new Map(rows.map(({ toolName, count }) => [toolName, count]));
   }
 
   /**
