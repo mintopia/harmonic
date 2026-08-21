@@ -330,6 +330,24 @@ export const runs = sqliteTable('runs', {
 });
 
 /**
+ * Per-Run tool-call counts (ADR-0031). The runner will overwrite these rows
+ * from its in-memory rollup; Task and Epic totals are derived on read through
+ * `runs.taskId` and `tasks.mapRef`, so they cannot drift from task ownership.
+ */
+export const runToolCalls = sqliteTable(
+  'run_tool_calls',
+  {
+    runId: integer('run_id')
+      .notNull()
+      .references(() => runs.id),
+    toolName: text('tool_name').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.toolName] })],
+);
+export type RunToolCallRow = typeof runToolCalls.$inferSelect;
+
+/**
  * The Execution Chain (issue #129, reliability-design Unit A): a persisted
  * identity threaded across every Run that continues one line of work —
  * reattempt / mirrored retry / human-reject continue / crash-resume / every

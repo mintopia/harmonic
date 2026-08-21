@@ -288,6 +288,13 @@
       "when": 1787333000179,
       "tag": "0040_stiff_rick_jones",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1787333958744,
+      "tag": "0041_majestic_mephisto",
+      "breakpoints": true
     }
   ]
 }
