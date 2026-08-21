@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "efbd1dd8-7efe-4158-941b-4e8c6f5ac84d",
-  "prevId": "f09c244d-5ce5-4066-ae49-ac9d9898f37c",
+  "id": "de4beb94-08d4-4318-a553-670a425d51b4",
+  "prevId": "08e074c9-c23a-4dff-b512-a5affc77705f",
   "tables": {
     "api_keys": {
       "name": "api_keys",
@@ -733,6 +733,59 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "run_tool_calls": {
+      "name": "run_tool_calls",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tool_name": {
+          "name": "tool_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "run_tool_calls_run_id_runs_id_fk": {
+          "name": "run_tool_calls_run_id_runs_id_fk",
+          "tableFrom": "run_tool_calls",
+          "tableTo": "runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "run_tool_calls_run_id_tool_name_pk": {
+          "columns": [
+            "run_id",
+            "tool_name"
+          ],
+          "name": "run_tool_calls_run_id_tool_name_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "runs": {
       "name": "runs",
       "columns": {
@@ -1452,6 +1505,62 @@
         },
         "base_branch": {
           "name": "base_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_state": {
+          "name": "tracker_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_parent": {
+          "name": "tracker_parent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_blocked_by": {
+          "name": "tracker_blocked_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_labels": {
+          "name": "tracker_labels",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_title": {
+          "name": "tracker_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_body": {
+          "name": "tracker_body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_url": {
+          "name": "tracker_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tracker_created_at": {
+          "name": "tracker_created_at",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

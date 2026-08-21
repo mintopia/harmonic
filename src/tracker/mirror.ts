@@ -50,6 +50,18 @@ export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
     drive: isEpic ? 'hitl' : role.drive,
     mapRef: ticket.parent,
     closed: ticket.state === 'closed',
+    // Persist the normalised facts verbatim so they survive a restart (issue
+    // #233, ADR-0030 "expand"). Write-only for now — no consumer reads them.
+    facts: {
+      state: ticket.state,
+      parent: ticket.parent,
+      blockedBy: ticket.blockedBy,
+      labels: ticket.labels,
+      title: ticket.title,
+      body: ticket.body,
+      url: ticket.url,
+      createdAt: ticket.createdAt,
+    },
   };
 }
 

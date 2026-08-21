@@ -18,6 +18,11 @@ import type { TurnStatus, TurnPurpose, TurnCancelReason } from '../domain/turn-q
 // canonical `LandingEffect`/`LandingJournalKind` enums still live there so
 // the pure module stays the single source of truth for them).
 import type { LandingEffect, LandingJournalKind } from '../domain/landing.js';
+// Type-only import (erased at compile): brands the durable tracker-fact columns
+// on `tasks` with the tracker's own normalised shapes, so the persisted facts
+// stay literally the `Ticket` fields — no redefinition to drift against. The
+// import is `type`-only, so no runtime db→tracker edge is emitted.
+import type { TicketRef, TicketState } from '../tracker/adapter.js';
 
 /** Tracker mirroring (issue #30). A Task is either authored here or a 1:1 projection of a tracker issue. */
 export const TASK_ORIGINS = ['native', 'mirrored'] as const;
@@ -28,6 +33,25 @@ export const WAYFINDER_TYPES = ['research', 'prototype', 'grilling', 'task'] as 
 export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
 export const DRIVES = ['afk', 'hitl'] as const;
 export type Drive = (typeof DRIVES)[number];
+
+/**
+ * The durable per-issue tracker facts (issue #233, ADR-0030 "expand"): the
+ * normalised shape of a mirrored issue's last successful scan, persisted so the
+ * facts survive a restart instead of living only in the ephemeral in-memory
+ * scan. Field-for-field a subset of the tracker `Ticket` — persisted verbatim.
+ * WRITE-ONLY for now: nothing reads these yet (derivation still runs off the
+ * live scan; the read-path is a later member of the epic).
+ */
+export interface TrackerFacts {
+  state: TicketState;
+  parent: number | null;
+  blockedBy: TicketRef[];
+  labels: string[];
+  title: string;
+  body: string;
+  url: string;
+  createdAt: string;
+}
 
 export const TASK_STATES = [
   'draft',
@@ -174,6 +198,27 @@ export const tasks = sqliteTable('tasks', {
    * column read straight off `TaskRow`.
    */
   baseBranch: text('base_branch'),
+  // --- Durable tracker facts (issue #233, ADR-0030 "expand"). The last
+  // successful scan's normalised facts, upserted every poll so they survive a
+  // restart. Null on native Tasks (and on mirrored rows written before this
+  // migration). WRITE-ONLY: no consumer reads these yet — the live-scan
+  // derivation is unchanged; the read-path is a later member of the epic. ---
+  /** The ticket's open/closed axis at last scan. Distinct from `state`, which is the Task's execution state. */
+  trackerState: text('tracker_state').$type<TicketState>(),
+  /** The ticket's parent pointer at last scan (the raw `#<n>` fact; `mapRef` is the derived Map rollup key). */
+  trackerParent: integer('tracker_parent'),
+  /** The ticket's `Blocked by` refs at last scan, verbatim (JSON). */
+  trackerBlockedBy: text('tracker_blocked_by', { mode: 'json' }).$type<TicketRef[]>(),
+  /** The ticket's labels at last scan (JSON). */
+  trackerLabels: text('tracker_labels', { mode: 'json' }).$type<string[]>(),
+  /** The ticket's title at last scan, verbatim (`prompt` is the derived title+body blend). */
+  trackerTitle: text('tracker_title'),
+  /** The ticket's body at last scan, verbatim. */
+  trackerBody: text('tracker_body'),
+  /** The ticket's tracker URL at last scan. */
+  trackerUrl: text('tracker_url'),
+  /** The ticket's created-at timestamp at last scan (tracker-native ISO string). */
+  trackerCreatedAt: text('tracker_created_at'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

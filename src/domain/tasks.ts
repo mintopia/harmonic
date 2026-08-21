@@ -17,6 +17,7 @@ import {
   type WayfinderType,
   type Drive,
   type WorkspaceRow,
+  type TrackerFacts,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
 import { resolve as resolveOverride } from './setting-override.js';
@@ -142,6 +143,27 @@ export interface MirrorInput {
   mapRef: number | null;
   /** The tracker open/closed axis; closed → completed. */
   closed: boolean;
+  /**
+   * The last-scan normalised tracker facts, persisted verbatim to the per-issue
+   * record (issue #233, ADR-0030 "expand"). Optional: the real poll path always
+   * supplies it (via {@link toMirrorInput}); omitting it leaves the durable fact
+   * columns untouched. WRITE-ONLY — nothing reads these yet.
+   */
+  facts?: TrackerFacts;
+}
+
+/** The 8 durable tracker-fact columns from a {@link TrackerFacts}, for the mirror upsert. */
+function trackerFactColumns(facts: TrackerFacts) {
+  return {
+    trackerState: facts.state,
+    trackerParent: facts.parent,
+    trackerBlockedBy: facts.blockedBy,
+    trackerLabels: facts.labels,
+    trackerTitle: facts.title,
+    trackerBody: facts.body,
+    trackerUrl: facts.url,
+    trackerCreatedAt: facts.createdAt,
+  };
 }
 
 export class TaskService {
@@ -319,6 +341,9 @@ export class TaskService {
             // runtime hitl flip must survive a label that still reads afk.
             drive: existing.escalated ? existing.drive : input.drive,
             mapRef: input.mapRef,
+            // Refresh the durable facts each poll; omitting them leaves the last
+            // known-good facts in place (issue #233).
+            ...(input.facts ? trackerFactColumns(input.facts) : {}),
             updatedAt: now,
           })
           .where(eq(tasks.id, existing.id))
@@ -350,6 +375,8 @@ export class TaskService {
           wayfinderType: input.wayfinderType,
           drive: input.drive,
           mapRef: input.mapRef,
+          // Persist durable tracker facts on first mirror (issue #233).
+          ...(input.facts ? trackerFactColumns(input.facts) : {}),
           createdAt: now,
           updatedAt: now,
         })

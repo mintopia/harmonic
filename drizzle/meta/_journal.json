@@ -302,6 +302,13 @@
       "when": 1787335000000,
       "tag": "0042_prune_run_event_firehose",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1787354574567,
+      "tag": "0043_zippy_wrecker",
+      "breakpoints": true
     }
   ]
 }

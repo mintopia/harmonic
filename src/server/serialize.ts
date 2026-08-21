@@ -38,7 +38,21 @@ export function runUsageToApi(ctx: AppContext, snapshot: RunUsageSnapshot): ApiR
   return { ...snapshot, cost: costOfUsages([snapshot.usage], pricesOf(ctx)) };
 }
 
-export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
+/** The durable tracker-fact columns (issue #233) are server-side persistence
+ * only — write-only, no consumer reads them yet — so they never enter the API
+ * shape. Omitting them here keeps the WS broadcast and the zod-validated REST
+ * response identical (streaming.test.ts parity). */
+type TrackerFactColumns =
+  | 'trackerState'
+  | 'trackerParent'
+  | 'trackerBlockedBy'
+  | 'trackerLabels'
+  | 'trackerTitle'
+  | 'trackerBody'
+  | 'trackerUrl'
+  | 'trackerCreatedAt';
+
+export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   workspaceId: number;
   cost: Cost | null;
   /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
@@ -72,8 +86,15 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
   const runs = await ctx.runs.listForTask(task.id);
   const usages = runs.map((run) => parseUsage(run.usage));
   const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
+  // Drop the durable tracker-fact columns (issue #233): server-side persistence
+  // only, never part of the API shape (see ApiTask).
+  const {
+    trackerState: _s, trackerParent: _p, trackerBlockedBy: _bb, trackerLabels: _l,
+    trackerTitle: _tt, trackerBody: _tb, trackerUrl: _tu, trackerCreatedAt: _tc,
+    ...apiFields
+  } = task;
   return {
-    ...task,
+    ...apiFields,
     workspaceId: atRestWorkspaceId(task.workspaceId),
     cost: costOfUsages(usages, pricesOf(ctx)),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),

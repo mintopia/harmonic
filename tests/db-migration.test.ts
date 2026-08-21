@@ -405,3 +405,58 @@ describe('landing_journal table (issue #115)', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 });
+
+describe('durable tracker facts migration (issue #233, ADR-0030 expand)', () => {
+  it('adds nullable fact columns; a pre-0040 mirrored row survives and reads them null', () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-tracker-facts-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0040');
+
+    // A pre-facts install: migrate up to just before 0040 and seed a mirrored
+    // Task the way an upgraded instance would have one — none of the tracker
+    // fact columns exist yet, so it is seeded via raw SQL over the legacy shape.
+    const sqlite = new Database(join(dataDir, 'harmonic.db'));
+    sqlite.pragma('foreign_keys = ON');
+    migrate(drizzle(sqlite, { schema }), { migrationsFolder });
+    const now = Date.now();
+    sqlite
+      .prepare(
+        `insert into tasks (prompt, working_dir, state, origin, tracker_ref, escalated, created_at, updated_at)
+         values ('Legacy mirrored', '/tmp/legacy-project', 'ready', 'mirrored', 233, 0, ?, ?)`,
+      )
+      .run(now, now);
+    sqlite.close();
+
+    // Boot to head applies 0040 and leaves the existing row's facts null.
+    const db = openDb(dataDir);
+    const legacy = db.select().from(schema.tasks).where(eq(schema.tasks.trackerRef, 233)).get()!;
+    expect(legacy).toMatchObject({ prompt: 'Legacy mirrored', origin: 'mirrored' });
+    expect(legacy.trackerState).toBeNull();
+    expect(legacy.trackerParent).toBeNull();
+    expect(legacy.trackerBlockedBy).toBeNull();
+    expect(legacy.trackerLabels).toBeNull();
+    expect(legacy.trackerTitle).toBeNull();
+    expect(legacy.trackerBody).toBeNull();
+    expect(legacy.trackerUrl).toBeNull();
+    expect(legacy.trackerCreatedAt).toBeNull();
+
+    // The migrated columns are real and usable: a subsequent poll's facts write
+    // and round-trip through them (JSON columns included).
+    db.update(schema.tasks)
+      .set({
+        trackerState: 'open',
+        trackerParent: 229,
+        trackerBlockedBy: [{ number: 230, title: 'eligibility', state: 'closed' }],
+        trackerLabels: ['ready-for-agent'],
+      })
+      .where(eq(schema.tasks.id, legacy.id))
+      .run();
+    const updated = db.select().from(schema.tasks).where(eq(schema.tasks.id, legacy.id)).get()!;
+    expect(updated.trackerState).toBe('open');
+    expect(updated.trackerParent).toBe(229);
+    expect(updated.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
+    expect(updated.trackerLabels).toEqual(['ready-for-agent']);
+
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});

@@ -7,7 +7,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { tasks as tasksTable } from '../src/db/schema.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { deriveRole, mirrorScan, deriveMaps } from '../src/tracker/mirror.js';
+import { deriveRole, mirrorScan, deriveMaps, toMirrorInput } from '../src/tracker/mirror.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import { allWorkspaces } from './helpers.js';
 
@@ -271,6 +271,87 @@ describe('mirrorScan upsert', () => {
     // A native Task MAY still depend on a mirrored one (the dependent is native).
     const dependent = await tasks.addDependency(native.id, mirrored!.id);
     expect(dependent.dependsOn).toEqual([mirrored!.id]);
+  });
+});
+
+describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
+  let dir: string;
+  let db: Db;
+  let tasks: TaskService;
+  let wsId: number;
+  const rawRow = (d: Db, ref: number) =>
+    d.select().from(tasksTable).where(eq(tasksTable.trackerRef, ref)).get()!;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-facts-'));
+    db = openDb(dir);
+    tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    wsId = allWorkspaces(db)()[0]!.id;
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rich = ticket({
+    number: 233,
+    title: 'Persist tracker facts',
+    body: 'the expand half',
+    state: 'open',
+    parent: 229,
+    labels: ['ready-for-agent', 'epic-member'],
+    blockedBy: [{ number: 230, title: 'eligibility', state: 'closed' }],
+    createdAt: '2026-08-20T09:30:00Z',
+    url: 'https://github.com/mintopia/harmonic/issues/233',
+  });
+
+  it('upserts the full normalised shape and it round-trips verbatim', () => {
+    mirrorScan(tasks, [rich], wsId);
+    const row = rawRow(db, 233);
+    expect(row.trackerState).toBe('open');
+    expect(row.trackerParent).toBe(229);
+    expect(row.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
+    expect(row.trackerLabels).toEqual(['ready-for-agent', 'epic-member']);
+    expect(row.trackerTitle).toBe('Persist tracker facts');
+    expect(row.trackerBody).toBe('the expand half');
+    expect(row.trackerUrl).toBe('https://github.com/mintopia/harmonic/issues/233');
+    expect(row.trackerCreatedAt).toBe('2026-08-20T09:30:00Z');
+  });
+
+  it('refreshes the facts on every re-poll', () => {
+    mirrorScan(tasks, [rich], wsId);
+    mirrorScan(tasks, [{ ...rich, title: 'Retitled', state: 'closed', labels: ['done'], closedAt: '2026-08-21T00:00:00Z' }], wsId);
+    const row = rawRow(db, 233);
+    expect(row.trackerTitle).toBe('Retitled');
+    expect(row.trackerState).toBe('closed');
+    expect(row.trackerLabels).toEqual(['done']);
+  });
+
+  it('last-known-good facts survive a restart with no fresh poll', () => {
+    mirrorScan(tasks, [rich], wsId);
+    // Reopen the same on-disk DB — a restart, no poll has run against it.
+    const db2 = openDb(dir);
+    const row = rawRow(db2, 233);
+    expect(row.trackerState).toBe('open');
+    expect(row.trackerParent).toBe(229);
+    expect(row.trackerBlockedBy).toEqual([{ number: 230, title: 'eligibility', state: 'closed' }]);
+    expect(row.trackerTitle).toBe('Persist tracker facts');
+    expect(row.trackerCreatedAt).toBe('2026-08-20T09:30:00Z');
+  });
+
+  it('an upsert with no facts leaves the last-known-good facts untouched', () => {
+    mirrorScan(tasks, [rich], wsId);
+    const { facts, ...withoutFacts } = toMirrorInput(rich);
+    void facts;
+    tasks.upsertMirrored(withoutFacts, wsId); // e.g. a legacy/native caller
+    const row = rawRow(db, 233);
+    expect(row.trackerTitle).toBe('Persist tracker facts'); // preserved, not nulled
+    expect(row.trackerState).toBe('open');
+  });
+
+  it('native Tasks carry null facts (columns are nullable)', () => {
+    const native = tasks.create({ prompt: 'native' });
+    const row = db.select().from(tasksTable).where(eq(tasksTable.id, native.id)).get()!;
+    expect(row.trackerState).toBeNull();
+    expect(row.trackerBlockedBy).toBeNull();
+    expect(row.trackerLabels).toBeNull();
   });
 });
 
