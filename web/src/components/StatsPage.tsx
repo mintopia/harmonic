@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { formatCost, usd } from '../cost';
+import { formatAvgCostPerRun, formatCost, usd } from '../cost';
 import type { Cost } from '../types';
 import { card, displayTitle, labelType } from '../ui';
-import { orderedRunStates, subagentShare, usageBars } from '../stats-model';
+import { cacheHitRate, failureRate, orderedRunStates, subagentShare, usageBars } from '../stats-model';
+import { fmtDuration } from '../phase-timeline-model';
 import { CostBars } from './CostBars';
 import { CumulativeCurve } from './CumulativeCurve';
 import { BarChart, type Bar } from './BarChart';
@@ -31,6 +32,10 @@ interface Stats {
   to: number;
   runCount: number;
   runsByState: Record<string, number>;
+  /** Failed-only Run count (excludes review-rejected); the honest failure-rate numerator. */
+  failedRuns: number;
+  /** p50 / p95 active-execution duration (ms); null when no run has a measurable duration. */
+  durationMs: { p50: number; p95: number } | null;
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   models: Record<string, ModelUsage>;
   /** Per-agent-type token breakdown (root + each Subagent type); may be absent on older data. */
@@ -142,6 +147,12 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
   const costText = stats ? formatCost(stats.cost) : null;
   const share = stats ? subagentShare(stats.agents) : null;
+  // KPI band figures — each "—" when its inputs are missing (honest numbers).
+  const pct = (r: number | null) => (r == null ? '—' : `${Math.round(r * 100)}%`);
+  const cacheHit = stats ? cacheHitRate(stats.totals) : null;
+  const failRate = stats ? failureRate(stats.failedRuns, stats.runCount) : null;
+  const avgCostText = stats ? formatAvgCostPerRun(stats.cost, stats.runCount) : null;
+  const medDuration = stats?.durationMs ? fmtDuration(stats.durationMs.p50) : null;
   // Token bars, largest first. Per-model rows carry their Cost too (the table
   // this replaced showed both); agent + tool rows are single-figure.
   const modelBars: Bar[] = stats
@@ -212,13 +223,17 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
           {/* A quiet stat row answers alongside the hero. Subagent share is
               the fraction of tokens spent below the root session (issue #48
               made Subagent tokens visible); "—" when no per-agent data. */}
-          <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-6`}>
+          <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
             <SummaryCell label="Runs" value={fmt(stats.runCount)} />
             <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
             <SummaryCell label="Tokens out" value={stats.totals ? compact.format(stats.totals.outputTokens) : '—'} />
             <SummaryCell label="Cache read" value={stats.totals ? compact.format(stats.totals.cacheReadTokens) : '—'} />
             <SummaryCell label="Cache write" value={stats.totals ? compact.format(stats.totals.cacheWriteTokens) : '—'} />
-            <SummaryCell label="Subagent share" value={share == null ? '—' : `${Math.round(share * 100)}%`} />
+            <SummaryCell label="Cache hit rate" value={pct(cacheHit)} />
+            <SummaryCell label="Failure rate" value={pct(failRate)} />
+            <SummaryCell label="Avg cost / run" value={avgCostText ?? '—'} />
+            <SummaryCell label="Median duration" value={medDuration ?? '—'} />
+            <SummaryCell label="Subagent share" value={pct(share)} />
           </div>
 
           {filled.length >= 2 && (

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { orderedRunStates, subagentShare, usageBars } from '../web/src/stats-model.js';
+import { cacheHitRate, failureRate, orderedRunStates, subagentShare, usageBars } from '../web/src/stats-model.js';
+import { formatAvgCostPerRun } from '../web/src/cost.js';
+import type { Cost } from '../web/src/types.js';
 
 const u = (input: number, output = 0, cacheRead = 0, cacheWrite = 0) => ({
   inputTokens: input,
@@ -42,6 +44,55 @@ describe('subagentShare', () => {
     expect(subagentShare(undefined)).toBeNull();
     expect(subagentShare({})).toBeNull();
     expect(subagentShare({ root: u(0) })).toBeNull();
+  });
+});
+
+describe('cacheHitRate', () => {
+  it('is cache-read over all input-side tokens, cache-write included (ADR-0028)', () => {
+    // read=30 over input+read+write = 10+30+10 = 50 → 0.6
+    expect(cacheHitRate(u(10, 5, 30, 10))).toBeCloseTo(0.6, 10);
+  });
+
+  it('is null when there is no usage', () => {
+    expect(cacheHitRate(null)).toBeNull();
+    expect(cacheHitRate(undefined)).toBeNull();
+  });
+
+  it('is null (not 0) when there are no input-side tokens', () => {
+    // output-only usage has an empty denominator — "—", never a fake 0%.
+    expect(cacheHitRate(u(0, 100, 0, 0))).toBeNull();
+  });
+});
+
+describe('failureRate', () => {
+  it('is failed-only over total Runs', () => {
+    expect(failureRate(3, 12)).toBeCloseTo(0.25, 10);
+  });
+
+  it('is null (not 0) when there are no Runs', () => {
+    expect(failureRate(0, 0)).toBeNull();
+  });
+
+  it('is 0 when there are Runs but none failed', () => {
+    expect(failureRate(0, 5)).toBe(0);
+  });
+});
+
+describe('formatAvgCostPerRun', () => {
+  const cost = (totalUsd: number | null, incomplete = false): Cost => ({ totalUsd, byModel: {}, incomplete });
+
+  it('divides total Cost by Run count', () => {
+    expect(formatAvgCostPerRun(cost(10), 4)).toBe('$2.50');
+  });
+
+  it('marks an incomplete aggregate as a floor', () => {
+    expect(formatAvgCostPerRun(cost(10, true), 4)).toBe('≥ $2.50');
+  });
+
+  it('is null when there is nothing honest to divide', () => {
+    expect(formatAvgCostPerRun(null, 4)).toBeNull();
+    expect(formatAvgCostPerRun(cost(null), 4)).toBeNull();
+    expect(formatAvgCostPerRun(cost(10), 0)).toBeNull();
   });
 });
 

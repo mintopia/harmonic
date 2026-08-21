@@ -53,6 +53,30 @@ export function usageBars(byKey: Record<string, TokenCounts>): UsageBar[] {
 }
 
 /**
+ * Cache hit rate (0..1, ADR-0028): cache-read tokens over *all* input-side
+ * tokens — `read / (input + read + write)`. The denominator includes cache-write
+ * on purpose, so priming the cache counts against the rate until it pays back.
+ * null when there is no usage or no input-side tokens — the caller shows "—",
+ * never a fabricated 0%.
+ */
+export function cacheHitRate(totals: TokenCounts | null | undefined): number | null {
+  if (!totals) return null;
+  const denom = totals.inputTokens + totals.cacheReadTokens + totals.cacheWriteTokens;
+  if (denom === 0) return null;
+  return totals.cacheReadTokens / denom;
+}
+
+/**
+ * Failure rate (0..1, ADR-0028): `failedRuns / total`, failed-only. `failedRuns`
+ * is the backend's already-honest numerator (review-rejected Runs excluded).
+ * null when there are no Runs — the caller shows "—", never a fabricated 0%.
+ */
+export function failureRate(failedRuns: number, total: number): number | null {
+  if (total <= 0) return null;
+  return failedRuns / total;
+}
+
+/**
  * The Subagent share of total tokens (0..1): everything not under `root`,
  * over the whole tree. null when there is no per-agent data or no tokens —
  * the caller shows "—", never a fabricated 0%.
