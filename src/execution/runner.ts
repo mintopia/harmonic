@@ -509,7 +509,7 @@ export class Runner {
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
     // that path can reach a Run parked in `review`/`landing` while a
     // `LandingCoordinator.land()` is mid-flight. Feeding the same append-only
-    // `landing_journal` (keyed on `this.db`, so it reads the very PONC the
+    // `landing_journal` (keyed on `this.asyncDb`, so it reads the very PONC the
     // review-side coordinator wrote) makes this coordinator honour the Point Of
     // No Cancel too: a cancel racing in after the PONC is clamped out and the
     // land stands — without this, that cancel would win here and "un-land" an
@@ -520,7 +520,7 @@ export class Runner {
       this.leaseStore,
       this.runFacts,
       (run) => this.events.onRunFinished?.(run),
-      new LandingJournalStore(this.db),
+      new LandingJournalStore(this.asyncDb),
       options.sessionRetirement,
     );
     this.tailer = new LiveUsageTailer(

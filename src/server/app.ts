@@ -310,7 +310,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     leases,
     (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
   );
-  const landingJournal = new LandingJournalStore(db);
+  const landingJournal = new LandingJournalStore(asyncDb);
   const reviewSettle = new RunSettleCoordinator(
     runs,
     tasks,
@@ -320,7 +320,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     landingJournal,
     sessionRetirement,
   );
-  const landing = new LandingCoordinator(runs, new RunFactStore(asyncDb), landingJournal, reviewSettle);
+  const landing = new LandingCoordinator(runs, asyncDb, landingJournal, reviewSettle);
   // Crash recovery before anything can execute (issue #117): one sweep
   // reconciles `run_facts`, `landing_journal`, and `turn_queue` together, so a
   // restart reconstructs one consistent picture instead of several independent

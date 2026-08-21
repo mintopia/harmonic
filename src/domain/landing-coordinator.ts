@@ -1,7 +1,8 @@
 import type { RunRow, TaskRow, RunFactType } from '../db/schema.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import type { RunStore } from './runs.js';
-import type { RunFactStore } from './run-facts.js';
-import type { LandingJournalStore } from './landing-journal.js';
+import { appendRunFactTx } from './run-facts.js';
+import { appendLandingJournalTx, type LandingJournalStore } from './landing-journal.js';
 import type { RunSettleCoordinator } from './run-settle.js';
 import type { SettleProjection } from './run-coordinator.js';
 import { reconcile, type LandingEffect, type ObservedState, type ReconcileAction } from './landing.js';
@@ -36,7 +37,7 @@ import { reconcile, type LandingEffect, type ObservedState, type ReconcileAction
 export class LandingCoordinator {
   constructor(
     private readonly runStore: RunStore,
-    private readonly runFacts: RunFactStore,
+    private readonly db: AsyncDbHandle,
     private readonly journal: LandingJournalStore,
     private readonly settle: RunSettleCoordinator,
     private readonly opts: { timeoutMs?: number; now?: () => number } = {},
@@ -62,22 +63,23 @@ export class LandingCoordinator {
    *
    *   1. Ensure `run.phase === 'landing'` (recorded + a lifecycle event, same
    *      as `ReviewService.accept`'s pre-#115 inline version of this step).
-   *   2. Append the land disposition fact **directly** via `RunFactStore` —
-   *      NOT through `settle` yet, because `settle` would also write the Run
-   *      row/release the lease/apply the Task action, and effects haven't
-   *      run — the operator must not see "landed" before the merge (etc.)
-   *      has actually happened. This append is what "reserves" the seq the
-   *      land fact needs: because it happens synchronously, before this
-   *      method's first `await`, nothing else can interleave and steal that
-   *      seq out from under it.
-   *   3. Immediately write the PONC, freezing `run_facts`'s disposition
-   *      cutoff at exactly that seq — the fact appended in step 2 is now
-   *      guaranteed decisive. From this point, any fact any concurrent
-   *      settle call appends for this Run — a cancel, a guardrail trip,
-   *      anything — lands at a strictly greater seq (monotonic `max+1`), so
-   *      `RunSettleCoordinator.settle`'s PONC clamp (run-settle.ts) excludes
-   *      it from ever winning: it stays in the log as an audit record, but
-   *      the land already frozen in at step 2 is what the operator sees.
+   *   2. Append the land disposition fact **directly** (NOT through `settle`
+   *      yet, because `settle` would also write the Run row/release the
+   *      lease/apply the Task action, and effects haven't run — the operator
+   *      must not see "landed" before the merge (etc.) has actually happened)
+   *      AND freeze the PONC at that fact's seq, both inside ONE
+   *      `AsyncDbHandle.transaction`. On the async Db the two writes must be a
+   *      single write-queue unit (ADR-0029): the transaction is exclusive, so a
+   *      concurrent settle's own `run_facts` append is ordered strictly before
+   *      or after this whole unit — it can never slip in between the land fact
+   *      and its PONC row and observe a not-yet-frozen cutoff.
+   *   3. With the PONC frozen at the land fact's seq, that fact is now
+   *      guaranteed decisive: any fact any concurrent settle call appends for
+   *      this Run — a cancel, a guardrail trip, anything — lands at a strictly
+   *      greater seq (monotonic `max+1`), so `RunSettleCoordinator.settle`'s
+   *      PONC clamp (run-settle.ts) excludes it from ever winning: it stays in
+   *      the log as an audit record, but the land frozen in at step 2 is what
+   *      the operator sees.
    *   4. For each effect, in order: record intent, run `apply()` (bounded by
    *      the operation timeout — see {@link LANDING_OP_TIMEOUT_MS}), record
    *      the result. The first `ok:false` stops the loop and returns
@@ -106,20 +108,24 @@ export class LandingCoordinator {
     const now = this.opts.now ?? Date.now;
 
     // Steps 2 + 3 (the PONC freeze) run FIRST, before any other work: append the
-    // land fact, then immediately freeze the PONC at its seq. `RunFactStore` is
-    // now on the async Db (ADR-0029), so the append is awaited — but the PONC
-    // invariant survives because `RunSettleCoordinator.settle` reads the PONC
-    // *after* its own `run_facts` append. Under the single-writer queue's strict
-    // FIFO, a racing settle whose fact lands at a higher seq than this land fact
-    // enqueued its append behind ours, so by the time its append resolves this
-    // append has already resolved and the `writePonc` below (synchronous, in this
-    // append's continuation) has already run — the racing settle observes the
-    // freeze and is clamped to audit-only. `journal` (LandingJournalStore) is
-    // still the sync Db; the phase-transition writes below are on the async
-    // RunStore and run only after the freeze, so a concurrent settle during those
-    // awaits already sees the PONC frozen.
-    const landFact = await this.runFacts.append(run.id, landFactType, { ...landProjection }, now());
-    this.journal.writePonc(run.id, landFact.seq, now());
+    // land fact and freeze the PONC at its seq — as ONE transaction (ADR-0029).
+    // Both `run_facts` and `landing_journal` are now on the async Db, so the two
+    // writes MUST be a single write-queue unit: the transaction is one exclusive
+    // unit, so a racing settle's own `run_facts` append (a separate `.write()`)
+    // is strictly ordered relative to it — never interleaved between the land
+    // fact and its PONC row. A settle whose cancel fact lands at a higher seq
+    // than this land fact enqueued its append behind this whole transaction, so
+    // by the time it appends and reads the PONC (`RunSettleCoordinator.settle`
+    // reads it *after* its own append) the freeze has already committed and the
+    // cancel is clamped to audit-only. Splitting this back into an awaited append
+    // then a separate `writePonc` would let that racing append slip in between
+    // and read a `null` PONC — the exact bug this atomicity prevents. The
+    // phase-transition writes below run only after the freeze, so a concurrent
+    // settle during those awaits already sees the PONC frozen.
+    await this.db.transaction(async (tx) => {
+      const landFact = await appendRunFactTx(tx, run.id, landFactType, { ...landProjection }, now());
+      await appendLandingJournalTx(tx, run.id, 'ponc', { payload: { cutoffSeq: landFact.seq } }, now());
+    });
 
     // Step 1: record the landing phase + a lifecycle event. Now that RunStore is
     // async these are awaited, so a concurrent settle during this await already
@@ -131,13 +137,13 @@ export class LandingCoordinator {
 
     const timeoutMs = this.opts.timeoutMs ?? LANDING_OP_TIMEOUT_MS;
     for (const effect of effects) {
-      this.journal.recordIntent(
+      await this.journal.recordIntent(
         run.id,
         { effect: effect.effect, idempotencyKey: effect.idempotencyKey, expected: effect.expected },
         now(),
       );
       const result = await withTimeout(effect.apply, timeoutMs, effect.effect);
-      this.journal.recordResult(
+      await this.journal.recordResult(
         run.id,
         { effect: effect.effect, idempotencyKey: effect.idempotencyKey, ok: result.ok, observed: result.observed, detail: result.detail },
         now(),
@@ -180,7 +186,7 @@ export class LandingCoordinator {
     observed: (effect: LandingEffect, idempotencyKey: string) => ObservedState,
     executors: Partial<Record<LandingEffect, LandingEffectExecutor>> = {},
   ): Promise<ReconcileAction[]> {
-    const rows = this.journal.views(run.id);
+    const rows = await this.journal.views(run.id);
     const actions = reconcile(rows, observed);
     for (const action of actions) {
       if (action.action === 'already-applied') continue;
@@ -188,7 +194,7 @@ export class LandingCoordinator {
         // The world already shows this effect done — record it as such
         // WITHOUT running `apply` again (the whole point: no duplicate
         // merge/PR/close, no false conflict against work that already landed).
-        this.journal.recordResult(run.id, { effect: action.effect, idempotencyKey: action.key, ok: true, observed: { adopted: true } });
+        await this.journal.recordResult(run.id, { effect: action.effect, idempotencyKey: action.key, ok: true, observed: { adopted: true } });
         continue;
       }
       // action === 'apply': genuinely never happened (or definitively failed
@@ -198,7 +204,7 @@ export class LandingCoordinator {
       const intentRow = rows.find((r) => r.kind === 'intent' && r.idempotencyKey === action.key);
       const expected = (intentRow?.payload['expected'] as Record<string, unknown> | undefined) ?? {};
       const result = await executor(action.key, expected);
-      this.journal.recordResult(run.id, { effect: action.effect, idempotencyKey: action.key, ok: result.ok, observed: result.observed, detail: result.detail });
+      await this.journal.recordResult(run.id, { effect: action.effect, idempotencyKey: action.key, ok: result.ok, observed: result.observed, detail: result.detail });
     }
     return actions;
   }

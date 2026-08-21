@@ -69,9 +69,9 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
-    journal = new LandingJournalStore(db);
+    journal = new LandingJournalStore(asyncDb);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
-    landing = new LandingCoordinator(runStore, runFacts, journal, settle);
+    landing = new LandingCoordinator(runStore, asyncDb, journal, settle);
     turnQueue = new TurnQueueStore(asyncDb);
   });
 
@@ -96,8 +96,8 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
 
     const idempotencyKey = `${baseBranch}<-${branch}`;
     const landFact = await runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'completed', reason: null });
-    journal.writePonc(run.id, landFact.seq);
-    journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
+    await journal.writePonc(run.id, landFact.seq);
+    await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
     // No result row: the process died before `apply()` resolved.
 
     return { task, run, idempotencyKey };
@@ -122,7 +122,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     // Adopted, never re-applied.
     expect(mergeSpy).not.toHaveBeenCalled();
 
-    const rows = journal.views(run.id);
+    const rows = await journal.views(run.id);
     const result = rows.find((r) => r.kind === 'result' && r.idempotencyKey === idempotencyKey);
     expect(result).toMatchObject({ payload: { ok: true, observed: { adopted: true } } });
 
@@ -190,9 +190,9 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
-    journal = new LandingJournalStore(db);
+    journal = new LandingJournalStore(asyncDb);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
-    landing = new LandingCoordinator(runStore, runFacts, journal, settle);
+    landing = new LandingCoordinator(runStore, asyncDb, journal, settle);
     turnQueue = new TurnQueueStore(asyncDb);
   });
 

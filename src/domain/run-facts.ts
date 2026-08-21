@@ -1,6 +1,41 @@
 import { asc, eq, sql } from 'drizzle-orm';
-import type { AsyncDbHandle } from '../db/async.js';
+import type { AsyncDb, AsyncDbHandle, AsyncTx } from '../db/async.js';
 import { runFacts, type RunFactRow, type RunFactType } from '../db/schema.js';
+
+/**
+ * Append a fact assigning the next monotonic `seq` (`max(seq)+1`, 1-based) on a
+ * caller-supplied executor — either a plain {@link AsyncDb} (the store's own
+ * `.write()` unit) or an already-open {@link AsyncTx}. Extracted from
+ * {@link RunFactStore.append} so a caller that must append a fact **atomically
+ * with a second write** shares this one source of seq assignment instead of
+ * re-deriving it: the landing PONC freeze (landing-coordinator.ts) appends the
+ * land fact and its `landing_journal` PONC row inside a single
+ * `AsyncDbHandle.transaction`, so no racing settle append can interleave
+ * between them and read a not-yet-frozen PONC (ADR-0029; run-settle.ts's PONC
+ * clamp relies on this). The `(run_id, seq)` unique index stays the
+ * cross-process integrity backstop.
+ */
+export async function appendRunFactTx(
+  db: AsyncDb | AsyncTx,
+  runId: number,
+  type: RunFactType,
+  payload: Record<string, unknown> = {},
+  now: number = Date.now(),
+): Promise<RunFactRow> {
+  const seq =
+    ((
+      await db
+        .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
+        .from(runFacts)
+        .where(eq(runFacts.runId, runId))
+        .get()
+    )?.n ?? 0) + 1;
+  return db
+    .insert(runFacts)
+    .values({ runId, seq, ts: now, type, payload: JSON.stringify(payload) })
+    .returning()
+    .get();
+}
 
 /**
  * The append-only fact log store (issue #112, reliability-design §0.1/§0.3):
@@ -35,21 +70,7 @@ export class RunFactStore {
     payload: Record<string, unknown> = {},
     now: number = Date.now(),
   ): Promise<RunFactRow> {
-    return this.db.write(async (db) => {
-      const seq =
-        ((
-          await db
-            .select({ n: sql<number>`coalesce(max(${runFacts.seq}), 0)` })
-            .from(runFacts)
-            .where(eq(runFacts.runId, runId))
-            .get()
-        )?.n ?? 0) + 1;
-      return db
-        .insert(runFacts)
-        .values({ runId, seq, ts: now, type, payload: JSON.stringify(payload) })
-        .returning()
-        .get();
-    });
+    return this.db.write((db) => appendRunFactTx(db, runId, type, payload, now));
   }
 
   /** A Run's fact log in `seq` order — the input to `computeDisposition`. */

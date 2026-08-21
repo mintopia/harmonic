@@ -109,7 +109,7 @@ export class CrashRecoveryCoordinator {
   private async reconcileLandingOrphans(now: number): Promise<void> {
     for (const run of await this.runStore.listLandingOrphans()) {
       const task = await this.taskService.get(run.taskId);
-      const poncSeq = this.landingJournal.ponc(run.id);
+      const poncSeq = await this.landingJournal.ponc(run.id);
       if (poncSeq === null) {
         // Died before the PONC ever froze — no irreversible effect could have
         // started (see landing.ts's module doc comment). Settle it as an
@@ -125,7 +125,7 @@ export class CrashRecoveryCoordinator {
       // effect with an `ok:true` result is `'already-applied'`
       // (landing.ts's `reconcile`) and never reaches `observed` at all, so a
       // fully-applied landing reconciles hermetically, no process spawned.
-      const priorEntries = foldJournal(this.landingJournal.views(run.id));
+      const priorEntries = foldJournal(await this.landingJournal.views(run.id));
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
       let merged = false;
       if (needsWorldCheck && run.branch && run.baseBranch) {
@@ -149,7 +149,7 @@ export class CrashRecoveryCoordinator {
       // Complete iff every intended effect has an ok result — mirrors exactly
       // what `LandingCoordinator.land()` checks before its own finishing
       // settle call (vacuously true when nothing was ever intended).
-      const entries = foldJournal(this.landingJournal.views(run.id));
+      const entries = foldJournal(await this.landingJournal.views(run.id));
       if (entries.every((entry) => entry.appliedOk)) {
         // Same fact type + projection + patch as `land()`'s finishing settle
         // call — the only "land" signal today (landing-coordinator.ts's

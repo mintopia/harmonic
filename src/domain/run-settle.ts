@@ -84,14 +84,14 @@ export class RunSettleCoordinator {
     //
     // Read *after* our own append (ADR-0029): under the async single-writer
     // queue, a landing that reserved a lower `seq` than ours enqueued its
-    // `run_facts` append ahead of this one, so by strict write-queue FIFO its
-    // land fact has resolved — and `LandingCoordinator.land` has run its
-    // (synchronous) `writePonc` in that append's continuation — by the time our
-    // own append resolves here. Reading the PONC before the append (as the sync
-    // path could) would instead observe `null` in that race window and let this
-    // signal wrongly win. Read once so both cutoffs below clamp against the same
-    // value.
-    const poncCutoffSeq = this.landingJournal?.ponc(run.id) ?? null;
+    // land-fact-plus-PONC transaction (`LandingCoordinator.land`) ahead of this
+    // append, so by strict write-queue FIFO that whole transaction — land fact
+    // AND PONC row — has committed by the time our own append resolves here.
+    // (Land writes both in ONE transaction precisely so no append can interleave
+    // between them.) Reading the PONC before the append would instead observe
+    // `null` in that race window and let this signal wrongly win. Read once so
+    // both cutoffs below clamp against the same value.
+    const poncCutoffSeq = (await this.landingJournal?.ponc(run.id)) ?? null;
 
     const priorDisposition = priorFacts.length
       ? computeDisposition(priorFacts, this.clampCutoff(priorFacts[priorFacts.length - 1]!.seq, poncCutoffSeq))
