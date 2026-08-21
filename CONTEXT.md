@@ -487,6 +487,23 @@ Copilot's native consumption unit (~$1 each), read per-turn from Copilot's
 session store (with Subagent attribution). Recorded on Usage and shown as
 actual spend alongside Cost — a separate figure, not a Cost input.
 
+**Event-loop guarantee**:
+The promise that nothing — a slow query or a background loop — can freeze the
+whole server (issue #200, split under epic #201; ADR-0029 §5). Harmonic runs
+synchronous SQLite on the one Node event loop shared by every request, so a
+single blocking stretch stalls *all* HTTP at once. The defences that hold the
+promise: an **Event-loop monitor** (`src/reliability/event-loop-monitor.ts`,
+issue #210) that probes loop delay and logs a stall as a legible event; the
+**loops-must-yield** rule — any background loop or heavy in-request scan hands
+the loop back on a wall-clock budget via `forEachYielding` / `yieldToEventLoop`
+(`src/reliability/yield.ts`, issue #211) rather than running to completion in one
+block; and, ahead, per-query timeout bounds. The durable cure — making DB access
+itself async so a query never blocks the loop — is the ADR-0029 libsql
+migration; until that lands these bound the blast radius on the synchronous
+engine. The monitor observes, it cannot pre-empt: it turns a silent freeze into
+a logged one.
+_Avoid_: watchdog (reserved for Guardrail)
+
 ### Statistics
 
 The **Stats** page's derived metrics, over a Run set in a range. All keep the
