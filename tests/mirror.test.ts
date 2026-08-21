@@ -169,8 +169,8 @@ describe('mirrorScan upsert', () => {
     // isEpic→hitl override does not fire. The opt-in rule alone must still keep
     // it hitl — under the old opt-out polarity it defaulted to afk and was
     // auto-driven (task 226 / run 275).
-    const [parent] = await mscan([ticket({ number: 229, labels: [] })]);
-    expect(parent!.drive).toBe('hitl');
+    const result = await mscan([ticket({ number: 229, labels: [] })]);
+    expect(result).toMatchObject([{ trackerRef: 229, drive: 'hitl' }]);
   });
 
   it('an Epic parent is never a blocker: a child "Blocked by" its parent gets no edge', async () => {

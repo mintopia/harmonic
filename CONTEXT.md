@@ -241,8 +241,8 @@ _Avoid_: child task, subtask
 
 **Ready frontier**:
 The subset of an Epic's Members currently runnable — carrying `ready-for-agent`
-(the same afk opt-in the **Drive** rule applies, issue #230), *open*, unassigned, and
-free of any open non-Epic blocker — recomputed every poll; the true width of
+(the same afk opt-in the **Drive** rule applies, issue #230), *open*, and free of
+any open non-Epic blocker — recomputed every poll; the true width of
 parallelism, not the whole Epic at once. Informally a **wave**: the next wave is
 the frontier re-derived after blockers clear. Never a stored or numbered entity.
 _Avoid_: wave (as a stored/numbered thing), batch
