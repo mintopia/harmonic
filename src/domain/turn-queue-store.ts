@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import { turnQueue, type TurnQueueRow } from '../db/schema.js';
 import { isMutating, type TurnCancelReason, type TurnItem, type TurnPurpose } from './turn-queue.js';
 
@@ -19,7 +19,7 @@ import { isMutating, type TurnCancelReason, type TurnItem, type TurnPurpose } fr
  * total order".
  */
 export class TurnQueueStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Enqueue a new turn onto `sessionId`'s queue, assigning the next monotonic
@@ -39,7 +39,7 @@ export class TurnQueueStore {
    * design (see turn-queue.ts) and so cannot itself distinguish a mutating
    * turn's missing binding from a read-only turn's legitimately absent one.
    */
-  enqueue(
+  async enqueue(
     sessionId: string,
     runId: number,
     purpose: TurnPurpose,
@@ -50,42 +50,43 @@ export class TurnQueueStore {
       expectedFingerprint?: string | undefined;
     } = {},
     now: number = Date.now(),
-  ): TurnQueueRow {
+  ): Promise<TurnQueueRow> {
     if (isMutating(purpose) && (binding.expectedWorkspaceOID === undefined || binding.expectedFingerprint === undefined)) {
       throw new Error(`mutating turn "${purpose}" must bind expectedWorkspaceOID and expectedFingerprint`);
     }
-    const seq =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${turnQueue.seq}), 0)` })
-        .from(turnQueue)
-        .where(eq(turnQueue.sessionId, sessionId))
-        .get()?.n ?? 0) + 1;
-    return this.db
-      .insert(turnQueue)
-      .values({
-        sessionId,
-        runId,
-        seq,
-        status: 'queued',
-        purpose,
-        expectedPhase: binding.expectedPhase,
-        expectedGeneration: binding.expectedGeneration,
-        expectedWorkspaceOid: binding.expectedWorkspaceOID,
-        expectedFingerprint: binding.expectedFingerprint,
-        enqueuedAt: now,
-      })
-      .returning()
-      .get();
+    return this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${turnQueue.seq}), 0)` })
+            .from(turnQueue)
+            .where(eq(turnQueue.sessionId, sessionId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(turnQueue)
+        .values({
+          sessionId,
+          runId,
+          seq,
+          status: 'queued',
+          purpose,
+          expectedPhase: binding.expectedPhase,
+          expectedGeneration: binding.expectedGeneration,
+          expectedWorkspaceOid: binding.expectedWorkspaceOID,
+          expectedFingerprint: binding.expectedFingerprint,
+          enqueuedAt: now,
+        })
+        .returning()
+        .get();
+    });
   }
 
   /** A Session's queue in `seq` order — the input to `planTurnQueue` (via `rowToItem`). */
-  listForSession(sessionId: string): TurnQueueRow[] {
-    return this.db
-      .select()
-      .from(turnQueue)
-      .where(eq(turnQueue.sessionId, sessionId))
-      .orderBy(asc(turnQueue.seq))
-      .all();
+  async listForSession(sessionId: string): Promise<TurnQueueRow[]> {
+    return this.db.read((db) =>
+      db.select().from(turnQueue).where(eq(turnQueue.sessionId, sessionId)).orderBy(asc(turnQueue.seq)).all(),
+    );
   }
 
   /**
@@ -95,13 +96,15 @@ export class TurnQueueStore {
    * already moved on (claimed twice, or claimed after settling) leaves this
    * update matching no row rather than silently stomping the row's state.
    */
-  claim(id: number, now: number = Date.now()): TurnQueueRow {
-    const row = this.db
-      .update(turnQueue)
-      .set({ status: 'claimed', claimedAt: now })
-      .where(and(eq(turnQueue.id, id), eq(turnQueue.status, 'queued')))
-      .returning()
-      .get();
+  async claim(id: number, now: number = Date.now()): Promise<TurnQueueRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(turnQueue)
+        .set({ status: 'claimed', claimedAt: now })
+        .where(and(eq(turnQueue.id, id), eq(turnQueue.status, 'queued')))
+        .returning()
+        .get(),
+    );
     if (row === undefined) throw new Error(`turn ${id} not in expected state for claim`);
     return row;
   }
@@ -113,26 +116,30 @@ export class TurnQueueStore {
    * Session regardless of this turn's own prior status — see the module doc
    * comment.
    */
-  markInFlight(id: number, idempotencyKey: string, now: number = Date.now()): TurnQueueRow {
-    const row = this.db
-      .update(turnQueue)
-      .set({ status: 'in_flight', idempotencyKey, sentAt: now })
-      .where(and(eq(turnQueue.id, id), eq(turnQueue.status, 'claimed')))
-      .returning()
-      .get();
+  async markInFlight(id: number, idempotencyKey: string, now: number = Date.now()): Promise<TurnQueueRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(turnQueue)
+        .set({ status: 'in_flight', idempotencyKey, sentAt: now })
+        .where(and(eq(turnQueue.id, id), eq(turnQueue.status, 'claimed')))
+        .returning()
+        .get(),
+    );
     if (row === undefined) throw new Error(`turn ${id} not in expected state for markInFlight`);
     return row;
   }
 
   /** Settle an `in_flight` turn to its terminal outcome, stamping
    * `settledAt`. Guarded by `status = 'in_flight'`. */
-  settle(id: number, status: 'done' | 'failed', now: number = Date.now()): TurnQueueRow {
-    const row = this.db
-      .update(turnQueue)
-      .set({ status, settledAt: now })
-      .where(and(eq(turnQueue.id, id), eq(turnQueue.status, 'in_flight')))
-      .returning()
-      .get();
+  async settle(id: number, status: 'done' | 'failed', now: number = Date.now()): Promise<TurnQueueRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(turnQueue)
+        .set({ status, settledAt: now })
+        .where(and(eq(turnQueue.id, id), eq(turnQueue.status, 'in_flight')))
+        .returning()
+        .get(),
+    );
     if (row === undefined) throw new Error(`turn ${id} not in expected state for settle`);
     return row;
   }
@@ -144,13 +151,15 @@ export class TurnQueueStore {
    * (`in_flight`) prompt is the coordinator's job, out of this store's scope
    * (see turn-queue.ts's module doc comment).
    */
-  cancel(id: number, reason: TurnCancelReason, now: number = Date.now()): TurnQueueRow {
-    const row = this.db
-      .update(turnQueue)
-      .set({ status: 'cancelled', cancelReason: reason, settledAt: now })
-      .where(and(eq(turnQueue.id, id), inArray(turnQueue.status, ['queued', 'claimed'])))
-      .returning()
-      .get();
+  async cancel(id: number, reason: TurnCancelReason, now: number = Date.now()): Promise<TurnQueueRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(turnQueue)
+        .set({ status: 'cancelled', cancelReason: reason, settledAt: now })
+        .where(and(eq(turnQueue.id, id), inArray(turnQueue.status, ['queued', 'claimed'])))
+        .returning()
+        .get(),
+    );
     if (row === undefined) throw new Error(`turn ${id} not in expected state for cancel`);
     return row;
   }
@@ -163,13 +172,15 @@ export class TurnQueueStore {
    * boot decision (cancel the not-yet-dispatched ones; resolve whatever is
    * still `in_flight`).
    */
-  listUnsettled(): TurnQueueRow[] {
-    return this.db
-      .select()
-      .from(turnQueue)
-      .where(inArray(turnQueue.status, ['queued', 'claimed', 'in_flight']))
-      .orderBy(asc(turnQueue.seq))
-      .all();
+  async listUnsettled(): Promise<TurnQueueRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(turnQueue)
+        .where(inArray(turnQueue.status, ['queued', 'claimed', 'in_flight']))
+        .orderBy(asc(turnQueue.seq))
+        .all(),
+    );
   }
 }
 

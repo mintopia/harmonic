@@ -182,14 +182,14 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
   }));
   if (!includeChats) return runs;
   const chats: ApiActivityProcess[] = await Promise.all(ctx.conversationDriver.activeConversationIds().map(async (id) => {
-    const convo = ctx.conversations.get(id);
+    const convo = await ctx.conversations.get(id);
     const usage = parseUsage(convo.usage);
     return {
       type: 'chat',
       runId: null,
       conversationId: id,
       taskId: null,
-      title: convo.title ?? firstLineTitle(ctx.conversations.firstTurnText(id)) ?? `Conversation #${id}`,
+      title: convo.title ?? firstLineTitle(await ctx.conversations.firstTurnText(id)) ?? `Conversation #${id}`,
       workspaceId: atRestWorkspaceId(convo.workspaceId),
       workspaceName: await workspaceNameOf(ctx, convo.workspaceId),
       harness: convo.harness,
@@ -261,7 +261,7 @@ function deriveConversationTitle(firstTurnText: string | null): string | null {
  * / cache-TTL facts come from optional per-model config; honest degradation
  * when unconfigured (null, never a fake percentage).
  */
-export function conversationToApi(ctx: AppContext, conversation: ConversationRow): ApiConversation {
+export async function conversationToApi(ctx: AppContext, conversation: ConversationRow): Promise<ApiConversation> {
   const { usage: rawUsage, ...rest } = conversation;
   const usage = parseUsage(rawUsage);
   const config = ctx.configStore.get();
@@ -269,7 +269,7 @@ export function conversationToApi(ctx: AppContext, conversation: ConversationRow
   return {
     ...rest,
     workspaceId: atRestWorkspaceId(conversation.workspaceId),
-    title: conversation.title ?? deriveConversationTitle(ctx.conversations.firstTurnText(conversation.id)),
+    title: conversation.title ?? deriveConversationTitle(await ctx.conversations.firstTurnText(conversation.id)),
     usage,
     cost: costOfUsages([usage], pricesOf(ctx)),
     contextTokens: conversation.contextTokens,

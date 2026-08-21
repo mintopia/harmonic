@@ -58,7 +58,7 @@ describe('Session retirement (issue #148)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-retire-'));
     db = openDb(dir);
     asyncDb = await openAsyncDb(dir);
-    sessions = new SessionStore(db);
+    sessions = new SessionStore(asyncDb);
     runs = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
@@ -70,50 +70,50 @@ describe('Session retirement (issue #148)', () => {
   });
 
   describe('SessionStore transitions', () => {
-    it('binds the builder worktree it owns', () => {
-      const s = dispatch();
-      const bound = sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+    it('binds the builder worktree it owns', async () => {
+      const s = await dispatch();
+      const bound = await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       expect(bound).toMatchObject({ worktreePath: '/wt/run-1', worktreeRepoDir: '/repo' });
     });
 
-    it('markIdle sets the deadline + pending reason; beginRetiring then clears the deadline', () => {
-      const s = dispatch();
-      const idle = sessions.markIdle(s.id, now + 5_000, 'reject-continuation-timeout', now);
+    it('markIdle sets the deadline + pending reason; beginRetiring then clears the deadline', async () => {
+      const s = await dispatch();
+      const idle = await sessions.markIdle(s.id, now + 5_000, 'reject-continuation-timeout', now);
       expect(idle).toMatchObject({ status: 'idle', retireDeadline: now + 5_000, retireReason: 'reject-continuation-timeout' });
-      const retiring = sessions.beginRetiring(s.id, 'reject-continuation-timeout', now);
+      const retiring = await sessions.beginRetiring(s.id, 'reject-continuation-timeout', now);
       expect(retiring).toMatchObject({ status: 'retiring', retireDeadline: null });
     });
 
-    it('markRetired stamps retiredAt and is terminal', () => {
-      const s = dispatch();
-      sessions.beginRetiring(s.id, 'landed', now);
-      const retired = sessions.markRetired(s.id, now + 1);
+    it('markRetired stamps retiredAt and is terminal', async () => {
+      const s = await dispatch();
+      await sessions.beginRetiring(s.id, 'landed', now);
+      const retired = await sessions.markRetired(s.id, now + 1);
       expect(retired).toMatchObject({ status: 'retired', retiredAt: now + 1 });
     });
 
-    it('never walks a retiring/retired Session back to idle', () => {
-      const s = dispatch();
-      sessions.beginRetiring(s.id, 'landed', now);
-      const stuck = sessions.markIdle(s.id, now + 5_000, 'retention-ttl', now);
+    it('never walks a retiring/retired Session back to idle', async () => {
+      const s = await dispatch();
+      await sessions.beginRetiring(s.id, 'landed', now);
+      const stuck = await sessions.markIdle(s.id, now + 5_000, 'retention-ttl', now);
       expect(stuck.status).toBe('retiring'); // markIdle was a no-op
     });
 
-    it('reactivate returns an idle Session to active for a continuation', () => {
-      const s = dispatch();
-      sessions.markIdle(s.id, now + 5_000, 'reject-continuation-timeout', now);
-      const active = sessions.reactivate(s.id, now + 1);
+    it('reactivate returns an idle Session to active for a continuation', async () => {
+      const s = await dispatch();
+      await sessions.markIdle(s.id, now + 5_000, 'reject-continuation-timeout', now);
+      const active = await sessions.reactivate(s.id, now + 1);
       expect(active).toMatchObject({ status: 'active', retireDeadline: null, retireReason: null });
     });
 
-    it('listRetiring / listRetentionDue select the right rows', () => {
-      const a = dispatch({ harnessSessionId: 'a' });
-      const b = dispatch({ harnessSessionId: 'b' });
-      const c = dispatch({ harnessSessionId: 'c' });
-      sessions.beginRetiring(a.id, 'landed', now);
-      sessions.markIdle(b.id, now + 10, 'retention-ttl', now); // not yet due at `now`
-      sessions.markIdle(c.id, now - 10, 'retention-ttl', now); // overdue
-      expect(sessions.listRetiring().map((s) => s.id)).toEqual([a.id]);
-      expect(sessions.listRetentionDue(now).map((s) => s.id)).toEqual([c.id]);
+    it('listRetiring / listRetentionDue select the right rows', async () => {
+      const a = await dispatch({ harnessSessionId: 'a' });
+      const b = await dispatch({ harnessSessionId: 'b' });
+      const c = await dispatch({ harnessSessionId: 'c' });
+      await sessions.beginRetiring(a.id, 'landed', now);
+      await sessions.markIdle(b.id, now + 10, 'retention-ttl', now); // not yet due at `now`
+      await sessions.markIdle(c.id, now - 10, 'retention-ttl', now); // overdue
+      expect((await sessions.listRetiring()).map((s) => s.id)).toEqual([a.id]);
+      expect((await sessions.listRetentionDue(now)).map((s) => s.id)).toEqual([c.id]);
     });
   });
 
@@ -122,17 +122,17 @@ describe('Session retirement (issue #148)', () => {
       new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
     it('marks the Session retiring on a landed disposition', async () => {
-      const s = dispatch();
+      const s = await dispatch();
       const run = await runForSession(s.id);
-      makeCoord().onRunSettled(run, 'landed', now);
-      expect(sessions.get(s.id)).toMatchObject({ status: 'retiring', retireReason: 'landed' });
+      await makeCoord().onRunSettled(run, 'landed', now);
+      expect(await sessions.get(s.id)).toMatchObject({ status: 'retiring', retireReason: 'landed' });
     });
 
     it('marks the Session idle under the reject-continuation deadline on a reject', async () => {
-      const s = dispatch();
+      const s = await dispatch();
       const run = await runForSession(s.id);
-      makeCoord().onRunSettled(run, 'rejected', now);
-      expect(sessions.get(s.id)).toMatchObject({
+      await makeCoord().onRunSettled(run, 'rejected', now);
+      expect(await sessions.get(s.id)).toMatchObject({
         status: 'idle',
         retireReason: 'reject-continuation-timeout',
         retireDeadline: now + cfg.rejectContinuationMs,
@@ -140,41 +140,41 @@ describe('Session retirement (issue #148)', () => {
     });
 
     it('retires immediately on review-SLA and operator-cancel', async () => {
-      const a = dispatch({ harnessSessionId: 'a' });
-      const b = dispatch({ harnessSessionId: 'b' });
-      makeCoord().onRunSettled(await runForSession(a.id), 'review-sla', now);
-      makeCoord().onRunSettled(await runForSession(b.id), 'operator-cancel', now);
-      expect(sessions.get(a.id)).toMatchObject({ status: 'retiring', retireReason: 'review-abandonment-sla' });
-      expect(sessions.get(b.id)).toMatchObject({ status: 'retiring', retireReason: 'operator-disposition' });
+      const a = await dispatch({ harnessSessionId: 'a' });
+      const b = await dispatch({ harnessSessionId: 'b' });
+      await makeCoord().onRunSettled(await runForSession(a.id), 'review-sla', now);
+      await makeCoord().onRunSettled(await runForSession(b.id), 'operator-cancel', now);
+      expect(await sessions.get(a.id)).toMatchObject({ status: 'retiring', retireReason: 'review-abandonment-sla' });
+      expect(await sessions.get(b.id)).toMatchObject({ status: 'retiring', retireReason: 'operator-disposition' });
     });
 
     it('retains under the retention-TTL backstop on any other ending', async () => {
-      const s = dispatch();
-      makeCoord().onRunSettled(await runForSession(s.id), 'other', now);
-      expect(sessions.get(s.id)).toMatchObject({ status: 'idle', retireReason: 'retention-ttl', retireDeadline: now + cfg.retentionTtlMs });
+      const s = await dispatch();
+      await makeCoord().onRunSettled(await runForSession(s.id), 'other', now);
+      expect(await sessions.get(s.id)).toMatchObject({ status: 'idle', retireReason: 'retention-ttl', retireDeadline: now + cfg.retentionTtlMs });
     });
 
     it('is a no-op for a Run with no Session', async () => {
       const task = await tasks.create({ prompt: 'p', state: 'ready' });
       const run = await runs.create(task.id); // sessionRowId null
-      expect(() => makeCoord().onRunSettled(run, 'landed', now)).not.toThrow();
+      await expect(makeCoord().onRunSettled(run, 'landed', now)).resolves.toBeUndefined();
     });
 
     it('does not re-decide a Session already retiring', async () => {
-      const s = dispatch();
+      const s = await dispatch();
       const run = await runForSession(s.id);
       const coord = makeCoord();
-      coord.onRunSettled(run, 'landed', now);
-      coord.onRunSettled(run, 'rejected', now + 1); // later reject must not un-retire it
-      expect(sessions.get(s.id).status).toBe('retiring');
+      await coord.onRunSettled(run, 'landed', now);
+      await coord.onRunSettled(run, 'rejected', now + 1); // later reject must not un-retire it
+      expect((await sessions.get(s.id)).status).toBe('retiring');
     });
   });
 
   describe('drain — the async removal pass (sole worktree remover)', () => {
     it('removes a retiring Session\'s worktree and marks it retired', async () => {
-      const s = dispatch();
-      sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      sessions.beginRetiring(s.id, 'landed', now);
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      await sessions.beginRetiring(s.id, 'landed', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
@@ -182,28 +182,28 @@ describe('Session retirement (issue #148)', () => {
 
       expect(retired).toBe(1);
       expect(removeWorktree).toHaveBeenCalledWith('/repo', '/wt/run-1');
-      expect(sessions.get(s.id)).toMatchObject({ status: 'retired', retiredAt: now });
+      expect(await sessions.get(s.id)).toMatchObject({ status: 'retired', retiredAt: now });
     });
 
     it('sweeps an idle Session past its retention deadline, then removes + retires it', async () => {
-      const s = dispatch();
-      sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      sessions.markIdle(s.id, now, 'retention-ttl', now);
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      await sessions.markIdle(s.id, now, 'retention-ttl', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
       await coord.drain(now + 1);
 
       expect(removeWorktree).toHaveBeenCalledOnce();
-      expect(sessions.get(s.id).status).toBe('retired');
+      expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
     it('does NOT remove a worktree a live Run still leases (coordinated with the lease)', async () => {
-      const s = dispatch();
-      sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       const run = await runForSession(s.id);
       await leases.acquire('worktree:/wt/run-1::branch', run.id, 'running'); // still held
-      sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'landed', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
@@ -211,31 +211,31 @@ describe('Session retirement (issue #148)', () => {
 
       expect(retired).toBe(0);
       expect(removeWorktree).not.toHaveBeenCalled();
-      expect(sessions.get(s.id).status).toBe('retiring'); // left for a later drain
+      expect((await sessions.get(s.id)).status).toBe('retiring'); // left for a later drain
 
       // Once the lease releases, a later drain completes the retirement.
       await leases.releaseByOwner(run.id);
       await coord.drain(now + 1);
       expect(removeWorktree).toHaveBeenCalledOnce();
-      expect(sessions.get(s.id).status).toBe('retired');
+      expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
     it('retires a Session with no bound worktree as a pure status transition (nothing to remove)', async () => {
-      const s = dispatch();
-      sessions.beginRetiring(s.id, 'operator-disposition', now);
+      const s = await dispatch();
+      await sessions.beginRetiring(s.id, 'operator-disposition', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
       await coord.drain(now);
 
       expect(removeWorktree).not.toHaveBeenCalled();
-      expect(sessions.get(s.id).status).toBe('retired');
+      expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
     it('is idempotent — a second drain changes nothing and removes nothing again', async () => {
-      const s = dispatch();
-      sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      sessions.beginRetiring(s.id, 'landed', now);
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      await sessions.beginRetiring(s.id, 'landed', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
@@ -243,26 +243,26 @@ describe('Session retirement (issue #148)', () => {
       await coord.drain(now);
 
       expect(removeWorktree).toHaveBeenCalledOnce();
-      expect(sessions.get(s.id).status).toBe('retired');
+      expect((await sessions.get(s.id)).status).toBe('retired');
     });
 
     it('survives a worktree-removal failure (best-effort) and still retires', async () => {
-      const s = dispatch();
-      sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      sessions.beginRetiring(s.id, 'landed', now);
+      const s = await dispatch();
+      await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
+      await sessions.beginRetiring(s.id, 'landed', now);
       const removeWorktree = vi.fn(async () => {
         throw new Error('worktree already gone');
       });
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
       await expect(coord.drain(now)).resolves.toBe(1);
-      expect(sessions.get(s.id).status).toBe('retired');
+      expect((await sessions.get(s.id)).status).toBe('retired');
     });
   });
 
   describe('lease transfer (continuation substrate)', () => {
     it('re-points a lease from one Run to the next sharing the Session', async () => {
-      const s = dispatch();
+      const s = await dispatch();
       const first = await runForSession(s.id);
       const second = await runForSession(s.id);
       await leases.acquire('worktree:/wt/run-1::branch', first.id, 'running');

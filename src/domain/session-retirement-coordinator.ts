@@ -21,7 +21,7 @@ export type RemoveWorktree = (repoDir: string, worktreePath: string) => Promise<
  * is optional, so every settle path that predates #148 keeps working unchanged.
  */
 export interface SessionRetirementHook {
-  onRunSettled(run: RunRow, cause: RetirementCause, now?: number): void;
+  onRunSettled(run: RunRow, cause: RetirementCause, now?: number): Promise<void>;
 }
 
 /**
@@ -33,11 +33,11 @@ export interface SessionRetirementHook {
  * is removed **only** when the Session retires — never at `finalizeWorkspace` /
  * reaching `terminal`. This coordinator is what closes that loop, in two halves:
  *
- *  - {@link onRunSettled} — the **synchronous** settle-hook. Every terminal Run
- *    disposition funnels through `RunSettleCoordinator.settle`, which calls this
- *    right after it releases the Work Context lease (so the two are ordered: the
- *    lease is gone before we decide the Session's fate). It only *records the
- *    intent* — marks the Session `idle` (retained under a deadline) or `retiring`
+ *  - {@link onRunSettled} — the settle-hook, awaited but still best-effort. Every
+ *    terminal Run disposition funnels through `RunSettleCoordinator.settle`, which
+ *    calls this right after it releases the Work Context lease (so the two are
+ *    ordered: the lease is gone before we decide the Session's fate). It only
+ *    *records the intent* — marks the Session `idle` (retained under a deadline) or `retiring`
  *    (removal owed) — because settle is synchronous and worktree removal is not.
  *  - {@link drain} — the **asynchronous** removal pass. Sweeps `idle` Sessions
  *    whose retention deadline has lapsed into `retiring`, then removes every
@@ -62,27 +62,28 @@ export class SessionRetirementCoordinator {
   ) {}
 
   /**
-   * Synchronous settle-hook: record the retirement intent for `run`'s Session
-   * from the settle `cause`, right after its lease released. A landing / abandon
-   * / operator-cancel marks the Session `retiring` (its worktree removal is now
-   * owed); a reject / other ending marks it `idle` under the matching retention
-   * deadline. A no-op when the Run has no Session, its Session is already
-   * retiring/retired, or the Session row has gone — so it never crashes settle.
+   * Awaited settle-hook, still best-effort: record the retirement intent for
+   * `run`'s Session from the settle `cause`, right after its lease released. A
+   * landing / abandon / operator-cancel marks the Session `retiring` (its
+   * worktree removal is now owed); a reject / other ending marks it `idle`
+   * under the matching retention deadline. A no-op when the Run has no
+   * Session, its Session is already retiring/retired, or the Session row has
+   * gone — so it never crashes settle.
    */
-  onRunSettled(run: RunRow, cause: RetirementCause, now: number = this.clock()): void {
+  async onRunSettled(run: RunRow, cause: RetirementCause, now: number = this.clock()): Promise<void> {
     if (run.sessionRowId == null) return;
     let session;
     try {
-      session = this.sessions.get(run.sessionRowId);
+      session = await this.sessions.get(run.sessionRowId);
     } catch {
       return; // Session write was best-effort at dispatch; nothing to retire.
     }
     if (session.status === 'retiring' || session.status === 'retired') return; // decided already
     const action = decideRetirement(cause, now, this.config);
     if (action.kind === 'retire') {
-      this.sessions.beginRetiring(session.id, action.reason, now);
+      await this.sessions.beginRetiring(session.id, action.reason, now);
     } else {
-      this.sessions.markIdle(session.id, action.retireDeadline, action.reason, now);
+      await this.sessions.markIdle(session.id, action.retireDeadline, action.reason, now);
     }
   }
 
@@ -94,12 +95,12 @@ export class SessionRetirementCoordinator {
    */
   async drain(now: number = this.clock()): Promise<number> {
     // 1. Retention deadlines: an idle Session whose window lapsed is owed removal.
-    for (const session of this.sessions.listRetentionDue(now)) {
-      this.sessions.beginRetiring(session.id, session.retireReason ?? 'retention-ttl', now);
+    for (const session of await this.sessions.listRetentionDue(now)) {
+      await this.sessions.beginRetiring(session.id, session.retireReason ?? 'retention-ttl', now);
     }
     // 2. Remove the worktree of every Session owed removal, then retire it.
     let retired = 0;
-    for (const session of this.sessions.listRetiring()) {
+    for (const session of await this.sessions.listRetiring()) {
       // Lease coordination: never tear down a worktree a live Run still leases
       // (a continuation may hold/have-transferred it). Leave it `retiring` for a
       // later drain — the lease releases when that Run settles.
@@ -109,7 +110,7 @@ export class SessionRetirementCoordinator {
         // `retired` write, or a manual cleanup) must not wedge retirement.
         await this.removeWorktree(session.worktreeRepoDir, session.worktreePath).catch(() => {});
       }
-      this.sessions.markRetired(session.id, now);
+      await this.sessions.markRetired(session.id, now);
       retired++;
     }
     return retired;

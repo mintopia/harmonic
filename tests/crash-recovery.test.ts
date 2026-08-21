@@ -72,7 +72,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
     landing = new LandingCoordinator(runStore, runFacts, journal, settle);
-    turnQueue = new TurnQueueStore(db);
+    turnQueue = new TurnQueueStore(asyncDb);
   });
 
   afterEach(async () => {
@@ -193,7 +193,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     journal = new LandingJournalStore(db);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
     landing = new LandingCoordinator(runStore, runFacts, journal, settle);
-    turnQueue = new TurnQueueStore(db);
+    turnQueue = new TurnQueueStore(asyncDb);
   });
 
   afterEach(async () => {

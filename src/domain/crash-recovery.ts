@@ -172,7 +172,7 @@ export class CrashRecoveryCoordinator {
   /** Pass B: the turn queue — cancel every pending turn, resolve whatever is
    * still `in_flight` (no live harness survives a restart). */
   private async reconcileTurnQueue(now: number): Promise<void> {
-    for (const row of this.turnQueue.listUnsettled()) {
+    for (const row of await this.turnQueue.listUnsettled()) {
       if (row.status === 'queued' || row.status === 'claimed') {
         // A pending resume re-entry (`crash-recovery`, issue #146) is *meant* to
         // survive a restart and be picked up by the next running process — the
@@ -182,7 +182,7 @@ export class CrashRecoveryCoordinator {
         // non-mutating, so it just settles `failed`, never blocking single-flight
         // on the next boot.)
         if (survivesRestart(row.purpose)) continue;
-        this.turnQueue.cancel(row.id, 'execution-closed', now);
+        await this.turnQueue.cancel(row.id, 'execution-closed', now);
         continue;
       }
       // in_flight: no live harness for it now. A mutating corrective turn
@@ -206,7 +206,7 @@ export class CrashRecoveryCoordinator {
           });
         }
       }
-      this.turnQueue.settle(row.id, 'failed', now);
+      await this.turnQueue.settle(row.id, 'failed', now);
     }
   }
 }

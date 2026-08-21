@@ -52,9 +52,12 @@ export interface AcpHandshake {
   /**
    * Fired with the new sessionId immediately after session/new, before the
    * optional model pin — so a caller can persist the id even if the pin
-   * then fails (the Runner stores it for usage backfill).
+   * then fails (the Runner stores it for usage backfill). Awaited, so a caller
+   * whose persistence is async (ADR-0029) finishes before handshake returns —
+   * preserving the ordering the sync store gave for free (the Runner reads the
+   * Session row id it sets, right after the handshake).
    */
-  onSessionCreated?: (sessionId: string) => void;
+  onSessionCreated?: (sessionId: string) => void | Promise<void>;
 }
 
 export interface PromptResult {
@@ -193,7 +196,7 @@ export class AcpDriver {
     )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };
     this.sessionId = session.sessionId;
     this.availableModes = AcpDriver.modeIdsOf(session.modes);
-    opts.onSessionCreated?.(this.sessionId);
+    await opts.onSessionCreated?.(this.sessionId);
     if (opts.modelId !== undefined) {
       await this.race(
         this.connection.request('session/set_model', { sessionId: this.sessionId, modelId: opts.modelId }),

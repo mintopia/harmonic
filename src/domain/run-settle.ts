@@ -137,11 +137,11 @@ export class RunSettleCoordinator {
     // (a land/abandon/cancel) or retain under a deadline (a reject / other
     // ending). Ordered strictly *after* `releaseLease` so the worktree's owner is
     // gone before its fate is decided (removal is coordinated with the lease).
-    // Sync + best-effort: it only marks the Session's status; the async worktree
-    // removal is a separate drain, and a hiccup must never crash settle.
+    // Awaited but best-effort: it only marks the Session's status; the async
+    // worktree removal is a separate drain, and a hiccup must never crash settle.
     const finished = await this.runStore.get(run.id);
     try {
-      this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner, patch));
+      await this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner, patch));
     } catch {
       // best-effort; the boot/periodic drain reconciles from the Session row
     }

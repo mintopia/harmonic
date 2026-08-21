@@ -45,9 +45,9 @@ describe('BootResumeCoordinator (issue #146)', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(db));
     runStore = new RunStore(asyncDb);
-    sessions = new SessionStore(db);
+    sessions = new SessionStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
-    turnQueue = new TurnQueueStore(db);
+    turnQueue = new TurnQueueStore(asyncDb);
   });
 
   afterEach(async () => {
@@ -64,7 +64,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
   }> {
     const created = await tasks.create({ prompt: 'resume me', state: 'ready', workingDir: '/tmp/repo' });
     const run = await runStore.create(created.id);
-    const session = sessions.recordDispatch({
+    const session = await sessions.recordDispatch({
       harness: 'claude',
       harnessSessionId: `hsid-${run.id}`,
       model: 'stub-model',
@@ -113,7 +113,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     expect(resumeRun.prompt).toBe(CRASH_RECOVERY_PROMPT);
     expect(resumeRun.chainId).toBe(run.chainId); // Execution Chain carried
 
-    const queue = turnQueue.listForSession(session.harnessSessionId);
+    const queue = await turnQueue.listForSession(session.harnessSessionId);
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({ runId: resumeRun.id, purpose: 'crash-recovery', status: 'queued' });
 
@@ -134,12 +134,12 @@ describe('BootResumeCoordinator (issue #146)', () => {
     expect(resumeRun.prompt).toContain('# Resumed Session (Harmonic summary)');
 
     // The incompatibility is persisted on the dead Session (#145 AC5).
-    expect(sessions.get(session.id).resumeIncompatibilityReason).toBe('load-session-unsupported');
+    expect((await sessions.get(session.id)).resumeIncompatibilityReason).toBe('load-session-unsupported');
 
     // The re-entry turn is queued on a fresh per-Run queue id (the `run-<id>`
     // convention the drive loop uses), not the dead Session's harness id.
-    expect(turnQueue.listForSession(session.harnessSessionId)).toHaveLength(0);
-    const queue = turnQueue.listForSession(`run-${resumeRun.id}`);
+    expect(await turnQueue.listForSession(session.harnessSessionId)).toHaveLength(0);
+    const queue = await turnQueue.listForSession(`run-${resumeRun.id}`);
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({ purpose: 'crash-recovery', status: 'queued' });
   });
@@ -153,7 +153,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
 
     const resumeRun = (await runStore.listForTask(task.id)).find((r) => r.id !== run.id)!;
     expect(resumeRun.sessionRowId).toBeNull();
-    expect(sessions.get(session.id).resumeIncompatibilityReason).toBe('cwd-mismatch');
+    expect((await sessions.get(session.id)).resumeIncompatibilityReason).toBe('cwd-mismatch');
   });
 
   it('incompatible (adapter version drift) → fails forward with the adapter-version reason', async () => {
@@ -165,7 +165,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
 
     const resumeRun = (await runStore.listForTask(task.id)).find((r) => r.id !== run.id)!;
     expect(resumeRun.sessionRowId).toBeNull();
-    expect(sessions.get(session.id).resumeIncompatibilityReason).toBe('adapter-version-mismatch');
+    expect((await sessions.get(session.id)).resumeIncompatibilityReason).toBe('adapter-version-mismatch');
   });
 
   it('is idempotent — a second recovery pass creates no duplicate Run or turn (AC3)', async () => {
@@ -176,7 +176,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     await coord.resume(); // repeat recovery
 
     expect((await runStore.listForTask(task.id)).filter((r) => r.id !== run.id)).toHaveLength(1);
-    expect(turnQueue.listForSession(session.harnessSessionId)).toHaveLength(1);
+    expect(await turnQueue.listForSession(session.harnessSessionId)).toHaveLength(1);
   });
 
   it('leaves an interrupted Run with no Session alone (nothing to resume)', async () => {

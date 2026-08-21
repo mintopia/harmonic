@@ -264,7 +264,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(db);
   const leases = new WorkContextLeaseStore(asyncDb);
-  const conversations = new ConversationStore(db, (conversation) => bus.emit('conversation_changed', conversation));
+  const conversations = new ConversationStore(asyncDb, (conversation) => bus.emit('conversation_changed', conversation));
   const permissionRules = new PermissionRuleStore(db);
   const auth = new AuthService(db);
   // An explicit empty password clears the gate; undefined leaves it as-is.
@@ -303,7 +303,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // after the lease releases; its async `drain` performs the actual worktree
   // removal — at boot, and on every `run_changed` below (a settle emits one, so
   // an accepted/cancelled Session's worktree is reclaimed promptly).
-  const sessionStore = new SessionStore(db);
+  const sessionStore = new SessionStore(asyncDb);
   const sessionRetirement = new SessionRetirementCoordinator(
     sessionStore,
     runs,
@@ -332,7 +332,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // never silently re-run. Finally, every Work Context lease a crash left
   // behind is reconciled (issue #123): released if its context is provably
   // clean, else flipped to `suspect` — never left silently held by a dead owner.
-  const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, leases, reviewSettle, landing, landingJournal, new TurnQueueStore(db));
+  const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, leases, reviewSettle, landing, landingJournal, new TurnQueueStore(asyncDb));
   await crashRecovery.reconcile();
   // A fresh process is executing nothing, so any Task still `running` was
   // orphaned by the restart — fail it loudly (re-queueable, with feedback).
@@ -365,7 +365,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // the Task's current working directory). Whether the reload succeeds or the
   // compatibility matrix forces a fresh summarized Session, the decision is
   // idempotent across repeat boots.
-  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(db), new RunFactStore(asyncDb), (session) => ({
+  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(asyncDb), new RunFactStore(asyncDb), (session) => ({
     harness: session.harness,
     adapterVersion: adapterVersion(session.harness),
     model: session.model,
@@ -378,7 +378,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   auth.sweepOrphanedConversationKeys();
   // A Conversation cannot survive a restart — its warm harness is gone — so
   // any still marked active is ended; its transcript survives read-only (issue 15).
-  conversations.markActiveEnded();
+  await conversations.markActiveEnded();
   // Auto-drive afk mirrored Tasks (issue #33): the Drive Prompt + completion /
   // failure decisions. Its {url} comes from the Task's Workspace poll loop's
   // last scan; the manager is built below, so bind it late through this holder.

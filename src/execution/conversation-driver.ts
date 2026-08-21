@@ -137,7 +137,7 @@ export class ConversationDriver {
    * as the next Turn on completion (issue 14) — `queued` reports which.
    */
   async submitTurn(conversationId: number, text: string): Promise<{ queued: boolean }> {
-    const convo = this.store.get(conversationId);
+    const convo = await this.store.get(conversationId);
     if (convo.state !== 'active') {
       throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
     }
@@ -147,7 +147,7 @@ export class ConversationDriver {
       return { queued: true };
     }
     if (!entry) entry = await this.spawn(convo);
-    this.beginTurn(entry, text);
+    await this.beginTurn(entry, text);
     return { queued: false };
   }
 
@@ -159,7 +159,7 @@ export class ConversationDriver {
    * new Turn, no illusion of seamless mid-thought redirection.
    */
   async interrupt(conversationId: number, text?: string): Promise<void> {
-    const convo = this.store.get(conversationId);
+    const convo = await this.store.get(conversationId);
     if (convo.state !== 'active') {
       throw new DomainError('invalid_state', `conversation ${conversationId} has ended`);
     }
@@ -177,18 +177,18 @@ export class ConversationDriver {
   }
 
   /** Record the operator's message and drive the Turn, streaming the reply over the firehose. */
-  private beginTurn(entry: ActiveConversation, text: string): void {
+  private async beginTurn(entry: ActiveConversation, text: string): Promise<void> {
     this.clearIdle(entry); // activity — the idle clock only runs between Turns
     entry.turning = true;
-    this.record(entry.conversationId, 'user_turn', { text });
+    await this.record(entry.conversationId, 'user_turn', { text });
     void this.runTurn(entry, text);
   }
 
   /** After a Turn settles, send the next queued follow-up, if any (issue 14). */
-  private drainQueue(entry: ActiveConversation): void {
+  private async drainQueue(entry: ActiveConversation): Promise<void> {
     if (!this.active.has(entry.conversationId)) return; // ended or crashed
     const next = entry.queue.shift();
-    if (next !== undefined) this.beginTurn(entry, next);
+    if (next !== undefined) await this.beginTurn(entry, next);
   }
 
   /** Arm the idle timeout (issue 15): a Conversation with no Turn for N minutes ends. */
@@ -197,9 +197,11 @@ export class ConversationDriver {
     const minutes = this.getConfig().conversationIdleTimeoutMinutes;
     if (!minutes || minutes <= 0) return; // disabled
     entry.idleTimer = setTimeout(() => {
-      if (!this.active.has(entry.conversationId)) return;
-      this.record(entry.conversationId, 'lifecycle', { event: 'idle_timeout' });
-      this.end(entry.conversationId);
+      void (async () => {
+        if (!this.active.has(entry.conversationId)) return;
+        await this.record(entry.conversationId, 'lifecycle', { event: 'idle_timeout' });
+        await this.end(entry.conversationId);
+      })().catch(() => {});
     }, minutes * 60_000);
     entry.idleTimer.unref?.();
   }
@@ -217,7 +219,7 @@ export class ConversationDriver {
    * reject_*) is the Harness's to interpret; "Allow for this conversation"
    * is just the native allow_always option, remembered for the session.
    */
-  answerPermission(conversationId: number, reqId: string, optionId: string, remember = false): void {
+  async answerPermission(conversationId: number, reqId: string, optionId: string, remember = false): Promise<void> {
     const pending = this.pendingPermissions.get(reqId);
     if (!pending || pending.conversationId !== conversationId) {
       throw new DomainError('not_found', `no pending permission '${reqId}' for conversation ${conversationId}`);
@@ -238,11 +240,11 @@ export class ConversationDriver {
     pending.resolve(outcome);
     // Record the resolution for the transcript/replay; reqId lets the panel
     // clear the matching prompt.
-    this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, ...(rule ? { rule } : {}) });
+    await this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId, ...(rule ? { rule } : {}) });
   }
 
   /** Explicit End: stop the harness and mark the Conversation ended. */
-  end(conversationId: number): ConversationRow {
+  async end(conversationId: number): Promise<ConversationRow> {
     const entry = this.active.get(conversationId);
     if (entry) this.teardown(entry);
     return this.store.end(conversationId);
@@ -294,7 +296,9 @@ export class ConversationDriver {
     });
 
     const driver = new AcpDriver(child, {
-      onSessionUpdate: (update) => this.record(convo.id, 'session_update', update),
+      onSessionUpdate: (update) => {
+        void this.record(convo.id, 'session_update', update).catch(() => {});
+      },
       onRequest: async (method, params) => {
         // Human-in-the-loop (ADR-0007): a persistent Permission Rule for
         // this tool kind + Working Directory auto-approves; otherwise hold
@@ -313,7 +317,9 @@ export class ConversationDriver {
         cwd: convo.workingDir,
         mcpServers,
         modelId,
-        onSessionCreated: (sessionId) => this.store.update(convo.id, { sessionId }),
+        onSessionCreated: async (sessionId) => {
+          await this.store.update(convo.id, { sessionId });
+        },
       });
     } catch (err) {
       // Spawn/handshake failed: the Conversation never became warm. Clean
@@ -332,21 +338,21 @@ export class ConversationDriver {
   private async runTurn(entry: ActiveConversation, text: string): Promise<void> {
     try {
       const result = await entry.driver.prompt([{ type: 'text', text }]);
-      this.record(entry.conversationId, 'lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
+      await this.record(entry.conversationId, 'lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       await this.accumulateTurnUsage(entry.conversationId, result);
     } catch (err) {
       // The harness died mid-Turn: the warm session is gone, so the
       // Conversation ends honestly (it cannot resume) rather than silently
       // re-spawning a fresh, context-less session.
       const message = err instanceof Error ? err.message : String(err);
-      this.record(entry.conversationId, 'lifecycle', { event: 'error', message });
+      await this.record(entry.conversationId, 'lifecycle', { event: 'error', message });
       this.teardown(entry);
-      this.store.end(entry.conversationId);
+      await this.store.end(entry.conversationId);
     } finally {
       entry.turning = false;
       // Send the next queued follow-up, if the Conversation is still warm;
       // otherwise start the idle clock until the next Turn.
-      this.drainQueue(entry);
+      await this.drainQueue(entry);
       if (this.active.has(entry.conversationId) && !entry.turning) this.armIdle(entry);
     }
   }
@@ -356,7 +362,7 @@ export class ConversationDriver {
    * Working Directory auto-approves silently (no prompt, no broadcast);
    * otherwise the request is held open and the operator is prompted.
    */
-  private decidePermission(conversationId: number, workingDir: string, request: unknown): Promise<PermissionOutcome> {
+  private async decidePermission(conversationId: number, workingDir: string, request: unknown): Promise<PermissionOutcome> {
     const kind = permissionKind(request);
     const rule = kind ? this.rules?.findMatch(kind, workingDir) : null;
     if (rule) {
@@ -364,12 +370,12 @@ export class ConversationDriver {
       const outcome: PermissionOutcome = optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
       // Recorded for the transcript/audit, flagged as rule-driven — never a
       // silent grant. No prompt broadcast: nothing to answer.
-      this.record(conversationId, 'permission_request', {
+      await this.record(conversationId, 'permission_request', {
         request,
         outcome,
         rule: { kind: rule.kind, workingDir: rule.workingDir },
       });
-      return Promise.resolve(outcome);
+      return outcome;
     }
     const reqId = `perm-${++this.nextPermissionId}`;
     return new Promise<PermissionOutcome>((resolve) => {
@@ -389,7 +395,7 @@ export class ConversationDriver {
       this.pendingPermissions.delete(reqId);
       const outcome = { outcome: 'cancelled' as const };
       pending.resolve(outcome);
-      this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId });
+      void this.record(conversationId, 'permission_request', { request: pending.request, outcome, reqId }).catch(() => {});
     }
   }
 
@@ -405,7 +411,7 @@ export class ConversationDriver {
   ): Promise<void> {
     let turnUsage: RunUsage | null = null;
     try {
-      const convo = this.store.get(conversationId);
+      const convo = await this.store.get(conversationId);
       const harness = this.getConfig().harnesses[convo.harness as keyof AppConfig['harnesses']];
       if (harness) {
         turnUsage = await collectUsageWithRetry({
@@ -415,28 +421,28 @@ export class ConversationDriver {
           sessionId: convo.sessionId,
           promptResult: result,
           // Conversation events share the run-event shape the collector reads.
-          events: this.store.listEvents(conversationId) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
+          events: (await this.store.listEvents(conversationId)) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
         });
       }
     } catch {
       // Usage is best-effort; fall through to a plain touch.
     }
-    const convo = this.store.get(conversationId);
+    const convo = await this.store.get(conversationId);
     const stored = convo.usage ? (JSON.parse(convo.usage) as RunUsage) : null;
     const accumulated = accumulateUsage(stored, turnUsage);
     const contextTokens = contextInputTokens(result.usage);
-    this.store.update(conversationId, {
+    await this.store.update(conversationId, {
       ...(accumulated ? { usage: JSON.stringify(accumulated) } : {}),
       ...(contextTokens !== null ? { contextTokens } : {}),
     });
   }
 
-  private record(
+  private async record(
     conversationId: number,
     type: 'session_update' | 'permission_request' | 'lifecycle' | 'user_turn',
     payload: unknown,
-  ): void {
-    const event = this.store.appendEvent(conversationId, { type, payload });
+  ): Promise<void> {
+    const event = await this.store.appendEvent(conversationId, { type, payload });
     this.events.onEvent?.(event);
   }
 

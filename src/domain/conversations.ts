@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import {
   conversations,
   conversationEvents,
@@ -39,78 +39,97 @@ export interface CreateConversationInput {
  */
 export class ConversationStore {
   constructor(
-    private readonly db: Db,
+    private readonly db: AsyncDbHandle,
     private readonly onChanged: (conversation: ConversationRow) => void = () => {},
   ) {}
 
-  create(input: CreateConversationInput): ConversationRow {
+  async create(input: CreateConversationInput): Promise<ConversationRow> {
     const now = Date.now();
-    const row = this.db
-      .insert(conversations)
-      .values({
-        title: null,
-        workspaceId: input.workspaceId,
-        harness: input.harness,
-        model: input.model,
-        workingDir: input.workingDir,
-        state: 'active',
-        sessionId: null,
-        createdAt: now,
-        updatedAt: now,
-        endedAt: null,
-      })
-      .returning()
-      .get();
+    const row = await this.db.write((db) =>
+      db
+        .insert(conversations)
+        .values({
+          title: null,
+          workspaceId: input.workspaceId,
+          harness: input.harness,
+          model: input.model,
+          workingDir: input.workingDir,
+          state: 'active',
+          sessionId: null,
+          createdAt: now,
+          updatedAt: now,
+          endedAt: null,
+        })
+        .returning()
+        .get(),
+    );
     this.onChanged(row);
     return row;
   }
 
-  get(id: number): ConversationRow {
-    const row = this.db.select().from(conversations).where(eq(conversations.id, id)).get();
+  async get(id: number): Promise<ConversationRow> {
+    const row = await this.db.read((db) => db.select().from(conversations).where(eq(conversations.id, id)).get());
     if (!row) throw new DomainError('not_found', `conversation ${id} not found`);
     return row;
   }
 
   /** Reverse-chronological: newest first, both active and ended (issue 15's list).
    * Scoped to `workspaceId` when given (ADR-0008); omitted means every Workspace. */
-  list(workspaceId?: number): ConversationRow[] {
-    return this.db
-      .select()
-      .from(conversations)
-      .where(workspaceId !== undefined ? eq(conversations.workspaceId, workspaceId) : undefined)
-      .orderBy(desc(conversations.createdAt))
-      .all();
+  async list(workspaceId?: number): Promise<ConversationRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(conversations)
+        .where(workspaceId !== undefined ? eq(conversations.workspaceId, workspaceId) : undefined)
+        .orderBy(desc(conversations.createdAt))
+        .all(),
+    );
   }
 
-  update(id: number, patch: Partial<ConversationRow>): ConversationRow {
-    const row = this.db
-      .update(conversations)
-      .set({ ...patch, updatedAt: Date.now() })
-      .where(eq(conversations.id, id))
-      .returning()
-      .get()!;
-    this.onChanged(row);
-    return row;
+  async update(id: number, patch: Partial<ConversationRow>): Promise<ConversationRow> {
+    const row = await this.db.write((db) =>
+      db
+        .update(conversations)
+        .set({ ...patch, updatedAt: Date.now() })
+        .where(eq(conversations.id, id))
+        .returning()
+        .get(),
+    );
+    this.onChanged(row!);
+    return row!;
   }
 
   /** Bump updatedAt (a Turn landed) and broadcast the change. */
-  touch(id: number): ConversationRow {
+  async touch(id: number): Promise<ConversationRow> {
     return this.update(id, {});
   }
 
   /** Terminal transition; a no-op (returns the row) if already ended. */
-  end(id: number): ConversationRow {
-    const current = this.get(id);
-    if (current.state === 'ended') return current;
-    const now = Date.now();
-    return this.update(id, { state: 'ended', endedAt: now });
+  async end(id: number): Promise<ConversationRow> {
+    return this.db.write(async (db) => {
+      const current = await db.select().from(conversations).where(eq(conversations.id, id)).get();
+      if (!current) throw new DomainError('not_found', `conversation ${id} not found`);
+      if (current.state === 'ended') return current;
+      const now = Date.now();
+      const row = await db
+        .update(conversations)
+        .set({ state: 'ended', endedAt: now, updatedAt: now })
+        .where(eq(conversations.id, id))
+        .returning()
+        .get();
+      this.onChanged(row!);
+      return row!;
+    });
   }
 
   /** Delete a Conversation and cascade its events (issue 15). */
-  delete(id: number): void {
-    this.get(id); // 404 on unknown
-    this.db.delete(conversationEvents).where(eq(conversationEvents.conversationId, id)).run();
-    this.db.delete(conversations).where(eq(conversations.id, id)).run();
+  async delete(id: number): Promise<void> {
+    await this.db.write(async (db) => {
+      const current = await db.select().from(conversations).where(eq(conversations.id, id)).get();
+      if (!current) throw new DomainError('not_found', `conversation ${id} not found`);
+      await db.delete(conversationEvents).where(eq(conversationEvents.conversationId, id)).run();
+      await db.delete(conversations).where(eq(conversations.id, id)).run();
+    });
   }
 
   /**
@@ -118,58 +137,69 @@ export class ConversationStore {
    * a restart — its warm harness is gone, so it cannot resume. Mark it ended;
    * the transcript survives read-only.
    */
-  markActiveEnded(): void {
+  async markActiveEnded(): Promise<void> {
     const now = Date.now();
-    this.db
-      .update(conversations)
-      .set({ state: 'ended', endedAt: now, updatedAt: now })
-      .where(eq(conversations.state, 'active'))
-      .run();
+    await this.db.write((db) =>
+      db
+        .update(conversations)
+        .set({ state: 'ended', endedAt: now, updatedAt: now })
+        .where(eq(conversations.state, 'active'))
+        .run(),
+    );
   }
 
-  appendEvent(conversationId: number, event: ConversationEventInput): PersistedConversationEvent {
-    const seq =
-      (this.db
-        .select({ n: sql<number>`coalesce(max(${conversationEvents.seq}), 0)` })
-        .from(conversationEvents)
-        .where(eq(conversationEvents.conversationId, conversationId))
-        .get()?.n ?? 0) + 1;
-    const row = this.db
-      .insert(conversationEvents)
-      .values({
-        conversationId,
-        seq,
-        ts: Date.now(),
-        type: event.type,
-        payload: JSON.stringify(event.payload),
-      })
-      .returning()
-      .get();
+  async appendEvent(conversationId: number, event: ConversationEventInput): Promise<PersistedConversationEvent> {
+    const row = await this.db.write(async (db) => {
+      const seq =
+        ((
+          await db
+            .select({ n: sql<number>`coalesce(max(${conversationEvents.seq}), 0)` })
+            .from(conversationEvents)
+            .where(eq(conversationEvents.conversationId, conversationId))
+            .get()
+        )?.n ?? 0) + 1;
+      return db
+        .insert(conversationEvents)
+        .values({
+          conversationId,
+          seq,
+          ts: Date.now(),
+          type: event.type,
+          payload: JSON.stringify(event.payload),
+        })
+        .returning()
+        .get();
+    });
     return deserializeConversationEvent(row);
   }
 
-  listEvents(conversationId: number): PersistedConversationEvent[] {
-    this.get(conversationId); // 404 on unknown conversation
-    return this.db
-      .select()
-      .from(conversationEvents)
-      .where(eq(conversationEvents.conversationId, conversationId))
-      .orderBy(asc(conversationEvents.seq))
-      .all()
-      .map(deserializeConversationEvent);
+  async listEvents(conversationId: number): Promise<PersistedConversationEvent[]> {
+    await this.get(conversationId); // 404 on unknown conversation
+    return (
+      await this.db.read((db) =>
+        db
+          .select()
+          .from(conversationEvents)
+          .where(eq(conversationEvents.conversationId, conversationId))
+          .orderBy(asc(conversationEvents.seq))
+          .all(),
+      )
+    ).map(deserializeConversationEvent);
   }
 
   /**
    * The text of the first operator Turn, for the derived title when a
    * Conversation has no operator-set one (issue 15). null before any Turn.
    */
-  firstTurnText(conversationId: number): string | null {
-    const row = this.db
-      .select()
-      .from(conversationEvents)
-      .where(and(eq(conversationEvents.conversationId, conversationId), eq(conversationEvents.type, 'user_turn')))
-      .orderBy(asc(conversationEvents.seq))
-      .get();
+  async firstTurnText(conversationId: number): Promise<string | null> {
+    const row = await this.db.read((db) =>
+      db
+        .select()
+        .from(conversationEvents)
+        .where(and(eq(conversationEvents.conversationId, conversationId), eq(conversationEvents.type, 'user_turn')))
+        .orderBy(asc(conversationEvents.seq))
+        .get(),
+    );
     if (!row) return null;
     const payload = JSON.parse(row.payload) as { text?: string };
     return typeof payload.text === 'string' ? payload.text : null;

@@ -502,9 +502,9 @@ export class Runner {
     this.runFacts = new RunFactStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.db);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
-    this.turnQueue = new TurnQueueStore(this.db);
+    this.turnQueue = new TurnQueueStore(this.asyncDb);
     this.chainStore = new ExecutionChainStore(this.db);
-    this.sessionStore = new SessionStore(this.db);
+    this.sessionStore = new SessionStore(this.asyncDb);
     // PONC-aware (issue #115): the Runner's settle path is what operator-cancel
     // (`cancelForTask` → `settleTaskRun`) and force-complete travel through, and
     // that path can reach a Run parked in `review`/`landing` while a
@@ -696,7 +696,7 @@ export class Runner {
       if (prior.sessionRowId === null) continue;
       if (prior.review !== 'rejected' || prior.reviewedAt === null) continue;
       try {
-        const session = this.sessionStore.get(prior.sessionRowId);
+        const session = await this.sessionStore.get(prior.sessionRowId);
         return { prior, session, trigger: 'human-reject' };
       } catch {
         continue; // the Session row is gone (retired + swept) — dispatch fresh
@@ -774,7 +774,7 @@ export class Runner {
         sessionId: src.session.harnessSessionId,
       });
       try {
-        this.sessionStore.reactivate(src.session.id, Date.now());
+        await this.sessionStore.reactivate(src.session.id, Date.now());
       } catch {
         /* best-effort; reactivate is a no-op unless the Session is idle */
       }
@@ -1497,7 +1497,7 @@ export class Runner {
     let retained = false;
     if (sessionRowId != null) {
       try {
-        this.sessionStore.bindWorktree(sessionRowId, repoDir, path, Date.now());
+        await this.sessionStore.bindWorktree(sessionRowId, repoDir, path, Date.now());
         retained = true;
       } catch {
         retained = false; // ownership not established — fall through to dispose
@@ -1814,12 +1814,12 @@ export class Runner {
     // this Run's live snapshot, which the chain-cumulative spend poll folds onto
     // the chain's prior floor. So spend can't be reset by a retry; the heal count
     // deliberately can.
-    let heals = this.turnQueue.listForSession(sessionKey).filter((t) => t.purpose === 'self-heal').length;
+    let heals = (await this.turnQueue.listForSession(sessionKey)).filter((t) => t.purpose === 'self-heal').length;
     // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
     // the count from the durable queue too, so the "at most one corrective
     // re-merge, and no mutating turn after it" bound survives a crash-resume of
     // this loop rather than being a purely in-memory flag.
-    let remerges = this.turnQueue.listForSession(sessionKey).filter((t) => t.purpose === 're-merge').length;
+    let remerges = (await this.turnQueue.listForSession(sessionKey)).filter((t) => t.purpose === 're-merge').length;
     let healCtx: HealContext | undefined;
     let remergeCtx: ReMergeContext | undefined;
     // The turn_queue row id of the corrective turn currently being driven, so it
@@ -1831,7 +1831,7 @@ export class Runner {
         // The corrective turn we dispatched has run its course — settle its queue
         // row regardless of the verdict; a further fail enqueues the next one.
         try {
-          this.turnQueue.settle(inFlightTurn, 'done');
+          await this.turnQueue.settle(inFlightTurn, 'done');
         } catch {
           // Best-effort audit: the row is a record, not this loop's dispatch
           // mechanism, so a settle race never blocks the Run from finishing.
@@ -1960,7 +1960,7 @@ export class Runner {
     try {
       const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
       const now = Date.now();
-      const row = this.turnQueue.enqueue(
+      const row = await this.turnQueue.enqueue(
         sessionKey,
         run.id,
         'self-heal',
@@ -1972,8 +1972,8 @@ export class Runner {
         },
         now,
       );
-      this.turnQueue.claim(row.id, now);
-      this.turnQueue.markInFlight(row.id, `self-heal-run-${run.id}-${attempt}`, now);
+      await this.turnQueue.claim(row.id, now);
+      await this.turnQueue.markInFlight(row.id, `self-heal-run-${run.id}-${attempt}`, now);
       return row.id;
     } catch {
       return null;
@@ -1996,7 +1996,7 @@ export class Runner {
     try {
       const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
       const now = Date.now();
-      const row = this.turnQueue.enqueue(
+      const row = await this.turnQueue.enqueue(
         sessionKey,
         run.id,
         're-merge',
@@ -2008,8 +2008,8 @@ export class Runner {
         },
         now,
       );
-      this.turnQueue.claim(row.id, now);
-      this.turnQueue.markInFlight(row.id, `re-merge-run-${run.id}`, now);
+      await this.turnQueue.claim(row.id, now);
+      await this.turnQueue.markInFlight(row.id, `re-merge-run-${run.id}`, now);
       return row.id;
     } catch {
       return null;
@@ -2740,10 +2740,10 @@ export class Runner {
       // harness session id), keeping `run.sessionRowId` stable. Best-effort:
       // written *alongside* the Run, so a Session persistence hiccup never fails
       // a dispatch that would otherwise proceed (AC: in-flight Run unchanged).
-      const persistSession = (harnessSessionId: string) => {
+      const persistSession = async (harnessSessionId: string) => {
         void this.runStore.update(run.id, { sessionId: harnessSessionId }).catch(() => {});
         try {
-          const session = this.sessionStore.recordDispatch({
+          const session = await this.sessionStore.recordDispatch({
             harness: task.harness,
             harnessSessionId,
             model: task.model,
@@ -2788,7 +2788,7 @@ export class Runner {
         });
         if (outcome.loaded) {
           record('lifecycle', { event: 'session-reloaded', sessionId: continueSessionId });
-          persistSession(continueSessionId);
+          await persistSession(continueSessionId);
         } else {
           // Fail forward to a fresh Session — never leave the Run session-less.
           record('lifecycle', { event: 'session-reload-declined', reason: outcome.reason, detail: outcome.detail });
@@ -2835,7 +2835,7 @@ export class Runner {
         // an accurate "Harmonic set no mode", not a missing capture.)
         if (sessionRowId !== undefined) {
           try {
-            this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
+            await this.sessionStore.setPermissionMode(sessionRowId, mode, Date.now());
           } catch {
             /* best-effort; additive */
           }

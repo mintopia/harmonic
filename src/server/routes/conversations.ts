@@ -133,13 +133,13 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       // harness this instance doesn't configure — `?.` handles that, guarded below.
       const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
       if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
-      const conversation = ctx.conversations.create({
+      const conversation = await ctx.conversations.create({
         workspaceId: workspace.id,
         harness,
         model: req.body.model ?? resolveOverride(workspace.chatModel, config.chat.model),
         workingDir: req.body.workingDir ?? workspace.workingDir,
       });
-      return reply.status(201).send(conversationToApi(ctx, conversation));
+      return reply.status(201).send(await conversationToApi(ctx, conversation));
     },
   );
 
@@ -158,7 +158,9 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => ({
-      conversations: ctx.conversations.list(req.query.workspaceId).map((c) => conversationToApi(ctx, c)),
+      conversations: await Promise.all(
+        (await ctx.conversations.list(req.query.workspaceId)).map((c) => conversationToApi(ctx, c)),
+      ),
     }),
   );
 
@@ -176,7 +178,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         },
       },
     },
-    async (req) => conversationToApi(ctx, ctx.conversations.get(req.params.id)),
+    async (req) => conversationToApi(ctx, await ctx.conversations.get(req.params.id)),
   );
 
   app.patch(
@@ -197,8 +199,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      ctx.conversations.get(req.params.id); // 404
-      return conversationToApi(ctx, ctx.conversations.update(req.params.id, { title: req.body.title }));
+      await ctx.conversations.get(req.params.id); // 404
+      return conversationToApi(ctx, await ctx.conversations.update(req.params.id, { title: req.body.title }));
     },
   );
 
@@ -218,12 +220,12 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      ctx.conversations.get(req.params.id); // 404
+      await ctx.conversations.get(req.params.id); // 404
       // Stop the harness if warm (revokes its key); then revoke any orphaned
       // key and cascade the events.
-      ctx.conversationDriver.end(req.params.id);
+      await ctx.conversationDriver.end(req.params.id);
       ctx.auth.deleteKeysForConversation(req.params.id);
-      ctx.conversations.delete(req.params.id);
+      await ctx.conversations.delete(req.params.id);
       return { ok: true } as const;
     },
   );
@@ -243,7 +245,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         },
       },
     },
-    async (req) => ({ events: ctx.conversations.listEvents(req.params.id) }),
+    async (req) => ({ events: await ctx.conversations.listEvents(req.params.id) }),
   );
 
   app.post(
@@ -315,7 +317,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      ctx.conversationDriver.answerPermission(req.params.id, req.params.reqId, req.body.optionId, req.body.remember);
+      await ctx.conversationDriver.answerPermission(req.params.id, req.params.reqId, req.body.optionId, req.body.remember);
       return { ok: true } as const;
     },
   );
@@ -336,8 +338,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      ctx.conversations.get(req.params.id); // 404 on unknown
-      return conversationToApi(ctx, ctx.conversationDriver.end(req.params.id));
+      await ctx.conversations.get(req.params.id); // 404 on unknown
+      return conversationToApi(ctx, await ctx.conversationDriver.end(req.params.id));
     },
   );
 }

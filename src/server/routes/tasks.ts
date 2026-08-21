@@ -705,15 +705,22 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.get(req.params.id); // 404s an unknown id via DomainError
+      const runsForTask = await ctx.runs.listForTask(req.params.id);
+      // `previewHumanRejectContinuation` stays a pure, synchronous domain
+      // function; resolve every candidate Session row up front so its
+      // `getSession` lookup can remain sync.
+      const sessions = new Map<number, Awaited<ReturnType<typeof ctx.sessions.get>> | null>();
+      for (const run of runsForTask) {
+        if (run.sessionRowId === null || sessions.has(run.sessionRowId)) continue;
+        try {
+          sessions.set(run.sessionRowId, await ctx.sessions.get(run.sessionRowId));
+        } catch {
+          sessions.set(run.sessionRowId, null); // Session retired + swept — nothing to continue
+        }
+      }
       const plan = previewHumanRejectContinuation(
-        await ctx.runs.listForTask(req.params.id),
-        (sessionRowId) => {
-          try {
-            return ctx.sessions.get(sessionRowId);
-          } catch {
-            return null; // Session retired + swept — nothing to continue
-          }
-        },
+        runsForTask,
+        (sessionRowId) => sessions.get(sessionRowId) ?? null,
         Date.now(),
       );
       if (!plan) return { available: false as const };

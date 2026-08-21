@@ -40,8 +40,11 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         // Conversation events stream in the same run_events shape, so the SPA
         // renders them with the shared EventStream (ADR-0006).
         ctx.bus.on('conversation_event', (event) => send({ type: 'conversation_event', event })),
-        ctx.bus.on('conversation_changed', (conversation) =>
-          send({ type: 'conversation_changed', conversation: conversationToApi(ctx, conversation) })),
+        ctx.bus.on('conversation_changed', (conversation) => {
+          void conversationToApi(ctx, conversation)
+            .then((c) => send({ type: 'conversation_changed', conversation: c }))
+            .catch(() => {});
+        }),
         // A Harness is blocked on the operator's permission decision (ADR-0007);
         // answered via POST /conversations/:id/permissions/:reqId.
         ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),

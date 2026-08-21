@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type Db } from '../src/db/index.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { sessions } from '../src/db/schema.js';
 import { DomainError } from '../src/domain/errors.js';
 import {
@@ -117,6 +118,7 @@ describe('Sessions (issue #141)', () => {
   describe('SessionStore', () => {
     let dir: string;
     let db: Db;
+    let asyncDb: AsyncDbHandle;
     let store: SessionStore;
     let workspaceId: number;
     const now = 1_000_000;
@@ -137,14 +139,18 @@ describe('Sessions (issue #141)', () => {
     beforeEach(async () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-sessions-'));
       db = openDb(dir);
-      store = new SessionStore(db);
+      asyncDb = await openAsyncDb(dir);
+      store = new SessionStore(asyncDb);
       workspaceId = (await allWorkspaces(db)())[0]!.id;
     });
-    afterEach(() => rmSync(dir, { recursive: true, force: true }));
+    afterEach(async () => {
+      await asyncDb.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
 
     describe('recordDispatch — insert path', () => {
-      it('inserts a fresh row with the dispatched fields and active status', () => {
-        const row = store.recordDispatch(baseInput());
+      it('inserts a fresh row with the dispatched fields and active status', async () => {
+        const row = await store.recordDispatch(baseInput());
         expect(row).toMatchObject({
           status: 'active',
           harness: 'claude',
@@ -159,22 +165,22 @@ describe('Sessions (issue #141)', () => {
         expect(row.id).toBeTypeOf('number');
       });
 
-      it('mines supportsLoadSession and snapshots capabilities when loadSession: true', () => {
-        const row = store.recordDispatch(
+      it('mines supportsLoadSession and snapshots capabilities when loadSession: true', async () => {
+        const row = await store.recordDispatch(
           baseInput({ capabilities: { agentCapabilities: { loadSession: true } } }),
         );
         expect(row.supportsLoadSession).toBe(true);
         expect(JSON.parse(row.capabilitySnapshot)).toEqual({ agentCapabilities: { loadSession: true } });
       });
 
-      it('capabilities: undefined yields capabilitySnapshot "{}" and supportsLoadSession false', () => {
-        const row = store.recordDispatch(baseInput({ capabilities: undefined }));
+      it('capabilities: undefined yields capabilitySnapshot "{}" and supportsLoadSession false', async () => {
+        const row = await store.recordDispatch(baseInput({ capabilities: undefined }));
         expect(row.capabilitySnapshot).toBe('{}');
         expect(row.supportsLoadSession).toBe(false);
       });
 
-      it('mcpTemplates: strips credentials before persisting', () => {
-        const row = store.recordDispatch(
+      it('mcpTemplates: strips credentials before persisting', async () => {
+        const row = await store.recordDispatch(
           baseInput({
             mcpTemplates: [
               {
@@ -190,19 +196,21 @@ describe('Sessions (issue #141)', () => {
         expect(JSON.parse(row.mcpTemplates)).toEqual([{ name: 'harmonic', type: 'http', url: 'http://x' }]);
       });
 
-      it("estimatedWarmUntil: now + 1h for claude, null for codex", () => {
-        const claudeRow = store.recordDispatch(baseInput({ harness: 'claude', harnessSessionId: 'sess-claude' }));
+      it("estimatedWarmUntil: now + 1h for claude, null for codex", async () => {
+        const claudeRow = await store.recordDispatch(
+          baseInput({ harness: 'claude', harnessSessionId: 'sess-claude' }),
+        );
         expect(claudeRow.estimatedWarmUntil).toBe(now + 3_600_000);
 
-        const codexRow = store.recordDispatch(baseInput({ harness: 'codex', harnessSessionId: 'sess-codex' }));
+        const codexRow = await store.recordDispatch(baseInput({ harness: 'codex', harnessSessionId: 'sess-codex' }));
         expect(codexRow.estimatedWarmUntil).toBeNull();
       });
 
-      it('permissionMode: null when omitted, echoed when passed', () => {
-        const withoutMode = store.recordDispatch(baseInput({ harnessSessionId: 'sess-no-mode' }));
+      it('permissionMode: null when omitted, echoed when passed', async () => {
+        const withoutMode = await store.recordDispatch(baseInput({ harnessSessionId: 'sess-no-mode' }));
         expect(withoutMode.permissionMode).toBeNull();
 
-        const withMode = store.recordDispatch(
+        const withMode = await store.recordDispatch(
           baseInput({ harnessSessionId: 'sess-with-mode', permissionMode: 'auto' }),
         );
         expect(withMode.permissionMode).toBe('auto');
@@ -210,10 +218,10 @@ describe('Sessions (issue #141)', () => {
     });
 
     describe('recordDispatch — upsert path', () => {
-      it('a repeat dispatch on the same (harness, harnessSessionId) updates the existing row, not a new one', () => {
-        const first = store.recordDispatch(baseInput({ model: 'model-a' }));
+      it('a repeat dispatch on the same (harness, harnessSessionId) updates the existing row, not a new one', async () => {
+        const first = await store.recordDispatch(baseInput({ model: 'model-a' }));
         const later = now + 60_000;
-        const second = store.recordDispatch(baseInput({ model: 'model-b', now: later }));
+        const second = await store.recordDispatch(baseInput({ model: 'model-b', now: later }));
 
         expect(second.id).toBe(first.id);
         expect(second.model).toBe('model-b');
@@ -222,26 +230,26 @@ describe('Sessions (issue #141)', () => {
         expect(second.createdAt).toBe(first.createdAt);
       });
 
-      it('does not create a second row for the same key', () => {
-        store.recordDispatch(baseInput({ model: 'model-a' }));
-        store.recordDispatch(baseInput({ model: 'model-b', now: now + 1000 }));
+      it('does not create a second row for the same key', async () => {
+        await store.recordDispatch(baseInput({ model: 'model-a' }));
+        await store.recordDispatch(baseInput({ model: 'model-b', now: now + 1000 }));
 
-        const row = store.getByHarnessSession('claude', 'sess-1');
+        const row = await store.getByHarnessSession('claude', 'sess-1');
         expect(row).toBeDefined();
         expect(row!.model).toBe('model-b');
       });
 
-      it('a different harnessSessionId creates a distinct row', () => {
-        const first = store.recordDispatch(baseInput({ harnessSessionId: 'sess-1' }));
-        const second = store.recordDispatch(baseInput({ harnessSessionId: 'sess-2' }));
+      it('a different harnessSessionId creates a distinct row', async () => {
+        const first = await store.recordDispatch(baseInput({ harnessSessionId: 'sess-1' }));
+        const second = await store.recordDispatch(baseInput({ harnessSessionId: 'sess-2' }));
         expect(second.id).not.toBe(first.id);
       });
     });
 
     describe('setPermissionMode', () => {
-      it('updates the permission mode and updatedAt, returning the row', () => {
-        const created = store.recordDispatch(baseInput());
-        const updated = store.setPermissionMode(created.id, 'bypassPermissions', now + 5000);
+      it('updates the permission mode and updatedAt, returning the row', async () => {
+        const created = await store.recordDispatch(baseInput());
+        const updated = await store.setPermissionMode(created.id, 'bypassPermissions', now + 5000);
         expect(updated.permissionMode).toBe('bypassPermissions');
         expect(updated.updatedAt).toBe(now + 5000);
         expect(updated.id).toBe(created.id);
@@ -249,16 +257,16 @@ describe('Sessions (issue #141)', () => {
     });
 
     describe('recordResumeIncompatibility (issue #145 AC5)', () => {
-      it('a freshly-recorded Session has no resume incompatibility recorded', () => {
-        const created = store.recordDispatch(baseInput());
+      it('a freshly-recorded Session has no resume incompatibility recorded', async () => {
+        const created = await store.recordDispatch(baseInput());
         expect(created.resumeIncompatibilityReason).toBeNull();
         expect(created.resumeIncompatibilityDetail).toBeNull();
       });
 
-      it('persists the reason and detail on the original Session, touching updatedAt', () => {
-        const created = store.recordDispatch(baseInput());
+      it('persists the reason and detail on the original Session, touching updatedAt', async () => {
+        const created = await store.recordDispatch(baseInput());
         const later = now + 5000;
-        const updated = store.recordResumeIncompatibility(
+        const updated = await store.recordResumeIncompatibility(
           created.id,
           'adapter-version-mismatch',
           'stored adapter claude@1 != current claude@2',
@@ -269,7 +277,7 @@ describe('Sessions (issue #141)', () => {
         expect(updated.updatedAt).toBe(later);
         expect(updated.id).toBe(created.id);
 
-        const reread = store.get(created.id);
+        const reread = await store.get(created.id);
         expect(reread.resumeIncompatibilityReason).toBe('adapter-version-mismatch');
         expect(reread.resumeIncompatibilityDetail).toBe('stored adapter claude@1 != current claude@2');
         expect(reread.updatedAt).toBe(later);
@@ -277,16 +285,16 @@ describe('Sessions (issue #141)', () => {
     });
 
     describe('get', () => {
-      it('returns the row for a known id', () => {
-        const created = store.recordDispatch(baseInput());
-        expect(store.get(created.id)).toEqual(created);
+      it('returns the row for a known id', async () => {
+        const created = await store.recordDispatch(baseInput());
+        expect(await store.get(created.id)).toEqual(created);
       });
 
-      it('throws DomainError(not_found) for a missing id', () => {
-        expect(() => store.get(999_999)).toThrow(DomainError);
+      it('throws DomainError(not_found) for a missing id', async () => {
+        await expect(store.get(999_999)).rejects.toThrow(DomainError);
         let caught: unknown;
         try {
-          store.get(999_999);
+          await store.get(999_999);
         } catch (err) {
           caught = err;
         }
@@ -296,19 +304,19 @@ describe('Sessions (issue #141)', () => {
     });
 
     describe('getByHarnessSession', () => {
-      it('returns undefined for an unknown (harness, harnessSessionId)', () => {
-        expect(store.getByHarnessSession('claude', 'nope')).toBeUndefined();
+      it('returns undefined for an unknown (harness, harnessSessionId)', async () => {
+        expect(await store.getByHarnessSession('claude', 'nope')).toBeUndefined();
       });
 
-      it('returns the row for a known (harness, harnessSessionId)', () => {
-        const created = store.recordDispatch(baseInput());
-        expect(store.getByHarnessSession('claude', 'sess-1')).toEqual(created);
+      it('returns the row for a known (harness, harnessSessionId)', async () => {
+        const created = await store.recordDispatch(baseInput());
+        expect(await store.getByHarnessSession('claude', 'sess-1')).toEqual(created);
       });
     });
 
     describe('the (harness, harnessSessionId) unique index', () => {
-      it('rejects a raw duplicate insert — the DB backstops a racing double-record', () => {
-        store.recordDispatch(baseInput());
+      it('rejects a raw duplicate insert — the DB backstops a racing double-record', async () => {
+        await store.recordDispatch(baseInput());
         // A second row with the SAME natural key, bypassing recordDispatch's
         // read-then-upsert, must be rejected by the schema's unique index.
         expect(() =>
@@ -328,9 +336,9 @@ describe('Sessions (issue #141)', () => {
         ).toThrow(/UNIQUE/i);
       });
 
-      it('allows the same harnessSessionId under a different harness', () => {
-        store.recordDispatch(baseInput({ harness: 'claude' }));
-        expect(() => store.recordDispatch(baseInput({ harness: 'codex' }))).not.toThrow();
+      it('allows the same harnessSessionId under a different harness', async () => {
+        await store.recordDispatch(baseInput({ harness: 'claude' }));
+        await expect(store.recordDispatch(baseInput({ harness: 'codex' }))).resolves.not.toThrow();
       });
     });
   });

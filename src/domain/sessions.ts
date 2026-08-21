@@ -1,5 +1,5 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
-import type { Db } from '../db/index.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import { sessions, type SessionRow, type SessionRetireReason } from '../db/schema.js';
 import type { AcpInitializeResult } from '../acp/driver.js';
 import { DomainError } from './errors.js';
@@ -138,7 +138,7 @@ export interface DispatchSessionInput {
  * C builds on, so the store only records and reads — retirement/load land later.
  */
 export class SessionStore {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: AsyncDbHandle) {}
 
   /**
    * Persist the Session for a dispatch, upserting on `(harness,
@@ -148,95 +148,107 @@ export class SessionStore {
    * `mcpTemplates` and never stored; `capabilitySnapshot` holds the whole
    * `initialize` result and `supportsLoadSession` is mined from it.
    */
-  recordDispatch(input: DispatchSessionInput): SessionRow {
+  async recordDispatch(input: DispatchSessionInput): Promise<SessionRow> {
     const capabilitySnapshot = JSON.stringify(input.capabilities ?? {});
     const supportsLoadSession = readLoadSessionCapability(input.capabilities);
     const mcpTemplates = JSON.stringify(stripMcpCredentials(input.mcpTemplates));
     const estimatedWarmUntil = estimateWarmUntil(input.harness, input.now);
-    const existing = this.getByHarnessSession(input.harness, input.harnessSessionId);
-    if (existing) {
-      return this.db
-        .update(sessions)
-        .set({
+    return this.db.write(async (db) => {
+      const existing = await db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.harness, input.harness), eq(sessions.harnessSessionId, input.harnessSessionId)))
+        .get();
+      if (existing) {
+        return (await db
+          .update(sessions)
+          .set({
+            model: input.model,
+            cwd: input.cwd,
+            workspaceId: input.workspaceId,
+            mcpTemplates,
+            ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+            capabilitySnapshot,
+            supportsLoadSession,
+            adapterVersion: input.adapterVersion,
+            estimatedWarmUntil,
+            status: 'active',
+            lastActiveAt: input.now,
+            updatedAt: input.now,
+          })
+          .where(eq(sessions.id, existing.id))
+          .returning()
+          .get())!;
+      }
+      return db
+        .insert(sessions)
+        .values({
+          harness: input.harness,
+          harnessSessionId: input.harnessSessionId,
           model: input.model,
           cwd: input.cwd,
           workspaceId: input.workspaceId,
           mcpTemplates,
-          ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+          permissionMode: input.permissionMode ?? null,
           capabilitySnapshot,
           supportsLoadSession,
           adapterVersion: input.adapterVersion,
-          estimatedWarmUntil,
           status: 'active',
           lastActiveAt: input.now,
+          estimatedWarmUntil,
+          createdAt: input.now,
           updatedAt: input.now,
         })
-        .where(eq(sessions.id, existing.id))
         .returning()
-        .get()!;
-    }
-    return this.db
-      .insert(sessions)
-      .values({
-        harness: input.harness,
-        harnessSessionId: input.harnessSessionId,
-        model: input.model,
-        cwd: input.cwd,
-        workspaceId: input.workspaceId,
-        mcpTemplates,
-        permissionMode: input.permissionMode ?? null,
-        capabilitySnapshot,
-        supportsLoadSession,
-        adapterVersion: input.adapterVersion,
-        status: 'active',
-        lastActiveAt: input.now,
-        estimatedWarmUntil,
-        createdAt: input.now,
-        updatedAt: input.now,
-      })
-      .returning()
-      .get();
+        .get();
+    });
   }
 
   /** Record the ACP permission mode once it is set on the Session (afk Runs set
    * it after the handshake), touching `updatedAt`. The caller passes the id of
    * a Session it just recorded on the same dispatch, so the row always exists. */
-  setPermissionMode(id: number, permissionMode: string, now: number): SessionRow {
-    return this.db
-      .update(sessions)
-      .set({ permissionMode, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async setPermissionMode(id: number, permissionMode: string, now: number): Promise<SessionRow> {
+    return (await this.db.write((db) =>
+      db
+        .update(sessions)
+        .set({ permissionMode, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get(),
+    ))!;
   }
 
   /** Record, on the ORIGINAL (dead) Session, why a `session/load` reload was
    * declined and a fresh summarized-Session was minted in its place (issue
    * #145 AC5). The caller passes a Session id it already resolved, so the row
    * always exists. */
-  recordResumeIncompatibility(id: number, reason: string, detail: string, now: number): SessionRow {
-    return this.db
-      .update(sessions)
-      .set({ resumeIncompatibilityReason: reason, resumeIncompatibilityDetail: detail, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async recordResumeIncompatibility(id: number, reason: string, detail: string, now: number): Promise<SessionRow> {
+    return (await this.db.write((db) =>
+      db
+        .update(sessions)
+        .set({ resumeIncompatibilityReason: reason, resumeIncompatibilityDetail: detail, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get(),
+    ))!;
   }
 
-  get(id: number): SessionRow {
-    const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
+  async get(id: number): Promise<SessionRow> {
+    const row = await this.db.read((db) => db.select().from(sessions).where(eq(sessions.id, id)).get());
     if (!row) throw new DomainError('not_found', `session ${id} not found`);
     return row;
   }
 
   /** The Session for a harness's own session id, or undefined — the natural-key
    * lookup resume loads against. */
-  getByHarnessSession(harness: string, harnessSessionId: string): SessionRow | undefined {
-    return this.db
-      .select()
-      .from(sessions)
-      .where(and(eq(sessions.harness, harness), eq(sessions.harnessSessionId, harnessSessionId)))
-      .get();
+  async getByHarnessSession(harness: string, harnessSessionId: string): Promise<SessionRow | undefined> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.harness, harness), eq(sessions.harnessSessionId, harnessSessionId)))
+        .get(),
+    );
   }
 
   // --- Retirement (issue #148, reliability-design Unit C) ------------------
@@ -252,57 +264,68 @@ export class SessionStore {
    * workspace is prepared, so retirement knows what to remove. Argument order
    * matches `Git.removeWorktree`/`RemoveWorktree` (`repoDir`, then `worktreePath`)
    * so a value never gets swapped across the bind→remove round trip. Idempotent. */
-  bindWorktree(id: number, worktreeRepoDir: string, worktreePath: string, now: number): SessionRow {
-    return this.db
-      .update(sessions)
-      .set({ worktreePath, worktreeRepoDir, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async bindWorktree(id: number, worktreeRepoDir: string, worktreePath: string, now: number): Promise<SessionRow> {
+    return (await this.db.write((db) =>
+      db
+        .update(sessions)
+        .set({ worktreePath, worktreeRepoDir, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get(),
+    ))!;
   }
 
   /** Move the Session to `idle` under a retention `deadline` (issue #148),
    * carrying the `reason` the sweep will retire it under. No-op (returns the row
    * unchanged) once the Session is already `retiring`/`retired` — a retirement
    * decision, once made, is never walked back to a retained state. */
-  markIdle(id: number, retireDeadline: number, reason: SessionRetireReason, now: number): SessionRow {
-    const row = this.get(id);
-    if (!canTransition(row.status, 'idle')) return row;
-    return this.db
-      .update(sessions)
-      .set({ status: 'idle', retireDeadline, retireReason: reason, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async markIdle(id: number, retireDeadline: number, reason: SessionRetireReason, now: number): Promise<SessionRow> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(sessions).where(eq(sessions.id, id)).get();
+      if (!row) throw new DomainError('not_found', `session ${id} not found`);
+      if (!canTransition(row.status, 'idle')) return row;
+      return (await db
+        .update(sessions)
+        .set({ status: 'idle', retireDeadline, retireReason: reason, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get())!;
+    });
   }
 
   /** Move the Session to `retiring` (issue #148) — worktree removal is now owed;
    * a crash before `retired` leaves it here for the boot sweep to re-drive. Sets
    * the `reason` it is retiring under. No-op once already `retiring`/`retired`. */
-  beginRetiring(id: number, reason: SessionRetireReason, now: number): SessionRow {
-    const row = this.get(id);
-    if (row.status === 'retiring' || row.status === 'retired') return row;
-    if (!canTransition(row.status, 'retiring')) return row;
-    return this.db
-      .update(sessions)
-      .set({ status: 'retiring', retireReason: reason, retireDeadline: null, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async beginRetiring(id: number, reason: SessionRetireReason, now: number): Promise<SessionRow> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(sessions).where(eq(sessions.id, id)).get();
+      if (!row) throw new DomainError('not_found', `session ${id} not found`);
+      if (row.status === 'retiring' || row.status === 'retired') return row;
+      if (!canTransition(row.status, 'retiring')) return row;
+      return (await db
+        .update(sessions)
+        .set({ status: 'retiring', retireReason: reason, retireDeadline: null, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get())!;
+    });
   }
 
   /** Move the Session to `retired` (issue #148) — its builder worktree has been
    * removed. Terminal; a no-op once already `retired`. */
-  markRetired(id: number, now: number): SessionRow {
-    const row = this.get(id);
-    if (row.status === 'retired') return row;
-    if (!canTransition(row.status, 'retired')) return row;
-    return this.db
-      .update(sessions)
-      .set({ status: 'retired', retiredAt: now, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async markRetired(id: number, now: number): Promise<SessionRow> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(sessions).where(eq(sessions.id, id)).get();
+      if (!row) throw new DomainError('not_found', `session ${id} not found`);
+      if (row.status === 'retired') return row;
+      if (!canTransition(row.status, 'retired')) return row;
+      return (await db
+        .update(sessions)
+        .set({ status: 'retired', retiredAt: now, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get())!;
+    });
   }
 
   /** Reactivate an `idle` Session for a continuation Run reusing its retained
@@ -311,22 +334,25 @@ export class SessionStore {
    * reject-continuation Run is a later ticket); the retention half of "lands in
    * the same workspace" — the worktree surviving, bound to the Session — is what
    * #148 delivers, and this is the transition that half will resume through. */
-  reactivate(id: number, now: number): SessionRow {
-    const row = this.get(id);
-    if (row.status !== 'idle') return row;
-    return this.db
-      .update(sessions)
-      .set({ status: 'active', retireDeadline: null, retireReason: null, updatedAt: now })
-      .where(eq(sessions.id, id))
-      .returning()
-      .get()!;
+  async reactivate(id: number, now: number): Promise<SessionRow> {
+    return this.db.write(async (db) => {
+      const row = await db.select().from(sessions).where(eq(sessions.id, id)).get();
+      if (!row) throw new DomainError('not_found', `session ${id} not found`);
+      if (row.status !== 'idle') return row;
+      return (await db
+        .update(sessions)
+        .set({ status: 'active', retireDeadline: null, retireReason: null, updatedAt: now })
+        .where(eq(sessions.id, id))
+        .returning()
+        .get())!;
+    });
   }
 
   /** Every Session in `retiring` — worktree removal owed (issue #148). The drain
    * removes each one's worktree and marks it `retired`; a crash mid-removal
    * leaves it here for the next boot to re-drive. */
-  listRetiring(): SessionRow[] {
-    return this.db.select().from(sessions).where(eq(sessions.status, 'retiring')).all();
+  async listRetiring(): Promise<SessionRow[]> {
+    return this.db.read((db) => db.select().from(sessions).where(eq(sessions.status, 'retiring')).all());
   }
 
   /** Every `idle` Session whose retention deadline has lapsed as of `now` (issue
@@ -334,12 +360,15 @@ export class SessionStore {
    * SQL prefilter narrows to idle rows with a deadline; {@link isRetentionElapsed}
    * is the single source of the lapse rule, so the query and predicate agree by
    * call, not by copy. */
-  listRetentionDue(now: number): SessionRow[] {
-    return this.db
-      .select()
-      .from(sessions)
-      .where(and(eq(sessions.status, 'idle'), isNotNull(sessions.retireDeadline)))
-      .all()
-      .filter((s) => isRetentionElapsed(s, now));
+  async listRetentionDue(now: number): Promise<SessionRow[]> {
+    return (
+      await this.db.read((db) =>
+        db
+          .select()
+          .from(sessions)
+          .where(and(eq(sessions.status, 'idle'), isNotNull(sessions.retireDeadline)))
+          .all(),
+      )
+    ).filter((s) => isRetentionElapsed(s, now));
   }
 }

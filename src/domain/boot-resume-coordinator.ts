@@ -75,7 +75,7 @@ export class BootResumeCoordinator {
       if (await this.alreadyHandled(orphan.id)) continue; // once-only (AC3)
       if (orphan.sessionRowId === null) continue; // narrowing; the query already excludes null
 
-      const session = this.sessionStore.get(orphan.sessionRowId);
+      const session = await this.sessionStore.get(orphan.sessionRowId);
       const task = await this.taskService.get(orphan.taskId);
       // The cwd / Work-Context axis compares two INDEPENDENT operands, each run
       // through `repoKey` (the canonicaliser the seam contract mandates): the
@@ -99,13 +99,13 @@ export class BootResumeCoordinator {
           sessionId: session.harnessSessionId,
           prompt: CRASH_RECOVERY_PROMPT,
         });
-        this.turnQueue.enqueue(session.harnessSessionId, resumeRun.id, 'crash-recovery', {}, ts);
+        await this.turnQueue.enqueue(session.harnessSessionId, resumeRun.id, 'crash-recovery', {}, ts);
       } else {
         // Fail forward: record why on the dead Session, seed the new Run with a
         // deterministic summary Harmonic built from its own records (never the
         // dead Session's own words), and enqueue the re-entry turn on a fresh
         // per-Run queue id — a later dispatch spawns a fresh Session for it.
-        this.sessionStore.recordResumeIncompatibility(session.id, eligibility.reason, eligibility.detail, ts);
+        await this.sessionStore.recordResumeIncompatibility(session.id, eligibility.reason, eligibility.detail, ts);
         const failure = classifyReloadFailure(eligibility.reason, eligibility.detail);
         const summary = buildResumeFallbackSummary({
           trigger: failure.reason,
@@ -127,7 +127,7 @@ export class BootResumeCoordinator {
         // `sessionKey`), so a later dispatch finds this queue where it looks for
         // every other fresh Run's — the real harness session id is adopted once
         // `session/new` returns for the fresh Session.
-        this.turnQueue.enqueue(`run-${resumeRun.id}`, resumeRun.id, 'crash-recovery', {}, ts);
+        await this.turnQueue.enqueue(`run-${resumeRun.id}`, resumeRun.id, 'crash-recovery', {}, ts);
       }
 
       // The idempotency ledger (AC3): the interrupted Run records the new Run it
