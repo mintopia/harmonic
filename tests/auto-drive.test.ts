@@ -95,8 +95,12 @@ const reminder = (taskId: number) => UNATTENDED_REMINDER.replace(/\{taskId\}/g, 
 
 describe('Drive Prompt fill (issue #33)', () => {
   it('splits title/body, maps skill by workflow/type, and fills every placeholder', () => {
-    expect(skillFor({ wayfinderType: 'research' })).toBe('/research');
-    expect(skillFor({ wayfinderType: null })).toBe('/implement');
+    expect(skillFor({ wayfinderType: 'research', harness: 'claude' })).toBe('/research');
+    expect(skillFor({ wayfinderType: null, harness: 'claude' })).toBe('/implement');
+    // Codex invokes skills with a `$` prefix; the name is otherwise unchanged.
+    expect(skillFor({ wayfinderType: 'research', harness: 'codex' })).toBe('$research');
+    expect(skillFor({ wayfinderType: null, harness: 'codex' })).toBe('$implement');
+    expect(skillFor({ wayfinderType: null, harness: 'copilot' })).toBe('/implement');
     expect(splitTitleBody('T\n\nB1\n\nB2')).toEqual({ title: 'T', body: 'B1\n\nB2' });
     expect(splitTitleBody('only title')).toEqual({ title: 'only title', body: '' });
 

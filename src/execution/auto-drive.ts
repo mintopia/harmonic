@@ -3,9 +3,13 @@ import type { TaskRow, RunRow } from '../db/schema.js';
 import { Git } from './git.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
 
-/** research→`/research`, everything else→`/implement` (issue #33). */
-export function skillFor(task: Pick<TaskRow, 'wayfinderType'>): string {
-  return task.wayfinderType === 'research' ? '/research' : '/implement';
+/**
+ * research→`research`, everything else→`implement` (issue #33). Codex invokes
+ * skills with a `$` prefix; every other harness uses `/`.
+ */
+export function skillFor(task: Pick<TaskRow, 'wayfinderType' | 'harness'>): string {
+  const prefix = task.harness === 'codex' ? '$' : '/';
+  return `${prefix}${task.wayfinderType === 'research' ? 'research' : 'implement'}`;
 }
 
 /** A mirrored Task's prompt is `title\n\nbody`; recover the two for the Drive Prompt. */
