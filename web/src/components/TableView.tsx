@@ -32,8 +32,8 @@ import { Icon } from './Icon';
 /** The Deck-language column grid (DESIGN.md § 6): the header and every row —
  * flat, banded or ungrouped — share one template so they line up. It sheds
  * low-priority columns below the tablet tier instead of horizontal-scrolling
- * like a phone (issue #226): base keeps #/Prompt/State, `md:` (≥768px) adds
- * Priority/Cost/Created, `lg:` (≥1024px) restores the full 8 with Harness/Model.
+ * like a phone (issue #228): base keeps #/Prompt/State, `md:` (≥768px) adds
+ * Priority/Cost, `lg:` (≥1024px) restores the full 8 with Harness/Model/Created.
  * The dropped header + row cells hide together (`hidden md:*`/`hidden lg:*`) so
  * the DOM cell count always matches the active track count and the ARIA grid
  * stays valid at every width. Created (a wide timestamp) rides the `lg:` tier
@@ -222,7 +222,7 @@ export function TableView({
             {/* Secondary affordance: it stacks above the Prompt link inside a
                 dense two-line cell, so a 44px hit box can't fit without stealing
                 the neighbour's clicks — the row itself (min-h-11) carries the
-                floor for the primary open action (issue #226). */}
+                floor for the primary open action (issue #228). */}
             ↻ re-attempt of <span className="tabular-nums normal-case">{taskKey(task.reattemptOf)}</span>
           </button>
         )}
