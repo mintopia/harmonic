@@ -192,9 +192,10 @@ export const codexAdapter: HarnessAdapter = {
     return {
       // `approval_policy: on-request` is the safe default: Codex asks before a
       // privileged action rather than running full-auto. Under afk the Runner
-      // auto-grants and remembers these (allow_always), so an unattended Run
-      // still proceeds. An operator who wants YOLO overrides it through the
-      // harness command-line options (CLI args win over CODEX_CONFIG).
+      // currently Escalates such a request to the operator (ADR-0007 held-request
+      // approval for Runs will later let the operator approve-and-remember in
+      // place). An operator who wants YOLO overrides this through the harness
+      // command-line options (CLI args win over CODEX_CONFIG).
       CODEX_CONFIG: JSON.stringify({ approval_policy: 'on-request', model: base, ...(effort ? { model_reasoning_effort: effort } : {}) }),
     };
   },

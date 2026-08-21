@@ -36,14 +36,14 @@ afterAll(() => {
   for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe('Codex afk permission model (ask-then-remember)', () => {
+describe('Codex afk permission model', () => {
   let server: TestServer;
 
   beforeAll(async () => {
     server = await startServer({
       ...stubHarness('codex'),
       // Codex advertises no auto/bypass mode — force the stub to match so the
-      // afk mode-forcing block takes the auto-grant branch, not the throw.
+      // afk mode-forcing block skips the mode-force (and its throw) for Codex.
       harnesses: { codex: { command: process.execPath, args: [STUB_HARNESS], env: { STUB_MODES: 'default,agent,agent-full-access' }, models: ['stub-model'], defaultModel: 'stub-model' } },
       defaults: { harness: 'codex' },
       drive: { autoRetry: 0, continueAttempts: 0 },
@@ -63,11 +63,11 @@ describe('Codex afk permission model (ask-then-remember)', () => {
     closed: false,
   });
 
-  it('auto-grants an afk Codex permission request with allow_always instead of Escalating', async () => {
+  it('starts an afk Codex Run despite no auto/bypass mode, then Escalates a permission request', async () => {
     const repo = makeRepo();
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     await server.app.ctx.configStore.update({
-      drive: { prompt: JSON.stringify({ requestPermission: { title: 'Write hello.txt' }, writeFiles: { 'agent.txt': 'work\n' }, mcpFinish: true, stopReason: 'end_turn' }) },
+      drive: { prompt: JSON.stringify({ requestPermission: { title: 'Write hello.txt' }, stopReason: 'end_turn' }) },
     });
 
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(9310));
@@ -80,16 +80,16 @@ describe('Codex afk permission model (ask-then-remember)', () => {
       return body.events.find((e: any) => e.type === 'permission_request');
     });
 
-    // Auto-granted with the *remember* option (allow_always), not cancelled —
-    // the run never took the Claude-style Escalate-on-request path. Getting a
-    // permission_request event at all also proves the afk mode-forcing block did
-    // NOT throw "no unattended permission mode" for Codex (it would have failed
-    // the run before the prompt turn ever reached the request).
-    expect(permission.payload.outcome).toMatchObject({ outcome: 'selected', optionId: 'always' });
-
-    // No request was ever cancelled — the escalate-on-permission branch is Claude-only.
-    const { body } = await server.api('GET', `/api/runs/${run.id}/events`);
-    const cancelled = body.events.filter((e: any) => e.type === 'permission_request' && e.payload.outcome?.outcome === 'cancelled');
-    expect(cancelled).toHaveLength(0);
+    // Getting a permission_request at all proves the afk mode-forcing block did
+    // NOT throw "no unattended permission mode" for Codex (that would have failed
+    // the Run before the prompt turn ever reached the request) — the mode-force is
+    // skipped for a request-gated harness. And the request Escalates (declined),
+    // like every other afk Run, until ADR-0007 held-request approval lands.
+    expect(permission.payload.outcome).toMatchObject({ outcome: 'cancelled' });
+    const settled = await waitFor(async () => {
+      const t = await server.app.ctx.tasks.get(task.id);
+      return t.escalated ? t : undefined;
+    });
+    expect(settled.escalated).toBe(true);
   });
 });

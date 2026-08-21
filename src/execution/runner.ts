@@ -107,14 +107,14 @@ const PROGRESS_NUDGE_TEXT =
  * harnesses without 'auto'. Set via session/set_mode after the handshake. */
 const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
 
-/** Harnesses whose afk permission model is "ask-then-remember": they advertise
- * no {@link AFK_PERMISSION_MODES} mode and instead request permission per action
- * (Codex `approval_policy: on-request`). An afk Run auto-grants those with
- * `allow_always` rather than Escalating, so the unattended Run proceeds and the
- * grant is remembered. The action boundary is the harness sandbox, tightened via
- * the harness command-line options; there is no ACP mode to force here. */
-const AFK_AUTO_GRANT_HARNESSES = ['codex'] as const;
-const afkAutoGrants = (harness: string): boolean => (AFK_AUTO_GRANT_HARNESSES as readonly string[]).includes(harness);
+/** Harnesses that advertise no {@link AFK_PERMISSION_MODES} mode and instead gate
+ * permissions per action (Codex `approval_policy: on-request`). There is no ACP
+ * mode to force for these — forcing one would clobber the operator's command-line
+ * override — so the afk mode-force is skipped and the per-request handler governs.
+ * (Held-request + Permission-Rule approval for Runs is planned per ADR-0007; until
+ * then these Escalate on a request like every other afk Run.) */
+const AFK_REQUEST_GATED_HARNESSES = ['codex'] as const;
+const afkRequestGated = (harness: string): boolean => (AFK_REQUEST_GATED_HARNESSES as readonly string[]).includes(harness);
 
 /**
  * Default review SLA (issue #114): how long a native Run may sit parked in
@@ -2337,14 +2337,13 @@ export class Runner {
             record('permission_request', { request: params, outcome });
             return { outcome };
           };
-          // In auto mode the harness only asks on a genuinely risky tool (safe
-          // ones are auto-approved and never reach here), so a request from an
-          // afk Run means "needs a human decision" → Escalate: decline, stop the
-          // turn, and flag it for the settle path to hand the Task back (issue
-          // #33). A harness that asks per-action instead (Codex on-request) has
-          // no such triage, so an afk Run auto-grants (allow_always) and keeps
-          // going rather than Escalating on every call.
-          if (autoDriven && !afkAutoGrants(task.harness)) {
+          // An afk Run has no human on this turn, so a permission request →
+          // Escalate: decline, stop the turn, and flag it for the settle path to
+          // hand the Task back (issue #33). Codex asks per-action (on-request)
+          // rather than pre-triaging like Claude's auto mode, so it Escalates
+          // sooner — the held-request + Permission-Rule model (ADR-0007, planned
+          // for Runs) will replace this with hold-approve-remember.
+          if (autoDriven) {
             escalating = (params as any)?.toolCall?.title ?? 'permission request';
             const outcome = { outcome: 'cancelled' };
             record('permission_request', { request: params, outcome });
@@ -2907,11 +2906,11 @@ export class Runner {
         if (!mode) {
           // A Codex-style harness governs unattended permissions through its own
           // approval policy (set at spawn, operator-overridable) plus the
-          // auto-grant in `onRequest` above — there is no ACP mode to force, and
-          // forcing one would clobber the operator's command-line override. Any
-          // other harness with no auto mode fails closed rather than prompting on
-          // every tool and Escalating immediately (issue #33 follow-up).
-          if (!afkAutoGrants(task.harness)) {
+          // per-request handler in `onRequest` above — there is no ACP mode to
+          // force, and forcing one would clobber the operator's command-line
+          // override. Any other harness with no auto mode fails closed rather than
+          // prompting on every tool and Escalating immediately (issue #33 follow-up).
+          if (!afkRequestGated(task.harness)) {
             throw new Error(
               `harness '${task.harness}' offers no unattended permission mode ` +
                 `(need one of ${AFK_PERMISSION_MODES.join('/')}; available: ${driver.availableModes.join(', ') || 'none'})`,
