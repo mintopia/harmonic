@@ -71,6 +71,45 @@ export interface RunChip {
   isCurrent: boolean;
 }
 
+/** A changed file the rail can link into the worktree-wide Changes view.
+ *
+ * `git diff --stat` does not include Git's add/modify status, so the current
+ * endpoint can only truthfully render the neutral `M` badge. Keeping that
+ * limitation in this view model makes the eventual richer diff response a
+ * single-boundary upgrade rather than an inference in the component.
+ */
+export interface ChangedFile {
+  path: string;
+  kind: 'M';
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Parse the per-file lines from `git diff --stat`. The final summary line has
+ * no pipe and is intentionally ignored. Git's graph comprises `+` / `-`
+ * characters, which give the compact per-file addition/deletion counts the
+ * rail needs without presenting the aggregate summary as a selectable file.
+ */
+export function changedFilesFromStat(stat: string | null): ChangedFile[] {
+  if (!stat) return [];
+  const files: ChangedFile[] = [];
+  for (const line of stat.split('\n')) {
+    const match = /^\s*(.+?)\s+\|\s+\d+\s+([+-]+)\s*$/.exec(line);
+    if (!match) continue;
+    const path = match[1];
+    const graph = match[2];
+    if (path === undefined || graph === undefined) continue;
+    files.push({
+      path,
+      kind: 'M',
+      additions: [...graph].filter((mark) => mark === '+').length,
+      deletions: [...graph].filter((mark) => mark === '-').length,
+    });
+  }
+  return files;
+}
+
 /** The current run's id: the highest attempt. `null` for a task with no runs.
  * Runs need not arrive sorted — picked by max `attempt`, not array position. */
 export function currentRunId(runs: Run[]): number | null {

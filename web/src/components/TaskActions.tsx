@@ -59,7 +59,7 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
  * un-flagged Details tab, so a red verdict was invisible at this gate and
  * Accept could merge it blind; arming forces a second, verdict-naming click
  * before it does, mirroring CancelButton/CompleteButton's own gate above. */
-function AcceptButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+function AcceptButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
     <button
@@ -67,7 +67,7 @@ function AcceptButton({ className, onConfirm }: { className: string; onConfirm: 
       className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
       onClick={trigger}
     >
-      {armed ? 'Critic flagged — accept anyway?' : 'Accept'}
+      {armed ? 'Critic flagged — accept anyway?' : label}
     </button>
   );
 }
@@ -130,17 +130,17 @@ export function TaskActions({
         // (proceed, or no Verification configured) the same single click it
         // always was.
         return decision && decision.outcome !== 'proceed' ? (
-          <AcceptButton key={action} className={btnAccept} onConfirm={onConfirm} />
+          <AcceptButton key={action} className={btnAccept} label={variant === 'footer' ? 'Accept & merge' : 'Accept'} onConfirm={onConfirm} />
         ) : (
           <button key={action} className={btnAccept} onClick={onConfirm}>
-            Accept
+            {variant === 'footer' ? 'Accept & merge' : 'Accept'}
           </button>
         );
       }
       case 'reject':
         return (
           <button key={action} className={btnReject} onClick={() => setRejecting(true)}>
-            Reject
+            {variant === 'footer' ? 'Reject…' : 'Reject'}
           </button>
         );
       case 'reattempt':

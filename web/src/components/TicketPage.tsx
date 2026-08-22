@@ -1,6 +1,5 @@
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
-import { nextTabIndex } from '../tablist-model';
 import { formatCost, formatCostByModel } from '../cost';
 import type { GuardrailEvent, Run, RunLogEvent, Task, VerificationAttempt } from '../types';
 import { EmptyState } from './EmptyState';
@@ -22,17 +21,6 @@ import { toastError } from '../toast';
 import { taskKey, ticketIdentity } from '../id-format.js';
 
 const metaChip = `${chip} bg-raised text-muted`;
-
-type Tab = 'output' | 'changes' | 'prompt' | 'details';
-const TAB_LABEL: Record<Tab, string> = { output: 'Output', changes: 'Changes', prompt: 'Prompt', details: 'Details' };
-
-/** The Changes tab's diff fetch, as a state machine so a swallowed error
- * or the in-flight window is never mistaken for "no changes". */
-type DiffState =
-  | { status: 'idle' } // no branch, or the run is still running
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; stat: string | null };
 
 /** Shared by OutputTab/PromptTab/ChangesTab: same copy, same placement, for
  * the one case they all share — no run selected yet. */
@@ -331,26 +319,6 @@ function SteerBox({ taskId }: { taskId: number }) {
   );
 }
 
-/** The exact prompt sent to the agent for the selected Run — persisted at run
- * time (native = the filled Task Prompt template + any feedback; mirrored =
- * the filled Drive Prompt), so it reflects what actually went out even if the
- * template has since changed. */
-function PromptTab({ run }: { run: Run | undefined }) {
-  if (!run) return <NoRunsYet />;
-  if (!run.prompt) {
-    return (
-      <p className="text-muted">
-        {run.state === 'running' ? 'Prompt is sent as the run starts…' : 'No prompt recorded for this run.'}
-      </p>
-    );
-  }
-  return (
-    <div className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 text-body text-ink tabular-nums">
-      {run.prompt}
-    </div>
-  );
-}
-
 /** The tail of the agent's own message text for the selected Run — a quick
  * read of how the run ended without opening the full Output stream. Thoughts
  * and tool calls are dropped; only assistant prose survives, last three folded
@@ -374,28 +342,19 @@ function OutputSummary({ events }: { events: RunLogEvent[] }) {
   );
 }
 
-function ChangesTab({ run, diff }: { run: Run | undefined; diff: DiffState }) {
-  if (!run) return <NoRunsYet />;
-  if (!run.branch) return <p className="text-muted">Ran in direct mode — no branch or diff.</p>;
+function ChangesTab({ task }: { task: Task }) {
+  if (!task.branch) return <p className="text-muted">This task has no worktree changes.</p>;
   return (
     <div className="space-y-2">
       {/* Branch refs and the diff are code (mono); the status sentences are
           prose (sans) — the Mono Is Code Rule. */}
       <div className="font-data text-data text-tool">
-        {run.branch} ← {run.baseBranch}
+        {task.branch} ← {task.baseBranch}
       </div>
-      {run.state === 'running' ? (
-        <p className="text-muted">Diff available once the run finishes.</p>
-      ) : diff.status === 'error' ? (
-        <p className="text-fail">Couldn’t load the diff for this run.</p>
-      ) : diff.status === 'ready' ? (
-        diff.stat ? (
-          <pre className="overflow-x-auto rounded-md bg-field p-2 font-data text-data text-muted">{diff.stat}</pre>
-        ) : (
-          <p className="text-muted">No changes on this branch.</p>
-        )
+      {task.stat ? (
+        <pre className="overflow-x-auto rounded-md bg-field p-2 font-data text-data text-muted">{task.stat}</pre>
       ) : (
-        <p className="text-muted">Loading diff…</p>
+        <p className="text-muted">No changes on this branch.</p>
       )}
     </div>
   );
@@ -565,6 +524,66 @@ function RunBanner({ run, nextRun }: { run: Run; nextRun: Run | undefined }) {
   return null;
 }
 
+function formatMetricTokens(run: Run | undefined): string {
+  const totals = run?.usage?.totals;
+  if (!totals) return '—';
+  const total = totals.totalTokens ?? (totals.inputTokens ?? 0) + (totals.outputTokens ?? 0);
+  return total ? total.toLocaleString() : '—';
+}
+
+function FlatMetrics({ task, runs, selectedRun }: { task: Task; runs: Run[]; selectedRun: Run | undefined }) {
+  const elapsed = selectedRun?.finishedAt
+    ? `${Math.max(0, Math.round((selectedRun.finishedAt - selectedRun.startedAt) / 1000))}s`
+    : selectedRun
+      ? 'running'
+      : '—';
+  const metrics = [
+    ['Cost', formatCost(task.cost) ?? '—'],
+    ['Tokens', formatMetricTokens(selectedRun)],
+    ['Elapsed', elapsed],
+    ['Runs', `${runs.length}`],
+    ['Diff', task.stat ? 'changed' : '—'],
+  ];
+  return (
+    <dl className="mt-4 flex flex-wrap border-y border-hairline text-small tabular-nums">
+      {metrics.map(([label, value]) => (
+        <div key={label} className="min-w-24 border-r border-hairline px-3 py-2 first:pl-0 last:border-r-0">
+          <dt className={labelType}>{label}</dt>
+          <dd className="mt-0.5 font-medium text-ink">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function AgentUsageTable({ run }: { run: Run }) {
+  const agents = run.usage?.models ?? {};
+  const entries = Object.entries(agents);
+  if (entries.length === 0) return null;
+  return (
+    <section className="mt-6">
+      <h2 className={`${sectionLabel} mb-2`}>Per-agent usage</h2>
+      <div className="overflow-x-auto border-y border-hairline">
+        <table className="w-full text-left text-small">
+          <thead className="border-b border-hairline text-label font-semibold uppercase text-muted">
+            <tr><th className="py-2 pr-3">Agent</th><th className="py-2 pr-3">Read</th><th className="py-2 pr-3">Write</th><th className="py-2">Cached</th></tr>
+          </thead>
+          <tbody>
+            {entries.map(([agent, usage]) => (
+              <tr key={agent} className="border-b border-hairline last:border-0">
+                <th scope="row" className="py-2 pr-3 font-medium text-ink">{agent}</th>
+                <td className="py-2 pr-3 tabular-nums">{(usage.inputTokens ?? 0).toLocaleString()}</td>
+                <td className="py-2 pr-3 tabular-nums">{(usage.outputTokens ?? 0).toLocaleString()}</td>
+                <td className="py-2 tabular-nums">{(usage.cacheReadTokens ?? 0).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 /**
  * The full-width Ticket page (issue #183, part of #179 — the Deck redesign):
  * TaskDetail's modal, adapted into its own route. Every hook/effect/state
@@ -596,8 +615,7 @@ export function TicketPage({
   const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
-  const [diff, setDiff] = useState<DiffState>({ status: 'idle' });
-  const [tab, setTab] = useState<Tab>('output');
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -702,31 +720,12 @@ export function TicketPage({
   // should land on the header; following resumes the moment the operator scrolls
   // to the bottom themselves (the `onScroll` handler below re-arms it).
   const scrollRef = useRef<HTMLDivElement>(null);
-  const tablistRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
-    if (tab !== 'output' || !el || !stickToBottom.current) return;
+    if (!el || !stickToBottom.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [events, tab]);
-
-  useEffect(() => {
-    if (selectedRunId === null || !selectedRun?.branch || selectedRun.state === 'running') {
-      setDiff({ status: 'idle' });
-      return;
-    }
-    let live = true;
-    setDiff({ status: 'loading' });
-    // Guard against a slow response for a previously-selected run landing
-    // after the user has switched runs.
-    api.runDiff(selectedRunId).then(
-      ({ stat }) => live && setDiff({ status: 'ready', stat }),
-      () => live && setDiff({ status: 'error' }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [selectedRunId, selectedRun?.branch, selectedRun?.state]);
+  }, [events]);
 
   // Escape → back to the Deck, same parity the old Modal gave for free via
   // the native <dialog> element.
@@ -737,22 +736,6 @@ export function TicketPage({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
-
-  const tabs: Tab[] = ['output', 'changes', 'prompt', 'details'];
-
-  // WAI-ARIA tablist keyboard nav: Tab reaches the tablist as one stop (roving
-  // tabindex below), then Left/Right/Home/End move between tabs. Selection
-  // follows focus (automatic activation) — switching a tab only toggles a
-  // `hidden` panel, so there's no cost that would justify manual activation.
-  const onTablistKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const next = nextTabIndex(e.key, tabs.indexOf(tab), tabs.length);
-    if (next === null) return;
-    const target = tabs[next];
-    if (target === undefined) return;
-    e.preventDefault();
-    setTab(target);
-    tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-  };
 
   // Surface why a Task failed or Escalated up top — the reason lives on the
   // latest Run (task-level: independent of whichever Run the operator has
@@ -792,7 +775,9 @@ export function TicketPage({
           Deck
         </button>
         <span className="text-small text-faint">
-          <b className="font-medium text-muted">Deck</b> / {ticketIdentity(task.id, task.trackerRef)}
+          <b className="font-medium text-muted">harmonic</b>
+          {task.mapRef !== null && <> / Epic <span className="font-data text-data text-tool">epic/{task.mapRef}</span></>}
+          {' / '}{ticketIdentity(task.id, task.trackerRef)}
         </span>
       </div>
 
@@ -834,6 +819,7 @@ export function TicketPage({
               <DependsOnFact task={task} />
               <NotifyFact taskId={task.id} />
             </div>
+            <FlatMetrics task={task} runs={runs} selectedRun={selectedRun} />
             <Brief task={task} />
             {/* An eligible Task can be waiting on capacity, Git backoff, a
                 Work Context holder, or its Epic integration branch. It is
@@ -878,105 +864,34 @@ export function TicketPage({
             )}
           </div>
 
-          {/* RUN RAIL */}
-          <RunRail runs={runs} selectedRunId={selectedRunId} onSelect={setSelectedRunId} />
-
-          {/* PER-RUN DETAIL */}
-          <div className="mt-5">
-            {selectedRun && <RunBanner run={selectedRun} nextRun={nextRun} />}
-            {selectedRun && <GuardrailTrips events={guardrailEvents} />}
-            {phaseSteps && (
-              <div className={`${card} mb-[18px] flex items-center px-[18px] py-[15px]`}>
-                <PhaseTimeline steps={phaseSteps} />
-              </div>
-            )}
-
-            <div className="grid grid-cols-[minmax(0,1fr)_320px] gap-[22px] pb-10">
-              <div className="min-w-0">
-                <div
-                  ref={tablistRef}
-                  role="tablist"
-                  aria-label="Run detail"
-                  onKeyDown={onTablistKeyDown}
-                  className="mb-2 flex gap-1 border-b border-hairline"
-                >
-                  {tabs.map((t) => {
-                    // Flag when Details holds review context (why a prior run
-                    // was rejected, or the feedback seeding this re-attempt) —
-                    // Verification's own verdict now lives in the always-open
-                    // side card, so it no longer needs to flag this tab too.
-                    const flag = t === 'details' && Boolean(task.feedback || selectedRun?.reviewFeedback);
-                    return (
-                      <button
-                        key={t}
-                        role="tab"
-                        id={`ticket-tab-${t}`}
-                        aria-selected={tab === t}
-                        aria-controls={`ticket-panel-${t}`}
-                        tabIndex={tab === t ? 0 : -1}
-                        aria-label={flag ? `${t} (has review feedback)` : undefined}
-                        onClick={() => setTab(t)}
-                        className={`-mb-px border-b-2 px-3 py-2 text-title font-medium transition-colors duration-150 ${
-                          tab === t ? 'border-accent font-semibold text-ink' : 'border-transparent text-faint hover:text-ink'
-                        }`}
-                      >
-                        {TAB_LABEL[t]}
-                        {flag && (
-                          <span className="ml-1 inline-block size-1.5 rounded-full bg-accent align-middle" aria-hidden />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Panels stay mounted (toggled with `hidden`) so switching
-                    tabs never discards in-progress state — notably a
-                    dependency edit held in the Dependencies component. */}
-                <div role="tabpanel" id="ticket-panel-output" aria-labelledby="ticket-tab-output" hidden={tab !== 'output'}>
-                  <OutputTab run={selectedRun} events={events} unavailable={logUnavailable} />
-                </div>
-                <div role="tabpanel" id="ticket-panel-changes" aria-labelledby="ticket-tab-changes" hidden={tab !== 'changes'}>
-                  <ChangesTab run={selectedRun} diff={diff} />
-                </div>
-                <div role="tabpanel" id="ticket-panel-prompt" aria-labelledby="ticket-tab-prompt" hidden={tab !== 'prompt'}>
-                  <PromptTab run={selectedRun} />
-                </div>
-                <div role="tabpanel" id="ticket-panel-details" aria-labelledby="ticket-tab-details" hidden={tab !== 'details'}>
+          <div className="mt-6 grid min-h-[520px] grid-cols-[minmax(0,1fr)_300px] gap-6 pb-8 max-rail:grid-cols-1">
+            <main className="min-w-0">
+              {selectedFile !== null ? (
+                <section aria-label="Worktree changes">
+                  <h2 className={sectionLabel}>Changes{selectedFile ? ` · ${selectedFile}` : ''}</h2>
+                  <div className={`${card} mt-3 p-4`}><ChangesTab task={task} /></div>
+                </section>
+              ) : selectedRun ? (
+                <section aria-label={`Run ${selectedRun.attempt}`}>
+                  <RunBanner run={selectedRun} nextRun={nextRun} />
+                  <GuardrailTrips events={guardrailEvents} />
+                  {phaseSteps && <div className={`${card} mb-5 flex items-center px-[18px] py-[15px]`}><PhaseTimeline steps={phaseSteps} /></div>}
+                  <div className={`${card} p-4`}><VerificationCard attempts={verificationAttempts} /></div>
+                  <div className="mt-6"><OutputTab run={selectedRun} events={events} unavailable={logUnavailable} /></div>
+                  <AgentUsageTable run={selectedRun} />
+                  <div className={`${card} mt-6 p-4`}><div className={`${sectionLabel} mb-2`}>This run</div><RunMeta run={selectedRun} /></div>
                   <DetailsTab task={task} run={selectedRun} events={events} />
-                </div>
-              </div>
-
-              <aside className="flex flex-col gap-4">
-                {selectedRun && (
-                  <div className={`${card} p-3.5`}>
-                    <VerificationCard attempts={verificationAttempts} />
-                  </div>
-                )}
-                {selectedRun && (
-                  <div className={`${card} p-3.5`}>
-                    <div className={`${sectionLabel} mb-1.5`}>This run</div>
-                    <RunMeta run={selectedRun} />
-                  </div>
-                )}
-              </aside>
+                </section>
+              ) : <NoRunsYet />}
+            </main>
+            <div className="min-h-0 border-l border-hairline pl-5 max-rail:border-l-0 max-rail:border-t max-rail:pt-5 max-rail:pl-0">
+              <RunRail runs={runs} worktree={{ branch: task.branch, baseBranch: task.baseBranch, isolationMode: task.isolationMode, stat: task.stat }} selectedRunId={selectedRunId} selectedFile={selectedFile} onSelectRun={(runId) => { setSelectedFile(null); setSelectedRunId(runId); }} onSelectFile={setSelectedFile} onSelectChanges={() => setSelectedFile('')} />
+              <Gate model={gateModel} task={task} runs={runs} verificationAttempts={verificationAttempts} onEdit={(t) => { onClose(); onEdit(t); }} onChanged={onChanged} onGoToCurrent={(runId) => { setSelectedFile(null); setSelectedRunId(runId); }} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* GATE */}
-      <Gate
-        model={gateModel}
-        task={task}
-        runs={runs}
-        verificationAttempts={verificationAttempts}
-        onEdit={(t) => {
-          onClose();
-          onEdit(t);
-        }}
-        onChanged={onChanged}
-        onGoToCurrent={setSelectedRunId}
-      />
     </div>
   );
 }

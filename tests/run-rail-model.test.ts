@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  changedFilesFromStat,
   continuationNote,
   currentRunId,
   formatRunDuration,
@@ -182,5 +183,23 @@ describe('continuationNote', () => {
     expect(
       continuationNote([run({ id: 1, attempt: 1, sessionId: 'S-A' }), run({ id: 2, attempt: 2, sessionId: null })]),
     ).toBeNull();
+  });
+});
+
+describe('changedFilesFromStat', () => {
+  it('turns git diff --stat entries into selectable changed-file rows', () => {
+    expect(
+      changedFilesFromStat(
+        ' src/server/rate-limit.ts | 96 ++++++++++++++\n src/server/app.ts        |  8 +---\n 2 files changed, 101 insertions(+), 3 deletions(-)',
+      ),
+    ).toEqual([
+      { path: 'src/server/rate-limit.ts', kind: 'M', additions: 14, deletions: 0 },
+      { path: 'src/server/app.ts', kind: 'M', additions: 1, deletions: 3 },
+    ]);
+  });
+
+  it('does not treat the git summary or an unavailable stat as a file', () => {
+    expect(changedFilesFromStat(null)).toEqual([]);
+    expect(changedFilesFromStat(' 2 files changed, 101 insertions(+), 3 deletions(-)')).toEqual([]);
   });
 });
