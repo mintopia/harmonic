@@ -556,6 +556,25 @@ count-share; a turn that called no tool goes to a separate **reasoning** bucket.
 Covers the whole Process Tree, Subagents included.
 _Avoid_: tool cost, per-tool spend
 
+### Operations
+
+**Operation**:
+A discrete, atomic action Harmonic's own runtime performs — polling a Tracker,
+picking and starting a Task, driving a Run, verifying, landing a worktree,
+merging an Epic, retiring a Session. Modelled as an OpenTelemetry **span**: it
+has a start, an end, a duration, a pass/fail status, and **nests** (a member-land
+Operation contains its `rebase`/`ff` git children; an Epic contains its Members).
+Ephemeral and **in-memory only** — never persisted to the DB. The set of
+currently-open spans *is* the live "what is Harmonic doing right now" view;
+finished Operations survive only as exported telemetry and rolled-up counts. An
+Operation is something *Harmonic* does, **not** something the agent does inside a
+Run: a Run is one Operation, but the agent's internal tool-calls and Subagents
+are Activity / Usage, never decomposed into Operation spans. Scope is *everything
+non-trivial* — a discrete action that can fail — so high-frequency internal ticks
+(usage tailer, guardrail timers, the event-loop probe) emit logs or metrics but
+open no span.
+_Avoid_: job, action (too vague), event (that is a Run Event / run_fact), task
+
 ### Interfaces
 
 **Activity**:
@@ -563,6 +582,10 @@ The instance-wide live view of every in-flight harness process — Runs and
 active Conversations across all Workspaces — showing realtime Usage, context
 fill, Cost, and each process's Process Tree. Read-only but for a per-process
 Stop/Kill and a deep-link to a related ticket; holds no state of its own.
+Distinct from **Operations**: Activity answers *what are the agents doing*
+(agent / Subagent internals — usage, tools, context), Operations answers *what is
+Harmonic's runtime doing* (orchestration). A Run appears in both — as agent
+internals in Activity, as one orchestration span in Operations.
 _Avoid_: monitor, dashboard
 
 **Dependency Graph**:
