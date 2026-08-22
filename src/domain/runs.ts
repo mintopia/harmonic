@@ -261,6 +261,20 @@ export class RunStore {
     return row?.n ?? 0;
   }
 
+  /** The Runs that consume Machine-Ceiling capacity. Review-parked Runs stay
+   * visible on their Task's run rail, not Activity. This shares the exact
+   * predicate used by {@link countRunning}, so Activity cannot silently diverge
+   * from scheduling. */
+  async listRunning(): Promise<RunRow[]> {
+    return this.db.read((db) =>
+      db
+        .select()
+        .from(runs)
+        .where(and(eq(runs.state, 'running'), this.notReviewParked))
+        .all(),
+    );
+  }
+
   /**
    * Running-Run count per owning Workspace, for the Auto-Runner's per-Workspace
    * concurrency cap (ADR-0012, issue #60). Runs carry no Workspace column, so

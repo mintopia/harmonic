@@ -190,27 +190,28 @@ export interface ApiActivityProcess {
 
 /**
  * The instance-wide Activity snapshot (issue #51, ADR 0010): every live
- * process across Workspaces, read from the in-memory registries
- * (`Runner.active` + `ConversationDriver.active`) and joined with each
- * session's latest Usage. A Run carries its live-usage snapshot — rolled-up
- * Usage, context fill, current-activity line, Process Tree — with Cost derived
- * on read like every other Cost. A Conversation has no live tailer, so its
- * `tree`/`activity` are null and its Usage/context come from the Conversation
- * row. `includeChats` is false for a Read Key (a read-scoped viz client): Runs
- * only, mirroring the firehose filter that hides Conversation traffic from
- * Read Keys.
+ * process across Workspaces. Runs come from the persisted capacity set, then
+ * join a Runner snapshot when one is live, so a wedged Run remains visible even
+ * after it has left the in-memory registry. A Run carries its live-usage
+ * snapshot — rolled-up Usage, context fill, current-activity line, Process
+ * Tree — with Cost derived on read like every other Cost. A Conversation has no
+ * live tailer, so its `tree`/`activity` are null and its Usage/context come from
+ * the Conversation row. `includeChats` is false for a Read Key (a read-scoped
+ * viz client): Runs only, mirroring the firehose filter that hides Conversation
+ * traffic from Read Keys.
  */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const prices = pricesOf(ctx);
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.runner.activeSnapshots()).map(async ({ runId, taskId, snapshot }) => {
-    const run = await ctx.runs.get(runId);
-    const task = await ctx.tasks.get(taskId);
+  const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.runId, snapshot.snapshot]));
+  const runs: ApiActivityProcess[] = await Promise.all((await ctx.runs.listRunning()).map(async (run) => {
+    const task = await ctx.tasks.get(run.taskId);
+    const snapshot = snapshots.get(run.id) ?? null;
     return {
       type: 'run',
-      runId,
+      runId: run.id,
       conversationId: null,
-      taskId,
-      title: firstLineTitle(task.prompt) ?? `Task ${taskId}`,
+      taskId: run.taskId,
+      title: firstLineTitle(task.prompt) ?? `Task ${run.taskId}`,
       workspaceId: atRestWorkspaceId(task.workspaceId),
       workspaceName: await workspaceNameOf(ctx, task.workspaceId),
       harness: task.harness,

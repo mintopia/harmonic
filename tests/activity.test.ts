@@ -7,10 +7,11 @@ import type { DeepPartial, AppConfig } from '../src/config.js';
 
 /**
  * The instance-wide Activity snapshot (issue #51, ADR 0010): `GET /api/activity`
- * reads the in-memory registries (`Runner.active` + `ConversationDriver.active`)
- * and joins each with its latest Usage / Process Tree. A hanging stub run keeps
- * a live process in the registry while we probe it; a warm Conversation keeps a
- * chat process. A read (viz) key reaches the endpoint but sees Runs only.
+ * reads persisted capacity-consuming Runs and warm Conversations, joining a Run
+ * with its latest live Usage / Process Tree when a Runner is registered. A
+ * hanging stub run keeps a live Runner while we probe telemetry; a warm
+ * Conversation keeps a chat process. A read (viz) key reaches the endpoint but
+ * sees Runs only.
  */
 describe('GET /api/activity snapshot (issue #51)', () => {
   let server: TestServer;
@@ -85,6 +86,36 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     const { status, body } = await server.api('GET', '/api/activity');
     expect(status).toBe(200);
     expect(body).toEqual({ processes: [] });
+  });
+
+  it('lists a persisted running Run whose completed Task no longer has a live Runner', async () => {
+    const task = (await server.api('POST', '/api/tasks', { prompt: 'wedged landing', workingDir: workDir })).body;
+    const run = await server.app.ctx.runs.create(task.id);
+    await server.app.ctx.tasks.setState(task.id, 'completed');
+
+    const { body } = await server.api('GET', '/api/activity');
+    expect(body.processes).toContainEqual(expect.objectContaining({
+      type: 'run',
+      runId: run.id,
+      taskId: task.id,
+      state: 'running',
+      usage: null,
+      activity: null,
+      tree: null,
+    }));
+    expect(await server.app.ctx.runs.countRunning()).toBe(1);
+  });
+
+  it('keeps a review-parked running Run visible on its Task run rail', async () => {
+    const runningBefore = await server.app.ctx.runs.countRunning();
+    const task = (await server.api('POST', '/api/tasks', { prompt: 'awaiting review', workingDir: workDir })).body;
+    const run = await server.app.ctx.runs.create(task.id);
+    await server.app.ctx.runs.update(run.id, { phase: 'review' });
+    await server.app.ctx.tasks.setState(task.id, 'awaiting-review');
+
+    const { body } = await server.api('GET', `/api/tasks/${task.id}/runs`);
+    expect(body.runs).toContainEqual(expect.objectContaining({ id: run.id, state: 'running', phase: 'review' }));
+    expect(await server.app.ctx.runs.countRunning()).toBe(runningBefore);
   });
 
   it('lists a live Run with its Usage snapshot, Process Tree, and derived Cost', async () => {

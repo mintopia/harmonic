@@ -17,11 +17,11 @@ export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Activity'],
         description:
-          'Instance-wide snapshot of every live process across Workspaces (ADR 0010): in-flight Runs and warm ' +
-          'Conversations from the in-memory registries, each joined with its latest Usage, context fill, derived ' +
-          'Cost, and (Runs only) current-activity line and Process Tree. The Activity view loads this once on ' +
-          'page-load, then follows the live `run_usage` firehose. A Read Key (a read-scoped API key) sees Runs ' +
-          'only — Conversations are excluded, matching the firehose filter.',
+          'Instance-wide snapshot of every capacity-consuming Run and warm Conversation across Workspaces (ADR 0010). ' +
+          'Runs come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity ' +
+          'line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live ' +
+          '`run_usage` firehose. A Read Key (a read-scoped API key) sees Runs only — Conversations are excluded, ' +
+          'matching the firehose filter.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         response: {
           200: activityResponseSchema.describe(
