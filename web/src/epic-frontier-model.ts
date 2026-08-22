@@ -67,19 +67,27 @@ export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
 
   const nodeFor = (member: EpicMember): FrontierNode => {
     const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
+    const dependencies = dependenciesFor(member);
+    const ready = member.ready || task?.state === 'ready';
     return {
       ref: member.ref,
       taskId: member.taskId,
       title: member.title || task?.prompt || `Member ${member.ref}`,
-      state: task?.state ?? member.state,
-      ready: member.ready || task?.state === 'ready',
-      runnable: task?.state === 'ready' && task.drive !== 'hitl' && !task.escalated,
-      dependencies: dependenciesFor(member),
+      state: task?.state ?? member.state ?? (ready ? 'ready' : null),
+      ready,
+      runnable:
+        task?.state === 'ready' &&
+        task.drive !== 'hitl' &&
+        !task.escalated &&
+        dependencies.every((dependency) => dependency.satisfied),
+      dependencies,
     };
   };
 
   const nodes = visibleMembers.map(nodeFor);
-  const frontier = nodes.filter((node) => node.ready || node.state === 'running');
+  const frontier = nodes.filter(
+    (node) => node.state === 'running' || (node.ready && node.dependencies.every((dependency) => dependency.satisfied)),
+  );
   const frontierRefs = new Set(frontier.map((node) => node.ref));
   const depthByRef = new Map<number, number>();
 

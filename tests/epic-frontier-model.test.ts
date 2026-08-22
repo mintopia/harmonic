@@ -109,4 +109,25 @@ describe('deriveEpicFrontier (issue #264)', () => {
       ],
     });
   });
+
+  it('uses the tracker-ready state for unmirrored members but never puts a member with open blockers in Frontier', () => {
+    const readyWithBlocker = task(1, 'ready', [2]);
+    const blocker = task(2, 'blocked');
+    const model = deriveEpicFrontier(
+      epic([
+        member(1, 1, { ready: true }),
+        member(2, 2),
+        { ...member(3, 3, { ready: true }), taskId: null },
+      ]),
+      [readyWithBlocker, blocker],
+    );
+
+    expect(model.columns.map((column) => [column.label, column.nodes.map((node) => node.ref)])).toEqual([
+      ['Frontier', [3]],
+      ['Depth 1', [2]],
+      ['Depth 2', [1]],
+    ]);
+    expect(model.columns[0]!.nodes[0]!.state).toBe('ready');
+    expect(model.columns[2]!.nodes[0]!.runnable).toBe(false);
+  });
 });

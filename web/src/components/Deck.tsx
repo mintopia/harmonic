@@ -270,7 +270,7 @@ const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
   running: 'bg-running-dot',
   healing: 'bg-running-dot motion-safe:animate-pulse',
   waiting: 'bg-raised',
-  blocking: 'bg-fail-dot',
+  blocking: 'bg-raised',
 };
 
 function frontierDot(state: string | null): string {
@@ -302,7 +302,7 @@ function FrontierNodeCard({
             type="button"
             disabled={node.taskId == null}
             onClick={() => node.taskId != null && onOpenTask(node.taskId)}
-            className="block min-w-0 text-left disabled:cursor-default"
+            className={`${touchTargetInline} block min-w-0 text-left disabled:cursor-default`}
           >
             <span className="font-data text-small text-faint">#{node.ref}</span>
             <span className="mt-1 block truncate text-title font-semibold text-ink">{node.title}</span>
@@ -370,15 +370,17 @@ function EpicBand({
         {attention.length > 0 && (
           <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} need you</span>
         )}
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
-          onClick={() => setOpen((v) => !v)}
-          className={`${touchTargetInline} shrink-0`}
-        >
-          <Chevron open={open} />
-        </button>
+        {frontier.columns.length > 0 && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? `Collapse Epic #${epic.ref} members` : `Expand Epic #${epic.ref} members`}
+            onClick={() => setOpen((v) => !v)}
+            className={`${touchTargetInline} shrink-0`}
+          >
+            <Chevron open={open} />
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pb-3.5">
