@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * WCAG 2.1 AA contrast floor for the Aurora palette (issue #87).
+ * WCAG 2.1 AA contrast floor for the Paper palette (issue #260).
  *
  * DESIGN.md § 2 claims every informational pairing holds AA "in both themes".
  * This test computes the actual contrast ratio of every documented token
@@ -78,17 +78,17 @@ function hex(tokens: Record<string, string>, name: string): string {
 
 /** Documented text-on-tint state pairings (DESIGN.md § 2; ui.ts STATE_CHIP_STYLES). */
 const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
-  ['running', 'running', 'running-tint'],
   ['ready', 'ready', 'ready-tint'],
-  ['completed', 'accept', 'accept-tint'],
+  ['await', 'await', 'await-tint'],
+  ['merged', 'accept', 'accept-tint'],
   ['failed', 'fail', 'fail-tint'],
-  ['blocked', 'blocked', 'blocked-tint'],
+  ['blocked', 'muted', 'blocked-tint'],
   ['tool', 'tool', 'tool-tint'],
-  // awaiting-review and active-nav render accent text on the accent tint.
+  // Active navigation renders teal accent text on the accent tint.
   ['accent', 'accent', 'accent-tint'],
   // Themed text selection (index.css `::selection`, issue #187): the Accent Tint
   // ground carries whatever text was selected, recoloured to Ink — a new tint
-  // pairing the Deck redesign introduced, so DESIGN.md § 2 requires it clear the
+  // pairing Paper uses, so DESIGN.md § 2 requires it clear the
   // text floor in both themes before it ships.
   ['selection', 'ink', 'accent-tint'],
   // The permission band (issue #97) takes the Running amber tint as its ground
@@ -104,12 +104,21 @@ const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
 
 const TEXT_FLOOR = 4.5;
 const UI_FLOOR = 3;
+const PAPER_TOKENS = ['await', 'await-dot', 'await-tint', 'on-await', 'on-done', 'sunken', 'edge-strong'] as const;
 
-describe('Aurora palette meets WCAG AA in both themes (issue #87)', () => {
+describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
   it('defines the same dark tokens via data-theme and prefers-color-scheme', () => {
     // Dark values live twice (explicit toggle + system media query); they must
     // stay byte-identical or one path silently drifts below the floor.
     expect(darkSystem).toEqual(darkExplicit);
+  });
+
+  it('defines the Paper tokens in both themes and maps them to Tailwind colors', () => {
+    for (const token of PAPER_TOKENS) {
+      expect(light[token]).toBeDefined();
+      expect(darkExplicit[token]).toBeDefined();
+      expect(CSS).toContain(`--color-${token}: var(--hm-${token});`);
+    }
   });
 
   for (const [themeName, t] of Object.entries(themes)) {
@@ -120,15 +129,35 @@ describe('Aurora palette meets WCAG AA in both themes (issue #87)', () => {
         });
       }
 
+      // ADR-0033 permits the vivid running amber below 4.5:1. It is never the
+      // sole state signal: the pulsing dot, label, and structural position
+      // carry the same meaning. Keep the exception named here so it cannot
+      // quietly become an unreviewed gap in the Paper contrast gate.
+      it('running amber follows the ADR-0033 light-theme exception', () => {
+        const ratio = contrast(hex(t, 'running'), hex(t, 'surface'));
+        if (themeName === 'light') expect(ratio).toBeLessThan(TEXT_FLOOR);
+        else expect(ratio).toBeGreaterThanOrEqual(TEXT_FLOOR);
+      });
+
+      // Bright solid await and merged fills need theme-specific ink: white in
+      // light, dark ink in dark. DESIGN.md §2 calls this the Ink-Flip Rule.
+      for (const [label, fg, bg] of [
+        ['await', 'on-await', 'await'],
+        ['merged', 'on-done', 'accept'],
+      ] as const) {
+        it(`${label} solid-fill ink ≥ ${TEXT_FLOOR}:1`, () => {
+          expect(contrast(hex(t, fg), hex(t, bg))).toBeGreaterThanOrEqual(TEXT_FLOOR);
+        });
+      }
+
       // The three text roles must read on every neutral panel background the
-      // Deck retune touched — Surface, Canvas, and the Raised inset fill (the
+      // Paper palette uses Surface, Canvas, Raised, and the Sunken well (the
       // hardest, its luminance nearest the mid-tone roles). Ink is primary text;
       // Muted is the informational floor; Faint (branch names, ids, metadata,
       // zero counts, the dialog close ✕) must still clear the text floor even at
-      // its quietest. All three re-verified here because the Deck darkened the
-      // light neutrals (canvas/raised) and nudged ink/muted/faint (issue #180).
+      // its quietest. All three are guarded across every Paper neutral.
       for (const role of ['ink', 'muted', 'faint'] as const) {
-        for (const bg of ['surface', 'canvas', 'raised'] as const) {
+        for (const bg of ['surface', 'canvas', 'raised', 'sunken'] as const) {
           it(`${role} on ${bg} ≥ ${TEXT_FLOOR}:1`, () => {
             expect(contrast(hex(t, role), hex(t, bg))).toBeGreaterThanOrEqual(TEXT_FLOOR);
           });
@@ -161,7 +190,7 @@ describe('Aurora palette meets WCAG AA in both themes (issue #87)', () => {
       // are deliberately BELOW the 3:1 affordance floor. The operator-relied-on
       // ≥3:1 non-text element is the Switch off-track — the one neutral DESIGN.md
       // §2 gives an explicit "held at ≥3:1" callout — not these; a seam that read
-      // at 3:1 would be a rule, which the Deck retired (§4: "grouping is the
+      // at 3:1 would be a rule, which Paper avoids (§4: "grouping is the
       // panel, not the rule"). They must still be a *visible* seam (never collapse
       // into the fill they sit on), but claiming the text/affordance floors here
       // would misread the design. Locking the band makes the exclusion a decision

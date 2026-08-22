@@ -26,7 +26,7 @@ const STATE_DONUT_COLOR: Record<string, string> = {
   blocked: 'var(--hm-blocked)',
   ready: 'var(--hm-ready-dot)',
   running: 'var(--hm-running-dot)',
-  'awaiting-review': 'var(--hm-accent)',
+  'awaiting-review': 'var(--hm-await)',
   completed: 'var(--hm-accept-dot)',
   failed: 'var(--hm-fail-dot)',
   // A review rejection lives in the Failed-rose family (DESIGN.md § 2), but on a

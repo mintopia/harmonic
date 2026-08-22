@@ -96,7 +96,7 @@ function DeckRow({
   indent?: boolean;
 }) {
   return (
-    <div className={`${deckRow} relative cursor-pointer ${indent ? 'pl-7' : ''}`}>
+    <div className={`${deckRow} bold-wash ${task.state} relative cursor-pointer ${indent ? 'pl-7' : ''}`}>
       <Dot task={task} />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
@@ -146,10 +146,9 @@ function OpenButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** The right-aligned accent pill on an awaiting-review row — its state IS the
- * cobalt accent (DESIGN.md § 2: "awaiting review = the cobalt accent"). */
+/** The right-aligned indigo pill on an awaiting-review row. */
 function ReviewPill() {
-  return <span className={`${chip} bg-accent-tint text-accent`}>awaiting review</span>;
+  return <span className={`${chip} bg-await-tint text-await`}>awaiting review</span>;
 }
 
 /** A running row's live readout: elapsed · N tools, tabular figures. Self-

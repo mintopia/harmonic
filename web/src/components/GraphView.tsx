@@ -360,7 +360,7 @@ function CardNode({
       role="button"
       tabIndex={0}
       aria-label={`${nodeTitle(task.prompt)} — ${STATE_LABEL[task.state]}, task ${task.id}. Open detail.`}
-      className="cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-accent"
+      className={`node ${task.state} cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-accent`}
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
       onKeyDown={(e) => {
@@ -380,6 +380,7 @@ function CardNode({
         width={n.w}
         height={n.h}
         rx={10}
+        className="node-fill"
         fill="var(--hm-surface)"
         stroke={hovered ? 'var(--hm-accent)' : 'var(--hm-hairline)'}
         strokeWidth={hovered ? 1.5 : 1}

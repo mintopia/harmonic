@@ -188,8 +188,8 @@ describe('state-signal palette (the Signal Rule)', () => {
     }
   });
 
-  it('speaks awaiting-review in the cobalt accent (the One Cobalt Rule)', () => {
-    expect(SIGNAL['awaiting-review']).toEqual({ color: 'var(--hm-accent)', text: 'var(--hm-accent)' });
+  it('speaks awaiting-review in the indigo review voice', () => {
+    expect(SIGNAL['awaiting-review']).toEqual({ color: 'var(--hm-await-dot)', text: 'var(--hm-await)' });
   });
 });
 
