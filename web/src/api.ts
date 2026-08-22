@@ -81,8 +81,14 @@ export const api = {
   config: () => request<AppConfig>('GET', '/api/config'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
-  tasks: (workspaceId?: number) =>
-    request<{ tasks: Task[] }>('GET', workspaceId ? `/api/tasks?workspaceId=${workspaceId}` : '/api/tasks'),
+  /** `open` is an explicit board optimization. Omit it for full task history. */
+  tasks: ({ workspaceId, state }: { workspaceId?: number; state?: 'open' } = {}) => {
+    const params = new URLSearchParams();
+    if (workspaceId) params.set('workspaceId', String(workspaceId));
+    if (state) params.set('state', state);
+    const query = params.toString();
+    return request<{ tasks: Task[] }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
+  },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>
     request<Task>('POST', '/api/tasks', input),

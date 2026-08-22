@@ -13,6 +13,8 @@ describe('task list filtering and sorting (table view backend)', () => {
     await server.api('POST', '/api/tasks', { prompt: 'c', priority: 'normal' });
     const d = await server.api('POST', '/api/tasks', { prompt: 'd', priority: 'high' });
     await server.api('POST', `/api/tasks/${d.body.id}/cancel`);
+    const e = await server.api('POST', '/api/tasks', { prompt: 'e' });
+    await server.app.ctx.tasks.setState(e.body.id, 'completed');
   });
   afterAll(async () => {
     await server.close();
@@ -34,16 +36,24 @@ describe('task list filtering and sorting (table view backend)', () => {
     expect(prompts(highReady.body)).toEqual(['b']);
   });
 
+  it('filters completed and cancelled tasks through the explicit open shortcut, while an omitted filter stays complete', async () => {
+    const open = await server.api('GET', '/api/tasks?state=open');
+    expect(prompts(open.body).sort()).toEqual(['a', 'b', 'c']);
+
+    const all = await server.api('GET', '/api/tasks');
+    expect(prompts(all.body).sort()).toEqual(['a', 'b', 'c', 'd', 'e']);
+  });
+
   it('sorts by creation time and by priority, both directions', async () => {
     const byCreatedDesc = await server.api('GET', '/api/tasks?sortBy=createdAt&order=desc');
-    expect(prompts(byCreatedDesc.body)).toEqual(['d', 'c', 'b', 'a']);
+    expect(prompts(byCreatedDesc.body)).toEqual(['e', 'd', 'c', 'b', 'a']);
 
     const byCreatedAsc = await server.api('GET', '/api/tasks?sortBy=createdAt&order=asc');
-    expect(prompts(byCreatedAsc.body)).toEqual(['a', 'b', 'c', 'd']);
+    expect(prompts(byCreatedAsc.body)).toEqual(['a', 'b', 'c', 'd', 'e']);
 
     const byPriority = await server.api('GET', '/api/tasks?sortBy=priority&order=asc');
     // high before normal before low; FIFO within a rank.
-    expect(prompts(byPriority.body)).toEqual(['b', 'd', 'c', 'a']);
+    expect(prompts(byPriority.body)).toEqual(['b', 'd', 'c', 'e', 'a']);
   });
 
   it('rejects invalid filter values', async () => {
