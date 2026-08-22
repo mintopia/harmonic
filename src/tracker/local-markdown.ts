@@ -5,6 +5,16 @@ import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdap
 
 /** A `**Status:**` word that means the ticket is done. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
+/**
+ * A `**Status:**` word that explicitly means the ticket is *open* — the lifecycle
+ * marker {@link WritableTrackerAdapter.reopen} writes (`open`; `reopened` for
+ * symmetry). This is authoritative over the ticked-boxes heuristic: a human who
+ * reopens a ticket whose acceptance boxes are all still ticked must see it parse
+ * `open`, else reopen is a no-op and the premature-close→reopen path churns
+ * (#237). Work-queue states like `ready-for-agent` are deliberately NOT open
+ * markers — for those, all boxes ticked still closes the ticket.
+ */
+const OPEN_STATUS = /\b(open|reopened)\b/i;
 const STATUS_FIELD = /^\s*\*\*Status:\*\*\s*.*$/im;
 
 /** The reserved local id for a feature's `spec.md` Map. Issue filenames start at `01`, so `0` never collides. */
@@ -245,13 +255,23 @@ function parse(raw: string, id: number, path: string, mtime: string, parent: num
   const { heading, title } = headingTitle(raw, path);
 
   const status = raw.match(/^\s*\*\*Status:\*\*\s*(.+?)\s*$/im)?.[1]?.trim() ?? '';
-  // Done when EITHER signal says so — either is sufficient: every
-  // acceptance-criteria checkbox ticked, OR a done-ish `**Status:**`
-  // (done/closed/complete/merged/shipped). A ticket with no checkboxes rests
-  // entirely on its Status.
+  // Closed-state precedence, explicit Status authoritative over the heuristic:
+  //   1. an explicit done-ish `**Status:**` (done/closed/…) → closed;
+  //   2. else an explicit open `**Status:**` (open/reopened) → open, even when
+  //      every box is ticked — so `reopen` (which writes `**Status:** open`) is
+  //      not silently overridden by ticked acceptance boxes (#237);
+  //   3. else the fallback heuristic: every acceptance checkbox ticked → closed.
+  // A ticket with a neutral/absent Status (e.g. `ready-for-agent`) rests entirely
+  // on its boxes; no boxes + neutral Status → open.
   const boxes = [...raw.matchAll(/^[ \t]*[-*]\s+\[([ xX])\]/gm)];
   const allChecked = boxes.length > 0 && boxes.every((m) => m[1] !== ' ');
-  const state: TicketState = allChecked || CLOSED_STATUS.test(status) ? 'closed' : 'open';
+  const state: TicketState = CLOSED_STATUS.test(status)
+    ? 'closed'
+    : OPEN_STATUS.test(status)
+      ? 'open'
+      : allChecked
+        ? 'closed'
+        : 'open';
 
   // "Blocked by" ids are feature-local; offset them into this feature's namespace.
   const blockedLine = raw.match(/^\s*\*\*Blocked by:\*\*\s*(.+?)\s*$/im)?.[1] ?? '';

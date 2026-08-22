@@ -368,6 +368,46 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     }
   });
 
+  it('explicit Status is authoritative over ticked boxes; reopen round-trips to open (#237)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
+    const issues = join(root, 'f', 'issues');
+    mkdirSync(issues, { recursive: true });
+    const t = (n: number, status: string, ...lines: string[]) =>
+      writeFileSync(join(issues, `0${n}-t.md`), [`# 0${n} — T${n}`, '', `**Status:** ${status}`, '', ...lines].join('\n'));
+    // All boxes ticked, but an explicit **open** Status forces open (else reopen no-ops).
+    t(1, 'open', '- [x] a', '- [X] b');
+    // All boxes ticked + explicit **closed** Status → closed.
+    t(2, 'closed', '- [x] a', '- [X] b');
+    // No Status line at all + all ticked → the allChecked fallback closes it.
+    writeFileSync(join(issues, '03-t.md'), ['# 03 — T3', '', '- [x] a', '- [X] b'].join('\n'));
+    try {
+      const byNum = new Map((await localMarkdownAdapter(root).scan()).map((x) => [x.number, x.state]));
+      expect([byNum.get(1), byNum.get(2), byNum.get(3)]).toEqual(['open', 'closed', 'closed']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reopen makes an all-ticked ticket parse open again — no churn (#237)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'harmonic-local-md-'));
+    const issues = join(root, 'f', 'issues');
+    mkdirSync(issues, { recursive: true });
+    const file = join(issues, '01-t.md');
+    // Prematurely closed: every acceptance box ticked AND Status closed.
+    writeFileSync(file, ['# 01 — T1', '', '**Status:** closed', '', '- [x] a', '- [X] b'].join('\n'));
+    try {
+      const md = localMarkdownAdapter(root);
+      expect((await md.readTicket({ number: 1, title: '', state: 'open' })).state).toBe('closed');
+      await md.reopen({ number: 1, title: '', state: 'closed' }, 'premature');
+      // The boxes stay ticked; only Status flipped to open — yet parse now reads open.
+      expect(readFileSync(file, 'utf8')).toContain('- [x] a');
+      expect(readFileSync(file, 'utf8')).toContain('**Status:** open');
+      expect((await md.readTicket({ number: 1, title: '', state: 'closed' })).state).toBe('open');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   /** Adds a `feature-b` (issues 01 Foo, 02 Bar→01, + spec) beside an existing feature root. */
   const addFeatureB = (root: string) => {
     const issuesB = join(root, 'feature-b', 'issues');
