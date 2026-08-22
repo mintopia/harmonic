@@ -193,10 +193,12 @@ export const codexAdapter: HarnessAdapter = {
       // `approval_policy: on-request` is the safe default for an attended
       // Conversation: Codex asks before a privileged action rather than running
       // full-auto, and the human answers. An afk Run has no human, so the Runner
-      // forces Codex's `danger-full-access` ACP session mode after the handshake
+      // forces Codex's `agent-full-access` ACP session mode after the handshake
       // (session/set_mode) — the only mechanism that grants unattended full
       // access; `approval_policy`/command-line YOLO flags do not take effect over
-      // ACP. A request that still surfaces (mode unavailable) Escalates to the
+      // ACP. (The mode id is `agent-full-access`; `danger-full-access` is that
+      // mode's sandbox-policy name, not the ACP id.) A request that still
+      // surfaces (mode unavailable) Escalates to the
       // operator (ADR-0007 held-request approval for Runs will later let the
       // operator approve-and-remember in place).
       CODEX_CONFIG: JSON.stringify({ approval_policy: 'on-request', model: base, ...(effort ? { model_reasoning_effort: effort } : {}) }),

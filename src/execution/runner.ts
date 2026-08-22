@@ -116,14 +116,16 @@ const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
 const AFK_REQUEST_GATED_HARNESSES = ['codex'] as const;
 const afkRequestGated = (harness: string): boolean => (AFK_REQUEST_GATED_HARNESSES as readonly string[]).includes(harness);
 
-/** For a request-gated harness, the ACP session mode that grants unattended full
- * access (no per-action approval) — Codex's `danger-full-access` agent mode.
- * Forced under afk when {@link AFK_PERMISSION_MODES} offers nothing, so the Run
- * runs unattended (matching Claude's `auto`/`bypassPermissions`) instead of
- * Escalating on the first privileged tool. Codex's `approval_policy`/command-line
- * YOLO flags do not take effect over ACP — setting the session mode is the only
- * mechanism that does. */
-const AFK_FULL_ACCESS_MODES: Partial<Record<string, string>> = { codex: 'danger-full-access' };
+/** For a request-gated harness, the ACP session mode **id** that grants
+ * unattended full access (no per-action approval) — Codex's `agent-full-access`
+ * mode (its `approvalPolicy: never`, sandbox `danger-full-access`). Forced under
+ * afk when {@link AFK_PERMISSION_MODES} offers nothing, so the Run runs
+ * unattended (matching Claude's `auto`/`bypassPermissions`) instead of Escalating
+ * on the first privileged tool. Codex's `approval_policy`/command-line YOLO flags
+ * do not take effect over ACP — a `session/set_mode` to this id is the only
+ * mechanism that does. NB the id is `agent-full-access`, not the sandbox-policy
+ * name `danger-full-access` (codex-acp `_AgentMode.AgentFullAccess`). */
+const AFK_FULL_ACCESS_MODES: Partial<Record<string, string>> = { codex: 'agent-full-access' };
 const afkFullAccessMode = (harness: string, available: readonly string[]): string | undefined => {
   const mode = AFK_FULL_ACCESS_MODES[harness];
   return mode && available.includes(mode) ? mode : undefined;

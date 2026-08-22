@@ -9,7 +9,7 @@ import type { MirrorInput } from '../src/domain/tasks.js';
 
 /**
  * Codex has no `auto`/`bypassPermissions` ACP mode. When it advertises its
- * full-access mode (`danger-full-access`) the afk Runner forces that mode after
+ * full-access mode (`agent-full-access`) the afk Runner forces that mode after
  * the handshake, so the Run runs unattended without per-action approval — the
  * only mechanism that grants Codex full access over ACP (approval_policy /
  * command-line YOLO flags do not take effect there). A Codex build that
@@ -102,13 +102,14 @@ describe('Codex afk full-access mode', () => {
   beforeAll(async () => {
     server = await startServer({
       ...stubHarness('codex'),
-      // Full-access path: Codex advertises `danger-full-access`, so the afk
+      // Full-access path: Codex advertises `agent-full-access` (its real ACP mode
+      // id; `danger-full-access` is that mode's sandbox-policy name), so the afk
       // Runner forces that ACP session mode after the handshake.
       harnesses: {
         codex: {
           command: process.execPath,
           args: [STUB_HARNESS],
-          env: { STUB_MODES: 'default,read-only,agent,danger-full-access' },
+          env: { STUB_MODES: 'read-only,agent,agent-full-access' },
           models: ['stub-model'],
           defaultModel: 'stub-model',
         },
@@ -131,10 +132,10 @@ describe('Codex afk full-access mode', () => {
     closed: false,
   });
 
-  it('forces the danger-full-access mode for an afk Codex Run', async () => {
+  it('forces the agent-full-access mode for an afk Codex Run', async () => {
     const repo = makeRepo();
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
-    // A scenario with no permission request — Codex in danger-full-access never
+    // A scenario with no permission request — Codex in agent-full-access never
     // asks — that finishes cleanly over MCP.
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ mcpFinish: true, stopReason: 'end_turn' }) },
@@ -149,7 +150,7 @@ describe('Codex afk full-access mode', () => {
       return body.events.find((e: any) => e.type === 'lifecycle' && e.payload?.event === 'mode_set');
     });
     // The forced ACP mode is Codex's full-access mode — session/set_mode
-    // danger-full-access went over the wire, and the Run did not Escalate.
-    expect(modeSet.payload.mode).toBe('danger-full-access');
+    // agent-full-access went over the wire, and the Run did not Escalate.
+    expect(modeSet.payload.mode).toBe('agent-full-access');
   });
 });
