@@ -553,20 +553,21 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runner,
     () => configStore.get(),
     () => workspaces.list(),
-    mirror,
-    // Parallel-Epic pick gate (issue #159): route to the Task's own Workspace
-    // poll loop, which owns its per-Epic integration-branch coordinator. No live
-    // loop ⇒ not gated, so a native-only / tracking-off Workspace is unaffected.
-    (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
-    gitBreaker,
+    {
+      mirror,
+      // Parallel-Epic pick gate (issue #159): route to the Task's own Workspace
+      // poll loop, which owns its per-Epic integration-branch coordinator. No live
+      // loop ⇒ not gated, so a native-only / tracking-off Workspace is unaffected.
+      epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
+      gitBreaker,
+    },
   );
-  // One tracker poll loop per tracker-enabled Workspace (issues #30, #45); each
-  // poll pokes the Auto-Runner so a newly-ready mirrored Task gets picked up.
+  // One tracker poll loop per tracker-enabled Workspace (issues #30, #45). Polls
+  // sync tracker facts only; Auto-Runner scheduling is independent of polling.
   const trackerManager = new TrackerPollerManager(
     tasks,
     () => workspaces.list(),
     undefined,
-    () => autoRunner.poke(),
     undefined,
     // Premature-closure backstop (issue #139): a ticket closed while its
     // mirrored Task was still running — under the close-after-verify model only
@@ -580,9 +581,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => configStore.get(),
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
-  bus.on('task_changed', (task) => {
-    if (task.state === 'ready') autoRunner.poke();
-  });
+  // A settled Run frees a Machine Ceiling slot, so it must immediately refill
+  // without waiting for the scheduler interval.
   bus.on('run_changed', () => autoRunner.poke());
   // A settle emits `run_changed` right after it records a Session's retirement
   // intent (issue #148); drain here so an accepted/cancelled/abandoned Session's
@@ -626,6 +626,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   app.addHook('onClose', async () => {
     trackerManager.stopAll();
+    autoRunner.stop();
     runner.shutdown();
     conversationDriver.shutdown();
     clearInterval(leaseSweep);
@@ -850,6 +851,7 @@ not resolved yet.`;
       runner.mcpUrl = mcpUrl;
       conversationDriver.mcpUrl = mcpUrl;
     }
+    autoRunner.start();
     autoRunner.poke();
     await trackerManager.sync();
     // Boot is complete and the server is listening — begin stall monitoring now

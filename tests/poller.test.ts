@@ -62,20 +62,18 @@ describe('TrackerPoller.poll', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('scans, mirrors 1:1 into its Workspace, and pokes downstream', async () => {
+  it('scans and mirrors 1:1 into its Workspace without scheduling work', async () => {
     const { adapter, scans } = stubAdapter([
       ticket({ number: 42, title: 'Add rate limiting', labels: ['ready-for-agent'] }),
       ticket({ number: 43, isMap: true, labels: ['wayfinder:map'] }), // not mirrored
     ]);
-    let pokes = 0;
-    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter, () => pokes++);
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
 
     await poller.poll();
 
     expect(scans()).toBe(1);
     expect(await tasks.list()).toHaveLength(1); // map skipped
     expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
-    expect(pokes).toBe(1);
   });
 
   it('single-flights overlapping polls so the timer and a manual pollNow never scan concurrently (issue #219)', async () => {
@@ -126,7 +124,6 @@ describe('TrackerPoller.poll', () => {
         if (broken) throw new Error('declaration vanished');
         return adapter;
       },
-      undefined,
       undefined,
       undefined,
       (r) => reported.push(r),
@@ -180,7 +177,6 @@ describe('TrackerPoller.poll', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       (id) => closed.push(id),
     );
     await poller.poll();
@@ -216,7 +212,6 @@ describe('TrackerPoller.poll', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       (id) => closed.push(id),
     );
     await poller.poll(); // ready
@@ -226,10 +221,9 @@ describe('TrackerPoller.poll', () => {
     expect((await tasks.list())[0]!.state).toBe('completed');
   });
 
-  it('runs epic integration between mirroring and the poke (issue #159)', async () => {
+  it('runs epic integration after mirroring without scheduling work (issue #159)', async () => {
     const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'], assignees: ['someone'] })]);
-    let pokes = 0;
-    const calls: Array<{ tickets: number[]; mirrored: Array<number | null>; pokesAtCall: number }> = [];
+    const calls: Array<{ tickets: number[]; mirrored: Array<number | null> }> = [];
     let persistedAssignees: string[] | undefined;
     const epics = {
       reconcile: async (tickets: Ticket[], mirrored: { trackerRef: number | null }[]) => {
@@ -237,7 +231,6 @@ describe('TrackerPoller.poll', () => {
         calls.push({
           tickets: tickets.map((t) => t.number),
           mirrored: mirrored.map((m) => m.trackerRef),
-          pokesAtCall: pokes,
         });
       },
     };
@@ -247,7 +240,6 @@ describe('TrackerPoller.poll', () => {
       dir,
       60_000,
       async () => adapter,
-      () => pokes++,
       undefined,
       undefined,
       undefined,
@@ -260,14 +252,11 @@ describe('TrackerPoller.poll', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.tickets).toContain(42);
     expect(calls[0]!.mirrored).toContain(42);
-    expect(calls[0]!.pokesAtCall).toBe(0); // reconcile ran before the poke
     expect(persistedAssignees).toEqual([]); // reconstructed DB facts, not the assigned live-scan object (#234)
-    expect(pokes).toBe(1);
   });
 
-  it('swallows an epic integration failure: logs it, still pokes, never wedges the poll (issue #159)', async () => {
+  it('swallows an epic integration failure, logs it, and never wedges the poll (issue #159)', async () => {
     const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
-    let pokes = 0;
     const errors: string[] = [];
     const epics = {
       reconcile: async () => {
@@ -280,7 +269,6 @@ describe('TrackerPoller.poll', () => {
       dir,
       60_000,
       async () => adapter,
-      () => pokes++,
       (m) => errors.push(m),
       undefined,
       undefined,
@@ -290,7 +278,6 @@ describe('TrackerPoller.poll', () => {
 
     await expect(poller.poll()).resolves.toBeUndefined();
 
-    expect(pokes).toBe(1); // mirroring already committed; the poke still fires
     expect(await tasks.list()).toHaveLength(1);
     expect(errors.some((e) => e.includes('epic integration'))).toBe(true);
   });

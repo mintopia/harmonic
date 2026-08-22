@@ -1,4 +1,4 @@
-import type { AppConfig, Priority } from '../config.js';
+import type { AppConfig } from '../config.js';
 import type { TaskService } from '../domain/tasks.js';
 import type { RunStore } from '../domain/runs.js';
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
@@ -7,8 +7,7 @@ import { workContextKey } from '../domain/work-context-key.js';
 import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
-
-const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
+import { forEachYielding } from '../reliability/yield.js';
 
 /**
  * The direct-mode Work Context identity a Task would occupy, or `undefined` in
@@ -33,14 +32,14 @@ function directContextKey(task: TaskRow): string | undefined {
  * Run) never occupy a context here. First holder found wins the key, so the skip
  * reason names a stable occupant.
  */
-function occupiedDirectContexts(tasks: readonly TaskRow[]): Map<string, TaskRow> {
+async function occupiedDirectContexts(tasks: readonly TaskRow[]): Promise<Map<string, TaskRow>> {
   const occupied = new Map<string, TaskRow>();
-  for (const t of tasks) {
-    if (t.drive === 'hitl') continue;
-    if (t.state !== 'running' && t.state !== 'awaiting-review') continue;
+  await forEachYielding(tasks, (t) => {
+    if (t.drive === 'hitl') return;
+    if (t.state !== 'running' && t.state !== 'awaiting-review') return;
     const key = directContextKey(t);
     if (key && !occupied.has(key)) occupied.set(key, t);
-  }
+  });
   return occupied;
 }
 
@@ -52,6 +51,16 @@ function occupiedDirectContexts(tasks: readonly TaskRow[]): Map<string, TaskRow>
 export interface MirrorClaim {
   /** Post-lock: advertise Harmonic's local claim without reading tracker ownership. */
   advertiseClaim(task: TaskRow): Promise<void>;
+}
+
+type RunLauncher = (taskId: Parameters<Runner['launchClaimed']>[0]) => Promise<unknown>;
+
+export interface AutoRunnerOptions {
+  mirror?: MirrorClaim;
+  epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
+  gitBreaker?: GitCircuitBreaker;
+  /** Fixed scheduler cadence; tests inject a short interval. */
+  intervalMs?: number;
 }
 
 /**
@@ -75,9 +84,14 @@ export interface MirrorClaim {
  * eligibility or ownership signal (ADR-0030).
  */
 export class AutoRunner {
+  private timer: NodeJS.Timeout | undefined;
   private scheduled = false;
   private filling = false;
   private refill = false;
+  private readonly mirror: MirrorClaim | undefined;
+  private readonly epicBaseNotReady: ((task: TaskRow) => boolean | Promise<boolean>) | undefined;
+  private readonly gitBreaker: GitCircuitBreaker | undefined;
+  private readonly intervalMs: number;
   /**
    * Why a ready Task was passed over on the most recent pick pass, keyed by
    * Task id (ADR-0022, issue #120). Today the only entry is the House Rule
@@ -104,34 +118,30 @@ export class AutoRunner {
 
   constructor(
     private readonly taskService: TaskService,
-    private readonly runStore: RunStore,
-    private readonly runner: Runner,
+    private readonly runStore: Pick<RunStore, 'countRunning' | 'countRunningByWorkspace'>,
+    private readonly runner: { launchClaimed: RunLauncher },
     private readonly getConfig: () => AppConfig,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
-    private readonly mirror?: MirrorClaim,
-    /**
-     * Pick gate for parallel-Epic members (issue #159): true while a mirrored
-     * Task is an Epic member not yet safe to fork a worktree from — its
-     * integration-branch base is unresolved (the reconcile hasn't set it), or set
-     * to an `epic/<ref>` branch that does not currently exist in git (never cut,
-     * or gone after a retire/restart — asked of git directly, #231). Skips it —
-     * without this, the
-     * mirror insert's `ready` poke could spawn the member before its base is
-     * resolved, forking it from the working dir's branch instead of `epic/<ref>`,
-     * or off a missing integration branch. The same gate the Runner's start funnel
-     * consults, so hand-started and auto-picked members are held identically.
-     * Absent (native-only server / no live poll loop) ⇒ never gated.
-     */
-    private readonly epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>,
-    /**
-     * The per-context git circuit breaker (issue #199), shared with the Runner
-     * that records failures into it. A ready Task whose base repo is in a git
-     * backoff window is passed over — so a context whose workspace-prep keeps
-     * fast-failing isn't re-picked (and re-spawning git) on the next tick.
-     * Absent → no git-backoff skip (native-only / test servers).
-     */
-    private readonly gitBreaker?: GitCircuitBreaker,
-  ) {}
+    options: AutoRunnerOptions = {},
+  ) {
+    this.mirror = options.mirror;
+    this.epicBaseNotReady = options.epicBaseNotReady;
+    this.gitBreaker = options.gitBreaker;
+    this.intervalMs = options.intervalMs ?? 1_000;
+  }
+
+  /** Begin the DB-backed scheduler interval. Idempotent. */
+  start(): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => this.poke(), this.intervalMs);
+    this.timer.unref?.();
+  }
+
+  stop(): void {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = undefined;
+  }
 
   /**
    * The reason a ready Task was skipped on the last pick pass, or `undefined` if
@@ -195,26 +205,21 @@ export class AutoRunner {
   }
 
   /**
-   * Start one picked Task. Native: flip + spawn atomically (unchanged). Mirrored
-   * afk: flip (the lock) → advisory claim → spawn, awaited so the run
-   * exists before the loop re-checks the slot count.
+   * Claim one picked Task, then spawn it. The conditional DB claim is the local
+   * ownership lock; only its winner may advertise a mirrored claim or launch.
    */
   private async startPicked(task: TaskRow, skip: Set<number>): Promise<void> {
-    if (task.origin !== 'mirrored' || !this.mirror) {
-      try {
-        await this.runner.start(task.id);
-      } catch {
-        // Work Context busy (or another start failure): leave the Task ready and
-        // skip it this cycle; a later poke retries once the occupant settles.
-        skip.add(task.id);
-      }
+    const claimed = await this.taskService.claimReady(task.id);
+    if (!claimed) {
+      skip.add(task.id);
       return;
     }
-    await this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write
-    try {
-      await this.mirror.advertiseClaim(await this.taskService.get(task.id));
-    } catch {
-      // Advisory claim failed — proceed; reconcile retries the assignment.
+    if (claimed.origin === 'mirrored' && this.mirror) {
+      try {
+        await this.mirror.advertiseClaim(claimed);
+      } catch {
+        // Advisory claim failed — proceed; reconcile retries the assignment.
+      }
     }
     try {
       await this.runner.launchClaimed(task.id);
@@ -225,7 +230,7 @@ export class AutoRunner {
   }
 
   /**
-   * Highest priority first; FIFO (creation time, then id) within. Skips hitl
+   * DB-owned explicit priority, topological rank, then age. Skips hitl
    * Tasks and any parked this cycle. Also skips a Task
    * whose Workspace is Auto-Runner-disabled (master is already on here, so an
    * inheriting Workspace counts as enabled) or already at its resolved cap — the
@@ -248,8 +253,11 @@ export class AutoRunner {
     runningByWorkspace: Map<number, number>,
     ceiling: number,
   ): Promise<TaskRow | undefined> {
-    const all = await this.taskService.list();
-    const occupied = occupiedDirectContexts(all);
+    const [all, ordered] = await Promise.all([
+      this.taskService.list(),
+      this.taskService.orderedEligibleWork(),
+    ]);
+    const occupied = await occupiedDirectContexts(all);
     this.contextSkipReasons.clear();
     // Parallel-Epic pick gate (issue #159, git ground-truth #231): a ready Epic
     // member isn't spawnable until its integration branch exists in git and its
@@ -260,67 +268,53 @@ export class AutoRunner {
     const epicGate = new Map<number, boolean>();
     if (this.epicBaseNotReady) {
       const gate = this.epicBaseNotReady;
-      await Promise.all(
-        all
-          // Same cheap exclusions the sync filter below applies, so a task that's
-          // skipped or hitl doesn't cost a `branchExists` call.
-          .filter(
-            (t) =>
-              t.state === 'ready' &&
-              t.origin === 'mirrored' &&
-              t.drive !== 'hitl' &&
-              !skip.has(t.id),
-          )
-          .map(async (t) => {
-            epicGate.set(t.id, await gate(t));
-          }),
-      );
+      await forEachYielding(all, async (t) => {
+        // Same cheap exclusions the pick loop below applies, so a task that's
+        // skipped or hitl doesn't cost a `branchExists` call.
+        if (t.state === 'ready' && t.origin === 'mirrored' && t.drive !== 'hitl' && !skip.has(t.id)) {
+          epicGate.set(t.id, await gate(t));
+        }
+      });
     }
-    const picked = all
-      .filter((t) => {
-        if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
-        if (epicGate.get(t.id)) return false;
-        const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
-        // Master is on (fill returned early otherwise), so an inheriting
-        // Workspace (null) is enabled; only an explicit `false` opts out.
-        if (!resolve(workspace?.autoRunnerEnabled, true)) return false;
-        const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
-        const running = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
-        if (running >= cap) return false;
+    let picked: TaskRow | undefined;
+    await forEachYielding(ordered, (t) => {
+      if (picked || t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return;
+      if (epicGate.get(t.id)) return;
+      const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
+      // Master is on (fill returned early otherwise), so an inheriting
+      // Workspace (null) is enabled; only an explicit `false` opts out.
+      if (!resolve(workspace?.autoRunnerEnabled, true)) return;
+      const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
+      const running = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
+      if (running >= cap) return;
         // Git-backoff skip (issue #199): a base repo whose workspace-prep git just
         // fast-failed is in an exponential-backoff window — pass its Tasks over so
         // the scheduler doesn't re-spawn git at fork-rate. Keyed on the base repo,
         // so a direct Run and a worktree Run colliding on the same repo share the
         // window. Recorded on the wait-clock so the block is legible to an operator.
-        if (this.gitBreaker && !this.gitBreaker.allows(repoKey(t.workingDir))) {
-          this.contextSkipReasons.set(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
-          if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
-          return false;
-        }
-        const key = directContextKey(t);
-        const holder = key ? occupied.get(key) : undefined;
-        if (holder) {
-          this.contextSkipReasons.set(
-            t.id,
-            `Work Context held by task ${holder.id} (${holder.state})`,
-          );
-          if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
-          return false;
-        }
-        return true;
-      })
-      .sort(
-        (a, b) =>
-          PRIORITY_RANK[a.priority as Priority] - PRIORITY_RANK[b.priority as Priority] ||
-          a.createdAt - b.createdAt ||
-          a.id - b.id,
-      )[0];
+      if (this.gitBreaker && !this.gitBreaker.allows(repoKey(t.workingDir))) {
+        this.contextSkipReasons.set(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
+        if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
+        return;
+      }
+      const key = directContextKey(t);
+      const holder = key ? occupied.get(key) : undefined;
+      if (holder) {
+        this.contextSkipReasons.set(
+          t.id,
+          `Work Context held by task ${holder.id} (${holder.state})`,
+        );
+        if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
+        return;
+      }
+      picked = t;
+    });
     // A Task no longer House-Rule-skipped this pass — started, or its
     // blocker cleared — resets its wait clock rather than carrying a stale
     // start time into a later, unrelated block.
-    for (const taskId of [...this.contextWaitingSince.keys()]) {
+    await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
       if (!this.contextSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
-    }
+    });
     return picked;
   }
 }

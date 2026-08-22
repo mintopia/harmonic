@@ -28,7 +28,7 @@ import { DomainError } from './errors.js';
 import { decideTaskDeletion } from './task-deletion.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { orderEligibleWork } from './work-ordering.js';
+import { orderEligibleWorkYielding } from './work-ordering.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -480,17 +480,17 @@ export class TaskService {
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state ? eq(tasks.state, query.state) : undefined,
     ].filter((f) => f !== undefined);
-    let rows = await Promise.all(
-      (
-        await this.db.read((db) =>
-          db
-            .select()
-            .from(tasks)
-            .where(filters.length > 0 ? and(...filters) : undefined)
-            .all(),
-        )
-      ).map((raw) => this.resolve(raw)),
+    const rawRows = await this.db.read((db) =>
+      db
+        .select()
+        .from(tasks)
+        .where(filters.length > 0 ? and(...filters) : undefined)
+        .all(),
     );
+    let rows: TaskRow[] = [];
+    await forEachYielding(rawRows, async (raw) => {
+      rows.push(await this.resolve(raw));
+    });
     if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
     if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
     if (query.sortBy) {
@@ -514,10 +514,16 @@ export class TaskService {
    */
   async orderedEligibleWork(workspaceId?: number): Promise<TaskRow[]> {
     const rows = await this.list(workspaceId === undefined ? {} : { workspaceId });
-    const candidates = rows.filter((task) => task.state === 'ready' || task.state === 'blocked');
+    const candidates: TaskRow[] = [];
+    await forEachYielding(rows, (task) => {
+      if (task.state === 'ready' || task.state === 'blocked') candidates.push(task);
+    });
     if (candidates.length === 0) return [];
 
-    const candidateIds = candidates.map((task) => task.id);
+    const candidateIds: number[] = [];
+    await forEachYielding(candidates, (task) => {
+      candidateIds.push(task.id);
+    });
     const dependencyRows = await this.db.read((db) =>
       db.select().from(taskDependencies).where(inArray(taskDependencies.taskId, candidateIds)).all(),
     );
@@ -527,7 +533,14 @@ export class TaskService {
       if (blockers) blockers.push(dependency.dependsOnId);
       else blockersByTaskId.set(dependency.taskId, [dependency.dependsOnId]);
     });
-    const blockerIds = [...new Set(dependencyRows.map((dependency) => dependency.dependsOnId))];
+    const blockerIds: number[] = [];
+    const seenBlockerIds = new Set<number>();
+    await forEachYielding(dependencyRows, (dependency) => {
+      if (!seenBlockerIds.has(dependency.dependsOnId)) {
+        seenBlockerIds.add(dependency.dependsOnId);
+        blockerIds.push(dependency.dependsOnId);
+      }
+    });
     const completedRows =
       blockerIds.length === 0
         ? []
@@ -538,7 +551,10 @@ export class TaskService {
               .where(and(inArray(tasks.id, blockerIds), eq(tasks.state, 'completed')))
               .all(),
           );
-    const completedIds = new Set(completedRows.map((task) => task.id));
+    const completedIds = new Set<number>();
+    await forEachYielding(completedRows, (task) => {
+      completedIds.add(task.id);
+    });
     const nodes: Array<TaskRow & { blockedBy: number[] }> = [];
     await forEachYielding(candidates, (task) => {
       nodes.push({
@@ -547,7 +563,27 @@ export class TaskService {
       });
     });
 
-    return orderEligibleWork(nodes);
+    return await orderEligibleWorkYielding(nodes);
+  }
+
+  /**
+   * Atomically claim a ready Task for a scheduler. A concurrent scheduler sees
+   * `undefined`, so local Task state is the cross-process ownership lock.
+   */
+  async claimReady(id: number): Promise<TaskRow | undefined> {
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ state: 'running', updatedAt: Date.now() })
+        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready')))
+        .returning()
+        .get(),
+    );
+    if (!row) return undefined;
+    const task = await this.resolve(row);
+    this.onChanged(task);
+    this.onNotify('run.started', task);
+    return task;
   }
 
   async get(id: number): Promise<TaskRow> {

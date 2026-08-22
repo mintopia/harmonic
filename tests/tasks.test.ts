@@ -36,6 +36,18 @@ describe('task authoring', () => {
     expect(list.body.tasks.map((t: any) => t.id)).toContain(body.id);
   });
 
+  it('claims a ready task exactly once when schedulers race (issue #236)', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'Claim me' });
+
+    const claims = await Promise.all([
+      server.app.ctx.tasks.claimReady(created.body.id),
+      server.app.ctx.tasks.claimReady(created.body.id),
+    ]);
+
+    expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1);
+    expect((await server.app.ctx.tasks.get(created.body.id)).state).toBe('running');
+  });
+
   it('saves a draft, allows editing while draft, and promotes it to ready', async () => {
     const created = await server.api('POST', '/api/tasks', {
       prompt: 'Draft me',

@@ -97,6 +97,23 @@ describe('auto-runner', () => {
     }
   });
 
+  it('refills from a finished-run event even while the interval is stopped', async () => {
+    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
+    server.app.ctx.autoRunner.stop();
+    const finishedTask = await server.api('POST', '/api/tasks', { prompt: 'finished', workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-event-')) });
+    await server.api('POST', `/api/tasks/${finishedTask.body.id}/run`);
+    await waitFor(async () => (await state(finishedTask.body.id)) === 'awaiting-review');
+    const task = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-event-')) });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await state(task.body.id)).toBe('ready');
+
+    // `run_changed` is the capacity-free wake-up path. It schedules a fill even
+    // with no timer running, so this cannot pass through interval polling.
+    server.app.ctx.bus.emit('run_changed', (await server.app.ctx.runs.listForTask(finishedTask.body.id))[0]!);
+    await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
+  });
+
   it('starts nothing when off, while manual run-now still works', async () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'manual' });
     await new Promise((r) => setTimeout(r, 300));

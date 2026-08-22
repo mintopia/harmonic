@@ -14,8 +14,8 @@ export interface MirrorSync {
 
 /**
  * The per-Epic integration-branch reconcile (issue #159), run each poll between
- * mirroring and the downstream poke so a ready member's `baseBranch` is set
- * before the Auto-Runner can pick it. Structurally implemented by the
+ * mirroring so a ready member's `baseBranch` is set before the scheduler's next
+ * DB-backed pick. Structurally implemented by the
  * {@link EpicIntegrationCoordinator} in the execution layer.
  */
 export interface EpicIntegrationSync {
@@ -25,8 +25,8 @@ export interface EpicIntegrationSync {
 /**
  * One Workspace's tracker mirroring poll loop (issues #30, #45). Scans this
  * Workspace's `workingDir` repo on a fixed interval and upserts each issue 1:1
- * into a mirrored Task *in this Workspace only*, then pokes downstream (the
- * Auto-Runner) so any newly-ready mirrored Task gets picked up. Best-effort: a
+ * into a mirrored Task *in this Workspace only*. It is a fact-sync sidecar;
+ * scheduling is independent of poll timing. Best-effort: a
  * failed scan is logged and the next tick retries. Lifecycle (start/stop on a
  * Workspace's tracker toggle, dir change, or deletion) is owned by the
  * {@link TrackerPollerManager}, so there is no per-tick enabled check — a
@@ -44,7 +44,6 @@ export class TrackerPoller {
     private readonly workingDir: string,
     private readonly pollIntervalMs: number,
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    private readonly onMirrored: () => void = () => {},
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
     private readonly mirror?: MirrorSync,
     /** Report each cycle's Resolved Tracker so the manager's cache stays fresh at poll time (issue #83). */
@@ -59,7 +58,7 @@ export class TrackerPoller {
     private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
     /**
      * The Epic integration-branch reconcile (issue #159). Runs after mirroring
-     * and before the poke so a ready Epic member's `baseBranch` points at its
+     * so a ready Epic member's `baseBranch` points at its
      * integration branch before the Auto-Runner spawns its worktree Run. Absent
      * ⇒ no Epic integration (today's per-Run behaviour). Its failure is logged,
      * not fatal: mirroring already committed, and an un-set base degrades to the
@@ -69,12 +68,12 @@ export class TrackerPoller {
   ) {}
 
   /**
-   * One poll cycle: resolve → scan → mirror 1:1 into this Workspace → poke →
-   * reconcile advisory assignments (issues #32 and #232). The resolution is
+   * One poll cycle: resolve → scan → mirror 1:1 into this Workspace → reconcile
+   * advisory assignments (issues #32 and #232). The resolution is
    * reported to {@link onResolved} either way (issue #83) so the Resolved
    * Tracker surface refreshes every poll, not just on the manager's reconcile.
-   * `observe` runs before the poke so a freshly mirrored Task can advertise a
-   * claim through the current adapter. `reconcile` runs after the local state settles.
+   * `observe` retains the current adapter for later advisory claims. `reconcile`
+   * runs after the local state settles.
    *
    * Single-flighted (issue #219): the interval timer and a manual `pollNow`
    * both call here, so a slow scan or a slow Epic-integration git op must not let
@@ -101,8 +100,8 @@ export class TrackerPoller {
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter);
     const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId);
-    // Set each ready Epic member's base branch before the poke (issue #159), so
-    // the Auto-Runner forks its worktree Run from the Epic's integration branch.
+    // Set each ready Epic member's base branch before the scheduler's next pick
+    // (issue #159), so it forks its worktree Run from the Epic's integration branch.
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
     if (this.epics) {
       try {
@@ -115,7 +114,6 @@ export class TrackerPoller {
         this.onError(`epic integration reconcile failed: ${String(err)}`);
       }
     }
-    this.onMirrored();
     // Backstop: upsertMirrored never moves a Task off `running` (nothing
     // interrupts a live Run), so a ticket closed mid-run (agent-via-skill or an
     // operator) leaves the Task stuck running with a parked agent. Under the

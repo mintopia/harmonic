@@ -77,7 +77,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     } as unknown as RunStore;
     const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
 
-    const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), mirror);
+    const runner$ = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), { mirror });
     runner$.poke();
     await vi.waitFor(() => expect(started).toHaveLength(4));
 
@@ -94,6 +94,58 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     expect(claims.length).toBeGreaterThan(0);
     for (const claim of claims) expect(claim.stateAtClaim).toBe('running');
     expect(claims.map((claim) => claim.ref).sort()).toEqual([42, 44, 45]);
+  });
+});
+
+describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
+  let dir: string;
+  let asyncDb: AsyncDbHandle;
+  let tasks: TaskService;
+  let autoRunner: AutoRunner | undefined;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-scheduler-'));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+  });
+  afterEach(async () => {
+    autoRunner?.stop();
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('starts ready work on its interval without a poll or poke', async () => {
+    const low = await tasks.create({ prompt: 'low priority interval task', priority: 'low', isolationMode: 'worktree' });
+    const high = await tasks.create({ prompt: 'high priority interval task', priority: 'high', isolationMode: 'worktree' });
+    const started: number[] = [];
+    const runner = {
+      launchClaimed: async (id: number) => started.push(id),
+    };
+    const runStore = {
+      countRunning: async () => started.length,
+      countRunningByWorkspace: async () => new Map<number, number>(),
+    };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), { intervalMs: 10 });
+
+    autoRunner.start();
+    await vi.waitFor(() => expect(started).toEqual([high.id]));
+
+    expect(started).not.toContain(low.id);
+  });
+
+  it('allows only one independent DB handle to claim a ready task', async () => {
+    const task = await tasks.create({ prompt: 'cross-handle claim', isolationMode: 'worktree' });
+    const secondDb = await openAsyncDb(dir);
+    const secondTasks = new TaskService(secondDb, () => defaultConfig(), allWorkspaces(secondDb));
+
+    try {
+      const claims = await Promise.all([tasks.claimReady(task.id), secondTasks.claimReady(task.id)]);
+      expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1);
+      expect((await tasks.get(task.id)).state).toBe('running');
+    } finally {
+      await secondDb.close();
+    }
   });
 });
 
@@ -139,15 +191,9 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
       countRunningByWorkspace: () => new Map<number, number>(),
     } as unknown as RunStore;
     const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
-    const ar = new AutoRunner(
-      tasks,
-      runStore,
-      runner,
-      () => config,
-      allWorkspaces(asyncDb),
-      undefined,
-      (t) => awaitsEpicBase(t),
-    );
+    const ar = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), {
+      epicBaseNotReady: (t) => awaitsEpicBase(t),
+    });
     return { ar, started };
   };
 

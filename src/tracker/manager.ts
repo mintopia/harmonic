@@ -57,7 +57,6 @@ export class TrackerPollerManager {
       repoRoot: string,
       featureIndex?: FeatureIndex,
     ) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    private readonly onMirrored: () => void = () => {},
     private readonly onError: (msg: string) => void = (msg) => console.error(msg),
     /** A mirrored Task whose ticket closed while it was still running (board-refresh backstop) — routed to the Runner to stop the parked agent and settle it done. */
     private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
@@ -110,7 +109,7 @@ export class TrackerPollerManager {
     const mirror = new MirrorCoordinator(this.tasks, ws.id);
     // Harmonic-owned per-Epic integration branches for this Workspace (issue
     // #159): cut in its Working Directory, one per derived Epic with a ready
-    // member, and each ready member's base branch pointed at it before the poke.
+    // member, and each ready member's base branch pointed at it before the next pick.
     const epics = new EpicIntegrationCoordinator(this.tasks, ws.workingDir);
     // The whole-Epic land (issue #161): once every member has landed onto the
     // integration branch, Verify the integrated whole and, on a pass, land it
@@ -144,7 +143,6 @@ export class TrackerPollerManager {
       ws.workingDir,
       ws.trackerPollIntervalSeconds * 1000,
       resolveForWs,
-      this.onMirrored,
       this.onError,
       mirror,
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
