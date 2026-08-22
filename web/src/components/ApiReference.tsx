@@ -55,10 +55,9 @@ function MethodPill({ method }: { method: string }) {
 }
 
 /** Response status → state color by real meaning (the Signal Rule's carve-out):
- * 2xx accepted (green), 4xx/5xx failed (red), everything else neutral. */
+ * 4xx/5xx failed (red); successful and unclassified responses stay neutral. */
 function statusStyle(status: string): string {
   const lead = status[0];
-  if (lead === '2') return 'bg-raised text-ink';
   if (lead === '4' || lead === '5') return 'bg-fail-tint text-fail';
   return 'bg-raised text-ink';
 }
