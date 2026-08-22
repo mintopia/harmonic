@@ -69,6 +69,8 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
+  /** The running run's phase, for the Board's Active-card badge; null unless the Task is running (or a pre-phase-machine run). */
+  phase: RunRow['phase'];
   /** The current scheduler reason this Task was not picked for, such as a
    * dependency, capacity, disabled Workspace, or missing integration branch;
    * null when it is not waiting (issue #238). */
@@ -131,6 +133,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     runStartedAt: running?.startedAt ?? null,
     toolCount,
     runId: running?.id ?? null,
+    phase: running?.phase ?? null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     candidateRef: runs.at(-1)?.candidateRef ?? null,
   };

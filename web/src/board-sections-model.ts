@@ -101,6 +101,19 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   return { needsYou, active, epics: activeEpics, standalone: standaloneTasks };
 }
 
+/**
+ * The one-line card title for a Task. A Task has no dedicated title field, only
+ * the full `prompt` (often Markdown whose body follows the summary), so the card
+ * would otherwise leak "## What to build …" into the heading. Take the first
+ * non-empty line, cut it at the first inline heading marker (`title ## Summary`),
+ * and strip a leading heading marker. Falls back to the raw first line.
+ */
+export function cardTitle(prompt: string): string {
+  const firstLine = prompt.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const beforeHeading = firstLine.split(/\s+#{1,6}\s+/)[0] ?? firstLine;
+  return beforeHeading.replace(/^#{1,6}\s+/, '').trim() || firstLine;
+}
+
 /** Elapsed as "1h 2m" / "3m 4s" / "5s" for live Board cards. */
 export function fmtElapsed(ms: number): string {
   const seconds = Math.floor(ms / 1_000);

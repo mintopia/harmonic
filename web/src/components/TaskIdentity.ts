@@ -14,7 +14,7 @@ function el(type: string, props: Record<string, unknown>, ...children: ReactNode
   return createElement(type, props, ...children);
 }
 
-function providerLabel(harness: string): string {
+export function providerLabel(harness: string): string {
   const normalized = harness.trim().toLowerCase();
   return PROVIDER_META[normalized as keyof typeof PROVIDER_META]?.label ?? harness;
 }

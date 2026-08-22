@@ -1,31 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../types';
 import type { Epic, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
-import {
-  FORCE_LAND_CONSEQUENCE,
-  railSegments,
-  rosterLanes,
-} from '../epic-model';
-import { boardSections, runningReadout } from '../board-sections-model';
+import { railSegments } from '../epic-model';
+import { boardSections, cardTitle, runningReadout } from '../board-sections-model';
 import { deriveEpicFrontier, type FrontierNode } from '../epic-frontier-model';
 import { issueRef, taskKey } from '../id-format.js';
-import { cardBranch, cardDiffstat } from './cardBranch';
+import { cardDiffstat } from './cardBranch';
 import { api } from '../api';
 import { subscribe } from '../ws';
-import { toastError, toastLandOutcome } from '../toast';
-import { ArmedButton } from './ArmedButton';
+import { toastError } from '../toast';
 import { Icon } from './Icon';
-import { TaskIdentity } from './TaskIdentity';
+import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
   btnGhost,
   btnPrimary,
-  btnQuietDestructive,
   chip,
   displayTitle,
-  escalatedChip,
   panel,
   sectionLabel,
   sectionLabelAttn,
+  stateChip,
   stateDot,
   toolChip,
   touchTargetInline,
@@ -88,15 +82,31 @@ function RunningReadoutLine({ task }: { task: Task }) {
   );
 }
 
-function RunNowButton({ taskId, onChanged }: { taskId: number; onChanged: () => void }) {
+function RunNowButton({ taskId, onChanged, icon }: { taskId: number; onChanged: () => void; icon?: boolean }) {
+  const run = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    api.runTask(taskId).then(onChanged, toastError);
+  };
+  if (icon) {
+    return (
+      <button
+        type="button"
+        aria-label="Run now"
+        title="Run now"
+        onClick={run}
+        className={`${btnPrimary} relative z-10 grid size-8 min-h-11 min-w-11 shrink-0 place-items-center p-0`}
+      >
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7 5l12 7-12 7V5z" />
+        </svg>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
       className={`${btnPrimary} h-8 min-h-11 px-3 py-0 text-small`}
-      onClick={(e) => {
-        e.stopPropagation();
-        api.runTask(taskId).then(onChanged, toastError);
-      }}
+      onClick={run}
     >
       Run now
     </button>
@@ -126,9 +136,17 @@ const CARD_ACCENT: Record<Task['state'], string> = {
   cancelled: 'bg-faint',
 };
 
+function WhoLine({ harness, model }: { harness: string; model: string }) {
+  return (
+    <span className="min-w-0 truncate text-small text-muted">
+      {providerLabel(harness)} <span aria-hidden="true">·</span> {formatModelLabel(model)}
+    </span>
+  );
+}
+
 function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void; onChanged: () => void }) {
-  const branch = cardBranch(task) ?? (task.isolationMode === 'worktree' ? 'worktree pending' : 'direct');
   const diffstat = cardDiffstat(task);
+  const running = task.state === 'running';
   const action =
     task.state === 'awaiting-review' ? (
       <ReviewButton onOpen={onOpen} />
@@ -137,45 +155,58 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
     ) : task.state === 'ready' ? (
       <RunNowButton taskId={task.id} onChanged={onChanged} />
     ) : null;
+  const showFoot = !!task.branch || running || !!action;
 
   return (
     <article data-task-id={task.id} className={`bold-wash ${task.state} relative flex h-full w-[26.25rem] shrink-0 flex-col overflow-hidden rounded-lg bg-surface shadow-card`}>
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${CARD_ACCENT[task.state]}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
+          {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}
           <Dot task={task} />
           <span className="font-data text-small text-faint">{rowId(task)}</span>
-          {task.mapRef != null && <span className={toolChip}>epic #{task.mapRef}</span>}
-          {task.drive === 'hitl' && <span className={`${chip} bg-raised text-muted`}>HITL</span>}
-          {task.escalated && <span className={escalatedChip}>needs you</span>}
+          {task.drive === 'hitl' ? (
+            <span className="ml-auto rounded-full bg-running-tint px-2 py-0.5 text-label font-semibold uppercase text-running">
+              HITL
+            </span>
+          ) : task.state === 'awaiting-review' ? (
+            <span className={`ml-auto ${stateChip(task.state)}`}>awaiting review</span>
+          ) : running && task.phase && task.phase !== 'terminal' ? (
+            <span className="ml-auto rounded-full bg-running-tint px-2 py-0.5 text-label font-semibold uppercase text-running">
+              {task.phase === 'landing' ? 'merging' : task.phase}
+            </span>
+          ) : null}
         </div>
         <button
           type="button"
           onClick={onOpen}
+          title={task.prompt}
           className="mt-3 line-clamp-2 text-left text-title font-semibold text-ink underline-offset-4 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
         >
-          {task.prompt}
+          {cardTitle(task.prompt)}
         </button>
-        <div className="mt-3 space-y-1.5 text-small text-muted">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="shrink-0 text-faint">ref</span>
-            <span className="min-w-0 truncate font-data">{branch}</span>
-            {diffstat && (
-              <span className="shrink-0 font-data text-faint">
-                +{diffstat.added} −{diffstat.removed}
+        <div className="mt-2">
+          <WhoLine harness={task.harness} model={task.model} />
+        </div>
+        {showFoot && (
+          <div className="mt-auto flex items-center gap-3 pt-4 text-small text-muted">
+            {task.branch && (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Icon name="branch" className="text-faint" />
+                <span className="min-w-0 truncate font-data">{task.branch}</span>
+                {diffstat && (
+                  <span className="shrink-0 font-data text-faint">
+                    +{diffstat.added} −{diffstat.removed}
+                  </span>
+                )}
               </span>
             )}
+            <span className="ml-auto flex items-center gap-3">
+              {running && <RunningReadoutLine task={task} />}
+              {action && <span className="relative z-10">{action}</span>}
+            </span>
           </div>
-          {task.state === 'running' ? (
-            <RunningReadoutLine task={task} />
-          ) : task.skipReason ? (
-            <p className="line-clamp-1 text-faint">{task.skipReason}</p>
-          ) : null}
-        </div>
-        <div className="mt-3 border-t border-hairline pt-3 text-small text-muted">
-          <TaskIdentity harness={task.harness} model={task.model} />
-        </div>
-        {action && <div className="relative z-10 mt-4 flex justify-end">{action}</div>}
+        )}
       </div>
     </article>
   );
@@ -313,13 +344,13 @@ function FrontierNodeCard({
   return (
     <div className={`bold-wash ${node.state ?? ''} w-[300px] shrink-0 rounded-lg border bg-surface p-3 ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
       <div className="flex items-start gap-2">
-        <span className={`mt-1 size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} role="img" aria-label={node.state ?? 'blocked'} />
+        <span className={`mt-1.5 size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} role="img" aria-label={node.state ?? 'blocked'} />
         <div className="min-w-0 flex-1">
           <button
             type="button"
             disabled={node.taskId == null}
             onClick={() => node.taskId != null && onOpenTask(node.taskId)}
-            className={`${touchTargetInline} block min-w-0 text-left disabled:cursor-default`}
+            className="block w-full min-w-0 text-left disabled:cursor-default"
           >
             <span className="font-data text-small text-faint">#{node.ref}</span>
             <span className="mt-1 block truncate text-title font-semibold text-ink">{node.title}</span>
@@ -337,8 +368,8 @@ function FrontierNodeCard({
             </div>
           )}
         </div>
+        {runnable && node.taskId != null && <RunNowButton taskId={node.taskId} onChanged={onChanged} icon />}
       </div>
-      {runnable && node.taskId != null && <RunNowButton taskId={node.taskId} onChanged={onChanged} />}
     </div>
   );
 }
@@ -350,25 +381,23 @@ function EpicBand({
   onOpenTask,
   onChanged,
   onOpenEpic,
-  onForceLandEpic,
 }: {
   epic: Epic;
   defaultOpen?: boolean;
   tasks: Task[];
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
-  /** Open the full Epic peek (ADR-0026) — the deep view behind the band. */
+  /** Open the full Epic peek (ADR-0026) — the deep view behind the band, where
+   * the merge/verification detail and Force-merge live. */
   onOpenEpic?: (epic: Epic) => void;
-  onForceLandEpic: (ref: number) => Promise<EpicLandOutcome>;
 }) {
   const attention = epic.members.filter((m) => m.escalated || m.state === 'awaiting-review');
-  const [open, setOpen] = useState(defaultOpen || attention.length > 0);
   const segments = railSegments(epic);
   const frontier = useMemo(() => deriveEpicFrontier(epic, tasks), [epic, tasks]);
-  const stuck = rosterLanes(epic).stuck;
-  const verification = epic.verification.status;
-  const blockingNote =
-    epic.land.held ?? (stuck.length > 0 ? `${issueRef(stuck[0]!.ref)} blocked` : null);
+  const hasDag = frontier.columns.length > 0;
+  // The Board shows the frontier-DAG inline by default (the Paper mockup); a
+  // fully-merged epic has no visible members (hasDag=false) and stays collapsed.
+  const [open, setOpen] = useState(defaultOpen || attention.length > 0 || hasDag);
 
   return (
     <div className={panel}>
@@ -387,7 +416,16 @@ function EpicBand({
         {attention.length > 0 && (
           <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} need you</span>
         )}
-        {frontier.columns.length > 0 && (
+        <span
+          className="flex shrink-0 items-center gap-1"
+          role="img"
+          aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} merged`}
+        >
+          {segments.map((seg) => (
+            <span key={seg.ref} className={`h-1.5 w-4 rounded-full ${SEGMENT_FILL[seg.status]}`} />
+          ))}
+        </span>
+        {hasDag && (
           <button
             type="button"
             aria-expanded={open}
@@ -400,48 +438,7 @@ function EpicBand({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pb-3.5">
-        <span
-          className="flex items-center gap-1"
-          role="img"
-          aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} merged`}
-        >
-          {segments.map((seg) => (
-            <span key={seg.ref} className={`h-1.5 w-5 rounded-full ${SEGMENT_FILL[seg.status]}`} />
-          ))}
-        </span>
-        <span className="text-small text-muted">
-          <span className="text-faint">merged</span> {epic.foldedCount}/{epic.memberCount}
-        </span>
-        {epic.integration.tip && (
-          <span className="text-small text-muted">
-            <span className="text-faint">tip</span> <span className="font-data">{epic.integration.tip}</span>
-          </span>
-        )}
-        <span className="text-small text-muted">
-          <span className="text-faint">verification</span>{' '}
-          {verification === 'pass' ? 'passed' : verification === 'fail' ? 'failed' : 'pending'}
-        </span>
-        <div className="ml-auto flex items-start gap-3">
-          {blockingNote && (
-            <span className="mt-0.5 rounded bg-fail-tint px-2 py-0.5 text-small text-fail">{blockingNote}</span>
-          )}
-          <div className="flex flex-col items-end gap-1">
-            <ArmedButton
-              label="Force-merge"
-              armedLabel="Confirm force-merge"
-              ariaLabel={`Force-merge Epic #${epic.ref}`}
-              className={`${touchTargetInline} ${btnQuietDestructive} text-small`}
-              onConfirm={() => {
-                onForceLandEpic(epic.ref).then(toastLandOutcome, toastError);
-              }}
-            />
-            <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
-          </div>
-        </div>
-      </div>
-
-      {open && frontier.columns.length > 0 && (
+      {open && hasDag && (
         <div className="overflow-x-auto border-t border-hairline p-4">
           <div className="flex min-w-max gap-4">
             {frontier.columns.map((column) => (
@@ -531,7 +528,6 @@ export function Board({
   onChanged,
   onNewTask,
   onOpenEpic,
-  onForceLandEpic,
   focusEpic = null,
   onClearFocus,
 }: {
@@ -562,7 +558,7 @@ export function Board({
             </button>
           )}
         </div>
-        <EpicBand epic={focusEpic} defaultOpen tasks={tasks} onOpenTask={onOpenTask} onChanged={onChanged} onOpenEpic={onOpenEpic} onForceLandEpic={onForceLandEpic} />
+        <EpicBand epic={focusEpic} defaultOpen tasks={tasks} onOpenTask={onOpenTask} onChanged={onChanged} onOpenEpic={onOpenEpic} />
       </div>
     );
   }
@@ -601,7 +597,6 @@ export function Board({
                 onOpenTask={onOpenTask}
                 onChanged={onChanged}
                 onOpenEpic={onOpenEpic}
-                onForceLandEpic={onForceLandEpic}
               />
             ))}
           </div>

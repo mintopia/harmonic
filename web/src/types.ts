@@ -246,6 +246,8 @@ export interface Task {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
+  /** The running run's phase, for the Board's Active-card status badge; null unless the Task is running (or a pre-phase-machine run). */
+  phase: RunPhase | null;
   /** The latest run's frozen verification candidate ref (issue #134's Run
    * `candidateRef`), surfaced here so an escalated Task's stranded candidate
    * can be adopted for review without a fresh builder run (issue #191); null

@@ -165,6 +165,10 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
     runId: z.number().nullable().meta({ example: 41 }),
+    /** The running run's phase (executing → validating → verifying → [review] →
+     * landing → terminal), so the Board's Active card can badge it; null unless
+     * the Task is running (or a pre-phase-machine run). */
+    phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
     /** The current scheduler reason this Task is waiting, such as a blocker,
      * capacity limit, disabled Workspace, or missing integration branch;
      * null when it is not waiting (issue #238). */

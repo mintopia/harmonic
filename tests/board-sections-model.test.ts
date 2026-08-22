@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boardSections, fmtElapsed, isActiveEpic, runningReadout } from '../web/src/board-sections-model.js';
+import { boardSections, cardTitle, fmtElapsed, isActiveEpic, runningReadout } from '../web/src/board-sections-model.js';
 import type { Epic, EpicMember } from '../web/src/epic-model.js';
 import type { Task, TaskState } from '../web/src/types.js';
 
@@ -38,6 +38,7 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   runStartedAt: null,
   toolCount: null,
   runId: null,
+  phase: null,
   candidateRef: null,
   skipReason: null,
   ...extra,
@@ -102,5 +103,23 @@ describe('live Board readouts', () => {
   it('returns no readout without a started running task', () => {
     expect(runningReadout(task(1, 'ready', { runStartedAt: 1_000 }), 2_000)).toBeNull();
     expect(runningReadout(task(1, 'running'), 2_000)).toBeNull();
+  });
+});
+
+describe('cardTitle', () => {
+  it('cuts an inline Markdown heading off the summary', () => {
+    expect(cardTitle('Running run is invisible ## Summary A run row...')).toBe('Running run is invisible');
+  });
+
+  it('strips a leading heading marker', () => {
+    expect(cardTitle('## What to build\n\nbody text')).toBe('What to build');
+  });
+
+  it('takes the first non-empty line and trims it', () => {
+    expect(cardTitle('\n  Fix the flaky test  \nmore detail')).toBe('Fix the flaky test');
+  });
+
+  it('passes a plain one-line prompt through', () => {
+    expect(cardTitle('Add compact conversation formatter')).toBe('Add compact conversation formatter');
   });
 });

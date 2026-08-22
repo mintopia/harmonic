@@ -25,6 +25,7 @@ export type IconName =
   | 'expand'
   | 'collapse'
   | 'refresh'
+  | 'branch'
   | 'alert-triangle';
 
 const PATHS: Record<IconName, JSX.Element> = {
@@ -112,6 +113,14 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12.75 8a4.75 4.75 0 1 1-1.4-3.36" />
       <path d="M12.75 2.5V5H10.25" />
+    </>
+  ),
+  branch: (
+    <>
+      <circle cx="4.5" cy="3.75" r="1.6" />
+      <path d="M4.5 5.35v6.9" />
+      <rect height="3.2" rx="1" width="3.2" x="9.9" y="9.05" />
+      <path d="M4.5 10h4.1a1.8 1.8 0 0 0 1.8-1.8V6.4" />
     </>
   ),
   'alert-triangle': (
