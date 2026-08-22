@@ -19,8 +19,8 @@ describe('parseRoute', () => {
   });
 
   it('falls back to the deck for an unknown or missing view', () => {
-    expect(parseRoute('/', '?view=bogus').view).toBe('deck');
-    expect(parseRoute('/', '?view=').view).toBe('deck');
+    expect(parseRoute('/', '?view=bogus').view).toBe('board');
+    expect(parseRoute('/', '?view=').view).toBe('board');
   });
 
   it('parses the board peeked columns, dropping unknown states and duplicates', () => {
@@ -63,7 +63,7 @@ describe('parseRoute — Ticket path (#181)', () => {
   it('reads a focused Task id from /task/:id, defaulting the view to deck', () => {
     const route = parseRoute('/task/172', '');
     expect(route.task).toBe(172);
-    expect(route.view).toBe('deck');
+    expect(route.view).toBe('board');
   });
 
   it('carries the underlying view alongside the Ticket id', () => {
@@ -89,7 +89,7 @@ describe('serializeRoute', () => {
   });
 
   it('omits the view param for the deck, emits it otherwise', () => {
-    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'deck' })).toBe('/');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'board' })).toBe('/');
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table' })).toBe('/?view=table');
   });
 

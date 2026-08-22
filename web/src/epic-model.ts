@@ -240,14 +240,14 @@ export function landOutcomeBanner(o: EpicLandOutcome): LandOutcomeBanner {
     case 'landed':
       return { tone: 'ok', text: `Merged — the merged subset reached the default branch at ${o.oid}.` };
     case 'noop':
-      return { tone: 'info', text: `Nothing to land — ${o.reason}.` };
+      return { tone: 'info', text: `Nothing to merge — ${o.reason}.` };
     case 'waiting':
       return { tone: 'warn', text: `Waiting — ${o.reason}. Try again shortly.` };
     case 'blocked':
-      return { tone: 'bad', text: `Blocked — the land gate wouldn't open: ${o.reason}.` };
+      return { tone: 'bad', text: `Blocked — the merge gate wouldn't open: ${o.reason}.` };
     case 'escalated':
       return { tone: 'bad', text: `Escalated — whole-Epic verification failed: ${o.reason}. It's yours now.` };
     case 'busy':
-      return { tone: 'warn', text: 'A land for this Epic is already in flight — retry in a moment.' };
+      return { tone: 'warn', text: 'A merge for this Epic is already in flight — retry in a moment.' };
   }
 }

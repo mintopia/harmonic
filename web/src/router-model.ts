@@ -14,7 +14,7 @@ import { TASK_STATES, type TaskState } from './types.js';
  *
  * The URL is the source of truth for the app's location. The pathname carries the
  * focused Ticket (`/task/:id`, the Deck's "Deck" redesign): a `Route` carries every
- * view's state at once (deck peek + table filters) in the query string, so a Ticket
+ * view's state at once (board peek + table filters) in the query string, so a Ticket
  * URL still remembers which underlying view/filters to return to. Unknown or
  * malformed params fall back to defaults rather than throwing: a hand-edited or
  * stale link lands somewhere sane, never on a blank screen.
@@ -65,7 +65,7 @@ export interface Route {
 }
 
 export const DEFAULT_ROUTE: Route = {
-  view: 'deck',
+  view: 'board',
   task: null,
   peeked: [],
   table: DEFAULT_TABLE_FILTERS,
@@ -110,7 +110,7 @@ export function parseRoute(pathname: string, search: string): Route {
   const params = new URLSearchParams(queryOf(search));
 
   const rawView = params.get(PARAM.view);
-  const view: View = isView(rawView) ? rawView : 'deck';
+  const view: View = isView(rawView) ? rawView : 'board';
 
   // The Ticket path: a bare positive integer Task id, else no Ticket open.
   const taskMatch = TASK_PATH.exec(pathname);
@@ -144,14 +144,14 @@ export function parseRoute(pathname: string, search: string): Route {
 /**
  * Serialize a {@link Route} to a relative URL: `/task/:id` when a Ticket is
  * focused, else `/` — plus a query string carrying the non-default view/peek/table
- * state (omitted entirely for the all-default deck route, giving the clean `/`
+ * state (omitted entirely for the all-default board route, giving the clean `/`
  * URL). `peek` states are emitted in TASK_STATES order so equal routes serialize
  * identically (stable round-trip / bookmarks).
  */
 export function serializeRoute(route: Route): string {
   const params = new URLSearchParams();
 
-  if (route.view !== 'deck') params.set(PARAM.view, route.view);
+  if (route.view !== 'board') params.set(PARAM.view, route.view);
 
   const peekSet = new Set(route.peeked);
   const peek = TASK_STATES.filter((s) => peekSet.has(s));

@@ -461,12 +461,12 @@ export function App() {
   // task reaches review the run hint retires and the review hint takes over —
   // the two never show at once (see onboarding-model).
   const showRunHint =
-    view === 'deck' && !!config && shouldShowRunHint(taskList, config.autoRunner, runHintDismissed);
+    view === 'board' && !!config && shouldShowRunHint(taskList, config.autoRunner, runHintDismissed);
   const dismissRunHint = () => {
     storeDismissed(localStorage, RUN_HINT_DISMISSED_KEY);
     setRunHintDismissed(true);
   };
-  const showReviewHint = view === 'deck' && shouldShowReviewHint(taskList, reviewHintDismissed);
+  const showReviewHint = view === 'board' && shouldShowReviewHint(taskList, reviewHintDismissed);
   const dismissReviewHint = () => {
     storeDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY);
     setReviewHintDismissed(true);
@@ -556,7 +556,7 @@ export function App() {
     }
     // Programmatic redirect off the deleted Workspace's page, not a place the
     // operator chose to visit — replace, no history entry.
-    navigate({ ...route, view: 'deck', task: null }, { replace: true });
+    navigate({ ...route, view: 'board', task: null }, { replace: true });
   };
 
   // Collapsed items keep their accessible name and gain a native tooltip;
@@ -596,7 +596,7 @@ export function App() {
                 // The Deck carries the cobalt "Needs you" count; other items none
                 // (the absence is the default). Suppressed when the rail is a
                 // strip of icons — there's no room for a numeric pill at 48px.
-                const needsYou = v === 'deck' && needsYouCount > 0 ? needsYouCount : null;
+                const needsYou = v === 'board' && needsYouCount > 0 ? needsYouCount : null;
                 return (
                   <button
                     key={v}
@@ -851,7 +851,7 @@ export function App() {
                 </EmptyState>
               ) : (
                 <>
-                  {view === 'deck' && (
+                  {view === 'board' && (
                     <>
                       {/* Manual tracker refresh — only when this Workspace mirrors a
                           tracker; otherwise there's nothing to re-poll. */}
@@ -947,7 +947,7 @@ export function App() {
             setOpenEpic(null);
             // "Focus on board" is a real navigation to the Deck view (the
             // only surface focus-mode applies to), mirroring pickView.
-            navigate({ ...route, view: 'deck', task: null });
+            navigate({ ...route, view: 'board', task: null });
           }}
           onClose={() => setOpenEpic(null)}
           onChanged={refreshEpics}

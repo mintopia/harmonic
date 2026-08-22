@@ -68,9 +68,9 @@ function EpicBandHeader({
       {onForceLandEpic && (
         <div className="flex shrink-0 flex-col items-end gap-1">
           <ArmedButton
-            label="Force-land"
-            armedLabel="Confirm force-land"
-            ariaLabel={`Force-land Epic #${epic.ref}`}
+            label="Force-merge"
+            armedLabel="Confirm force-merge"
+            ariaLabel={`Force-merge Epic #${epic.ref}`}
             className={btnQuietDestructive}
             onConfirm={() => {
               onForceLandEpic(epic.ref).then(toastLandOutcome, toastError);

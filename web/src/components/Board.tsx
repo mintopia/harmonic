@@ -139,7 +139,7 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
     ) : null;
 
   return (
-    <article data-task-id={task.id} className="relative flex h-full w-[26.25rem] shrink-0 flex-col overflow-hidden rounded-lg bg-surface shadow-card">
+    <article data-task-id={task.id} className={`bold-wash ${task.state} relative flex h-full w-[26.25rem] shrink-0 flex-col overflow-hidden rounded-lg bg-surface shadow-card`}>
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${CARD_ACCENT[task.state]}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
@@ -212,7 +212,7 @@ function CardStrip({
 
   return (
     <div className="relative">
-      <div ref={stripRef} data-deck-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin]">
+      <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin]">
         {tasks.map((task) => (
           <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
         ))}
@@ -311,7 +311,7 @@ function FrontierNodeCard({
 }) {
   const runnable = node.runnable && node.taskId != null;
   return (
-    <div className={`w-[300px] shrink-0 rounded-lg border bg-surface p-3 ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
+    <div className={`bold-wash ${node.state ?? ''} w-[300px] shrink-0 rounded-lg border bg-surface p-3 ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
       <div className="flex items-start gap-2">
         <span className={`mt-1 size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} role="img" aria-label={node.state ?? 'blocked'} />
         <div className="min-w-0 flex-1">
@@ -428,9 +428,9 @@ function EpicBand({
           )}
           <div className="flex flex-col items-end gap-1">
             <ArmedButton
-              label="Force-land"
-              armedLabel="Confirm force-land"
-              ariaLabel={`Force-land Epic #${epic.ref}`}
+              label="Force-merge"
+              armedLabel="Confirm force-merge"
+              ariaLabel={`Force-merge Epic #${epic.ref}`}
               className={`${touchTargetInline} ${btnQuietDestructive} text-small`}
               onConfirm={() => {
                 onForceLandEpic(epic.ref).then(toastLandOutcome, toastError);

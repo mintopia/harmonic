@@ -276,7 +276,7 @@ describe('landOutcomeBanner', () => {
   it('produces a fixed sentence for busy (no reason field on the contract)', () => {
     expect(landOutcomeBanner({ status: 'busy' })).toEqual({
       tone: 'warn',
-      text: 'A land for this Epic is already in flight — retry in a moment.',
+      text: 'A merge for this Epic is already in flight — retry in a moment.',
     });
   });
 });

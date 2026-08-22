@@ -133,9 +133,9 @@ export function EpicPeek({
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1.5">
               <ArmedButton
-                label="Force-land ready subset"
-                armedLabel="Confirm force-land"
-                ariaLabel={`Force-land Epic #${epic.ref}`}
+                label="Force-merge ready subset"
+                armedLabel="Confirm force-merge"
+                ariaLabel={`Force-merge Epic #${epic.ref}`}
                 className={btnQuietDestructive}
                 onConfirm={handleForceLand}
               />

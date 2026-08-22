@@ -1,7 +1,7 @@
 import type { JSX } from 'react';
 
 export type IconName =
-  | 'deck'
+  | 'board'
   | 'activity'
   | 'table'
   | 'graph'
@@ -28,7 +28,7 @@ export type IconName =
   | 'alert-triangle';
 
 const PATHS: Record<IconName, JSX.Element> = {
-  deck: (
+  board: (
     <>
       <rect height="7" rx="1" width="3.5" x="1.75" y="2.75" />
       <rect height="10.5" rx="1" width="3.5" x="6.25" y="2.75" />
