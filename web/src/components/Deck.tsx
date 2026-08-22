@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../types';
 import type { Epic, EpicMember, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
 import {
@@ -10,6 +10,7 @@ import {
 import { deckSections, startOfDay, type RecentSummary } from '../deck-model';
 import { issueRef, taskKey } from '../id-format.js';
 import { runningReadout } from '../board-model';
+import { cardBranch, cardDiffstat } from './cardBranch';
 import { api } from '../api';
 import { subscribe } from '../ws';
 import { toastError, toastLandOutcome } from '../toast';
@@ -49,28 +50,6 @@ function rowId(task: Task): string {
     : taskKey(task.id);
 }
 
-/** The row's small set of meaningful chips (DESIGN.md § 6: "Escalated and
- * mirrored get their one meaningful chip … neutral afk/high"): a mirrored issue
- * keeps its cyan tag *and* an amber `escalated` when both apply — the pair the
- * prototype shows on a triage row — with a neutral `afk` when a mirrored Task
- * runs unattended and isn't escalated. Native/normal carry none; caps at two,
- * never a slab. */
-function RowChips({ task }: { task: Task }) {
-  return (
-    <>
-      {task.origin === 'mirrored' && <span className={toolChip}>mirrored</span>}
-      {task.escalated ? (
-        <span className={escalatedChip}>escalated</span>
-      ) : (
-        task.drive === 'afk' && <span className={`${chip} bg-raised text-muted`}>afk</span>
-      )}
-      {task.origin !== 'mirrored' && task.priority === 'high' && (
-        <span className={`${chip} bg-raised text-muted`}>high</span>
-      )}
-    </>
-  );
-}
-
 /** A round state dot; a running Task's dot pulses (motion-safe, so reduced
  * motion keeps the figure and drops the animation — DESIGN.md § 6). */
 function Dot({ task }: { task: Task }) {
@@ -78,59 +57,7 @@ function Dot({ task }: { task: Task }) {
   return <span aria-hidden="true" className={`${stateDot(task.state)} ${pulse}`} />;
 }
 
-/** A Deck summary row: state dot · faint id · loud title · one quiet fact ·
- * right-aligned signal/action. The title is a **stretched link** (its `::after`
- * overlays the whole row) so the entire row opens the Ticket while the only
- * focusable element is a genuine control — no `role=button` wrapper nesting the
- * row's own action button (WAI-ARIA bans focusable descendants of a widget).
- * The aside sits `z-10` above the overlay so its button stays clickable. */
-function DeckRow({
-  task,
-  onOpen,
-  aside,
-  indent = false,
-}: {
-  task: Task;
-  onOpen: () => void;
-  aside?: React.ReactNode;
-  indent?: boolean;
-}) {
-  return (
-    <div className={`${deckRow} bold-wash ${task.state} relative cursor-pointer ${indent ? 'pl-7' : ''}`}>
-      <Dot task={task} />
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 font-data text-small text-faint">{rowId(task)}</span>
-          <button
-            type="button"
-            onClick={onOpen}
-            className="min-w-0 flex-1 truncate text-left text-title font-medium text-ink after:absolute after:inset-0 after:content-['']"
-          >
-            {task.prompt}
-          </button>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-small text-faint">
-          <RowChips task={task} />
-          <TaskIdentity harness={task.harness} model={task.model} compact className="flex-1" />
-          {task.isolationMode !== 'direct' && <span className="truncate text-muted">{task.isolationMode}</span>}
-        </div>
-        {task.skipReason && (
-          <div className="mt-1 flex min-w-0 gap-1 text-small text-muted">
-            <span className="shrink-0 text-faint">Waiting to run</span>
-            <span aria-hidden="true">·</span>
-            <span className="min-w-0 break-words">{task.skipReason}</span>
-          </div>
-        )}
-      </div>
-      {aside && <div className="relative z-10 flex items-center gap-2.5 justify-self-end">{aside}</div>}
-    </div>
-  );
-}
-
-/** A quiet forward-action ghost button on a row — opens the Ticket (DESIGN.md
- * § 5: the escalated row "carries its state's forward action as a button …
- * `Open`"). Sits above the stretched-link overlay, so `stopPropagation` keeps
- * the click from also firing the row's navigate. */
+/** The quiet forward action for work that has been handed back to the operator. */
 function OpenButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
@@ -141,14 +68,9 @@ function OpenButton({ onOpen }: { onOpen: () => void }) {
         onOpen();
       }}
     >
-      Open
+      Take over
     </button>
   );
-}
-
-/** The right-aligned indigo pill on an awaiting-review row. */
-function ReviewPill() {
-  return <span className={`${chip} bg-await-tint text-await`}>awaiting review</span>;
 }
 
 /** A running row's live readout: elapsed · N tools, tabular figures. Self-
@@ -205,9 +127,130 @@ function RunNowButton({ taskId, onChanged }: { taskId: number; onChanged: () => 
   );
 }
 
-/** A quiet right-aligned status word (blocked / draft / when). */
-function WhenNote({ children }: { children: React.ReactNode }) {
-  return <span className="text-small text-faint">{children}</span>;
+function ReviewButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      className="inline-flex min-h-11 items-center justify-center rounded-md bg-await px-3 py-2 text-small font-semibold text-on-await transition-colors hover:opacity-90"
+      onClick={onOpen}
+    >
+      Review <span aria-hidden="true">→</span>
+    </button>
+  );
+}
+
+const CARD_ACCENT: Record<Task['state'], string> = {
+  draft: 'bg-muted',
+  blocked: 'bg-blocked',
+  ready: 'bg-ready-dot',
+  running: 'bg-running-dot',
+  'awaiting-review': 'bg-await-dot',
+  completed: 'bg-merged-dot',
+  failed: 'bg-fail-dot',
+  cancelled: 'bg-faint',
+};
+
+function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void; onChanged: () => void }) {
+  const branch = cardBranch(task) ?? (task.isolationMode === 'worktree' ? 'worktree pending' : 'direct');
+  const diffstat = cardDiffstat(task);
+  const action =
+    task.state === 'awaiting-review' ? (
+      <ReviewButton onOpen={onOpen} />
+    ) : task.escalated || task.drive === 'hitl' ? (
+      <OpenButton onOpen={onOpen} />
+    ) : task.state === 'ready' ? (
+      <RunNowButton taskId={task.id} onChanged={onChanged} />
+    ) : null;
+
+  return (
+    <article data-task-id={task.id} className="relative flex h-full w-[26.25rem] shrink-0 flex-col overflow-hidden rounded-lg bg-surface shadow-card">
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${CARD_ACCENT[task.state]}`} />
+      <div className="flex flex-1 flex-col px-4 py-4 pl-5">
+        <div className="flex items-center gap-2">
+          <Dot task={task} />
+          <span className="font-data text-small text-faint">{rowId(task)}</span>
+          {task.mapRef != null && <span className={toolChip}>epic #{task.mapRef}</span>}
+          {task.drive === 'hitl' && <span className={`${chip} bg-raised text-muted`}>HITL</span>}
+          {task.escalated && <span className={escalatedChip}>needs you</span>}
+        </div>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="mt-3 line-clamp-2 text-left text-title font-semibold text-ink underline-offset-4 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
+        >
+          {task.prompt}
+        </button>
+        <div className="mt-3 space-y-1.5 text-small text-muted">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-faint">ref</span>
+            <span className="min-w-0 truncate font-data">{branch}</span>
+            {diffstat && (
+              <span className="shrink-0 font-data text-faint">
+                +{diffstat.added} −{diffstat.removed}
+              </span>
+            )}
+          </div>
+          {task.state === 'running' ? (
+            <RunningReadoutLine task={task} />
+          ) : task.skipReason ? (
+            <p className="line-clamp-1 text-faint">{task.skipReason}</p>
+          ) : null}
+        </div>
+        <div className="mt-3 border-t border-hairline pt-3 text-small text-muted">
+          <TaskIdentity harness={task.harness} model={task.model} />
+        </div>
+        {action && <div className="relative z-10 mt-4 flex justify-end">{action}</div>}
+      </div>
+    </article>
+  );
+}
+
+function CardStrip({
+  tasks,
+  onOpen,
+  onChanged,
+}: {
+  tasks: Task[];
+  onOpen: (task: Task) => void;
+  onChanged: () => void;
+}) {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(0);
+
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const measure = () => {
+      const visibleCards = Math.max(1, Math.floor(strip.clientWidth / 432));
+      setMore(Math.max(0, tasks.length - visibleCards));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [tasks.length]);
+
+  return (
+    <div className="relative">
+      <div ref={stripRef} data-deck-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin]">
+        {tasks.map((task) => (
+          <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
+        ))}
+      </div>
+      {more > 0 && (
+        <>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-canvas" />
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-raised px-2 py-1 text-small font-medium text-muted">
+            → {more} more
+          </span>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** A disclosure chevron; points right when closed, down when open. */
@@ -630,33 +673,13 @@ export function Deck({
 
       {needsYou.length > 0 && (
         <Section label="Needs you" count={String(needsYou.length)} sub="review & escalations" attn>
-          <div className={`${panel} divide-y divide-hairline`}>
-            {needsYou.map((task) => (
-              <DeckRow
-                key={task.id}
-                task={task}
-                onOpen={() => onOpen(task)}
-                aside={task.state === 'awaiting-review' ? <ReviewPill /> : <OpenButton onOpen={() => onOpen(task)} />}
-              />
-            ))}
-          </div>
+          <CardStrip tasks={needsYou} onOpen={onOpen} onChanged={onChanged} />
         </Section>
       )}
 
       {inFlight.length > 0 && (
-        <Section label="In flight" count={String(inFlight.length)}>
-          <div className={`${panel} divide-y divide-hairline`}>
-            {inFlight.map((task) => (
-              <DeckRow
-                key={task.id}
-                task={task}
-                onOpen={() => onOpen(task)}
-                aside={
-                  task.state === 'running' && task.runStartedAt != null ? <RunningReadoutLine task={task} /> : null
-                }
-              />
-            ))}
-          </div>
+        <Section label="Active" count={String(inFlight.length)}>
+          <CardStrip tasks={inFlight} onOpen={onOpen} onChanged={onChanged} />
         </Section>
       )}
 
@@ -677,23 +700,10 @@ export function Deck({
       )}
 
       {queued.length > 0 && (
-        <Section label="Queued" count={String(queued.length)} sub="auto-runner picks by priority">
-          <div className={`${panel} divide-y divide-hairline`}>
+        <Section label="Standalone" count={String(queued.length)} sub="ready, blocked & draft">
+          <div data-deck-layout="loose-cards" className="flex flex-wrap gap-3">
             {queued.map((task) => (
-              <DeckRow
-                key={task.id}
-                task={task}
-                onOpen={() => onOpen(task)}
-                aside={
-                  task.state === 'ready' ? (
-                    <RunNowButton taskId={task.id} onChanged={onChanged} />
-                  ) : task.state === 'blocked' ? (
-                    <WhenNote>waiting</WhenNote>
-                  ) : (
-                    <WhenNote>draft</WhenNote>
-                  )
-                }
-              />
+              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
             ))}
           </div>
         </Section>
