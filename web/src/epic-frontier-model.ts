@@ -1,0 +1,122 @@
+import type { Epic, EpicMember } from './epic-model.js';
+import { issueRef, taskKey } from './id-format.js';
+import type { Task } from './types.js';
+
+export interface FrontierDependency {
+  taskId: number;
+  label: string;
+  satisfied: boolean;
+}
+
+export interface FrontierNode {
+  ref: number;
+  taskId: number | null;
+  title: string;
+  state: string | null;
+  ready: boolean;
+  runnable: boolean;
+  dependencies: FrontierDependency[];
+}
+
+export interface FrontierColumn {
+  label: 'Frontier' | `Depth ${number}`;
+  nodes: FrontierNode[];
+}
+
+export interface EpicFrontier {
+  columns: FrontierColumn[];
+}
+
+function dependencyLabel(task: Task | undefined, taskId: number): string {
+  if (!task) return `Task ${taskId}`;
+  return task.origin === 'mirrored' && task.trackerRef != null ? issueRef(task.trackerRef) : taskKey(task.id);
+}
+
+function isMerged(member: EpicMember): boolean {
+  return member.landStatus === 'completed';
+}
+
+/**
+ * Derives the compact Epic DAG used by the Board. The tracker-provided ready
+ * frontier remains authoritative for unmirrored members, while live Task
+ * state supplies dependency edges and the running frontier.
+ */
+export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const membersByTaskId = new Map(
+    epic.members.flatMap((member) => (member.taskId == null ? [] : [[member.taskId, member] as const])),
+  );
+  const visibleMembers = epic.members.filter((member) => !isMerged(member));
+  const visibleTaskIds = new Set(
+    visibleMembers.flatMap((member) => (member.taskId == null ? [] : [member.taskId])),
+  );
+
+  const dependenciesFor = (member: EpicMember): FrontierDependency[] => {
+    const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
+    return (task?.dependsOn ?? []).map((taskId) => {
+      const dependency = tasksById.get(taskId);
+      const dependencyMember = membersByTaskId.get(taskId);
+      return {
+        taskId,
+        label: dependencyLabel(dependency, taskId),
+        satisfied: dependency?.state === 'completed' || dependencyMember?.landStatus === 'completed',
+      };
+    });
+  };
+
+  const nodeFor = (member: EpicMember): FrontierNode => {
+    const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
+    return {
+      ref: member.ref,
+      taskId: member.taskId,
+      title: member.title || task?.prompt || `Member ${member.ref}`,
+      state: task?.state ?? member.state,
+      ready: member.ready || task?.state === 'ready',
+      runnable: task?.state === 'ready' && task.drive !== 'hitl' && !task.escalated,
+      dependencies: dependenciesFor(member),
+    };
+  };
+
+  const nodes = visibleMembers.map(nodeFor);
+  const frontier = nodes.filter((node) => node.ready || node.state === 'running');
+  const frontierRefs = new Set(frontier.map((node) => node.ref));
+  const depthByRef = new Map<number, number>();
+
+  const depthFor = (node: FrontierNode, visiting: Set<number>): number => {
+    if (frontierRefs.has(node.ref)) return 0;
+    const known = depthByRef.get(node.ref);
+    if (known != null) return known;
+    if (visiting.has(node.ref)) return 1;
+
+    visiting.add(node.ref);
+    const depths = node.dependencies
+      .filter((dependency) => !dependency.satisfied)
+      .map((dependency) => {
+        const member = visibleTaskIds.has(dependency.taskId) ? membersByTaskId.get(dependency.taskId) : undefined;
+        return member ? depthFor(nodeFor(member), visiting) : 0;
+      });
+    visiting.delete(node.ref);
+
+    const depth = Math.max(1, ...depths.map((value) => value + 1));
+    depthByRef.set(node.ref, depth);
+    return depth;
+  };
+
+  const depthColumns = new Map<number, FrontierNode[]>();
+  for (const node of nodes) {
+    const depth = depthFor(node, new Set());
+    if (depth === 0) continue;
+    const column = depthColumns.get(depth) ?? [];
+    column.push(node);
+    depthColumns.set(depth, column);
+  }
+
+  return {
+    columns: [
+      ...(frontier.length > 0 ? [{ label: 'Frontier' as const, nodes: frontier }] : []),
+      ...[...depthColumns.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([depth, nodes]) => ({ label: `Depth ${depth}` as const, nodes })),
+    ],
+  };
+}

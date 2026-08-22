@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../types';
-import type { Epic, EpicMember, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
+import type { Epic, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
 import {
   FORCE_LAND_CONSEQUENCE,
-  memberRailStatus,
   railSegments,
   rosterLanes,
 } from '../epic-model';
 import { deckSections, startOfDay, type RecentSummary } from '../deck-model';
+import { deriveEpicFrontier, type FrontierNode } from '../epic-frontier-model';
 import { issueRef, taskKey } from '../id-format.js';
 import { runningReadout } from '../board-model';
 import { cardBranch, cardDiffstat } from './cardBranch';
@@ -273,61 +273,55 @@ const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
   blocking: 'bg-fail-dot',
 };
 
-const MEMBER_DOT: Record<RailSegmentStatus, string> = {
-  landed: 'bg-merged-dot',
-  running: 'bg-running-dot motion-safe:animate-pulse',
-  healing: 'bg-running-dot motion-safe:animate-pulse',
-  waiting: 'bg-ready-dot',
-  blocking: 'bg-fail-dot',
-};
+function frontierDot(state: string | null): string {
+  if (state === 'running') return 'bg-running-dot motion-safe:animate-pulse';
+  if (state === 'ready') return 'bg-ready-dot';
+  if (state === 'awaiting-review') return 'bg-await-dot';
+  if (state === 'blocked') return 'bg-blocked';
+  if (state === 'completed') return 'bg-merged-dot';
+  if (state === 'failed') return 'bg-fail-dot';
+  return 'bg-edge';
+}
 
-const MEMBER_STATUS_WORD: Record<RailSegmentStatus, string> = {
-  landed: 'merged',
-  running: 'running',
-  healing: 'healing',
-  waiting: 'waiting',
-  blocking: 'blocked',
-};
-
-function MemberRow({ member, epic, onOpenTask }: { member: EpicMember; epic: Epic; onOpenTask: (taskId: number) => void }) {
-  const status = memberRailStatus(member, epic);
-  const open = member.taskId != null ? () => onOpenTask(member.taskId!) : undefined;
-  const inner = (
-    <>
-      <span aria-hidden="true" className={`size-2 rounded-full ${MEMBER_DOT[status]}`} />
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="shrink-0 font-data text-small text-faint">#{member.ref}</span>
-          <span className="truncate text-title font-medium text-ink">{member.title || `member #${member.ref}`}</span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 text-small text-faint">
-          {member.escalated && <span className={escalatedChip}>escalated</span>}
-          <span className="text-muted">{MEMBER_STATUS_WORD[status]}</span>
+function FrontierNodeCard({
+  node,
+  onOpenTask,
+  onChanged,
+}: {
+  node: FrontierNode;
+  onOpenTask: (taskId: number) => void;
+  onChanged: () => void;
+}) {
+  const runnable = node.runnable && node.taskId != null;
+  return (
+    <div className={`w-[300px] shrink-0 rounded-lg border bg-surface p-3 ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
+      <div className="flex items-start gap-2">
+        <span className={`mt-1 size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} role="img" aria-label={node.state ?? 'blocked'} />
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            disabled={node.taskId == null}
+            onClick={() => node.taskId != null && onOpenTask(node.taskId)}
+            className="block min-w-0 text-left disabled:cursor-default"
+          >
+            <span className="font-data text-small text-faint">#{node.ref}</span>
+            <span className="mt-1 block truncate text-title font-semibold text-ink">{node.title}</span>
+          </button>
+          {node.dependencies.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {node.dependencies.map((dependency) => (
+                <span
+                  key={dependency.taskId}
+                  className={`rounded bg-raised px-1.5 py-0.5 text-small text-muted ${dependency.satisfied ? 'line-through' : ''}`}
+                >
+                  {dependency.label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-    </>
-  );
-  const cls = `${deckRow} pl-7`;
-  return open ? (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={open}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          open();
-        }
-      }}
-      className={`${cls} cursor-pointer`}
-    >
-      {inner}
-      <span className="justify-self-end" />
-    </div>
-  ) : (
-    <div className={cls}>
-      {inner}
-      <span className="justify-self-end" />
+      {runnable && node.taskId != null && <RunNowButton taskId={node.taskId} onChanged={onChanged} />}
     </div>
   );
 }
@@ -335,19 +329,25 @@ function MemberRow({ member, epic, onOpenTask }: { member: EpicMember; epic: Epi
 function EpicBand({
   epic,
   defaultOpen = false,
+  tasks,
   onOpenTask,
+  onChanged,
   onOpenEpic,
   onForceLandEpic,
 }: {
   epic: Epic;
   defaultOpen?: boolean;
+  tasks: Task[];
   onOpenTask: (taskId: number) => void;
+  onChanged: () => void;
+  /** Open the full Epic peek (ADR-0026) — the deep view behind the band. */
   onOpenEpic?: (epic: Epic) => void;
   onForceLandEpic: (ref: number) => Promise<EpicLandOutcome>;
 }) {
   const attention = epic.members.filter((m) => m.escalated || m.state === 'awaiting-review');
   const [open, setOpen] = useState(defaultOpen || attention.length > 0);
   const segments = railSegments(epic);
+  const frontier = useMemo(() => deriveEpicFrontier(epic, tasks), [epic, tasks]);
   const stuck = rosterLanes(epic).stuck;
   const verification = epic.verification.status;
   const blockingNote =
@@ -423,10 +423,19 @@ function EpicBand({
       </div>
 
       {open && (
-        <div className="divide-y divide-hairline border-t border-hairline">
-          {epic.members.map((m) => (
-            <MemberRow key={m.ref} member={m} epic={epic} onOpenTask={onOpenTask} />
-          ))}
+        <div className="overflow-x-auto border-t border-hairline p-4">
+          <div className="flex min-w-max gap-4">
+            {frontier.columns.map((column) => (
+              <section key={column.label} className="w-[300px] shrink-0">
+                <h3 className="mb-2 text-label font-bold uppercase text-faint">{column.label}</h3>
+                <div className="flex flex-col gap-2">
+                  {column.nodes.map((node) => (
+                    <FrontierNodeCard key={node.ref} node={node} onOpenTask={onOpenTask} onChanged={onChanged} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -589,7 +598,7 @@ export function Deck({
             </button>
           )}
         </div>
-        <EpicBand epic={focusEpic} defaultOpen onOpenTask={onOpenTask} onOpenEpic={onOpenEpic} onForceLandEpic={onForceLandEpic} />
+        <EpicBand epic={focusEpic} defaultOpen tasks={tasks} onOpenTask={onOpenTask} onChanged={onChanged} onOpenEpic={onOpenEpic} onForceLandEpic={onForceLandEpic} />
       </div>
     );
   }
@@ -624,7 +633,9 @@ export function Deck({
               <EpicBand
                 key={epic.ref}
                 epic={epic}
+                tasks={tasks}
                 onOpenTask={onOpenTask}
+                onChanged={onChanged}
                 onOpenEpic={onOpenEpic}
                 onForceLandEpic={onForceLandEpic}
               />
