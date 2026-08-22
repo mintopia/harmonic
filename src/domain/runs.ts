@@ -4,7 +4,9 @@ import { runs, runEvents, runFacts, runToolCalls, tasks, type RunRow, type RunEv
 import { DomainError } from './errors.js';
 import { isParkedPhase } from './run-phases.js';
 import type { ResolvedGuardrails } from './setting-override.js';
-import type { PriceTable } from '../execution/pricing.js';
+import { costOfUsages, type PriceTable } from '../execution/pricing.js';
+import type { RunUsage } from '../execution/usage.js';
+import { forEachYielding } from '../reliability/yield.js';
 
 export interface RunEventInput {
   /** ACP transcript updates are deliberately never durable. See ADR-0031. */
@@ -103,6 +105,36 @@ export class RunStore {
     return this.db.write((db) =>
       db.update(runs).set(patch).where(eq(runs.id, id)).returning().get(),
     ) as Promise<RunRow>;
+  }
+
+  /** Write a final Usage and its Cost atomically. Once present, Cost never changes. */
+  async updateWithFrozenCost(id: number, patch: Partial<RunRow>): Promise<RunRow> {
+    return this.db.write(async (db) => {
+      const current = await db.select().from(runs).where(eq(runs.id, id)).get();
+      if (!current) throw new DomainError('not_found', `run ${id} not found`);
+      const usage = patch.usage ?? current.usage;
+      const cost = current.cost ?? patch.cost ?? frozenCost(usage, current.priceTable);
+      return db.update(runs).set({ ...patch, cost }).where(eq(runs.id, id)).returning().get();
+    });
+  }
+
+  /** One deliberate migration backfill for Runs that predate stored Cost. */
+  async backfillCosts(fallbackPrices: PriceTable): Promise<void> {
+    const candidates = await this.db.read((db) =>
+      db
+        .select()
+        .from(runs)
+        .where(and(isNull(runs.cost), isNotNull(runs.usage), or(ne(runs.state, 'running'), eq(runs.phase, 'review'))))
+        .all(),
+    );
+    await forEachYielding(candidates, async (run) => {
+      // Pre-ADR Runs were priced from the live table on every read. The one
+      // deliberate backfill preserves that last visible value, rather than
+      // applying their old guardrail snapshot.
+      const cost = frozenCost(run.usage, JSON.stringify(fallbackPrices));
+      if (cost === null) return;
+      await this.db.write((db) => db.update(runs).set({ cost }).where(and(eq(runs.id, run.id), isNull(runs.cost))).run());
+    });
   }
 
   /**
@@ -404,6 +436,11 @@ export class RunStore {
   }
 }
 
+function frozenCost(usage: string | null, rawPrices: string | null): string | null {
+  if (!usage || !rawPrices) return null;
+  return JSON.stringify(costOfUsages([JSON.parse(usage) as RunUsage], JSON.parse(rawPrices) as PriceTable));
+}
+
 export function deserializeEvent(row: RunEventRow): PersistedRunEvent {
   return { ...row, payload: JSON.parse(row.payload) };
 }
@@ -415,6 +452,7 @@ export function serializeRun(run: RunRow): Record<string, unknown> {
   return {
     ...rest,
     usage: run.usage ? JSON.parse(run.usage) : null,
+    cost: run.cost ? JSON.parse(run.cost) : null,
     guardrailConfig: run.guardrailConfig ? JSON.parse(run.guardrailConfig) : null,
     priceTable: run.priceTable ? JSON.parse(run.priceTable) : null,
   };

@@ -35,6 +35,7 @@ function run(overrides: Partial<RunRow> & Pick<RunRow, 'id' | 'taskId'>): RunRow
     candidateOid: null,
     candidateRef: null,
     usage: null,
+    cost: null,
     liveUsage: null,
     guardrailConfig: null,
     priceTable: null,
