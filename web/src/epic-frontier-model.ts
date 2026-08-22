@@ -43,9 +43,10 @@ function isMerged(member: EpicMember): boolean {
  */
 export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
-  const membersByTaskId = new Map(
-    epic.members.flatMap((member) => (member.taskId == null ? [] : [[member.taskId, member] as const])),
-  );
+  const membersByTaskId = new Map<number, EpicMember>();
+  for (const member of epic.members) {
+    if (member.taskId != null) membersByTaskId.set(member.taskId, member);
+  }
   const visibleMembers = epic.members.filter((member) => !isMerged(member));
   const visibleTaskIds = new Set(
     visibleMembers.flatMap((member) => (member.taskId == null ? [] : [member.taskId])),
@@ -111,12 +112,10 @@ export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
     depthColumns.set(depth, column);
   }
 
-  return {
-    columns: [
-      ...(frontier.length > 0 ? [{ label: 'Frontier' as const, nodes: frontier }] : []),
-      ...[...depthColumns.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(([depth, nodes]) => ({ label: `Depth ${depth}` as const, nodes })),
-    ],
-  };
+  const columns: FrontierColumn[] = [];
+  if (frontier.length > 0) columns.push({ label: 'Frontier', nodes: frontier });
+  for (const [depth, nodes] of [...depthColumns.entries()].sort(([left], [right]) => left - right)) {
+    columns.push({ label: `Depth ${depth}`, nodes });
+  }
+  return { columns };
 }

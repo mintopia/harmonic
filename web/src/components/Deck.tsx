@@ -278,7 +278,7 @@ function frontierDot(state: string | null): string {
   if (state === 'ready') return 'bg-ready-dot';
   if (state === 'awaiting-review') return 'bg-await-dot';
   if (state === 'blocked') return 'bg-blocked';
-  if (state === 'completed') return 'bg-merged-dot';
+  if (state === 'completed') return 'bg-edge';
   if (state === 'failed') return 'bg-fail-dot';
   return 'bg-edge';
 }
@@ -422,7 +422,7 @@ function EpicBand({
         </div>
       </div>
 
-      {open && (
+      {open && frontier.columns.length > 0 && (
         <div className="overflow-x-auto border-t border-hairline p-4">
           <div className="flex min-w-max gap-4">
             {frontier.columns.map((column) => (

@@ -97,7 +97,8 @@ describe('deriveEpicFrontier (issue #264)', () => {
 
   it('keeps running work in Frontier without exposing Run now, and excludes HITL ready work from the action', () => {
     const running = task(1, 'running');
-    const hitl = { ...task(2, 'ready'), drive: 'hitl' as const };
+    const hitl = task(2, 'ready');
+    hitl.drive = 'hitl';
     const model = deriveEpicFrontier(epic([member(1, 1), member(2, 2)]), [running, hitl]);
 
     expect(model.columns[0]).toMatchObject({
