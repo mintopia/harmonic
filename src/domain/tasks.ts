@@ -699,6 +699,23 @@ export class TaskService {
     return this.setState(id, 'completed');
   }
 
+  /**
+   * Claim a mirrored afk Task for the Auto-Runner in one compare-and-set step.
+   * If the Task left the ready afk frontier after the scheduler scanned it, the
+   * claim is rejected and the caller must treat it as a clean no-op.
+   */
+  async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ state: 'running', updatedAt: Date.now() })
+        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored'), eq(tasks.drive, 'afk')))
+        .returning()
+        .get(),
+    );
+    return row ? await this.changed(row) : undefined;
+  }
+
   async setState(id: number, state: TaskState): Promise<TaskRow> {
     const row = await this.db.write((db) =>
       db.update(tasks).set({ state, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
