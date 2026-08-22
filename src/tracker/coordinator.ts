@@ -15,6 +15,17 @@ import { forEachYielding } from '../reliability/yield.js';
 export class MirrorCoordinator {
   private adapter: TrackerAdapter | null = null;
 
+  /**
+   * The advisory state this coordinator has last *successfully* advertised per
+   * Task id — the cheap local idempotency guard (issue #232). No tracker read
+   * participates (ADR-0030 forbids the old `mine()` assignee read); this records
+   * only what *we* wrote, so a per-poll reconcile skips a claim/release whose
+   * desired advertised state is unchanged. A failed write is not recorded, so it
+   * retries next reconcile; a running→handed-back→running Task flips the recorded
+   * state each way and re-advertises correctly.
+   */
+  private readonly advertised = new Map<number, 'claimed' | 'released'>();
+
   /** One coordinator per tracker-enabled Workspace (issue #45), scoped to that Workspace's Tasks and adapter. */
   constructor(
     private readonly tasks: TaskService,
@@ -35,6 +46,7 @@ export class MirrorCoordinator {
     if (!this.adapter || task.trackerRef == null) return;
     try {
       await this.adapter.claim(ticketRef(task, task.trackerRef));
+      this.advertised.set(task.id, 'claimed'); // reconcile can now skip the redundant re-claim
     } catch {
       // Advisory only — proceed to spawn and let reconcile retry the assignment.
     }
@@ -53,9 +65,17 @@ export class MirrorCoordinator {
       if (task.origin !== 'mirrored' || task.trackerRef == null) return;
       const ticket = ticketRef(task, task.trackerRef);
       if (task.state === 'running') {
-        await adapter.claim(ticket).catch(() => {});
+        if (this.advertised.get(task.id) === 'claimed') return; // already advertised; skip the redundant write
+        await adapter
+          .claim(ticket)
+          .then(() => void this.advertised.set(task.id, 'claimed'))
+          .catch(() => {});
       } else if (handedBack(task)) {
-        await adapter.release(ticket).catch(() => {});
+        if (this.advertised.get(task.id) === 'released') return; // already released; skip the redundant write
+        await adapter
+          .release(ticket)
+          .then(() => void this.advertised.set(task.id, 'released'))
+          .catch(() => {});
       }
     });
   }

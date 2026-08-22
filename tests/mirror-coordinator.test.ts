@@ -125,4 +125,35 @@ describe('MirrorCoordinator (issue #32)', () => {
     expect(calls.release).not.toContain(12);
     expect(calls.release).not.toContain(13);
   });
+
+  it('reconcile: idempotency guard skips redundant claim/release when state is unchanged, re-writes on change (issue #232)', async () => {
+    const running = await tasks.upsertMirrored(mirrored(20));
+    await tasks.setState(running.id, 'running'); // → claim
+    const escalated = await tasks.upsertMirrored(mirrored(21));
+    await tasks.escalate(escalated.id); // → release
+
+    const { adapter, calls } = fakeAdapter();
+    const coord = new MirrorCoordinator(tasks, wsId);
+    await coord.observe(adapter);
+
+    // First reconcile advertises each once.
+    await coord.reconcile();
+    expect(calls.claim).toEqual([20]);
+    expect(calls.release).toEqual([21]);
+
+    // Second reconcile with unchanged Task state must NOT grow the write counts.
+    await coord.reconcile();
+    expect(calls.claim).toEqual([20]);
+    expect(calls.release).toEqual([21]);
+
+    // A state change (running → handed-back) must re-advertise: 20 now releases.
+    await tasks.escalate(running.id);
+    await coord.reconcile();
+    expect(calls.claim).toEqual([20]);
+    expect(calls.release).toEqual([21, 20]);
+
+    // And a further reconcile with that new state stays idempotent.
+    await coord.reconcile();
+    expect(calls.release).toEqual([21, 20]);
+  });
 });
