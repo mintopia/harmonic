@@ -315,14 +315,6 @@ export const sectionLabelAttn = 'text-label font-bold uppercase text-await';
 export const railBadge =
   'ml-auto min-w-5 rounded-full bg-await px-1.5 py-0.5 text-center text-label font-bold tabular-nums text-on-await';
 
-/** A Deck row: state dot · faint id · loud title · ≤2 facts · right-aligned
- * signal (DESIGN.md § 6). One content line + one quiet meta line; the whole row
- * is the click target to the Ticket. Rows live inside a `panel` and separate by
- * a hairline inset (`divide-y divide-hairline` on the panel), never on the
- * canvas. */
-export const deckRow =
-  'grid w-full grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-3.5 px-4 py-3 text-left transition-colors duration-150 hover:bg-raised/50';
-
 /** State dot (DESIGN.md § 6): a ~8px round in the state's colour — the lightest
  * state signal, before a row title or a run-chip label. Reuses the lane-dot
  * mapping so the dot and the board lane can't fork colours. Running dots pulse

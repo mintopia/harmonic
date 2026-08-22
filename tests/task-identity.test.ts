@@ -10,8 +10,8 @@ const TABLE_VIEW = readFileSync(
   'utf8',
 );
 
-const DECK = readFileSync(
-  fileURLToPath(new URL('../web/src/components/Deck.tsx', import.meta.url)),
+const BOARD = readFileSync(
+  fileURLToPath(new URL('../web/src/components/Board.tsx', import.meta.url)),
   'utf8',
 );
 
@@ -39,8 +39,8 @@ describe('TaskIdentity', () => {
 });
 
 describe('task identity wiring', () => {
-  it('renders through the shared TaskIdentity component in the table and deck surfaces', () => {
+  it('renders through the shared TaskIdentity component in the table and Board surfaces', () => {
     expect(TABLE_VIEW).toContain('TaskIdentity');
-    expect(DECK).toContain('TaskIdentity');
+    expect(BOARD).toContain('TaskIdentity');
   });
 });

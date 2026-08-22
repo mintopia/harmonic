@@ -1,6 +1,6 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
-import { TERMINAL_STATES } from './board-model.js';
+import { TERMINAL_STATES } from './task-state-model.js';
 import { VIEWS, type View } from './rail-model.js';
 import { TASK_STATES, type TaskState } from './types.js';
 

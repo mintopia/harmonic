@@ -3,8 +3,8 @@ import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
 import type { Epic, EpicLandOutcome } from './epic-model';
-import { Deck } from './components/Deck';
-import { deckSections } from './deck-model';
+import { Board } from './components/Board';
+import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
 import { TicketPage } from './components/TicketPage';
 import { EpicPeek } from './components/EpicPeek';
@@ -397,15 +397,14 @@ export function App() {
 
   // The rail's cobalt "Needs you" badge (DESIGN.md §5): Tasks awaiting review
   // (the review gate) plus afk Runs that escalated to a human — the two states
-  // that want an operator's eyes now. Derived from `deckSections` (not a local
-  // predicate) so the badge is the exact count of the Deck's Needs-you section:
+  // that want an operator's eyes now. Derived from `boardSections` (not a local
+  // predicate) so the badge is the exact count of the Board's Needs-you section:
   // a hand-rolled `state === 'awaiting-review' || escalated` filter drifts —
   // it keeps counting a terminal Task still flagged `escalated` (and Epic
   // members that render in their band), so the badge stuck above the real item
   // count. One source of truth means the number always matches what's shown.
   const needsYouCount = useMemo(
-    // eslint-disable-next-line react/purity -- `needsYou` is not time-dependent; the date only buckets other sections, recomputed when tasks/epics change
-    () => deckSections(tasks ?? [], epics, Date.now()).needsYou.length,
+    () => boardSections(tasks ?? [], epics).needsYou.length,
     [tasks, epics],
   );
   const previousTaskStates = useRef<Map<number, Task['state']> | null>(null);
@@ -425,7 +424,7 @@ export function App() {
   // EpicPeek's deep-link into the Ticket, and TaskDetail's skip-holder link:
   // both navigate to /task/:id so the focus is a real, bookmarkable route.
   const openTaskById = (taskId: number) => navigate({ ...route, task: taskId });
-  // A Deck/Table/Graph row's click target — the one seam every surface's
+  // A Board/Table/Graph row's click target — the one seam every surface's
   // `onOpen(task)` shares, so a row always opens the same /task/:id route.
   const openRow = (t: Task) => openTaskById(t.id);
 
@@ -872,7 +871,7 @@ export function App() {
                           </button>
                         </div>
                       )}
-                      <Deck
+                      <Board
                         tasks={taskList}
                         loading={tasks === null}
                         epics={epics}
@@ -882,7 +881,6 @@ export function App() {
                         onNewTask={() => setEditing('new')}
                         onOpenEpic={setOpenEpic}
                         onForceLandEpic={forceLandEpic}
-                        onShowRecent={() => pickView('table')}
                         focusEpic={focusEpic}
                         onClearFocus={() => setFocusEpic(null)}
                       />

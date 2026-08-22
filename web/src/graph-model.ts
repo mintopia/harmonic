@@ -1,7 +1,7 @@
 // Explicit .js extensions: this module is shared with the node-side test
 // project, whose nodenext resolution requires them (Vite maps .js → .ts).
 import type { Task, TaskState } from './types.js';
-import { TERMINAL_STATES } from './board-model.js';
+import { TERMINAL_STATES } from './task-state-model.js';
 
 /**
  * The read-only Dependency Graph view (issue #85, ADR 0015). The layout

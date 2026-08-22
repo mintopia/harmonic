@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import type { Epic, EpicMember, LandOutcomeBanner, LandOutcomeBannerTone, RailSegmentStatus } from '../epic-model';
+import type { Epic, EpicMember, LandOutcomeBanner, LandOutcomeBannerTone } from '../epic-model';
 import {
   FORCE_LAND_CONSEQUENCE,
   ROSTER_LANES,
   ROSTER_LANE_LABELS,
   landOutcomeBanner,
   memberRailStatus,
-  railSegments,
   rosterLanes,
   statusLineParts,
 } from '../epic-model';
@@ -15,22 +14,6 @@ import { toastError } from '../toast';
 import { btnQuiet, btnQuietDestructive, chip, escalatedChip, labelType, panelTitle } from '../ui';
 import { ArmedButton } from './ArmedButton';
 import { Modal } from './Modal';
-
-const RAIL_LABEL: Record<RailSegmentStatus, string> = {
-  landed: 'merged',
-  running: 'running',
-  healing: 'healing',
-  waiting: 'waiting',
-  blocking: 'blocking',
-};
-
-const RAIL_TONE: Record<RailSegmentStatus, string> = {
-  landed: 'bg-merged-tint text-merged',
-  running: 'bg-running-tint text-running',
-  healing: 'bg-running-tint text-running',
-  waiting: 'bg-raised text-muted',
-  blocking: 'bg-fail-tint text-fail',
-};
 
 const BANNER_TONE: Record<LandOutcomeBannerTone, string> = {
   ok: 'bg-merged-tint text-merged',
@@ -41,25 +24,24 @@ const BANNER_TONE: Record<LandOutcomeBannerTone, string> = {
 
 const BANNER_TIMEOUT_MS = 6000;
 
-function LandingRail({ epic }: { epic: Epic }) {
-  const segments = railSegments(epic);
-  return (
-    <div className="flex gap-1">
-      {segments.map((seg) => (
-        <div key={seg.ref} className="min-w-0 flex-1">
-          <div
-            title={`#${seg.ref} — ${RAIL_LABEL[seg.status]}`}
-            className={`flex h-8 items-center justify-center rounded-md text-label font-semibold tabular-nums ${RAIL_TONE[seg.status]} ${
-              seg.status === 'healing' ? 'motion-safe:animate-pulse' : ''
-            }`}
-          >
-            #{seg.ref}
-          </div>
-          <div className="mt-1 truncate text-center text-label text-faint">{RAIL_LABEL[seg.status]}</div>
-        </div>
-      ))}
-    </div>
-  );
+function memberStatusLabel(status: ReturnType<typeof memberRailStatus>): string {
+  switch (status) {
+    case 'landed': return 'merged';
+    case 'running': return 'running';
+    case 'healing': return 'healing';
+    case 'waiting': return 'waiting';
+    case 'blocking': return 'blocking';
+  }
+}
+
+function memberStatusTone(status: ReturnType<typeof memberRailStatus>): string {
+  switch (status) {
+    case 'landed': return 'bg-merged-tint text-merged';
+    case 'running':
+    case 'healing': return 'bg-running-tint text-running';
+    case 'waiting': return 'bg-raised text-muted';
+    case 'blocking': return 'bg-fail-tint text-fail';
+  }
 }
 
 function MemberRow({
@@ -77,7 +59,7 @@ function MemberRow({
       <span className="w-12 shrink-0 font-data text-small tabular-nums text-muted">#{member.ref}</span>
       <span className="min-w-0 flex-1 truncate text-ink">{member.title || '—'}</span>
       {member.escalated && <span className={`${escalatedChip} shrink-0`}>escalated</span>}
-      <span className={`${chip} shrink-0 ${RAIL_TONE[status]}`}>{RAIL_LABEL[status]}</span>
+      <span className={`${chip} shrink-0 ${memberStatusTone(status)}`}>{memberStatusLabel(status)}</span>
     </>
   );
   if (member.taskId == null) {
@@ -171,8 +153,6 @@ export function EpicPeek({
         </header>
 
         <div className="flex-1 overflow-y-auto p-4">
-          <div className={`${labelType} mb-1.5 text-muted`}>Merging rail</div>
-          <LandingRail epic={epic} />
           {(() => {
             const s = statusLineParts(epic);
             return (

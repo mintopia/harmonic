@@ -4,11 +4,9 @@ import type { Task, TaskState } from './types.js';
 import type { Epic } from './epic-model.js';
 
 /**
- * The Deck's attention-ordered sections (DESIGN.md § 5 "The Deck", replacing
- * the kanban Board's state columns — issue #182). The home surface is a single
- * column of panelled sections ordered by the operator's attention:
- * `Needs you → In flight → Landing → Queued → Recent`. This is the pure read
- * model; `Deck.tsx` renders it.
+ * The Paper Board's attention-ordered sections (DESIGN.md § 5). The home
+ * surface is ordered by the operator's attention:
+ * `Needs you → Active → Epics → Standalone`.
  *
  * **Standalone (non-Epic) work is first-class.** A Task is only pulled OUT of
  * the flat sections when it is a member of an *active* Epic — one still in the
@@ -48,30 +46,17 @@ function needsYouRank(t: Task): number {
 // blocked (waiting on a dep), then draft (not yet promoted).
 const QUEUED_RANK: Partial<Record<TaskState, number>> = { ready: 0, blocked: 1, draft: 2 };
 
-export interface RecentSummary {
-  /** completed today */
-  landed: number;
-  /** failed today */
-  failed: number;
-  /** cancelled today */
-  cancelled: number;
-  /** landed + failed + cancelled today */
-  total: number;
-}
-
-export interface DeckSections {
+export interface BoardSections {
   /** Awaiting-review + escalated standalone Tasks — the sacred core, always
    * first, always above the fold (DESIGN.md § 5 Needs you). */
   needsYou: Task[];
   /** Running standalone Tasks; an escalated running Task is promoted to
    * Needs you, and an active-Epic member runs inside its band, not here. */
-  inFlight: Task[];
+  active: Task[];
   /** Active Epics, each rendered as a band; ascending by ref. */
-  landing: Epic[];
+  epics: Epic[];
   /** Ready + blocked + draft standalone Tasks, frontier-first. */
-  queued: Task[];
-  /** Today's terminal standalone Tasks, collapsed to counts. */
-  recent: RecentSummary;
+  standalone: Task[];
 }
 
 /**
@@ -96,40 +81,37 @@ function activeMemberTaskIds(epics: Epic[]): Set<number> {
   return ids;
 }
 
-/** Local-day start for `now` — the boundary for "today" in Recent. Pure given
- * `now` + the ambient timezone; callers pass a client `Date.now()`. Exported so
- * the Deck can memoize on the day bucket, not the live one-second tick. */
-export function startOfDay(now: number): number {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-export function deckSections(tasks: Task[], epics: Epic[], now: number): DeckSections {
+export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const excluded = activeMemberTaskIds(epics);
   const standalone = tasks.filter((t) => !excluded.has(t.id));
   const isTerminal = (t: Task): boolean => TERMINAL.includes(t.state);
-  const todayStart = startOfDay(now);
 
   const needsYou = standalone
     .filter((t) => !isTerminal(t) && (t.state === 'awaiting-review' || t.escalated))
     .sort((a, b) => needsYouRank(a) - needsYouRank(b) || byProcessingOrder(a, b));
 
-  const inFlight = standalone.filter((t) => t.state === 'running' && !t.escalated).sort(byProcessingOrder);
+  const active = standalone.filter((t) => t.state === 'running' && !t.escalated).sort(byProcessingOrder);
 
-  const queued = standalone
+  const standaloneTasks = standalone
     .filter((t) => !t.escalated && QUEUED_RANK[t.state] !== undefined)
     .sort((a, b) => QUEUED_RANK[a.state]! - QUEUED_RANK[b.state]! || byQueueOrder(a, b));
 
-  const recentTasks = standalone.filter((t) => isTerminal(t) && t.updatedAt >= todayStart);
-  const recent: RecentSummary = {
-    landed: recentTasks.filter((t) => t.state === 'completed').length,
-    failed: recentTasks.filter((t) => t.state === 'failed').length,
-    cancelled: recentTasks.filter((t) => t.state === 'cancelled').length,
-    total: recentTasks.length,
-  };
+  const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);
 
-  const landing = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);
+  return { needsYou, active, epics: activeEpics, standalone: standaloneTasks };
+}
 
-  return { needsYou, inFlight, landing, queued, recent };
+/** Elapsed as "1h 2m" / "3m 4s" / "5s" for live Board cards. */
+export function fmtElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1_000);
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+export function runningReadout(task: Task, now: number, liveTools?: number | null): { elapsed: string; tools: number } | null {
+  if (task.state !== 'running' || task.runStartedAt === null) return null;
+  return { elapsed: fmtElapsed(Math.max(0, now - task.runStartedAt)), tools: liveTools ?? task.toolCount ?? 0 };
 }

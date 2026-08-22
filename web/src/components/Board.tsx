@@ -6,10 +6,9 @@ import {
   railSegments,
   rosterLanes,
 } from '../epic-model';
-import { deckSections, startOfDay, type RecentSummary } from '../deck-model';
+import { boardSections, runningReadout } from '../board-sections-model';
 import { deriveEpicFrontier, type FrontierNode } from '../epic-frontier-model';
 import { issueRef, taskKey } from '../id-format.js';
-import { runningReadout } from '../board-model';
 import { cardBranch, cardDiffstat } from './cardBranch';
 import { api } from '../api';
 import { subscribe } from '../ws';
@@ -239,7 +238,7 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function Section({
+function BoardSection({
   label,
   count,
   sub,
@@ -462,40 +461,7 @@ function EpicBand({
   );
 }
 
-function RecentBar({ recent, onShowRecent }: { recent: RecentSummary; onShowRecent: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onShowRecent}
-      className={`${panel} mt-3 flex w-full items-center gap-4 px-4 py-3 text-left text-small text-muted transition-colors duration-150 hover:bg-raised/50`}
-    >
-      {recent.landed > 0 && (
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className="size-2 rounded-full bg-merged-dot" />
-          {recent.landed} merged
-        </span>
-      )}
-      {recent.failed > 0 && (
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className="size-2 rounded-full bg-fail-dot" />
-          {recent.failed} failed
-        </span>
-      )}
-      {recent.cancelled > 0 && (
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className="size-2 rounded-full bg-faint" />
-          {recent.cancelled} cancelled
-        </span>
-      )}
-      <span className="text-faint">today</span>
-      <span className="ml-auto">
-        <Icon name="chevron-down" className="-rotate-90 text-faint" />
-      </span>
-    </button>
-  );
-}
-
-function FirstRunDeck({ onNewTask }: { onNewTask: () => void }) {
+function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
   const steps = [
     { title: 'Create a task', body: 'Describe the work and point it at a repo on this machine.' },
     { title: 'Run it', body: 'Press Run now, or turn the auto-runner on to start ready tasks for you.' },
@@ -527,13 +493,13 @@ function FirstRunDeck({ onNewTask }: { onNewTask: () => void }) {
   );
 }
 
-function DeckSkeleton() {
+function BoardSkeleton() {
   return (
     <div aria-hidden="true" className="animate-pulse motion-reduce:animate-none">
       {[2, 3].map((rows, i) => (
         <section key={i} className="mt-6 first:mt-3">
           <div className="mb-2 h-3 w-24 rounded bg-raised" />
-          <div className={panel}>
+          <div className="rounded-lg bg-surface shadow-card">
             {Array.from({ length: rows }, (_, j) => (
               <div key={j} className="flex items-center gap-3 px-4 py-3.5">
                 <span className="size-2 rounded-full bg-raised" />
@@ -556,7 +522,7 @@ function AllClear() {
   );
 }
 
-export function Deck({
+export function Board({
   tasks,
   loading,
   epics,
@@ -566,7 +532,6 @@ export function Deck({
   onNewTask,
   onOpenEpic,
   onForceLandEpic,
-  onShowRecent,
   focusEpic = null,
   onClearFocus,
 }: {
@@ -579,33 +544,12 @@ export function Deck({
   onNewTask: () => void;
   onOpenEpic?: (epic: Epic) => void;
   onForceLandEpic: (epicRef: number) => Promise<EpicLandOutcome>;
-  onShowRecent: () => void;
   focusEpic?: Epic | null;
   onClearFocus?: () => void;
 }) {
-  const hasRunning = tasks.some((t) => t.state === 'running');
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!hasRunning) return;
-    // `now` here only feeds Recent's midnight boundary (deckSections keys off
-    // startOfDay(now)); running readouts tick in their own leaf now (issue #222),
-    // so advance `now` only when the local day rolls over — the Deck no longer
-    // re-renders every second.
-    const timer = setInterval(() => {
-      const t = Date.now();
-      setNow((prev) => (startOfDay(t) !== startOfDay(prev) ? t : prev));
-    }, 1_000);
-    return () => clearInterval(timer);
-  }, [hasRunning]);
+  const sections = useMemo(() => boardSections(tasks, epics), [tasks, epics]);
 
-  const dayStart = startOfDay(now);
-  const sections = useMemo(
-    () => deckSections(tasks, epics, now),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `now` intentionally excluded; `dayStart` is its only section-relevant projection
-    [tasks, epics, dayStart],
-  );
-
-  if (loading) return <DeckSkeleton />;
+  if (loading) return <BoardSkeleton />;
 
   if (focusEpic) {
     return (
@@ -623,33 +567,33 @@ export function Deck({
     );
   }
 
-  if (tasks.length === 0 && epics.length === 0) return <FirstRunDeck onNewTask={onNewTask} />;
+  if (tasks.length === 0 && epics.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
 
-  const { needsYou, inFlight, landing, queued, recent } = sections;
+  const { needsYou, active, epics: activeEpics, standalone } = sections;
   const nothingActive =
-    needsYou.length === 0 && inFlight.length === 0 && landing.length === 0 && queued.length === 0 && recent.total === 0;
+    needsYou.length === 0 && active.length === 0 && activeEpics.length === 0 && standalone.length === 0;
   if (nothingActive) return <AllClear />;
 
   return (
     <div>
-      <h1 className="sr-only">Deck</h1>
+      <h1 className="sr-only">Board</h1>
 
       {needsYou.length > 0 && (
-        <Section label="Needs you" count={String(needsYou.length)} sub="review & escalations" attn>
+        <BoardSection label="Needs you" count={String(needsYou.length)} sub="review & escalations" attn>
           <CardStrip tasks={needsYou} onOpen={onOpen} onChanged={onChanged} />
-        </Section>
+        </BoardSection>
       )}
 
-      {inFlight.length > 0 && (
-        <Section label="Active" count={String(inFlight.length)}>
-          <CardStrip tasks={inFlight} onOpen={onOpen} onChanged={onChanged} />
-        </Section>
+      {active.length > 0 && (
+        <BoardSection label="Active" count={String(active.length)}>
+          <CardStrip tasks={active} onOpen={onOpen} onChanged={onChanged} />
+        </BoardSection>
       )}
 
-      {landing.length > 0 && (
-        <Section label="Merging" count={landing.length === 1 ? '1 epic' : `${landing.length} epics`} sub="members merge as a batch">
+      {activeEpics.length > 0 && (
+        <BoardSection label="Epics" count={activeEpics.length === 1 ? '1 epic' : `${activeEpics.length} epics`} sub="members merge as a batch">
           <div className="flex flex-col gap-3">
-            {landing.map((epic) => (
+            {activeEpics.map((epic) => (
               <EpicBand
                 key={epic.ref}
                 epic={epic}
@@ -661,20 +605,18 @@ export function Deck({
               />
             ))}
           </div>
-        </Section>
+        </BoardSection>
       )}
 
-      {queued.length > 0 && (
-        <Section label="Standalone" count={String(queued.length)} sub="ready, blocked & draft">
-          <div data-deck-layout="loose-cards" className="flex flex-wrap gap-3">
-            {queued.map((task) => (
+      {standalone.length > 0 && (
+        <BoardSection label="Standalone" count={String(standalone.length)} sub="ready, blocked & draft">
+          <div data-board-layout="loose-cards" className="flex flex-wrap gap-3">
+            {standalone.map((task) => (
               <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
             ))}
           </div>
-        </Section>
+        </BoardSection>
       )}
-
-      {recent.total > 0 && <RecentBar recent={recent} onShowRecent={onShowRecent} />}
     </div>
   );
 }

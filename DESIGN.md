@@ -24,10 +24,8 @@
          surface (code-internal landBranch / EpicLandCoordinator unaffected).
 
      Retired with Deck: the cobalt one-accent framing, the panelled-list Deck
-     home, and every Deck token below. Where running code and this file disagree,
-     this file wins for new work; `web/src/index.css` still implements Deck and is
-     migrated to Paper as a separate step. The approved visual reference is
-     `.scratch/redesign/board-paper.html` (Board + Ticket, both themes, Soft/Bold).
+     home, and every Deck token below. The shipped Paper implementation and this
+     file are the design reference.
      Accessibility decisions from the 2026-08-21 audit are recorded inline in § 2;
      the running-amber sub-AA exception is ADR-0033. -->
 

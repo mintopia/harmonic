@@ -21,7 +21,7 @@ import {
 } from '../ui';
 import { EmptyState } from './EmptyState';
 import { useArmedConfirm } from './useArmedConfirm';
-import { fmtElapsed } from '../board-model';
+import { fmtElapsed } from '../board-sections-model';
 import { leaseActions, type LeaseAction, type LeaseState } from '../lease-actions-model';
 import {
   activitySections,

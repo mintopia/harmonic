@@ -7,24 +7,24 @@ const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8')
 describe('Paper accessibility contract (issue #266)', () => {
   it('announces task state, the needs-you count, and merge outcomes', () => {
     const app = source('web/src/App.tsx');
-    const deck = source('web/src/components/Deck.tsx');
+    const board = source('web/src/components/Board.tsx');
     const epicPeek = source('web/src/components/EpicPeek.tsx');
     const toasts = source('web/src/toast.tsx');
 
     expect(app).toContain('setStateAnnouncement');
     expect(app).toContain('Needs you: {needsYouCount}');
-    expect(deck).toContain("aria-live={attn ? 'polite' : undefined}");
+    expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
     expect(epicPeek).toContain('aria-live="assertive"');
     expect(toasts).toContain('aria-live="assertive"');
   });
 
   it('keeps state dots named and compact controls touchable', () => {
-    const deck = source('web/src/components/Deck.tsx');
+    const board = source('web/src/components/Board.tsx');
     const rail = source('web/src/components/ticket/RunRail.tsx');
     const gate = source('web/src/components/ticket/Gate.tsx');
     const ui = source('web/src/ui.ts');
 
-    expect(deck).toContain('role="img" aria-label={task.state.replaceAll');
+    expect(board).toContain('role="img" aria-label={task.state.replaceAll');
     expect(rail).toContain('role="img"');
     expect(gate).toContain('role="img" aria-label={DOT_LABEL[model.dot]}');
     expect(rail).toContain('min-h-11 w-full rounded-md border border-hairline');

@@ -1,622 +1,96 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-19T22:00:00Z",
-  "title": "Design System: Harmonic — \"Deck\"",
+  "generatedAt": "2026-08-22T18:37:00Z",
+  "title": "Design System: Harmonic — Paper",
   "extensions": {
     "colorMeta": {
-      "accent": {
-        "role": "primary",
-        "displayName": "Cobalt Accent",
-        "canonical": "oklch(54.6% 0.215 262.9)",
-        "tonalRamp": [
-          "#00062c",
-          "#001a63",
-          "#0031a4",
-          "#1451d8",
-          "#3978fe",
-          "#74a3ff",
-          "#aecafe",
-          "#e6efff"
-        ]
-      },
-      "accent-dark": {
-        "role": "primary",
-        "displayName": "Cobalt Accent (Dark)",
-        "canonical": "oklch(67.0% 0.174 270.6)",
-        "tonalRamp": [
-          "#040033",
-          "#120076",
-          "#242f9c",
-          "#3e53c2",
-          "#5c77e9",
-          "#849ffe",
-          "#b5c7fe",
-          "#e8eefe"
-        ]
-      },
-      "accent-hover": {
-        "role": "primary",
-        "displayName": "Cobalt Pressed",
-        "canonical": "oklch(49.0% 0.216 264.2)"
-      },
-      "accent-hover-dark": {
-        "role": "primary",
-        "displayName": "Cobalt Pressed (Dark)",
-        "canonical": "oklch(73.1% 0.139 272.2)"
-      },
-      "accent-tint-light": {
-        "role": "primary",
-        "displayName": "Cobalt Tint",
-        "canonical": "#EAF1FE"
-      },
-      "accent-tint-dark": {
-        "role": "primary",
-        "displayName": "Cobalt Tint (Dark)",
-        "canonical": "#1C2545"
-      },
-      "on-accent-light": {
-        "role": "primary",
-        "displayName": "On Cobalt",
-        "canonical": "oklch(100.0% 0.000 89.9)"
-      },
-      "on-accent-dark": {
-        "role": "primary",
-        "displayName": "On Cobalt (Dark)",
-        "canonical": "oklch(17.4% 0.013 270.6)"
-      },
-      "canvas-light": {
-        "role": "neutral",
-        "displayName": "Canvas",
-        "canonical": "#F6F7FB",
-        "tonalRamp": [
-          "#0b0b0c",
-          "#252526",
-          "#424243",
-          "#616163",
-          "#828284",
-          "#a5a5a7",
-          "#c9c9cb",
-          "#eeeef0"
-        ]
-      },
-      "canvas-dark": {
-        "role": "neutral",
-        "displayName": "Canvas (Dark)",
-        "canonical": "oklch(17.4% 0.013 270.6)",
-        "tonalRamp": [
-          "#090b11",
-          "#23252c",
-          "#3f4249",
-          "#5e6169",
-          "#7f828a",
-          "#a2a5ad",
-          "#c6c9d2",
-          "#ebeef7"
-        ]
-      },
-      "shell-light": {
-        "role": "neutral",
-        "displayName": "Shell White",
-        "canonical": "oklch(100.0% 0.000 89.9)"
-      },
-      "shell-dark": {
-        "role": "neutral",
-        "displayName": "Shell Night",
-        "canonical": "oklch(20.1% 0.014 272.6)"
-      },
-      "surface-light": {
-        "role": "neutral",
-        "displayName": "Surface White",
-        "canonical": "oklch(100.0% 0.000 89.9)"
-      },
-      "surface-dark": {
-        "role": "neutral",
-        "displayName": "Surface Night",
-        "canonical": "oklch(21.8% 0.016 268.9)"
-      },
-      "raised-light": {
-        "role": "neutral",
-        "displayName": "Raised Mist",
-        "canonical": "#EEF0F6"
-      },
-      "raised-dark": {
-        "role": "neutral",
-        "displayName": "Raised Night",
-        "canonical": "oklch(25.7% 0.020 267.9)"
-      },
-      "hairline-light": {
-        "role": "neutral",
-        "displayName": "Hairline",
-        "canonical": "#E7E9F1"
-      },
-      "hairline-dark": {
-        "role": "neutral",
-        "displayName": "Hairline (Dark)",
-        "canonical": "#242A35"
-      },
-      "edge-light": {
-        "role": "neutral",
-        "displayName": "Edge",
-        "canonical": "#D6D9E4"
-      },
-      "edge-dark": {
-        "role": "neutral",
-        "displayName": "Edge (Dark)",
-        "canonical": "#2E3440"
-      },
-      "ink-light": {
-        "role": "neutral",
-        "displayName": "Deep Ink",
-        "canonical": "#141627",
-        "tonalRamp": [
-          "#08091a",
-          "#212337",
-          "#3d4056",
-          "#5c5f77",
-          "#7d8199",
-          "#9fa3bd",
-          "#c3c7e2",
-          "#eaedff"
-        ]
-      },
-      "ink-dark": {
-        "role": "neutral",
-        "displayName": "Pale Ink",
-        "canonical": "#EDEFF6"
-      },
-      "muted-light": {
-        "role": "neutral",
-        "displayName": "Muted Slate",
-        "canonical": "#565A72"
-      },
-      "muted-dark": {
-        "role": "neutral",
-        "displayName": "Muted Slate (Dark)",
-        "canonical": "oklch(70.9% 0.031 275.0)"
-      },
-      "faint-light": {
-        "role": "neutral",
-        "displayName": "Faint Slate",
-        "canonical": "#767A8E"
-      },
-      "faint-dark": {
-        "role": "neutral",
-        "displayName": "Faint Slate (Dark)",
-        "canonical": "#7E8496"
-      },
-      "running-text-light": {
-        "role": "secondary",
-        "displayName": "Running Amber",
-        "canonical": "oklch(57.0% 0.137 56.5)",
-        "tonalRamp": [
-          "#160700",
-          "#3c1b00",
-          "#653301",
-          "#924c02",
-          "#be691c",
-          "#e58c47",
-          "#ffb784",
-          "#feeadc"
-        ]
-      },
-      "running-dot-light": {
-        "role": "secondary",
-        "displayName": "Running Amber Dot",
-        "canonical": "oklch(70.8% 0.154 66.3)"
-      },
-      "running-tint-light": {
-        "role": "secondary",
-        "displayName": "Running Amber Tint",
-        "canonical": "oklch(95.6% 0.033 83.7)"
-      },
-      "running-text-dark": {
-        "role": "secondary",
-        "displayName": "Running Amber (Dark)",
-        "canonical": "oklch(78.5% 0.146 74.0)"
-      },
-      "running-tint-dark": {
-        "role": "secondary",
-        "displayName": "Running Amber Tint (Dark)",
-        "canonical": "oklch(30.3% 0.045 81.1)"
-      },
-      "ready-text-light": {
-        "role": "secondary",
-        "displayName": "Ready Green",
-        "canonical": "oklch(52.7% 0.137 150.1)",
-        "tonalRamp": [
-          "#001003",
-          "#002e10",
-          "#005121",
-          "#037534",
-          "#379954",
-          "#5ebd76",
-          "#83e299",
-          "#c8ffd2"
-        ]
-      },
-      "ready-dot-light": {
-        "role": "secondary",
-        "displayName": "Ready Green Dot",
-        "canonical": "oklch(63.0% 0.153 153.4)"
-      },
-      "ready-tint-light": {
-        "role": "secondary",
-        "displayName": "Ready Green Tint",
-        "canonical": "oklch(94.4% 0.035 158.7)"
-      },
-      "ready-dot-dark": {
-        "role": "secondary",
-        "displayName": "Ready Green Dot (Dark)",
-        "canonical": "oklch(77.3% 0.153 163.2)"
-      },
-      "ready-tint-dark": {
-        "role": "secondary",
-        "displayName": "Ready Green Tint (Dark)",
-        "canonical": "oklch(28.3% 0.041 169.0)"
-      },
-      "completed-text-light": {
-        "role": "secondary",
-        "displayName": "Completed Emerald",
-        "canonical": "oklch(51.3% 0.109 163.3)",
-        "tonalRamp": [
-          "#000f07",
-          "#002d1d",
-          "#024f36",
-          "#017350",
-          "#359670",
-          "#5cba92",
-          "#82e0b5",
-          "#c1ffe1"
-        ]
-      },
-      "completed-dot-light": {
-        "role": "secondary",
-        "displayName": "Completed Emerald Dot",
-        "canonical": "oklch(69.6% 0.149 162.5)"
-      },
-      "completed-tint-light": {
-        "role": "secondary",
-        "displayName": "Completed Emerald Tint",
-        "canonical": "oklch(94.4% 0.037 166.6)"
-      },
-      "completed-text-dark": {
-        "role": "secondary",
-        "displayName": "Completed Emerald (Dark)",
-        "canonical": "oklch(77.3% 0.153 163.2)"
-      },
-      "completed-tint-dark": {
-        "role": "secondary",
-        "displayName": "Completed Emerald Tint (Dark)",
-        "canonical": "oklch(28.3% 0.041 169.0)"
-      },
-      "failed-text-light": {
-        "role": "secondary",
-        "displayName": "Failed Rose",
-        "canonical": "oklch(56.9% 0.181 15.8)",
-        "tonalRamp": [
-          "#1f0004",
-          "#4c0113",
-          "#7e0225",
-          "#b01b3d",
-          "#d8475d",
-          "#fe7080",
-          "#feb1b5",
-          "#fee9e9"
-        ]
-      },
-      "failed-dot-light": {
-        "role": "secondary",
-        "displayName": "Failed Rose Dot",
-        "canonical": "oklch(66.6% 0.188 15.0)"
-      },
-      "failed-tint-light": {
-        "role": "secondary",
-        "displayName": "Failed Rose Tint",
-        "canonical": "oklch(93.8% 0.029 4.5)"
-      },
-      "failed-text-dark": {
-        "role": "secondary",
-        "displayName": "Failed Rose (Dark)",
-        "canonical": "oklch(71.9% 0.169 13.4)"
-      },
-      "failed-tint-dark": {
-        "role": "secondary",
-        "displayName": "Failed Rose Tint (Dark)",
-        "canonical": "oklch(26.0% 0.056 5.6)"
-      },
-      "blocked-slate-light": {
-        "role": "secondary",
-        "displayName": "Blocked Slate",
-        "canonical": "oklch(54.6% 0.036 275.5)",
-        "tonalRamp": [
-          "#07091a",
-          "#202437",
-          "#3c4156",
-          "#5b6076",
-          "#7c8199",
-          "#9ea4bc",
-          "#c2c8e1",
-          "#eaeeff"
-        ]
-      },
-      "blocked-tint-light": {
-        "role": "secondary",
-        "displayName": "Blocked Slate Tint",
-        "canonical": "oklch(95.0% 0.007 277.2)"
-      },
-      "blocked-slate-dark": {
-        "role": "secondary",
-        "displayName": "Blocked Slate (Dark)",
-        "canonical": "oklch(65.6% 0.033 273.4)"
-      },
-      "blocked-tint-dark": {
-        "role": "secondary",
-        "displayName": "Blocked Slate Tint (Dark)",
-        "canonical": "oklch(26.9% 0.018 266.3)"
-      },
-      "tool-text-light": {
-        "role": "tertiary",
-        "displayName": "Tooling Cyan",
-        "canonical": "oklch(58.4% 0.100 214.5)",
-        "tonalRamp": [
-          "#000e12",
-          "#002b33",
-          "#014b58",
-          "#026d7f",
-          "#1e91a7",
-          "#4db5cc",
-          "#74daf2",
-          "#d2f6ff"
-        ]
-      },
-      "tool-dot-light": {
-        "role": "tertiary",
-        "displayName": "Tooling Cyan Dot",
-        "canonical": "oklch(66.8% 0.113 213.2)"
-      },
-      "tool-tint-light": {
-        "role": "tertiary",
-        "displayName": "Tooling Cyan Tint",
-        "canonical": "oklch(94.7% 0.027 211.1)"
-      },
-      "tool-text-dark": {
-        "role": "tertiary",
-        "displayName": "Tooling Cyan (Dark)",
-        "canonical": "oklch(75.4% 0.139 232.7)"
-      },
-      "tool-tint-dark": {
-        "role": "tertiary",
-        "displayName": "Tooling Cyan Tint (Dark)",
-        "canonical": "oklch(29.1% 0.042 223.8)"
-      }
+      "accent": { "role": "primary", "displayName": "Tooling Teal", "canonical": "#0D7271", "tonalRamp": ["#062826", "#094642", "#0B6360", "#0D7271", "#21978F", "#4ABAB2", "#A4DDD8", "#E0F0EF"] },
+      "await-text-light": { "role": "secondary", "displayName": "Review Indigo", "canonical": "#4B4FA6", "tonalRamp": ["#1D1E45", "#30336C", "#4B4FA6", "#656ACA", "#9096E6", "#BFC2F1", "#ECEDF7", "#F7F7FC"] },
+      "canvas-light": { "role": "neutral", "displayName": "Matte Paper", "canonical": "#F1F2EF", "tonalRamp": ["#15161A", "#282B31", "#464A51", "#656B73", "#979BA2", "#D5D8D1", "#EEEFEB", "#F1F2EF"] },
+      "running-text-light": { "role": "secondary", "displayName": "Running Amber", "canonical": "#C0722A", "tonalRamp": ["#3A2C16", "#764513", "#A75E20", "#C0722A", "#DE9A45", "#EFC17F", "#F6EBDC", "#FDF8F1"] },
+      "done-text-light": { "role": "secondary", "displayName": "Merged Emerald", "canonical": "#267356", "tonalRamp": ["#12302A", "#1D5744", "#267356", "#37A574", "#37C48E", "#8FD8B7", "#E1F1EA", "#F4FBF7"] },
+      "failed-text-light": { "role": "secondary", "displayName": "Failed Rose", "canonical": "#AF3C52", "tonalRamp": ["#3B1D24", "#762637", "#AF3C52", "#CF566C", "#F0768A", "#F2ABB6", "#F9E4E8", "#FDF5F6"] }
     },
     "typographyMeta": {
-      "display": {
-        "displayName": "Display",
-        "purpose": "View and page titles, and the title of a dialog or floating panel (a panel is its own view). One per surface."
-      },
-      "hero": {
-        "displayName": "Hero",
-        "purpose": "The single big figure on Stats (cost). Rare — one per app."
-      },
-      "title": {
-        "displayName": "Title",
-        "purpose": "Card and section headings. Reach for this, not Label, for anything naming a section."
-      },
-      "body": {
-        "displayName": "Body",
-        "purpose": "Prose, agent messages, UI copy. Caps at ~72ch; tables and streams may run full width."
-      },
-      "small": {
-        "displayName": "Small",
-        "purpose": "Metadata lines, notes, telemetry — the whispered layer."
-      },
-      "label": {
-        "displayName": "Label",
-        "purpose": "Field labels and table headers. The only uppercase in the system."
-      },
-      "code": {
-        "displayName": "Code",
-        "purpose": "Genuine code only: file paths, shell commands, branch refs, tool targets, inline code tokens. Never prose, names, figures, or telemetry."
-      }
+      "display": { "displayName": "Display", "purpose": "Ticket titles only." },
+      "title": { "displayName": "Title", "purpose": "Board bands, task titles, and sidebar card labels." },
+      "body": { "displayName": "Body", "purpose": "Operator-facing language." },
+      "label": { "displayName": "Label", "purpose": "Uppercase field and section labels only." },
+      "code": { "displayName": "Code", "purpose": "Paths, branches, commands, hashes, and session IDs." }
     },
     "shadows": [
-      {
-        "name": "card",
-        "value": "0 1px 2px rgb(20 22 45 / 0.06), 0 6px 18px rgb(20 22 45 / 0.07)",
-        "purpose": "Light theme: a panel floating on the canvas — grouping is the panel. Two layers, a contact shadow plus a soft ambient bloom. Never paired with a border (ghost-card ban)."
-      },
-      {
-        "name": "card-dark",
-        "value": "0 0 0 1px #242A35",
-        "purpose": "Dark theme: shadows fade on a dark field, so a panel is a lightness step (canvas #0E1016 → surface #171A22) plus a hairline ring."
-      },
-      {
-        "name": "bar",
-        "value": "0 12px 32px rgb(20 22 45 / 0.12)",
-        "purpose": "Light theme float: the save bar, dialogs, the conversation dock, toasts."
-      },
-      {
-        "name": "bar-dark",
-        "value": "0 0 0 1px #232833, 0 12px 32px rgb(0 0 0 / 0.5)",
-        "purpose": "Dark theme float: the hairline ring does the separating work the shadow cannot on a dark field."
-      },
-      {
-        "name": "btn",
-        "value": "0 1px 2px rgb(37 99 235 / 0.32)",
-        "purpose": "Light theme: a tight cobalt-tinted contact shadow under the primary button. Not a glow."
-      },
-      {
-        "name": "btn-dark",
-        "value": "none",
-        "purpose": "Dark theme: the primary button carries itself on the accent lightness alone."
-      }
+      { "name": "card-light", "value": "0 2px 8px rgb(27 30 36 / 0.08), 0 1px 2px rgb(27 30 36 / 0.05)", "purpose": "Quiet lift for Paper cards in light mode." },
+      { "name": "dialog-light", "value": "0 18px 48px rgb(27 30 36 / 0.20)", "purpose": "Floating dialog depth." }
     ],
     "motion": [
-      {
-        "name": "ease-out-quint",
-        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "The system easing: exponential ease-out. No bounce, no elastic."
-      },
-      {
-        "name": "duration-state",
-        "value": "150ms",
-        "purpose": "Every hover, focus, and colour state change. Users are in flow; motion conveys state, never decoration."
-      },
-      {
-        "name": "dialog-in",
-        "value": "opacity 0 -> 1, translateY(4px) scale(0.98) -> none, 150ms ease-out-quint",
-        "purpose": "Dialog entrance. Reduced-motion alternative: animation: none."
-      },
-      {
-        "name": "toast-in",
-        "value": "opacity 0 -> 1, translateY(-8px) -> none",
-        "purpose": "Toasts hang from under the header, so they descend into place. Gated by motion-safe: in the markup."
-      }
+      { "name": "ui-transition", "value": "150ms ease", "purpose": "Hover and focus transitions." },
+      { "name": "running-pulse", "value": "pulse, disabled by prefers-reduced-motion", "purpose": "Running state dot only." }
     ],
     "breakpoints": [
-      {
-        "name": "rail",
-        "value": "900px",
-        "purpose": "Below this the sidebar collapses from a ~196px rail to a top row of icons. Responsive behaviour is structural, never fluid typography."
-      }
+      { "name": "rail", "value": "900px" },
+      { "name": "rail-collapse", "value": "860px" }
     ]
   },
   "components": [
     {
-      "name": "Primary Button",
+      "name": "Primary action",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "The view's one primary action. Cobalt fill — part of the One Cobalt Rule's budget, so never more than one per view.",
-      "html": "<button class=\"ds-btn-primary\">Save changes</button>",
-      "css": ".ds-btn-primary { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; font-weight: 600; color: var(--hm-on-accent); background: var(--hm-accent); border: none; border-radius: 9px; padding: 8px 14px; box-shadow: var(--hm-shadow-btn); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background: var(--hm-accent-hot); } .ds-btn-primary:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; background: var(--hm-accent); cursor: default; }"
+      "description": "Teal is for ordinary interface action, never review state.",
+      "html": "<button class=\"ds-primary\">New task</button>",
+      "css": ".ds-primary{min-height:44px;padding:8px 14px;border:0;border-radius:10px;background:#0D7271;color:#fff;font:600 14px system-ui;cursor:pointer}.ds-primary:hover{background:#0B6360}.ds-primary:focus-visible{outline:2px solid #0D7271;outline-offset:2px}"
     },
     {
-      "name": "Ghost Button",
+      "name": "Review action",
+      "kind": "button",
+      "refersTo": "button-review",
+      "description": "Indigo is reserved for the operator's review turn.",
+      "html": "<button class=\"ds-review\">Review →</button>",
+      "css": ".ds-review{min-height:44px;padding:8px 14px;border:0;border-radius:10px;background:#4B4FA6;color:#fff;font:600 14px system-ui;cursor:pointer}.ds-review:hover{background:#3D418D}.ds-review:focus-visible{outline:2px solid #0D7271;outline-offset:2px}"
+    },
+    {
+      "name": "Ghost action",
       "kind": "button",
       "refersTo": "button-ghost",
-      "description": "The secondary action. Surface fill with a 1px Edge border and ink text; the border darkens on hover. A border OR a shadow, never both.",
-      "html": "<button class=\"ds-btn-ghost\">Discard</button>",
-      "css": ".ds-btn-ghost { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; font-weight: 500; color: var(--hm-ink); background: var(--hm-surface); border: 1px solid var(--hm-edge); border-radius: 9px; padding: 8px 14px; cursor: pointer; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-ghost:hover { border-color: var(--hm-faint); } .ds-btn-ghost:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; } .ds-btn-ghost:disabled { opacity: 0.5; border-color: var(--hm-edge); cursor: default; }"
+      "description": "Quiet secondary control on a Paper surface.",
+      "html": "<button class=\"ds-ghost\">Reject…</button>",
+      "css": ".ds-ghost{min-height:44px;padding:8px 14px;border:1px solid #D5D8D1;border-radius:10px;background:#fff;color:#1B1E24;font:500 14px system-ui;cursor:pointer}.ds-ghost:hover{border-color:#61676F}.ds-ghost:focus-visible{outline:2px solid #0D7271;outline-offset:2px}"
     },
     {
-      "name": "Quiet Button",
-      "kind": "button",
-      "refersTo": "button-quiet",
-      "description": "A muted text link for tertiary actions (Rerun, Cancel, Reject…). The destructive variant hovers to Failed rose rather than ink.",
-      "html": "<button class=\"ds-btn-quiet\">Rerun</button> <button class=\"ds-btn-quiet ds-btn-quiet--destructive\">Cancel run</button>",
-      "css": ".ds-btn-quiet { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; font-weight: 500; color: var(--hm-muted); background: none; border: none; padding: 0; margin-right: 16px; cursor: pointer; transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-quiet:hover { color: var(--hm-ink); } .ds-btn-quiet--destructive:hover { color: var(--hm-fail); } .ds-btn-quiet:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; border-radius: 4px; } .ds-btn-quiet:disabled { opacity: 0.5; color: var(--hm-muted); cursor: default; }"
+      "name": "Task card",
+      "kind": "card",
+      "refersTo": "board-card",
+      "description": "Scannable Board card with a state bar and restrained metadata.",
+      "html": "<article class=\"ds-card\"><i></i><small>T-172</small><strong>Refresh Paper design artifacts</strong><span>main · 18m</span></article>",
+      "css": ".ds-card{position:relative;display:grid;gap:8px;overflow:hidden;padding:16px 16px 16px 20px;border-radius:13px;background:#fff;box-shadow:0 2px 8px rgb(27 30 36/.08);color:#1B1E24;font:14px system-ui}.ds-card i{position:absolute;inset:0 auto 0 0;width:4px;background:#0D7271}.ds-card small,.ds-card span{color:#656B73}.ds-card strong{font-size:16px}.ds-card:hover{transform:translateY(-1px)}"
     },
     {
-      "name": "Field",
-      "kind": "input",
-      "refersTo": "field",
-      "description": "The one form-control vocabulary. Placeholder sits at Muted (4.5:1), never Faint — a placeholder is informational text.",
-      "html": "<input class=\"ds-field\" type=\"text\" placeholder=\"Search tasks…\" />",
-      "css": ".ds-field { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; width: 100%; box-sizing: border-box; color: var(--hm-ink); background: var(--hm-field); border: 1px solid var(--hm-edge); border-radius: 9px; padding: 6px 10px; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-field::placeholder { color: var(--hm-muted); } .ds-field:focus { border-color: var(--hm-accent); outline: none; } .ds-field:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; } .ds-field:disabled { opacity: 0.5; }"
-    },
-    {
-      "name": "State Pill",
+      "name": "State pill",
       "kind": "chip",
-      "refersTo": "state-pill",
-      "description": "State text on its own tint, full-pill — the state layer in tables and the task header. Awaiting-review is the cobalt accent because it is the state that needs the operator. Draft and cancelled stay neutral (Raised/Muted): nothing is happening yet.",
-      "html": "<span class=\"ds-state-pill ds-state-pill--awaiting\">Awaiting review</span> <span class=\"ds-state-pill ds-state-pill--running\">Running</span> <span class=\"ds-state-pill ds-state-pill--draft\">Draft</span>",
-      "css": ".ds-state-pill { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; display: inline-block; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; margin-right: 6px; } .ds-state-pill--awaiting { background: var(--hm-accent-tint); color: var(--hm-accent); } .ds-state-pill--running { background: var(--hm-running-tint); color: var(--hm-running); } .ds-state-pill--draft { background: var(--hm-raised); color: var(--hm-muted); }"
+      "refersTo": "chip-awaiting-review",
+      "description": "Tinted state signal with text, never color alone.",
+      "html": "<span class=\"ds-chip\">Awaiting review</span>",
+      "css": ".ds-chip{display:inline-block;border-radius:999px;padding:4px 8px;background:#ECEDF7;color:#4B4FA6;font:700 10px system-ui;letter-spacing:.1em;text-transform:uppercase}"
     },
     {
-      "name": "Nav Item",
+      "name": "Active navigation",
       "kind": "nav",
-      "refersTo": "nav-item",
-      "description": "Sidebar navigation: a minimal line-icon + label row. Active is accent text on Accent Tint — one of the One Cobalt Rule's six sanctioned uses.",
-      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-item--active\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"18\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"11\" rx=\"1\"/></svg>Board</a><a class=\"ds-nav-item\" href=\"#\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"3\" y1=\"6\" x2=\"21\" y2=\"6\"/><line x1=\"3\" y1=\"12\" x2=\"21\" y2=\"12\"/><line x1=\"3\" y1=\"18\" x2=\"21\" y2=\"18\"/></svg>Table</a></nav>",
-      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; width: 196px; background: var(--hm-shell); padding: 8px; box-sizing: border-box; } .ds-nav-item { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; font-weight: 500; color: var(--hm-muted); text-decoration: none; transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-nav-item:hover { color: var(--hm-ink); background: var(--hm-raised); } .ds-nav-item--active { color: var(--hm-accent); background: var(--hm-accent-tint); } .ds-nav-item:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; }"
-    },
-    {
-      "name": "Review Gate",
-      "kind": "custom",
-      "refersTo": "review-gate",
-      "description": "Signature component, and the product's core promise. Two verbs only — a reviewed task merges or fails, and nothing else belongs in the row. Reject is the Ghost; Accept is the cobalt primary and sits LAST, so the affirmative holds the terminal position. Accept is deliberately unguarded, because the operator's read IS the review; Reject opens a dialog because it takes a reason, not because it needs a guard. Cancel is deliberately absent: once the work exists, \"cancelled\" and \"failed\" are two names for one terminal fact. Only the branch ref is monospace.",
-      "html": "<div class=\"ds-review-gate\"><span class=\"ds-review-gate__note\">Merges <code class=\"ds-review-gate__branch\">agent/4810-dark-mode</code> into main.</span><button class=\"ds-review-gate__reject\">Reject…</button><button class=\"ds-review-gate__accept\">Accept &amp; merge</button></div>",
-      "css": ".ds-review-gate { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; gap: 10px; background: var(--hm-surface); border-radius: 12px; box-shadow: var(--hm-shadow-card); padding: 16px; } .ds-review-gate__note { margin-right: auto; font-size: 0.75rem; color: var(--hm-faint); } .ds-review-gate__branch { font-family: \"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8125rem; } .ds-review-gate__reject { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; font-weight: 500; color: var(--hm-ink); background: var(--hm-surface); border: 1px solid var(--hm-edge); border-radius: 9px; padding: 8px 14px; cursor: pointer; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-review-gate__reject:hover { border-color: var(--hm-faint); } .ds-review-gate__reject:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; } .ds-review-gate__accept { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 0.90625rem; font-weight: 600; color: var(--hm-on-accent); background: var(--hm-accent); border: none; border-radius: 9px; padding: 8px 14px; box-shadow: var(--hm-shadow-btn); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-review-gate__accept:hover { background: var(--hm-accent-hot); } .ds-review-gate__accept:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; }"
-    },
-    {
-      "name": "Toast",
-      "kind": "custom",
-      "refersTo": "toast",
-      "description": "How a rejected operation announces itself — never a native alert()/confirm(). A Failed-tint card in a top-right stack hanging off the header's bottom edge, aria-live, ~6s auto-dismiss.",
-      "html": "<div class=\"ds-toast\" role=\"status\"><div class=\"ds-toast__body\"><p class=\"ds-toast__title\">Couldn't merge agent/4810-dark-mode</p><p class=\"ds-toast__detail\">Worktree conflict in web/src/ui.ts — the task is back in Awaiting review.</p></div><button class=\"ds-toast__dismiss\" aria-label=\"Dismiss\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"/><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"/></svg></button></div>",
-      "css": ".ds-toast { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: flex-start; gap: 12px; width: 360px; box-sizing: border-box; background: var(--hm-fail-tint); border-radius: 12px; box-shadow: var(--hm-shadow-bar); padding: 12px 14px; } .ds-toast__body { flex: 1; } .ds-toast__title { font-size: 0.90625rem; font-weight: 600; color: var(--hm-fail); margin: 0; } .ds-toast__detail { font-size: 0.75rem; line-height: 1.45; color: var(--hm-muted); margin: 4px 0 0; } .ds-toast__dismiss { color: var(--hm-faint); background: none; border: none; padding: 2px; cursor: pointer; transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-toast__dismiss:hover { color: var(--hm-ink); } .ds-toast__dismiss:focus-visible { outline: 2px solid var(--hm-accent); outline-offset: 2px; border-radius: 4px; }"
-    },
-    {
-      "name": "Panel",
-      "kind": "container",
-      "refersTo": "panel",
-      "description": "The grouping primitive: a Surface panel holds a group of rows. Groups separate by the canvas between panels; rows inside separate by a hairline inset. Never a bare ruled-row list on the canvas.",
-      "html": "<div class=\"ds-panel\"><div class=\"ds-row\"><span class=\"ds-dot\"></span><span class=\"ds-id\">172</span><span class=\"ds-title\">Refactor auth session refresh</span></div><div class=\"ds-row\"><span class=\"ds-dot ready\"></span><span class=\"ds-id\">174</span><span class=\"ds-title\">Document verification override chain</span></div></div>",
-      "css": ".ds-panel{background:#FFFFFF;border-radius:12px;box-shadow:0 1px 2px rgb(20 22 45/.06),0 6px 18px rgb(20 22 45/.07);overflow:hidden;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;}.ds-panel .ds-row{display:flex;align-items:center;gap:12px;padding:12px 15px;}.ds-panel .ds-row+.ds-row{border-top:1px solid #E7E9F1;}.ds-panel .ds-dot{width:8px;height:8px;border-radius:50%;background:#2563EB;}.ds-panel .ds-dot.ready{background:#1BA35B;}.ds-panel .ds-id{font-size:11.5px;color:#767A8E;}.ds-panel .ds-title{font-size:13.5px;font-weight:550;color:#141627;}"
-    },
-    {
-      "name": "Deck Row",
-      "kind": "list-item",
-      "refersTo": "deck-row",
-      "description": "A Deck summary row: state dot, faint id, loud title, up to two quiet meta facts, and a right-aligned state signal. One click opens the full Ticket — the Deck never becomes the detail.",
-      "html": "<div class=\"ds-drow\"><span class=\"ds-dot\"></span><div class=\"ds-main\"><div class=\"ds-t\">Refactor auth session refresh to single-flight</div><div class=\"ds-meta\">Claude · opus · worktree</div></div><span class=\"ds-signal\">awaiting review</span></div>",
-      "css": ".ds-drow{display:flex;align-items:center;gap:13px;padding:12px 15px;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;}.ds-drow .ds-dot{width:8px;height:8px;border-radius:50%;background:#2563EB;flex:none;}.ds-drow .ds-main{flex:1;min-width:0;}.ds-drow .ds-t{font-size:13.5px;font-weight:550;color:#141627;}.ds-drow .ds-meta{font-size:11.5px;color:#767A8E;margin-top:3px;}.ds-drow .ds-signal{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;background:#EAF1FE;color:#2563EB;}"
-    },
-    {
-      "name": "Run Chip",
-      "kind": "control",
-      "refersTo": "run-chip",
-      "description": "One chip per Run on the Ticket’s run rail; selecting it switches the run-level detail (phases, verification, output, changes, cost). Shows state, cost, duration. Selected chip is Accent Tint plus a cobalt ring.",
-      "html": "<button class=\"ds-chip active\"><span class=\"ds-ctop\"><span class=\"ds-dot\"></span>Run 3</span><span class=\"ds-csub\">awaiting · $0.71 · 44s</span></button>",
-      "css": ".ds-chip{display:inline-flex;flex-direction:column;gap:4px;padding:9px 13px;border:1px solid #D6D9E4;border-radius:10px;background:#FFFFFF;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;text-align:left;cursor:pointer;}.ds-chip.active{border-color:transparent;box-shadow:0 0 0 1.5px #2563EB;background:#EAF1FE;}.ds-chip .ds-ctop{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:#141627;}.ds-chip .ds-dot{width:7px;height:7px;border-radius:50%;background:#2563EB;}.ds-chip .ds-csub{font-size:11px;color:#767A8E;padding-left:15px;}"
-    },
-    {
-      "name": "Phase Stepper",
-      "kind": "indicator",
-      "refersTo": "phase-step",
-      "description": "A Run’s executing → validating → verifying → review → landing machine as a compact stepper. Done steps emerald, current cobalt, pending hollow, a failed step rose (a failed Run stops there).",
-      "html": "<div class=\"ds-phases\"><span class=\"ds-ps ok\">executing</span><span class=\"ds-pc\"></span><span class=\"ds-ps ok\">verifying</span><span class=\"ds-pc\"></span><span class=\"ds-ps cur\">review</span></div>",
-      "css": ".ds-phases{display:inline-flex;align-items:center;gap:8px;font-family:ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;font-size:12px;}.ds-phases .ds-ps{padding:3px 10px;border-radius:999px;}.ds-phases .ds-ps.ok{background:#D8F4E9;color:#067A55;}.ds-phases .ds-ps.cur{background:#2563EB;color:#fff;font-weight:600;}.ds-phases .ds-pc{width:20px;height:2px;background:#1BA35B;border-radius:2px;}"
+      "refersTo": "navigation-active",
+      "description": "Teal tooling voice on the current view.",
+      "html": "<nav><a class=\"ds-nav\" href=\"#\">Board</a></nav>",
+      "css": ".ds-nav{display:block;min-height:44px;padding:12px;border-radius:10px;background:#E0F0EF;color:#0D7271;font:600 14px system-ui;text-decoration:none}.ds-nav:focus-visible{outline:2px solid #0D7271;outline-offset:2px}"
     }
   ],
   "narrative": {
-    "northStar": "Deck — the operator's board: one dense, structural, terminal-adjacent surface that reads the whole agent fleet at a glance, ordered by the operator's attention, in one cobalt accent over a semantic state palette. No metaphor, no costume.",
-    "overview": "Harmonic is an operator's console for running and reviewing a fleet of autonomous coding agents. The UI is reorganised around the real Task/Epic lifecycle: the home is the Deck — attention-ordered panelled sections (Needs you, In flight, Landing, Queued, Recent) — and a Task opens as its own full Ticket page with a run rail that switches between its Runs. Density is a virtue here, earned by structure (panels, hierarchy, alignment), never bought with clutter. Dark is the canonical operator identity; light ships for bright rooms.",
-    "keyCharacteristics": [
-      "Attention-ordered surfaces: what needs the operator now is first and loudest.",
-      "Dense and structural: grouping by floating panels, hierarchy by weight/size/colour-layer.",
-      "One cobalt accent (≤10% of any screen) plus a semantic state-signal family.",
-      "Monospace for genuine code only (paths, refs, oids, tool targets); language and figures in sans with tabular-nums.",
-      "Terminal-adjacent by restraint, never a costume — no scanlines, glow, or faux-CRT.",
-      "True dual theme with an AA contrast floor in both."
-    ],
+    "northStar": "Paper",
+    "overview": "Harmonic is a dense operator console in a matte, low-chroma Paper register. Teal speaks for the interface and tooling; indigo marks the single state that needs the operator. The Board is ordered by attention, with the review gate always clear and reachable.",
+    "keyCharacteristics": ["Attention-ordered Board sections", "Teal action and tooling voice with indigo review voice", "True light and dark themes with Soft and Bold densities", "Semantic state color that never carries meaning alone"],
     "rules": [
-      "One Cobalt Rule: accent only for primary action, active nav, selection, focus, chart, selected run chip, and awaiting-review — ≤10% of any screen.",
-      "Signal Rule: state colours live on the state layer (dots, pills, merge-train segments, run-chip states), never smeared across content or decorative.",
-      "Cool-Neutral Rule: neutrals carry no hue; warmth or coolness comes only from the accent and the state family.",
-      "Mono Is Code Rule: monospace only for code and code-identity tokens; everything read as language or a figure is sans with tabular-nums.",
-      "Three Weights Rule: 400 / 500–550 / 650 (750 for the Display title); add hierarchy with size or colour layer, not weight.",
-      "Grouping is the panel: a group of rows lives in one panel; never bare ruled rows on the canvas.",
-      "Attention leads: order every surface so the review gate and escalations come first.",
-      "Elevation declared once: shadow or ring, never both (no ghost card).",
-      "Standalone (non-Epic) Tasks are first-class on every surface; the Deck row is a summary, the Ticket page is the detail."
+      { "name": "Two Voices", "body": "Teal means action, tooling, and ready. Indigo means review and needs-you. Neither decorates generic content.", "section": "colors" },
+      { "name": "Mono Is Code", "body": "Use monospace only for code identities such as paths, branch refs, commands, hashes, and session IDs.", "section": "typography" },
+      { "name": "Review Gate", "body": "Reject is ghost and Accept & merge is teal, last, and sticky on the current run.", "section": "components" }
     ],
-    "dos": [
-      "Order surfaces by the operator's attention — the review gate and escalations first, loudest.",
-      "Group with panels; carry density with hierarchy and alignment, not clutter. If it reads busy, add structure before cutting content.",
-      "Set everything read as language or a figure in sans with tabular-nums; reserve mono for genuine code.",
-      "Design every change in both themes; give controls default/hover/focus-visible/disabled and every animation a prefers-reduced-motion alternative.",
-      "Give every interactive control a ≥44×44px hit area and tabular readouts real table semantics."
-    ],
-    "donts": [
-      "Don't reintroduce a kanban Board with drag-between-columns, or a docked master/detail Task panel — the Deck is attention-ordered rows and the Ticket is its own page.",
-      "Don't build a group from bare ruled rows on the canvas — group with a panel.",
-      "Don't set prose, labels, model/harness names, costs, ordinary ids, or telemetry in monospace.",
-      "Don't use state colours decoratively or pair a border with a wide shadow (ghost card).",
-      "Don't let cobalt mean anything but the interface's voice — tooling metadata is cyan, no second accent.",
-      "Don't tint neutrals toward any hue, use gradient text, glassmorphism, side-stripe borders, or nested cards.",
-      "Don't dress the tool as a terminal costume — scanlines, glow, faux-CRT, rotated rails are banned."
-    ]
+    "dos": ["Do order the Board by what needs the operator now.", "Do use teal for ordinary actions and indigo only for review.", "Do use merged and merging in operator-facing copy."],
+    "donts": ["Don't use teal for review state.", "Don't use monospace for ordinary prose or figures.", "Don't reintroduce Deck row lists, connector lines, or a Kanban board."]
   }
 }
