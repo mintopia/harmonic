@@ -18,6 +18,13 @@ Subagents must use an appropriate model, defaults:
 Explicitly specify the model when starting a subagent.
 Subagents must use an appropriate subagent type.
 
+### Testing
+
+While editing, run the relevant test file with `npx vitest run <file>`.
+Before the final test run, run `npm run typecheck` and `npm run lint`.
+Run `npm test` once when the work is complete. It starts ACP harnesses and
+covers shared-lock integration cases, so it is slower than a focused test.
+
 ## Agent skills
 
 ### Issue tracker
@@ -88,4 +95,3 @@ This server runs the **front door** surface: three tools reach every jCodeMunch 
 - Otherwise `order { "action": "register_edit", "args": { "paths": [...] } }` after an edit, batched for bulk changes.
 
 **Announce your model once per session** so the server can size its answers: `announce_model { "model": "<your-model-id>" }`.
-

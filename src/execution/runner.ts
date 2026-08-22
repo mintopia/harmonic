@@ -622,13 +622,17 @@ export class Runner {
 
   /** Start a run for a ready task. Returns the created run immediately. */
   async start(taskId: number): Promise<RunRow> {
-    const task = await this.taskService.get(taskId);
-    if (task.state !== 'ready') {
+    const claimed = await this.taskService.claimReady(taskId);
+    if (!claimed) {
+      const task = await this.taskService.get(taskId);
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
-    const run = await this.beginRun(task);
-    await this.taskService.setState(taskId, 'running');
-    return run;
+    try {
+      return await this.beginRun(claimed);
+    } catch (err) {
+      await this.taskService.setState(taskId, 'ready');
+      throw err;
+    }
   }
 
   /**

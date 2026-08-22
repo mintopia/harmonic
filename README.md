@@ -76,6 +76,11 @@ npm test           # vitest suite
 npm run typecheck
 ```
 
+While you work, run the relevant test file with `npx vitest run <file>`.
+Before the final test run, use `npm run typecheck` and `npm run lint`. Run
+`npm test` once when the work is complete. It starts ACP harnesses and covers
+shared-lock behavior, so it is slower than a focused test.
+
 Architecture decisions are recorded in [docs/adr/](docs/adr/), product
 and design ground rules in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md).
 
