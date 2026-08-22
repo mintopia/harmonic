@@ -22,7 +22,6 @@ import {
   btnPrimary,
   btnQuietDestructive,
   chip,
-  deckRow,
   displayTitle,
   escalatedChip,
   panel,
