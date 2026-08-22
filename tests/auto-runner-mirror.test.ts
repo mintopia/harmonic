@@ -104,6 +104,50 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     // The yielded Task is handed back to the frontier, not stranded running.
     expect((await tasks.get(yielded.id)).state).toBe('ready');
   });
+
+  it('does not resurrect a task that flips to hitl between the ready scan and the claim', async () => {
+    const stopped = await tasks.upsertMirrored(mirroredAfk(55));
+
+    const started: Array<{ id: number; via: 'start' | 'launchClaimed' }> = [];
+    const mirror: MirrorClaim = {
+      foreignAssignee: () => false,
+      recheckAndClaim: async () => 'spawn',
+    };
+    const runner = {
+      start: async (id: number) => {
+        started.push({ id, via: 'start' });
+        await tasks.setState(id, 'running');
+      },
+      launchClaimed: (id: number) => {
+        started.push({ id, via: 'launchClaimed' });
+      },
+    } as unknown as Runner;
+    const runStore = {
+      countRunning: () => started.length,
+      countRunningByWorkspace: () => new Map<number, number>(),
+    } as unknown as RunStore;
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 10 } };
+
+    const runner$ = new AutoRunner(
+      tasks,
+      runStore,
+      runner,
+      () => config,
+      allWorkspaces(asyncDb),
+      mirror,
+      async (task) => {
+        if (task.id === stopped.id) await tasks.escalate(task.id);
+        return false;
+      },
+    );
+
+    runner$.poke();
+    await vi.waitFor(async () => expect((await tasks.get(stopped.id)).drive).toBe('hitl'));
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(started).toEqual([]);
+    expect(await tasks.get(stopped.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true });
+  });
 });
 
 /**

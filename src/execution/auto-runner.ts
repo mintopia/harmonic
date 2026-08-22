@@ -211,10 +211,14 @@ export class AutoRunner {
       }
       return;
     }
-    await this.taskService.setState(task.id, 'running'); // the local lock, before any tracker write
+    const claimed = await this.taskService.claimMirroredAutoRun(task.id); // the local lock, before any tracker write
+    if (!claimed) {
+      skip.add(task.id);
+      return;
+    }
     let decision: 'spawn' | 'yield';
     try {
-      decision = await this.mirror.recheckAndClaim(await this.taskService.get(task.id));
+      decision = await this.mirror.recheckAndClaim(claimed);
     } catch {
       decision = 'spawn'; // readTicket/claim failed — proceed; reconcile retries the assignment
     }

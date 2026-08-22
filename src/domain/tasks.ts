@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import {
@@ -78,7 +78,8 @@ export interface TaskOverrides {
 
 export const taskListQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
-  state: z.enum(TASK_STATES).optional().meta({ example: 'awaiting-review' }),
+  /** `open` excludes closed Tasks for the board poll; omitting state still returns every Task. */
+  state: z.union([z.enum(TASK_STATES), z.literal('open')]).optional().meta({ example: 'awaiting-review' }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
   /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
@@ -411,7 +412,11 @@ export class TaskService {
     // and priority can be inherited, so they filter on the resolved value below.
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
-      query.state ? eq(tasks.state, query.state) : undefined,
+      query.state === 'open'
+        ? notInArray(tasks.state, ['completed', 'cancelled'])
+        : query.state
+          ? eq(tasks.state, query.state)
+          : undefined,
     ].filter((f) => f !== undefined);
     let rows = await Promise.all(
       (
@@ -692,6 +697,23 @@ export class TaskService {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}, not running`);
     }
     return this.setState(id, 'completed');
+  }
+
+  /**
+   * Claim a mirrored afk Task for the Auto-Runner in one compare-and-set step.
+   * If the Task left the ready afk frontier after the scheduler scanned it, the
+   * claim is rejected and the caller must treat it as a clean no-op.
+   */
+  async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ state: 'running', updatedAt: Date.now() })
+        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored'), eq(tasks.drive, 'afk')))
+        .returning()
+        .get(),
+    );
+    return row ? await this.changed(row) : undefined;
   }
 
   async setState(id: number, state: TaskState): Promise<TaskRow> {

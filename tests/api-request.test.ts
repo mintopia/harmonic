@@ -26,6 +26,14 @@ describe('api request()', () => {
     await expect(api.tasks()).resolves.toEqual({ tasks: [{ id: 1 }] });
   });
 
+  it('lets the board explicitly request only open tasks without changing the default API request', async () => {
+    const fetch = fakeFetch(JSON.stringify({ tasks: [] }), { status: 200 });
+    vi.stubGlobal('fetch', fetch);
+
+    await api.tasks({ workspaceId: 7, state: 'open' });
+    expect(fetch).toHaveBeenCalledWith('/api/tasks?workspaceId=7&state=open', { method: 'GET' });
+  });
+
   it('surfaces the server error message on a non-2xx response', async () => {
     vi.stubGlobal(
       'fetch',
