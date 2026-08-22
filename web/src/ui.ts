@@ -15,7 +15,7 @@ export const btnPrimary =
 export const btnGhost =
   'inline-flex min-h-11 items-center justify-center rounded-md border border-edge bg-surface px-3.5 py-2 font-medium text-ink transition-colors duration-150 hover:border-faint disabled:opacity-50 disabled:hover:border-edge';
 
-export const btnQuiet = 'font-medium text-muted transition-colors duration-150 hover:text-ink';
+export const btnQuiet = 'inline-flex min-h-11 items-center font-medium text-muted transition-colors duration-150 hover:text-ink';
 
 /** A ≥44×44px touch target (issue #56): expand the *hit area* to the accessible
  * minimum while the visual stays as compact as the layout wants. `touchTarget`
@@ -39,7 +39,7 @@ export const touchOverlay = 'absolute left-1/2 top-1/2 size-11 -translate-x-1/2 
  * fail red") — the Reject option on a permission prompt, cancel/remove
  * links elsewhere. */
 export const btnQuietDestructive =
-  'font-medium text-muted transition-colors duration-150 hover:text-fail disabled:opacity-50 disabled:hover:text-muted';
+  'inline-flex min-h-11 items-center font-medium text-muted transition-colors duration-150 hover:text-fail disabled:opacity-50 disabled:hover:text-muted';
 
 /** Solid-fail destructive — the loud end of the destructive scale, the filled
  * counterpart of btnQuietDestructive. Reserved for the confirm inside a

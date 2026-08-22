@@ -1,9 +1,18 @@
 import { currentRunId } from '../../run-rail-model';
+import type { RunDot } from '../../run-rail-model';
 import type { GateModel } from '../../ticket-gate-model';
 import { formatCost } from '../../cost';
 import type { Run, Task, VerificationAttempt } from '../../types';
 import { btnGhost, dot, runDotFill } from '../../ui';
 import { TaskActions } from '../TaskActions';
+
+const DOT_LABEL: Record<RunDot, string> = {
+  running: 'running',
+  fail: 'failed',
+  merged: 'merged',
+  review: 'awaiting review',
+  neutral: 'neutral',
+};
 
 function formatTokens(run: Run | undefined): string | null {
   const totals = run?.usage?.totals;
@@ -39,7 +48,7 @@ export function Gate({
       <div className="sticky bottom-0 z-10 border-t border-edge bg-surface shadow-bar">
         <div className="mx-auto flex max-w-[1120px] items-center gap-4 px-6 py-3">
           <div className="flex items-center gap-2.5 text-small text-muted">
-            <span aria-hidden className={`${dot} ${runDotFill[model.dot]}`} />
+            <span role="img" aria-label={DOT_LABEL[model.dot]} className={`${dot} ${runDotFill[model.dot]}`} />
             <span>
               <b className="font-semibold text-ink">Run {model.attempt}</b> {rest}
             </span>

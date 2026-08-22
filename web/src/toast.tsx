@@ -106,7 +106,7 @@ export function Toaster() {
               <span className="min-w-0 flex-1 break-words">{t.message}</span>
               <button
                 aria-label="Dismiss"
-                className={`shrink-0 rounded-md p-0.5 transition-opacity duration-150 hover:opacity-70 ${
+                className={`-mr-2 -mt-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md transition-opacity duration-150 hover:opacity-70 ${
                   success ? 'text-muted' : 'text-fail'
                 }`}
                 onClick={() => dismissToast(t.id)}

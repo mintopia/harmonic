@@ -40,7 +40,7 @@ function rowId(task: Task): string {
 
 function Dot({ task }: { task: Task }) {
   const pulse = task.state === 'running' ? 'motion-safe:animate-pulse' : '';
-  return <span aria-hidden="true" className={`${stateDot(task.state)} ${pulse}`} />;
+  return <span role="img" aria-label={task.state.replaceAll('-', ' ')} className={`${stateDot(task.state)} ${pulse}`} />;
 }
 
 function OpenButton({ onOpen }: { onOpen: () => void }) {
@@ -256,7 +256,11 @@ function Section({
     <section className="mt-6 first:mt-3">
       <div className="mb-2 flex items-baseline gap-2 px-1">
         <h2 className={attn ? sectionLabelAttn : sectionLabel}>{label}</h2>
-        {count != null && <span className="text-small font-semibold text-muted">{count}</span>}
+        {count != null && (
+          <span aria-atomic="true" aria-live={attn ? 'polite' : undefined} className="text-small font-semibold text-muted">
+            {count}
+          </span>
+        )}
         {sub && <span className="ml-auto text-small text-faint">{sub}</span>}
       </div>
       {children}
@@ -373,7 +377,7 @@ function EpicBand({
         <button
           type="button"
           onClick={() => (onOpenEpic ? onOpenEpic(epic) : setOpen((v) => !v))}
-          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+          className={`${touchTargetInline} min-w-0 flex-1 gap-2.5 text-left`}
         >
           <span className="shrink-0 rounded bg-tool-tint px-1.5 py-0.5 text-label font-bold uppercase text-tool">
             {epic.kind}

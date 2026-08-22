@@ -87,7 +87,7 @@ function MemberRow({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2.5 rounded-md bg-raised px-2.5 py-2 text-left transition-colors duration-150 hover:bg-surface hover:ring-1 hover:ring-edge"
+      className="flex min-h-11 w-full items-center gap-2.5 rounded-md bg-raised px-2.5 py-2 text-left transition-colors duration-150 hover:bg-surface hover:ring-1 hover:ring-edge"
       onClick={() => onOpenTask(taskId)}
     >
       {body}
@@ -161,10 +161,10 @@ export function EpicPeek({
             </div>
           </div>
           <button type="button" className={`${btnQuiet} mt-3`} onClick={() => onFocus(epic.ref)}>
-            Focus on board →
+            Focus on board <span aria-hidden="true">→</span>
           </button>
           {banner && (
-            <div role="status" className={`mt-3 rounded-md px-3 py-2 text-small ${BANNER_TONE[banner.tone]}`}>
+            <div aria-atomic="true" aria-live="assertive" className={`mt-3 rounded-md px-3 py-2 text-small ${BANNER_TONE[banner.tone]}`}>
               {banner.text}
             </div>
           )}

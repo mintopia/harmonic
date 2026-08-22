@@ -19,7 +19,11 @@ const WORD_TONE: Record<RunDot, string> = {
 
 function ChipDot({ chip }: { chip: RunChip }) {
   return (
-    <span aria-hidden className={`${dot} ${runDotFill[chip.dot]} ${chip.pulse ? 'motion-safe:animate-dot-pulse' : ''}`} />
+    <span
+      role="img"
+      aria-label={chip.stateWord}
+      className={`${dot} ${runDotFill[chip.dot]} ${chip.pulse ? 'motion-safe:animate-dot-pulse' : ''}`}
+    />
   );
 }
 
@@ -96,7 +100,7 @@ export function RunRail({
           <button
             type="button"
             onClick={onSelectChanges}
-            className="w-full rounded-md border border-hairline bg-field px-3 py-2 text-left text-small transition-colors hover:border-edge"
+            className="min-h-11 w-full rounded-md border border-hairline bg-field px-3 py-2 text-left text-small transition-colors hover:border-edge"
           >
             <span className="block font-data text-data text-tool">{worktree.branch}</span>
             <span className="mt-1 block text-faint">
