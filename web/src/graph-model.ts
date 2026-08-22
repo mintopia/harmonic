@@ -117,15 +117,15 @@ export interface Signal {
  * (`web/src/index.css`, DESIGN.md § 2). The Signal Rule: only true states carry
  * a hue — `draft` and `cancelled` stay neutral (Faint dot / Muted text), nothing
  * is happening or it's over. Tokens re-theme for free, so this reads in both
- * themes. `awaiting-review` is the one state that speaks in the cobalt accent
- * (the One Cobalt Rule lists awaiting-review among accent's few homes).
+ * themes. `awaiting-review` is the one state that speaks in Paper's indigo
+ * review voice.
  */
 export const SIGNAL: Record<TaskState, Signal> = {
   draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
   blocked: { color: 'var(--hm-blocked)', text: 'var(--hm-blocked)' },
   ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
   running: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
-  'awaiting-review': { color: 'var(--hm-accent)', text: 'var(--hm-accent)' },
+  'awaiting-review': { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
   completed: { color: 'var(--hm-accept-dot)', text: 'var(--hm-accept)' },
   failed: { color: 'var(--hm-fail-dot)', text: 'var(--hm-fail)' },
   cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },

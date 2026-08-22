@@ -190,10 +190,10 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
  * Rule — only true states get a color). */
 export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   draft: 'bg-raised text-muted',
-  blocked: 'bg-blocked-tint text-blocked',
+  blocked: 'bg-blocked-tint text-muted',
   ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
-  'awaiting-review': 'bg-accent-tint text-accent',
+  'awaiting-review': 'bg-await-tint text-await',
   completed: 'bg-accept-tint text-accept',
   failed: 'bg-fail-tint text-fail',
   cancelled: 'bg-raised text-muted',
@@ -227,7 +227,7 @@ const STATE_COUNT_COLORS: Record<TaskState, string> = {
   blocked: 'text-blocked',
   ready: 'text-ready',
   running: 'text-running',
-  'awaiting-review': 'text-accent',
+  'awaiting-review': 'text-await',
   completed: 'text-accept',
   failed: 'text-fail',
   cancelled: 'text-muted',
@@ -240,10 +240,10 @@ export function stateCountColor(state: TaskState, count: number): string {
 /** Board column-header count pill: raised neutral until the count means
  * a state worth coloring (running amber, failed red, completed green). */
 const STATE_COUNT_PILLS: Partial<Record<TaskState, string>> = {
-  blocked: 'bg-blocked-tint text-blocked',
+  blocked: 'bg-blocked-tint text-muted',
   ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
-  'awaiting-review': 'bg-accent-tint text-accent',
+  'awaiting-review': 'bg-await-tint text-await',
   completed: 'bg-accept-tint text-accept',
   failed: 'bg-fail-tint text-fail',
 };
@@ -265,7 +265,7 @@ const LANE_BORDER: Record<TaskState, string> = {
   blocked: 'border-blocked',
   ready: 'border-ready-dot',
   running: 'border-running-dot',
-  'awaiting-review': 'border-accent',
+  'awaiting-review': 'border-await',
   completed: 'border-accept-dot',
   failed: 'border-fail-dot',
   cancelled: 'border-faint',
@@ -275,7 +275,7 @@ const LANE_DOT: Record<TaskState, string> = {
   blocked: 'bg-blocked',
   ready: 'bg-ready-dot',
   running: 'bg-running-dot',
-  'awaiting-review': 'bg-accent',
+  'awaiting-review': 'bg-await-dot',
   completed: 'bg-accept-dot',
   failed: 'bg-fail-dot',
   cancelled: 'bg-faint',
@@ -305,7 +305,7 @@ export const panel = 'overflow-hidden rounded-xl bg-surface shadow-card';
  * section register, distinct from `labelType`'s 600 field-label weight). The
  * 'Needs you' section is the one whose label is accent, not faint (§ 6). */
 export const sectionLabel = 'text-label font-bold uppercase text-faint';
-export const sectionLabelAttn = 'text-label font-bold uppercase text-accent';
+export const sectionLabelAttn = 'text-label font-bold uppercase text-await';
 
 /** The rail's cobalt "Needs you" count badge (DESIGN.md §5): a count pill in
  * the accent, right-aligned in its nav row. This is the one sanctioned cobalt
@@ -313,7 +313,7 @@ export const sectionLabelAttn = 'text-label font-bold uppercase text-accent';
  * count, cobalt when it's the 'Needs you' count"), not a Signal-Rule state
  * colour. Shared here so the shell can't fork the pill's register. */
 export const railBadge =
-  'ml-auto min-w-5 rounded-full bg-accent px-1.5 py-0.5 text-center text-label font-bold tabular-nums text-on-accent';
+  'ml-auto min-w-5 rounded-full bg-await px-1.5 py-0.5 text-center text-label font-bold tabular-nums text-on-await';
 
 /** A Deck row: state dot · faint id · loud title · ≤2 facts · right-aligned
  * signal (DESIGN.md § 6). One content line + one quiet meta line; the whole row
@@ -339,7 +339,7 @@ export const runDotFill: Record<RunDot, string> = {
   running: 'bg-running-dot',
   fail: 'bg-fail-dot',
   accept: 'bg-accept-dot',
-  review: 'bg-accent',
+  review: 'bg-await-dot',
   neutral: 'bg-edge',
 };
 
@@ -349,7 +349,7 @@ export const runDotFill: Record<RunDot, string> = {
 export const runChip =
   'flex min-w-[132px] flex-col gap-1 rounded-lg border border-edge bg-surface px-3 py-2 text-left transition-colors duration-150 hover:border-faint';
 export const runChipActive =
-  'flex min-w-[132px] flex-col gap-1 rounded-lg border border-transparent bg-accent-tint px-3 py-2 text-left shadow-[0_0_0_1.5px_var(--hm-accent)]';
+  'flex min-w-[132px] flex-col gap-1 rounded-lg border border-transparent bg-await-tint px-3 py-2 text-left shadow-[0_0_0_1.5px_var(--hm-await)]';
 
 /** Phase-stepper node (DESIGN.md § 6): the Run's executing → validating →
  * verifying → review → landing machine. A done step is an emerald ✓ node, the
