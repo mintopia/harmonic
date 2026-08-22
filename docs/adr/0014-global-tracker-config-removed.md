@@ -4,7 +4,7 @@ Tracker enable/interval were global before per-Workspace mirroring (issue #45)
 moved them onto the Workspace row; a vestigial `config.tracker` block lingered,
 read by nothing but a one-time backfill. We considered reviving it as a
 global-default-with-per-Workspace-override (the ADR-0012 inheritance pattern) so
-tracking could be flipped fleet-wide — and rejected it. A global `enabled`
+tracking could be flipped fleet-wide, and rejected it. A global `enabled`
 default would start **every** Workspace polling its repo on inherit, and any
 Workspace without a `docs/agents/issue-tracker.md` would error every cycle, so
 the safe shape is per-Workspace opt-in, which is exactly what we already have.
@@ -18,10 +18,10 @@ dead global block is deleted outright.
   toggle, but "inherit → on" makes every Workspace poll a repo that may have no
   tracker declaration, turning a convenience into a fleet of failing poll loops.
   The visibility that would make it safe (which Workspaces even *have* a tracker)
-  is the Resolved Tracker surface — a reason to show resolution, not to inherit
+  is the Resolved Tracker surface, a reason to show resolution, not to inherit
   enablement.
 - **Leave the vestigial block in place (rejected).** Dead config that still ships
-  in the schema, config route, OpenAPI, and global settings UI — pure confusion
+  in the schema, config route, OpenAPI, and global settings UI: pure confusion
   for the next reader.
 - **Delete it; tracker stays per-Workspace (chosen).**
 
@@ -34,7 +34,7 @@ dead global block is deleted outright.
   `tracker.{enabled,pollIntervalSeconds}` off the **raw stored JSON** (decoupled
   from the schema type via a small local legacy shape), so an instance upgrading
   across the gap still carries its old global setting onto the Default Workspace.
-  It is marker-guarded (`trackerEnabledBackfilled`) and run-once — removable once
+  It is marker-guarded (`trackerEnabledBackfilled`) and run-once, removable once
   all instances are known-migrated.
 - No change to the live tracker fleet: pollers key entirely off
   `WorkspaceRow.trackerEnabled` / `trackerPollIntervalSeconds`.

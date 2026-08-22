@@ -3,9 +3,9 @@ title: ACP & harness adapters
 ---
 
 Harmonic drives every coding agent (Claude, Codex, Copilot) exclusively over
-**ACP (Agent Client Protocol)** — stdio JSON-RPC with structured streaming.
+**ACP (Agent Client Protocol)**, stdio JSON-RPC with structured streaming.
 See [ACP](https://agentclientprotocol.com). This is a deliberate design
-decision — see [ADR 0001](/harmonic/how-it-works/design-decisions/).
+decision. See [ADR 0001](/harmonic/how-it-works/design-decisions/).
 
 ## Why ACP only
 
@@ -16,7 +16,7 @@ Harmonic does not use the harnesses' one-shot CLI modes (`claude -p`,
 - Uniform real-time observability (tool calls, thoughts, plans).
 - No second-class degraded mode.
 
-Amendment: neither Claude nor Codex speaks ACP natively — both go through
+Amendment: neither Claude nor Codex speaks ACP natively, so both go through
 canonical vendor adapter packages, `@agentclientprotocol/claude-agent-acp`
 and `@agentclientprotocol/codex-acp`, which are part of the vendor surface
 Harmonic depends on.
@@ -24,7 +24,7 @@ Harmonic depends on.
 ## The Harness Adapter contract
 
 A **Harness Adapter** is the per-harness code module behind which all
-harness-specific knowledge lives — spawn tweaks (quirk workarounds), the
+harness-specific knowledge lives: spawn tweaks (quirk workarounds), the
 model pin, and the Usage Collector. It's keyed by Harness; operator config
 holds only what is genuinely operator-tunable.
 
@@ -62,8 +62,8 @@ gap:
 
 - **Model selection**: spawn-time env for Claude/Codex; for Copilot the
   adapter calls ACP `session/set_model` right after `session/new` (its
-  spawn-time flags are ignored/misleading in `--acp` mode). The observed
-  model is verified from Usage and any contradiction is surfaced on the Run.
+  spawn-time flags are ignored/misleading in `--acp` mode). Harmonic verifies
+  the observed model from Usage and surfaces any contradiction on the Run.
 - **Usage/token accounting**: taken from ACP extension/`_meta` fields where
   emitted, else from parsing the harness's native session logs on disk
   (per-harness Usage Collector). Copilot emits usage on neither surface, so

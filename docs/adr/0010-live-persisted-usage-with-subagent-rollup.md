@@ -14,7 +14,7 @@ by including Subagent spend.
 
 ## Considered options
 
-- **Ephemeral live snapshot (rejected).** Simplest — in-memory only, rebuilt
+- **Ephemeral live snapshot (rejected).** Simplest: in-memory only, rebuilt
   from logs on read. Rejected: the operator wanted the current numbers to
   survive a restart and appear without re-deriving.
 - **Persist a time-series of samples (rejected).** Enables a context-growth
@@ -26,7 +26,7 @@ by including Subagent spend.
 ## Consequences
 
 - The Run row gains a live-usage snapshot column; push cadence (~1s) and
-  persist cadence (~10s) are deliberately decoupled — smooth UI, lazy DB.
+  persist cadence (~10s) are deliberately decoupled: smooth UI, lazy DB.
 - A new `run_usage` firehose event; included in the read/viz-key filter for
   Runs, excluded for Conversations (matching the existing rule that Conversation
   traffic is hidden from Read Keys).

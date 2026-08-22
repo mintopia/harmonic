@@ -21,7 +21,7 @@ npm test           # vitest suite
 npm run typecheck  # tsc for src + web
 ```
 
-`npm install` runs the `prepare` script, which builds `dist/` — so a
+`npm install` runs the `prepare` script, which builds `dist/`, so a
 successful install also proves the build.
 
 ## The scripts

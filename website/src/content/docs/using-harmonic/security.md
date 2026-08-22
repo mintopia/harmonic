@@ -10,7 +10,7 @@ and the ungated default you should understand before exposing Harmonic
 beyond your own machine.
 
 :::danger
-With no password set, Harmonic runs **ungated** — anyone who can reach
+With no password set, Harmonic runs **ungated**. Anyone who can reach
 the address has full access to every Workspace, Task, and Run, and can
 start agents against your code. The default bind (`0.0.0.0`) is reachable
 from your whole network. Set a password **or** bind to `127.0.0.1` before
@@ -27,7 +27,7 @@ when you start the server:
 harmonic start --password 'a long passphrase'
 ```
 
-You can also supply it as the `HARMONIC_PASSWORD` environment variable —
+You can also supply it as the `HARMONIC_PASSWORD` environment variable,
 handy for a service unit or container. The command-line flag wins if both
 are set (see the
 [Configuration reference](/harmonic/reference/configuration/)).
@@ -36,7 +36,7 @@ A few things to know about how it behaves:
 
 - **It persists.** The password is stored (scrypt-hashed, never in plain
   text) in the database. Once set, later starts that omit `--password`
-  and `HARMONIC_PASSWORD` leave it in place — omitting it does **not**
+  and `HARMONIC_PASSWORD` leave it in place; omitting it does **not**
   revert to ungated.
 - **Setting it again rotates it.** Passing a new value replaces the
   stored password. (Changing it from the running app's Settings page also
@@ -82,9 +82,9 @@ No operator password set — Harmonic is running ungated and reachable on 0.0.0.
   Set one any time: harmonic serve --password <password>   (or HARMONIC_PASSWORD)
 ```
 
-On a loopback binding (`127.0.0.1`, `::1`, or `localhost`) the middle
-"anyone who can reach this address" line is dropped — only the first and
-last lines print.
+On a loopback binding (`127.0.0.1`, `::1`, or `localhost`) Harmonic drops
+the middle "anyone who can reach this address" line, printing only the
+first and last.
 
 One caveat: with `harmonic start` (the recommended background flow) this
 warning is written to the daemon's log at `<data-dir>/harmonic.log`, not
@@ -104,9 +104,8 @@ default; ungated on `0.0.0.0` is an open door.
 
 ## See also
 
-- [Configuration reference](/harmonic/reference/configuration/) — the
+- [Configuration reference](/harmonic/reference/configuration/): the
   `--password` / `--host` options and their environment variables.
-- [CLI reference](/harmonic/reference/cli/) — every command and option.
-- [Settings & overrides](/harmonic/using-harmonic/settings-and-overrides/)
-  — Permission Rules and the other in-app security settings.
-</content>
+- [CLI reference](/harmonic/reference/cli/): every command and option.
+- [Settings & overrides](/harmonic/using-harmonic/settings-and-overrides/):
+  Permission Rules and the other in-app security settings.

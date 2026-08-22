@@ -3,15 +3,15 @@ title: Notifications
 description: How Harmonic's global Notification Channels subscribe to task events and deliver them to Discord, Slack, email, or a generic webhook.
 ---
 
-Harmonic notifies the outside world when a Task hits a milestone — created,
-running, awaiting review, done, failed — or when the queue empties out. A
+Harmonic notifies the outside world when the queue empties out or when a
+Task hits a milestone: created, running, awaiting review, done, or failed. A
 **Notification Channel** is the thing that receives those events; each
 channel picks which events it cares about, and a Task can layer its own
 overrides on top of the global subscriptions.
 
 ## Notification Channels
 
-A Notification Channel is a **global-only** setting — per
+A Notification Channel is a **global-only** setting. Per
 [ADR 0012](/harmonic/how-it-works/design-decisions/), notifications are
 machine-level, not per-workspace. Channels are created and managed via the
 REST API / MCP; see [API & MCP](/harmonic/using-harmonic/api-and-mcp/) and
@@ -65,7 +65,7 @@ Six events exist:
 | `queue.idle` | The queue has nothing left to run |
 
 A new channel defaults to subscribing to only `task.awaiting-review` and
-`task.failed` — a deliberately low noise-floor covering just the
+`task.failed`, a deliberately low noise-floor covering just the
 review-gate and failure moments. A channel may subscribe to any subset of
 the six.
 
@@ -74,7 +74,7 @@ the six.
 When an event fires, Harmonic delivers it to the union of:
 
 1. every channel globally subscribed to that event, plus
-2. any channel bound to that specific Task as a **per-task override** — a
+2. any channel bound to that specific Task as a **per-task override**. A
    Task can add or remove channel overrides so a channel fires for it even
    when that channel isn't globally subscribed to the event.
 
@@ -105,9 +105,9 @@ The `webhook` channel type delivers a `POST` request with
 }
 ```
 
-- `event` — one of the six event types.
-- `timestamp` — milliseconds since the Unix epoch, set at send time.
-- `task` — present for every event **except** `queue.idle`. Fields: `id`,
+- `event`: one of the six event types.
+- `timestamp`: milliseconds since the Unix epoch, set at send time.
+- `task`: present for every event **except** `queue.idle`. Fields: `id`,
   `prompt`, `state`, `harness`, `model`, `priority`, `isolationMode`,
   `workingDir`.
 

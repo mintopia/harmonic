@@ -1,7 +1,7 @@
 # Drop the Config Repo
 
 The Config Repo (a dotfiles-style git repository seeding harnesses,
-models, prices, channels, credentials, and API keys — imported on
+models, prices, channels, credentials, and API keys, imported on
 `harmonic init` and explicit pull, exportable back out) is removed from
 the product. Setup has become easy enough that a portability layer is
 not worth its surface: config is now editable in the web UI, the server

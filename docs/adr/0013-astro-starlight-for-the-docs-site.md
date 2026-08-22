@@ -3,7 +3,7 @@
 User-facing documentation lives in a standalone static site built with
 **Astro Starlight** under a top-level `website/` directory, published to
 **GitHub Pages** by a `.github/workflows` action on push to `main`. The site is
-greenfield tooling — no docs generator existed before — and draws its content
+greenfield tooling, since no docs generator existed before, and draws its content
 from the markdown the repo already keeps (`README.md`, `CONTEXT.md`,
 `PRODUCT.md`, `docs/**`, the ADRs). Its API-reference page is generated from
 Harmonic's own OpenAPI spec rather than hand-written: a build-time script builds
@@ -11,8 +11,8 @@ the Fastify app in-process and calls `app.swagger()` to emit
 `website/src/openapi.json`, so the reference can never drift from the Zod route
 schemas (ADR 0005).
 
-We chose Starlight because the audience is two-tracked — a developer-operator
-adopting Harmonic and a contributor working on internals — and Starlight gives
+We chose Starlight because the audience is two-tracked, a developer-operator
+adopting Harmonic and a contributor working on internals, and Starlight gives
 search, a sidebar, and a dark-canonical theme out of the box, matching the
 Aurora identity (cobalt accent, Space Grotesk + JetBrains Mono) with a
 light-touch theme rather than a bespoke build. Keeping the site in its own
@@ -28,7 +28,7 @@ release, so prose fixes never wait on a server build.
 - **Docusaurus (rejected).** React (matching the app) and MDX-rich, but heavier
   to stand up and theme for what is a content-first site.
 - **In-repo markdown only, no site (rejected).** Zero tooling, but no search, no
-  navigation, no rendered API reference, and no public URL — the ask was
+  navigation, no rendered API reference, and no public URL, and the ask was
   explicitly a documentation *website*.
 - **Docs served inside the Harmonic app at `/docs` (rejected).** Couples every
   docs change to an app deploy and bloats the app bundle with prose.
@@ -42,7 +42,7 @@ release, so prose fixes never wait on a server build.
   agent guides) stays where it is and becomes a content source, not the site.
 - The API reference depends on an `npm run docs:openapi` step that builds the
   app in-process and writes a committed `openapi.json` snapshot, regenerated in
-  the Pages workflow before the Starlight build — no running server, no port.
+  the Pages workflow before the Starlight build: no running server, no port.
 - Docs deploy on their own cadence via GitHub Pages, independent of app
   releases.
 - Theming is intentionally light for v1 (accent + fonts + dark default); a full

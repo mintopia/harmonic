@@ -2,7 +2,7 @@
 
 In worktree Isolation Mode each Run works on its own branch
 (`harmonic/task-<id>-run-<n>`). Accepting the task's review does not just
-mark it completed — it merges that branch into the base branch the worktree
+mark it completed. It merges that branch into the base branch the worktree
 was created from. A merge conflict aborts the merge and returns the task to
 awaiting-review with the conflict surfaced.
 
@@ -15,6 +15,6 @@ friction; PR flows assume remotes/credentials we don't want in v1.
 
 - Accept is a git-mutating action. Combined with the agent-review config
   flag (default off), enabling agent review means agents can land branches
-  unattended — this is deliberate opt-in autonomy.
+  unattended. This is deliberate opt-in autonomy.
 - Dependent tasks see the accepted work on the base branch immediately,
   which is what makes worktree mode compose with dependency chains.

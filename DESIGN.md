@@ -33,7 +33,7 @@
 
 ---
 name: Harmonic
-description: Operator console for running and reviewing autonomous coding agents — matte "Paper" world, teal action voice, indigo review voice, workflow-shaped surfaces, frontier-DAG epics
+description: Operator console for running and reviewing autonomous coding agents. Matte "Paper" world, teal action voice, indigo review voice, workflow-shaped surfaces, frontier-DAG epics
 designSystem: Paper
 colors:
   accent: "#0D7271"

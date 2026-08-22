@@ -3,13 +3,13 @@
 A **Workspace** is a named Working Directory (a repo root, unique by absolute
 path) that owns its own board of Tasks and Conversations, its own execution
 settings (Task defaults, Auto-Runner, Tracker, Drive), and its own Tracker
-poll loop. One Harmonic instance — one data directory, one SQLite database —
-hosts many Workspaces. Execution settings are per-Workspace; machine-level
+poll loop. One Harmonic instance hosts many Workspaces from one data
+directory and one SQLite database. Execution settings are per-Workspace; machine-level
 settings (Harnesses, model prices, operator password, Notification Channels)
 stay global.
 
-We chose this over the previous de-facto model — **one instance per project,
-isolated by `--data-dir`** — because that model has no guard rails: nothing
+We chose this over the previous de-facto model, **one instance per project,
+isolated by `--data-dir`**, because that model has no guard rails: nothing
 stops a second instance booting on the same data directory, and when one
 does, its crash-recovery sweep marks the other's running Runs `interrupted`.
 Isolating projects meant remembering a distinct `--data-dir` *and* `--port`

@@ -9,13 +9,13 @@ store whose `assistant_usage_events` table carries per-turn tokens, AI Units,
 and Subagent attribution. The per-Harness Usage Collector owns this parsing and
 emits both Usage and the Process Tree.
 
-We chose this over the previous source — ACP prompt-result aggregates plus a
-Copilot OTel file exporter — because ACP only reports end-of-turn aggregates on
+We chose this over the previous source, ACP prompt-result aggregates plus a
+Copilot OTel file exporter, because ACP only reports end-of-turn aggregates on
 the result (no live numbers, no per-Subagent breakdown), and the Claude
 `subagents/` layout (new in CLI 2.1.224) means Subagent tokens live in files the
 old collector never read: **Run Usage and Cost were undercounting.** The native
 logs are written incrementally during execution, carry per-message model+usage,
-and expose the parent→Subagent structure — everything the Activity view needs.
+and expose the parent→Subagent structure, everything the Activity view needs.
 AI Units, previously OTel-only, turned out to also live in `session-store.db`,
 so OTel can be dropped entirely.
 
@@ -40,6 +40,6 @@ so OTel can be dropped entirely.
   can silently break Usage. This is the accepted cost of this ADR; treat log
   shape as an integration surface and fail loudly (flag incomplete, never a
   fake zero) when a format is unrecognised.
-- Codex has no Subagent concept — its Process Tree is a single node.
+- Codex has no Subagent concept: its Process Tree is a single node.
 - Fixing the undercount reprices history the moment logs are re-read; existing
   Runs' Cost may rise once their Subagent tokens are counted.

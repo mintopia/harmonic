@@ -12,7 +12,7 @@ npm installs from git, since build artifacts are not committed.
 
 - First `npx` run pays a full clone + install + build (including the
   better-sqlite3 native module); later runs hit the npx cache.
-- Users always get whatever `main` is — no semver contract, no
+- Users always get whatever `main` is: no semver contract, no
   changelog obligation. Pinning is by commitish
   (`npx github:mintopia/harmonic#<sha>`).
 - The `prepare` script also fires on local `npm install`, so a plain

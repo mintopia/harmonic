@@ -13,8 +13,8 @@ autonomous coding-agent tasks. It's an ES module package
   `fastify-type-provider-zod`.
 - **Persistence**: SQLite via `better-sqlite3`, with Drizzle ORM (`drizzle-orm`)
   and `drizzle-kit` for migrations.
-- **Harness integration**: ACP (Agent Client Protocol) over stdio JSON-RPC —
-  see [ACP & harness adapters](/harmonic/how-it-works/acp-and-adapters/).
+- **Harness integration**: ACP (Agent Client Protocol) over stdio JSON-RPC.
+  See [ACP & harness adapters](/harmonic/how-it-works/acp-and-adapters/).
   Harmonic also runs its own MCP server (`@modelcontextprotocol/sdk`) exposed
   to spawned harnesses.
 - **Frontend**: React 19 + Vite, styled with Tailwind CSS 4; dependency-graph
@@ -67,15 +67,15 @@ src/tracker/             — issue-tracker integration: github.ts,
 
 ## web/ and drizzle/
 
-- `web/` — the React/Vite frontend (`web/index.html`, `web/vite.config.ts`,
+- `web/`. The React/Vite frontend (`web/index.html`, `web/vite.config.ts`,
   `web/src/` with `App.tsx`, `main.tsx`, `api.ts`, `ws.ts`, and
   `web/src/components/`). Built by `vite build --config web/vite.config.ts`
   as part of `npm run build`; typechecked via `tsc -p web/tsconfig.json`.
-- `drizzle/` — generated SQL migrations plus `drizzle/meta/` snapshots,
+- `drizzle/`. Generated SQL migrations plus `drizzle/meta/` snapshots,
   produced by `drizzle-kit` from `src/db/schema.ts` per `drizzle.config.ts`
-  (dialect sqlite, out `./drizzle`). Migrations are applied automatically at
-  startup by Drizzle's migrator in `src/db/index.ts` — there is no separate
-  migrate script.
+  (dialect sqlite, out `./drizzle`). Drizzle's migrator in `src/db/index.ts`
+  applies migrations automatically at startup. There is no separate migrate
+  script.
 
 For how Harmonic talks to each coding agent, see
 [ACP & harness adapters](/harmonic/how-it-works/acp-and-adapters/).

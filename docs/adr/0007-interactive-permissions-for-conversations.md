@@ -2,7 +2,7 @@
 
 In a Conversation the `ConversationDriver` holds the harness's ACP
 `session/request_permission` request *open* and prompts the operator over
-the UI, resolving the request only when they pick an option — the agent's
+the UI, resolving the request only when they pick an option. The agent's
 turn genuinely blocks on the human. This is the deliberate inverse of the
 `Runner`, which auto-picks `allow_always`/`allow_once` so autonomous Runs
 never wait. Remembering has three tiers: **Allow once**, **Allow for this
@@ -19,7 +19,7 @@ green-light a shell tool in an unrelated repo.
 
 ## Consequences
 
-- Persistent Permission Rules are auto-approval — a security escalation on
+- Persistent Permission Rules are auto-approval, a security escalation on
   par with the `agentReview` flag. They are therefore opt-in (never the
   default click), operator-visible, and revocable; remembering you cannot
   audit or undo is not offered.

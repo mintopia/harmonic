@@ -1,8 +1,8 @@
 # afk completion requires a resolved ticket
 
 **Status: superseded by [ADR-0021](0021-verification-gate-replaces-agent-review.md) (implemented in #139).**
-Under the close-after-verify model, `finish_task` — not the agent closing the
-ticket — is the execution-complete signal; Harmonic runs verification, lands per
+Under the close-after-verify model, `finish_task`, not the agent closing the
+ticket, is the execution-complete signal; Harmonic runs verification, lands per
 Merge Fate, and **closes the ticket itself** (auto-merge: merge then close;
 open-PR: leave open; artifact: leave open). A ticket closed before Harmonic lands
 is **premature**: it is reopened and the Task Escalated, and it no longer stands
@@ -16,11 +16,11 @@ open is *unresolved*: it is routed into the failure path (Auto-Retry within the
 cap, then Escalate to a human), and its worktree branch is **not** merged.
 Harmonic no longer closes tickets itself.
 
-We chose this because the previous rule — "clean completion" meant only that the
-harness process exited without throwing — silently completed soft failures. An
+We chose this because the previous rule silently completed soft failures. Under
+it, "clean completion" meant only that the harness process exited without throwing. An
 agent that gave up cleanly (e.g. "this dependency isn't done yet", `stopReason:
 end_turn`, exit 0) had its Task marked `completed`, its ticket force-closed by
-Harmonic's fallback, and under `auto-merge` its half-done branch merged — with no
+Harmonic's fallback, and under `auto-merge` its half-done branch merged, with no
 retry and no escalation, because those only existed on the error path. The skills
 are already the source of truth and close the ticket on real success (the Drive
 Prompt instructs it), so "did the agent close the ticket?" is the honest success
@@ -47,7 +47,7 @@ signal that was already available and ignored.
 - **open-PR is exempt:** it intentionally leaves the ticket open (the PR's own
   merge closes it), so its success stays "a PR was created."
 - An agent that does the work but forgets to close its ticket will now retry then
-  escalate rather than complete — acceptable: a human closes it, and the skills'
+  escalate rather than complete. Acceptable: a human closes it, and the skills'
   contract is to close on success.
 - Pairs with the GitHub body-line dependency fix (issue #46): with real
   Dependency edges, an afk Task blocked on an unfinished dependency stays

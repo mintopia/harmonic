@@ -5,20 +5,20 @@ description: How Harmonic interoperates with the mattpocock skills via a data-fo
 
 ## The contract
 
-**Harmonic does not bundle or run the mattpocock skills** — the set of
+**Harmonic does not bundle or run the mattpocock skills**, the set of
 Claude Code skills that includes `/research`, `/implement`, and
 `/wayfinder`. It interoperates with them through two contracts, both
 external:
 
 - **A data-format contract.** The skills author tickets and label them as
-  they work — GitHub issues with `wayfinder:*` labels, `ready-for-agent`,
+  they work: GitHub issues with `wayfinder:*` labels, `ready-for-agent`,
   `ready-for-human`, and so on. Harmonic *parses* that output and projects
   each ticket onto a **mirrored Task** on a Harmonic board. The skills stay
   the **source of truth** for the ticket's content; Harmonic mirrors it 1:1
   and owns only execution state.
 - **A prompt-injection contract.** When Harmonic auto-runs a mirrored Task
   (drive **afk**), it doesn't reimplement the skill's logic. It injects the
-  skill's own slash-command — `/research`, `/implement` — as the **Drive
+  skill's own slash-command, `/research` or `/implement`, as the **Drive
   Prompt**, so the skill does the actual work exactly as it would if a human
   had typed the command.
 
@@ -40,11 +40,11 @@ board carries both kinds of Task side by side; only the Origin differs.
 ### Mirrored Task
 
 A **Mirrored Task** is bound 1:1 to a tracker issue by a tracker ref. The
-tracker owns the Task's shape — its prompt, its blocking relationships, its
-workflow role — and is the source of truth for all of it. Harmonic owns
+tracker owns the Task's shape: its prompt, its blocking relationships, its
+workflow role. It is the source of truth for all of it. Harmonic owns
 only execution state (Runs, Usage) and writes back to the tracker just two
 things: claim and close. A re-poll of the tracker upserts the mirrored
-Task. A mirrored Task never enters *draft* or *awaiting-review* — those
+Task. A mirrored Task never enters *draft* or *awaiting-review*. Those
 states belong to native Tasks and the review gate, which mirrored Tasks
 bypass entirely.
 
@@ -72,7 +72,7 @@ classifies the decision ticket:
 | `grilling`   | A grilling ticket. |
 | `task`       | A plain decision task. |
 
-Wayfinder Type is null for `implement` Tasks — implementation is a
+Wayfinder Type is null for `implement` Tasks; implementation is a
 Workflow, never a Wayfinder Type.
 
 ### Drive
@@ -86,36 +86,36 @@ Workflow, never a Wayfinder Type.
 
 Drive is seeded from labels: `ready-for-human`, `grilling`, `prototype`,
 and bare tasks seed `hitl`; `ready-for-agent` and `research` seed `afk`. An
-*unclear* signal seeds `afk` — Harmonic attempts optimistically rather than
+*unclear* signal seeds `afk`. Harmonic attempts optimistically rather than
 stalling. The Auto-Runner's entire pick predicate is: pick-eligible iff
 `drive ≠ hitl`.
 
 Mirrored Tasks bypass the review gate entirely. There is no Accept/Reject
-for a mirrored Task — closure is a tracker act, performed by the
+for a mirrored Task; closure is a tracker act, performed by the
 agent-via-skill or by a human.
 
 ### Drive Prompt
 
 The **Drive Prompt** is what Harmonic injects to auto-run an afk mirrored
-Task. It's a **global** settings template — there is no per-Task override —
+Task. It's a **global** settings template with no per-Task override,
 built from a workflow slash-command plus a short preamble, filled in from
 the Task:
 
-- `{skill}` — derived from the Task's Workflow / Wayfinder Type
+- `{skill}`: derived from the Task's Workflow / Wayfinder Type
   (`research` → `/research`, `implement` → `/implement`)
-- `{ref}`, `{url}`, `{title}`, `{body}` — from the mirrored ticket
+- `{ref}`, `{url}`, `{title}`, `{body}`: from the mirrored ticket
 
 The preamble instructs the agent to resolve the ticket end-to-end and to
 comment on and close it using the tracker doc's `gh` mechanics. Once
-launched, the Run streams Run Events like any other Run — there's no
+launched, the Run streams Run Events like any other Run. There's no
 separate visibility path for skill-driven work.
 
 ### Escalation
 
-**Escalation** is the runtime `afk → hitl` flip. When an afk Run blocks on
-a human prompt — a permission request or a clarifying question — Harmonic
-stops the Run, sets the Task's *drive* to `hitl`, and lands the Task back
-in *ready*, flagged "escalated to human." The Auto-Runner then skips it
+**Escalation** is the runtime `afk → hitl` flip. An afk Run can block on
+a human prompt: a permission request or a clarifying question. When it does,
+Harmonic stops the Run, sets the Task's *drive* to `hitl`, and lands the Task
+back in *ready*, flagged "escalated to human." The Auto-Runner then skips it
 (per the `drive ≠ hitl` predicate) until a person takes over.
 
 ### Auto-Retry
@@ -145,17 +145,17 @@ mirrored Task is resolved (the agent closed its ticket):
 | `artifact`   | Leave the branch as-is for a human or CI to pick up. |
 
 Merge Fate has a global default with a per-Task override, and only applies
-to worktree isolation — direct isolation has no branch to merge. Research
+to worktree isolation. Direct isolation has no branch to merge. Research
 findings branches are always `artifact`, regardless of the configured
 default.
 
 ## Completion by ticket close
 
-Per [ADR 0011](/harmonic/how-it-works/design-decisions/), an afk mirrored
-Run is treated as **successful only when the agent-via-skill has closed its
+Per [ADR 0011](/harmonic/how-it-works/design-decisions/), Harmonic treats an
+afk mirrored Run as **successful only when the agent-via-skill has closed its
 tracker ticket.** A Run that ends without error but leaves the ticket open
-is *unresolved*: it's routed to the failure path — Auto-Retry within the
-cap, then Escalate — and its worktree branch is **not** merged.
+is *unresolved*, so it's routed to the failure path: Auto-Retry within the
+cap, then Escalate. Its worktree branch is **not** merged.
 
 **Harmonic no longer closes tickets itself.** The one exception is
 `open-PR`, which intentionally leaves the ticket open: the PR's own merge

@@ -4,7 +4,7 @@ A web application running inside a Coder workspace that executes autonomous
 agent Tasks by driving agent Harnesses (Claude, Codex, Copilot) over ACP.
 See `CONTEXT.md` for the domain glossary.
 
-## House Rules
+## House rules
 
 Use subagents for tasks.
 Use multiple subagents in parallel working as a team, with agent messaging to co-ordinate.
@@ -52,15 +52,15 @@ be reconciled and written down, not a standing caveat to route around.)
 ### Background loops must yield
 
 Harmonic runs every HTTP handler and every background loop on one Node event
-loop. Any background loop — boot sweep, periodic poll, reconcile pass, the
-Auto-Runner fill — that iterates a collection whose size grows with the database
-or the workload MUST chunk its synchronous work and yield the loop between
-chunks, so it can never freeze the process (issue #200, ADR-0029 §5). Use
-`forEachYielding` / `yieldToEventLoop` from `src/reliability/yield.ts`. This is
-distinct from bounding retries/subprocess spawns (#219) and routing heavy
+loop. Any background loop that iterates a collection whose size grows with the
+database or the workload MUST chunk its synchronous work and yield the loop
+between chunks, so it can never freeze the process (issue #200, ADR-0029 §5).
+This covers the boot sweep, periodic polls, reconcile passes, and the Auto-Runner
+fill. Use `forEachYielding` / `yieldToEventLoop` from `src/reliability/yield.ts`.
+This is distinct from bounding retries/subprocess spawns (#219) and routing heavy
 aggregate reads off the loop (#213).
 
-## Code Exploration Policy
+## Code exploration policy
 
 Always use jCodeMunch-MCP for code navigation. Never fall back to Read, Grep, Glob, or Bash for code exploration.
 **Exception:** use `Read` when you are about to edit a file — the harness requires a `Read` before `Edit`/`Write`. Use jCodeMunch to *find and understand* code, then `Read` only the file you are changing.

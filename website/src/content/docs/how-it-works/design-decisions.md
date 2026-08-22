@@ -2,13 +2,13 @@
 title: Design decisions
 ---
 
-Harmonic records significant architectural, tooling, and workflow decisions
+Harmonic records architectural, tooling, and workflow decisions
 as **Architecture Decision Records (ADRs)** in `docs/adr/` in the repo. Each
 ADR is a short, standalone rationale. New architectural, tooling,
 dependency, testing, CI, or workflow changes get an ADR before being
 proposed.
 
-The repo's ADRs have no formal status field — treat all of them as living,
+The repo's ADRs have no formal status field, so treat all of them as living,
 accepted decisions unless a later ADR supersedes them. ADR 0001 carries
 dated inline amendments.
 
