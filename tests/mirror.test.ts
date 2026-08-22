@@ -237,6 +237,28 @@ describe('mirrorScan upsert', () => {
     expect(after!.state).toBe('running');
   });
 
+  it('completed Task on a close-incapable (inbound-only) tracker stays completed — no reopen re-run loop (issue #237)', async () => {
+    const [task] = await mscan([ticket({ number: 237, labels: ['ready-for-agent'] })]);
+    await tasks.setState(task!.id, 'completed');
+
+    // The ticket still reads open (an inbound-only adapter never owns the close),
+    // so a naive completed→ready flip would re-run it, complete, no-op the close,
+    // and re-ready forever. Gated on trackerCanClose=false → the flip is suppressed.
+    const held = await tasks.upsertMirrored(
+      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false, false),
+      wsId,
+    );
+    expect(held.state).toBe('completed');
+
+    // A writable tracker (can close) still treats a still-open ticket as a
+    // genuine external reopen and flips the resting completed Task back to ready.
+    const reopened = await tasks.upsertMirrored(
+      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false, true),
+      wsId,
+    );
+    expect(reopened.state).toBe('ready');
+  });
+
   it('reconcile never interrupts a running Run (nothing cascades)', async () => {
     const [, dependent] = await mscan([
       ticket({ number: 1 }),

@@ -99,7 +99,10 @@ export class TrackerPoller {
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter);
-    const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId);
+    // `!!adapter.close` is the writable-tracker signal (issue #237): an
+    // inbound-only adapter with no close capability must not have its completed
+    // Tasks flipped back to ready (their tickets stay open by design).
+    const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId, !!adapter.close);
     // Set each ready Epic member's base branch before the scheduler's next pick
     // (issue #159), so it forks its worktree Run from the Epic's integration branch.
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.

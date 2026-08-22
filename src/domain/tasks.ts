@@ -153,6 +153,17 @@ export interface MirrorInput {
   /** The tracker open/closed axis; closed → completed. */
   closed: boolean;
   /**
+   * Whether the resolved tracker adapter can close this ticket — i.e. owns the
+   * lifecycle write (issue #237). The `completed → ready` reopen flip below only
+   * fires for a *writable* tracker, where a still-open ticket genuinely means a
+   * human re-opened it. For an inbound-only ("freeform") adapter with no `close`
+   * capability Harmonic never owns the close, so a completed Task's ticket stays
+   * open by design; flipping it back to `ready` would re-run it forever. Optional
+   * and defaulting to capable: every shipped adapter (github/gitlab/local-markdown)
+   * implements `close`, so an omitted signal preserves the genuine-reopen behaviour.
+   */
+  trackerCanClose?: boolean;
+  /**
    * The last-scan normalised tracker facts, persisted verbatim to the per-issue
    * record (issue #233, ADR-0030 "expand"). Optional: the real poll path always
    * supplies it (via {@link toMirrorInput}); omitting it leaves the durable fact
@@ -335,7 +346,13 @@ export class TaskService {
             ? existing.state
             : input.closed
               ? 'completed'
-              : existing.state === 'completed'
+              : // A still-open ticket flips a resting completed Task back to
+                // ready only on a tracker Harmonic can close (a genuine external
+                // reopen). An inbound-only adapter that can't close leaves the
+                // ticket open by design, so suppress the flip — otherwise the
+                // Task re-runs, completes, the close no-ops, and it re-readies
+                // forever (issue #237).
+                existing.state === 'completed' && input.trackerCanClose !== false
                 ? 'ready'
               : existing.state;
         // Re-poll never touches the four operator picks (harness/model/isolation/

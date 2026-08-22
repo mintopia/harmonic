@@ -53,7 +53,7 @@ const trackerFacts = (ticket: Ticket): TrackerFacts => ({
  * on every re-poll (relabeling flips Auto/You), except while the Task is
  * escalated — Harmonic's runtime hitl flip must not be undone by a stale label.
  */
-export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
+export function toMirrorInput(ticket: Ticket, isEpic = false, trackerCanClose = true): MirrorInput {
   const role = deriveRole(ticket);
   return {
     trackerRef: ticket.number,
@@ -62,6 +62,11 @@ export function toMirrorInput(ticket: Ticket, isEpic = false): MirrorInput {
     drive: isEpic ? 'hitl' : role.drive,
     mapRef: ticket.parent,
     closed: ticket.state === 'closed',
+    // Whether the resolved adapter owns the close (issue #237): gates the
+    // completed→ready reopen flip in upsertMirrored so an inbound-only tracker
+    // Harmonic can't close never re-runs a completed Task forever. Defaults to
+    // capable, matching every shipped adapter.
+    trackerCanClose,
     // Persist the normalised facts verbatim so they survive a restart (issue
     // #233, ADR-0030 "expand"). Derivation reads them after restart (#234).
     facts: trackerFacts(ticket),
@@ -84,6 +89,10 @@ export async function mirrorScan(
   tasks: TaskService,
   tickets: Ticket[],
   workspaceId: number,
+  /** Whether the polling adapter can close a ticket (issue #237) — plumbed to
+   * each {@link toMirrorInput} so the completed→ready reopen flip is gated on a
+   * writable tracker. Defaults to capable (every shipped adapter closes). */
+  trackerCanClose = true,
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
   const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
@@ -106,7 +115,7 @@ export async function mirrorScan(
   // anyway, and the reconcile pass below reads `idByRef` built from every row.
   const rows: TaskRow[] = [];
   await forEachYielding(issues, async (t) => {
-    rows.push(await tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number)), workspaceId));
+    rows.push(await tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number), trackerCanClose), workspaceId));
   });
   const idByRef = new Map<number, number>();
   await forEachYielding(rows, (row) => {
