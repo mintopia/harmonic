@@ -19,6 +19,7 @@ import { workContextKey } from '../src/domain/work-context-key.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
+import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 
@@ -146,6 +147,40 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     expect(parkedRun.state).toBe('running');
     expect(parkedRun.phase).toBe('landing');
     expect((await tasks.get(run.taskId)).state).toBe('awaiting-review');
+  });
+
+  it('yields while reconciling a large landing backlog', async () => {
+    for (let i = 0; i < 25; i++) {
+      const created = await tasks.create({ prompt: `landing ${i}`, state: 'ready', workingDir: repo });
+      await tasks.setState(created.id, 'awaiting-review');
+      const run = await runStore.create(created.id);
+      await runStore.update(run.id, { phase: 'landing' });
+    }
+    let tick = 0;
+    let yields = 0;
+    const order: string[] = [];
+
+    const done = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, {
+      now: () => 1_000_000,
+      yieldOptions: {
+        budgetMs: 0,
+        now: () => tick++,
+        yieldNow: async () => {
+          yields++;
+          await yieldToEventLoop();
+        },
+      },
+    })
+      .reconcile()
+      .then(() => order.push('done'));
+    setImmediate(() => order.push('immediate'));
+    await done;
+    await yieldToEventLoop();
+
+    expect(yields).toBeGreaterThan(0);
+    expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
+    expect((await tasks.list()).every((task) => task.state === 'failed')).toBe(true);
   });
 });
 
@@ -344,5 +379,63 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     const lease = await leases.getByKey(key);
     expect(lease).toBeDefined();
     expect(lease?.state).toBe('suspect');
+  });
+
+  it('yields while reconciling a large lease backlog', async () => {
+    const repos: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const extraRepo = makeRepo();
+      repos.push(extraRepo);
+      await seedDeadOwnerLease(extraRepo, 'direct');
+    }
+    let tick = 0;
+    let yields = 0;
+
+    await new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, {
+      now: () => 1_000_000,
+      isDirectContextClean: async () => false,
+      yieldOptions: {
+        budgetMs: 0,
+        now: () => tick++,
+        yieldNow: async () => {
+          yields++;
+          await yieldToEventLoop();
+        },
+      },
+    }).reconcile();
+
+    expect(yields).toBeGreaterThan(0);
+    expect((await leases.listAll()).every((lease) => lease.state === 'suspect')).toBe(true);
+    for (const extraRepo of repos) rmSync(extraRepo, { recursive: true, force: true });
+  });
+
+  it('yields while reconciling a large turn-queue backlog', async () => {
+    const runIds: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      const created = await tasks.create({ prompt: `turn ${i}`, state: 'ready', workingDir: repo });
+      const run = await runStore.create(created.id);
+      runIds.push(run.id);
+      await turnQueue.enqueue(`run-${run.id}`, run.id, 'continue', {}, Date.now());
+    }
+    let tick = 0;
+    let yields = 0;
+
+    await new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, {
+      now: () => 1_000_000,
+      yieldOptions: {
+        budgetMs: 0,
+        now: () => tick++,
+        yieldNow: async () => {
+          yields++;
+          await yieldToEventLoop();
+        },
+      },
+    }).reconcile();
+
+    expect(yields).toBeGreaterThan(0);
+    for (const runId of runIds) {
+      const rows = await turnQueue.listForSession(`run-${runId}`);
+      expect(rows[0]?.status).toBe('cancelled');
+    }
   });
 });

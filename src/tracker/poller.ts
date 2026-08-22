@@ -5,6 +5,7 @@ import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './a
 import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { persistedTickets } from './persisted.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
 export interface MirrorSync {
@@ -65,6 +66,7 @@ export class TrackerPoller {
      * current-branch fallback rather than wedging the poll.
      */
     private readonly epics?: EpicIntegrationSync,
+    private readonly opts: { yieldOptions?: YieldOptions } = {},
   ) {}
 
   /**
@@ -96,8 +98,14 @@ export class TrackerPoller {
     }
     this.onResolved(resolutionSuccess(adapter));
     const tickets = await adapter.scan();
-    this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
-    this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
+    this.urlByRef = new Map();
+    this.titleByRef = new Map();
+    const closedRefs = new Set<number>();
+    await forEachYielding(tickets, (ticket) => {
+      this.urlByRef.set(ticket.number, ticket.url);
+      this.titleByRef.set(ticket.number, ticket.title);
+      if (ticket.state === 'closed') closedRefs.add(ticket.number);
+    }, this.opts.yieldOptions);
     await this.mirror?.observe(adapter);
     // `!!adapter.close` is the writable-tracker signal (issue #237): an
     // inbound-only adapter with no close capability must not have its completed
@@ -122,12 +130,11 @@ export class TrackerPoller {
     // operator) leaves the Task stuck running with a parked agent. Under the
     // close-after-verify model (#139) that close is premature — hand those to the
     // Runner to stop the agent, reopen the ticket, and Escalate.
-    const closedRefs = new Set(tickets.filter((t) => t.state === 'closed').map((t) => t.number));
-    for (const task of mirrored) {
+    await forEachYielding(mirrored, (task) => {
       if (task.state === 'running' && task.trackerRef != null && closedRefs.has(task.trackerRef)) {
         this.onClosedWhileRunning(task.id);
       }
-    }
+    }, this.opts.yieldOptions);
     await this.mirror?.reconcile();
   }
 

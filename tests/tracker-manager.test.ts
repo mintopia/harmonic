@@ -12,6 +12,7 @@ import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { TrackerResolutionError } from '../src/tracker/adapter.js';
 import { allWorkspaces, waitFor } from './helpers.js';
+import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const ticket = (number: number): Ticket => ({
   number,
@@ -290,5 +291,54 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.pollNow(a.id);
     expect(manager.resolvedTracker(a.id)).toMatchObject({ ok: false });
     expect(manager.coordinatorFor(a.id)).toBeUndefined();
+  });
+
+  it('yields while syncing a large workspace backlog', async () => {
+    manager.stopAll();
+    let tick = 0;
+    let yields = 0;
+    const order: string[] = [];
+    const extraRepos: string[] = [];
+    manager = new TrackerPollerManager(tasks, () => workspaces.list(), async (repoRoot: string) => {
+      polled.push(repoRoot);
+      return {
+        name: 'stub',
+        scan: async () => [],
+        readTicket: async (r) => ticket(r.number),
+        claim: async () => {},
+        release: async () => {},
+        close: async () => {},
+        reopen: async () => {},
+      };
+    }, undefined, undefined, undefined, {
+      yieldOptions: {
+        budgetMs: 0,
+        now: () => tick++,
+        yieldNow: async () => {
+          yields++;
+          await yieldToEventLoop();
+        },
+      },
+    });
+    for (let i = 0; i < 30; i++) {
+      const workingDir = mkdtempSync(join(tmpdir(), `harmonic-sync-${i}-`));
+      extraRepos.push(workingDir);
+      await workspaces.create({
+        name: `W${i}`,
+        workingDir,
+        trackerEnabled: true,
+      });
+    }
+
+    const done = manager.sync().then(() => order.push('done'));
+    setImmediate(() => order.push('immediate'));
+    await done;
+    await yieldToEventLoop();
+
+    expect(yields).toBeGreaterThan(0);
+    expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
+    expect(polled.length).toBeGreaterThan(0);
+    for (const workingDir of extraRepos) rmSync(workingDir, { recursive: true, force: true });
   });
 });

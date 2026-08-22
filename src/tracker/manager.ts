@@ -14,7 +14,7 @@ import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
-import { forEachYielding } from '../reliability/yield.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 
 interface Entry {
   poller: TrackerPoller;
@@ -67,6 +67,7 @@ export class TrackerPollerManager {
      * #159, still runs) — used by tests that don't exercise the land path.
      */
     private readonly getConfig?: () => Pick<AppConfig, 'verification'>,
+    private readonly opts: { yieldOptions?: YieldOptions } = {},
   ) {}
 
   /**
@@ -79,24 +80,28 @@ export class TrackerPollerManager {
    * poller's `onResolved`), and a manual {@link pollNow} forces it immediately.
    */
   async sync(): Promise<void> {
-    const wsById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
-    for (const [id, entry] of this.entries) {
+    const workspaces = await this.getWorkspaces();
+    const wsById = new Map<number, WorkspaceRow>();
+    await forEachYielding(workspaces, (ws) => {
+      wsById.set(ws.id, ws);
+    }, this.opts.yieldOptions);
+    await forEachYielding(this.entries, ([id, entry]) => {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled || entry.sig !== sigOf(ws)) {
         entry.poller.stop();
         this.entries.delete(id);
       }
-    }
-    for (const id of [...this.resolved.keys()]) {
+    }, this.opts.yieldOptions);
+    await forEachYielding(this.resolved.keys(), (id) => {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled) this.resolved.delete(id);
-    }
-    for (const ws of wsById.values()) {
-      if (!ws.trackerEnabled || this.entries.has(ws.id)) continue;
+    }, this.opts.yieldOptions);
+    await forEachYielding(wsById.values(), async (ws) => {
+      if (!ws.trackerEnabled || this.entries.has(ws.id)) return;
       const resolved = await resolveTracker(ws.workingDir, this.resolveAdapter);
       this.resolved.set(ws.id, resolved);
       if (resolved.ok) this.startLoop(ws);
-    }
+    }, this.opts.yieldOptions);
   }
 
   /** Build and start a poll loop for a Workspace (its tracker already resolved). */
@@ -143,6 +148,7 @@ export class TrackerPollerManager {
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
       this.onClosedWhileRunning,
       epics,
+      this.opts,
     );
     this.entries.set(ws.id, { poller, mirror, epics, ...(epicLand ? { epicLand } : {}), sig: sigOf(ws) });
     poller.start();

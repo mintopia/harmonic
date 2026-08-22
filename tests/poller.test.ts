@@ -8,6 +8,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { allWorkspaces } from './helpers.js';
+import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -317,5 +318,48 @@ describe('TrackerPoller.poll', () => {
 
     expect(await tasks.list()).toHaveLength(1);
     expect(errors.some((e) => e.includes('epic integration'))).toBe(true);
+  });
+
+  it('yields while walking a large closed-running backlog', async () => {
+    let current = Array.from({ length: 30 }, (_, index) => ticket({ number: index + 1, labels: ['ready-for-agent'] }));
+    let tick = 0;
+    let yields = 0;
+    const order: string[] = [];
+    const closed: number[] = [];
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => ({ ...stubAdapter([]).adapter, scan: async () => current }),
+      undefined,
+      undefined,
+      undefined,
+      (id) => closed.push(id),
+      undefined,
+      {
+        yieldOptions: {
+          budgetMs: 0,
+          now: () => tick++,
+          yieldNow: async () => {
+            yields++;
+            await yieldToEventLoop();
+          },
+        },
+      },
+    );
+
+    await poller.poll();
+    for (const task of await tasks.list()) await tasks.setState(task.id, 'running');
+    current = current.map((row) => ({ ...row, state: 'closed' }));
+    const done = poller.poll().then(() => order.push('done'));
+    setImmediate(() => order.push('immediate'));
+    await done;
+    await yieldToEventLoop();
+
+    expect(yields).toBeGreaterThan(0);
+    expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
+    expect(closed).toHaveLength(30);
   });
 });

@@ -4,6 +4,7 @@ import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { RunSettleCoordinator } from './run-settle.js';
 import type { LandingCoordinator, LandingEffectExec } from './landing-coordinator.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 
 export interface AcceptOutcome {
   /** When false, the merge conflicted: the task stays awaiting-review. */
@@ -54,6 +55,7 @@ export class ReviewService {
     private readonly landing: LandingCoordinator,
     private readonly acceptHook: AcceptHook = async () => ({ ok: true }),
     private readonly landingEffects: LandingEffectsHook = () => [],
+    private readonly opts: { yieldOptions?: YieldOptions } = {},
   ) {}
 
   private async reviewable(taskId: number): Promise<{ task: TaskRow; run: RunRow }> {
@@ -143,16 +145,16 @@ export class ReviewService {
    */
   async sweepExpiredReviews(now: number = Date.now()): Promise<number> {
     let swept = 0;
-    for (const run of await this.runStore.listReviewParkedOverdue(now)) {
+    await forEachYielding(await this.runStore.listReviewParkedOverdue(now), async (run) => {
       const task = await this.taskService.get(run.taskId);
-      if (task.state !== 'awaiting-review') continue;
+      if (task.state !== 'awaiting-review') return;
       await this.settle.settle(task, run, 'review-sla-expiry', {
         runState: 'failed',
         taskAction: 'failed',
         reason: 'review SLA expired (unreviewed)',
       });
       swept++;
-    }
+    }, this.opts.yieldOptions);
     return swept;
   }
 }

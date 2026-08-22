@@ -51,6 +51,19 @@ describe('forEachYielding', () => {
     expect(yieldedAt).toEqual([30, 60]);
   });
 
+  it('keeps yielding through a large backlog', async () => {
+    let clock = 0;
+    let yields = 0;
+    await forEachYielding(
+      Array.from({ length: 1_000 }),
+      () => {
+        clock += 1;
+      },
+      { now: () => clock, yieldNow: async () => void (yields += 1) },
+    );
+    expect(yields).toBe(40);
+  });
+
   it('never yields when the whole loop stays within budget', async () => {
     let clock = 0;
     let yields = 0;

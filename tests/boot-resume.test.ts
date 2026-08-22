@@ -16,6 +16,8 @@ import {
 } from '../src/domain/boot-resume-coordinator.js';
 import type { RunRow, SessionRow } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
+import type { YieldOptions } from '../src/reliability/yield.js';
+import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 /**
  * Direct unit coverage for `BootResumeCoordinator` (issue #146, reliability-design
@@ -90,8 +92,11 @@ describe('BootResumeCoordinator (issue #146)', () => {
       ...over,
     });
 
-  function coordinator(resolveCaps: (s: SessionRow) => ResumeCapabilities): BootResumeCoordinator {
-    return new BootResumeCoordinator(runStore, tasks, sessions, turnQueue, runFacts, resolveCaps);
+  function coordinator(
+    resolveCaps: (s: SessionRow) => ResumeCapabilities,
+    opts: { now?: () => number; yielding?: YieldOptions } = {},
+  ): BootResumeCoordinator {
+    return new BootResumeCoordinator(runStore, tasks, sessions, turnQueue, runFacts, resolveCaps, opts);
   }
 
   it('compatible → resumes the SAME Session as a new Run + a crash-recovery turn on its harness id', async () => {
@@ -171,6 +176,33 @@ describe('BootResumeCoordinator (issue #146)', () => {
 
     expect((await runStore.listForTask(task.id)).filter((r) => r.id !== run.id)).toHaveLength(1);
     expect(await turnQueue.listForSession(session.harnessSessionId)).toHaveLength(1);
+  });
+
+  it('yields through a large resumable backlog instead of monopolizing the event loop', async () => {
+    for (let i = 0; i < 12; i++) await seedInterrupted();
+    let clock = 0;
+    let yields = 0;
+    const order: string[] = [];
+    const coord = new BootResumeCoordinator(runStore, tasks, sessions, turnQueue, runFacts, capsFor(), {
+      yielding: {
+        budgetMs: 0,
+        now: () => clock++,
+        yieldNow: async () => {
+          yields++;
+          await yieldToEventLoop();
+        },
+      },
+    });
+
+    const done = coord.resume().then(() => order.push('done'));
+    setImmediate(() => order.push('immediate'));
+    await done;
+    await yieldToEventLoop();
+
+    expect(yields).toBeGreaterThan(0);
+    expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
+    expect((await tasks.list({ state: 'running' })).length).toBe(12);
   });
 
   it('leaves an interrupted Run with no Session alone (nothing to resume)', async () => {
