@@ -30,24 +30,8 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
   });
 
-  const wrap = <A, R>(fn: (args: A) => R) => {
-    return (args: A) => {
-      try {
-        return json(fn(args));
-      } catch (err) {
-        if (err instanceof DomainError) {
-          return {
-            content: [{ type: 'text' as const, text: `Error (${err.code}): ${err.message}` }],
-            isError: true,
-          };
-        }
-        throw err;
-      }
-    };
-  };
-
   /** Operator-only tool guard (issue #125): thrown as a `DomainError` so
-   * `wrap` reports it the same way any other domain rejection is reported,
+   * `wrapAsync` reports it the same way any other domain rejection is reported,
    * rather than a raw 500. */
   const requireOperator = () => {
     if (!operator) {
@@ -55,8 +39,8 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     }
   };
 
-  /** Same as {@link wrap}, for a tool whose handler is async (issue #161's
-   * `force_land_epic` is the first — every existing tool is synchronous). */
+  /** Wrap a tool handler so a thrown `DomainError` becomes an `isError` tool
+   * result rather than a raw 500. */
   const wrapAsync = <A, R>(fn: (args: A) => Promise<R>) => {
     return async (args: A) => {
       try {

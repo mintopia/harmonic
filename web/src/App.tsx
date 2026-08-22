@@ -185,6 +185,7 @@ export function App() {
   // outside React's render scope and must not put `route` in its effect deps
   // (that would re-subscribe on every navigation).
   const routeRef = useRef(route);
+  // eslint-disable-next-line react/refs -- latest-route ref, deliberately synced during render so the ws handler reads it without re-subscribing
   routeRef.current = route;
   // The last Ticket id we fired a not-in-list fetch for, so a 10s poll (which
   // hands `tasks` a fresh array reference) can't re-fire the fetch — and, on a
@@ -352,6 +353,7 @@ export function App() {
       clearInterval(timer);
       debouncedRefreshEpics.cancel();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `view`/`navigate` intentionally excluded; subscribe once per Workspace, routeRef carries the latest route to the handler
   }, [refresh, refreshEpics, authed, activeWorkspaceId]);
 
   const periodCost = usePeriodCost(authed === true, tasks, activeWorkspaceId);
@@ -400,6 +402,7 @@ export function App() {
   // members that render in their band), so the badge stuck above the real item
   // count. One source of truth means the number always matches what's shown.
   const needsYouCount = useMemo(
+    // eslint-disable-next-line react/purity -- `needsYou` is not time-dependent; the date only buckets other sections, recomputed when tasks/epics change
     () => deckSections(tasks ?? [], epics, Date.now()).needsYou.length,
     [tasks, epics],
   );

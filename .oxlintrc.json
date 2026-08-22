@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "error",
+    "react/react-in-jsx-scope": "off",
+    "react/set-state-in-effect": "off",
+    "no-unused-vars": ["error", {
+      "ignoreRestSiblings": true,
+      "argsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_",
+      "caughtErrorsIgnorePattern": "^_"
+    }]
+  },
+  "ignorePatterns": [
+    "dist",
+    "web/dist",
+    "node_modules",
+    "coverage",
+    "website",
+    "**/*.d.ts"
+  ],
+  "overrides": [
+    {
+      "files": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "*.ts"],
+      "env": { "node": true, "es2023": true }
+    },
+    {
+      "files": ["web/**/*.{ts,tsx}"],
+      "env": { "browser": true, "es2023": true }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.spec.ts", "tests/**"],
+      "env": { "node": true, "vitest": true }
+    }
+  ]
+}

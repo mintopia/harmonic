@@ -127,6 +127,7 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
     });
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when taskId changes; `load` closes over taskId
   }, [taskId]);
 
   if (channels.length === 0) return null;
@@ -180,6 +181,7 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
 function RunMeta({ run }: { run: Run }) {
   const totals = run.usage?.totals;
   const rows: Array<[string, ReactNode]> = [];
+  // eslint-disable-next-line react/jsx-key -- rendered as a single <dd> child below, not a list item
   if (run.reason) rows.push(['reason', <span className="text-fail">{run.reason}</span>]);
   if (run.stopReason) rows.push(['stop', run.stopReason]);
   rows.push(['started', new Date(run.startedAt).toLocaleTimeString()]);
@@ -187,6 +189,7 @@ function RunMeta({ run }: { run: Run }) {
   if (run.sessionId) {
     rows.push([
       'session',
+      // eslint-disable-next-line react/jsx-key -- single <dd> child, not a list item
       <span className="font-mono text-small" title={run.sessionId}>
         {run.sessionId}
       </span>,
@@ -201,6 +204,7 @@ function RunMeta({ run }: { run: Run }) {
   if (run.cost && formatCost(run.cost)) {
     rows.push([
       'cost',
+      // eslint-disable-next-line react/jsx-key -- single <dd> child, not a list item
       <span title={formatCostByModel(run.cost)}>
         {formatCost(run.cost)}
         {Object.keys(run.cost.byModel).length > 1 ? ` (${formatCostByModel(run.cost)})` : ''}
@@ -210,6 +214,7 @@ function RunMeta({ run }: { run: Run }) {
   if (typeof totals?.aiUnits === 'number') {
     rows.push([
       'AI units',
+      // eslint-disable-next-line react/jsx-key -- single <dd> child, not a list item
       <span title="Copilot AI Units — actual spend (separate from Cost)">{totals.aiUnits.toFixed(2)} AIU</span>,
     ]);
   }

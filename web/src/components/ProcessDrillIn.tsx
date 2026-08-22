@@ -33,6 +33,7 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
   // so re-tracking only happens when the tree object actually changes, not once
   // a second. A ref carries the live `now` into that tree-triggered effect.
   const nowRef = useRef(now);
+  // eslint-disable-next-line react/refs -- deliberately synced during render so the tree-triggered effect reads the live `now` without depending on it
   nowRef.current = now;
   useEffect(() => {
     setActivity((prev) => trackNodeActivity(prev, tree, nowRef.current));
