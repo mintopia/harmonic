@@ -353,9 +353,11 @@ export const runs = sqliteTable('runs', {
   candidateRef: text('candidate_ref'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
+  /** JSON: Cost frozen when the Run's final Usage is recorded (ADR-0035). */
+  cost: text('cost'),
   /** JSON: latest live-usage snapshot (rolled-up Usage + context fill +
    * current-activity line + Process Tree), overwritten on a coarse ~10s
-   * cadence and on finish (ADR 0010). Cost is not stored — derived on read. */
+   * cadence and on finish (ADR 0010). */
   liveUsage: text('live_usage'),
   /** JSON: the effective Guardrail config (`ResolvedGuardrails`) snapshotted at
    * Run start (issue #126, ADR-0019); null for pre-feature Runs. A later config

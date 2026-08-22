@@ -11,7 +11,8 @@ export interface ModelPrice {
 export type PriceTable = Record<string, ModelPrice>;
 
 /**
- * Cost (see CONTEXT.md): the dollar value of Usage, derived on read.
+ * Cost (see ADR-0035): the dollar value of Usage. Settled Runs store this
+ * value; live usage can still derive it on read.
  * A model without a price contributes null, and the whole aggregate is
  * flagged incomplete — a partial total is a floor, never a fake zero.
  */
@@ -130,6 +131,29 @@ export function costOfUsages(usages: (RunUsage | null)[], prices: PriceTable): C
     const usd = priceUsage(mu, price);
     byModel[model] = usd;
     totalUsd = (totalUsd ?? 0) + usd;
+  }
+  return { totalUsd, byModel, incomplete };
+}
+
+/** Sum Costs already frozen on Runs, preserving unknown-model floors. */
+export function sumCosts(costs: (Cost | null)[]): Cost | null {
+  const present = costs.filter((cost): cost is Cost => cost !== null);
+  if (present.length === 0) return null;
+
+  const byModel: Record<string, number | null> = {};
+  let totalUsd: number | null = null;
+  let incomplete = false;
+  for (const cost of present) {
+    incomplete ||= cost.incomplete;
+    if (cost.totalUsd !== null) totalUsd = (totalUsd ?? 0) + cost.totalUsd;
+    for (const [model, usd] of Object.entries(cost.byModel)) {
+      if (usd === null) {
+        byModel[model] = null;
+        incomplete = true;
+      } else if (byModel[model] !== null) {
+        byModel[model] = (byModel[model] ?? 0) + usd;
+      }
+    }
   }
   return { totalUsd, byModel, incomplete };
 }

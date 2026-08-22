@@ -36,7 +36,7 @@ export interface DaySeriesRun {
  * cost, input+output tokens (cache excluded), and run count — ordered by day.
  *
  * Pricing is injected (`priceRuns`) rather than reached for so this stays a
- * pure, testable seam: the route passes `(dayRows) => costOfRuns(ctx, dayRows)`,
+ * pure, testable seam: the route passes `costOfRuns`,
  * preserving the honest-numbers floor (`incomplete`) exactly as the range total
  * computes it. Tokens are a straight sum of what each run reported, so a day
  * whose runs logged no usage reads as 0 tokens (an honest count, not a price).

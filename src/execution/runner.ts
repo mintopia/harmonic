@@ -3177,7 +3177,11 @@ export class Runner {
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
       this.noteModelMismatch(task, usage, record);
-      const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
+      const patch = {
+        stopReason: result.stopReason ?? null,
+        usage: usage ? JSON.stringify(usage) : null,
+        cost: usage ? JSON.stringify(costOfUsages([usage], resolvePrices(this.getConfig().prices))) : null,
+      };
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
@@ -3415,7 +3419,10 @@ export class Runner {
       if (this.shuttingDown) return { kind: 'terminal' };
       const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
       this.noteModelMismatch(task, usage, record);
-      const patch = { usage: usage ? JSON.stringify(usage) : null };
+      const patch = {
+        usage: usage ? JSON.stringify(usage) : null,
+        cost: usage ? JSON.stringify(costOfUsages([usage], resolvePrices(this.getConfig().prices))) : null,
+      };
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
@@ -3592,6 +3599,7 @@ export class Runner {
         // Healing is best-effort; the run keeps its stored usage.
       }
     }
+    await this.runStore.backfillCosts(resolvePrices(config.prices));
   }
 
   /** The run's `git diff --stat` at settle time, or null (direct mode, or a
@@ -3683,7 +3691,7 @@ export class Runner {
     // Single write: the caller's decoration (`parkForReview`'s usage/stat
     // `patch`) layered under the review-phase reset, so `phase`/`reviewDeadline`
     // always win and the board sees one update, not two.
-    await this.runStore.update(run.id, {
+    await this.runStore.updateWithFrozenCost(run.id, {
       ...patch,
       state: 'running',
       phase: 'review',

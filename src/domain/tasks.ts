@@ -83,7 +83,8 @@ export interface TaskOverrides {
 
 export const taskListQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
-  state: z.enum(TASK_STATES).optional().meta({ example: 'awaiting-review' }),
+  /** `open` excludes closed Tasks for the board poll; omitting state still returns every Task. */
+  state: z.union([z.enum(TASK_STATES), z.literal('open')]).optional().meta({ example: 'awaiting-review' }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
   /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
@@ -502,18 +503,26 @@ export class TaskService {
     // and priority can be inherited, so they filter on the resolved value below.
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
-      query.state ? eq(tasks.state, query.state) : undefined,
+      query.state === 'open'
+        ? notInArray(tasks.state, ['completed', 'cancelled'])
+        : query.state
+          ? eq(tasks.state, query.state)
+          : undefined,
     ].filter((f) => f !== undefined);
-    const rawRows = await this.db.read((db) =>
-      db
-        .select()
-        .from(tasks)
-        .where(filters.length > 0 ? and(...filters) : undefined)
-        .all(),
-    );
+    const [rawRows, workspaceRows] = await Promise.all([
+      this.db.read((db) =>
+        db
+          .select()
+          .from(tasks)
+          .where(filters.length > 0 ? and(...filters) : undefined)
+          .all(),
+      ),
+      this.getWorkspaces(),
+    ]);
     let rows: TaskRow[] = [];
     await forEachYielding(rawRows, async (raw) => {
-      rows.push(await this.resolve(raw));
+      const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
+      rows.push({ ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) });
     });
     if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
     if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
@@ -864,6 +873,23 @@ export class TaskService {
     return this.setState(id, 'completed');
   }
 
+  /**
+   * Claim a mirrored afk Task for the Auto-Runner in one compare-and-set step.
+   * If the Task left the ready afk frontier after the scheduler scanned it, the
+   * claim is rejected and the caller must treat it as a clean no-op.
+   */
+  async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
+    const row = await this.db.write((db) =>
+      db
+        .update(tasks)
+        .set({ state: 'running', updatedAt: Date.now() })
+        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored'), eq(tasks.drive, 'afk')))
+        .returning()
+        .get(),
+    );
+    return row ? await this.changed(row) : undefined;
+  }
+
   async setState(id: number, state: TaskState): Promise<TaskRow> {
     const row = await this.db.write((db) =>
       db.update(tasks).set({ state, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
@@ -1156,7 +1182,86 @@ export class TaskService {
   }
 
   async listWithDeps(query: TaskListQuery = {}): Promise<TaskWithDeps[]> {
-    return Promise.all((await this.list(query)).map((task) => this.withDeps(task)));
+    // Inline `list()` here so the list path resolves rows once, then batches the
+    // dependency/reattempt lookups over the final listed set.
+    const filters = [
+      query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
+      query.state === 'open'
+        ? notInArray(tasks.state, ['completed', 'cancelled'])
+        : query.state
+          ? eq(tasks.state, query.state)
+          : undefined,
+    ].filter((f) => f !== undefined);
+    const [rawRows, workspaceRows] = await Promise.all([
+      this.db.read((db) =>
+        db
+          .select()
+          .from(tasks)
+          .where(filters.length > 0 ? and(...filters) : undefined)
+          .all(),
+      ),
+      this.getWorkspaces(),
+    ]);
+    let listed = rawRows.map((raw) => {
+      const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
+      return { ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) };
+    });
+    if (query.harness) listed = listed.filter((task) => task.harness === query.harness);
+    if (query.priority) listed = listed.filter((task) => task.priority === query.priority);
+    if (query.sortBy) {
+      const dir = query.order === 'desc' ? -1 : 1;
+      const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };
+      listed = listed.sort((a, b) => {
+        const cmp =
+          query.sortBy === 'priority'
+            ? (rank[a.priority] ?? 1) - (rank[b.priority] ?? 1) || a.createdAt - b.createdAt
+            : a.createdAt - b.createdAt || a.id - b.id;
+        return cmp * dir;
+      });
+    }
+    if (listed.length === 0) return [];
+    const ids = listed.map((task) => task.id);
+    const [dependencyRows, dependentRows, reattemptRows] = await Promise.all([
+      this.db.read((db) =>
+        db
+          .select({ taskId: taskDependencies.taskId, dependsOnId: taskDependencies.dependsOnId, state: tasks.state })
+          .from(taskDependencies)
+          .innerJoin(tasks, eq(taskDependencies.dependsOnId, tasks.id))
+          .where(inArray(taskDependencies.taskId, ids))
+          .all(),
+      ),
+      this.db.read((db) =>
+        db
+          .select({ taskId: taskDependencies.taskId, dependsOnId: taskDependencies.dependsOnId })
+          .from(taskDependencies)
+          .where(inArray(taskDependencies.dependsOnId, ids))
+          .all(),
+      ),
+      this.db.read((db) =>
+        db.select({ id: tasks.id, reattemptOf: tasks.reattemptOf }).from(tasks).where(inArray(tasks.reattemptOf, ids)).all(),
+      ),
+    ]);
+    const rawById = new Map(rawRows.map((task) => [task.id, task]));
+    const dependsOn = new Map(ids.map((id) => [id, [] as number[]]));
+    const dependents = new Map(ids.map((id) => [id, [] as number[]]));
+    const failedDependencies = new Set<number>();
+    for (const edge of dependencyRows) {
+      dependsOn.get(edge.taskId)?.push(edge.dependsOnId);
+      if (edge.state === 'failed' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
+    }
+    for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
+    const reattempts = new Map(ids.map((id) => [id, [] as number[]]));
+    for (const row of reattemptRows) {
+      if (row.reattemptOf !== null) reattempts.get(row.reattemptOf)?.push(row.id);
+    }
+    return listed.map((task) => ({
+      ...task,
+      dependsOn: dependsOn.get(task.id) ?? [],
+      dependents: dependents.get(task.id) ?? [],
+      blockedOnFailed: task.state === 'blocked' && failedDependencies.has(task.id),
+      reattempts: reattempts.get(task.id) ?? [],
+      overrides: this.overridesOf(rawById.get(task.id) ?? task),
+    }));
   }
 
   /** Is `to` reachable from `from` following depends-on edges? */

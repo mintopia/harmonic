@@ -1,10 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { and, eq, gte, lte } from 'drizzle-orm';
 import type { App } from '../app.js';
-import { runFacts, runs, tasks } from '../../db/schema.js';
-import { totalsForRange } from '../../domain/tool-call-aggregates.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
 import { buildDaySeries } from '../stats-series.js';
@@ -153,101 +150,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // carries no dynamic default (keeps the OpenAPI snapshot deterministic).
       const to = req.query.to ?? Date.now();
       const startedAtMs = Date.now();
-      // runs carries no workspaceId of its own (it inherits via its Task —
-      // ADR-0008), so scoping by Workspace means joining tasks.
-      //
-      // This range scan over the (large, growing) runs table is the heavy
-      // aggregate #213 routes off the event-loop-blocking sync path: it runs on
-      // the concurrent libsql read connection (ADR-0029 §5), so a big scan can
-      // never freeze in-flight HTTP the way a synchronous better-sqlite3 `.all()`
-      // would. Reads see the last committed WAL snapshot of the sync writer.
-      // All four heavy range reads share one concurrent read-connection scope
-      // (#213): the runs scan, two run_facts joins, and native tool-call
-      // aggregate stay in one `.read(...)` on the libsql read sibling rather
-      // than several round-trips on it.
-      const { rows, factRows, failFactRows, toolTotals } = await ctx.asyncReadDb.read(async (db) => {
-        const rows =
-          workspaceId === undefined
-            ? await db
-                .select()
-                .from(runs)
-                .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to)))
-                .all()
-            : (
-                await db
-                  .select({ runs })
-                  .from(runs)
-                  .innerJoin(tasks, eq(runs.taskId, tasks.id))
-                  .where(and(gte(runs.startedAt, from), lte(runs.startedAt, to), eq(tasks.workspaceId, workspaceId)))
-                  .all()
-              ).map((r) => r.runs);
-
-        // Each Run's `agent-finish` run_fact ts, for the active-execution duration
-        // below (ADR-0028): the agent's working time, not calendar time parked in
-        // review/landing. Joined on the same range predicate rather than an
-        // `IN (run ids)` — an "All time" range can hold thousands of Runs, past
-        // SQLite's bound-parameter limit. Earliest fact ts wins if a Run somehow
-        // logged more than one.
-        const factRows =
-          workspaceId === undefined
-            ? await db
-                .select({ runId: runFacts.runId, ts: runFacts.ts })
-                .from(runFacts)
-                .innerJoin(runs, eq(runFacts.runId, runs.id))
-                .where(
-                  and(
-                    eq(runFacts.type, 'agent-finish/unresolved'),
-                    gte(runs.startedAt, from),
-                    lte(runs.startedAt, to),
-                  ),
-                )
-                .all()
-            : await db
-                .select({ runId: runFacts.runId, ts: runFacts.ts })
-                .from(runFacts)
-                .innerJoin(runs, eq(runFacts.runId, runs.id))
-                .innerJoin(tasks, eq(runs.taskId, tasks.id))
-                .where(
-                  and(
-                    eq(runFacts.type, 'agent-finish/unresolved'),
-                    gte(runs.startedAt, from),
-                    lte(runs.startedAt, to),
-                    eq(tasks.workspaceId, workspaceId),
-                  ),
-                )
-                .all();
-
-        // Every fact of the range's failed Runs, for the by-reason breakdown below:
-        // the winning terminal disposition (issue #197) is derived from these, not
-        // from the high-cardinality free-text `runs.reason`. Bounded to failed Runs
-        // (`runs.state = 'failed'`) so a wide range doesn't drag in the whole log.
-        // Same range-join predicate as above (an "All time" range can hold more Runs
-        // than SQLite's bound-parameter limit).
-        const failFactRows =
-          workspaceId === undefined
-            ? await db
-                .select({ runId: runFacts.runId, seq: runFacts.seq, type: runFacts.type })
-                .from(runFacts)
-                .innerJoin(runs, eq(runFacts.runId, runs.id))
-                .where(and(eq(runs.state, 'failed'), gte(runs.startedAt, from), lte(runs.startedAt, to)))
-                .all()
-            : await db
-                .select({ runId: runFacts.runId, seq: runFacts.seq, type: runFacts.type })
-                .from(runFacts)
-                .innerJoin(runs, eq(runFacts.runId, runs.id))
-                .innerJoin(tasks, eq(runs.taskId, tasks.id))
-                .where(
-                  and(
-                    eq(runs.state, 'failed'),
-                    gte(runs.startedAt, from),
-                    lte(runs.startedAt, to),
-                    eq(tasks.workspaceId, workspaceId),
-                  ),
-                )
-                .all();
-
-        const toolTotals = await totalsForRange(db, { from, to, ...(workspaceId === undefined ? {} : { workspaceId }) });
-        return { rows, factRows, failFactRows, toolTotals };
+      // Local libsql executes file-backed queries inline despite returning a
+      // Promise. The typed worker RPC keeps all four growing range scans off the
+      // server event loop while preserving the separate WAL reader from #213.
+      const { rows, factRows, failFactRows, toolTotals } = await ctx.statsReader.read({
+        from,
+        to,
+        ...(workspaceId === undefined ? {} : { workspaceId }),
       });
 
       const agentFinishTs = new Map<number, number>();
@@ -310,13 +219,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // buildDaySeries re-parses/re-merges each bucket's usage rather than
       // reusing the range-wide merge above — a deliberate cost of keeping it a
       // pure, ctx-free seam (pricing is injected); the per-bucket work is small.
-      const series = buildDaySeries(rows, (dayRows) => costOfRuns(ctx, dayRows));
+      const series = buildDaySeries(rows, costOfRuns);
 
       // A day with runs but no priceable usage shows as unpriceable (null) in
       // the series. A range total that spans such a day is a floor, not an
       // exact figure — keep the headline Cost honest with the chart's "at
       // least" so the visible total and the accessible label agree (issue #92).
-      const cost = costOfRuns(ctx, rows);
+      const cost = costOfRuns(rows);
       const flooredCost =
         cost && !cost.incomplete && series.some((s) => s.totalUsd === null) ? { ...cost, incomplete: true } : cost;
 

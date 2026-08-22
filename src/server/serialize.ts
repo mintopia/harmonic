@@ -1,17 +1,17 @@
 import type { AppContext } from './app.js';
 import type { ConversationRow, ConversationState, RunRow, RunState } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import { costOfUsages, resolvePrices, type Cost } from '../execution/pricing.js';
+import { costOfUsages, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
- * WebSocket broadcasts so the SPA sees one format (issue 15). Cost is
- * derived from stored Usage on every read — never persisted — so a price
- * change reprices all history.
+ * WebSocket broadcasts so the SPA sees one format (issue 15). Settled Run
+ * Costs are stored and frozen; only live Usage is priced on read.
  */
 
 const parseUsage = (raw: string | null): RunUsage | null => (raw ? (JSON.parse(raw) as RunUsage) : null);
+const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
 const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices);
 
@@ -20,14 +20,14 @@ const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices
  * at rest, so every API-facing shape narrows it back to `number` here. */
 export const atRestWorkspaceId = (workspaceId: number | null): number => workspaceId!;
 
-export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage'> & { usage: RunUsage | null; cost: Cost | null };
+export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage' | 'cost'> & { usage: RunUsage | null; cost: Cost | null };
 
-export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
+export function runToApi(_ctx: AppContext, run: RunRow): ApiRun {
   const usage = parseUsage(run.usage);
   // liveUsage is the Activity view's live/persisted snapshot, streamed as a
   // `run_usage` firehose event — not part of the run's REST shape.
   const { liveUsage: _liveUsage, ...rest } = run;
-  return { ...rest, usage, cost: costOfUsages([usage], pricesOf(ctx)) };
+  return { ...rest, usage, cost: parseCost(run.cost) };
 }
 
 /** The firehose shape of a live-usage snapshot (ADR 0010): the persisted
@@ -84,7 +84,28 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.runs.listForTask(task.id);
-  const usages = runs.map((run) => parseUsage(run.usage));
+  const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
+  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null);
+}
+
+/** Serialize a task list from its already-batched Runs (issue #258). */
+export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTask[]> {
+  if (tasks.length === 0) return [];
+  const runsByTask = new Map(tasks.map((task) => [task.id, [] as RunRow[]]));
+  for (const run of await ctx.runs.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
+  const running = tasks.flatMap((task) => {
+    const run = task.state === 'running' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
+    return run ? [run] : [];
+  });
+  const toolCounts = await ctx.runs.toolCallCounts(running.map((run) => run.id));
+  return tasks.map((task) => {
+    const runs = runsByTask.get(task.id) ?? [];
+    const activeRun = task.state === 'running' ? runs.find((run) => run.state === 'running') : undefined;
+    return taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null);
+  });
+}
+
+function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
   const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
   // Drop the durable tracker-fact columns (issue #233): server-side persistence
   // only, never part of the API shape (see ApiTask).
@@ -96,13 +117,13 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
   return {
     ...apiFields,
     workspaceId: atRestWorkspaceId(task.workspaceId),
-    cost: costOfUsages(usages, pricesOf(ctx)),
+    cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
-    toolCount: running ? await runningToolCount(ctx, running) : null,
+    toolCount,
     runId: running?.id ?? null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     candidateRef: runs.at(-1)?.candidateRef ?? null,
@@ -117,9 +138,9 @@ async function runningToolCount(ctx: AppContext, run: RunRow): Promise<number> {
   return count;
 }
 
-/** Cost of an arbitrary set of runs against the live price table. */
-export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
-  return costOfUsages(runs.map((run) => parseUsage(run.usage)), pricesOf(ctx));
+/** Cost of an arbitrary set of Runs, summed from their frozen values. */
+export function costOfRuns(runs: RunRow[]): Cost | null {
+  return sumCosts(runs.map((run) => parseCost(run.cost)));
 }
 
 /** One live process in the Activity snapshot (issue #51); see `activitySnapshot`. */

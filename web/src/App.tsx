@@ -231,7 +231,9 @@ export function App() {
   const refresh = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
-      const { tasks } = await api.tasks(activeWorkspaceId);
+      // The Deck is the board's active-work view. Its poll opts into the API's
+      // SQL-level closed-task exclusion, while other views retain full history.
+      const { tasks } = await api.tasks({ workspaceId: activeWorkspaceId, state: view === 'deck' ? 'open' : undefined });
       setTasks(tasks);
       // The open Ticket derives from this list (see `openTask` below), so the
       // poll keeps its state-aware footer fresh with no extra bookkeeping —
@@ -244,7 +246,7 @@ export function App() {
       failStreak.current += 1;
       if (failStreak.current >= 2) setError(e instanceof Error ? e.message : String(e));
     }
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, view]);
 
   // Parallel-Epic read model refetch (issue #167, ADR-0026: "the client
   // refetches on the existing task_changed firehose poke"). Best-effort — an
@@ -308,11 +310,18 @@ export function App() {
       if (msg.type === 'task_changed' && msg.task.workspaceId === activeWorkspaceId) {
         setTasks((current) => {
           const rest = (current ?? []).filter((t) => t.id !== msg.task.id);
+          // Keep the Deck's open-only poll result coherent between its 10s
+          // refreshes when a Task becomes closed over the socket.
+          if (view === 'deck' && (msg.task.state === 'completed' || msg.task.state === 'cancelled')) return rest;
           return [...rest, msg.task];
         });
-        // Keep the cached (not-in-list) open Ticket fresh from the socket too;
-        // an in-list one refreshes via setTasks above.
-        setFetchedTask((current) => (current && current.id === msg.task.id ? msg.task : current));
+        // Keep a focused closed Task available after removing it from the
+        // Deck's open-only collection. The route stays on its Ticket without
+        // an unnecessary follow-up fetch; a pre-existing cached Ticket still
+        // refreshes through the same path.
+        setFetchedTask((current) =>
+          current?.id === msg.task.id || routeRef.current.task === msg.task.id ? msg.task : current,
+        );
         // Keep the Epic peek + landing rail live (ADR-0026): a member's
         // task_changed is exactly the signal an Epic's fold/land/verification
         // state may have moved, so refetch alongside the Task-list update.

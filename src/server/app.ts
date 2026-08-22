@@ -15,7 +15,8 @@ import { join, dirname, sep } from 'node:path';
 import { landBranch } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
-import { openAsyncDb, openAsyncReadHandle, type AsyncDbHandle, type AsyncReadDb } from '../db/async.js';
+import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
+import { openStatsReader, type StatsReader } from '../db/stats-reader.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
@@ -194,12 +195,8 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 
 export interface AppContext {
   asyncDb: AsyncDbHandle;
-  /**
-   * Concurrent-read libsql sibling of {@link asyncDb}, for routing heavy
-   * aggregates (Stats) off the write connection (#213, ADR-0029 §5).
-   * Read-only by type; `asyncDb` is the single writer.
-   */
-  asyncReadDb: AsyncReadDb;
+  /** Typed worker RPC for the growing Stats range scans (#257). */
+  statsReader: StatsReader;
   configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
@@ -234,12 +231,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // it owns boot — migrations, the FK dance, the Default-Workspace backfill — and
   // is the single writer through its queue.
   const asyncDb = await openAsyncDb(opts.dataDir);
-  // #213 / ADR-0029 §5: heavy aggregates (the Stats range scan) read through a
-  // *separate* concurrent libsql read connection, so an expensive scan never
-  // contends with the write facade's single connection. `openAsyncDb` above has
-  // already booted the file, so this connection only attaches — no migrate, no
-  // backfill, no write.
-  const asyncReadDb = openAsyncReadHandle(opts.dataDir);
+  // #257 / ADR-0029 §5: local libsql runs file-backed queries inline. Give the
+  // growing Stats range scans a dedicated worker and typed request shape.
+  const statsReader = openStatsReader(opts.dataDir);
   const bus = new EventBus();
   const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb);
@@ -613,7 +607,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, asyncReadDb, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -634,11 +628,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     conversationDriver.shutdown();
     clearInterval(leaseSweep);
     loopMonitor?.stop();
-    // The async libsql clients (`asyncDb`, and the `asyncReadDb` read sibling)
-    // are deliberately NOT closed here: shutdown races best-effort background
-    // reads (autoRunner poke, the queue-idle probe below, in-flight Stats scans)
-    // that a closed client would reject as unhandled `CLIENT_CLOSED`. The clients
-    // are released on process exit.
+    await statsReader.close();
   });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);

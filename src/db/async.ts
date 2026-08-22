@@ -190,32 +190,6 @@ export class AsyncDbHandle {
   }
 }
 
-/**
- * The read-only view of an {@link AsyncDbHandle} handed to the off-thread read
- * path (#213): `read`/`close` only, never `write`/`transaction`. Typing the
- * concurrent-read connection this way makes the single-writer invariant
- * (ADR-0029 §2/§3) unbreakable at the call site — sync better-sqlite3 stays the
- * one writer, and a stray second writer to the same file can't compile.
- */
-export type AsyncReadDb = Pick<AsyncDbHandle, 'read' | 'close'>;
-
-/**
- * Attach a concurrent-read libsql connection to an **already-booted** database,
- * for the async/off-thread read path (#213, ADR-0029 §5). The sync {@link
- * import('./index.js').openDb} owns boot — migrations, the FK dance, the
- * backfill — and stays the single writer; this connection only ever serves
- * `.read(...)` (heavy aggregates like the Stats range scan), so it runs no
- * migrate/backfill and takes no write. WAL lets it read a fresh committed
- * snapshot concurrently with the sync writer, keeping the expensive scan off the
- * event-loop-blocking better-sqlite3 path during the expand-contract migration.
- * Returned as an {@link AsyncReadDb} so the read-only promise is type-enforced.
- */
-export function openAsyncReadHandle(dataDir: string): AsyncReadDb {
-  const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-  const db = drizzle(client, { schema });
-  return new AsyncDbHandle(db, client);
-}
-
 type LegacyStoredConfig = {
   defaults?: { workingDir?: string };
   tracker?: { enabled?: boolean; pollIntervalSeconds?: number };
