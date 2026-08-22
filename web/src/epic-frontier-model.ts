@@ -1,6 +1,6 @@
 import type { Epic, EpicMember } from './epic-model.js';
 import { issueRef, taskKey } from './id-format.js';
-import type { Task } from './types.js';
+import { TASK_STATES, type Task } from './types.js';
 
 export interface FrontierDependency {
   taskId: number;
@@ -12,7 +12,7 @@ export interface FrontierNode {
   ref: number;
   taskId: number | null;
   title: string;
-  state: string | null;
+  state: Task['state'] | null;
   ready: boolean;
   runnable: boolean;
   dependencies: FrontierDependency[];
@@ -36,6 +36,10 @@ function isMerged(member: EpicMember): boolean {
   return member.landStatus === 'completed';
 }
 
+function isTaskState(state: string | null): state is Task['state'] {
+  return state != null && TASK_STATES.some((candidate) => candidate === state);
+}
+
 /**
  * Derives the compact Epic DAG used by the Board. The tracker-provided ready
  * frontier remains authoritative for unmirrored members, while live Task
@@ -54,13 +58,17 @@ export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
 
   const dependenciesFor = (member: EpicMember): FrontierDependency[] => {
     const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
+    const hasReachedFrontier = member.ready || task?.state === 'ready' || task?.state === 'running';
     return (task?.dependsOn ?? []).map((taskId) => {
       const dependency = tasksById.get(taskId);
       const dependencyMember = membersByTaskId.get(taskId);
       return {
         taskId,
         label: dependencyLabel(dependency, taskId),
-        satisfied: dependency?.state === 'completed' || dependencyMember?.landStatus === 'completed',
+        satisfied:
+          dependency?.state === 'completed' ||
+          dependencyMember?.landStatus === 'completed' ||
+          (dependency == null && hasReachedFrontier),
       };
     });
   };
@@ -73,7 +81,7 @@ export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
       ref: member.ref,
       taskId: member.taskId,
       title: member.title || task?.prompt || `Member ${member.ref}`,
-      state: task?.state ?? member.state ?? (ready ? 'ready' : null),
+      state: task?.state ?? (isTaskState(member.state) ? member.state : ready ? 'ready' : null),
       ready,
       runnable:
         task?.state === 'ready' &&

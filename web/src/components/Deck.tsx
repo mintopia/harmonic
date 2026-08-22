@@ -272,14 +272,29 @@ const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
   blocking: 'bg-raised',
 };
 
-function frontierDot(state: string | null): string {
-  if (state === 'running') return 'bg-running-dot motion-safe:animate-pulse';
-  if (state === 'ready') return 'bg-ready-dot';
-  if (state === 'awaiting-review') return 'bg-await-dot';
-  if (state === 'blocked') return 'bg-blocked';
-  if (state === 'completed') return 'bg-edge';
-  if (state === 'failed') return 'bg-fail-dot';
-  return 'bg-edge';
+function frontierDot(state: FrontierNode['state']): string {
+  switch (state) {
+    case null:
+    case 'draft':
+    case 'completed':
+      return 'bg-edge';
+    case 'running':
+      return 'bg-running-dot motion-safe:animate-pulse';
+    case 'ready':
+      return 'bg-ready-dot';
+    case 'awaiting-review':
+      return 'bg-await-dot';
+    case 'blocked':
+      return 'bg-blocked';
+    case 'failed':
+      return 'bg-fail-dot';
+    case 'cancelled':
+      return 'bg-faint';
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
 }
 
 function FrontierNodeCard({

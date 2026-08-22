@@ -130,4 +130,22 @@ describe('deriveEpicFrontier (issue #264)', () => {
     expect(model.columns[0]!.nodes[0]!.state).toBe('ready');
     expect(model.columns[2]!.nodes[0]!.runnable).toBe(false);
   });
+
+  it('treats an absent dependency as satisfied once a member is ready', () => {
+    const ready = task(2, 'ready', [1]);
+    const model = deriveEpicFrontier(epic([member(2, 2)]), [ready]);
+
+    expect(model.columns).toEqual([
+      expect.objectContaining({
+        label: 'Frontier',
+        nodes: [
+          expect.objectContaining({
+            ref: 2,
+            runnable: true,
+            dependencies: [{ taskId: 1, label: 'Task 1', satisfied: true }],
+          }),
+        ],
+      }),
+    ]);
+  });
 });
