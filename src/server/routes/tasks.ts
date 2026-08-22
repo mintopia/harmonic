@@ -166,9 +166,10 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
     runId: z.number().nullable().meta({ example: 41 }),
-    /** The transient House-Rule reason (ADR-0022, issue #120) this ready Task is
-     * being skipped for a held Work Context lease; null when not skipped (issue #171). */
-    skipReason: z.string().nullable().meta({ example: 'Work Context held by task 12 (running)' }),
+    /** The current scheduler reason this Task is waiting, such as a blocker,
+     * capacity limit, disabled Workspace, or missing integration branch;
+     * null when it is not waiting (issue #238). */
+    skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
     /** The latest run's frozen verification candidate ref (issue #134's Run
      * `candidateRef`), surfaced here so an escalated Task's stranded candidate
      * can be adopted for review, or re-reviewed with a note, without a fresh

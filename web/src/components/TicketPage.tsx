@@ -763,9 +763,9 @@ export function TicketPage({
       ? { escalated: task.escalated, text: latestRun.reason.replace(/^escalated to human:\s*/i, '') }
       : null;
 
-  // Link the lease skip-reason to its holder (issue #176): the server string
-  // names the Task holding the Work Context but gave the operator nothing to
-  // click. `null` when the string doesn't contain a `task <id>` to link.
+  // A reason may name the Task holding the Work Context. Link that holder when
+  // it does; the new scheduler reasons remain useful plain text when they do
+  // not include a Task reference.
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
 
   // The next-attempt lookup is scoped to the selected run so it renders beside
@@ -835,12 +835,13 @@ export function TicketPage({
               <NotifyFact taskId={task.id} />
             </div>
             <Brief task={task} />
-            {/* Informational, not alarming (issue #171): a ready Task not
-                running yet because its Work Context lease is held elsewhere —
-                subtle so it never competes with the failed/escalated alert. */}
+            {/* An eligible Task can be waiting on capacity, Git backoff, a
+                Work Context holder, or its Epic integration branch. It is
+                informational, so it stays quieter than a failed/escalated
+                alert. */}
             {task.skipReason && (
               <div className="mt-2 text-small text-muted">
-                <span className={labelType}>Skipped</span> —{' '}
+                <span className={labelType}>Waiting to run</span> —{' '}
                 {/* Link the holder ref to its Task (the lease owner). Split on the
                     literal `task <id>` the model already parsed, so the `task …`
                     format lives in exactly one place (skip-reason-model). */}

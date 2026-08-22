@@ -69,9 +69,9 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
-  /** The transient House-Rule reason (ADR-0022, issue #120) the Auto-Runner's
-   * last pick pass skipped this ready Task for — a held Work Context lease
-   * (`AutoRunner.skipReasonFor`); null when the Task wasn't skipped (issue #171). */
+  /** The current scheduler reason this Task was not picked for, such as a
+   * dependency, capacity, disabled Workspace, or missing integration branch;
+   * null when it is not waiting (issue #238). */
   skipReason: string | null;
   /** The latest run's frozen verification candidate ref (issue #134); null
    * when no run has produced a candidate yet (pre-feature, escalated before

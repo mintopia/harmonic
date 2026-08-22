@@ -105,6 +105,11 @@ export interface TaskWithDeps extends TaskRow {
   overrides: TaskOverrides;
 }
 
+/** A scheduler candidate with its unfinished local dependency ids. */
+export interface OrderedEligibleTask extends TaskRow {
+  blockedBy: number[];
+}
+
 /** States an operator may edit a task in. blocked is editable so its defaults
  * (model, harness, …) can be changed while it waits on a dependency (issue: a
  * blocked ticket often needs its model re-pointed before it ever runs). */
@@ -514,7 +519,7 @@ export class TaskService {
    * priority, topological rank, then age. It deliberately includes `blocked`
    * Tasks: a consumer choosing runnable work must skip non-`ready` rows.
    */
-  async orderedEligibleWork(workspaceId?: number): Promise<TaskRow[]> {
+  async orderedEligibleWork(workspaceId?: number): Promise<OrderedEligibleTask[]> {
     const rows = await this.list(workspaceId === undefined ? {} : { workspaceId });
     const candidates: TaskRow[] = [];
     await forEachYielding(rows, (task) => {
@@ -557,7 +562,7 @@ export class TaskService {
     await forEachYielding(completedRows, (task) => {
       completedIds.add(task.id);
     });
-    const nodes: Array<TaskRow & { blockedBy: number[] }> = [];
+    const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       nodes.push({
         ...task,

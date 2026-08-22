@@ -114,6 +114,13 @@ function DeckRow({
           <TaskIdentity harness={task.harness} model={task.model} compact className="flex-1" />
           {task.isolationMode !== 'direct' && <span className="truncate text-muted">{task.isolationMode}</span>}
         </div>
+        {task.skipReason && (
+          <div className="mt-1 flex min-w-0 gap-1 text-small text-muted">
+            <span className="shrink-0 text-faint">Waiting to run</span>
+            <span aria-hidden="true">·</span>
+            <span className="min-w-0 break-words">{task.skipReason}</span>
+          </div>
+        )}
       </div>
       {aside && <div className="relative z-10 flex items-center gap-2.5 justify-self-end">{aside}</div>}
     </div>

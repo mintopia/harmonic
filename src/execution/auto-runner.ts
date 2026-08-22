@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config.js';
-import type { TaskService } from '../domain/tasks.js';
+import type { OrderedEligibleTask, TaskService } from '../domain/tasks.js';
 import type { RunStore } from '../domain/runs.js';
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import { resolve, resolveCap } from '../domain/setting-override.js';
@@ -22,6 +22,13 @@ import { forEachYielding } from '../reliability/yield.js';
 function directContextKey(task: TaskRow): string | undefined {
   if (task.isolationMode !== 'direct') return undefined;
   return workContextKey({ isolationMode: 'direct', workingDir: task.workingDir });
+}
+
+/** An integration base already assigned to an Epic member. If this ref is gone,
+ * only the Epic reconcile can restore it; the scheduler gives that one pass,
+ * then escalates rather than returning the member to a permanent retry loop. */
+function hasAssignedEpicBase(task: TaskRow): boolean {
+  return task.baseBranch?.startsWith('epic/') ?? false;
 }
 
 /**
@@ -61,7 +68,14 @@ export interface AutoRunnerOptions {
   gitBreaker?: GitCircuitBreaker;
   /** Fixed scheduler cadence; tests inject a short interval. */
   intervalMs?: number;
+  /** How long a confirmed absent assigned integration branch has to recover
+   * through tracker reconciliation before the Task is escalated. */
+  missingEpicBaseGraceMs?: number;
+  /** Injected for deterministic scheduler-time tests. */
+  clock?: () => number;
 }
+
+const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 60_000;
 
 /**
  * The scheduler. When enabled, fills free run slots with ready tasks —
@@ -92,16 +106,19 @@ export class AutoRunner {
   private readonly epicBaseNotReady: ((task: TaskRow) => boolean | Promise<boolean>) | undefined;
   private readonly gitBreaker: GitCircuitBreaker | undefined;
   private readonly intervalMs: number;
+  private readonly missingEpicBaseGraceMs: number;
+  private readonly clock: () => number;
   /**
-   * Why a ready Task was passed over on the most recent pick pass, keyed by
-   * Task id (ADR-0022, issue #120). Today the only entry is the House Rule
-   * skip — a Task whose direct-mode Work Context is held by a running or
-   * awaiting-review afk Run. The Task stays `ready` and returns to the frontier
-   * next cycle; this map is the legible-skip surface an operator / the queue
-   * diagnostics can read to tell a blocked queue apart from a silent stall.
-   * Rebuilt each pick pass, so it reflects the current frontier, not history.
+   * Why a Task was not picked on the most recent scheduler pass, keyed by
+   * Task id. Rebuilt from the local queue each pass, so the API reports the
+   * condition holding now instead of a stale scheduling decision.
    */
-  private readonly contextSkipReasons = new Map<number, string>();
+  private readonly schedulerSkipReasons = new Map<number, string>();
+
+  /** Assigned Epic bases that were missing on the preceding scheduler pass.
+   * A null base is still awaiting its first reconcile and remains transient;
+   * an assigned `epic/<ref>` that stays absent has no scheduler-side recovery. */
+  private readonly missingEpicBaseSince = new Map<number, number>();
 
   /**
    * Epoch ms a Task first started being House-Rule-skipped on a still-current
@@ -111,7 +128,7 @@ export class AutoRunner {
    * first time a pick pass skips a Task and left alone on every subsequent
    * pass it's still skipped, so the clock reflects when the wait *began*, not
    * the last time it was observed; pruned in the same pass to any Task no
-   * longer present in the freshly-rebuilt `contextSkipReasons` — the Task
+   * longer present in the freshly-rebuilt `schedulerSkipReasons` — the Task
    * started (or its blocker cleared) and a later wait starts a fresh clock.
    */
   private readonly contextWaitingSince = new Map<number, number>();
@@ -128,6 +145,8 @@ export class AutoRunner {
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.gitBreaker = options.gitBreaker;
     this.intervalMs = options.intervalMs ?? 1_000;
+    this.missingEpicBaseGraceMs = options.missingEpicBaseGraceMs ?? DEFAULT_MISSING_EPIC_BASE_GRACE_MS;
+    this.clock = options.clock ?? Date.now;
   }
 
   /** Begin the DB-backed scheduler interval. Idempotent. */
@@ -143,13 +162,9 @@ export class AutoRunner {
     this.timer = undefined;
   }
 
-  /**
-   * The reason a ready Task was skipped on the last pick pass, or `undefined` if
-   * it was eligible (or not seen). Naming the occupying Task, this lets the
-   * operator surface explain why a `ready` Task hasn't started (issue #120).
-   */
+  /** The latest scheduler reason for `taskId`, if it was not picked. */
   skipReasonFor(taskId: number): string | undefined {
-    return this.contextSkipReasons.get(taskId);
+    return this.schedulerSkipReasons.get(taskId);
   }
 
   /** When `taskId` started its current House-Rule-blocked streak (issue
@@ -183,8 +198,11 @@ export class AutoRunner {
         // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
         // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
         const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
-        if (!master) return;
         const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
+        // Refresh before the capacity loop: a full machine never reaches
+        // `pickNext`, but its queued Tasks still need to say why they wait.
+        await this.refreshSkipReasons({ master, ceiling, workspacesById });
+        if (!master) return;
         // Tasks parked this cycle because they are un-spawnable, so the
         // slow claim path can't spin re-picking the same one before a re-scan.
         const skip = new Set<number>();
@@ -196,6 +214,7 @@ export class AutoRunner {
           if (!next) break;
           await this.startPicked(next, skip);
         }
+        await this.refreshSkipReasons({ master, ceiling, workspacesById });
       } while (this.refill);
     } catch {
       // Filling is best-effort; the next poke retries.
@@ -214,6 +233,9 @@ export class AutoRunner {
       skip.add(task.id);
       return;
     }
+    this.schedulerSkipReasons.delete(task.id);
+    this.contextWaitingSince.delete(task.id);
+    this.missingEpicBaseSince.delete(task.id);
     if (claimed.origin === 'mirrored' && this.mirror) {
       try {
         await this.mirror.advertiseClaim(claimed);
@@ -227,6 +249,110 @@ export class AutoRunner {
       await this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
       skip.add(task.id);
     }
+  }
+
+  private recordSkipReason(taskId: number, reason: string): void {
+    this.schedulerSkipReasons.set(taskId, reason);
+  }
+
+  /** The lease diagnostics clock applies only to waits that contend for a
+   * Work Context, plus the existing git-workspace backoff. Other scheduler
+   * explanations are intentionally current-state only. */
+  private recordWaiting(taskId: number): void {
+    if (!this.contextWaitingSince.has(taskId)) this.contextWaitingSince.set(taskId, Date.now());
+  }
+
+  /**
+   * Rebuild the legible scheduler state for every waiting Task. This runs once
+   * per scheduler pass, independently of whether the machine has a free slot,
+   * so capacity and disabled-workspace waits cannot disappear behind the pick
+   * loop's early exit.
+   */
+  private async refreshSkipReasons({
+    master,
+    ceiling,
+    workspacesById,
+  }: {
+    master: boolean;
+    ceiling: number;
+    workspacesById: Map<number, WorkspaceRow>;
+  }): Promise<void> {
+    const [all, ordered, running, runningByWorkspace] = await Promise.all([
+      this.taskService.list(),
+      this.taskService.orderedEligibleWork(),
+      this.runStore.countRunning(),
+      this.runStore.countRunningByWorkspace(),
+    ]);
+    const orderedById = new Map<number, OrderedEligibleTask>();
+    await forEachYielding(ordered, (task) => {
+      orderedById.set(task.id, task);
+    });
+    const occupied = await occupiedDirectContexts(all);
+    const missingThisPass = new Map<number, number>();
+    this.schedulerSkipReasons.clear();
+
+    await forEachYielding(all, async (task) => {
+      if (task.state === 'blocked') {
+        const blocker = orderedById.get(task.id)?.blockedBy[0];
+        this.recordSkipReason(task.id, blocker === undefined ? 'blocked by a dependency' : `blocked-by #${blocker}`);
+        return;
+      }
+      if (task.state !== 'ready') return;
+      if (task.drive === 'hitl') {
+        this.recordSkipReason(task.id, task.escalated ? 'hitl, escalated to human' : 'hitl');
+        return;
+      }
+      if (!master) {
+        this.recordSkipReason(task.id, 'Auto-Runner disabled');
+        return;
+      }
+      const workspace = task.workspaceId == null ? undefined : workspacesById.get(task.workspaceId);
+      if (!resolve(workspace?.autoRunnerEnabled, true)) {
+        this.recordSkipReason(task.id, 'workspace disabled');
+        return;
+      }
+      if (running >= ceiling) {
+        this.recordSkipReason(task.id, 'at capacity');
+        return;
+      }
+      const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
+      const workspaceRunning = task.workspaceId == null ? 0 : (runningByWorkspace.get(task.workspaceId) ?? 0);
+      if (workspaceRunning >= cap) {
+        this.recordSkipReason(task.id, 'at capacity');
+        return;
+      }
+      if (this.gitBreaker && !this.gitBreaker.allows(repoKey(task.workingDir))) {
+        this.recordSkipReason(task.id, 'git workspace-prep backoff (repeated failures on this repo)');
+        this.recordWaiting(task.id);
+        return;
+      }
+      if (await this.epicBaseNotReady?.(task)) {
+        if (hasAssignedEpicBase(task)) {
+          const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
+          if (this.clock() - since >= this.missingEpicBaseGraceMs) {
+            await this.taskService.escalate(task.id);
+            this.recordSkipReason(task.id, 'integration branch missing, escalated to human');
+            return;
+          }
+          missingThisPass.set(task.id, since);
+        }
+        this.recordSkipReason(task.id, 'integration branch missing');
+        return;
+      }
+      const key = directContextKey(task);
+      const holder = key ? occupied.get(key) : undefined;
+      if (holder) {
+        this.recordSkipReason(task.id, `Work Context held by task ${holder.id} (${holder.state})`);
+        this.recordWaiting(task.id);
+      }
+    });
+    this.missingEpicBaseSince.clear();
+    await forEachYielding(missingThisPass, ([taskId, since]) => {
+      this.missingEpicBaseSince.set(taskId, since);
+    });
+    await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
+      if (!this.schedulerSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
+    });
   }
 
   /**
@@ -258,7 +384,6 @@ export class AutoRunner {
       this.taskService.orderedEligibleWork(),
     ]);
     const occupied = await occupiedDirectContexts(all);
-    this.contextSkipReasons.clear();
     // Parallel-Epic pick gate (issue #159, git ground-truth #231): a ready Epic
     // member isn't spawnable until its integration branch exists in git and its
     // base is set. The check hits git, so resolve it for the mirrored ready
@@ -293,18 +418,15 @@ export class AutoRunner {
         // so a direct Run and a worktree Run colliding on the same repo share the
         // window. Recorded on the wait-clock so the block is legible to an operator.
       if (this.gitBreaker && !this.gitBreaker.allows(repoKey(t.workingDir))) {
-        this.contextSkipReasons.set(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
-        if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
+        this.recordSkipReason(t.id, 'git workspace-prep backoff (repeated failures on this repo)');
+        this.recordWaiting(t.id);
         return;
       }
       const key = directContextKey(t);
       const holder = key ? occupied.get(key) : undefined;
       if (holder) {
-        this.contextSkipReasons.set(
-          t.id,
-          `Work Context held by task ${holder.id} (${holder.state})`,
-        );
-        if (!this.contextWaitingSince.has(t.id)) this.contextWaitingSince.set(t.id, Date.now());
+        this.recordSkipReason(t.id, `Work Context held by task ${holder.id} (${holder.state})`);
+        this.recordWaiting(t.id);
         return;
       }
       picked = t;
@@ -313,7 +435,7 @@ export class AutoRunner {
     // blocker cleared — resets its wait clock rather than carrying a stale
     // start time into a later, unrelated block.
     await forEachYielding(this.contextWaitingSince.keys(), (taskId) => {
-      if (!this.contextSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
+      if (!this.schedulerSkipReasons.has(taskId)) this.contextWaitingSince.delete(taskId);
     });
     return picked;
   }

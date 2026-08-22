@@ -6,6 +6,8 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig, type AppConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AutoRunner, type MirrorClaim } from '../src/execution/auto-runner.js';
+import { GitCircuitBreaker } from '../src/execution/git-failure.js';
+import { repoKey } from '../src/execution/repo-lock.js';
 import type { RunStore } from '../src/domain/runs.js';
 import type { Runner } from '../src/execution/runner.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
@@ -216,6 +218,123 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   });
 });
 
+describe('AutoRunner — skip reasons and unresolvable integration bases (issue #238)', () => {
+  let dir: string;
+  let asyncDb: AsyncDbHandle;
+  let tasks: TaskService;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-arun-skips-'));
+    asyncDb = await openAsyncDb(dir);
+    tasks = new TaskService(
+      asyncDb,
+      () => ({ ...defaultConfig(), defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' } }),
+      allWorkspaces(asyncDb),
+    );
+  });
+  afterEach(async () => {
+    await asyncDb.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('clears capacity and an expired git-backoff reason, then starts the Task', async () => {
+    const task = await tasks.create({ prompt: 'wait for a slot' });
+    const started: number[] = [];
+    let running = 1;
+    let now = 0;
+    const breaker = new GitCircuitBreaker({ threshold: 3, baseMs: 10_000, maxMs: 10_000 }, () => now);
+    breaker.recordFailure(repoKey(task.workingDir));
+    const runner = {
+      launchClaimed: async (id: number) => {
+        started.push(id);
+        running += 1;
+      },
+    };
+    const runStore = {
+      countRunning: async () => running,
+      countRunningByWorkspace: async () => new Map<number, number>(),
+    };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), { gitBreaker: breaker });
+
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toBe('at capacity'));
+    expect(started).toEqual([]);
+
+    running = 0;
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toContain('git workspace-prep backoff'));
+    expect(started).toEqual([]);
+
+    now = 10_000;
+    autoRunner.poke();
+    await vi.waitFor(() => expect(started).toEqual([task.id]));
+    expect(autoRunner.skipReasonFor(task.id)).toBeUndefined();
+  });
+
+  it('escalates an Epic member only after its assigned integration branch stays missing past the reconciliation grace window', async () => {
+    const task = await tasks.upsertMirrored(mirroredAfk(208));
+    await tasks.setBaseBranch(task.id, 'epic/208');
+    const started: number[] = [];
+    const runner = { launchClaimed: async (id: number) => started.push(id) };
+    const runStore = {
+      countRunning: async () => started.length,
+      countRunningByWorkspace: async () => new Map<number, number>(),
+    };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    let now = 0;
+    const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), {
+      epicBaseNotReady: (candidate) => candidate.baseBranch === 'epic/208',
+      missingEpicBaseGraceMs: 100,
+      clock: () => now,
+    });
+
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toBe('integration branch missing'));
+    expect(started).toEqual([]);
+
+    // The next scheduler pass still permits tracker reconciliation to re-cut
+    // the branch. An absent branch alone is not proof that it cannot recover.
+    autoRunner.poke();
+    await vi.waitFor(async () => expect((await tasks.get(task.id)).escalated).toBe(false));
+
+    now = 100;
+    autoRunner.poke();
+    await vi.waitFor(async () => expect(await tasks.get(task.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true }));
+    expect(autoRunner.skipReasonFor(task.id)).toBe('hitl, escalated to human');
+    expect(started).toEqual([]);
+  });
+
+  it('clears a missing integration-branch reason when the branch reappears inside the grace window', async () => {
+    const task = await tasks.upsertMirrored(mirroredAfk(209));
+    await tasks.setBaseBranch(task.id, 'epic/209');
+    const started: number[] = [];
+    let now = 0;
+    let missing = true;
+    const runner = { launchClaimed: async (id: number) => started.push(id) };
+    const runStore = {
+      countRunning: async () => started.length,
+      countRunningByWorkspace: async () => new Map<number, number>(),
+    };
+    const config: AppConfig = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const autoRunner = new AutoRunner(tasks, runStore, runner, () => config, allWorkspaces(asyncDb), {
+      epicBaseNotReady: (candidate) => missing && candidate.baseBranch === 'epic/209',
+      missingEpicBaseGraceMs: 100,
+      clock: () => now,
+    });
+
+    autoRunner.poke();
+    await vi.waitFor(() => expect(autoRunner.skipReasonFor(task.id)).toBe('integration branch missing'));
+
+    now = 99;
+    missing = false;
+    autoRunner.poke();
+    await vi.waitFor(() => expect(started).toEqual([task.id]));
+    expect(autoRunner.skipReasonFor(task.id)).toBeUndefined();
+    expect((await tasks.get(task.id)).escalated).toBe(false);
+  });
+});
+
 /**
  * The Work Context House Rule pick predicate (ADR-0022, issue #120): the
  * Auto-Runner skips a ready afk Task whose direct-mode Work Context is already
@@ -355,7 +474,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     expect(ar.waitingSince(blocked.id)).toBe(startedWaiting);
 
     // The occupant frees the context — a later pass admits `blocked`, and its
-    // clock is cleared (it's no longer in `contextSkipReasons`).
+    // clock is cleared when the scheduler reason is gone.
     await tasks.setState(occupant.id, 'completed');
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(blocked.id));

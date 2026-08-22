@@ -25,4 +25,16 @@ describe('parseSkipReasonTaskRef', () => {
     // Same "held by" shape but no `<id>` to link — must not false-match.
     expect(parseSkipReasonTaskRef('Work Context held by another run')).toBeNull();
   });
+
+  it.each([
+    'At capacity',
+    'Integration branch missing',
+    'Git backoff',
+    'Workspace disabled',
+    'HITL',
+  ])('leaves non-lease scheduler reasons as plain text', (reason) => {
+    // Issue #238 expands the API beyond Work Context leases. These reasons
+    // have no Task to link, but the Ticket and Deck still render their text.
+    expect(parseSkipReasonTaskRef(reason)).toBeNull();
+  });
 });
