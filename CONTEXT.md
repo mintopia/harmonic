@@ -575,6 +575,25 @@ non-trivial* — a discrete action that can fail — so high-frequency internal 
 open no span.
 _Avoid_: job, action (too vague), event (that is a Run Event / run_fact), task
 
+**Scheduled Job**:
+A recurring piece of Harmonic's own housekeeping that runs on a fixed cadence —
+the Tracker poll, the Session-retirement drain, orphan-worktree reconcile, the
+Work Context lease sweep, the review-SLA sweep, epic reconcile. The persistent
+*schedule* (interval, last run, last result, next run) that **fires an Operation
+each tick** — a cron entry to the Operation's invocation. A single **Scheduler**
+owns every Job's timer, single-flight and yield-aware; membership uses the same
+"discrete, can-fail, worth-a-name" bar as an Operation, so sub-second internal
+ticks are excluded. The **Tracker poll is modelled per-Workspace** — one Job
+instance per Workspace, added/removed with the Workspace and shown *disabled*
+when its Tracker will not resolve. Surfaced **read-only** on the Operations page
+(Sonarr-style: interval / last run / next run / result). Unlike an Operation its
+schedule state is **persisted**, so "last ran" survives the restarts under which
+the ephemeral span surface resets. Governed by ADR-0038.
+_Avoid_: routine, cron job (rejected names for this concept), task (a Scheduled
+Job is Harmonic's housekeeping, never a unit of agent work). Note: "job" is
+otherwise avoided (see Task, Operation) — **Scheduled Job** is the one sanctioned
+compound.
+
 ### Interfaces
 
 **Activity**:
