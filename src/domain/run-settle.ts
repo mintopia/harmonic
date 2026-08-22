@@ -124,7 +124,7 @@ export class RunSettleCoordinator {
     // matching today's semantics — a losing straggler never decorates the row
     // another disposition won. `phase: 'terminal'` marks the Run settled: it has
     // left every in-flight/parked phase (issue #114).
-    await this.runStore.update(run.id, {
+    await this.runStore.updateWithFrozenCost(run.id, {
       ...patch,
       state: winner.runState,
       phase: 'terminal',

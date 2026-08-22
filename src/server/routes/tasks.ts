@@ -886,7 +886,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         .filter((u): u is RunUsage => u !== null);
       return {
         ...(mergeUsage(usages) ?? { models: {}, totals: null, toolCalls: {}, source: null }),
-        cost: costOfRuns(ctx, runs),
+        cost: costOfRuns(runs),
         runCount: usages.length,
       };
     },

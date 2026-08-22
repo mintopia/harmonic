@@ -2,7 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { runs } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 import { costOfUsages, DEFAULT_PRICES, resolvePrices } from '../src/execution/pricing.js';
 import type { ModelUsage, RunUsage } from '../src/execution/usage.js';
@@ -152,21 +154,43 @@ describe('cost surfaces (API)', () => {
 
   const flatPrice = (input: number) => ({ input, output: 0, cacheRead: 0, cacheWrite: 0 });
 
-  it('run detail carries cost with the per-model split; config price changes apply retroactively', async () => {
+  it('run detail keeps the cost frozen when the configured price changes', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
     server = await serverWithLoggedUsage(
       { [workDir]: { modelA: 1_000_000 } },
       { modelA: flatPrice(2) },
     );
-    const { runId } = await runToDone(workDir);
+    const { taskId, runId } = await runToDone(workDir);
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
 
-    // Cost is derived on read: repricing rewrites history.
+    // A price change only applies to future Runs. This finished Run keeps the
+    // price table captured when it settled.
     await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
     const repriced = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(repriced.cost.totalUsd).toBe(4);
+    expect(repriced.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.cost.totalUsd).toBe(2);
+    expect((await server.api('GET', `/api/tasks/${taskId}/usage`)).body.cost.totalUsd).toBe(2);
+    expect((await server.api('GET', `/api/stats?from=0&to=${Date.now() + 1_000}`)).body.cost.totalUsd).toBe(2);
+  });
+
+  it('backfills a legacy settled run once, then keeps that result frozen', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
+    const overrides = { modelA: flatPrice(2) };
+    server = await serverWithLoggedUsage({ [workDir]: { modelA: 1_000_000 } }, overrides);
+    const { runId } = await runToDone(workDir);
+
+    await server.app.ctx.asyncDb.write((db) =>
+      db.update(runs).set({ cost: null, priceTable: JSON.stringify({ modelA: flatPrice(3) }) }).where(eq(runs.id, runId)).run(),
+    );
+    const dataDir = server.dataDir;
+    await server.app.close();
+    server = await startServer({ ...stubHarness(), prices: overrides }, { dataDir });
+
+    expect((await server.api('GET', `/api/runs/${runId}`)).body.cost.totalUsd).toBe(2);
+    await server.api('PATCH', '/api/config', { prices: { modelA: flatPrice(4) } });
+    expect((await server.api('GET', `/api/runs/${runId}`)).body.cost.totalUsd).toBe(2);
   });
 
   it('task usage endpoint sums cost over ALL runs, failed attempts included', async () => {
@@ -208,7 +232,7 @@ describe('cost surfaces (API)', () => {
     expect(asc.map((t: any) => t.id)).toEqual([none.body.id, cheap.taskId, dear.taskId]);
   });
 
-  it('backfills a missing per-model split at boot, preserving ACP totals (log-flush race healing)', async () => {
+  it('backfills a missing per-model split at boot without repricing the frozen cost', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'harmonic-cost-work-'));
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-cost-logs-'));
     const overrides = stubHarness() as DeepPartial<AppConfig> & {
@@ -250,7 +274,7 @@ describe('cost surfaces (API)', () => {
     expect(healed.usage.models.modelA.inputTokens).toBe(1_000_000);
     expect(healed.usage.totals.totalTokens).toBe(3); // ACP totals preserved
     expect(healed.usage.source).toBe('combined');
-    expect(healed.cost).toEqual({ totalUsd: 2, byModel: { modelA: 2 }, incomplete: false });
+    expect(healed.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });
   });
 
   it('stats carry period cost, per-model cost, and the incomplete flag for unpriced models', async () => {

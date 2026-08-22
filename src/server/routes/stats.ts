@@ -310,13 +310,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // buildDaySeries re-parses/re-merges each bucket's usage rather than
       // reusing the range-wide merge above — a deliberate cost of keeping it a
       // pure, ctx-free seam (pricing is injected); the per-bucket work is small.
-      const series = buildDaySeries(rows, (dayRows) => costOfRuns(ctx, dayRows));
+      const series = buildDaySeries(rows, costOfRuns);
 
       // A day with runs but no priceable usage shows as unpriceable (null) in
       // the series. A range total that spans such a day is a floor, not an
       // exact figure — keep the headline Cost honest with the chart's "at
       // least" so the visible total and the accessible label agree (issue #92).
-      const cost = costOfRuns(ctx, rows);
+      const cost = costOfRuns(rows);
       const flooredCost =
         cost && !cost.incomplete && series.some((s) => s.totalUsd === null) ? { ...cost, incomplete: true } : cost;
 
