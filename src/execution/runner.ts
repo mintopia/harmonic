@@ -34,7 +34,7 @@ import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domai
 import { RunFactStore } from '../domain/run-facts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
-import { RunSettleCoordinator } from '../domain/run-settle.js';
+import { RunSettleCoordinator, type RunBranchRetirementHook } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
@@ -232,6 +232,8 @@ export interface RunnerOptions {
    * (pre-#148 behaviour); the worktree teardown then falls back to
    * `finalizeWorkspace` for a Run with no Session. */
   sessionRetirement?: SessionRetirementHook;
+  /** Best-effort retirement of a terminal Run's now-redundant candidate ref. */
+  branchRetirement?: RunBranchRetirementHook;
   /** The single-writer merge train (issue #163): the ONE process-global
    * {@link MergeTrainCoordinator} an Epic member's Run lands through, in place of
    * the direct auto-merge path. Absent → members fall back to the plain
@@ -584,6 +586,7 @@ export class Runner {
       (run) => this.events.onRunFinished?.(run),
       new LandingJournalStore(this.asyncDb),
       options.sessionRetirement,
+      options.branchRetirement,
     );
     this.tailer = new LiveUsageTailer(
       {

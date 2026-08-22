@@ -9,6 +9,10 @@ import { projectSettle, type CoordinatorFact, type SettleProjection, type Settle
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
 
+export interface RunBranchRetirementHook {
+  onRunSettled(task: TaskRow, run: RunRow): Promise<void>;
+}
+
 /**
  * The single terminal-disposition coordinator (issue #113, generalised for the
  * phase machine in #114; reliability-design §0.3). Every way a Run reaches a
@@ -48,6 +52,7 @@ export class RunSettleCoordinator {
     private readonly onRunFinished?: (run: RunRow) => void,
     private readonly landingJournal?: LandingJournalStore,
     private readonly sessionRetirement?: SessionRetirementHook,
+    private readonly branchRetirement?: RunBranchRetirementHook,
   ) {}
 
   /**
@@ -144,6 +149,11 @@ export class RunSettleCoordinator {
       await this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner, patch));
     } catch {
       // best-effort; the boot/periodic drain reconciles from the Session row
+    }
+    try {
+      await this.branchRetirement?.onRunSettled(task, finished);
+    } catch {
+      // Best-effort. A later boot reconciliation retries branch retirement.
     }
     await this.applySettleTaskAction(task.id, winner.taskAction);
     this.onRunFinished?.(finished);

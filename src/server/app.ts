@@ -30,6 +30,7 @@ import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
 import { Git } from '../execution/git.js';
+import { BranchRetirementCoordinator } from '../execution/branch-retirement.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
@@ -205,6 +206,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
   );
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
+  const branchRetirement = new BranchRetirementCoordinator(runs, tasks);
   const landingJournal = new LandingJournalStore(asyncDb);
   const reviewSettle = new RunSettleCoordinator(
     runs,
@@ -214,10 +216,12 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (run) => bus.emit('run_changed', run),
     landingJournal,
     sessionRetirement,
+    branchRetirement,
   );
   const landing = new LandingCoordinator(runs, asyncDb, landingJournal, reviewSettle);
   const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, leases, reviewSettle, landing, landingJournal, new TurnQueueStore(asyncDb));
   await crashRecovery.reconcile();
+  await branchRetirement.reconcile();
   for (const orphan of await tasks.list({ state: 'running' })) {
     if ((await runs.listForTask(orphan.id)).some((run) => run.state === 'running')) continue;
     await tasks.setState(orphan.id, 'failed');

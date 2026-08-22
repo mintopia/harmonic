@@ -36,6 +36,8 @@ export interface EpicGit {
   branchExists(dir: string, name: string): Promise<boolean>;
   createBranch(dir: string, name: string, startPoint: string): Promise<unknown>;
   deleteBranch(dir: string, name: string): Promise<unknown>;
+  branchCheckedOutAt(dir: string, branch: string): Promise<string | null>;
+  isAncestor(dir: string, baseBranch: string, branch: string): Promise<boolean>;
 }
 
 /**
@@ -284,7 +286,11 @@ export class EpicIntegrationCoordinator {
    */
   async retireIntegrationBranch(epicRef: number): Promise<void> {
     const branch = integrationBranchName(epicRef);
+    const retainedBranch = await this.git.symbolicBranch(this.workingDir);
+    if (retainedBranch === null) return;
     if (!(await this.git.branchExists(this.workingDir, branch))) return;
+    if ((await this.git.branchCheckedOutAt(this.workingDir, branch)) !== null) return;
+    if (!(await this.git.isAncestor(this.workingDir, retainedBranch, branch))) return;
     await this.git.deleteBranch(this.workingDir, branch);
   }
 }

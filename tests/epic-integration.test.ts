@@ -41,6 +41,8 @@ class FakeGit implements EpicGit {
   readonly branches: Set<string>;
   readonly created: string[] = [];
   readonly deleted: string[] = [];
+  readonly checkedOut = new Set<string>();
+  readonly contained = new Set<string>();
   symbolicBranchCalls = 0;
   constructor(
     existing: string[] = [],
@@ -48,6 +50,7 @@ class FakeGit implements EpicGit {
     private readonly defaultBranch: string | null = 'develop',
   ) {
     this.branches = new Set(existing);
+    for (const branch of existing) this.contained.add(branch);
   }
   async symbolicBranch(): Promise<string | null> {
     this.symbolicBranchCalls++;
@@ -66,6 +69,12 @@ class FakeGit implements EpicGit {
     this.branches.delete(name);
     this.deleted.push(name);
     return undefined;
+  }
+  async branchCheckedOutAt(_dir: string, branch: string): Promise<string | null> {
+    return this.checkedOut.has(branch) ? '/worktree/active' : null;
+  }
+  async isAncestor(_dir: string, _baseBranch: string, branch: string): Promise<boolean> {
+    return this.contained.has(branch);
   }
 }
 
@@ -450,6 +459,20 @@ describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () =
 
     await coord.retireIntegrationBranch(10); // already gone ⇒ no-op
     expect(git.deleted).toEqual(['epic/10']);
+  });
+
+  it('keeps an uncontained or checked-out integration branch', async () => {
+    const git = new FakeGit(['epic/10']);
+    git.contained.delete('epic/10');
+    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+
+    await coord.retireIntegrationBranch(10);
+    expect(git.deleted).toEqual([]);
+
+    git.contained.add('epic/10');
+    git.checkedOut.add('epic/10');
+    await coord.retireIntegrationBranch(10);
+    expect(git.deleted).toEqual([]);
   });
 });
 
