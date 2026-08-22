@@ -33,7 +33,7 @@ function Chevron({ open }: { open: boolean }) {
  * always present, so color is a redundant second cue, never the only one. */
 const METHOD_STYLES: Record<string, string> = {
   GET: 'bg-raised text-muted',
-  POST: 'bg-accept-tint text-accept',
+  POST: 'bg-raised text-ink',
   PUT: 'bg-running-tint text-running',
   PATCH: 'bg-running-tint text-running',
   DELETE: 'bg-fail-tint text-fail',
@@ -58,7 +58,7 @@ function MethodPill({ method }: { method: string }) {
  * 2xx accepted (green), 4xx/5xx failed (red), everything else neutral. */
 function statusStyle(status: string): string {
   const lead = status[0];
-  if (lead === '2') return 'bg-accept-tint text-accept';
+  if (lead === '2') return 'bg-raised text-ink';
   if (lead === '4' || lead === '5') return 'bg-fail-tint text-fail';
   return 'bg-raised text-ink';
 }

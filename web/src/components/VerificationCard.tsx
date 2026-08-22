@@ -7,7 +7,7 @@ import type { IconName } from './Icon';
 
 /**
  * Verdict/outcome → tint+text tone (issue #169, part of #109). There is no
- * dedicated "pass/ok" semantic token in `index.css` — `--hm-accept` ("completed
+ * dedicated "pass/ok" semantic token in `index.css` — `--hm-merged` ("merged
  * / accepted") is the closest existing positive-outcome token, already reused
  * elsewhere for a favourable state (`STATE_CHIP_STYLES.completed` in ui.ts), so
  * a `pass` verdict / `proceed` outcome takes it here rather than inventing a
@@ -19,13 +19,13 @@ import type { IconName } from './Icon';
  * event, handed to a human.
  */
 const VERDICT_TONE: Record<Verdict, string> = {
-  pass: 'bg-accept-tint text-accept',
+  pass: 'bg-merged-tint text-merged',
   fail: 'bg-fail-tint text-fail',
   inconclusive: 'bg-running-tint text-running',
 };
 
 const OUTCOME_TONE: Record<VerificationOutcome, string> = {
-  proceed: 'bg-accept-tint text-accept',
+  proceed: 'bg-merged-tint text-merged',
   block: 'bg-fail-tint text-fail',
   escalate: 'bg-running-tint text-running',
 };

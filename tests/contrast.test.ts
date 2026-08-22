@@ -80,7 +80,7 @@ function hex(tokens: Record<string, string>, name: string): string {
 const TEXT_ON_TINT: ReadonlyArray<readonly [string, string, string]> = [
   ['ready', 'ready', 'ready-tint'],
   ['await', 'await', 'await-tint'],
-  ['merged', 'accept', 'accept-tint'],
+  ['merged', 'merged', 'merged-tint'],
   ['failed', 'fail', 'fail-tint'],
   ['blocked', 'muted', 'blocked-tint'],
   ['tool', 'tool', 'tool-tint'],
@@ -121,6 +121,19 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
     }
   });
 
+  it('uses the merged token family, not the retired accept family', () => {
+    for (const tokens of [light, darkExplicit, darkSystem]) {
+      expect(tokens.accept).toBeUndefined();
+      expect(tokens['accept-dot']).toBeUndefined();
+      expect(tokens['accept-tint']).toBeUndefined();
+      expect(tokens.merged).toBeDefined();
+      expect(tokens['merged-dot']).toBeDefined();
+      expect(tokens['merged-tint']).toBeDefined();
+    }
+    expect(CSS).not.toContain('--color-accept:');
+    expect(CSS).toContain('--color-merged: var(--hm-merged);');
+  });
+
   for (const [themeName, t] of Object.entries(themes)) {
     describe(themeName, () => {
       for (const [label, fg, bg] of TEXT_ON_TINT) {
@@ -143,7 +156,7 @@ describe('Paper palette meets WCAG AA in both themes (issue #260)', () => {
       // light, dark ink in dark. DESIGN.md §2 calls this the Ink-Flip Rule.
       for (const [label, fg, bg] of [
         ['await', 'on-await', 'await'],
-        ['merged', 'on-done', 'accept'],
+        ['merged', 'on-done', 'merged'],
       ] as const) {
         it(`${label} solid-fill ink ≥ ${TEXT_FLOOR}:1`, () => {
           expect(contrast(hex(t, fg), hex(t, bg))).toBeGreaterThanOrEqual(TEXT_FLOOR);

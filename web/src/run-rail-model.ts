@@ -15,9 +15,9 @@ import { formatCost } from './cost.js';
  */
 
 /** The state-signal family a run's dot/word draws from (DESIGN.md § Signal
- * Rule). `review` is the cobalt gate colour (a run parked at the human gate);
+ * Rule). `review` is the indigo gate colour (a run parked at the human gate);
  * `neutral` is the un-coloured register (cancelled). */
-export type RunDot = 'running' | 'fail' | 'accept' | 'review' | 'neutral';
+export type RunDot = 'running' | 'fail' | 'merged' | 'review' | 'neutral';
 
 /** How a single run reads at a glance: its disposition word, the signal dot
  * that word rides, and whether the dot pulses (only live, unparked work). */
@@ -36,7 +36,7 @@ export interface RunDisplay {
  * colour rather than as amber work-in-flight. Pure.
  */
 export function runDisplay(run: Run): RunDisplay {
-  if (run.review === 'accepted') return { word: 'accepted', dot: 'accept', pulse: false };
+  if (run.review === 'accepted') return { word: 'merged', dot: 'merged', pulse: false };
   if (run.review === 'rejected') return { word: 'rejected', dot: 'fail', pulse: false };
   switch (run.state) {
     case 'failed':
@@ -44,14 +44,16 @@ export function runDisplay(run: Run): RunDisplay {
     case 'cancelled':
       return { word: 'cancelled', dot: 'neutral', pulse: false };
     case 'completed':
-      // Landed/settled without an explicit review flag (e.g. an afk auto-merge
+      // Merged/settled without an explicit review flag (e.g. an afk auto-merge
       // or an operator Complete) — reads as done, not amber.
-      return { word: 'completed', dot: 'accept', pulse: false };
+      return { word: 'merged', dot: 'merged', pulse: false };
     case 'running':
       if (run.phase === 'review') return { word: 'awaiting', dot: 'review', pulse: false };
-      // executing | validating | verifying | landing carry their phase word;
+      // executing | validating | verifying carry their phase word; `landing`
+      // displays as the operator-facing "merging" label.
       // a pre-feature run with no phase reads the generic 'running'.
-      return { word: run.phase && run.phase !== 'terminal' ? run.phase : 'running', dot: 'running', pulse: true };
+      const word = run.phase === 'landing' ? 'merging' : run.phase && run.phase !== 'terminal' ? run.phase : 'running';
+      return { word, dot: 'running', pulse: true };
   }
 }
 

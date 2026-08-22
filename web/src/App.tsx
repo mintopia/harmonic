@@ -772,7 +772,7 @@ export function App() {
 
         {showReviewHint && (
           <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
-            <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-accent" />
+            <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-await-dot" />
             <p className="flex-1 text-muted">
               A task is ready for review. Open it to read the changes, then{' '}
               <span className="font-semibold text-ink">Accept</span> to merge or{' '}

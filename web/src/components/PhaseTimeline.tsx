@@ -8,27 +8,29 @@ const PHASE_LABELS: Record<PhaseStep['phase'], string> = {
   validating: 'Validating',
   verifying: 'Verifying',
   review: 'Review',
-  landing: 'Landing',
+  landing: 'Merging',
   terminal: 'Done',
 };
 
-function dotClass(status: PhaseStep['status']): string {
-  if (status === 'current') return 'bg-accent motion-safe:animate-pulse';
-  if (status === 'done') return 'bg-accent';
+function dotClass(step: PhaseStep): string {
+  if (step.status === 'current') {
+    return step.phase === 'review' ? 'bg-await-dot' : 'bg-accent motion-safe:animate-pulse';
+  }
+  if (step.status === 'done') return 'bg-accent';
   // 'gap' is hollow, not filled — the run passed through, but no event
   // proves it, so the dot only outlines the pending-phase slot rather than
   // filling it (issue #176). Deliberately not a new color: the same faint
   // ring pending already uses, just drawn as a ring instead of a fill.
-  if (status === 'gap') return 'bg-transparent ring-1 ring-inset ring-faint';
+  if (step.status === 'gap') return 'bg-transparent ring-1 ring-inset ring-faint';
   return 'bg-faint';
 }
 
-function textClass(status: PhaseStep['status']): string {
-  if (status === 'current') return 'text-accent';
-  if (status === 'done') return 'text-muted';
+function textClass(step: PhaseStep): string {
+  if (step.status === 'current') return step.phase === 'review' ? 'text-await' : 'text-accent';
+  if (step.status === 'done') return 'text-muted';
   // 'gap' reads a touch stronger than 'pending' (text-faint) — it's a note
   // about missing data, not silence, but still no alarm color (issue #176).
-  if (status === 'gap') return 'text-muted';
+  if (step.status === 'gap') return 'text-muted';
   return 'text-faint';
 }
 
@@ -59,8 +61,8 @@ export function PhaseTimeline({ steps }: { steps: PhaseStep[] }) {
     <ol aria-label="Run phase timeline" className="flex flex-wrap items-center gap-x-1 gap-y-1">
       {steps.map((step, i) => (
         <li key={step.phase} className="flex items-center gap-1">
-          <span aria-hidden className={`size-[7px] shrink-0 rounded-full ${dotClass(step.status)}`} />
-          <span title={titleFor(step)} className={`${labelType} ${textClass(step.status)}`}>
+          <span aria-hidden className={`size-[7px] shrink-0 rounded-full ${dotClass(step)}`} />
+          <span title={titleFor(step)} className={`${labelType} ${textClass(step)}`}>
             {PHASE_LABELS[step.phase]}
           </span>
           {/* A duration is a figure, not code — sans + tabular-nums, never the

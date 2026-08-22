@@ -698,7 +698,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
         <Stat
           label="Needs you"
           value={String(summary.needsYouCount)}
-          tone={summary.needsYouCount > 0 ? 'text-accent' : 'text-muted'}
+          tone={summary.needsYouCount > 0 ? 'text-await' : 'text-muted'}
         />
         <Stat label="Cost" value={formatCost(summary.cost) ?? '—'} tone={summary.cost ? 'text-ink' : 'text-muted'} />
         <Stat label="Fleet tok/s" value={`${compact.format(Math.round(summary.tokensPerSecond))}`} />
@@ -783,7 +783,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                       "Needs you" band leads whatever the sort, so escalations never scroll away.
                       aria-hidden: the row-group's aria-label already carries label + count. */}
                   <div aria-hidden="true" className="flex items-center gap-2 bg-raised/40 px-4 py-1.5">
-                    <span className={`${labelType} ${section.pinned ? 'text-accent' : 'text-muted'}`}>{section.label}</span>
+                    <span className={`${labelType} ${section.pinned ? 'text-await' : 'text-muted'}`}>{section.label}</span>
                     <span className="text-label tabular-nums text-muted">{section.rows.length}</span>
                   </div>
                   {section.rows.map((p) => {

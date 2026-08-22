@@ -102,7 +102,7 @@ export function SecuritySection() {
         {!configured && (
           <p className="text-small text-muted">No password set — this console is ungated. Set one to require login.</p>
         )}
-        {confirmed && <p className="text-accept">Password changed.</p>}
+        {confirmed && <p className="text-muted">Password changed.</p>}
         {error && <p className="text-fail">{error}</p>}
       </div>
     </form>

@@ -134,6 +134,12 @@ function cssVarsOf(cls: string): string[] {
 }
 
 describe('ui.ts primitives (issue #180)', () => {
+  it('reserves indigo await tokens for awaiting review', () => {
+    expect(ui.STATE_CHIP_STYLES['awaiting-review']).toBe('bg-await-tint text-await');
+    expect(ui.laneBorder('awaiting-review')).toBe('border-await');
+    expect(ui.laneDot('awaiting-review')).toBe('bg-await-dot');
+  });
+
   it('every --hm-* token is defined in both themes', () => {
     expect([...lightTokens].sort()).toEqual([...darkTokens].sort());
   });

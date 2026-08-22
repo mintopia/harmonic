@@ -73,7 +73,7 @@ function EpicBandHeader({
       <span className="truncate font-semibold text-ink">{epic.title}</span>
       <span className="font-data text-small text-faint">epic/{epic.ref}</span>
       <span className="text-small tabular-nums text-muted">
-        {epic.foldedCount}/{epic.memberCount} folded
+        {epic.foldedCount}/{epic.memberCount} merged
       </span>
       <div className="flex-1" />
       {onForceLandEpic && (

@@ -194,7 +194,7 @@ export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
   'awaiting-review': 'bg-await-tint text-await',
-  completed: 'bg-accept-tint text-accept',
+  completed: 'bg-merged-tint text-merged',
   failed: 'bg-fail-tint text-fail',
   cancelled: 'bg-raised text-muted',
 };
@@ -228,7 +228,7 @@ const STATE_COUNT_COLORS: Record<TaskState, string> = {
   ready: 'text-ready',
   running: 'text-running',
   'awaiting-review': 'text-await',
-  completed: 'text-accept',
+  completed: 'text-merged',
   failed: 'text-fail',
   cancelled: 'text-muted',
 };
@@ -244,7 +244,7 @@ const STATE_COUNT_PILLS: Partial<Record<TaskState, string>> = {
   ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
   'awaiting-review': 'bg-await-tint text-await',
-  completed: 'bg-accept-tint text-accept',
+  completed: 'bg-merged-tint text-merged',
   failed: 'bg-fail-tint text-fail',
 };
 
@@ -266,7 +266,7 @@ const LANE_BORDER: Record<TaskState, string> = {
   ready: 'border-ready-dot',
   running: 'border-running-dot',
   'awaiting-review': 'border-await',
-  completed: 'border-accept-dot',
+  completed: 'border-merged-dot',
   failed: 'border-fail-dot',
   cancelled: 'border-faint',
 };
@@ -276,7 +276,7 @@ const LANE_DOT: Record<TaskState, string> = {
   ready: 'bg-ready-dot',
   running: 'bg-running-dot',
   'awaiting-review': 'bg-await-dot',
-  completed: 'bg-accept-dot',
+  completed: 'bg-merged-dot',
   failed: 'bg-fail-dot',
   cancelled: 'bg-faint',
 };
@@ -338,7 +338,7 @@ export function stateDot(state: TaskState): string {
 export const runDotFill: Record<RunDot, string> = {
   running: 'bg-running-dot',
   fail: 'bg-fail-dot',
-  accept: 'bg-accept-dot',
+  merged: 'bg-merged-dot',
   review: 'bg-await-dot',
   neutral: 'bg-edge',
 };
@@ -356,7 +356,7 @@ export const runChipActive =
  * current step a cobalt node, a pending step a hollow Edge node, a failed step a
  * rose ✗ node (a failed Run stops there). */
 export const PHASE_NODE_STYLES = {
-  done: 'border-transparent bg-accept-tint text-accept',
+  done: 'border-transparent bg-merged-tint text-merged',
   current: 'border-transparent bg-accent text-on-accent',
   pending: 'border-edge text-faint',
   failed: 'border-transparent bg-fail-tint text-fail',
@@ -367,7 +367,7 @@ export type PhaseNodeVisual = keyof typeof PHASE_NODE_STYLES;
  * proceed emerald / block·escalate rose / not-reached faint — a fail-safe read
  * (inconclusive → escalate) never renders as a silent pass. */
 export const VERIFICATION_OUTCOME_COLORS = {
-  proceed: 'text-accept',
+  proceed: 'text-merged',
   fail: 'text-fail',
   'not-reached': 'text-faint',
 } as const;

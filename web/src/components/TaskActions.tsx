@@ -46,7 +46,7 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
   return (
     <button
       ref={ref}
-      className={armed ? 'font-semibold text-accept transition-colors duration-150' : className}
+      className={armed ? 'font-semibold text-ink transition-colors duration-150' : className}
       onClick={trigger}
     >
       {armed ? 'Sure?' : 'Complete'}
@@ -205,7 +205,7 @@ export function TaskActions({
   // stays a glance (issue #94).
   const isReviewGate = variant === 'footer' && task.state === 'awaiting-review';
   const container = isReviewGate
-    ? 'flex flex-wrap items-center gap-2.5 border-t border-accent bg-raised px-4 py-3'
+    ? 'flex flex-wrap items-center gap-2.5 border-t border-await bg-raised px-4 py-3'
     : variant === 'footer'
       ? 'flex flex-wrap items-center justify-end gap-2.5 border-t border-hairline px-4 py-3'
       : 'flex flex-wrap items-center justify-end gap-2.5';

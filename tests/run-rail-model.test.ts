@@ -41,10 +41,10 @@ function run(over: Partial<Run> = {}): Run {
 
 describe('runDisplay', () => {
   it('reads a settled review verdict before the run state', () => {
-    // Accepted/rejected win over the phase machine's end — the run is settled.
+    // A merged/rejected verdict wins over the phase machine's end — the run is settled.
     expect(runDisplay(run({ review: 'accepted', state: 'completed', phase: 'landing' }))).toEqual({
-      word: 'accepted',
-      dot: 'accept',
+      word: 'merged',
+      dot: 'merged',
       pulse: false,
     });
     expect(runDisplay(run({ review: 'rejected', state: 'running', phase: 'review' }))).toEqual({
@@ -82,7 +82,7 @@ describe('runDisplay', () => {
       pulse: true,
     });
     expect(runDisplay(run({ state: 'running', phase: 'landing' }))).toEqual({
-      word: 'landing',
+      word: 'merging',
       dot: 'running',
       pulse: true,
     });
@@ -100,8 +100,8 @@ describe('runDisplay', () => {
 
   it('reads a completed run without a review flag as done', () => {
     expect(runDisplay(run({ state: 'completed', review: null, phase: 'landing' }))).toEqual({
-      word: 'completed',
-      dot: 'accept',
+      word: 'merged',
+      dot: 'merged',
       pulse: false,
     });
   });

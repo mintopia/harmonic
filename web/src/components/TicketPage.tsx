@@ -467,7 +467,7 @@ function DependsOnFact({ task }: { task: Task }) {
           {task.dependsOn.map((depId) => {
             const satisfied = allTasks.find((t) => t.id === depId)?.state === 'completed';
             return (
-              <span key={depId} className={`inline-flex items-center gap-1 ${satisfied ? 'text-accept' : ''}`}>
+              <span key={depId} className={`inline-flex items-center gap-1 ${satisfied ? 'text-merged' : ''}`}>
                 {satisfied && <Icon name="check" className="size-3" />}
                 {depId}
               </span>

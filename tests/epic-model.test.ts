@@ -245,7 +245,7 @@ describe('epicByTaskId', () => {
 
 describe('landOutcomeBanner', () => {
   const cases: { outcome: EpicLandOutcome; tone: string; contains: string[] }[] = [
-    { outcome: { status: 'landed', oid: 'abc123' }, tone: 'ok', contains: ['Landed', 'abc123'] },
+    { outcome: { status: 'landed', oid: 'abc123' }, tone: 'ok', contains: ['Merged', 'abc123'] },
     { outcome: { status: 'noop', reason: 'no integration branch' }, tone: 'info', contains: ['no integration branch'] },
     {
       outcome: { status: 'waiting', reason: 'default branch busy' },

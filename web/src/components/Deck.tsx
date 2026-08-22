@@ -253,7 +253,7 @@ function Section({
  * lives here"): landed emerald / running amber / blocking rose / pending
  * neutral; a heal in progress pulses (the one genuinely-live thing, ADR-0026). */
 const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
-  landed: 'bg-accept-dot',
+  landed: 'bg-merged-dot',
   running: 'bg-running-dot',
   healing: 'bg-running-dot motion-safe:animate-pulse',
   waiting: 'bg-raised',
@@ -262,7 +262,7 @@ const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
 
 /** The state dot for an Epic member row, mapped from its rail status. */
 const MEMBER_DOT: Record<RailSegmentStatus, string> = {
-  landed: 'bg-accept-dot',
+  landed: 'bg-merged-dot',
   running: 'bg-running-dot motion-safe:animate-pulse',
   healing: 'bg-running-dot motion-safe:animate-pulse',
   waiting: 'bg-ready-dot',
@@ -270,7 +270,7 @@ const MEMBER_DOT: Record<RailSegmentStatus, string> = {
 };
 
 const MEMBER_STATUS_WORD: Record<RailSegmentStatus, string> = {
-  landed: 'folded',
+  landed: 'merged',
   running: 'running',
   healing: 'healing',
   waiting: 'waiting',
@@ -368,7 +368,7 @@ function EpicBand({
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
         </button>
         {attention.length > 0 && (
-          <span className={`${chip} shrink-0 bg-running-tint text-running`}>{attention.length} need you</span>
+          <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} need you</span>
         )}
         <button
           type="button"
@@ -385,14 +385,14 @@ function EpicBand({
         <span
           className="flex items-center gap-1"
           role="img"
-          aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} folded`}
+          aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} merged`}
         >
           {segments.map((seg) => (
             <span key={seg.ref} className={`h-1.5 w-5 rounded-full ${SEGMENT_FILL[seg.status]}`} />
           ))}
         </span>
         <span className="text-small text-muted">
-          <span className="text-faint">folded</span> {epic.foldedCount}/{epic.memberCount}
+          <span className="text-faint">merged</span> {epic.foldedCount}/{epic.memberCount}
         </span>
         {epic.integration.tip && (
           <span className="text-small text-muted">
@@ -444,8 +444,8 @@ function RecentBar({ recent, onShowRecent }: { recent: RecentSummary; onShowRece
     >
       {recent.landed > 0 && (
         <span className="flex items-center gap-2">
-          <span aria-hidden="true" className="size-2 rounded-full bg-accept-dot" />
-          {recent.landed} landed
+          <span aria-hidden="true" className="size-2 rounded-full bg-merged-dot" />
+          {recent.landed} merged
         </span>
       )}
       {recent.failed > 0 && (
@@ -531,7 +531,7 @@ function AllClear() {
   return (
     <div className="mx-auto mt-16 max-w-sm text-center">
       <h1 className={displayTitle}>All clear</h1>
-      <p className="mt-2 text-muted">Nothing needs you right now. Queued and landed work shows here as it moves.</p>
+      <p className="mt-2 text-muted">Nothing needs you right now. Queued and merged work shows here as it moves.</p>
     </div>
   );
 }
@@ -661,7 +661,7 @@ export function Deck({
       )}
 
       {landing.length > 0 && (
-        <Section label="Landing" count={landing.length === 1 ? '1 epic' : `${landing.length} epics`} sub="members land as a batch">
+        <Section label="Merging" count={landing.length === 1 ? '1 epic' : `${landing.length} epics`} sub="members merge as a batch">
           <div className="flex flex-col gap-3">
             {landing.map((epic) => (
               <EpicBand

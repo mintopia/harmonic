@@ -10,8 +10,8 @@ import { Icon } from '../Icon';
 const WORD_TONE: Record<RunDot, string> = {
   running: 'text-running',
   fail: 'text-fail',
-  accept: 'text-accept',
-  review: 'text-accent',
+  merged: 'text-merged',
+  review: 'text-await',
   neutral: 'text-muted',
 };
 

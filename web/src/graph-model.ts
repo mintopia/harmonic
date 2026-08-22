@@ -126,7 +126,7 @@ export const SIGNAL: Record<TaskState, Signal> = {
   ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
   running: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
   'awaiting-review': { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
-  completed: { color: 'var(--hm-accept-dot)', text: 'var(--hm-accept)' },
+  completed: { color: 'var(--hm-merged-dot)', text: 'var(--hm-merged)' },
   failed: { color: 'var(--hm-fail-dot)', text: 'var(--hm-fail)' },
   cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
 };
@@ -138,7 +138,7 @@ export const STATE_LABEL: Record<TaskState, string> = {
   ready: 'Ready',
   running: 'Running',
   'awaiting-review': 'Review',
-  completed: 'Done',
+  completed: 'Merged',
   failed: 'Failed',
   cancelled: 'Cancelled',
 };

@@ -19,7 +19,7 @@ import { Modal } from './Modal';
 /** Rail/roster status → its plain-text label (colourblind safety: text names
  * the state everywhere colour is used, never colour alone). */
 const RAIL_LABEL: Record<RailSegmentStatus, string> = {
-  landed: 'landed',
+  landed: 'merged',
   running: 'running',
   healing: 'healing',
   waiting: 'waiting',
@@ -29,7 +29,7 @@ const RAIL_LABEL: Record<RailSegmentStatus, string> = {
 /** Rail/roster status → tint/ink pair, reusing the app's existing state
  * vocabulary (ui.ts's tint/ink chip pairs) rather than minting new colour. */
 const RAIL_TONE: Record<RailSegmentStatus, string> = {
-  landed: 'bg-accept-tint text-accept',
+  landed: 'bg-merged-tint text-merged',
   running: 'bg-running-tint text-running',
   healing: 'bg-running-tint text-running',
   waiting: 'bg-raised text-muted',
@@ -37,7 +37,7 @@ const RAIL_TONE: Record<RailSegmentStatus, string> = {
 };
 
 const BANNER_TONE: Record<LandOutcomeBannerTone, string> = {
-  ok: 'bg-accept-tint text-accept',
+  ok: 'bg-merged-tint text-merged',
   warn: 'bg-running-tint text-running',
   bad: 'bg-fail-tint text-fail',
   info: 'bg-raised text-muted',
@@ -189,14 +189,14 @@ export function EpicPeek({
         </header>
 
         <div className="flex-1 overflow-y-auto p-4">
-          <div className={`${labelType} mb-1.5 text-muted`}>Landing rail</div>
+          <div className={`${labelType} mb-1.5 text-muted`}>Merging rail</div>
           <LandingRail epic={epic} />
           {(() => {
             const s = statusLineParts(epic);
             return (
               <div className="mt-2 text-small text-muted tabular-nums">
                 <span className="font-data">{s.ref}</span> @ <span className="font-data">{s.tip}</span> ·
-                verification {s.verification} · {s.foldedCount}/{s.memberCount} folded
+                verification {s.verification} · {s.foldedCount}/{s.memberCount} merged
               </div>
             );
           })()}

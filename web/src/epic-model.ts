@@ -128,7 +128,7 @@ export const ROSTER_LANE_LABELS: Record<RosterLane, string> = {
   stuck: 'Stuck',
   inflight: 'In flight',
   waiting: 'Waiting',
-  landed: 'Landed',
+  landed: 'Merged',
 };
 
 const RAIL_TO_LANE: Record<RailSegmentStatus, RosterLane> = {
@@ -201,7 +201,7 @@ export interface LandOutcomeBanner {
  * they arm the control from.
  */
 export const FORCE_LAND_CONSEQUENCE =
-  'lands the members already folded in; a stuck sibling stays behind; Verification still gates';
+  'merges the members already on the integration branch; a stuck sibling stays behind; Verification still gates';
 
 /**
  * A member Task id → its owning Epic, for a board/table card's Epic chip
@@ -238,7 +238,7 @@ export function epicByTaskId(epics: Epic[]): Map<number, Epic> {
 export function landOutcomeBanner(o: EpicLandOutcome): LandOutcomeBanner {
   switch (o.status) {
     case 'landed':
-      return { tone: 'ok', text: `Landed — the folded subset merged to the default branch at ${o.oid}.` };
+      return { tone: 'ok', text: `Merged — the merged subset reached the default branch at ${o.oid}.` };
     case 'noop':
       return { tone: 'info', text: `Nothing to land — ${o.reason}.` };
     case 'waiting':

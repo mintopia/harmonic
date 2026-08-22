@@ -34,9 +34,9 @@
   --hm-await-dot: #4b4fa6;
   --hm-await-tint: #ecedf7;
   --hm-on-await: #ffffff;
-  --hm-accept: #267356;
-  --hm-accept-dot: #267356;
-  --hm-accept-tint: #e1f1ea;
+  --hm-merged: #267356;
+  --hm-merged-dot: #267356;
+  --hm-merged-tint: #e1f1ea;
   --hm-done: #267356;
   --hm-done-dot: #267356;
   --hm-done-tint: #e1f1ea;
@@ -90,9 +90,9 @@
   --hm-await-dot: #9096e6;
   --hm-await-tint: #25264c;
   --hm-on-await: #15161a;
-  --hm-accept: #37c48e;
-  --hm-accept-dot: #37c48e;
-  --hm-accept-tint: #12302a;
+  --hm-merged: #37c48e;
+  --hm-merged-dot: #37c48e;
+  --hm-merged-tint: #12302a;
   --hm-done: #37c48e;
   --hm-done-dot: #37c48e;
   --hm-done-tint: #12302a;
@@ -144,9 +144,9 @@
     --hm-await-dot: #9096e6;
     --hm-await-tint: #25264c;
     --hm-on-await: #15161a;
-    --hm-accept: #37c48e;
-    --hm-accept-dot: #37c48e;
-    --hm-accept-tint: #12302a;
+    --hm-merged: #37c48e;
+    --hm-merged-dot: #37c48e;
+    --hm-merged-tint: #12302a;
     --hm-done: #37c48e;
     --hm-done-dot: #37c48e;
     --hm-done-tint: #12302a;
@@ -195,9 +195,9 @@
   --color-await-dot: var(--hm-await-dot);
   --color-await-tint: var(--hm-await-tint);
   --color-on-await: var(--hm-on-await);
-  --color-accept: var(--hm-accept);
-  --color-accept-dot: var(--hm-accept-dot);
-  --color-accept-tint: var(--hm-accept-tint);
+  --color-merged: var(--hm-merged);
+  --color-merged-dot: var(--hm-merged-dot);
+  --color-merged-tint: var(--hm-merged-tint);
   --color-done: var(--hm-done);
   --color-done-dot: var(--hm-done-dot);
   --color-done-tint: var(--hm-done-tint);
@@ -275,11 +275,11 @@
 .bold .bold-wash.ready { background-color: var(--hm-ready-tint); }
 .bold .bold-wash.running { background-color: var(--hm-running-tint); }
 .bold :is(.bold-wash.await, .bold-wash.awaiting-review) { background-color: var(--hm-await-tint); }
-.bold :is(.bold-wash.merged, .bold-wash.completed) { background-color: var(--hm-accept-tint); }
+.bold :is(.bold-wash.merged, .bold-wash.completed) { background-color: var(--hm-merged-tint); }
 .bold .node.ready .node-fill { fill: var(--hm-ready-tint); }
 .bold .node.running .node-fill { fill: var(--hm-running-tint); }
 .bold :is(.node.await, .node.awaiting-review) .node-fill { fill: var(--hm-await-tint); }
-.bold :is(.node.merged, .node.completed) .node-fill { fill: var(--hm-accept-tint); }
+.bold :is(.node.merged, .node.completed) .node-fill { fill: var(--hm-merged-tint); }
 
 /* The Display weight — the top of the Three Weights ramp (DESIGN.md §3: "750
    for the Display title"). A named utility so the Display title, the Stats hero
