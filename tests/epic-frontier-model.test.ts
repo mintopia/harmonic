@@ -131,9 +131,10 @@ describe('deriveEpicFrontier (issue #264)', () => {
     expect(model.columns[2]!.nodes[0]!.runnable).toBe(false);
   });
 
-  it('treats an absent dependency as satisfied once a member is ready', () => {
+  it('keeps a completed standalone dependency satisfied in the frontier', () => {
     const ready = task(2, 'ready', [1]);
-    const model = deriveEpicFrontier(epic([member(2, 2)]), [ready]);
+    const completed = task(1, 'completed');
+    const model = deriveEpicFrontier(epic([member(2, 2)]), [completed, ready]);
 
     expect(model.columns).toEqual([
       expect.objectContaining({
@@ -142,7 +143,7 @@ describe('deriveEpicFrontier (issue #264)', () => {
           expect.objectContaining({
             ref: 2,
             runnable: true,
-            dependencies: [{ taskId: 1, label: 'Task 1', satisfied: true }],
+            dependencies: [{ taskId: 1, label: '#1', satisfied: true }],
           }),
         ],
       }),

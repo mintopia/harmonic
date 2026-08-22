@@ -58,7 +58,6 @@ export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
 
   const dependenciesFor = (member: EpicMember): FrontierDependency[] => {
     const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
-    const hasReachedFrontier = member.ready || task?.state === 'ready' || task?.state === 'running';
     return (task?.dependsOn ?? []).map((taskId) => {
       const dependency = tasksById.get(taskId);
       const dependencyMember = membersByTaskId.get(taskId);
@@ -67,8 +66,7 @@ export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
         label: dependencyLabel(dependency, taskId),
         satisfied:
           dependency?.state === 'completed' ||
-          dependencyMember?.landStatus === 'completed' ||
-          (dependency == null && hasReachedFrontier),
+          dependencyMember?.landStatus === 'completed',
       };
     });
   };
