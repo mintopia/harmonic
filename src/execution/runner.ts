@@ -107,14 +107,27 @@ const PROGRESS_NUDGE_TEXT =
  * harnesses without 'auto'. Set via session/set_mode after the handshake. */
 const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
 
-/** Harnesses that advertise no {@link AFK_PERMISSION_MODES} mode and instead gate
- * permissions per action (Codex `approval_policy: on-request`). There is no ACP
- * mode to force for these — forcing one would clobber the operator's command-line
- * override — so the afk mode-force is skipped and the per-request handler governs.
+/** Harnesses that advertise no {@link AFK_PERMISSION_MODES} mode and gate
+ * permissions per action (Codex `approval_policy: on-request`). Under afk these
+ * are put into their {@link AFK_FULL_ACCESS_MODES} mode when they advertise one;
+ * a harness that advertises none instead falls back to the per-request handler.
  * (Held-request + Permission-Rule approval for Runs is planned per ADR-0007; until
- * then these Escalate on a request like every other afk Run.) */
+ * then a fallback request Escalates like every other afk Run.) */
 const AFK_REQUEST_GATED_HARNESSES = ['codex'] as const;
 const afkRequestGated = (harness: string): boolean => (AFK_REQUEST_GATED_HARNESSES as readonly string[]).includes(harness);
+
+/** For a request-gated harness, the ACP session mode that grants unattended full
+ * access (no per-action approval) — Codex's `danger-full-access` agent mode.
+ * Forced under afk when {@link AFK_PERMISSION_MODES} offers nothing, so the Run
+ * runs unattended (matching Claude's `auto`/`bypassPermissions`) instead of
+ * Escalating on the first privileged tool. Codex's `approval_policy`/command-line
+ * YOLO flags do not take effect over ACP — setting the session mode is the only
+ * mechanism that does. */
+const AFK_FULL_ACCESS_MODES: Partial<Record<string, string>> = { codex: 'danger-full-access' };
+const afkFullAccessMode = (harness: string, available: readonly string[]): string | undefined => {
+  const mode = AFK_FULL_ACCESS_MODES[harness];
+  return mode && available.includes(mode) ? mode : undefined;
+};
 
 const HARNESS_MUTEX_KEYS = {
   claude: 'claude',
@@ -2931,14 +2944,21 @@ export class Runner {
       // closed if neither is offered, rather than prompt on every tool call and
       // Escalate immediately (issue #33 follow-up; pattern from ../starchart).
       if (autoDriven) {
-        const mode = AFK_PERMISSION_MODES.find((m) => driver.availableModes.includes(m));
+        // Prefer a standard afk mode (Claude's 'auto' classifier, then
+        // 'bypassPermissions'); failing that, a request-gated harness's
+        // full-access mode (Codex's `danger-full-access`) — the ACP mode that
+        // runs unattended without per-action approval. Codex advertises no
+        // auto/bypass mode, so without forcing this it would Escalate on the
+        // first privileged tool.
+        const mode =
+          AFK_PERMISSION_MODES.find((m) => driver.availableModes.includes(m)) ??
+          afkFullAccessMode(task.harness, driver.availableModes);
         if (!mode) {
-          // A Codex-style harness governs unattended permissions through its own
-          // approval policy (set at spawn, operator-overridable) plus the
-          // per-request handler in `onRequest` above — there is no ACP mode to
-          // force, and forcing one would clobber the operator's command-line
-          // override. Any other harness with no auto mode fails closed rather than
-          // prompting on every tool and Escalating immediately (issue #33 follow-up).
+          // A request-gated harness that advertises no full-access mode still
+          // governs unattended permissions through its spawn-time approval policy
+          // plus the per-request handler in `onRequest` above. Any other harness
+          // with no forceable mode fails closed rather than prompting on every
+          // tool and Escalating immediately (issue #33 follow-up).
           if (!afkRequestGated(task.harness)) {
             throw new Error(
               `harness '${task.harness}' offers no unattended permission mode ` +
