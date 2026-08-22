@@ -28,6 +28,7 @@ import { DomainError } from './errors.js';
 import { decideTaskDeletion } from './task-deletion.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { orderEligibleWork } from './work-ordering.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -504,6 +505,49 @@ export class TaskService {
       });
     }
     return rows;
+  }
+
+  /**
+   * Read the active backlog from the local database and order it by explicit
+   * priority, topological rank, then age. It deliberately includes `blocked`
+   * Tasks: a consumer choosing runnable work must skip non-`ready` rows.
+   */
+  async orderedEligibleWork(workspaceId?: number): Promise<TaskRow[]> {
+    const rows = await this.list(workspaceId === undefined ? {} : { workspaceId });
+    const candidates = rows.filter((task) => task.state === 'ready' || task.state === 'blocked');
+    if (candidates.length === 0) return [];
+
+    const candidateIds = candidates.map((task) => task.id);
+    const dependencyRows = await this.db.read((db) =>
+      db.select().from(taskDependencies).where(inArray(taskDependencies.taskId, candidateIds)).all(),
+    );
+    const blockersByTaskId = new Map<number, number[]>();
+    await forEachYielding(dependencyRows, (dependency) => {
+      const blockers = blockersByTaskId.get(dependency.taskId);
+      if (blockers) blockers.push(dependency.dependsOnId);
+      else blockersByTaskId.set(dependency.taskId, [dependency.dependsOnId]);
+    });
+    const blockerIds = [...new Set(dependencyRows.map((dependency) => dependency.dependsOnId))];
+    const completedRows =
+      blockerIds.length === 0
+        ? []
+        : await this.db.read((db) =>
+            db
+              .select({ id: tasks.id })
+              .from(tasks)
+              .where(and(inArray(tasks.id, blockerIds), eq(tasks.state, 'completed')))
+              .all(),
+          );
+    const completedIds = new Set(completedRows.map((task) => task.id));
+    const nodes: Array<TaskRow & { blockedBy: number[] }> = [];
+    await forEachYielding(candidates, (task) => {
+      nodes.push({
+        ...task,
+        blockedBy: (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id)),
+      });
+    });
+
+    return orderEligibleWork(nodes);
   }
 
   async get(id: number): Promise<TaskRow> {
