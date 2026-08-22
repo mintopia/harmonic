@@ -1,6 +1,6 @@
 # Decision: libsql local queries run inline on the main thread — move heavy reads off-thread
 
-Status: proposed
+Status: accepted
 Date: 2026-08-21
 
 ## Context
@@ -9,7 +9,7 @@ ADR-0029 replaced the synchronous better-sqlite3 connection with async libsql an
 claimed (§5) a general guarantee that "**nothing — slow query or background loop —
 can block the event loop**," delivered in part by "**routing heavy aggregates
 through the async/off-thread path**" (the #213 concurrent read connection,
-`asyncReadDb`).
+`asyncReadDb`). This decision is implemented by the Stats worker-thread reader.
 
 Measured reality (2026-08-21): `@libsql/client` (v0.17.4, native `linux-x64`
 binding) on a local `file:` URL executes each query **synchronously inline on the
