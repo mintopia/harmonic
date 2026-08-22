@@ -221,6 +221,43 @@ describe('TrackerPoller.poll', () => {
     expect((await tasks.list())[0]!.state).toBe('completed');
   });
 
+  it('accepts an inbound reopen of a completed Task as tracker truth', async () => {
+    let state: 'open' | 'closed' = 'closed';
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => ({ ...stubAdapter([]).adapter, scan: async () => [ticket({ number: 42, labels: ['ready-for-agent'], state })] }),
+    );
+
+    await poller.poll();
+    expect((await tasks.list())[0]!.state).toBe('completed');
+
+    state = 'open';
+    await poller.poll();
+    expect((await tasks.list())[0]!.state).toBe('ready');
+  });
+
+  it('keeps an inbound-reopened Task ineligible when ready-for-agent was removed', async () => {
+    let state: 'open' | 'closed' = 'closed';
+    let labels = ['ready-for-agent'];
+    const poller = new TrackerPoller(
+      tasks,
+      wsId,
+      dir,
+      60_000,
+      async () => ({ ...stubAdapter([]).adapter, scan: async () => [ticket({ number: 42, labels, state })] }),
+    );
+
+    await poller.poll();
+    state = 'open';
+    labels = [];
+    await poller.poll();
+
+    expect((await tasks.list())[0]).toMatchObject({ state: 'ready', drive: 'hitl' });
+  });
+
   it('runs epic integration after mirroring without scheduling work (issue #159)', async () => {
     const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'], assignees: ['someone'] })]);
     const calls: Array<{ tickets: number[]; mirrored: Array<number | null> }> = [];

@@ -100,21 +100,27 @@ export interface TrackerAdapter {
    * ({@link TicketRef}) is needed, so a caller that has just a Task's ref
    * (never a full scanned {@link Ticket}) can close without a round-trip read.
    */
-  close(ticket: TicketRef, comment: string): Promise<void>;
+  close?(ticket: TicketRef, comment: string): Promise<void>;
   /**
    * Re-open a ticket that was closed prematurely with a comment (issue #139):
    * under the close-after-verify model Harmonic — not the agent — owns the
    * close, so a close it did not make (agent-via-skill, or an operator) is
-   * reverted and the Task Escalated. A tracker with no reopen concept
-   * (read-only local-markdown) no-ops.
+   * reverted and the Task Escalated. A tracker without lifecycle writes omits
+   * this method and remains an inbound-only source.
    */
-  reopen(ticket: TicketRef, comment: string): Promise<void>;
+  reopen?(ticket: TicketRef, comment: string): Promise<void>;
   /**
    * Open a PR from a Run's worktree branch — the open-PR Merge Fate (issue
    * #33). Optional: a tracker with no PR concept omits it, and auto-drive
    * treats an absent one as leave-the-branch (artifact).
    */
   openPR?(input: OpenPRInput): Promise<void>;
+}
+
+/** A tracker that supports Harmonic-owned lifecycle writes as well as inbound reads. */
+export interface WritableTrackerAdapter extends TrackerAdapter {
+  close(ticket: TicketRef, comment: string): Promise<void>;
+  reopen(ticket: TicketRef, comment: string): Promise<void>;
 }
 
 /** The open-PR Merge Fate's inputs (issue #33). */

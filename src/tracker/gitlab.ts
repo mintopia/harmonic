@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerAdapter } from './adapter.js';
+import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -132,7 +132,7 @@ function assigneeQuery(ids: Set<number>): string {
  * request per 100 issues (no N+1). Merge the links/epics API here if a Premium
  * instance needs the UI-visible edges instead.
  */
-export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGlab): TrackerAdapter {
+export function gitlabAdapter(config: GitlabConfig, run: GlabRunner = defaultGlab): WritableTrackerAdapter {
   const proj = `projects/${encodeURIComponent(config.project)}`;
   let me: RawUser | undefined;
 

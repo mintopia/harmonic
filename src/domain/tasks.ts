@@ -330,6 +330,8 @@ export class TaskService {
             ? existing.state
             : input.closed
               ? 'completed'
+              : existing.state === 'completed'
+                ? 'ready'
               : existing.state;
         // Re-poll never touches the four operator picks (harness/model/isolation/
         // priority), so an operator's pin on a mirrored Task survives every scan.

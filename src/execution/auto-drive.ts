@@ -189,6 +189,10 @@ export class AutoDrive {
     if (task.trackerRef == null) return true; // native/direct with no ticket — nothing to close
     try {
       const adapter = await this.resolveAdapter(task.workingDir);
+      // A freeform tracker may provide inbound facts without status writes.
+      // The verified local transition still completes; its next scan remains
+      // authoritative if the tracker changes independently.
+      if (!adapter.close) return true;
       const { title } = splitTitleBody(task.prompt);
       await adapter.close(
         { number: task.trackerRef, title, state: 'open' },
@@ -211,6 +215,7 @@ export class AutoDrive {
     if (task.trackerRef == null) return false;
     try {
       const adapter = await this.resolveAdapter(task.workingDir);
+      if (!adapter.reopen) return false;
       const { title } = splitTitleBody(task.prompt);
       await adapter.reopen(
         { number: task.trackerRef, title, state: 'closed' },

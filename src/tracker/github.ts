@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type TrackerAdapter } from './adapter.js';
+import { MAP_LABEL, type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -122,7 +122,7 @@ function normalise(raw: RawIssue): Ticket {
  * dependency preview features *disabled* returns them empty; add body-line
  * (`Blocked by: #n` / `Part of #n`) fallback parsing here if that surfaces.
  */
-export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): TrackerAdapter {
+export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): WritableTrackerAdapter {
   const json = async <T>(args: string[]): Promise<T> => JSON.parse(await run(args, repoRoot));
 
   return {

@@ -1,10 +1,11 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { basename, join } from 'node:path';
-import { type Ticket, type TicketRef, type TicketState, type TrackerAdapter } from './adapter.js';
+import { type Ticket, type TicketRef, type TicketState, type WritableTrackerAdapter } from './adapter.js';
 
-/** A `**Status:**` word that means the ticket is done. Read-only: we never write it. */
+/** A `**Status:**` word that means the ticket is done. */
 const CLOSED_STATUS = /\b(done|closed|complete|completed|merged|shipped)\b/i;
+const STATUS_FIELD = /^\s*\*\*Status:\*\*\s*.*$/im;
 
 /** The reserved local id for a feature's `spec.md` Map. Issue filenames start at `01`, so `0` never collides. */
 const SPEC_ID = 0;
@@ -83,14 +84,14 @@ async function assignBases(scopes: Scope[], featureIndex?: FeatureIndex): Promis
  *   its own id namespace (see {@link STRIDE}) — no `Path:` needed. Each feature's
  *   sibling `spec.md` is surfaced as a wayfinder **Map** (`isMap`); that feature's
  *   issues `parent` onto it, so the board rolls each spec's tickets up under it.
- * - **Read-only.** The format carries no assignee or closed field, so Harmonic's
- *   reservation/accept writes have nowhere to land: `claim`/`release`/`close`
- *   no-op. The board mirrors the tickets but never mutates them on disk.
+ * - **Writes.** The format carries no assignee, so `claim`/`release` remain
+ *   local-only. `close` and `reopen` update the ticket's `**Status:**` field,
+ *   which keeps lifecycle transitions portable with GitHub and GitLab.
  */
 export function localMarkdownAdapter(
   dir: string,
   opts: { featureIndex?: FeatureIndex } = {},
-): TrackerAdapter {
+): WritableTrackerAdapter {
   return {
     name: 'local-markdown',
 
@@ -104,14 +105,33 @@ export function localMarkdownAdapter(
       return found;
     },
 
-    // Read-only: no assignee/closed field to write. Harmonic still tracks the
-    // reservation and accept in its own DB — they just don't persist to the file.
+    // The format has no assignee field. Harmonic still tracks reservations in
+    // its own DB, while lifecycle changes persist through Status.
     async claim() {},
     async release() {},
-    async close() {},
-    async reopen() {},
+    async close(ticket) {
+      await writeStatus(dir, ticket.number, 'closed', opts.featureIndex);
+    },
+    async reopen(ticket) {
+      // Reopening changes lifecycle only. `open` deliberately does not opt the
+      // ticket back into AFK work: a human must explicitly restore
+      // `ready-for-agent` when they want Harmonic to pick it again.
+      await writeStatus(dir, ticket.number, 'open', opts.featureIndex);
+    },
 
   };
+}
+
+/** Persist one lifecycle state through the adapter-owned Status field. */
+async function writeStatus(root: string, ticketNumber: number, status: string, featureIndex?: FeatureIndex): Promise<void> {
+  const ticket = (await parseAll(root, featureIndex)).find((parsed) => parsed.id === ticketNumber && !parsed.isMap);
+  if (!ticket) throw new Error(`local-markdown: no ticket #${ticketNumber} under ${root}`);
+  const raw = await readFile(ticket.path, 'utf8');
+  const field = `**Status:** ${status}`;
+  const updated = STATUS_FIELD.test(raw)
+    ? raw.replace(STATUS_FIELD, field)
+    : `${raw}${raw.endsWith('\n') ? '\n' : '\n\n'}${field}\n`;
+  await writeFile(ticket.path, updated, 'utf8');
 }
 
 // --- ids ---

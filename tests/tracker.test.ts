@@ -344,21 +344,25 @@ describe('local-markdown tracker adapter (mattpocock format)', () => {
     }
   });
 
-  it('is read-only: claim/release/close never touch the files', async () => {
+  it('writes close and reopen lifecycle transitions to Status while claim/release remain local-only', async () => {
     const root = mkTree();
     try {
       const md = localMarkdownAdapter(root);
-      const file = join(root, 'harmonic-v1', 'issues', '02-local-markdown.md');
+      const file = join(root, 'harmonic-v1', 'issues', '01-adapter-interface.md');
       const before = readFileSync(file, 'utf8');
-      const ticket = await md.readTicket({ number: 2, title: '', state: 'open' });
+      const ticket = await md.readTicket({ number: 1, title: '', state: 'open' });
       await md.claim(ticket);
       await md.release(ticket);
       await md.close(ticket, 'accepted');
-      expect(readFileSync(file, 'utf8')).toBe(before);
-      // scan still reports the on-disk state, unchanged.
-      const after = await md.readTicket({ number: 2, title: '', state: 'open' });
+      expect(readFileSync(file, 'utf8')).not.toBe(before);
+      expect(readFileSync(file, 'utf8')).toContain('**Status:** closed');
+      expect((await md.readTicket({ number: 1, title: '', state: 'open' })).state).toBe('closed');
+
+      await md.reopen(ticket, 'premature');
+      expect(readFileSync(file, 'utf8')).toContain('**Status:** open');
+      const after = await md.readTicket({ number: 1, title: '', state: 'closed' });
       expect(after.assignees).toEqual([]);
-      expect(after.state).toBe('closed'); // from the ticked checkboxes on disk, not from close()
+      expect(after.state).toBe('open');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

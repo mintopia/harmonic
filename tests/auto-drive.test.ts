@@ -167,6 +167,33 @@ describe('Drive Prompt fill (issue #33)', () => {
     // A native/direct Task with no ticket ref never reopens.
     expect(await drive.reopenTicket(worktreeTask({ trackerRef: null }))).toBe(false);
   });
+
+  it('completes after a verified landing when the adapter only supports inbound status', async () => {
+    const inboundOnly: TrackerAdapter = {
+      name: 'other',
+      scan: async () => [],
+      readTicket: async (ref) => ({
+        number: ref.number,
+        title: ref.title,
+        state: 'open',
+        body: '',
+        createdAt: '',
+        closedAt: null,
+        labels: [],
+        assignees: [],
+        parent: null,
+        blockedBy: [],
+        blocking: [],
+        comments: [],
+        isMap: false,
+        url: '',
+      }),
+      claim: async () => {},
+      release: async () => {},
+    };
+    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => inboundOnly);
+    expect(await drive.closeCompleted(worktreeTask())).toBe(true);
+  });
 });
 
 describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
