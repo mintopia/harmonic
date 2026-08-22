@@ -149,6 +149,46 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     expect((await tasks.get(run.taskId)).state).toBe('awaiting-review');
   });
 
+  it('re-parks a known failed landing without re-applying it (issue #270)', async () => {
+    const branch = 'nonexistent-branch';
+    const baseBranch = 'main';
+    const { run, idempotencyKey } = await seedMidLanding(branch, baseBranch);
+    await journal.recordResult(run.id, {
+      effect: 'target-ref',
+      idempotencyKey,
+      ok: false,
+      detail: 'target branch has uncommitted changes; land via PR/manual',
+    });
+    const isMerged = vi.fn(async () => false);
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, { isMerged });
+
+    await coord.reconcile();
+
+    expect(isMerged).not.toHaveBeenCalled();
+    expect(await runStore.get(run.id)).toMatchObject({
+      state: 'running',
+      phase: 'review',
+      reviewFeedback: 'target branch has uncommitted changes; land via PR/manual',
+    });
+    expect(await runStore.countRunning()).toBe(0);
+  });
+
+  it('settles a retried landing when its latest result succeeded (issue #270)', async () => {
+    const branch = 'nonexistent-branch';
+    const baseBranch = 'main';
+    const { run, idempotencyKey } = await seedMidLanding(branch, baseBranch);
+    await journal.recordResult(run.id, { effect: 'target-ref', idempotencyKey, ok: false, detail: 'target was dirty' });
+    await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
+    await journal.recordResult(run.id, { effect: 'target-ref', idempotencyKey, ok: true, observed: { baseBranch, branch } });
+    const isMerged = vi.fn(async () => false);
+    const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, { isMerged });
+
+    await coord.reconcile();
+
+    expect(isMerged).not.toHaveBeenCalled();
+    expect(await runStore.get(run.id)).toMatchObject({ state: 'completed', phase: 'terminal' });
+  });
+
   it('yields while reconciling a large landing backlog', async () => {
     for (let i = 0; i < 25; i++) {
       const created = await tasks.create({ prompt: `landing ${i}`, state: 'ready', workingDir: repo });

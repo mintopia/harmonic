@@ -83,8 +83,8 @@ export class LandingCoordinator {
    *   4. For each effect, in order: record intent, run `apply()` (bounded by
    *      the operation timeout — see {@link LANDING_OP_TIMEOUT_MS}), record
    *      the result. The first `ok:false` stops the loop and returns
-   *      `{ ok:false, detail }` **without** calling `settle` — the Task stays
-   *      in `awaiting-review` (today's merge-conflict behaviour, unchanged).
+   *      `{ ok:false, detail }` **without** calling `settle`, and re-parks the
+   *      Run at review so the Task stays actionable without consuming capacity.
    *      Everything already-applied before the failing effect stays applied
    *      and journaled; nothing here retries or rolls anything back — that is
    *      `reconcileLanding`'s job, driven by a later, deliberate call.
@@ -148,17 +148,19 @@ export class LandingCoordinator {
         now(),
       );
       if (!result.ok) {
-        // Non-interruptible does NOT mean "can't fail" — it means a FAILED
-        // effect leaves the Task in the same awaiting-review limbo today's
-        // merge-conflict path already uses, rather than a half-settled Run.
-        // Whatever already applied before this effect stays applied and
-        // journaled; nothing here retries.
+        await this.reparkForReview(run);
         return { ok: false, detail: result.detail };
       }
     }
 
     await this.settle.settle(task, run, landFactType, landProjection, patch);
     return { ok: true };
+  }
+
+  /** Return an unsuccessful landing to the operator's review gate. */
+  async reparkForReview(run: RunRow): Promise<void> {
+    await this.runStore.update(run.id, { phase: 'review' });
+    await this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'review' } });
   }
 
   /**

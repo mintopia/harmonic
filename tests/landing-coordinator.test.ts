@@ -11,6 +11,7 @@ import { RunFactStore } from '../src/domain/run-facts.js';
 import { LandingJournalStore } from '../src/domain/landing-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { LandingCoordinator, type LandingEffectExec, type LandingEffectOutcome } from '../src/domain/landing-coordinator.js';
+import { ReviewService } from '../src/domain/review.js';
 import type { SettleProjection } from '../src/domain/run-coordinator.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
@@ -247,6 +248,38 @@ describe('LandingCoordinator (issue #115)', () => {
     const types = (await runFacts.list(run.id)).map((f) => f.type);
     expect(types).toContain('operator-accept');
     expect(types).not.toContain('agent-finish/unresolved');
+  });
+
+  it('re-parks a failed operator accept for review without consuming a run slot (issue #270)', async () => {
+    const { task, run } = await fixture();
+    await runFacts.append(run.id, 'escalate', {
+      runState: 'failed',
+      taskAction: 'escalated',
+      reason: 'critic requires human review',
+    });
+    const review = new ReviewService(
+      runStore,
+      tasks,
+      settle,
+      coordinator,
+      undefined,
+      () => [{
+        effect: 'target-ref',
+        idempotencyKey: 'main@dirty-target',
+        expected: {},
+        apply: async () => ({ ok: false, detail: 'target branch has uncommitted changes; land via PR/manual' }),
+      }],
+    );
+
+    await expect(review.accept(task.id)).rejects.toThrow('target branch has uncommitted changes');
+
+    expect(await runStore.get(run.id)).toMatchObject({
+      state: 'running',
+      phase: 'review',
+      reviewFeedback: 'target branch has uncommitted changes; land via PR/manual',
+    });
+    expect((await tasks.get(task.id)).state).toBe('awaiting-review');
+    expect(await runStore.countRunning()).toBe(0);
   });
 
   it('an operator-accept loses to a racing operator-cancel appended BEFORE the land\'s PONC (issue #191)', async () => {

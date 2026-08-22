@@ -127,7 +127,21 @@ export class CrashRecoveryCoordinator {
       // effect with an `ok:true` result is `'already-applied'`
       // (landing.ts's `reconcile`) and never reaches `observed` at all, so a
       // fully-applied landing reconciles hermetically, no process spawned.
-      const priorEntries = foldJournal(await this.landingJournal.views(run.id));
+      const journalViews = await this.landingJournal.views(run.id);
+      const priorEntries = foldJournal(journalViews);
+      const latestResults = new Map<string, typeof journalViews[number]>();
+      for (const row of journalViews) {
+        if (row.kind === 'result' && row.idempotencyKey !== null) latestResults.set(row.idempotencyKey, row);
+      }
+      const failedResult = [...latestResults.values()].find((row) => row.payload['ok'] === false);
+      if (failedResult) {
+        const detail = failedResult.payload['detail'];
+        await this.landing.reparkForReview(run);
+        await this.runStore.update(run.id, {
+          reviewFeedback: typeof detail === 'string' ? detail : 'landing failed; retry accept or land via PR/manual',
+        });
+        return;
+      }
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
       let merged = false;
       if (needsWorldCheck && run.branch && run.baseBranch) {
