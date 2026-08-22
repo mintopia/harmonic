@@ -418,17 +418,20 @@ export class TaskService {
           ? eq(tasks.state, query.state)
           : undefined,
     ].filter((f) => f !== undefined);
-    let rows = await Promise.all(
-      (
-        await this.db.read((db) =>
-          db
-            .select()
-            .from(tasks)
-            .where(filters.length > 0 ? and(...filters) : undefined)
-            .all(),
-        )
-      ).map((raw) => this.resolve(raw)),
-    );
+    const [rawRows, workspaceRows] = await Promise.all([
+      this.db.read((db) =>
+        db
+          .select()
+          .from(tasks)
+          .where(filters.length > 0 ? and(...filters) : undefined)
+          .all(),
+      ),
+      this.getWorkspaces(),
+    ]);
+    let rows = rawRows.map((raw) => {
+      const workspace = resolveWorkspace(workspaceRows, raw.workspaceId ?? undefined);
+      return { ...raw, ...this.resolveDefaults(this.overridesOf(raw), workspace) };
+    });
     if (query.harness) rows = rows.filter((t) => t.harness === query.harness);
     if (query.priority) rows = rows.filter((t) => t.priority === query.priority);
     if (query.sortBy) {
@@ -1008,7 +1011,44 @@ export class TaskService {
   }
 
   async listWithDeps(query: TaskListQuery = {}): Promise<TaskWithDeps[]> {
-    return Promise.all((await this.list(query)).map((task) => this.withDeps(task)));
+    const listed = await this.list(query);
+    if (listed.length === 0) return [];
+    const ids = listed.map((task) => task.id);
+    const [rawRows, edges, reattemptRows] = await Promise.all([
+      this.db.read((db) => db.select().from(tasks).where(inArray(tasks.id, ids)).all()),
+      this.db.read((db) =>
+        db
+          .select({ taskId: taskDependencies.taskId, dependsOnId: taskDependencies.dependsOnId, state: tasks.state })
+          .from(taskDependencies)
+          .innerJoin(tasks, eq(taskDependencies.dependsOnId, tasks.id))
+          .where(or(inArray(taskDependencies.taskId, ids), inArray(taskDependencies.dependsOnId, ids)))
+          .all(),
+      ),
+      this.db.read((db) =>
+        db.select({ id: tasks.id, reattemptOf: tasks.reattemptOf }).from(tasks).where(inArray(tasks.reattemptOf, ids)).all(),
+      ),
+    ]);
+    const rawById = new Map(rawRows.map((task) => [task.id, task]));
+    const dependsOn = new Map(ids.map((id) => [id, [] as number[]]));
+    const dependents = new Map(ids.map((id) => [id, [] as number[]]));
+    const failedDependencies = new Set<number>();
+    for (const edge of edges) {
+      dependsOn.get(edge.taskId)?.push(edge.dependsOnId);
+      dependents.get(edge.dependsOnId)?.push(edge.taskId);
+      if (edge.state === 'failed' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
+    }
+    const reattempts = new Map(ids.map((id) => [id, [] as number[]]));
+    for (const row of reattemptRows) {
+      if (row.reattemptOf !== null) reattempts.get(row.reattemptOf)?.push(row.id);
+    }
+    return listed.map((task) => ({
+      ...task,
+      dependsOn: dependsOn.get(task.id) ?? [],
+      dependents: dependents.get(task.id) ?? [],
+      blockedOnFailed: task.state === 'blocked' && failedDependencies.has(task.id),
+      reattempts: reattempts.get(task.id) ?? [],
+      overrides: this.overridesOf(rawById.get(task.id) ?? task),
+    }));
   }
 
   /** Is `to` reachable from `from` following depends-on edges? */

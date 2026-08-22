@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { runs, runEvents, runFacts, runToolCalls, tasks, type RunRow, type RunEventRow, type RunState } from '../db/schema.js';
 import { DomainError } from './errors.js';
@@ -81,6 +81,14 @@ export class RunStore {
   listForTask(taskId: number): Promise<RunRow[]> {
     return this.db.read((db) =>
       db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(asc(runs.attempt)).all(),
+    );
+  }
+
+  /** Runs for a task list, ordered as `listForTask` orders each task's Runs. */
+  async listForTasks(taskIds: number[]): Promise<RunRow[]> {
+    if (taskIds.length === 0) return [];
+    return this.db.read((db) =>
+      db.select().from(runs).where(inArray(runs.taskId, taskIds)).orderBy(asc(runs.taskId), asc(runs.attempt)).all(),
     );
   }
 
@@ -211,6 +219,20 @@ export class RunStore {
       db.select({ toolName: runToolCalls.toolName, count: runToolCalls.count }).from(runToolCalls).where(eq(runToolCalls.runId, runId)).all(),
     );
     return new Map(rows.map(({ toolName, count }) => [toolName, count]));
+  }
+
+  /** Total persisted tool calls for each supplied Run, for board list serialization. */
+  async toolCallCounts(runIds: number[]): Promise<Map<number, number>> {
+    if (runIds.length === 0) return new Map();
+    const rows = await this.db.read((db) =>
+      db
+        .select({ runId: runToolCalls.runId, count: sql<number>`sum(${runToolCalls.count})` })
+        .from(runToolCalls)
+        .where(inArray(runToolCalls.runId, runIds))
+        .groupBy(runToolCalls.runId)
+        .all(),
+    );
+    return new Map(rows.map(({ runId, count }) => [runId, count]));
   }
 
   /**

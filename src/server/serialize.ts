@@ -71,6 +71,28 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId'> & {
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.runs.listForTask(task.id);
   const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
+  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null);
+}
+
+/** Serialize a task list from its already-batched Runs (issue #258). */
+export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTask[]> {
+  if (tasks.length === 0) return [];
+  const runsByTask = new Map(tasks.map((task) => [task.id, [] as RunRow[]]));
+  for (const run of await ctx.runs.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
+  const running = tasks.flatMap((task) => {
+    const run = task.state === 'running' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
+    return run ? [run] : [];
+  });
+  const toolCounts = await ctx.runs.toolCallCounts(running.map((run) => run.id));
+  return tasks.map((task) => {
+    const runs = runsByTask.get(task.id) ?? [];
+    const activeRun = task.state === 'running' ? runs.find((run) => run.state === 'running') : undefined;
+    return taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null);
+  });
+}
+
+function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
+  const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
   return {
     ...task,
     workspaceId: atRestWorkspaceId(task.workspaceId),
@@ -80,7 +102,7 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
-    toolCount: running ? await runningToolCount(ctx, running) : null,
+    toolCount,
     runId: running?.id ?? null,
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     candidateRef: runs.at(-1)?.candidateRef ?? null,

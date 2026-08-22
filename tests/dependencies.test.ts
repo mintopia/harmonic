@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 describe('dependencies', () => {
@@ -123,5 +123,36 @@ describe('dependencies', () => {
     const list = await server.api('GET', '/api/tasks');
     const listed = list.body.tasks.find((t: any) => t.id === dependent.id);
     expect(listed.dependsOn).toEqual([dep.id]);
+  });
+
+  it('loads list dependency and run data in batches (issue #258)', async () => {
+    const dep = await createTask({});
+    await createTask({ dependsOn: [dep.id] });
+    await createTask({});
+
+    const listForTask = vi.spyOn(server.app.ctx.runs, 'listForTask');
+    const dependsOn = vi.spyOn(server.app.ctx.tasks, 'dependsOn');
+    const dependents = vi.spyOn(server.app.ctx.tasks, 'dependents');
+    const reattempts = vi.spyOn(server.app.ctx.tasks, 'reattempts');
+    const listToolCalls = vi.spyOn(server.app.ctx.runs, 'listToolCalls');
+    const listForTasks = vi.spyOn(server.app.ctx.runs, 'listForTasks');
+    const toolCallCounts = vi.spyOn(server.app.ctx.runs, 'toolCallCounts');
+
+    const list = await server.api('GET', '/api/tasks');
+
+    expect(list.status).toBe(200);
+    expect(listForTask).not.toHaveBeenCalled();
+    expect(dependsOn).not.toHaveBeenCalled();
+    expect(dependents).not.toHaveBeenCalled();
+    expect(reattempts).not.toHaveBeenCalled();
+    expect(listToolCalls).not.toHaveBeenCalled();
+    expect(listForTasks).toHaveBeenCalledOnce();
+    expect(toolCallCounts).toHaveBeenCalledOnce();
+
+    vi.restoreAllMocks();
+
+    for (const task of list.body.tasks) {
+      expect((await server.api('GET', `/api/tasks/${task.id}`)).body).toEqual(task);
+    }
   });
 });

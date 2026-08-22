@@ -20,7 +20,7 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { readTranscriptLog } from '../../execution/transcript-log.js';
-import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi } from '../serialize.js';
+import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi } from '../serialize.js';
 import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
 /** The reviewer's note, carried onto the re-attempt or back to the queue. */
@@ -348,10 +348,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       const { sortBy, ...query } = req.query;
       // Cost is not a task column — it is derived from runs — so the cost
       // sort happens here, after serialization; unknown cost sorts lowest.
-      const tasks = await Promise.all(
-        (await ctx.tasks.listWithDeps(sortBy === 'cost' ? query : { ...query, ...(sortBy ? { sortBy } : {}) })).map((task) =>
-          taskToApi(ctx, task),
-        ),
+      const tasks = await tasksToApi(
+        ctx,
+        await ctx.tasks.listWithDeps(sortBy === 'cost' ? query : { ...query, ...(sortBy ? { sortBy } : {}) }),
       );
       if (sortBy === 'cost') {
         const dir = query.order === 'desc' ? -1 : 1;
