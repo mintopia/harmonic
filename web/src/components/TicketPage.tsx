@@ -360,13 +360,24 @@ function ChangesTab({ task }: { task: Task }) {
   );
 }
 
-/** The re-attempt/review context and the editable Dependencies/Notify blocks
- * — everything DetailsTab held that isn't now permanently visible in the
- * Ticket page's side aside (RunMeta and VerificationCard moved there, so this
- * tab no longer repeats them — issue #183). */
+/** The selected Run's prompt, re-attempt/review context, and editable
+ * Dependencies/Notify blocks. The prompt is persisted with the Run, so it
+ * records exactly what reached the agent even after the Task template changes. */
 function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunLogEvent[] }) {
   return (
     <div className="flex flex-col">
+      <div className="mt-6">
+        <div className={`${sectionLabel} mb-2`}>Prompt sent</div>
+        {run?.prompt ? (
+          <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-field p-3 text-body text-ink tabular-nums">
+            {run.prompt}
+          </pre>
+        ) : (
+          <p className="text-muted">
+            {run?.state === 'running' ? 'Prompt is sent as the run starts…' : 'No prompt recorded for this run.'}
+          </p>
+        )}
+      </div>
       <OutputSummary events={events} />
       {run?.reviewFeedback && (
         <div className="py-3 first:pt-0">

@@ -60,6 +60,7 @@ export function RunRail({
   const note = continuationNote(runs);
   const files = changedFilesFromStat(worktree.stat);
   const hasWorktree = worktree.isolationMode === 'worktree' && Boolean(worktree.branch);
+  const isRunSelected = (runId: number) => selectedFile === null && runId === selectedRunId;
 
   return (
     <aside aria-label="Run navigation" className="flex h-full min-h-0 flex-col gap-6">
@@ -75,9 +76,9 @@ export function RunRail({
             <button
               key={c.runId}
               type="button"
-              aria-pressed={c.runId === selectedRunId}
+              aria-pressed={isRunSelected(c.runId)}
               onClick={() => onSelectRun(c.runId)}
-              className={`w-full ${c.runId === selectedRunId ? runChipActive : runChip}`}
+              className={`w-full ${isRunSelected(c.runId) ? runChipActive : runChip}`}
             >
               <span className="flex items-center gap-2 text-data font-semibold text-ink">
                 <ChipDot chip={c} />
@@ -122,7 +123,7 @@ export function RunRail({
         <button
           type="button"
           onClick={onSelectChanges}
-          className={`${sectionLabel} mb-2 block text-left hover:text-ink`}
+          className={`${sectionLabel} mb-2 flex min-h-11 items-center text-left hover:text-ink`}
         >
           Changed files{files.length > 0 ? ` · ${files.length}` : ''}
         </button>
@@ -138,7 +139,7 @@ export function RunRail({
                 type="button"
                 aria-pressed={selectedFile === file.path}
                 onClick={() => onSelectFile(file.path)}
-                className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-small transition-colors hover:bg-raised ${
+                className={`grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-small transition-colors hover:bg-raised ${
                   selectedFile === file.path ? 'bg-await-tint text-ink' : 'text-muted'
                 }`}
               >
