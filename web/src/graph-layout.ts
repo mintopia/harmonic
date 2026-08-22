@@ -10,12 +10,9 @@
 // whose children are the members. elk positions the members together; the view
 // then draws the group as nothing but a quiet floating label + per-node badge,
 // never a container box (ADR 0015 / prototype #84).
-import ELK from 'elkjs/lib/elk.bundled.js';
+import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js';
 import type { Task } from './types';
 import { flattenElkLayout, type GraphEdge, type Layout, type LayoutOpts } from './graph-model';
-
-// Re-exported so existing view imports (`from './graph-layout'`) keep resolving.
-export type { Direction, LaidGroup, LaidNode, Layout, LayoutOpts } from './graph-model';
 
 const elk = new ELK();
 
@@ -23,7 +20,6 @@ export async function layoutGraph(tasks: Task[], edges: GraphEdge[], opts: Layou
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const labelPad = opts.groupLabelPad ?? 34;
 
-  // Bucket tasks by Map; unmapped ones sit at root level.
   const maps = new Map<number, { title: string; members: Task[] }>();
   const loose: Task[] = [];
   for (const t of tasks) {
@@ -38,7 +34,7 @@ export async function layoutGraph(tasks: Task[], edges: GraphEdge[], opts: Layou
 
   const taskNode = (t: Task) => ({ id: `t${t.id}`, width: opts.nodeW, height: opts.nodeH });
 
-  const children: unknown[] = [
+  const children: ElkNode['children'] = [
     ...[...maps.entries()].map(([ref, g]) => ({
       id: `m${ref}`,
       layoutOptions: {
@@ -56,7 +52,7 @@ export async function layoutGraph(tasks: Task[], edges: GraphEdge[], opts: Layou
     targets: [`t${e.to}`],
   }));
 
-  const graph = {
+  const graph: ElkNode = {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
@@ -72,8 +68,7 @@ export async function layoutGraph(tasks: Task[], edges: GraphEdge[], opts: Layou
     edges: elkEdges,
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const res = await elk.layout(graph as any);
+  const res = await elk.layout(graph);
   const groupTitles = new Map([...maps.entries()].map(([ref, g]) => [ref, g.title]));
   return flattenElkLayout(res, groupTitles, byId, edges);
 }

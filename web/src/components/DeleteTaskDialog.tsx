@@ -6,18 +6,6 @@ import { Modal } from './Modal';
 import { btnDestructive, panelTitle } from '../ui';
 import { taskLabel } from '../id-format.js';
 
-/**
- * The hard-delete confirm (issue #162, ADR-0025). Deliberately its own dialog
- * rather than CancelButton's two-click arm (TaskActions.tsx): delete is
- * permanent — it cascades the Task's Runs/history server-side — where Cancel
- * just parks the Task in a `cancelled` state it can leave again (Uncancel).
- * A one-line arm risks reading as "just a stronger Cancel"; a named dialog
- * makes the distinction, and what's about to be lost, explicit.
- *
- * Server-guarded to a non-running Task (409 otherwise) — the same shape as
- * `taskActions` already withholding the action while running, so this dialog
- * never has to render that refusal.
- */
 export function DeleteTaskDialog({
   task,
   onClose,

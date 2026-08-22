@@ -12,10 +12,6 @@ interface ApiKey {
   revokedAt: number | null;
 }
 
-/** The scopes the public create endpoint offers (`src/server/routes/auth.ts`):
- * `full` drives the whole fleet, `read` is the viz-client key (issue #35).
- * `ApiKey.scope` stays an open `string` — the server may return other internal
- * scopes — so `ScopeChip` keeps a neutral fallback. */
 type Scope = 'full' | 'read';
 
 async function json<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -29,8 +25,6 @@ async function json<T>(method: string, path: string, body?: unknown): Promise<T>
   return res.json() as Promise<T>;
 }
 
-/** navigator.clipboard.writeText with a brief "copied" acknowledgement — no
- * existing clipboard pattern in the app to match, so this is the one. */
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -51,12 +45,6 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-/** A key's scope → a neutral chip. Scope is a *capability* (what the key may
- * do), not a Task state, so it never takes a state colour (the Signal Rule):
- * `full` and `read` differ only by ink weight, the same non-chromatic
- * distinction the conversation-state and continuation-cost chips use. A `read`
- * key is the viz-client credential (issue #35) — GET tasks/runs/maps + WS, no
- * mutations — so it reads quieter (muted) than a full-access key (ink). */
 const SCOPE_STYLES: Record<string, string> = {
   full: 'bg-raised text-ink',
   read: 'bg-raised text-muted',
@@ -66,8 +54,6 @@ function ScopeChip({ scope }: { scope: string }) {
   return <span className={`${chip} ${SCOPE_STYLES[scope] ?? 'bg-raised text-muted'}`}>{scope}</span>;
 }
 
-/** One row of the connection header: a Label name, the Data-role value
- * (a URL/command is code — the Mono Is Code Rule), and its copy button. */
 function ConnectionRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2">
@@ -109,7 +95,6 @@ export function ApiPage() {
         <h1 className={displayTitle}>API</h1>
       </div>
 
-      {/* Section cards on the canvas — the same grammar as Settings. */}
       <div className="flex flex-col gap-4">
       <section className={`${card} p-5`}>
         <h2 className="mb-3 text-title font-semibold">Connection</h2>
@@ -153,8 +138,6 @@ export function ApiPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          {/* Scope is chosen at mint time — the backend supports a read-only
-              viz-client key (issue #35), full-access by default. */}
           <select
             aria-label="Key scope"
             className={selectField}

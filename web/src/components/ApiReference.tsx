@@ -4,9 +4,6 @@ import type { ApiReferenceEndpoint, ApiReferenceGroup, SchemaNode } from '../ope
 import { card, chip, labelType, searchField, sectionTitle, touchOverlay } from '../ui';
 import { EmptyState } from './EmptyState';
 
-/** Disclosure chevron, private to this file — mirrors Icon.tsx's stroke
- * vocabulary (16 viewBox, 1.5 stroke, currentColor) without adding to the
- * shared rail icon set, which this isn't part of. */
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -26,11 +23,6 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-/** HTTP method → house-palette tint (DESIGN.md § 2, the API-docs carve-out
- * on the Signal Rule): color encodes what the verb does to state —
- * read is neutral, create green, mutate amber, destroy red — reusing the
- * state vocabulary on this developer-facing surface only. The verb text is
- * always present, so color is a redundant second cue, never the only one. */
 const METHOD_STYLES: Record<string, string> = {
   GET: 'bg-raised text-muted',
   POST: 'bg-raised text-ink',
@@ -39,9 +31,6 @@ const METHOD_STYLES: Record<string, string> = {
   DELETE: 'bg-fail-tint text-fail',
 };
 
-/** Fixed-width so the paths line up into a scannable column regardless of
- * verb length; mono because an HTTP verb is a code token you paste into a
- * request (the Mono Is Code Rule). */
 function MethodPill({ method }: { method: string }) {
   return (
     <span
@@ -54,18 +43,12 @@ function MethodPill({ method }: { method: string }) {
   );
 }
 
-/** Response status → state color by real meaning (the Signal Rule's carve-out):
- * 4xx/5xx failed (red); successful and unclassified responses stay neutral. */
 function statusStyle(status: string): string {
   const lead = status[0];
   if (lead === '4' || lead === '5') return 'bg-fail-tint text-fail';
   return 'bg-raised text-ink';
 }
 
-/** Renders a schema's structure where the view-model resolved it; falls
- * back to pretty-printed raw JSON for whatever construct it didn't (Mono
- * Is Code Rule — property names and every type/schema literal are code,
- * only the "required" chip and headings are sans). */
 function SchemaView({ node }: { node: SchemaNode }) {
   if (node.kind === 'raw') {
     return (
@@ -118,12 +101,7 @@ function ParamsTable({ parameters }: { parameters: ApiReferenceEndpoint['paramet
   if (parameters.length === 0) return null;
   return (
     <div>
-      {/* Title role, not Label: this is a section heading, and Label is for
-          "field labels and table headers" (DESIGN.md § 3). Both being Label
-          is what made the heading and the column headers read as one block. */}
       <h4 className={`mb-1.5 ${sectionTitle}`}>Parameters</h4>
-      {/* Grouped by air, not ruled rows — a parameter list is a list, and
-          hairline-per-row is the Ledger regression DESIGN.md § 4 names. */}
       <ul className="flex flex-col gap-1.5">
         {parameters.map((p) => (
           <li key={`${p.in}:${p.name}`} className="flex flex-wrap items-center gap-1.5 pl-2">
@@ -138,17 +116,6 @@ function ParamsTable({ parameters }: { parameters: ApiReferenceEndpoint['paramet
   );
 }
 
-/**
- * A representative body for a resolved schema. Prefers the example the spec
- * actually declares (zod `.meta({ example })` in src/server/schemas.ts and the
- * route modules), at whatever depth it's declared — a whole-body example, or
- * one field at a time. Only where the spec is silent does this fall back to a
- * placeholder per primitive and the first branch of an enum/union.
- *
- * That fallback is why the panel says the example is derived rather than
- * captured: a shape illustration must never read as real recorded output
- * (PRODUCT.md § Honest numbers: never fake precision we don't have).
- */
 function exampleFor(node: SchemaNode): unknown {
   if (node.example !== undefined) return node.example;
   switch (node.kind) {
@@ -178,16 +145,10 @@ function exampleFor(node: SchemaNode): unknown {
           return null;
       }
     case 'raw':
-      // A construct the view-model didn't resolve (free-form dictionary,
-      // `not`, …): its own JSON Schema is the most honest illustration.
       return node.raw;
   }
 }
 
-/** One status-code tab. Selected lights up in the code's own meaning-colour
- * (statusStyle) rather than the cobalt selection tint: on this surface the
- * status *is* the state, and the API-docs carve-out (DESIGN.md § 2) already
- * licenses the state vocabulary here. Unselected stays muted text. */
 function StatusTab({ status, active, onClick }: { status: string; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -204,10 +165,6 @@ function StatusTab({ status, active, onClick }: { status: string; active: boolea
   );
 }
 
-/** Example|Schema switch. Deliberately the minimal underline tab (DESIGN.md
- * § Task detail's Events/Changes/Details), not another pill: where these sit
- * under the response status pills, a second row of pills would read as the
- * same rank. Accent underline = selection. */
 function PaneTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -224,8 +181,6 @@ function PaneTab({ label, active, onClick }: { label: string; active: boolean; o
   );
 }
 
-/** The two views of a schema, without the switch — for callers that own the
- * Example|Schema choice for a whole section rather than per block. */
 function SchemaBody({ schema, pane }: { schema: SchemaNode; pane: 'example' | 'schema' }) {
   if (pane === 'schema') return <SchemaView node={schema} />;
   return (
@@ -240,7 +195,6 @@ function SchemaBody({ schema, pane }: { schema: SchemaNode; pane: 'example' | 's
   );
 }
 
-/** The Example|Schema switch on its own, for the same callers. */
 function PaneTabs({ pane, onChange }: { pane: 'example' | 'schema'; onChange: (p: 'example' | 'schema') => void }) {
   return (
     <div aria-label="Schema view" className="flex gap-3" role="group">
@@ -250,9 +204,6 @@ function PaneTabs({ pane, onChange }: { pane: 'example' | 'schema'; onChange: (p
   );
 }
 
-/** Everything in an endpoint that isn't a payload. Full width in every
- * restructure below: prose wants its measure (~72ch), and burying it in a
- * narrow column was half the imbalance. */
 function EndpointPrelude({ endpoint }: { endpoint: ApiReferenceEndpoint }) {
   return (
     <>
@@ -264,7 +215,6 @@ function EndpointPrelude({ endpoint }: { endpoint: ApiReferenceEndpoint }) {
   );
 }
 
-/** The response status-code selector. */
 function StatusTabs({
   responses,
   current,
@@ -290,31 +240,16 @@ function StatusTabs({
 const DERIVED_NOTE = 'Examples are derived from the schema, not captured payloads.';
 
 /**
- * The open endpoint: prose spans the width, then request and response pair off
- * below it under ONE Example|Schema switch. Both payloads answer the same
- * question, so a switch (and a caveat) per column was duplication.
- *
- * The right column is the response on *every* endpoint, body or not: the
- * reference is read by scanning down a list, and a response that sometimes
- * spans the full width would move the thing you're looking for. Where there's
- * no body to show, the request side says so rather than sitting blank.
- *
- * Owns the Example|Schema and status selections. Any live-mode variant wrapper
- * must sit ABOVE this component, never inside it: the wrapper's DOM is mutated
- * by live.js, and re-rendering it on every tab click makes React try to remove
- * nodes live.js has moved.
+ * Any live-mode variant wrapper must sit ABOVE this component, never inside it:
+ * the wrapper's DOM is mutated by live.js, and re-rendering it on every tab
+ * click makes React try to remove nodes live.js has moved.
  */
 function EndpointPaired({ endpoint }: { endpoint: ApiReferenceEndpoint }) {
   const [pane, setPane] = useState<'example' | 'schema'>('example');
   const [status, setStatus] = useState<string | null>(null);
   const current = endpoint.responses.find((r) => r.status === status) ?? endpoint.responses[0];
-  // Four shared rows — label / status tabs / description / body — so both code
-  // blocks start on the same line instead of the response's being pushed down
-  // by the rows above it. Subgrid rather than hand-tuned spacers: those rows
-  // are as tall as their content (a status chip, a sentence that may wrap), and
-  // magic numbers would drift the moment either changes. It only works because
-  // the grid below always declares the rows; a subgrid whose parent has no
-  // tracks collapses its children into one row.
+  // Subgrid only works because the grid below always declares the rows; a
+  // subgrid whose parent has no tracks collapses its children into one row.
   const col =
     'grid min-w-0 grid-rows-[auto_auto_auto_auto] gap-y-1.5 min-[1100px]:row-start-1 min-[1100px]:row-span-4 min-[1100px]:grid-rows-subgrid';
   return (
@@ -324,12 +259,9 @@ function EndpointPaired({ endpoint }: { endpoint: ApiReferenceEndpoint }) {
         <h4 className={`${sectionTitle} pb-1`}>Payloads</h4>
         <PaneTabs onChange={setPane} pane={pane} />
       </div>
-      {/* Always two columns, so the response never moves between endpoints —
-          which also means the parent always declares the rows above. */}
       <div className="grid gap-x-5 gap-y-5 min-[1100px]:grid-cols-2 min-[1100px]:grid-rows-[auto_auto_auto_1fr] min-[1100px]:gap-y-0">
         <div className={col}>
           <h5 className={`${labelType} text-muted`}>Request</h5>
-          {/* Hold the status-tab row open on this side. */}
           <div />
           {endpoint.requestBody?.description ? (
             <p className="text-muted">{endpoint.requestBody.description}</p>
@@ -348,8 +280,6 @@ function EndpointPaired({ endpoint }: { endpoint: ApiReferenceEndpoint }) {
           <div className={col}>
             <h5 className={`${labelType} text-muted`}>Response</h5>
             <StatusTabs current={current.status} onChange={setStatus} responses={endpoint.responses} />
-            {/* What this status means — the spec's own words (schemas.ts's
-                `errorResponse`, or a `.describe()` on the success schema). */}
             {current.description ? <p className="text-muted">{current.description}</p> : <div />}
             <div className="min-w-0">
               {current.schema ? (
@@ -394,8 +324,6 @@ function EndpointRow({
             <span className="ml-auto hidden truncate pl-3 text-right text-muted md:block">{endpoint.summary}</span>
           )}
         </button>
-        {/* Deep-link glyph, quiet by default: a copy/share handle for this row
-            that opens it (rather than toggling closed) and updates the URL. */}
         <a
           aria-label="Link to this endpoint"
           className="relative shrink-0 text-muted hover:text-ink"
@@ -419,8 +347,6 @@ function EndpointRow({
   );
 }
 
-/** Fetches the public spec and renders a grouped, expandable endpoint
- * reference below the API page's spec-download panel (issue 7). */
 export function ApiReference() {
   const [groups, setGroups] = useState<ApiReferenceGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -437,8 +363,6 @@ export function ApiReference() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  // Deep-link restore (once groups are in): if the URL landed with an
-  // endpoint's anchor in the hash, open that row and scroll it into view.
   useEffect(() => {
     if (!groups) return;
     const hash = window.location.hash.replace(/^#/, '');

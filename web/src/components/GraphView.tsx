@@ -3,6 +3,8 @@ import type { Task } from '../types';
 import {
   SIGNAL,
   STATE_LABEL,
+  type LaidNode,
+  type Layout,
   type Transform,
   edgePath,
   fitTransform,
@@ -12,28 +14,11 @@ import {
   truncate,
   visibleTasks,
 } from '../graph-model';
-import { layoutGraph, type LaidNode, type Layout } from '../graph-layout';
+import { layoutGraph } from '../graph-layout';
 import { taskKey } from '../id-format.js';
 import { Switch } from './Switch';
 import { EmptyState } from './EmptyState';
 import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
-
-/**
- * The read-only Dependency Graph view (issue #85, ADR 0015). It renders the
- * active Workspace's Tasks as a DAG over their Dependency edges — native and
- * mirrored alike — using elkjs for layout and hand-rolled SVG for the render.
- * The visuals follow the Deck language (issue #186) over the prototype's start
- * (#84): left-right layout, card nodes carrying a state dot + label +
- * native/mirrored glyph, Map membership as a per-node badge + quiet label (no
- * container box), edges tinted by their source state, and pan/zoom/fit
- * navigation. Elevation is the hairline ring alone — no ghost-card shadow, and
- * every colour is a re-theming token, so it reads in both themes. It is
- * read-only — a node click deep-links to the Task detail, where editing lives.
- */
-
-// The state palette (SIGNAL / STATE_LABEL) and the pan/zoom + edge geometry live
-// in graph-model.ts so they're unit-testable without a browser; the render below
-// is the only browser-bound part.
 
 const NODE_W = 196;
 const NODE_H = 60;
@@ -44,14 +29,11 @@ export function GraphView({
   onOpen,
 }: {
   tasks: Task[];
-  /** First board load still in flight — distinguishes "loading" from "no tasks". */
   loading: boolean;
   onOpen: (task: Task) => void;
 }) {
   const [showTerminal, setShowTerminal] = useState(false);
 
-  // Which Tasks and edges the graph draws. `visible` recomputes on any board
-  // change (the firehose replaces Task objects); `edges` follows it.
   const visible = useMemo(() => visibleTasks(tasks, showTerminal), [tasks, showTerminal]);
   const edges = useMemo(() => graphEdges(visible), [visible]);
   const badges = useMemo(() => mapBadges(visible), [visible]);
@@ -100,8 +82,6 @@ export function GraphView({
   // instant a pan starts, but `drag` is a ref (no re-render), so the style would
   // otherwise only catch up on the first pointer-move. Kept in state for that.
   const [dragging, setDragging] = useState(false);
-  // Distinguishes a pan-drag from a click-to-open: a gesture that moved past a
-  // few px opens nothing.
   const moved = useRef(false);
   const pressed = useRef<number | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -116,7 +96,6 @@ export function GraphView({
   }, []);
 
   const fit = () => setT(fitTransform(layout?.width ?? 0, layout?.height ?? 0, vp.w, vp.h));
-  // Fit whenever a fresh layout lands or the viewport first sizes.
   useEffect(() => {
     if (layout && layout.width > 0 && vp.w > 0) setT(fitTransform(layout.width, layout.height, vp.w, vp.h));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,7 +146,6 @@ export function GraphView({
   return (
     <div className="flex h-full flex-col">
       <h1 className="sr-only">Dependency graph</h1>
-      {/* Toolbar: the anchor count, and the terminal-reveal toggle. */}
       <div className="mb-4 flex flex-wrap items-baseline gap-3">
         <span className="flex items-baseline gap-1.5">
           <span className={`${displayTitle} tabular-nums ${visible.length > 0 || loading ? '' : 'text-faint'}`}>
@@ -203,7 +181,6 @@ export function GraphView({
             e.currentTarget.releasePointerCapture(e.pointerId);
             drag.current = null;
             setDragging(false);
-            // A tap that didn't pan on a node deep-links to its Task detail.
             if (!moved.current) openNode(pressed.current);
             pressed.current = null;
           }}
@@ -247,9 +224,6 @@ export function GraphView({
               ))}
             </defs>
             <g transform={`translate(${t.tx},${t.ty}) scale(${t.k})`}>
-              {/* Map membership: a quiet floating label only — never a box
-                  (ADR 0015). The per-node badge carries membership when elk's
-                  layering scatters a Map's members. */}
               {layout?.groups.map((g) => (
                 <text
                   key={g.ref}
@@ -264,7 +238,6 @@ export function GraphView({
                 </text>
               ))}
 
-              {/* Edges: tinted by source state, gently curved, arrowed. */}
               {layout?.edges.map((e) => {
                 const a = layout.nodes.find((n) => n.id === e.from);
                 const b = layout.nodes.find((n) => n.id === e.to);
@@ -284,7 +257,6 @@ export function GraphView({
                 );
               })}
 
-              {/* Nodes: Variant A card + the Map badge (prototype winner). */}
               {layout?.nodes.map((n) => {
                 const task = byId.get(n.id) ?? n.task;
                 return (
@@ -303,11 +275,9 @@ export function GraphView({
           </svg>
         </div>
 
-        {/* Zoom controls (top-right). Rendered as a sibling of the pan/zoom
-            host — not a child — so a button press never triggers the host's
-            pointer capture, which would otherwise swallow the click. Each
-            control carries a ≥44px touch target (issue #56) via the shared
-            helper, even though the glyphs read compact. */}
+        {/* Rendered as a sibling of the pan/zoom host — not a child — so a
+            button press never triggers the host's pointer capture, which would
+            otherwise swallow the click. */}
         <div className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-surface px-1 shadow-card ring-1 ring-edge">
           <button
             className={`${touchTarget} rounded-full text-muted hover:bg-raised hover:text-ink`}
@@ -370,10 +340,6 @@ function CardNode({
         }
       }}
     >
-      {/* Elevation is declared once — the hairline ring (accent on hover), no
-          drop-shadow: a border+shadow is the banned ghost-card pairing, and a
-          hardcoded shadow wouldn't re-theme (DESIGN.md § 4). Dark already leans
-          on the ring; light now matches. */}
       <rect
         x={n.x}
         y={n.y}
@@ -385,11 +351,6 @@ function CardNode({
         stroke={hovered ? 'var(--hm-accent)' : 'var(--hm-hairline)'}
         strokeWidth={hovered ? 1.5 : 1}
       />
-      {/* State dot before the title — the Deck's lightest state signal
-          (DESIGN.md § 6), replacing the old left side-stripe (a pattern the Deck
-          bans). `draft` / `cancelled` render neutral, per the Signal Rule; a
-          running dot pulses (motion-safe), the same "work in flight" cue the
-          Deck row's dot carries. */}
       <circle
         cx={n.x + 18}
         cy={n.y + 18}
@@ -403,7 +364,6 @@ function CardNode({
       <text x={n.x + 30} y={n.y + 44} fontSize={10.5} fontWeight={600} fill={sig.text} letterSpacing="0.03em">
         {STATE_LABEL[task.state].toUpperCase()}
       </text>
-      {/* native = filled dot, mirrored = ring (tracker-owned). */}
       <circle
         cx={n.x + n.w - 24}
         cy={n.y + 40}
@@ -415,7 +375,6 @@ function CardNode({
       <text x={n.x + n.w - 14} y={n.y + 44} className="fill-faint" fontSize={10} textAnchor="end">
         {taskKey(task.id)}
       </text>
-      {/* Map badge: the membership signal that survives elk's dependency layering. */}
       {badge != null && (
         <text x={n.x + n.w - 10} y={n.y + 16} textAnchor="end" className="fill-faint" fontSize={9.5} fontWeight={700}>
           {badge}

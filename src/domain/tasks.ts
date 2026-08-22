@@ -623,6 +623,10 @@ export class TaskService {
     return await this.resolve(await this.getRaw(id));
   }
 
+  async assertExists(id: number): Promise<void> {
+    await this.getRaw(id);
+  }
+
   async update(id: number, input: UpdateTaskInput): Promise<TaskRow> {
     const task = await this.get(id);
     if (!EDITABLE_STATES.includes(task.state)) {
@@ -938,8 +942,6 @@ export class TaskService {
     );
     return await this.changed(row!);
   }
-
-  // ---- Dependencies ----
 
   async dependsOn(taskId: number): Promise<number[]> {
     return (

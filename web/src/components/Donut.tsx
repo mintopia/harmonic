@@ -1,10 +1,7 @@
 export interface DonutSegment {
-  /** Stable key + accessible category name. */
   key: string;
-  /** Legend label; defaults to `key`. */
   label?: string;
   value: number;
-  /** CSS colour for the arc + legend dot (e.g. "var(--hm-running-dot)"). */
   color: string;
 }
 
@@ -16,7 +13,6 @@ const TAU = Math.PI * 2;
 
 const polar = (r: number, a: number): [number, number] => [CX + r * Math.cos(a), CY + r * Math.sin(a)];
 
-/** One donut wedge from angle a0→a1 (radians, 0 = 12 o'clock, clockwise). */
 function wedge(a0: number, a1: number): string {
   const [x0o, y0o] = polar(R, a0);
   const [x1o, y1o] = polar(R, a1);
@@ -26,16 +22,9 @@ function wedge(a0: number, a1: number): string {
   return `M${x0o} ${y0o} A${R} ${R} 0 ${large} 1 ${x1o} ${y1o} L${x1i} ${y1i} A${R_INNER} ${R_INNER} 0 ${large} 0 ${x0i} ${y0i} Z`;
 }
 
-/**
- * A donut chart for a small categorical split (run states). Segments carry
- * their own colour — for run states that's the state-signal family (the
- * Signal Rule: a coloured segment *is* a state, exactly like the chips it
- * replaces), not the cobalt data series. The hole holds the total. A single
- * category draws a full ring (a lone wedge can't close a circle).
- */
 export function Donut({ segments, total, ariaLabel }: { segments: DonutSegment[]; total: number; ariaLabel?: string }) {
   const sum = segments.reduce((a, s) => a + s.value, 0) || 1;
-  let angle = -Math.PI / 2; // start at 12 o'clock
+  let angle = -Math.PI / 2;
   const arcs = segments.map((s) => {
     const sweep = (s.value / sum) * TAU;
     const a0 = angle;

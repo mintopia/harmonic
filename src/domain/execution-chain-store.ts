@@ -73,16 +73,14 @@ export class ExecutionChainStore {
    */
   resolveForTask(task: { id: number; reattemptOf: number | null }): Promise<number> {
     return this.db.write(async (db) => {
-      // Branch 1: same-task continuation.
       const own = await latestChainedRunOn(db, task.id);
       if (own?.chainId != null) return own.chainId;
 
-      // Branch 2: walk the reattempt ancestry.
       const MAX_ANCESTRY_DEPTH = 100;
       let ancestorId: number | null = task.reattemptOf;
       const visited = new Set<number>();
       for (let depth = 0; ancestorId != null && depth < MAX_ANCESTRY_DEPTH; depth++) {
-        if (visited.has(ancestorId)) break; // cycle guard
+        if (visited.has(ancestorId)) break;
         visited.add(ancestorId);
 
         const currentAncestorId = ancestorId;
@@ -97,8 +95,6 @@ export class ExecutionChainStore {
         ancestorId = ancestorTask?.reattemptOf ?? null;
       }
 
-      // Branch 3: neither the task itself nor its reattempt ancestry has a
-      // chained Run to inherit — this Run starts a brand-new line of work.
       return insertChainOn(db, Date.now());
     });
   }

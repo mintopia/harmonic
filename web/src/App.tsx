@@ -630,7 +630,6 @@ export function App() {
       >
         Skip to content
       </a>
-      {/* The sidebar: navigation lives here; above the working view is status only. */}
       <aside
         className={`shrink-0 border-b border-hairline bg-shell rail:flex rail:flex-col rail:overflow-hidden rail:border-b-0 rail:border-r rail:transition-[width] rail:duration-150 rail:ease-out motion-reduce:rail:transition-none ${
           railCollapsed ? 'rail:w-12' : 'rail:w-[200px]'
@@ -673,11 +672,6 @@ export function App() {
       </aside>
 
       <div className="group/shell flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* The status strip (DESIGN.md §5): status, not navigation — the
-            auto-runner master switch, the running/machine ceiling, and today's
-            cost, in hairline-separated clusters; then the theme cycle, the
-            global Settings icon, Log out, and the one primary action. It pins
-            with the rail while only the working area below scrolls. */}
         <header
           aria-label="Status"
           className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline bg-shell px-6 py-2.5"

@@ -13,28 +13,6 @@ import {
 import type { ContinuationPreview } from '../types';
 import { taskLabel } from '../id-format.js';
 
-/**
- * The review gate's Reject path. Feedback is saved on the run either way; the
- * destination is the operator's choice: send it back to Ready to retry (reject,
- * then spawn a linked re-attempt carrying the feedback), or mark it Failed and
- * stop.
- *
- * There is deliberately no "cancel" here, and none on the gate. A reviewed task
- * has exactly two outcomes — merge it, or fail it with feedback — because
- * "cancelled" and "failed" would be two names for the same terminal fact once
- * the work already exists, and offering both invites the operator to pick
- * between synonyms. Cancel keeps its meaning where a task has produced nothing
- * to judge (draft / blocked / ready) or is still producing it (running).
- *
- * No cobalt here — this dialog speaks in work states (ready / failed), not the
- * interface's voice.
- *
- * When the original task still has a live Session, the re-attempt choice
- * (issue #170) splits into "continue full conversation" (resume the same
- * Session, with an estimated warm/cold cost shown up front) or "start
- * condensed" (a fresh Session on a condensed conversation) — a fetch failure
- * on that preview silently falls back to the plain single re-attempt button.
- */
 export function RejectDialog({
   taskId,
   onClose,
@@ -67,10 +45,6 @@ export function RejectDialog({
     };
   }, [taskId]);
 
-  // Both reject paths reject first (recording the feedback on the run and
-  // failing the task); "retry" then spawns a new task linked to this one,
-  // carrying the feedback and the continuation choice, instead of re-queuing
-  // in place.
   const submit = (retry: boolean, continuation?: 'full' | 'condensed') => async () => {
     setBusy(true);
     setError(null);
@@ -81,7 +55,6 @@ export function RejectDialog({
         rejected.current = true;
       }
       if (retry) await api.reattempt(taskId, fb, continuation);
-      // Acknowledge the completed gate action naming its outcome (issue #98).
       const suffix = continuation ? ` (${continuation})` : '';
       toastSuccess(
         retry
@@ -117,11 +90,6 @@ export function RejectDialog({
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
         {preview?.available && (
-          // Both re-attempt paths now carry a *computed* warm/cold/unknown band
-          // (issue #177): the full continuation reads the source Session's cache
-          // warmth, the condensed path a band computed relative to it
-          // (`estimateCondensedContinuationCost`). Same `continuationCostChip`, so
-          // amber marks whichever path is the pricier one right now — never both.
           <div className="mb-2 space-y-1 text-small">
             <p>
               <span className={`${continuationCostChip(preview.continueFull.estimate.band)} mr-2`}>
@@ -137,15 +105,7 @@ export function RejectDialog({
             </p>
           </div>
         )}
-        {/* Dismissal is Modal's own X, so the footer carries only the two
-            outcomes — nothing here competes with them for the eye. */}
         <div className="flex flex-wrap justify-end gap-2">
-          {/* Quiet-destructive, not a fail-tint pill: the tint was the retired
-              Ledger's vocabulary, and it spent a state colour (Failed rose
-              means the *state*) on an action. Quiet also ranks the two outcomes
-              honestly — re-attempting keeps the work moving and is the common
-              path, so it takes the heavier Ghost; stopping here is the lesser
-              one. No cobalt in this dialog, so Ghost is the top of the scale. */}
           <button type="button" onClick={submit(false)} disabled={busy} className={`${btnQuietDestructive} px-3 py-1.5`}>
             Mark failed
           </button>

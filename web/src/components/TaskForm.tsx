@@ -33,8 +33,6 @@ export function TaskForm({
   onSaved: () => void;
 }) {
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
-  // Hold the raw overrides (null = inherit). A new task inherits everything;
-  // editing seeds from what was pinned, so untouched fields stay inherited.
   const [ov, setOv] = useState<Overrides>(
     task?.overrides ?? { harness: null, model: null, isolationMode: null, priority: null },
   );
@@ -52,8 +50,6 @@ export function TaskForm({
   const inheritedModel = workspace?.model ?? config.harnesses[effHarness]?.defaultModel ?? '';
   const models = config.harnesses[effHarness]?.models ?? [];
 
-  // A new task inherits its Workspace's Working Directory (ADR-0008); only surface
-  // the field when editing, or when there's no Workspace to inherit from.
   const showWorkingDir = !!task || workspaceId === null;
 
   const save = async (state?: 'draft' | 'ready') => {
@@ -189,7 +185,6 @@ export function TaskForm({
 
         {error && <p className="mb-3 text-fail">{error}</p>}
 
-        {/* Dismissal is Modal's X; the footer carries only outcomes. */}
         <div className="flex justify-end gap-2">
           {!task && (
             <button type="button" disabled={busy || !prompt} onClick={() => save('draft')} className={btnGhost}>

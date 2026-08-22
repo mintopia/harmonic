@@ -65,7 +65,6 @@ export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
   return [...processes].sort((a, b) => {
     const tier = TIER_RANK[attentionTier(a)] - TIER_RANK[attentionTier(b)];
     if (tier !== 0) return tier;
-    // Fuller context first; a null fill sorts after any known fill.
     const fa = contextFillFraction(a);
     const fb = contextFillFraction(b);
     if (fa !== fb) {
@@ -73,7 +72,7 @@ export function rankActivity(processes: ActivityProcess[]): ActivityProcess[] {
       if (fb === null) return -1;
       return fb - fa;
     }
-    return a.startedAt - b.startedAt; // longest-running leads
+    return a.startedAt - b.startedAt;
   });
 }
 
@@ -196,10 +195,9 @@ export function sortActivity(processes: ActivityProcess[], sort: ActivitySort, n
       if (mb === null) return -1;
       return mb - ma;
     }
-    return a.startedAt - b.startedAt; // longest-running leads a tie
+    return a.startedAt - b.startedAt;
   };
   const [needsYou, rest] = partitionNeedsYou(processes);
-  // Pinned tier keeps its attention order; the rest follow the chosen metric.
   return [...rankActivity(needsYou), ...rest.sort(byMetric)];
 }
 

@@ -53,7 +53,6 @@ const configPatchBodySchema = z
     prices: z
       .record(
         z.string(),
-        // Per-model rates in $/Mtok, overriding or extending the shipped table.
         z.object({
           input: z.number().nonnegative().meta({ example: 3 }),
           output: z.number().nonnegative().meta({ example: 15 }),
@@ -159,9 +158,6 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      // The declared body schema is deliberately permissive (see above);
-      // `ConfigStore.update`'s own re-parse through `appConfigSchema` is
-      // the actual validation boundary, same as before this migration.
       const updated = await ctx.configStore.update(req.body as DeepPartial<AppConfig>);
       ctx.autoRunner.poke();
       return updated;

@@ -6,15 +6,6 @@ import { touchOverlay } from '../ui';
  * and focus restore all come from the platform. Clicking the backdrop closes.
  * Keep the dialog itself padding-free so backdrop-click detection (target ===
  * dialog) never fires from clicks inside the panel; children own their padding.
- * Separation from the page is the floating-bar shadow plus the backdrop dim
- * (in dark the shadow token carries a hairline ring, since shadows vanish
- * on a dark field — the Soft Depth Rule).
- *
- * Dismissal is this X, owned here rather than by each dialog: Escape and
- * backdrop-click are invisible, so a modal needs one visible way out, and it
- * should be the same one everywhere (DESIGN.md § 7: one consistent component
- * vocabulary). Faint, because DESIGN.md reserves that step for icon-only
- * affordances. Children must leave the top-right corner clear.
  */
 export function Modal({
   label,

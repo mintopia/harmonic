@@ -22,8 +22,6 @@ import { taskKey, ticketIdentity } from '../id-format.js';
 
 const metaChip = `${chip} bg-raised text-muted`;
 
-/** Shared by OutputTab/PromptTab/ChangesTab: same copy, same placement, for
- * the one case they all share — no run selected yet. */
 function NoRunsYet() {
   return (
     <EmptyState title="No runs yet" className="py-8">
@@ -96,9 +94,6 @@ function Dependencies({ task }: { task: Task }) {
           </span>
         ))}
         {current.dependents.length > 0 && current.state !== 'completed' && (
-          // Two-step inline confirm — never a native confirm() (DESIGN.md
-          // § Toasts): this cascades a cancel across dependents, so it asks
-          // once, in the interface's own voice, before acting.
           <button
             className={`rounded-md px-1.5 py-0.5 ${confirmCancel ? 'font-semibold text-fail' : 'text-muted hover:text-fail'}`}
             onClick={() => {
@@ -182,9 +177,8 @@ function NotifyOverrides({ taskId }: { taskId: number }) {
   );
 }
 
-/** The selected run's result facts as labelled Data rows. */
 function RunMeta({ run }: { run: Run }) {
-  const totals = run.usage?.totals as any;
+  const totals = run.usage?.totals;
   const rows: Array<[string, ReactNode]> = [];
   if (run.reason) rows.push(['reason', <span className="text-fail">{run.reason}</span>]);
   if (run.stopReason) rows.push(['stop', run.stopReason]);
@@ -231,11 +225,6 @@ function RunMeta({ run }: { run: Run }) {
   );
 }
 
-/** The selected run's Guardrail-trip log (issue #171), rendered distinctly
- * from the run's other facts — each trip is a fail-tinted panel naming the
- * dimension and the limit-vs-observed evidence, mirroring the escalation
- * banner's fail vocabulary (`bg-fail-tint`/`text-fail`/`font-semibold`) so a
- * Guardrail trip reads with the same weight as a failed run. */
 function GuardrailTrips({ events }: { events: GuardrailEvent[] }) {
   if (events.length === 0) return null;
   return (
@@ -264,9 +253,6 @@ function OutputTab({ run, events, unavailable }: { run: Run | undefined; events:
   );
 }
 
-/** Steer a running run: queue an operator message that is delivered as a fresh
- * turn at the next turn boundary (never mid-turn). For an agent that has gone
- * off-track, or one that ended its turn and parked waiting for a prompt. */
 function SteerBox({ taskId }: { taskId: number }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -293,7 +279,6 @@ function SteerBox({ taskId }: { taskId: number }) {
           id="steer-run-message"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          // Enter sends; Shift+Enter for a newline — the chat-input convention.
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -304,9 +289,6 @@ function SteerBox({ taskId }: { taskId: number }) {
           placeholder="Redirect the agent — delivered at its next turn boundary…"
           className="min-w-0 flex-1 resize-none rounded-md border border-edge bg-field px-2 py-1 text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
-        {/* Ghost, not a cobalt fill: steering a running run is a secondary
-            move, and the page keeps its one cobalt primary for the review
-            gate's Accept (the One Cobalt Rule; issue #94). */}
         <button
           onClick={() => void send()}
           disabled={sending || text.trim().length === 0}
@@ -319,10 +301,6 @@ function SteerBox({ taskId }: { taskId: number }) {
   );
 }
 
-/** The tail of the agent's own message text for the selected Run — a quick
- * read of how the run ended without opening the full Output stream. Thoughts
- * and tool calls are dropped; only assistant prose survives, last three folded
- * utterances shown newest-last. */
 function OutputSummary({ events }: { events: RunLogEvent[] }) {
   const messages = coalesceEvents(events)
     .filter((item): item is Extract<typeof item, { kind: 'text' }> => item.kind === 'text' && item.variant === 'message')
@@ -346,8 +324,6 @@ function ChangesTab({ task }: { task: Task }) {
   if (!task.branch) return <p className="text-muted">This task has no worktree changes.</p>;
   return (
     <div className="space-y-2">
-      {/* Branch refs and the diff are code (mono); the status sentences are
-          prose (sans) — the Mono Is Code Rule. */}
       <div className="font-data text-data text-tool">
         {task.branch} ← {task.baseBranch}
       </div>
@@ -360,9 +336,6 @@ function ChangesTab({ task }: { task: Task }) {
   );
 }
 
-/** The selected Run's prompt, re-attempt/review context, and editable
- * Dependencies/Notify blocks. The prompt is persisted with the Run, so it
- * records exactly what reached the agent even after the Task template changes. */
 function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; events: RunLogEvent[] }) {
   return (
     <div className="flex flex-col">
@@ -399,7 +372,6 @@ function DetailsTab({ task, run, events }: { task: Task; run: Run | undefined; e
   );
 }
 
-/** A compact `key value` fact for the task-meta line (prototype `.mfact`). */
 function MetaFact({ k, children }: { k?: string; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -409,16 +381,10 @@ function MetaFact({ k, children }: { k?: string; children: ReactNode }) {
   );
 }
 
-/** The `·` divider between task-meta facts (prototype `.dotsep`). */
 function MetaSep() {
   return <span aria-hidden className="size-[3px] shrink-0 rounded-full bg-edge" />;
 }
 
-/** The header meta line's "depends on" fact: each dependency id, checked off
- * once its own Task has landed. Read-only and compact — the full editable
- * add/remove list stays in the Details tab's `Dependencies` (unchanged);
- * this fetches the same `api.tasks()` list `Dependencies` does, purely to
- * resolve each dependency's own state for the checkmark (issue #183). */
 function DependsOnFact({ task }: { task: Task }) {
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   useEffect(() => {
@@ -449,10 +415,6 @@ function DependsOnFact({ task }: { task: Task }) {
   );
 }
 
-/** The header meta line's "notify" fact: the channels this Task routes to, or
- * "channel defaults" when none are pinned — read-only, same data
- * `NotifyOverrides` (Details tab) edits. Renders nothing when the Workspace
- * has no channels configured at all, mirroring `NotifyOverrides`'s own gate. */
 function NotifyFact({ taskId }: { taskId: number }) {
   const [channels, setChannels] = useState<{ id: number; name: string }[]>([]);
   const [attached, setAttached] = useState<number[]>([]);
@@ -479,10 +441,6 @@ function NotifyFact({ taskId }: { taskId: number }) {
   );
 }
 
-/** The task-level Brief card (prototype `.brief`): the same prompt render
- * `DescriptionTab` used inside the old modal's Description tab, now surfaced
- * directly under the header instead of behind a tab — the header IS the
- * Ticket page's front matter (issue #183). */
 function Brief({ task }: { task: Task }) {
   return (
     <div className={`${card} mt-[15px] px-4 py-3 text-small leading-relaxed text-muted`}>
@@ -504,11 +462,6 @@ function Brief({ task }: { task: Task }) {
   );
 }
 
-/** A rejected/failed selected Run's banner (prototype `.runbanner`), carrying
- * feedback forward into the next Run on the same Task when one exists — an
- * auto-retry after a validation failure, the one same-Task case a "next Run"
- * genuinely applies (a *reviewed* rejection spawns a new linked Task instead,
- * surfaced by the Brief's re-attempt lineage line, not a Run in this list). */
 function RunBanner({ run, nextRun }: { run: Run; nextRun: Run | undefined }) {
   if (run.review === 'rejected') {
     return (
@@ -595,18 +548,6 @@ function AgentUsageTable({ run }: { run: Run }) {
   );
 }
 
-/**
- * The full-width Ticket page (issue #183, part of #179 — the Deck redesign):
- * TaskDetail's modal, adapted into its own route. Every hook/effect/state
- * below is carried over verbatim from the modal (the run list + selected-run
- * state, the WS `run_changed` sync, the event-stream replay + live
- * `run_event`, the guardrail/verification-attempt polls, the diff fetch) —
- * only the *rendering* changes: a crumb bar replaces the Modal's dialog
- * chrome, the run switcher becomes the `RunRail`, the always-current
- * `TaskActions` footer becomes the run-aware `Gate`, and RunMeta/
- * VerificationCard move out of the tabbed Details into an always-visible side
- * column (matching the prototype's `.t-side`).
- */
 export function TicketPage({
   task,
   onEdit,
@@ -635,7 +576,6 @@ export function TicketPage({
       setRuns(runs);
       setSelectedRunId((current) => current ?? runs[runs.length - 1]?.id ?? null);
     });
-    // New runs and state changes arrive over the socket.
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'run_changed' && msg.run.taskId === task.id) {
         setRuns((current) => {
@@ -692,10 +632,6 @@ export function TicketPage({
     };
   }, [selectedRunId]);
 
-  // Verification-attempt log for the selected run (issue #169, part of #109):
-  // REST replay, then a WS-triggered refetch (no per-attempt firehose event,
-  // unlike run_event) — `run_changed` for this run is the signal something on
-  // it may have changed. Mirrors the guardrailEvents effect above exactly.
   useEffect(() => {
     if (selectedRunId === null) {
       setVerificationAttempts([]);
@@ -738,8 +674,6 @@ export function TicketPage({
     el.scrollTop = el.scrollHeight;
   }, [events]);
 
-  // Escape → back to the Deck, same parity the old Modal gave for free via
-  // the native <dialog> element.
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -757,25 +691,14 @@ export function TicketPage({
       ? { escalated: task.escalated, text: latestRun.reason.replace(/^escalated to human:\s*/i, '') }
       : null;
 
-  // A reason may name the Task holding the Work Context. Link that holder when
-  // it does; the new scheduler reasons remain useful plain text when they do
-  // not include a Task reference.
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
 
-  // The next-attempt lookup is scoped to the selected run so it renders beside
-  // its result banner, not in the task-level header above.
   const nextRun = selectedRun ? runs.find((r) => r.attempt === selectedRun.attempt + 1) : undefined;
 
-  // The bottom bar (issue #183): whether the selected run gets the live gate
-  // or a read-only historical result. The accept-anyway arming on a block/
-  // escalate verdict (issue #174) lives inside TaskActions, which the live
-  // variant embeds — not re-decided here.
   const gateModel = gateForRun({ task, runs, selectedRunId });
 
   return (
     <div className="flex h-full flex-col">
-      {/* Crumb bar: the page's back-to-Deck affordance, replacing the Modal's
-          dialog chrome (issue #183). */}
       <div className="sticky top-0 z-[4] flex shrink-0 items-center gap-2.5 border-b border-hairline bg-shell px-6 py-2.5">
         <button
           type="button"
@@ -792,10 +715,6 @@ export function TicketPage({
         </span>
       </div>
 
-      {/* The scrolling middle region — the whole page's content, including
-          the sticky crumb's sibling below-the-fold content. Carries the skip
-          link's target (issue #183: the same `id="main-content"` App.tsx's
-          own `<main>` uses when no Ticket is open). */}
       <div
         id="main-content"
         ref={scrollRef}
@@ -807,7 +726,6 @@ export function TicketPage({
         className="min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
       >
         <div className="mx-auto w-full max-w-[1120px] px-6">
-          {/* TASK LEVEL */}
           <div className="pb-1 pt-[22px]">
             <div className="flex items-start gap-3">
               <h1 className={`${displayTitle} line-clamp-2 min-w-0`}>{task.prompt}</h1>
@@ -832,16 +750,9 @@ export function TicketPage({
             </div>
             <FlatMetrics task={task} runs={runs} selectedRun={selectedRun} />
             <Brief task={task} />
-            {/* An eligible Task can be waiting on capacity, Git backoff, a
-                Work Context holder, or its Epic integration branch. It is
-                informational, so it stays quieter than a failed/escalated
-                alert. */}
             {task.skipReason && (
               <div className="mt-2 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
-                {/* Link the holder ref to its Task (the lease owner). Split on the
-                    literal `task <id>` the model already parsed, so the `task …`
-                    format lives in exactly one place (skip-reason-model). */}
                 {skipHolderId === null
                   ? task.skipReason
                   : (() => {

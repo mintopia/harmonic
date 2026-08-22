@@ -4,15 +4,6 @@ import { costFloor, formatMetric, metricValue, METRIC_LABEL, type DayCost, type 
 const dateLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const dayLabel = (ms: number) => new Date(ms).toLocaleDateString(undefined, { weekday: 'short' });
 
-/**
- * Cost/tokens/runs per day as a compact bar chart (DESIGN.md § Charts): one
- * cobalt series, a friendly 1/2/5×10ⁿ ceiling, ≤~12 date labels. Honest
- * numbers — for the usd metric an unpriceable day is a hollow dashed column
- * (no value asserted), never a zero bar, and a floored day tooltips with a
- * "≥". Tokens/runs are always concrete counts, so every day plots as a solid
- * bar with no dashed/floor treatment. Replaces the old full-width area chart
- * with something that reads at a glance and stays small.
- */
 export function CostBars({ series, metric = 'usd' }: { series: DayCost[]; metric?: StatMetric }) {
   const values = series.map((s) => metricValue(s, metric) ?? 0);
   const max = Math.max(...values, metric === 'usd' ? 0.01 : 1);

@@ -1,12 +1,6 @@
 import type { ReactNode } from 'react';
 import { card, labelType } from '../ui';
 
-/**
- * Settings section card (DESIGN.md § Settings): each section is a card
- * floating on the canvas — title, one-line muted description, controls.
- * The parent stacks them at 16px; content caps at 48rem so field rows
- * never sprawl.
- */
 export function SettingsSection({
   title,
   description,
@@ -25,10 +19,8 @@ export function SettingsSection({
   );
 }
 
-/** Uppercase field label above an input. */
 export const fieldLabel = `mb-1.5 block ${labelType} text-muted`;
 
-/** The `(token, description)` help list rendered under a prompt editor. */
 export function PlaceholderList({ placeholders }: { placeholders: [string, string][] }) {
   return (
     <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
@@ -42,10 +34,6 @@ export function PlaceholderList({ placeholders }: { placeholders: [string, strin
   );
 }
 
-/** Read-only "Compiled preview" of a prompt — the exact text the server would
- * send, tokens filled with sample values (and, for the critic, the appended
- * scaffolding). Rendered under the editor so an operator sees what the model
- * actually receives. Shared by the global and per-Workspace settings pages. */
 export function PromptPreview({ text }: { text: string }) {
   return (
     <details className="mt-2">

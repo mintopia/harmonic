@@ -13,11 +13,6 @@ import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
 import { taskLabel } from '../id-format.js';
 
-/** Review-gate verdict summary tone (issue #174 FIX 1) — text-only, unlike
- * VerificationCard's OUTCOME_TONE chips, since this lives in a one-line
- * footer strip rather than a tinted pill. `proceed` reads as muted (nothing
- * to flag); `block`/`escalate` both read fail-red — the footer's job is only
- * to say "go read Details", not to distinguish the two here. */
 const DECISION_TONE: Record<VerificationOutcome, string> = {
   proceed: 'text-muted',
   block: 'text-fail',
@@ -72,13 +67,6 @@ function AcceptButton({ className, label, onConfirm }: { className: string; labe
   );
 }
 
-/**
- * The task's operator actions, rendered from the shared taskActions() map
- * so the board card and the detail modal footer never drift. The only
- * per-surface differences are props: secondary actions read as quiet text
- * on the dense card and bordered ghost buttons in the modal footer, and
- * the footer disappears entirely for terminal states.
- */
 export function TaskActions({
   task,
   variant,
@@ -103,17 +91,11 @@ export function TaskActions({
   const actions = taskActions(task.state);
   if (variant === 'footer' && actions.length === 0) return null;
 
-  // The run's current Verification decision, if any attempts have landed —
-  // drives both the review-gate's inline verdict line and whether Accept
-  // arms itself (issue #174 FIX 1).
   const decision =
     verificationAttempts && verificationAttempts.length > 0 ? overallDecision(verificationAttempts) : null;
 
   const secondary = variant === 'card' ? btnQuiet : btnGhost;
   const act = (fn: () => Promise<unknown>) => () => fn().then(onChanged, toastError);
-  // A gate action (accept/cancel) that acknowledges itself on success — a
-  // confirmation toast naming what happened, so an irreversible click never
-  // lands silently (issue #98). Reject is acknowledged in RejectDialog.
   const actDone = (fn: () => Promise<unknown>, done: string) => () =>
     fn().then(() => {
       toastSuccess(done);
@@ -124,11 +106,6 @@ export function TaskActions({
     switch (action) {
       case 'accept': {
         const onConfirm = actDone(() => api.acceptTask(task.id), `${taskLabel(task.id)} accepted — merging`);
-        // Gate-arm rationale (issue #174 FIX 1): a block/escalate verdict is
-        // otherwise invisible at this footer, so Accept alone could merge it
-        // blind. Arming only when the verdict is red keeps the common case
-        // (proceed, or no Verification configured) the same single click it
-        // always was.
         return decision && decision.outcome !== 'proceed' ? (
           <AcceptButton key={action} className={btnAccept} label={variant === 'footer' ? 'Accept & merge' : 'Accept'} onConfirm={onConfirm} />
         ) : (
@@ -183,9 +160,6 @@ export function TaskActions({
             Uncancel
           </button>
         );
-      // Distinct from Cancel (issue #162): permanent, confirmed in its own
-      // dialog rather than CancelButton's inline two-click arm, and quiet
-      // here so it never visually competes with Cancel's own destructive slot.
       case 'delete':
         return (
           <button key={action} className={btnQuietDestructive} onClick={() => setDeleting(true)}>
@@ -195,14 +169,6 @@ export function TaskActions({
     }
   };
 
-  // On awaiting-review, the detail-modal footer IS the review gate (DESIGN
-  // § Task detail): it takes its own ground (the Raised inset) and a short
-  // label so it reads unmistakably as THE gate rather than a generic action
-  // row. The cobalt stays where the design puts the gate's loudness — the
-  // accent top-rule (the awaiting-review state's lane colour) and the Accept
-  // primary within — so the ground itself doesn't spend the accent budget
-  // (the One Cobalt Rule). The gate lives only in the footer; the board card
-  // stays a glance (issue #94).
   const isReviewGate = variant === 'footer' && task.state === 'awaiting-review';
   const container = isReviewGate
     ? 'flex flex-wrap items-center gap-2.5 border-t border-await bg-raised px-4 py-3'
@@ -221,10 +187,6 @@ export function TaskActions({
           <div className="mr-auto">
             <div className={sectionTitle}>Review gate</div>
             <div className="text-small text-muted">Read the changes, then accept to merge.</div>
-            {/* Inline verdict summary (issue #174 FIX 1): the critic's
-                verdict otherwise sits unflagged in the Details tab, so put
-                the one-line proceed/block/escalate readout where Accept is
-                clicked. Truncated to stay one line beside the gate text. */}
             {decision && (
               <div className={`mt-0.5 max-w-sm truncate text-small ${DECISION_TONE[decision.outcome]}`}>
                 <span className="font-semibold">{decision.outcome}</span> — {decision.reason}
@@ -232,22 +194,11 @@ export function TaskActions({
             )}
           </div>
         )}
-        {/* Un-escalate is a flag action, not a state action (issue #33
-            follow-up): hand an escalated mirrored Task back to afk drive.
-            Shown only while escalated, beside the state's own actions. */}
         {task.escalated && (
           <button className={secondary} onClick={act(() => api.unescalateTask(task.id))}>
             Un-escalate
           </button>
         )}
-        {/* Escalated-candidate recovery (issue #191): flag actions beside
-            Un-escalate, not part of taskActions(state) — an afk→hitl
-            escalation drops back to `ready` with the last run's candidate
-            stranded on a private ref. Adopt & review is the primary
-            affirmative path (the accent stays sanctioned here as a second
-            primary alongside the gate's own Accept, same as issue #174's
-            accept-anyway); Note to critic is a plain secondary ghost button
-            (One Cobalt Rule) that re-runs only the critic, not the builder. */}
         {showsEscalationRecovery(task) && (
           <>
             <button className={secondary} onClick={() => setNotingToCritic(true)}>

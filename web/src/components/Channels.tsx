@@ -14,9 +14,8 @@ const EVENTS = [
 ] as const;
 
 /**
- * Notification channel management inside Settings. Like SecuritySection,
- * channels are their own REST resources saved immediately — they never
- * touch the config dirty-state/save-bar machinery.
+ * Channels are their own REST resources saved immediately — they never touch
+ * the config dirty-state/save-bar machinery.
  */
 export function ChannelsSection() {
   const [channelList, setChannelList] = useState<Channel[]>([]);

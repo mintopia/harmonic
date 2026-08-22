@@ -120,8 +120,6 @@ export function planResumeFallback(
   return { action: 'summarized-fallback', trigger: failure.reason, detail: failure.detail };
 }
 
-// --- The deterministic summary ------------------------------------------------
-
 /**
  * The facet of a `run_fact` the summary reads — its position in the Run's
  * monotonic log (`seq`), its kind (`type`), and its JSON-encoded `payload`. A

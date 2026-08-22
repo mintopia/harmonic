@@ -6,12 +6,6 @@ import { Icon } from './Icon';
 import { DirectoryPicker } from './DirectoryPicker';
 import { btnGhost, btnPrimary, field, labelType, panelTitle, selectField } from '../ui';
 
-/**
- * The create-a-Workspace dialog: name + a #67 directory picker (with a
- * free-text path fallback). Reused by the switcher's `+` button and by the
- * no-workspace empty state (issue #68), so it lives at module scope and is
- * exported rather than nested in the switcher.
- */
 export function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Workspace) => void }) {
   const [name, setName] = useState('');
   const [workingDir, setWorkingDir] = useState('');
@@ -83,16 +77,6 @@ export function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; 
   );
 }
 
-/**
- * The sidebar Workspace switcher (ADR-0008, issue #41): picks the active
- * Workspace that Board/Table/Stats and the status strip scope to, and where
- * a new Task/Conversation lands. A plain `<select>`, matching the filter
- * selects elsewhere (TableView) rather than a bespoke popover — the fastest
- * honest fit for "pick one of a short named list". The dropdown is switch-only;
- * the adjacent `+` button creates a Workspace. Per-Workspace settings live on
- * the "Workspace" rail item, not here (issue #64, dropped from the switcher in
- * issue #66).
- */
 export function WorkspaceSwitcher({
   workspaces,
   activeId,

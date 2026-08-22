@@ -144,8 +144,6 @@ async function writeStatus(root: string, ticketNumber: number, status: string, f
   await writeFile(ticket.path, updated, 'utf8');
 }
 
-// --- ids ---
-
 const idOf = (name: string): number => parseInt(name, 10);
 
 /** `03-apps-workloads.md` → "apps workloads" — the title fallback when a file has no `# NN — …` heading. */
@@ -154,8 +152,6 @@ const slugTitle = (path: string): string =>
     .replace(/^\d+[-_.]?/, '')
     .replace(/[-_]/g, ' ')
     .trim();
-
-// --- directory resolution ---
 
 /** The `.md` files under `d` whose name starts with an integer, or `[]` if `d` isn't readable. */
 async function ticketNames(d: string): Promise<string[]> {
@@ -197,8 +193,6 @@ async function resolveScopes(root: string): Promise<Scope[]> {
   }
   return scopes;
 }
-
-// --- ticket parse ---
 
 interface Parsed {
   id: number;
@@ -319,8 +313,6 @@ async function parseSpec(path: string, base: number): Promise<Parsed | null> {
     closedAt: null,
   };
 }
-
-// --- directional edge synthesis ---
 
 function synthesise(files: Parsed[]): Ticket[] {
   const byId = new Map(files.map((f) => [f.id, f]));

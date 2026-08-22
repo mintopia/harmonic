@@ -22,18 +22,6 @@ import {
 import { Switch } from './Switch';
 import { Modal } from './Modal';
 
-/**
- * Per-Workspace settings page (ADR-0012, issue #64): the Workspace half of the
- * settings split, scoped to the active Workspace (the rail item that opens it
- * follows the switcher). It holds the Workspace's own identity — name, Working
- * Directory (read-only), tracker mirroring — plus its overrides of the global
- * defaults (Task defaults, the Auto-Runner cap and enable), each rendered
- * through the inheritance field (#65) so inheriting-vs-overriding is explicit
- * and reversible. Delete lives here too, behind a naming Modal confirm.
- *
- * Overrides resolve at read time (#60); this page only reads and writes them.
- * The whole set saves together on the floating bar, mirroring SettingsPage.
- */
 export function WorkspaceSettingsPage({
   workspace,
   config,
@@ -56,8 +44,6 @@ export function WorkspaceSettingsPage({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  // Switching Workspace re-scopes the page: reseed from the new one and drop any
-  // half-made edits to the old (they belonged to a different Workspace).
   useEffect(() => {
     setPristine(workspace);
     setLocal(workspace);
@@ -491,14 +477,12 @@ export function WorkspaceSettingsPage({
                 label="Command verifier"
                 value={local.verificationCommand}
                 inherited={config.verification.command ?? EMPTY_COMMAND}
-                format={(v) => (isVerifierOff(v) ? 'Off' : summarizeCommand(v))}
+                format={summarizeCommand}
                 onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
               >
                 {({ value, onChange }) => {
-                  // format() above is only ever handed the inherited (real) value —
-                  // the read-only line never shows the off sentinel — but the render
-                  // prop's value can be either, since overriding-and-off both count
-                  // as "overridden" from InheritField's point of view.
+                  // The render prop's value can be the off sentinel, since
+                  // overriding-and-off both count as "overridden" to InheritField.
                   if (isVerifierOff(value)) {
                     return (
                       <div className="flex flex-col gap-3">
@@ -560,12 +544,11 @@ export function WorkspaceSettingsPage({
                 label="Agent critic"
                 value={local.verificationCritic}
                 inherited={config.verification.critic ?? EMPTY_CRITIC}
-                format={(v) => (isVerifierOff(v) ? 'Off' : summarizeCritic(v))}
+                format={summarizeCritic}
                 onChange={(verificationCritic) => set('verificationCritic', verificationCritic)}
               >
                 {({ value, onChange }) => {
-                  // Same off-sentinel narrowing as the command verifier above —
-                  // format() never sees it, but the render prop's value can.
+                  // Same off-sentinel narrowing as the command verifier above.
                   if (isVerifierOff(value)) {
                     return (
                       <div className="flex flex-col gap-3">
@@ -681,19 +664,12 @@ export function WorkspaceSettingsPage({
   );
 }
 
-/** Friendly phrasing per failure code, with the raw reason kept as a tooltip. */
 const RESOLVE_FAILURE_LABEL: Record<string, string> = {
   'no-declaration': 'No tracker declared',
   unsupported: 'Unsupported tracker',
   misconfigured: 'Tracker misconfigured',
 };
 
-/**
- * The read-only Resolved Tracker (issue #83): the resolved adapter label when
- * it resolves, the reason it can't when it doesn't, or a hint that tracking is
- * off. Read straight from the server (the pristine Workspace), not local edits —
- * it recomputes only when a save re-syncs the poll loop.
- */
 function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
   const resolved = workspace.resolvedTracker;
   if (!resolved) {
@@ -714,15 +690,6 @@ function ResolvedTrackerValue({ workspace }: { workspace: Workspace }) {
   );
 }
 
-/**
- * Naming Modal confirm for delete (issue #64 acceptance, hardened in #98). The
- * operator must type the Workspace's exact name to arm the delete — a real
- * gate on the app's most destructive action, not a single labelled click — and
- * the confirm carries the solid-fail destructive weight (btnDestructive) that
- * loudness deserves. The confirm is also disabled up front when a Task is
- * running; the server's 409 is the backstop, surfaced inline if it fires anyway
- * (e.g. a Task started between load and here).
- */
 function DeleteWorkspaceDialog({
   workspace,
   blockedByRunningTask,
@@ -738,8 +705,6 @@ function DeleteWorkspaceDialog({
   const [error, setError] = useState<string | null>(null);
   const [typed, setTyped] = useState('');
 
-  // Type-the-name gate: the delete arms only once the operator reproduces the
-  // Workspace's exact name (trimmed, so trailing whitespace isn't a trap).
   const nameMatches = typed.trim() === workspace.name;
   const canDelete = nameMatches && !blockedByRunningTask && !busy;
 

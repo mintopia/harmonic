@@ -46,7 +46,7 @@ export class MirrorCoordinator {
     if (!this.adapter || task.trackerRef == null) return;
     try {
       await this.adapter.claim(ticketRef(task, task.trackerRef));
-      this.advertised.set(task.id, 'claimed'); // reconcile can now skip the redundant re-claim
+      this.advertised.set(task.id, 'claimed');
     } catch {
       // Advisory only — proceed to spawn and let reconcile retry the assignment.
     }
@@ -65,13 +65,13 @@ export class MirrorCoordinator {
       if (task.origin !== 'mirrored' || task.trackerRef == null) return;
       const ticket = ticketRef(task, task.trackerRef);
       if (task.state === 'running') {
-        if (this.advertised.get(task.id) === 'claimed') return; // already advertised; skip the redundant write
+        if (this.advertised.get(task.id) === 'claimed') return;
         await adapter
           .claim(ticket)
           .then(() => void this.advertised.set(task.id, 'claimed'))
           .catch(() => {});
       } else if (handedBack(task)) {
-        if (this.advertised.get(task.id) === 'released') return; // already released; skip the redundant write
+        if (this.advertised.get(task.id) === 'released') return;
         await adapter
           .release(ticket)
           .then(() => void this.advertised.set(task.id, 'released'))

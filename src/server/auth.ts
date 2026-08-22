@@ -17,17 +17,10 @@ const hashPassword = (password: string, salt: string) =>
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
-/**
- * Single-operator auth: one password (scrypt-hashed at rest), in-memory
- * cookie sessions for the SPA, and named revocable bearer API keys for
- * the REST API and MCP server.
- */
 export class AuthService {
   private sessions = new Set<string>();
 
   constructor(private readonly db: AsyncDbHandle) {}
-
-  // ---- Operator password ----
 
   async hasPassword(): Promise<boolean> {
     return (await this.readAuth()) !== null;
@@ -46,7 +39,6 @@ export class AuthService {
     );
   }
 
-  /** Remove the operator password — Harmonic falls back to ungated. Idempotent. */
   async clearPassword(): Promise<void> {
     await this.db.write((db) => db.delete(settings).where(eq(settings.key, AUTH_KEY)).run());
   }
@@ -65,8 +57,6 @@ export class AuthService {
     );
     return row ? (JSON.parse(row.value) as StoredAuth) : null;
   }
-
-  // ---- Sessions (SPA cookies) ----
 
   createSession(): string {
     const token = randomBytes(32).toString('hex');
@@ -91,8 +81,6 @@ export class AuthService {
       if (token !== keepToken) this.sessions.delete(token);
     }
   }
-
-  // ---- API keys ----
 
   async createKey(
     name: string,
@@ -134,7 +122,6 @@ export class AuthService {
     });
   }
 
-  /** Operator-created API Keys (full + read) — Run/Conversation Keys are machine credentials, never listed. */
   async listKeys(): Promise<Omit<ApiKeyRow, 'tokenHash'>[]> {
     const rows = await this.db.read((db) =>
       db
@@ -157,7 +144,6 @@ export class AuthService {
     });
   }
 
-  /** Run Keys die with their Run — hard delete; the Run itself is the audit record. */
   async deleteKeysForRun(runId: number): Promise<void> {
     await this.db.write((db) =>
       db
@@ -167,7 +153,6 @@ export class AuthService {
     );
   }
 
-  /** Conversation Keys die with their Conversation — hard delete (issue 16). */
   async deleteKeysForConversation(conversationId: number): Promise<void> {
     await this.db.write((db) =>
       db
@@ -177,7 +162,6 @@ export class AuthService {
     );
   }
 
-  /** Boot-time sweep: delete every Run Key whose Run is no longer running. */
   async sweepOrphanedRunKeys(): Promise<void> {
     await this.db.write((db) => {
       const runningRuns = db.select({ id: runs.id }).from(runs).where(eq(runs.state, 'running'));
@@ -193,12 +177,6 @@ export class AuthService {
     });
   }
 
-  /**
-   * Boot-time sweep: delete every Conversation Key (issue 16). A warm
-   * Conversation cannot survive a server restart — its harness process is
-   * gone — so every conversation-scoped key present at boot is orphaned by
-   * definition.
-   */
   async sweepOrphanedConversationKeys(): Promise<void> {
     await this.db.write((db) => db.delete(apiKeys).where(eq(apiKeys.scope, 'conversation')).run());
   }

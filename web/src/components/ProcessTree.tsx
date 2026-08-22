@@ -3,16 +3,10 @@ import type { ProcessNode, ProcessStatus } from '../types';
 import { chip } from '../ui';
 import { flattenTree, nodeTokens, statusLabel, type FlatNode, type NodeActivityMap } from '../process-tree-model';
 
-/** Compact figures ("18.2k") — the same treatment the rest of Activity uses. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
-/** One indent step. The connectors are drawn with hairline borders, never mono
- * box-drawing glyphs — structure is a divider, not code (DESIGN: Mono Is Code). */
 const COL = 'w-4 shrink-0';
 
-/** The connector cell for the node's own branch (its last indent column): a
- * half-height stem down from above, a horizontal stub to the content, and — when
- * the node has a later sibling — the stem continuing below (├ vs └). */
 function Elbow({ isLast }: { isLast: boolean }) {
   return (
     <span className={`relative ${COL} self-stretch`} aria-hidden="true">
@@ -23,8 +17,6 @@ function Elbow({ isLast }: { isLast: boolean }) {
   );
 }
 
-/** The indent gutter: an ancestor-spine column draws a full-height line while
- * that branch continues below; the final column is the node's own elbow. */
 function Connectors({ guides, isLast, depth }: { guides: boolean[]; isLast: boolean; depth: number }) {
   if (depth === 0) return null;
   return (
@@ -39,8 +31,6 @@ function Connectors({ guides, isLast, depth }: { guides: boolean[]; isLast: bool
   );
 }
 
-/** The node's live status: an amber pulse while active, a still faint dot once
- * idle. (Hidden nodes are pruned upstream and never reach a row.) */
 function StatusDot({ status }: { status: ProcessStatus }) {
   const active = status === 'active';
   return (
@@ -51,8 +41,6 @@ function StatusDot({ status }: { status: ProcessStatus }) {
   );
 }
 
-/** Per-node context fill as a plain token figure — the tree is a compact
- * readout, so no gauge here; the row's own gauge carries the whole-process fill. */
 function nodeContext(node: ProcessNode): string {
   return node.contextTokens === null ? '—' : `${compact.format(node.contextTokens)} ctx`;
 }
@@ -102,14 +90,6 @@ function TreeRow({
   );
 }
 
-/**
- * A Run's Process Tree (issue #53): the root session and its recursive
- * Subagents, one selectable row each, with hairline depth connectors and a live
- * per-node status that fades as the node goes idle. Selecting a node frames the
- * output pane on it (see `frameEvents`). The idle lifecycle lives in the pure
- * model (`flattenTree` over a `NodeActivityMap`) — this component only paints
- * the rows the model keeps, so a node that ages to `hidden` simply drops out.
- */
 export function ProcessTree({
   tree,
   activity,

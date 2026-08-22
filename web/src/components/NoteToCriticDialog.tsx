@@ -5,16 +5,6 @@ import { Modal } from './Modal';
 import { btnGhost, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 
-/**
- * Give the critic a human note and re-run verification against an escalated
- * Task's existing candidate, in place — issue #191's second escape hatch. The
- * critic takes no operator input today; this re-runs *only* the critic (never
- * the builder) against the run's frozen candidate, so an `inconclusive` or
- * `block` verdict can be resolved without a full re-attempt. Unlike
- * ReattemptDialog's feedback, which rides into the next builder prompt, this
- * note goes to the critic — so it's required, not optional (an empty note
- * would re-run the critic with nothing new to consider).
- */
 export function NoteToCriticDialog({ task, onClose, onDone }: { task: Task; onClose: () => void; onDone: () => void }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);

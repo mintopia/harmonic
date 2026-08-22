@@ -40,24 +40,6 @@ const unlockBodySchema = z
   .object({ key: z.string().min(1).meta({ example: 'direct:/home/dev/harmonic' }) })
   .meta({ id: 'LeaseUnlockBody' });
 
-/**
- * The operator supersede/unlock + queue-diagnostics surface over Work Context
- * leases (issue #125, ADR-0022, reliability-design §0.5): the manual escape
- * for a `suspect` lease boot reconciliation (#123) or the live sweep (#122)
- * could only flag, never resolve. Operator only — not on `scopedKeyAllowed`'s
- * (or `readScopeAllowed`'s) allowlist, so a run-scoped or read-scoped key
- * gets the same 403 an unrecognized path gets by default (see app.ts).
- *
- * Scope: these disposition the **lease** — the authoritative acquire gate in
- * `Runner.beginRun`. Once freed (or re-pointed), the context is admissible on
- * the next `poke`d pick pass for the anti-starvation case this targets: a lease
- * whose owner Run is dead/abandoned, whose Task has already left
- * `running`/`awaiting-review`. A context still physically occupied by a live
- * owner Task in those states stays skipped by the House Rule pick predicate —
- * which reads Task state, not the lease (auto-runner.ts) — and rightly so: that
- * checkout is still in use, and disposing *that* is a Task action
- * (complete/cancel), not a lease action.
- */
 export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -102,7 +84,7 @@ export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.runs.get(req.body.runId); // 404s an unknown Run before touching the lease
+      await ctx.runs.assertExists(req.body.runId);
       await ctx.leases.supersede(req.body.key, req.body.runId);
       ctx.autoRunner.poke();
       return { ok: true } as const;

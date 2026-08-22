@@ -5,19 +5,6 @@ import { chip, labelType } from '../ui';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 
-/**
- * Verdict/outcome → tint+text tone (issue #169, part of #109). There is no
- * dedicated "pass/ok" semantic token in `index.css` — `--hm-merged` ("merged
- * / accepted") is the closest existing positive-outcome token, already reused
- * elsewhere for a favourable state (`STATE_CHIP_STYLES.completed` in ui.ts), so
- * a `pass` verdict / `proceed` outcome takes it here rather than inventing a
- * new token. `fail`/`block` take the existing fail tokens directly. For
- * `inconclusive`/`escalate` this reuses running-amber, following the precedent
- * `ui.ts`'s `escalatedChip` sets in its own comment ("afk→hitl escalation
- * reuses Running amber's tint/ink because 'work in flight, now yours' is the
- * closest existing meaning") — an escalated Verification is the same shape of
- * event, handed to a human.
- */
 const VERDICT_TONE: Record<Verdict, string> = {
   pass: 'bg-merged-tint text-merged',
   fail: 'bg-fail-tint text-fail',
@@ -60,21 +47,6 @@ function outcomeChip(outcome: VerificationOutcome): string {
   return `${chip} ${OUTCOME_TONE[outcome]} inline-flex items-center gap-1`;
 }
 
-/**
- * A Run's Verification readout (issue #169, part of #109): the overall
- * proceed/block/escalate outcome, the current per-verifier verdicts (latest
- * attempt per mechanism), the latest critic summary, and the full attempts
- * log grouped by mechanism, self-heal retries numbered under their mechanism
- * (issue #174). Follows `GuardrailTrips`'s presentational shape
- * (TaskDetail.tsx) — one prop, no internal fetch/state — but renders in the
- * Details tab rather than the always-visible header, since a full attempts
- * log is heavier than a one-line trip banner. The empty log renders a quiet
- * "Verification pending" state rather than nothing (issue #174) — the Run
- * hasn't reached Verification yet, which is a state worth naming, not an
- * absence to hide. All derivation is delegated to
- * `verification-attempts-model.ts` + `combineVerdicts` — this component only
- * maps and renders.
- */
 export function VerificationCard({ attempts }: { attempts: VerificationAttempt[] }) {
   if (attempts.length === 0) {
     return (

@@ -18,9 +18,6 @@ import { Donut, type DonutSegment } from './Donut';
 import { fillSeries, METRIC_LABEL, type DayCost, type StatMetric } from './costChart-model';
 import { EmptyState } from './EmptyState';
 
-/** Each run state's signal colour, for the run-states donut — the same
- * state-signal family the chips use (the Signal Rule), so the segment colour
- * reads as the state. Unknown states fall back to a neutral edge grey. */
 const STATE_DONUT_COLOR: Record<string, string> = {
   draft: 'var(--hm-muted)',
   blocked: 'var(--hm-blocked)',
@@ -29,9 +26,6 @@ const STATE_DONUT_COLOR: Record<string, string> = {
   'awaiting-review': 'var(--hm-await)',
   completed: 'var(--hm-merged-dot)',
   failed: 'var(--hm-fail-dot)',
-  // A review rejection lives in the Failed-rose family (DESIGN.md § 2), but on a
-  // darker rose than failed's bright dot so the two read as distinct slices —
-  // never the cobalt accent, which is the interface's own voice (the Signal Rule).
   rejected: 'var(--hm-fail)',
   cancelled: 'var(--hm-faint)',
 };
@@ -85,12 +79,8 @@ const RANGES: Record<string, number | null> = {
 const METRICS: Record<string, StatMetric> = { USD: 'usd', Tokens: 'tokens', Runs: 'runs' };
 
 const fmt = (n: number) => n.toLocaleString();
-/** Summary figures compact ("18.2M"); tables keep exact numbers. */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
-/** A segmented pill toggle — the shared control behind both the time-range and
- * the chart-metric switch, so the two can't drift in style (DESIGN.md: the
- * accent marks the current selection; state colours stay off it). */
 function SegmentedControl<T extends string>({
   ariaLabel,
   options,
@@ -120,16 +110,10 @@ function SegmentedControl<T extends string>({
   );
 }
 
-/** The muted uppercase label above a stat figure — shared by the hero and the
- * quiet stat row so the two can't drift (Label role, DESIGN.md § 3). */
 function StatLabel({ children }: { children: ReactNode }) {
   return <div className={`${labelType} mb-1.5 text-muted`}>{children}</div>;
 }
 
-/** One cell of the quiet stat row: muted label over a weighted, tabular value.
- * (The hero cost figure is rendered separately — it leads on the canvas, never
- * boxed in this row: DESIGN.md § Stats, "the Hero cost figure leads, no
- * card-in-a-card".) */
 function SummaryCell({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -145,7 +129,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const [range, setRange] = useState('7 days');
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Local only — re-plots the already-fetched series in place, never refetches.
   const [metric, setMetric] = useState<StatMetric>('usd');
 
   useEffect(() => {
@@ -177,14 +160,11 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
   const filled = stats ? fillSeries(stats.series, stats.from, stats.to) : [];
   const costText = stats ? formatCost(stats.cost) : null;
   const share = stats ? subagentShare(stats.agents) : null;
-  // KPI band figures — each "—" when its inputs are missing (honest numbers).
   const pct = (r: number | null) => (r == null ? '—' : `${Math.round(r * 100)}%`);
   const cacheHit = stats ? cacheHitRate(stats.totals) : null;
   const failRate = stats ? failureRate(stats.failedRuns, stats.runCount) : null;
   const avgCostText = stats ? formatAvgCostPerRun(stats.cost, stats.runCount) : null;
   const medDuration = stats?.durationMs ? fmtDuration(stats.durationMs.p50) : null;
-  // Token bars, largest first. Per-model rows carry their Cost too (the table
-  // this replaced showed both); agent + tool rows are single-figure.
   const modelBars: Bar[] = stats
     ? usageBars(stats.models).map((b) => {
         const c = stats.cost?.byModel[b.key];
@@ -203,8 +183,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         .map(([key, count]) => ({ key, value: count, valueLabel: fmt(count) }))
         .sort((a, b) => b.value - a.value)
     : [];
-  // The run-states donut, regrouped for reliability: review-rejected Runs are
-  // split out of the folded-in `failed` count into their own slice (ADR-0028).
   const reliabilitySegments: DonutSegment[] = stats
     ? reliabilityStates(stats.runsByState, stats.failedRuns, stats.rejectedRuns).map(({ state, count }) => ({
         key: state,
@@ -264,9 +242,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
 
       {stats && stats.runCount > 0 && (
         <>
-          {/* The one loud figure of the view: cost — the number the operator
-              glances at. It leads on the canvas (no card-in-a-card, DESIGN.md
-              § Stats), big sans + tabular-nums, never mono (Mono Is Code). */}
           <div className="mb-5">
             <StatLabel>Cost · {range}</StatLabel>
             <div
@@ -276,9 +251,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </div>
           </div>
 
-          {/* A quiet stat row answers alongside the hero. Subagent share is
-              the fraction of tokens spent below the root session (issue #48
-              made Subagent tokens visible); "—" when no per-agent data. */}
           <div className={`${card} mb-4 grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 lg:grid-cols-5`}>
             <SummaryCell label="Runs" value={fmt(stats.runCount)} />
             <SummaryCell label="Tokens in" value={stats.totals ? compact.format(stats.totals.inputTokens) : '—'} />
@@ -309,11 +281,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </section>
           )}
 
-          {/* Reliability (issue #197): are runs failing, and how long do they
-              take? The run-states donut is regrouped here so cancelled and
-              review-rejected Runs read as their own slices (ADR-0028), never
-              folded into failures — the whole picture the failure rate must be
-              reconciled against. */}
           <section className={`${card} mb-4 p-5`}>
             <h2 className="mb-4 text-title font-semibold">Reliability</h2>
             <div className="grid gap-6 md:grid-cols-2">
@@ -372,9 +339,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             </section>
           </div>
 
-          {/* Per-agent-type spend (root session vs each Subagent type). Only
-              runs whose harness parsed a Process Tree carry this, so older
-              data may leave it empty — then the card is simply omitted. */}
           {agentBars.length > 0 && (
             <section className={`${card} mt-4 p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tokens per agent</h2>

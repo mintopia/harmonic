@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import type { ActivityProcess, RunLogEvent } from '../types';
+import type { ActivityProcess, ProcessNode, RunLogEvent } from '../types';
 import { chip, labelType } from '../ui';
 import {
   findNode,
@@ -13,20 +13,16 @@ import {
 import { EventStream } from './EventStream';
 import { ProcessTree } from './ProcessTree';
 
-/**
- * The expanded drill-in for one Activity Run (issue #53): its Process Tree on
- * the left, the selected node's live transcript on the right. Selecting a node
- * reframes the shared `EventStream` on that agent/session — not the whole Task —
- * via `frameEvents`. The output is parsed from the native transcript and
- * refreshed while the operator watches; it never replays `run_events`.
- *
- * The idle lifecycle lives in the pure model: every tree snapshot (the 5s poll
- * and the `run_usage` firehose deltas the view already merges) is folded into a
- * `NodeActivityMap`, and the `now` tick ages each node active → inactive →
- * hidden between snapshots. Only Runs reach here — a Conversation has no tree.
- */
-export function ProcessDrillIn({ process, now }: { process: ActivityProcess; now: number }) {
-  const tree = process.tree!; // caller only mounts this for a Run with a tree
+/** An Activity process the caller has confirmed carries a Process Tree. */
+export type RunWithTree = ActivityProcess & { tree: ProcessNode };
+
+/** True when the process carries a Process Tree — narrows to {@link RunWithTree}. */
+export function hasProcessTree(p: ActivityProcess): p is RunWithTree {
+  return p.tree !== null;
+}
+
+export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: number }) {
+  const tree = process.tree;
   const runId = process.runId;
   const [activity, setActivity] = useState<NodeActivityMap>(NO_NODE_ACTIVITY);
   const [selectedId, setSelectedId] = useState(tree.id);
@@ -42,8 +38,8 @@ export function ProcessDrillIn({ process, now }: { process: ActivityProcess; now
     setActivity((prev) => trackNodeActivity(prev, tree, nowRef.current));
   }, [tree]);
 
-  // Poll the native JSONL while the pane is open. A transcript can appear just
-  // after session creation, so unavailable is deliberately rechecked too.
+  // A transcript can appear just after session creation, so unavailable is
+  // deliberately rechecked too.
   useEffect(() => {
     if (runId === null) return;
     let live = true;
@@ -72,13 +68,11 @@ export function ProcessDrillIn({ process, now }: { process: ActivityProcess; now
 
   return (
     <div className="grid gap-4 border-t border-hairline bg-raised/20 px-4 py-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-      {/* The tree: one selectable row per node, live status fading as it idles. */}
       <div className="min-w-0">
         <div className={`${labelType} mb-2 text-muted`}>Process tree</div>
         <ProcessTree tree={tree} activity={activity} now={now} selectedId={selected.id} onSelect={setSelectedId} />
       </div>
 
-      {/* The output pane, framed on the selected node. */}
       <div className="min-w-0">
         <div className="mb-2 flex items-center gap-2">
           <span className={`${labelType} text-muted`}>Output</span>

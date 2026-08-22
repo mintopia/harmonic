@@ -3,10 +3,6 @@ import { api } from '../api';
 import { btnGhost, btnQuietDestructive, field } from '../ui';
 import { fieldLabel } from './SettingsSection';
 
-/** Sets, changes, or removes the operator password. Deliberately its own form
- * with its own submit — a credential change isn't part of the config object, so
- * it never touches the Settings page's dirty-state/save-bar machinery. Adapts to
- * whether a password is currently set (ungated installs show a Set form). */
 export function SecuritySection() {
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -45,7 +41,6 @@ export function SecuritySection() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    // Change (password already set) stays in-page; initial Set reloads to sign in.
     run(() => api.changePassword(currentPassword, newPassword), !configured);
   };
 

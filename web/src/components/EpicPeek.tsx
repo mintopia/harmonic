@@ -16,8 +16,6 @@ import { btnQuiet, btnQuietDestructive, chip, escalatedChip, labelType, panelTit
 import { ArmedButton } from './ArmedButton';
 import { Modal } from './Modal';
 
-/** Rail/roster status → its plain-text label (colourblind safety: text names
- * the state everywhere colour is used, never colour alone). */
 const RAIL_LABEL: Record<RailSegmentStatus, string> = {
   landed: 'merged',
   running: 'running',
@@ -26,8 +24,6 @@ const RAIL_LABEL: Record<RailSegmentStatus, string> = {
   blocking: 'blocking',
 };
 
-/** Rail/roster status → tint/ink pair, reusing the app's existing state
- * vocabulary (ui.ts's tint/ink chip pairs) rather than minting new colour. */
 const RAIL_TONE: Record<RailSegmentStatus, string> = {
   landed: 'bg-merged-tint text-merged',
   running: 'bg-running-tint text-running',
@@ -43,12 +39,8 @@ const BANNER_TONE: Record<LandOutcomeBannerTone, string> = {
   info: 'bg-raised text-muted',
 };
 
-/** How long the transient force-land outcome banner stays up before it
- * auto-dismisses (mirrors the toast stack's 6s window in toast.tsx). */
 const BANNER_TIMEOUT_MS = 6000;
 
-/** The landing rail (ADR-0026's peek hero): members as segments coloured by
- * land status, motion (a pulse) reserved for a live heal (`hasLiveHeal`). */
 function LandingRail({ epic }: { epic: Epic }) {
   const segments = railSegments(epic);
   return (
@@ -70,9 +62,6 @@ function LandingRail({ epic }: { epic: Epic }) {
   );
 }
 
-/** One roster row: ref, title, escalation flag, and land status — a deep-link
- * button into the member's existing TaskDetail when it's mirrored, else a
- * static row (the member hasn't been mirrored into a Task yet). */
 function MemberRow({
   member,
   epic,
@@ -109,13 +98,6 @@ function MemberRow({
   );
 }
 
-/**
- * The Epic peek (ADR-0026, issue #167): a Modal mirroring TaskDetail's usage.
- * Hero = the landing rail + status line; below it the stuck-first roster,
- * lane-grouped; the header carries the armed force-land control and a
- * "Focus on board" affordance. Force-land's result renders as a transient
- * in-peek banner (`landOutcomeBanner`), auto-dismissing after a few seconds.
- */
 export function EpicPeek({
   epic,
   workspaceId,

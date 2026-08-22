@@ -99,8 +99,6 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         body: updateChannelSchema,
         response: {
           200: channelSchema.describe('The updated channel.'),
-          // A channel's type is fixed, so a replacement config is validated
-          // against the type it already has.
           400: errorResponse(
             "The payload failed validation, or the config does not match the shape the channel's existing type requires.",
           ),
@@ -131,9 +129,6 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     },
   );
 
-  // Per-task overrides: this task announces itself to this channel. These
-  // live under /tasks/:id/channels but are operator-only (runScopedKeyAllowed
-  // in app.ts denies the whole /tasks/:id/channels subtree).
   app.post(
     '/tasks/:id/channels',
     {

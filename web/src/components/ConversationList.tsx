@@ -8,18 +8,6 @@ import { ArmedButton } from './ArmedButton';
 import { EmptyState } from './EmptyState';
 import { Icon } from './Icon';
 
-/**
- * One row of the history list (issue #15): title (falling back honestly to
- * "Untitled conversation"), a state chip, and a single muted metadata line —
- * harness · model · working dir · tokens · cost — the same figures the detail
- * view's telemetry strip reads, at list density. Per DESIGN.md's Mono Is Code
- * Rule the line is sans; only the working-dir path stays mono. The clickable
- * row and the Delete button are siblings (not nested interactive elements),
- * the row staying keyboard-operable. Delete is the shared two-step armed
- * confirm and sits visible (not hover-revealed) so it is never a bare click on
- * a hover-only affordance (issue #98). The accent dot mirrors TaskDetail's
- * tab-flag treatment: a live "something changed here" cue, not a state color.
- */
 function ConversationRow({
   conversation,
   needsAttention,
@@ -79,12 +67,6 @@ function ConversationRow({
   );
 }
 
-/**
- * The reverse-chronological Conversation history (issue #15): active and
- * ended alike, newest first — exactly the order the server already returns.
- * "New conversation" is the panel's one primary action here, mirroring the
- * top strip's "New task" (DESIGN.md's one-primary-per-view rule).
- */
 export function ConversationList({
   conversations,
   attention,

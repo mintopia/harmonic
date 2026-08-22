@@ -73,6 +73,10 @@ export class ConversationStore {
     return row;
   }
 
+  async assertExists(id: number): Promise<void> {
+    await this.get(id);
+  }
+
   /** Reverse-chronological: newest first, both active and ended (issue 15's list).
    * Scoped to `workspaceId` when given (ADR-0008); omitted means every Workspace. */
   async list(workspaceId?: number): Promise<ConversationRow[]> {

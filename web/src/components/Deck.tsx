@@ -33,31 +33,17 @@ import {
   touchTargetInline,
 } from '../ui';
 
-/* ────────────────────────────────────────────────────────────────────────
- * The Deck (DESIGN.md § 5, issue #182) — the home surface. A single centred
- * column of panelled sections ordered by the operator's attention
- * (`Needs you → In flight → Landing → Queued → Recent`), replacing the kanban
- * Board's state columns and drag. Rows are the summary; clicking one opens the
- * full Ticket page. The pure section model lives in `deck-model.ts`.
- * ──────────────────────────────────────────────────────────────────────── */
-
-/** A mirrored Task reads by its tracker issue number; a native Task by its id,
- * `T-<id>` (DESIGN.md § 6 — "faint mono id"; a native task id is never a bare
- * number). */
 function rowId(task: Task): string {
   return task.origin === 'mirrored' && task.trackerRef != null
     ? issueRef(task.trackerRef)
     : taskKey(task.id);
 }
 
-/** A round state dot; a running Task's dot pulses (motion-safe, so reduced
- * motion keeps the figure and drops the animation — DESIGN.md § 6). */
 function Dot({ task }: { task: Task }) {
   const pulse = task.state === 'running' ? 'motion-safe:animate-pulse' : '';
   return <span aria-hidden="true" className={`${stateDot(task.state)} ${pulse}`} />;
 }
 
-/** The quiet forward action for work that has been handed back to the operator. */
 function OpenButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
@@ -73,11 +59,6 @@ function OpenButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** A running row's live readout: elapsed · N tools, tabular figures. Self-
- * contained (issue #222): it owns its once-a-second elapsed tick and subscribes
- * to the `run_usage` firehose for *its own* run, so a usage tick re-renders only
- * this leaf — never the whole Deck subtree. Renders nothing until the Task is a
- * live run (mirrors `runningReadout`'s null). */
 function RunningReadoutLine({ task }: { task: Task }) {
   const runId = task.runId;
   const [now, setNow] = useState(() => Date.now());
@@ -109,9 +90,6 @@ function RunningReadoutLine({ task }: { task: Task }) {
   );
 }
 
-/** The forward-action button on a ready Task (DESIGN.md § 5: "a `Run now` on
- * each"): starts a Run, then refreshes. Stops propagation so it never doubles
- * as opening the Ticket. */
 function RunNowButton({ taskId, onChanged }: { taskId: number; onChanged: () => void }) {
   return (
     <button
@@ -253,7 +231,6 @@ function CardStrip({
   );
 }
 
-/** A disclosure chevron; points right when closed, down when open. */
 function Chevron({ open }: { open: boolean }) {
   return (
     <Icon
@@ -262,8 +239,6 @@ function Chevron({ open }: { open: boolean }) {
     />
   );
 }
-
-/* ── Section ──────────────────────────────────────────────────────────── */
 
 function Section({
   label,
@@ -290,11 +265,6 @@ function Section({
   );
 }
 
-/* ── Epic band (Landing) ──────────────────────────────────────────────── */
-
-/** Merge-train segment fill by land status (DESIGN.md § 6 — "the Epic's colour
- * lives here"): landed emerald / running amber / blocking rose / pending
- * neutral; a heal in progress pulses (the one genuinely-live thing, ADR-0026). */
 const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
   landed: 'bg-merged-dot',
   running: 'bg-running-dot',
@@ -303,7 +273,6 @@ const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
   blocking: 'bg-fail-dot',
 };
 
-/** The state dot for an Epic member row, mapped from its rail status. */
 const MEMBER_DOT: Record<RailSegmentStatus, string> = {
   landed: 'bg-merged-dot',
   running: 'bg-running-dot motion-safe:animate-pulse',
@@ -363,10 +332,6 @@ function MemberRow({ member, epic, onOpenTask }: { member: EpicMember; epic: Epi
   );
 }
 
-/** One Epic as a band (DESIGN.md § 6 Epic band): a header (kind badge · ref ·
- * title · disclosure), a status row (merge-train · folded · tip · verification
- * · blocking note · Force-land), and — when open — the member roster. This is
- * the one place the parallel-Epic machinery is legible at a glance. */
 function EpicBand({
   epic,
   defaultOpen = false,
@@ -377,15 +342,9 @@ function EpicBand({
   epic: Epic;
   defaultOpen?: boolean;
   onOpenTask: (taskId: number) => void;
-  /** Open the full Epic peek (ADR-0026) — the deep view behind the band. */
   onOpenEpic?: (epic: Epic) => void;
   onForceLandEpic: (ref: number) => Promise<EpicLandOutcome>;
 }) {
-  // Members that need the operator (escalated or awaiting-review): the band
-  // opens by default when it holds one, so nothing that needs you stays below
-  // the fold even though it lives inside a Landing band and not Needs-you
-  // (DESIGN.md § 5 Prime Directive; reconciles the rail's cobalt count, which
-  // includes Epic members, with what the Deck actually shows — issue #182).
   const attention = epic.members.filter((m) => m.escalated || m.state === 'awaiting-review');
   const [open, setOpen] = useState(defaultOpen || attention.length > 0);
   const segments = railSegments(epic);
@@ -396,8 +355,6 @@ function EpicBand({
 
   return (
     <div className={panel}>
-      {/* Header: the identity opens the full peek (the deep view); the trailing
-          chevron toggles the inline member roster (DESIGN.md § 6 Epic band). */}
       <div className="flex items-center gap-2.5 px-4 py-3">
         <button
           type="button"
@@ -476,8 +433,6 @@ function EpicBand({
   );
 }
 
-/* ── Recent (collapsed count) ─────────────────────────────────────────── */
-
 function RecentBar({ recent, onShowRecent }: { recent: RecentSummary; onShowRecent: () => void }) {
   return (
     <button
@@ -511,10 +466,6 @@ function RecentBar({ recent, onShowRecent }: { recent: RecentSummary; onShowRece
   );
 }
 
-/* ── Empty & loading states ───────────────────────────────────────────── */
-
-/** First-run: the empty Deck teaches its own shape — one quiet guide and a
- * single primary driving to the first agent Run (no tour, no overlay). */
 function FirstRunDeck({ onNewTask }: { onNewTask: () => void }) {
   const steps = [
     { title: 'Create a task', body: 'Describe the work and point it at a repo on this machine.' },
@@ -547,8 +498,6 @@ function FirstRunDeck({ onNewTask }: { onNewTask: () => void }) {
   );
 }
 
-/** Skeleton: panelled section shapes so the Deck's geometry is stable from the
- * first paint (skeletons, not a spinner). */
 function DeckSkeleton() {
   return (
     <div aria-hidden="true" className="animate-pulse motion-reduce:animate-none">
@@ -569,7 +518,6 @@ function DeckSkeleton() {
   );
 }
 
-/** When the workspace has tasks but nothing needs the operator right now. */
 function AllClear() {
   return (
     <div className="mx-auto mt-16 max-w-sm text-center">
@@ -578,8 +526,6 @@ function AllClear() {
     </div>
   );
 }
-
-/* ── Deck ─────────────────────────────────────────────────────────────── */
 
 export function Deck({
   tasks,
@@ -598,23 +544,16 @@ export function Deck({
   tasks: Task[];
   loading: boolean;
   epics: Epic[];
-  /** Open a standalone Task's Ticket. */
   onOpen: (task: Task) => void;
-  /** Open a Task's Ticket by id (Epic member deep-links). */
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
   onNewTask: () => void;
-  /** Open the full Epic peek from a Landing band (ADR-0026). */
   onOpenEpic?: (epic: Epic) => void;
   onForceLandEpic: (epicRef: number) => Promise<EpicLandOutcome>;
-  /** Show the full terminal history (the Table view) from the Recent bar. */
   onShowRecent: () => void;
-  /** Epic focus-mode (ADR-0026): filters the Deck to one Epic's band. */
   focusEpic?: Epic | null;
   onClearFocus?: () => void;
 }) {
-  // Running rows' elapsed figure ticks off a once-a-second `now`, only while a
-  // Task is actually running (issue #100).
   const hasRunning = tasks.some((t) => t.state === 'running');
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -630,9 +569,6 @@ export function Deck({
     return () => clearInterval(timer);
   }, [hasRunning]);
 
-  // Re-derive sections when the inputs or the *day bucket* change — not on every
-  // one-second `now` tick. `now` only feeds Recent's midnight boundary inside
-  // `deckSections` (its sole consumer now that readouts self-tick — issue #222).
   const dayStart = startOfDay(now);
   const sections = useMemo(
     () => deckSections(tasks, epics, now),
@@ -642,8 +578,6 @@ export function Deck({
 
   if (loading) return <DeckSkeleton />;
 
-  // Epic focus-mode (ADR-0026): the Deck narrows to one Epic's band, expanded,
-  // with a Clear-focus control — the same feature the Board's focus header gave.
   if (focusEpic) {
     return (
       <div>

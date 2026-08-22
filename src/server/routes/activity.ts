@@ -32,10 +32,6 @@ export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      // A Read Key (viz client) gets Runs only — the same rule the firehose
-      // applies to hide Conversation traffic from Read Keys (issue #35). Auth
-      // already passed in app.ts's onRequest hook; this re-reads the key's scope
-      // from the same credential (bearer header, or `?token=` for browser clients).
       const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
       const token = bearer ?? (req.query as Record<string, string | undefined>)?.token;
       const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';

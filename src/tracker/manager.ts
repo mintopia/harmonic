@@ -80,7 +80,6 @@ export class TrackerPollerManager {
    */
   async sync(): Promise<void> {
     const wsById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
-    // Stop pollers whose Workspace is gone, disabled tracking, or changed its repo/interval.
     for (const [id, entry] of this.entries) {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled || entry.sig !== sigOf(ws)) {
@@ -88,14 +87,10 @@ export class TrackerPollerManager {
         this.entries.delete(id);
       }
     }
-    // Drop cached resolutions for Workspaces gone or with tracking off — no poll, no Resolved Tracker.
     for (const id of [...this.resolved.keys()]) {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled) this.resolved.delete(id);
     }
-    // For every tracker-enabled Workspace lacking a running loop: resolve its
-    // tracker, cache the result, and start a loop only when it resolves. An
-    // unresolvable one surfaces its reason but stays loop-less (issue #83).
     for (const ws of wsById.values()) {
       if (!ws.trackerEnabled || this.entries.has(ws.id)) continue;
       const resolved = await resolveTracker(ws.workingDir, this.resolveAdapter);

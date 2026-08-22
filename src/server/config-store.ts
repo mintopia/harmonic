@@ -13,16 +13,6 @@ import {
 
 const CONFIG_KEY = 'config';
 
-/**
- * Configuration lives in the database (the runtime truth, per the PRD);
- * built-in defaults seed it on first boot. Boot-time overrides are merged
- * on top of whatever is stored — they are for tests and CLI flags.
- *
- * Constructed via the async {@link ConfigStore.create} factory (ADR-0029): the
- * boot load + seed both touch the async Db, which a JS constructor can't await.
- * `get()` stays synchronous — it returns the in-memory cache the factory primed;
- * only the write path (`update`/`replace`/`persist`) awaits the write queue.
- */
 export class ConfigStore {
   private current: AppConfig;
 
@@ -59,11 +49,6 @@ export class ConfigStore {
   }
 
   async replace(config: AppConfig): Promise<AppConfig> {
-    // No `migrateLegacyConfig` here: `PUT /config` validates the body against
-    // `appConfigSchema` (routes/config.ts), which no longer declares the retired
-    // `agentReview` flag (#140) and strips unknown keys — so a full-replace never
-    // carries the legacy flag to migrate. The fold lives where it can still be
-    // observed: the boot load (existing stored config) and the PATCH passthrough.
     this.current = appConfigSchema.parse(config);
     await this.persist();
     return this.current;

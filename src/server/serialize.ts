@@ -26,7 +26,7 @@ export function runToApi(_ctx: AppContext, run: RunRow): ApiRun {
   const usage = parseUsage(run.usage);
   // liveUsage is the Activity view's live/persisted snapshot, streamed as a
   // `run_usage` firehose event — not part of the run's REST shape.
-  const { liveUsage: _liveUsage, ...rest } = run;
+  const { liveUsage, ...rest } = run;
   return { ...rest, usage, cost: parseCost(run.cost) };
 }
 
@@ -105,17 +105,23 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   });
 }
 
+/** Peel the durable tracker-fact columns (issue #233) off a task: they are
+ * server-side persistence only, so they never enter the API shape — dropping
+ * them keeps the WS broadcast and the zod-validated REST response identical
+ * (streaming.test.ts parity). */
+function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns> {
+  const {
+    trackerState, trackerParent, trackerBlockedBy, trackerLabels,
+    trackerTitle, trackerBody, trackerUrl, trackerCreatedAt,
+    ...rest
+  } = task;
+  return rest;
+}
+
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
   const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
-  // Drop the durable tracker-fact columns (issue #233): server-side persistence
-  // only, never part of the API shape (see ApiTask).
-  const {
-    trackerState: _s, trackerParent: _p, trackerBlockedBy: _bb, trackerLabels: _l,
-    trackerTitle: _tt, trackerBody: _tb, trackerUrl: _tu, trackerCreatedAt: _tc,
-    ...apiFields
-  } = task;
   return {
-    ...apiFields,
+    ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
@@ -238,12 +244,10 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       harness: convo.harness,
       model: convo.model,
       state: convo.state,
-      // Conversations are direct-mode only (ADR-0006) — no Isolation Mode.
       isolation: 'direct',
       startedAt: convo.createdAt,
       trackerRef: null,
       trackerUrl: null,
-      // Conversations are hitl by nature; they don't carry the afk-escalation flag.
       escalated: false,
       usage,
       contextTokens: convo.contextTokens,

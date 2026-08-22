@@ -95,7 +95,7 @@ export interface CriticHarnessDrive {
   run(req: CriticDriveRequest): Promise<CriticDriveResult>;
 }
 
-/** Runner's `spawnHarness` env-overlay recipe (`execution/runner.ts:496-509`),
+/** Runner's `spawnHarness` env-overlay recipe (`execution/runner.ts`),
  * minus any tracker credential. The critic never receives
  * `HARMONIC_API_KEY`/`HARMONIC_MCP_URL` — even though nothing here sets them
  * in the first place (unlike `Runner.drive`, which injects them into the
@@ -123,7 +123,7 @@ function criticSpawnEnv(
 /**
  * The real critic drive: spawn the configured harness, speak ACP over its
  * stdio (`AcpDriver`, same sequence the Runner uses at
- * `execution/runner.ts:702-786`), and run exactly one read-only prompt turn.
+ * `execution/runner.ts`), and run exactly one read-only prompt turn.
  *
  * Containment, in the order reliability-design Unit B lists it:
  *
@@ -131,7 +131,7 @@ function criticSpawnEnv(
  * - **No Harmonic MCP**: `handshake({ mcpServers: [] })` — the harness never
  *   learns about the Harmonic MCP server (`finish_task`/`accept_task`/anything
  *   that could mutate the tracker), unlike a builder Run which registers it
- *   (`runner.ts:657-661`). The critic keeps its own harness-native tools (read,
+ *   (`runner.ts`). The critic keeps its own harness-native tools (read,
  *   execute, fetch) but has no path to the tracker: it cannot close/accept a
  *   Task, only return a verdict.
  * - **Builder-equivalent tool access**: the critic gets the same unattended
@@ -173,13 +173,9 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         onRequest: async (method, params) => {
           if (method === 'session/request_permission') {
             permissionRequests.push(params);
-            // Grant, matching the afk builder: the critic may need to execute
-            // tools to judge the change. It is held read-only by its prompt and
-            // the mutation fingerprint, not by declining tool calls.
             const optionId = grantOptionId(params);
             return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
           }
-          // Advertise no fs/terminal capability; anything else gets null.
           return null;
         },
       });
@@ -207,8 +203,6 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         const modelId = adapterFor(req.harnessId).sessionModelId?.(req.model);
         await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId }), timeout]);
 
-        // Give the critic the afk builder's unattended tool access; the
-        // grant-all `onRequest` above backstops any harness that still asks.
         const mode = criticPermissionMode(req.harnessId, driver.availableModes);
         if (mode) {
           await Promise.race([driver.setMode(mode), timeout]);

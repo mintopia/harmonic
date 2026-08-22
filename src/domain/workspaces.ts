@@ -112,6 +112,10 @@ export class WorkspaceService {
     return row;
   }
 
+  async assertExists(id: number): Promise<void> {
+    await this.get(id);
+  }
+
   /** {@link resolveWorkspace} over the current list — see its doc comment. */
   async resolve(id?: number): Promise<WorkspaceRow> {
     return resolveWorkspace(await this.list(), id);

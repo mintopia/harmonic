@@ -2,10 +2,6 @@ import { useEffect, useState } from 'react';
 import { renderMarkdown } from '../markdown';
 
 /**
- * Rendered, sanitized Markdown for tracker-issue descriptions. Styling of the
- * emitted tags lives in index.css under `.markdown`. Shown in Task detail (the
- * board card stays brief — a clamped title only).
- *
  * `renderMarkdown` dynamically imports `marked`, so the render resolves a tick
  * later on first use; the raw source is shown until the HTML is ready.
  */

@@ -60,7 +60,6 @@ export type StatMetric = 'usd' | 'tokens' | 'runs' | 'fails';
 /** The metric's heading label ("Cost per day", the toggle button text). */
 export const METRIC_LABEL: Record<StatMetric, string> = { usd: 'Cost', tokens: 'Tokens', runs: 'Runs', fails: 'Fails' };
 
-/** Compact figure formatting for token counts ("21.9k", "1.2M"). */
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
 /** Format one day's value for the selected metric — money for usd, compact

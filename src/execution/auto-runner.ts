@@ -412,7 +412,7 @@ export class AutoRunner {
     }
 
     for (const task of ordered) {
-      if (running >= ceiling) break; // Machine Ceiling reached — the old `while` guard.
+      if (running >= ceiling) break;
       if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) {
         continue;
       }

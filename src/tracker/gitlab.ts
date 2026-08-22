@@ -87,7 +87,6 @@ function parseBody(desc: string): { parent: number | null; blockedBy: number[] }
   return { parent: parent ? Number(parent[1]) : null, blockedBy };
 }
 
-/** Reverse-fill `blocking` from every ticket's declared `blockedBy` (a scan-set derivation, like local-markdown). */
 function synthesise(raws: RawIssue[]): Ticket[] {
   const parsed = raws.map((raw) => ({ raw, ...parseBody(raw.description ?? '') }));
   const byId = new Map(parsed.map((p) => [p.raw.iid, p]));

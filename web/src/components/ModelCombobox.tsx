@@ -3,13 +3,6 @@ import { field } from '../ui';
 import { Icon } from './Icon';
 import { filterModels } from './modelFilter';
 
-/**
- * Model picker: a text field that stays free-typeable (arbitrary and
- * suffixed IDs like `gpt-5.4-mini[low]` commit as-is) fronted by a definite,
- * browsable list of the harness's configured models — the native <datalist>
- * it replaces gave no reliable dropdown affordance. The value is controlled
- * by the parent; this component owns only open/highlight state.
- */
 export function ModelCombobox({
   id,
   value,
@@ -30,8 +23,6 @@ export function ModelCombobox({
   const custom = value.trim() !== '' && shown.length === 0;
   const panelOpen = open && (shown.length > 0 || custom);
 
-  // Close on any pointer press outside the widget. The panel lives inside the
-  // task-form <dialog>, so a click elsewhere in the form should dismiss it.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
@@ -41,8 +32,6 @@ export function ModelCombobox({
     return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
 
-  // Keep the highlighted option visible as arrow keys move past the edge of
-  // the scrollable listbox.
   useEffect(() => {
     if (highlight >= 0) {
       document.getElementById(`${listId}-opt-${highlight}`)?.scrollIntoView({ block: 'nearest' });

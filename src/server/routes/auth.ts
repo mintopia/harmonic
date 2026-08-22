@@ -25,7 +25,6 @@ const meResponseSchema = z.object({
 
 const changePasswordBodySchema = z.object({
   currentPassword: z.string().meta({ example: '<your-current-password>' }),
-  // Mirrors AuthService.setPassword's rule so the spec documents it.
   newPassword: z.string().min(4).meta({ example: '<your-new-password>' }),
 });
 
@@ -159,7 +158,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const { currentPassword, newPassword } = req.body;
-      // Ungated → this is the initial set, so skip the current-password check.
       if ((await ctx.auth.hasPassword()) && !(await ctx.auth.verifyLogin(currentPassword))) {
         return reply.status(401).send({ error: { code: 'unauthenticated', message: 'wrong current password' } });
       }

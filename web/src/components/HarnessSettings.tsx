@@ -5,17 +5,15 @@ import { FieldError, fieldLabel } from './SettingsSection';
 import { Icon } from './Icon';
 import { renameRecordKey } from './settings-rename';
 
-/** Draft-name editing for a record keyed by an editable name.
- *
- * Holds the in-progress name in local state so typing never rewrites the
- * parent object's key — which is what remounted the row and stole focus. The
- * rename is committed to the parent only on `commit` (called on blur), via
- * {@link renameRecordKey}, which silently keeps the old name on an empty or
- * colliding rename. Shared by the env-var and model-price editors below. */
+/**
+ * Holds the in-progress name in local state so typing never rewrites the parent
+ * object's key — which is what remounted the row and stole focus. Committed to
+ * the parent only on `commit` (blur), via {@link renameRecordKey}, which
+ * silently keeps the old name on an empty or colliding rename.
+ */
 function useKeyRename<V>(record: Record<string, V>, onChange: (next: Record<string, V>) => void) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   return {
-    /** The value to show in the name input: the live draft, or the committed key. */
     nameFor: (key: string) => drafts[key] ?? key,
     setName: (key: string, value: string) => setDrafts((d) => ({ ...d, [key]: value })),
     commit: (key: string) => {
@@ -31,7 +29,6 @@ function useKeyRename<V>(record: Record<string, V>, onChange: (next: Record<stri
   };
 }
 
-/** Add/remove/edit rows of a plain string list (harness args, models). */
 function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange: (items: string[]) => void; ariaLabel: string }) {
   const update = (i: number, value: string) => onChange(items.map((item, idx) => (idx === i ? value : item)));
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
@@ -55,9 +52,8 @@ function ListEditor({ items, onChange, ariaLabel }: { items: string[]; onChange:
   );
 }
 
-/** Key-value rows for a harness's spawned-process env. Values are masked
- * (password-style) by default since they commonly hold API keys, with a
- * per-row reveal toggle. */
+/** Values are masked (password-style) by default since they commonly hold API
+ * keys, with a per-row reveal toggle. */
 function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (env: Record<string, string>) => void }) {
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const rename = useKeyRename(env, onChange);
@@ -114,10 +110,6 @@ function EnvEditor({ env, onChange }: { env: Record<string, string>; onChange: (
   );
 }
 
-/** One harness as a collapsed disclosure row: the summary carries the id
- * and launch command (machine data → Data face); the deep config only
- * unfolds on demand. A failed save with errors inside forces it open so
- * the messages are never hidden. */
 function HarnessCard({
   id,
   harness,

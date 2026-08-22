@@ -78,6 +78,10 @@ export class RunStore {
     return row;
   }
 
+  async assertExists(id: number): Promise<void> {
+    await this.get(id);
+  }
+
   listForTask(taskId: number): Promise<RunRow[]> {
     return this.db.read((db) =>
       db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(asc(runs.attempt)).all(),

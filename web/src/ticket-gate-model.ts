@@ -57,7 +57,6 @@ export function gateForRun(input: { task: Task; runs: Run[]; selectedRunId: numb
     return { kind: 'live', isReviewGate: task.state === 'awaiting-review' };
   }
 
-  // Historical run: read-only, regardless of the task's live state.
   const current = runs.find((r) => r.id === currentId)!;
   const { word, dot } = runDisplay(selected);
   return {

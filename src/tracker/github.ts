@@ -117,10 +117,6 @@ function normalise(raw: RawIssue): Ticket {
  * — `gh` exposes native sub-issue `parent` and directional dependency edges
  * (`blockedBy`/`blocking`) as JSON fields, so one bulk read normalises whole.
  * Writes only `claim` and `close`, over ambient `gh` auth.
- *
- * ponytail: native relationships only. A GitHub repo with the sub-issue /
- * dependency preview features *disabled* returns them empty; add body-line
- * (`Blocked by: #n` / `Part of #n`) fallback parsing here if that surfaces.
  */
 export function githubAdapter(repoRoot: string, run: GhRunner = defaultGh): WritableTrackerAdapter {
   const json = async <T>(args: string[]): Promise<T> => JSON.parse(await run(args, repoRoot));

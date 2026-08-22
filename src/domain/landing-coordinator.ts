@@ -127,9 +127,8 @@ export class LandingCoordinator {
       await appendLandingJournalTx(tx, run.id, 'ponc', { payload: { cutoffSeq: landFact.seq } }, now());
     });
 
-    // Step 1: record the landing phase + a lifecycle event. Now that RunStore is
-    // async these are awaited, so a concurrent settle during this await already
-    // sees the PONC frozen above and is clamped to audit-only.
+    // Now that RunStore is async these are awaited, so a concurrent settle during
+    // this await already sees the PONC frozen above and is clamped to audit-only.
     if (run.phase !== 'landing') {
       await this.runStore.update(run.id, { phase: 'landing' });
       await this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'landing' } });

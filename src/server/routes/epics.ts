@@ -87,23 +87,6 @@ const epicLandOutcomeSchema = z
   ])
   .meta({ id: 'EpicLandOutcome' });
 
-/**
- * The operator force-land-the-ready-subset action over a whole Epic (issue
- * #161, ADR-0024): land whatever subset is currently folded into the Epic's
- * integration branch into the default branch now, even though a sibling
- * member is stuck — explicit and never automatic. Verification still gates
- * the merge (a failing whole-Epic Verification escalates rather than
- * landing); this only bypasses the all-members-`completed` gate.
- *
- * Mirrors the lease operator-action shape (`routes/leases.ts`, issue #125):
- * operator only, not on `scopedKeyAllowed`'s (or `readScopeAllowed`'s)
- * allowlist, so a run-scoped or read-scoped key gets the same 403 an
- * unrecognized path gets by default (see app.ts).
- */
-/** `Epic` (`src/domain/epic-view.ts`) passed straight through — the domain
- * shape already *is* the frozen DTO, so there is nothing to reshape; kept as
- * a named identity so a future divergence between the two has one seam to
- * change rather than two call sites drifting apart. */
 const epicToApi = (epic: Epic): Epic => epic;
 
 export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
@@ -127,7 +110,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.assertExists(req.params.workspaceId);
       const epics = await ctx.trackerManager.listEpics(req.params.workspaceId);
       return { epics: epics.map(epicToApi) };
     },
@@ -150,7 +133,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.assertExists(req.params.workspaceId);
       const epic = await ctx.trackerManager.epicDetail(req.params.workspaceId, req.params.epicRef);
       if (!epic) {
         throw new DomainError('not_found', `no Epic ${req.params.epicRef} derived for workspace ${req.params.workspaceId}`);
@@ -178,7 +161,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.workspaces.get(req.params.workspaceId); // 404s an unknown Workspace before touching the tracker
+      await ctx.workspaces.assertExists(req.params.workspaceId);
       const outcome = await ctx.trackerManager.forceLandEpic(req.params.workspaceId, req.params.epicRef);
       if (!outcome) {
         throw new DomainError(

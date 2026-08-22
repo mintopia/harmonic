@@ -30,23 +30,12 @@ import { ArmedButton } from './ArmedButton';
 import { Icon } from './Icon';
 import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
 
-/** The Deck-language column grid (DESIGN.md § 6): the header and every row —
- * flat, banded or ungrouped — share one template so they line up. It sheds
- * low-priority columns below the tablet tier instead of horizontal-scrolling
- * like a phone (issue #228): base keeps #/Prompt/State, `md:` (≥768px) adds
- * Priority/Cost, `lg:` (≥1024px) restores the full 8 with Harness/Model/Created.
- * The dropped header + row cells hide together (`hidden md:*`/`hidden lg:*`) so
+/** The dropped header + row cells hide together (`hidden md:*`/`hidden lg:*`) so
  * the DOM cell count always matches the active track count and the ARIA grid
- * stays valid at every width. Created (a wide timestamp) rides the `lg:` tier
- * with Harness/Model so the Prompt column keeps real width at tablet. */
+ * stays valid at every width. */
 const GRID =
   'grid grid-cols-[3rem_minmax(0,1fr)_8rem] md:grid-cols-[3rem_minmax(0,1fr)_8rem_5rem_5.5rem] lg:grid-cols-[3rem_minmax(0,1fr)_8rem_6rem_9rem_5rem_5.5rem_12rem] items-center gap-x-3 px-4';
 
-/** One band header + its member rows (issue #167, ADR-0026): title, #ref,
- * fold progress, an armed force-land control, and an expand/collapse
- * disclosure — collapse state is local, not persisted (a glance affordance,
- * not routed state like the Board's peeked terminal columns). Styled as the
- * quiet ActivityView-style strip (`bg-raised/40`), not a full-bleed band. */
 function EpicBandHeader({
   epic,
   collapsed,
@@ -151,10 +140,6 @@ export function TableView({
     api.task(id).then(onOpen, toastError);
   };
 
-  // Group-by-Epic bands (issue #167, ADR-0026): one band per Epic that has at
-  // least one member on the current page, in `epics`' own order; the rest of
-  // the page's rows fall to a flat "Ungrouped" tail — a Task page can straddle
-  // an Epic's full membership, so a band only ever reflects what's visible now.
   const epicLookup = useMemo(() => epicByTaskId(epics), [epics]);
   const bands = epics
     .map((epic) => ({ epic, members: pageTasks.filter((t) => epicLookup.get(t.id) === epic) }))
@@ -170,8 +155,6 @@ export function TableView({
     });
   };
 
-  // Sortable headers hide below their column's tier in lockstep with the row
-  // cells (see GRID): Priority/Cost appear at `md:`, Created only at `lg:`.
   const sortHeader = (key: SortKey, label: string, opts?: { align?: 'right'; tier?: 'md' | 'lg' }) => (
     <span
       role="columnheader"
@@ -193,10 +176,6 @@ export function TableView({
     </span>
   );
 
-  // The existing flat row, reused for both an Epic band's members and the
-  // ungrouped tail — group-by-Epic (issue #167) changes only what wraps the
-  // rows, never the row itself. `indent` pushes an Epic member's row in from
-  // the band header (DESIGN.md § 6 — the same pl-7 the Deck's own bands use).
   const renderRow = (task: Task, indent = false) => (
     <div
       key={task.id}
@@ -270,8 +249,6 @@ export function TableView({
     <div>
       <h1 className="sr-only">Tasks</h1>
       <div className="mb-4 flex flex-wrap items-baseline gap-2">
-        {/* The view's anchor figure: how many tasks the filters (including
-            search, issue #104) select. */}
         <span className="flex items-baseline gap-1.5">
           <span className={`${displayTitle} tabular-nums ${total > 0 || loading ? '' : 'text-faint'}`}>
             {loading ? '…' : total}
@@ -357,11 +334,6 @@ export function TableView({
           </div>
         </div>
 
-        {/* Stale rows stay visible and fully legible while a refetch is in
-            flight — the top-edge progress bar and aria-busy carry the loading
-            signal instead of dimming the whole table below AA. Sparse hairline
-            dividers (`divide-y divide-hairline`) separate rows, never a ruled
-            wall of per-row borders. */}
         {bands.length === 0 ? (
           <div role="rowgroup" className="divide-y divide-hairline">
             {pageTasks.map((t) => renderRow(t))}
@@ -422,8 +394,6 @@ export function TableView({
         )}
       </div>
 
-      {/* Pagination (issue #104): only shown once there's more than a page to
-          page through, so the single-page (common) case stays uncluttered. */}
       {pageCount > 1 && (
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-small tabular-nums text-muted">

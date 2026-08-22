@@ -9,10 +9,6 @@ import type { Run } from '../../types';
 import { dot, runChip, runChipActive, runDotFill, sectionLabel } from '../../ui';
 import { Icon } from '../Icon';
 
-/** The rc-state word's ink (prototype `.rc-state.*`): both `failed` and
- * `rejected` fold to the `fail` RunDot in the locked `runDisplay` model, so
- * both read Failed rose here — the model doesn't keep them apart, and this
- * component doesn't re-derive a distinction it doesn't have. */
 const WORD_TONE: Record<RunDot, string> = {
   running: 'text-running',
   fail: 'text-fail',
@@ -27,13 +23,6 @@ function ChipDot({ chip }: { chip: RunChip }) {
   );
 }
 
-/**
- * The Ticket page's run rail (issue #183, part of #179): one chip per Run,
- * switching which Run's detail renders below. Pure presentation over the
- * locked `run-rail-model` — this component derives nothing about a Run's
- * disposition itself, it only maps `RunChip`/the continuation note to markup
- * (prototype lines 484–502).
- */
 export function RunRail({
   runs,
   worktree,

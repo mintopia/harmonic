@@ -3,8 +3,6 @@ import { coalesceTail, isInterrupted, type StreamEvent, type ToolCallView } from
 import { guardrailDimensionLabel } from '../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../ui';
 
-// ACP tool kinds → the short word on the chip. Anything unknown or absent
-// reads as a generic "tool" — the opaque toolCallId is never a label.
 const TOOL_KIND_LABEL: Record<string, string> = {
   read: 'read',
   edit: 'edit',
@@ -21,9 +19,6 @@ function toolKindLabel(kind: string | undefined): string {
   return (kind && TOOL_KIND_LABEL[kind]) ?? 'tool';
 }
 
-/** The one thing the operator asked to see — is it finished? — kept quiet:
- * a running tool pulses, a finished one recedes to a check, a failed one is
- * the only status worth a color (redundant with its aria-label). */
 function ToolStatus({ status }: { status: string | undefined }) {
   if (status === 'completed')
     return (
@@ -44,10 +39,6 @@ function ToolStatus({ status }: { status: string | undefined }) {
   );
 }
 
-/** One tool call as a single scannable line: kind chip · what it touched ·
- * done? The target is machine data (a path, a command) so it stays mono and
- * truncates to one line — never the multi-line wrap that let the status chip
- * drift mid-title and clip at the panel edge. */
 function ToolLine({ tool }: { tool: ToolCallView }) {
   const target = tool.title || 'Tool call';
   return (
@@ -62,15 +53,6 @@ function ToolLine({ tool }: { tool: ToolCallView }) {
   );
 }
 
-/**
- * The transcript shows the *conversation*, not the protocol. Agent prose,
- * thoughts and tool calls (folded upstream) are the content; a plan and a
- * genuine model-mismatch warning also earn a line. Everything else the harness
- * streams — usage ticks, "tools loaded" / mode-change chatter, resolved-
- * permission echoes, and turn-started/ended bookkeeping — is noise the operator
- * doesn't read, so it returns null and never renders (the caller drops nulls,
- * so no empty rows are left behind). Only non-text, non-tool events reach here.
- */
 function renderEventLine(event: StreamEvent): ReactNode {
   if (event.type === 'session_update') {
     if (event.payload.sessionUpdate === 'plan') {
@@ -81,30 +63,19 @@ function renderEventLine(event: StreamEvent): ReactNode {
               <span className="shrink-0 text-muted">
                 {entry.status === 'completed' ? '☑' : entry.status === 'in_progress' ? '◐' : '☐'}
               </span>
-              {/* Plan entries are the agent's own prose — Body sans, not the
-                  code face (the Mono Is Code Rule). */}
               <span>{entry.content}</span>
             </li>
           ))}
         </ul>
       );
     }
-    // usage ticks, capability/mode chatter ("tools loaded") — all bookkeeping.
     return null;
   }
-  // A resolved permission is already implied by the tool row that ran after it
-  // (and was surfaced live as its own prompt) — no echo line in the transcript.
   if (event.type === 'permission_request') return null;
   if (event.type === 'lifecycle' && isInterrupted(event.payload)) {
-    // The one lifecycle line worth keeping: it confirms the operator's own
-    // Stop/Interrupt landed. A normal turn end is silent.
     return <div className="text-muted">Interrupted</div>;
   }
   if (event.payload.event === 'model_mismatch') {
-    // The model setting shown must be real — the harness ran something other
-    // than the task's pin. Harness metadata, not a failure: Tooling cyan, never
-    // Failed rose (the run completed). A model name reads as language, so it's
-    // sans at UI-emphasis weight — mono is for code (the Mono Is Code Rule).
     return (
       <div className="text-tool">
         model mismatch: ran on <span className="font-medium">{(event.payload.observed ?? []).join(', ')}</span> (task
@@ -113,10 +84,6 @@ function renderEventLine(event: StreamEvent): ReactNode {
     );
   }
   if (event.payload.event === 'steer_delivered' || event.payload.event === 'steer_queued') {
-    // The operator steered this run. Keep it in the transcript so the redirect
-    // is visible next to the turn it lands on — queued shows it was accepted,
-    // delivered shows the turn it opened. Rendered as an operator aside, not
-    // agent prose: accent-tinted, labelled, the steering text quoted verbatim.
     const queued = event.payload.event === 'steer_queued';
     return (
       <div className="rounded-md bg-accent-tint px-2 py-1 text-ink">
@@ -126,10 +93,6 @@ function renderEventLine(event: StreamEvent): ReactNode {
     );
   }
   if (event.payload.event === 'progress-nudge') {
-    // The stall detector redirected the agent one turn before it would have
-    // tripped the Progress guardrail (issue #171). An operator aside like
-    // steer_delivered/steer_queued above — accent-tinted, labelled — but this
-    // one is the system's own nudge, not something the operator typed.
     return (
       <div className="rounded-md bg-accent-tint px-2 py-1 text-ink">
         <span className={`${labelType} mr-2 text-accent`}>progress nudge</span>
@@ -141,13 +104,6 @@ function renderEventLine(event: StreamEvent): ReactNode {
     );
   }
   if (event.payload.event === 'guardrail-tripped') {
-    // A Guardrail actually tripped and settled the run (issue #171) — Failed
-    // rose like model_mismatch's Tooling cyan is to harness metadata. Same
-    // "Guardrail tripped — {label}" phrasing as the header banner
-    // (GuardrailTrips/describeGuardrailTrip in TaskDetail), reusing its label
-    // vocabulary via guardrailDimensionLabel so the raw wire token
-    // ("wall-clock") never leaks into the transcript as its own rendering
-    // (issue #176). The reason is the trip's evidence, formatted server-side.
     return (
       <div className="text-fail">
         Guardrail tripped —{' '}
@@ -156,7 +112,6 @@ function renderEventLine(event: StreamEvent): ReactNode {
       </div>
     );
   }
-  // Every other lifecycle/protocol event (turn started, finished, …) is noise.
   return null;
 }
 
@@ -167,11 +122,7 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
   // Memoizing on the `events` array (a fresh reference only when one is
   // appended) plus capping the input to a bounded tail keeps it flat.
   const { items, hidden } = useMemo(() => coalesceTail(events), [events]);
-  // The stream carries two different textures: the agent's prose (message /
-  // thought) reads in the Body sans face like any other copy, while machine
-  // output — tool targets, model names, ids — answers in the Data face.
-  // Keeping them distinct is what stops a turn reading as one flat mono wall.
-  // The rendered nodes are memoized on `items` too, so an unrelated parent
+  // The rendered nodes are memoized on `items`, so an unrelated parent
   // re-render reuses them and React skips the whole transcript subtree.
   const rendered = useMemo(
     () =>
@@ -191,7 +142,6 @@ export function EventStream<E extends StreamEvent>({ events }: { events: E[] }) 
           );
         }
         if (item.kind === 'tool') return <ToolLine key={item.key} tool={item.tool} />;
-        // Protocol/lifecycle noise renders nothing and leaves no gap behind.
         const line = renderEventLine(item.event);
         return line ? <div key={item.key}>{line}</div> : null;
       }),

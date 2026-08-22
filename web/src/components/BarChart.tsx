@@ -1,22 +1,10 @@
 export interface Bar {
-  /** Stable react key + the accessible category name. */
   key: string;
-  /** The row label (rendered left, truncated); defaults to `key`. */
   label?: string;
-  /** The bar magnitude — bars scale to the largest value in the set. */
   value: number;
-  /** The formatted figure shown at the row's right (e.g. "18.2M · $0.52"). */
   valueLabel: string;
 }
 
-/**
- * A compact horizontal bar chart for a categorical breakdown (tokens per
- * model, per agent-type, tool calls). One cobalt series only — the accent is
- * the interface's single chart voice (DESIGN.md § Charts, the One Cobalt
- * Rule); categories are told apart by their labels, never by colour. Bars
- * scale to the set's max, with a floor so the smallest non-zero row stays
- * visible.
- */
 export function BarChart({
   bars,
   ariaLabel,
@@ -24,12 +12,6 @@ export function BarChart({
 }: {
   bars: Bar[];
   ariaLabel?: string;
-  /**
-   * When set, the breakdown carries real table semantics (role=table/row/
-   * columnheader + sr-only value labels) so it reads as a tabular readout to
-   * a screen reader, matching the Table and Activity surfaces (DESIGN.md §7).
-   * `label`/`value` name the two data columns (the bar itself is decorative).
-   */
   columns?: { label: string; value: string };
 }) {
   const max = Math.max(...bars.map((b) => b.value), 1);
@@ -46,8 +28,6 @@ export function BarChart({
     return (
       <div role="table" aria-label={ariaLabel} className="flex flex-col gap-2.5">
         <div role="rowgroup">
-          {/* Headers exist for the screen reader only — the chart shows the
-              category and figure visually, so the column names are sr-only. */}
           <div role="row" className="sr-only">
             <span role="columnheader">{columns.label}</span>
             <span role="columnheader">{columns.value}</span>

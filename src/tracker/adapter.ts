@@ -18,8 +18,8 @@ async function gitlabRemote(repoRoot: string): Promise<string | null> {
   } catch {
     return null;
   }
-  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](.+?)(?:\.git)?$/);
-  return m ? m[1]!.replace(/^\d+\//, '') : null; // strip ssh:// :port
+  const m = url.match(/^(?:git@|(?:https?|ssh):\/\/(?:[^@/]+@)?)[^:/]+[:/](?:\d+\/)?(.+?)(?:\.git)?$/);
+  return m ? m[1]! : null;
 }
 import { githubAdapter } from './github.js';
 import { gitlabAdapter } from './gitlab.js';
@@ -224,8 +224,6 @@ export async function resolveTrackerAdapter(
     throw new TrackerResolutionError('no-declaration', `No tracker declaration at ${docPath}`);
   }
   const name = doc.match(/^#\s*Issue tracker:\s*(.+?)\s*$/m)?.[1];
-  // Normalise the declared name: case-insensitive, spaces/underscores → hyphens,
-  // so "Local Markdown", "local markdown", and "local-markdown" all resolve.
   switch (name?.trim().toLowerCase().replace(/[\s_]+/g, '-')) {
     case 'github':
       return githubAdapter(repoRoot);

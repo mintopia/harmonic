@@ -1,10 +1,7 @@
 import type { ReactNode } from 'react';
 
-/**
- * Pill switch (DESIGN.md § Components): the accent means "on", the knob
- * slides. Pass children for an inline label; pass `label` alone when a
- * field label already names the switch.
- */
+/** Pass children for an inline label; pass `label` alone when a field label
+ * already names the switch. */
 export function Switch({
   checked,
   onChange,

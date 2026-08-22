@@ -5,14 +5,6 @@ import { btnQuietDestructive, toolChip } from '../ui';
 import { EmptyState } from './EmptyState';
 import { PathTail } from './PathTail';
 
-/**
- * Persistent Permission Rules (issue #13 / ADR-0007): each row is an
- * operator-visible, revocable auto-approval escalation — created from a
- * Conversation's "Always allow {kind} in {dir}" prompt button, never from
- * here. Like ChannelsSection/ApiPage, this is its own immediately-saved
- * REST resource (load() on mount, delete-then-load() per row) — it never
- * touches the config dirty-state/save-bar.
- */
 export function PermissionRules() {
   const [rules, setRules] = useState<PermissionRule[]>([]);
 

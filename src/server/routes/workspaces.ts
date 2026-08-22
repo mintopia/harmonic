@@ -74,7 +74,6 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
 
-  /** Flatten the manager's Resolved Tracker (issue #83) into the API's nullable shape. */
   const serializeResolvedTracker = (r: ResolvedTracker | null) =>
     r === null
       ? null
@@ -124,7 +123,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       const workspace = await ctx.workspaces.create(req.body);
-      await ctx.trackerManager.sync(); // created with tracker on ⇒ resolve + start its poll loop now
+      await ctx.trackerManager.sync();
       return reply.status(201).send(serialize(workspace));
     },
   );
@@ -176,7 +175,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         }
       }
       const workspace = await ctx.workspaces.update(req.params.id, req.body);
-      await ctx.trackerManager.sync(); // toggling tracker / repointing the repo / changing the interval takes effect now
+      await ctx.trackerManager.sync();
       return serialize(workspace);
     },
   );
@@ -199,7 +198,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req, reply) => {
       await ctx.workspaces.delete(req.params.id);
-      await ctx.trackerManager.sync(); // the deleted Workspace's poll loop stops here
+      await ctx.trackerManager.sync();
       return reply.status(204).send(null);
     },
   );
@@ -222,7 +221,7 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const ws = await ctx.workspaces.get(req.params.id); // 404 if missing
+      const ws = await ctx.workspaces.get(req.params.id);
       if (!ws.trackerEnabled) throw new DomainError('conflict', `tracking is not enabled for workspace ${ws.id}`);
       await ctx.trackerManager.pollNow(ws.id);
       return { ok: true as const };

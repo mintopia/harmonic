@@ -1,12 +1,5 @@
 import { btnGhost, btnPrimary } from '../ui';
 
-/**
- * The settings pages' one primary action, floated: deep-config edits happen far
- * from the page header, so the dirty-state Discard/Save actions ride a
- * shadow-bar above the viewport bottom (DESIGN.md § Settings). Shared by the
- * global Settings page and the per-Workspace one — both mount it only while
- * dirty. A truncated error sits inline; the caller keeps the full message.
- */
 export function FloatingSaveBar({
   error,
   saving,

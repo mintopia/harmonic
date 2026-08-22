@@ -59,20 +59,10 @@ import {
 } from '../ui';
 
 /**
- * Live operator telemetry (issue #12): running tokens, estimated cost
- * (`formatCost` reused verbatim, so the ≥/unpriced honesty already built for
- * Stats/Task carries over unchanged), and context-window fill, plus an idle
- * cold-cache estimate. Every cell degrades honestly on missing data — no
- * fake zero token count, no fake context percentage — rather than hiding
- * the whole strip; only the cold-cache line disappears entirely, since an
- * unconfigured TTL isn't evidence of anything.
- *
- * The cold-cache read is genuinely time-dependent (idle time keeps growing
- * with no new Turn, unlike every other field here which only changes on a
- * `conversation_changed` message), so this re-evaluates its own predicate
- * on a 20s interval rather than only when `conversation` itself changes.
- * Shown for ended Conversations too (issue #15: read-only still means the
- * telemetry is visible, just frozen at its last value).
+ * The cold-cache read is time-dependent — idle time keeps growing with no new
+ * Turn, unlike every other field here, which changes only on a
+ * `conversation_changed` message — so this re-evaluates on a 20s interval
+ * rather than only when `conversation` itself changes.
  */
 function TelemetryStrip({ conversation, events }: { conversation: Conversation; events: ConversationEvent[] }) {
   const [now, setNow] = useState(() => Date.now());
@@ -95,10 +85,6 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
 
   return (
     <div className="border-b border-hairline">
-      {/* Live telemetry is ONE quiet status line, not a feature (DESIGN.md §
-          Conversation): tokens · cost · context, whispered in Small muted
-          sans. These are figures, so sans with tabular-nums — never the code
-          face. Each part degrades honestly (no fake zero / no fake %). */}
       <p className="px-4 py-2 text-small text-muted">
         {tokens === 'no usage yet' ? 'no usage yet' : `${tokens} tokens`}
         {' · '}
@@ -107,11 +93,6 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
         {context.value === '—' ? '—' : `${context.value} context`}
         {context.note ? ` · ${context.note}` : ''}
       </p>
-      {/* Quiet and neutral, not a state chip: Running Amber's meaning is
-          locked to "work in flight" (DESIGN.md), and a cold cache is the
-          opposite — idle time with no Turn — so this stays in the
-          Raised/Muted informational register rather than borrowing a colour
-          that would misstate what's happening. */}
       {coldCache && (
         <p role="status" className="bg-raised px-4 py-1.5 text-small text-muted">
           {coldCache}
@@ -123,9 +104,6 @@ function TelemetryStrip({ conversation, events }: { conversation: Conversation; 
 
 const fieldLabel = `mb-1 block ${labelType} text-muted`;
 
-/** Segments the transcript on user_turn boundaries (event-stream-model.ts's
- * EventStream renders each turn's agent events unchanged) and keeps the
- * latest turn in view as the reply streams in. */
 function Transcript({ events }: { events: ConversationEvent[] }) {
   const turns = segmentTranscript(events);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -144,7 +122,6 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
         <div key={turn.userTurn?.id ?? `pre-${i}`}>
           {turn.userTurn && (
             <div className="mb-1.5 flex justify-end">
-              {/* Operator prose — sans, never the code face (the Mono Is Code Rule). */}
               <p className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-accent-tint px-3 py-2 text-ink">
                 {turn.userTurn.payload.text}
               </p>
@@ -159,14 +136,10 @@ function Transcript({ events }: { events: ConversationEvent[] }) {
 }
 
 /**
- * A single polite live region that speaks transcript TRANSITIONS — a tool
- * call finishing, a fresh agent message beginning, a Turn ending — and
- * nothing else (issue #96). The transcript itself is deliberately NOT a live
- * region: re-announcing coalesced prose as it streams would bury these
- * signals under per-chunk spam. Announcements are *appended* as their own
- * nodes rather than replacing the last, so a repeated line ("New message"
- * twice in a turn) is still read out — a polite region whose text only swaps
- * for an identical string stays silent on the repeat.
+ * Announcements are *appended* as their own nodes rather than replacing the
+ * last, so a repeated line ("New message" twice in a turn) is still read out —
+ * a polite live region whose text only swaps for an identical string stays
+ * silent on the repeat.
  */
 function StreamAnnouncer({
   events,
@@ -210,19 +183,6 @@ function StreamAnnouncer({
   );
 }
 
-/**
- * One outstanding ACP permission request (issue #11): the Harness is
- * genuinely blocked on the operator's decision, so this renders prominently
- * — its own banded section between the transcript and composer, always in
- * view (not scrolled away with the turn that raised it) — with an explicit
- * "waiting for your decision" line so the paused Turn is unmistakable.
- * Buttons render exactly the options the ACP request offers, plus one
- * synthesized "Always allow {kind} in {dir}" choice (issue #13 / ADR-0007):
- * that's a persistent auto-approval escalation, not a native ACP option, so
- * it renders last, in the quiet button treatment (never the tinted
- * allow-once pill or the tool-teal ghost allow-always uses) — it must never
- * read as the default click.
- */
 function PermissionPrompt({
   pending,
   workingDir,
@@ -237,13 +197,11 @@ function PermissionPrompt({
   const kind = pending.request.toolCall?.kind;
   const alwaysAllowOptionId = chooseAlwaysAllowOptionId(pending.request.options);
 
-  // The Harness is blocked on the operator, so when this prompt appears focus
-  // moves to its first choice (issue #96): a screen-reader or keyboard user
-  // lands on the decision without hunting the panel for it. In the same pass
-  // an assertive live region is filled — empty at first render, populated a
-  // tick later — because an `aria-live` node inserted with its text already
-  // present isn't reliably announced; only a change observed *after* the node
-  // is in the tree is. Keyed per reqId-mounted instance, this runs once on
+  // When this prompt appears focus moves to its first choice (issue #96). In
+  // the same pass an assertive live region is filled — empty at first render,
+  // populated a tick later — because an `aria-live` node inserted with its text
+  // already present isn't reliably announced; only a change observed *after* the
+  // node is in the tree is. Keyed per reqId-mounted instance, this runs once on
   // appear and never yanks focus back mid-decision.
   const firstOptionRef = useRef<HTMLButtonElement>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -268,22 +226,9 @@ function PermissionPrompt({
       aria-label={`Permission request: ${title}`}
       className="border-t border-hairline bg-running-tint px-4 py-3"
     >
-      {/* The Harness is genuinely blocked on a human, so this interrupts the
-          screen reader assertively — ahead of the polite transcript announcer.
-          Populated after mount (see effect above) so the announcement reliably
-          fires; visually hidden since the amber band already carries it. */}
       <div role="alert" className="sr-only">
         {announcement}
       </div>
-      {/* The ask is the one prominent element (DESIGN.md § Conversation): the
-          Harness is genuinely blocked on the operator, so "Waiting for your
-          decision" leads in the Title role — never the quietest line — and the
-          band takes Running amber's tint. Amber's locked meaning is "work in
-          flight" (the Signal Rule); a paused Turn waiting on a decision is
-          exactly that — work stopped, now the operator's — the same carve-out
-          escalatedChip makes. That sets the band apart from the neutral Raised
-          cold-cache and ended notices sharing the dock. The tool metadata
-          (chip + title) drops to the muted context register beneath it. */}
       <p className="text-title font-semibold text-ink">Waiting for your decision</p>
       <div className="mt-1.5 flex items-center gap-2">
         <span className={toolChip}>permission</span>
@@ -335,8 +280,6 @@ function Composer({
   onSend,
 }: {
   config: AppConfig;
-  /** The active Workspace, for its chat-default overrides; null on a fresh
-   * instance with no Workspace yet. */
   workspace: Workspace | null;
   conversation: Conversation | null;
   events: ConversationEvent[];
@@ -346,20 +289,11 @@ function Composer({
     text: string,
   ) => Promise<{ queued: boolean }>;
 }) {
-  // Seeded from the resolved chat default (ADR-0012): this Workspace's override,
-  // else the global chat default — the same resolution the server does when the
-  // request omits these. Only meaningful before a conversation exists; once
-  // spawned the process's harness/model are read from the conversation itself
-  // and can no longer change. Working directory isn't offered here: a new
-  // conversation inherits its Workspace's working directory server-side (ADR-0008).
   const [harness, setHarness] = useState(workspace?.chatHarness ?? config.chat.harness);
   const [model, setModel] = useState(workspace?.chatModel ?? config.chat.model);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
-  // A transient, honest "this landed in the queue, not on the wire yet"
-  // notice (issue #14) — cleared on a timer, like Toaster's own auto-dismiss,
-  // rather than left to linger once the queued Turn has long since started.
   const [queued, setQueued] = useState(false);
   const queuedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -369,8 +303,6 @@ function Composer({
 
   const locked = conversation !== null;
   const ended = conversation?.state === 'ended';
-  // Whether the panel offers Interrupt at all (issue #14): only meaningful
-  // once a Turn can be running, i.e. an active, already-spawned conversation.
   const running = conversation?.state === 'active' && isTurnRunning(events);
   const models = config.harnesses[harness]?.models ?? [];
 
@@ -399,11 +331,6 @@ function Composer({
     }
   };
 
-  // Cancels the in-flight Turn (ACP session/cancel): whatever is still
-  // typed re-prompts as the next Turn, or — composer empty — this just
-  // stops it. Either way the transcript, not this control, is what tells
-  // the honest story afterwards (a `cancelled` stop reason, then a fresh
-  // Turn if there was text to send).
   const interrupt = async () => {
     if (!conversation || interrupting) return;
     setInterrupting(true);
@@ -429,8 +356,6 @@ function Composer({
   return (
     <div className="border-t border-hairline p-3">
       {!locked && (
-        // Two across only when the panel is expanded; in the narrow dock they
-        // stack (the grid keys off panel state, not viewport width).
         <div className={`mb-2 grid gap-2 ${expanded ? 'sm:grid-cols-2' : ''}`}>
           <div>
             <label className={fieldLabel} htmlFor="conv-harness">
@@ -457,10 +382,6 @@ function Composer({
           </div>
         </div>
       )}
-      {/* Transient and honest (issue #14): this message really did land in
-          the queue rather than start immediately — it clears itself once
-          that's stopped being new information, same register as the
-          cold-cache status line above (motion-safe-gated like Toaster's). */}
       {queued && (
         <p role="status" className="mb-1.5 text-label text-muted motion-safe:animate-[toast-in_150ms_var(--ease-out-quint)]">
           Queued — will send once the current turn finishes.
@@ -500,18 +421,6 @@ function Composer({
   );
 }
 
-/**
- * The detail header (issue #15): back-to-list, the Conversation's title
- * (inline-editable — the rename affordance is available for any real
- * Conversation, ended ones included, since renaming is metadata, not a
- * Turn), the expand/collapse toggle, End (active only), Delete (quiet
- * destructive, now behind the shared two-step armed confirm — issue #98, so a
- * conversation is never deleted on a single bare click), and Close. A second,
- * Data-role line carries the id/state/
- * harness/model/Working Directory that used to sit in the composer's locked
- * banner — now shown here so it survives even when the composer itself
- * doesn't render (an ended Conversation has none at all).
- */
 function ConversationHeader({
   conversation,
   composing,
@@ -627,11 +536,6 @@ function ConversationHeader({
       </div>
       {conversation && (
         <div className="mt-1 flex items-center gap-1.5 text-small text-muted">
-          {/* State as a small dot, not a full pill (DESIGN.md § Conversation:
-              "a small 'Active' dot") — active is the quiet norm; an ended
-              conversation is spelled out by the read-only banner and the
-              disabled composer below, so it never needs a loud chip here.
-              Neutral, per the lifecycle-not-work-state reasoning in ui.ts. */}
           <span
             className={`h-1.5 w-1.5 shrink-0 rounded-full ${
               conversation.state === 'active' ? 'bg-muted' : 'bg-faint'
@@ -639,15 +543,12 @@ function ConversationHeader({
             title={conversation.state}
           />
           <span className="sr-only">{conversation.state}</span>
-          {/* Names read as language → sans (the Mono Is Code Rule). */}
           <span className="shrink-0">
             {conversation.harness} · {conversation.model}
           </span>
           <span aria-hidden="true" className="shrink-0 text-faint">
             ·
           </span>
-          {/* Only the path is code (mono); it takes the remaining width and
-              keeps its final segment whole, full path on hover. */}
           <PathTail path={conversation.workingDir} className="flex-1 font-data" />
         </div>
       )}
@@ -655,52 +556,21 @@ function ConversationHeader({
   );
 }
 
-/** Which pane the open panel shows: the history list, or one Conversation's
- * detail — `conversationId: null` inside `detail` is the not-yet-created
- * "compose a new one" state the old walking skeleton always started in. */
 type LauncherView = { kind: 'list' } | { kind: 'detail'; conversationId: number | null };
 
-/**
- * The Conversations launcher (issue #10 walking skeleton; issue #15 grows it
- * into history browsing): a right-hand dock running the full height of the
- * working view. App mounts it inside the below-header region but outside the
- * view switch, so it is view-independent — its always-on firehose
- * subscription (attention tracking + a live list) keeps running whether the
- * panel is open or not, on every view. That region is also its positioning
- * context: the dock is `absolute` within it and so clears the header without
- * hardcoding the header's height (which moves — see App.tsx).
- *
- * The closed launcher sits flush on the bottom edge as a drawer tab, reading
- * as the pull for the panel that rises from it. The open dock does contend
- * with the toast stack for the top-right corner, and the stack yields: it
- * dodges left of a docked panel, keyed off the `data-dock` attribute below
- * (see toast.tsx). This file publishes that attribute and knows nothing else
- * about toasts.
- *
- * The last-viewed Conversation persists in localStorage (`conversation-
- * storage.ts`) so reopening the panel returns to it instead of the list —
- * explicitly leaving the list (the back arrow) forgets it, so *that* choice
- * also survives a close/reopen. A persisted Conversation that comes back
- * `ended` (e.g. after a server restart orphaned it) still opens straight to
- * its detail — just read-only, never a fake resume.
- */
 export function ConversationLauncher({
   config,
   workspace,
 }: {
   config: AppConfig | null;
-  /** The active Workspace (ADR-0008) a new Conversation binds to, and whose
-   * chat-default overrides seed the Composer; null on a fresh instance. */
   workspace: Workspace | null;
 }) {
   const workspaceId = workspace?.id ?? null;
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  // A one-shot flag that adds the entrance-flourish class for ~150ms after
-  // toggling expand/collapse, then removes it — re-adding the same class
-  // later still restarts the CSS animation (it only replays on a genuine
-  // "gained the class" transition), so this never needs a remount, which
-  // would otherwise blow away in-progress Composer text on every toggle.
+  // Re-adding the same class later still restarts the CSS animation (it only
+  // replays on a genuine "gained the class" transition), so the flourish never
+  // needs a remount, which would otherwise blow away in-progress Composer text.
   const [flourish, setFlourish] = useState(false);
   const flourishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -725,15 +595,10 @@ export function ConversationLauncher({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [events, setEvents] = useState<ConversationEvent[]>([]);
-  // Prompts the Harness is genuinely blocked on (issue #11), scoped to
-  // whichever conversation is open.
   const [pending, setPending] = useState<PendingPermissions>({});
 
-  // Needs-attention tracking (issue #15): which Conversations, keyed by id,
-  // saw a permission request or a finished Turn land while the operator
-  // wasn't looking at them. `focusedRef` mirrors `open`/`view` into a ref so
-  // the always-on subscription below never needs to reconnect just because
-  // the operator switched panes.
+  // `focusedRef` mirrors `open`/`view` into a ref so the always-on subscription
+  // below never needs to reconnect just because the operator switched panes.
   const [attention, setAttention] = useState<AttentionState>(NO_ATTENTION);
   const focusedRef = useRef<number | null>(null);
   useEffect(() => {
@@ -757,22 +622,12 @@ export function ConversationLauncher({
     }
   }, [open, view]);
 
-  // The always-on firehose subscription (issue #15): mounted for the
-  // launcher's whole lifetime, independent of `open`/`view`, so a
-  // permission request or finished Turn on a background Conversation is
-  // caught even while the panel is collapsed. Doubles as the list's live
-  // feed, so a title/usage/state change is reflected in the history list
-  // whether or not it's currently on screen.
   useEffect(() => {
     if (workspaceId === null) return;
-    // A Workspace switch replaces the list outright rather than merging —
-    // the previous Workspace's Conversations don't belong here anymore.
     setConversations([]);
     api.conversations(workspaceId).then(({ conversations }) => setConversations(conversations), toastError);
     const unsubscribe = subscribe((msg) => {
       setAttention((current) => applyAttentionMessage(current, msg, focusedRef.current));
-      // Scoped to the active Workspace (ADR-0008) — same treatment as the
-      // board's task_changed filter in App.tsx.
       if (msg.type === 'conversation_changed' && msg.conversation.workspaceId === workspaceId) {
         setConversations((current) => upsertConversation(current, msg.conversation));
       }
@@ -780,11 +635,6 @@ export function ConversationLauncher({
     return unsubscribe;
   }, [workspaceId]);
 
-  // The focused Conversation's own detail stream (issues #10–#14, largely
-  // unchanged): replay the persisted events, then append live ones as they
-  // arrive, deduped by id. Runs whenever `focusedId` changes — including to
-  // null, which just clears the detail state (the list, or a fresh compose,
-  // show nothing here).
   useEffect(() => {
     if (focusedId === null) {
       setConversation(null);
@@ -794,9 +644,6 @@ export function ConversationLauncher({
     }
     const id = focusedId;
     let live = true;
-    // Clear the previous Conversation's state before replaying this one
-    // (TaskDetail.tsx's run-switch pattern), so switching in the list never
-    // flashes stale transcript/telemetry under the new id.
     setConversation(null);
     setEvents([]);
     setPending({});
@@ -850,9 +697,6 @@ export function ConversationLauncher({
   const send = async (fields: { harness: string; model: string }, text: string) => {
     let id = view.kind === 'detail' ? view.conversationId : null;
     if (id === null) {
-      // First turn: spawns the harness server-side once this and the turn
-      // below land — harness/model lock from here on. Working directory is
-      // inherited from the Workspace server-side (ADR-0008).
       const created = await api.createConversation({
         ...fields,
         ...(workspaceId !== null ? { workspaceId } : {}),
@@ -925,10 +769,6 @@ export function ConversationLauncher({
       >
         <span className="relative inline-flex">
           <Icon name="chat" className="text-accent" />
-          {/* The needs-attention dot: TaskDetail's tab-flag treatment
-              (a small accent dot, aria-hidden — the aria-label above carries
-              the same information to assistive tech), not a state color;
-              see conversation-attention-model.ts's header comment. */}
           {needsAttention && (
             <span
               aria-hidden="true"
@@ -941,9 +781,6 @@ export function ConversationLauncher({
     );
   }
 
-  // While the focused conversation is still loading, hold off on the
-  // composer rather than flash the unlocked (harness/model/workingDir
-  // editable) form before the locked, server-confirmed one replaces it.
   const composerReady = view.kind === 'detail' && (view.conversationId === null || conversation !== null);
   const ended = conversation?.state === 'ended';
 
@@ -999,17 +836,8 @@ export function ConversationLauncher({
           <div className="flex-1 overflow-y-auto p-4">
             <Transcript events={events} />
           </div>
-          {/* Adjoins the transcript, never wraps it (issue #96): the scroll
-              container above stays a plain region so streaming prose isn't
-              re-read; only this sibling speaks the transitions. */}
           <StreamAnnouncer events={events} resetKey={conversation?.id ?? 'new'} />
 
-          {/* Pending prompts sit outside the scrollable transcript so a
-              paused Turn stays visible without hunting for it — the panel
-              is non-modal, so this never traps focus. Ended Conversations
-              never carry one (issue #15: read-only means no permission
-              prompts at all, belt-and-braces alongside `pending` already
-              being empty for them). */}
           {!ended &&
             Object.values(pending).map((p) => (
               <PermissionPrompt

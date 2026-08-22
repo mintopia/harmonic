@@ -456,7 +456,7 @@ type TurnOutcome =
   | { kind: 'merge-train-heal'; detail: string };
 
 export class Runner {
-  private active = new Map<number, ActiveRun>(); // by run id
+  private active = new Map<number, ActiveRun>();
   /** Set once {@link shutdown} kills the harnesses on process/server close, so a
    * drive loop reacting to its SIGKILLed harness leaves the Run `running` for
    * boot reconciliation to record as interrupted, rather than settling it a
@@ -2626,7 +2626,6 @@ export class Runner {
               );
               return;
             }
-            // outcome.kind === 'trip'
             unmeasurableSince = null;
             const trip = outcome.trip;
             const event =
@@ -2776,7 +2775,7 @@ export class Runner {
         for (const [id, t] of outstandingTools) {
           if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
         }
-        if (!oldest) return; // nothing outstanding right now
+        if (!oldest) return;
         const trip = toolTimeoutTrip({
           outstandingMs: Date.now() - oldest.startedAt,
           limitMs: toolTimeoutMs,
@@ -3896,8 +3895,6 @@ export class Runner {
   private kill(active: ActiveRun): void {
     try {
       if (active.child.exitCode === null && !active.child.killed) active.child.kill('SIGKILL');
-    } catch {
-      // already gone
-    }
+    } catch {}
   }
 }

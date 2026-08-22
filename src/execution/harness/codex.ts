@@ -182,7 +182,6 @@ function splitModelId(model: string): { base: string; effort: string | null } {
   return match ? { base: match[1]!, effort: match[2]! } : { base: model, effort: null };
 }
 
-/** Codex Harness Adapter, built on the issue-22 spike findings. */
 export const codexAdapter: HarnessAdapter = {
   // CODEX_CONFIG is a JSON object merged into the Codex session config —
   // the verified spawn-time pinning mechanism. The model actually used is

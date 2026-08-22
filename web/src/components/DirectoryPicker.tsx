@@ -11,13 +11,6 @@ import { Icon } from './Icon';
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 /**
- * Lazy directory picker (issue #67) over `GET /api/fs` (issue #62): starts at
- * the server user's home and expands one level per click, caching each node's
- * children so re-expanding is instant. Clicking a directory's name selects it
- * (`onSelect`), which the caller mirrors into the working-dir field. It is a
- * convenience over — not a replacement for — the free-text path input, which
- * stays as the manual-entry fallback for anywhere outside the browsable tree.
- *
  * Operator-only: `/api/fs` needs a full-scope session, so a scoped/read key
  * gets a load error surfaced inline rather than a picker.
  */
@@ -25,14 +18,11 @@ export function DirectoryPicker({
   selected,
   onSelect,
 }: {
-  /** The current working-dir value, so the matching row reads as chosen. */
   selected: string;
   onSelect: (path: string) => void;
 }) {
   const [state, dispatch] = useReducer(reducePicker, undefined, emptyPicker);
 
-  // Load the home listing once on mount. A load failure becomes the root
-  // error (see below), so the picker degrades to "use the text field".
   useEffect(() => {
     let live = true;
     api

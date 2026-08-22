@@ -121,16 +121,8 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
     },
     async (req, reply) => {
       const config = ctx.configStore.get();
-      // Defaults to the earliest-created Workspace when omitted (ADR-0008), so
-      // callers that predate Workspaces keep working unchanged.
       const workspace = await ctx.workspaces.resolve(req.body.workspaceId);
-      // The chat default (ADR-0012), resolved like every other overridable
-      // setting: an explicit request value wins, else this Workspace's chat
-      // override, else the global chat default. Distinct from the Task defaults —
-      // a Conversation talks to whatever agent chat is pointed at.
       const harness = req.body.harness ?? resolveOverride(workspace.chatHarness, config.chat.harness);
-      // `harness` may be a Workspace override (plain text), so it can name a
-      // harness this instance doesn't configure — `?.` handles that, guarded below.
       const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
       if (!harnessConfig) throw new DomainError('validation', `harness '${harness}' is not configured`);
       const conversation = await ctx.conversations.create({
@@ -199,7 +191,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      await ctx.conversations.get(req.params.id); // 404
+      await ctx.conversations.assertExists(req.params.id);
       return conversationToApi(ctx, await ctx.conversations.update(req.params.id, { title: req.body.title }));
     },
   );
@@ -220,9 +212,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      await ctx.conversations.get(req.params.id); // 404
-      // Stop the harness if warm (revokes its key); then revoke any orphaned
-      // key and cascade the events.
+      await ctx.conversations.assertExists(req.params.id);
       await ctx.conversationDriver.end(req.params.id);
       await ctx.auth.deleteKeysForConversation(req.params.id);
       await ctx.conversations.delete(req.params.id);
@@ -338,7 +328,7 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
       },
     },
     async (req) => {
-      await ctx.conversations.get(req.params.id); // 404 on unknown
+      await ctx.conversations.assertExists(req.params.id);
       return conversationToApi(ctx, await ctx.conversationDriver.end(req.params.id));
     },
   );

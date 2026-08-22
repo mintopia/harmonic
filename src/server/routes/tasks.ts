@@ -110,7 +110,6 @@ const taskWithDepsSchema = z
      * resumes the same Session, 'condensed' starts fresh; null on originals and
      * pre-feature re-attempts (⇒ full). */
     continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),
-    // --- Tracker mirroring (issue #30). native Tasks carry origin + nulls/false. ---
     /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
     origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
     /** The mirrored issue's number; null on native Tasks. */
@@ -499,7 +498,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.tasks.get(req.params.id); // 404 on unknown task
+      await ctx.tasks.assertExists(req.params.id);
       if (!(await ctx.runner.steer(req.params.id, req.body.text))) {
         throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer`);
       }
@@ -709,7 +708,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.tasks.get(req.params.id); // 404s an unknown id via DomainError
+      await ctx.tasks.assertExists(req.params.id);
       const runsForTask = await ctx.runs.listForTask(req.params.id);
       // `previewHumanRejectContinuation` stays a pure, synchronous domain
       // function; resolve every candidate Session row up front so its
@@ -760,7 +759,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.tasks.get(req.params.id);
+      await ctx.tasks.assertExists(req.params.id);
       return { runs: (await ctx.runs.listForTask(req.params.id)).map((run) => runToApi(ctx, run)) };
     },
   );
@@ -837,7 +836,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.runs.get(req.params.id); // 404 on unknown run
+      await ctx.runs.assertExists(req.params.id);
       return {
         guardrailEvents: (await ctx.guardrailEvents.list(req.params.id)).map((r) => ({
           ...r,
@@ -862,7 +861,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.runs.get(req.params.id); // 404 on unknown run
+      await ctx.runs.assertExists(req.params.id);
       return { verificationAttempts: await ctx.verificationAttempts.list(req.params.id) };
     },
   );
@@ -879,7 +878,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.tasks.get(req.params.id);
+      await ctx.tasks.assertExists(req.params.id);
       const runs = await ctx.runs.listForTask(req.params.id);
       const usages = runs
         .map((run) => (run.usage ? (JSON.parse(run.usage) as RunUsage) : null))

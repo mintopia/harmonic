@@ -121,8 +121,6 @@ export class ChannelService {
       .then(deserialize);
   }
 
-  // Same read-then-write rule: the 404-check and the two deletes run as one
-  // write unit so nothing can race the channel out from under the delete.
   delete(id: number): Promise<void> {
     return this.db.write(async (db) => {
       const row = await db.select().from(channels).where(eq(channels.id, id)).get();
@@ -137,9 +135,6 @@ export class ChannelService {
     return (await this.list()).filter((c) => c.events.includes(event));
   }
 
-  // ---- Per-task overrides ----
-
-  // 404-check + insert run as one write unit, per the read-then-write rule.
   addOverride(taskId: number, channelId: number): Promise<void> {
     return this.db.write(async (db) => {
       const row = await db.select().from(channels).where(eq(channels.id, channelId)).get();

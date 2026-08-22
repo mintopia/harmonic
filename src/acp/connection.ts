@@ -85,7 +85,6 @@ export class AcpConnection {
       return; // tolerated log noise
     }
 
-    // Response to one of our requests.
     if (msg.id !== undefined && msg.method === undefined) {
       const pending = this.pending.get(msg.id);
       if (!pending) return;
@@ -95,14 +94,12 @@ export class AcpConnection {
       return;
     }
 
-    // Notification.
     if (msg.id === undefined && msg.method === 'session/update') {
       this.handlers.onSessionUpdate(msg.params as SessionUpdateParams);
       return;
     }
     if (msg.id === undefined) return;
 
-    // Agent→client request.
     this.handlers
       .onRequest(msg.method, msg.params)
       .then((result) => this.write({ jsonrpc: '2.0', id: msg.id, result: result ?? null }))

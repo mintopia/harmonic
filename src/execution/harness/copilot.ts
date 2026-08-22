@@ -116,7 +116,6 @@ function readSubagents(eventsFile: string): Map<string, SubagentInfo> {
   return map;
 }
 
-/** Copilot Harness Adapter, built on the issue-25 spike findings. */
 export const copilotAdapter: HarnessAdapter = {
   // No model env: --model and COPILOT_MODEL are ignored in --acp mode, and
   // --model falsifies session/new's reported currentModelId without changing

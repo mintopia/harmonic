@@ -186,7 +186,7 @@ export class ConversationDriver {
 
   /** After a Turn settles, send the next queued follow-up, if any (issue 14). */
   private async drainQueue(entry: ActiveConversation): Promise<void> {
-    if (!this.active.has(entry.conversationId)) return; // ended or crashed
+    if (!this.active.has(entry.conversationId)) return;
     const next = entry.queue.shift();
     if (next !== undefined) await this.beginTurn(entry, next);
   }
@@ -195,7 +195,7 @@ export class ConversationDriver {
   private armIdle(entry: ActiveConversation): void {
     this.clearIdle(entry);
     const minutes = this.getConfig().conversationIdleTimeoutMinutes;
-    if (!minutes || minutes <= 0) return; // disabled
+    if (!minutes || minutes <= 0) return;
     entry.idleTimer = setTimeout(() => {
       void (async () => {
         if (!this.active.has(entry.conversationId)) return;
@@ -469,8 +469,6 @@ export class ConversationDriver {
   private kill(entry: ActiveConversation): void {
     try {
       if (entry.child.exitCode === null && !entry.child.killed) entry.child.kill('SIGKILL');
-    } catch {
-      // already gone
-    }
+    } catch {}
   }
 }

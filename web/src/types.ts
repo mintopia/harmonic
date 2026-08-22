@@ -257,6 +257,16 @@ export interface Task {
   skipReason: string | null;
 }
 
+/** Aggregate token counters on a `Run`'s usage snapshot, as the ticket UI reads
+ * them; all optional/nullable because a source may report only some counters. */
+export interface RunUsageTotals {
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  /** Harness-native spend units (e.g. Copilot AI Units); absent when the harness has none. */
+  aiUnits?: number | null;
+}
+
 export interface Run {
   id: number;
   taskId: number;
@@ -275,7 +285,7 @@ export interface Run {
   branch: string | null;
   baseBranch: string | null;
   usage: {
-    totals: Record<string, number | null> | null;
+    totals: RunUsageTotals | null;
     models: Record<string, Record<string, number>>;
     toolCalls: Record<string, number>;
     source: string | null;

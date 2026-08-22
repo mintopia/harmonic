@@ -196,13 +196,10 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       // Review rejections, split back out from the folded-in `runsByState.failed`
       // so the reliability breakdown shows them as their own (non-failure) slice.
       const rejectedRuns = rows.filter(isReviewRejected).length;
-      // Execution failures bucketed by their winning terminal disposition (#197).
       const failReasons = failuresByReason(
         failures.map((r) => ({ facts: factsByRun.get(r.id) ?? [], reason: r.reason })),
       );
 
-      // Active-execution duration (ADR-0028), from the agent-finish facts read
-      // above: the fact ts − Run start, with a wall-clock fallback.
       const durations = rows
         .map((r) =>
           activeExecutionDurationMs({
@@ -214,11 +211,6 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         .filter((d): d is number => d !== null);
       const durationMs = durationPercentiles(durations);
 
-      // Cost, input+output tokens, and run count per local day (by run start
-      // time) for the Stats chart's USD / Tokens / Runs series (issue #194).
-      // buildDaySeries re-parses/re-merges each bucket's usage rather than
-      // reusing the range-wide merge above — a deliberate cost of keeping it a
-      // pure, ctx-free seam (pricing is injected); the per-bucket work is small.
       const series = buildDaySeries(rows, costOfRuns);
 
       // A day with runs but no priceable usage shows as unpriceable (null) in

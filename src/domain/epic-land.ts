@@ -112,7 +112,6 @@ export function decideEpicLand(facts: EpicLandFacts): EpicLandDecision {
     if (facts.members.some((m) => m === 'pending')) {
       return { action: 'wait', reason: 'members are still in progress' };
     }
-    // else: every member is completed — the gate opens.
   }
 
   if (facts.verification === null) {

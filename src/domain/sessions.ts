@@ -268,7 +268,6 @@ export class SessionStore {
     );
   }
 
-  // --- Retirement (issue #148, reliability-design Unit C) ------------------
   // Session retirement is the sole owner of builder-worktree removal. These
   // methods move a Session through `active → idle → retiring → retired` and
   // record the worktree it owns; `SessionRetirementCoordinator` drives them and
