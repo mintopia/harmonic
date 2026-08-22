@@ -864,9 +864,8 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * and produces a fresh candidate (reliability-design Unit B), and the attempt
  * log is how a later reader tells which candidate each verdict actually
  * judged. `output` stores the verifier's raw output (the critic's agent
- * text); the caller caps it before it reaches here (`critic.ts`'s
- * `DIFF_CHAR_CAP`-driven truncation is the model for that) so an unbounded or
- * adversarial transcript can't grow the row without limit. `phase` defaults
+ * text); the caller is expected to cap it before it reaches here so an
+ * unbounded or adversarial transcript can't grow the row without limit. `phase` defaults
  * to `'verifying'` — the only phase a Verification attempt runs in today —
  * kept as its own column rather than inferred from the Run row so the record
  * is self-describing even if the Run has since moved on.

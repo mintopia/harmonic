@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -19,6 +19,48 @@ import { workspaces } from '../src/db/schema.js';
 export const allWorkspaces = (db: AsyncDbHandle) => () => db.read((d) => d.select().from(workspaces).all());
 
 export const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
+
+/**
+ * Cancel every still-`running` Task on `server` and wait for its Run to settle.
+ * Test hygiene for the process-global Claude harness lock (#237): the Runner
+ * holds a whole-run mutex per Claude process and releases it only when the Run
+ * finalizes, so a hung `exit:'hang'` Run a test leaves behind wedges every later
+ * Claude Run in the same file. Call from `afterEach` in files that start hanging
+ * Runs so the lock drains between tests. Best-effort — a Run that already
+ * settled between the list and the cancel is fine.
+ */
+export async function cancelRunningTasks(server: TestServer): Promise<void> {
+  const running = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'running');
+  await Promise.all(running.map((t) => server.app.ctx.runner.cancelForTask(t.id).catch(() => {})));
+  await waitFor(async () => {
+    const still = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'running');
+    return still.length === 0 ? true : undefined;
+  }).catch(() => {});
+}
+
+/**
+ * Seed a local-markdown ticket file so the mirrored close-after-land step can
+ * find it. A repo whose `docs/agents/issue-tracker.md` names `Path: tickets`
+ * resolves a single unnamed scope (base id 0), so `<repo>/tickets/<ref>.md`
+ * parses to ticket id `<ref>` (`local-markdown.ts`). Since f705011 made
+ * `close()` write the `**Status:**` field (rather than no-op), an afk auto-merge
+ * Task with no on-disk ticket now Escalates on close — production always has the
+ * file (it came from a scan), so integration tests must seed it too.
+ */
+export function seedLocalMarkdownTicket(
+  repoDir: string,
+  trackerRef: number,
+  status = 'ready-for-agent',
+  path = 'tickets',
+): void {
+  const dir = join(repoDir, path);
+  mkdirSync(dir, { recursive: true });
+  // No blank line before **Status:** — `local-markdown`'s writeStatus regex
+  // (`^\s*\*\*Status:`) would otherwise collapse it, so this exact shape is a
+  // fixed point of `close` (re-writing the same status leaves the file byte
+  // -identical → a direct-isolation Run's worktree stays clean).
+  writeFileSync(join(dir, `${trackerRef}.md`), `# ${trackerRef} — ticket ${trackerRef}\n**Status:** ${status}\n`);
+}
 
 /** Config overrides registering the stub ACP agent as the given harness. */
 export function stubHarness(harnessId: 'claude' | 'codex' | 'copilot' = 'claude'): DeepPartial<AppConfig> {

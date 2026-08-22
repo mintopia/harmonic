@@ -2,20 +2,29 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, stubHarness, waitFor, captureRunEnv, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, captureRunEnv, cancelRunningTasks, type TestServer } from './helpers.js';
 
 describe('run-scoped key restrictions', () => {
   let server: TestServer;
   let scopedToken: string;
 
   beforeAll(async () => {
-    server = await startServer(stubHarness());
+    // Copilot, not Claude: this describe deliberately keeps a hung Run alive for
+    // the scoped key AND separately runs a Task to `awaiting-review` (the review
+    // -gate test). The whole-run Claude harness lock (#237) makes those two
+    // Claude Runs mutually exclusive; a non-mutexed harness lets them coexist as
+    // they did before #237 (these tests are harness-agnostic).
+    server = await startServer({ ...stubHarness('copilot'), defaults: { harness: 'copilot' } });
     // Capture a scoped key from a hanging run, kept alive so the key stays valid
     // while we probe with it.
     const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY'], { exit: 'hang' });
     scopedToken = env.HARMONIC_API_KEY as string;
   });
   afterAll(async () => {
+    // Cancel this describe's still-running (hung) Runs before teardown so the
+    // process-global Claude harness lock (#237) is released for the next
+    // describe — a plain server.close() leaves them `running` and wedged.
+    await cancelRunningTasks(server);
     await server.close();
   });
 
@@ -81,6 +90,10 @@ describe('read-scoped key (issue #35)', () => {
     readToken = body.token;
   });
   afterAll(async () => {
+    // Cancel this describe's still-running (hung) Runs before teardown so the
+    // process-global Claude harness lock (#237) is released for the next
+    // describe — a plain server.close() leaves them `running` and wedged.
+    await cancelRunningTasks(server);
     await server.close();
   });
 

@@ -2,29 +2,12 @@ import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { Git } from './git.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
+import { buildDrivePrompt, driveFields, skillFor, splitTitleBody } from './drive-prompt.js';
 
-/**
- * research→`research`, everything else→`implement` (issue #33). Codex invokes
- * skills with a `$` prefix; every other harness uses `/`.
- */
-export function skillFor(task: Pick<TaskRow, 'wayfinderType' | 'harness'>): string {
-  const prefix = task.harness === 'codex' ? '$' : '/';
-  return `${prefix}${task.wayfinderType === 'research' ? 'research' : 'implement'}`;
-}
-
-/** A mirrored Task's prompt is `title\n\nbody`; recover the two for the Drive Prompt. */
-export function splitTitleBody(prompt: string): { title: string; body: string } {
-  const i = prompt.indexOf('\n\n');
-  return i === -1 ? { title: prompt, body: '' } : { title: prompt.slice(0, i), body: prompt.slice(i + 2) };
-}
-
-/** Fill a Drive Prompt template's `{skill}/{ref}/{url}/{title}/{body}` placeholders. */
-export function buildDrivePrompt(
-  template: string,
-  fields: { skill: string; ref: string; url: string; title: string; body: string },
-): string {
-  return template.replace(/\{(skill|ref|url|title|body)\}/g, (_, key: keyof typeof fields) => fields[key]);
-}
+// Re-exported from the pure `drive-prompt.ts` module (shared with the critic
+// verifier and the web settings preview); kept here so existing importers of
+// `auto-drive.js` are unaffected.
+export { buildDrivePrompt, driveFields, skillFor, splitTitleBody };
 
 /**
  * The auto-drive half of afk mirrored-Task execution (issue #33): the Drive
@@ -49,14 +32,7 @@ export class AutoDrive {
 
   /** The Drive Prompt for a mirrored afk Task — the global template filled from it. */
   prompt(task: TaskRow): string {
-    const { title, body } = splitTitleBody(task.prompt);
-    const drive = buildDrivePrompt(this.getConfig().drive.prompt, {
-      skill: skillFor(task),
-      ref: String(task.trackerRef ?? ''),
-      url: this.urlFor(task) ?? '',
-      title,
-      body,
-    });
+    const drive = buildDrivePrompt(this.getConfig().drive.prompt, driveFields(task, this.urlFor));
     // A re-queued mirrored Task carries operator feedback in its column (the
     // prompt is re-derived from the ticket each poll). Append it so the retry
     // sees it — same section the native review/re-attempt path uses (run-prompt.ts).

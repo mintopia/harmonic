@@ -17,6 +17,7 @@ import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLin
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
+import { driveFields } from './drive-prompt.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
@@ -184,6 +185,10 @@ export interface RunnerOptions {
   };
   /** Auto-drive collaborator for afk mirrored Tasks (issue #33); absent on a native-only server. */
   autoDrive?: AutoDrive;
+  /** Resolves a Task's ticket URL for the critic's `{url}` interpolation token
+   * (`drive-prompt.ts` `driveFields`). Independent of `autoDrive` because the
+   * critic runs on native Runs too; absent → `{url}` resolves to empty. */
+  urlFor?: (task: TaskRow) => string | null;
   /** Push/persist cadence for the live-usage tailer; defaults to ~1s/~10s. */
   tailerCadence?: TailerCadence;
   /** Spend-Guardrail poll + unmeasurable-grace cadence (issue #128); defaults to ~1s poll / 60s grace. */
@@ -478,6 +483,7 @@ export class Runner {
   /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
+  private readonly urlFor: (task: TaskRow) => string | null;
   private readonly runFacts: RunFactStore;
   /** The Verification attempt log (issue #135/#136): every command/critic
    * verifier invocation against a Run's frozen candidate is appended here. */
@@ -551,6 +557,7 @@ export class Runner {
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
     this.criticDrive = options.criticDrive;
+    this.urlFor = options.urlFor ?? (() => null);
     this.spendPollMs = options.spendGuardrail?.pollMs ?? 1000;
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
@@ -1455,11 +1462,11 @@ export class Runner {
     }
 
     if (critic) {
-      // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B):
-      // a second verdict folded into the same `combineVerdicts`. It reviews the
-      // frozen candidate's diff against its base (the candidate commit's parent,
-      // `${oid}^` — exactly what `snapshotCandidate` committed it against) from a
-      // disposable read-only worktree, and never runs against the live checkout.
+      // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B;
+      // containment relaxed by the 2026-08 amendment): a second verdict folded
+      // into the same `combineVerdicts`. It reads the frozen candidate from a
+      // disposable read-only worktree (read + fetch tools, no mutation), never
+      // the live checkout, with the operator's interpolated review prompt.
       if (!oid) {
         verdicts.push(await this.noCandidateVerdict(run.id, 'critic', record));
       } else {
@@ -1476,12 +1483,12 @@ export class Runner {
         const attempt = await runCritic({
           repoDir: task.workingDir,
           candidateOid: oid,
-          baseRev: `${oid}^`,
           worktreePath: join(this.worktreesDir, `critic-${run.id}`),
           critic,
+          fields: driveFields(task, this.urlFor),
           // `runCritic` strips the tracker credentials and registers no MCP
-          // servers, so the turn is contained (issue #136) regardless of which
-          // harness runs it.
+          // servers, and only approves read/fetch tool calls, so the turn is
+          // contained (issue #136) regardless of which harness runs it.
           harness: criticHarness,
           harnessId: criticHarnessId,
           // Only pass the seam when injected — `exactOptionalPropertyTypes`
@@ -3787,9 +3794,9 @@ export class Runner {
     const attempt = await runCritic({
       repoDir: task.workingDir,
       candidateOid: oid,
-      baseRev: `${oid}^`,
       worktreePath: join(this.worktreesDir, `critic-reverify-${run.id}`),
       critic,
+      fields: driveFields(task, this.urlFor),
       harness: criticHarness,
       harnessId: criticHarnessId,
       operatorNote: note,

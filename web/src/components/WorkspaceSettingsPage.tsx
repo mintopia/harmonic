@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, Workspace } from '../types';
 import { btnDestructive, btnGhost, displayTitle, field, selectField } from '../ui';
-import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import { FieldError, PlaceholderList, PromptPreview, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import { DRIVE_PLACEHOLDERS, compileCriticPreview } from '../prompt-preview-model';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { InheritField } from './InheritField';
 import { ModelCombobox } from './ModelCombobox';
@@ -615,11 +616,13 @@ export function WorkspaceSettingsPage({
                           id="workspace-critic-prompt"
                           rows={3}
                           className={field}
-                          placeholder="Review the diff for correctness against the ticket."
+                          placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
                           value={value.prompt}
                           onChange={(e) => onChange(setCriticField(value, 'prompt', e.target.value))}
                         />
                         <FieldError message={fieldErrors['verificationCritic.prompt']} />
+                        <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
+                        <PromptPreview text={compileCriticPreview(value.prompt)} />
                       </div>
                     </div>
                   );

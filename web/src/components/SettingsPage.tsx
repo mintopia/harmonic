@@ -6,7 +6,16 @@ import { PermissionRules } from './PermissionRules';
 import type { AppConfig, VerificationCommand, VerificationCritic } from '../types';
 import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
-import { FieldError, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import { FieldError, PlaceholderList, PromptPreview, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
+import {
+  DRIVE_PLACEHOLDERS,
+  TASK_ID_PLACEHOLDER,
+  TASK_PLACEHOLDERS,
+  compileCriticPreview,
+  compileDrivePreview,
+  compileTaskIdPreview,
+  compileTaskPreview,
+} from '../prompt-preview-model';
 import { FloatingSaveBar } from './FloatingSaveBar';
 import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
@@ -293,15 +302,21 @@ function VerificationFields({
             </div>
             <div>
               <label className={fieldLabel} htmlFor="settings-critic-prompt">Review prompt</label>
+              <p className="mb-1 text-small text-muted">
+                The critic reads the candidate checkout and the issue itself (read-only). Harmonic appends the
+                read-only instruction and the JSON verdict contract — see the compiled preview.
+              </p>
               <textarea
                 id="settings-critic-prompt"
                 rows={3}
                 className={field}
-                placeholder="Review the diff for correctness against the ticket."
+                placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
                 value={v.critic.prompt}
                 onChange={(e) => setCritic(setCriticField(v.critic!, 'prompt', e.target.value))}
               />
               <FieldError message={fieldErrors['verification.critic.prompt']} />
+              <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
+              <PromptPreview text={compileCriticPreview(v.critic.prompt)} />
             </div>
           </div>
         )}
@@ -318,24 +333,6 @@ function VerificationFields({
     </div>
   );
 }
-
-const DRIVE_PLACEHOLDERS: [string, string][] = [
-  ['{skill}', 'workflow skill — /research or /implement'],
-  ['{ref}', 'issue number'],
-  ['{url}', 'issue URL'],
-  ['{title}', 'issue title (default omits it — agent fetches the issue)'],
-  ['{body}', 'issue body (default omits it — agent fetches the issue)'],
-];
-
-const TASK_ID_PLACEHOLDER: [string, string][] = [['{taskId}', 'Harmonic task id']];
-
-const TASK_PLACEHOLDERS: [string, string][] = [
-  ['{prompt}', "the task's own prompt"],
-  ['{id}', 'task id'],
-  ['{workingDir}', 'working directory'],
-  ['{harness}', 'harness id'],
-  ['{model}', 'model id'],
-];
 
 function TaskPromptFields({
   config,
@@ -356,14 +353,8 @@ function TaskPromptFields({
         onChange={(e) => onChange(e.target.value)}
       />
       <FieldError message={fieldErrors['taskPrompt']} />
-      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
-        {TASK_PLACEHOLDERS.map(([token, desc]) => (
-          <div key={token} className="contents">
-            <dt className="font-data text-ink">{token}</dt>
-            <dd>{desc}</dd>
-          </div>
-        ))}
-      </dl>
+      <PlaceholderList placeholders={TASK_PLACEHOLDERS} />
+      <PromptPreview text={compileTaskPreview(config.taskPrompt)} />
     </div>
   );
 }
@@ -389,14 +380,8 @@ function DriveFields({
           onChange={(e) => onChange({ ...d, prompt: e.target.value })}
         />
         <FieldError message={fieldErrors['drive.prompt']} />
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
-          {DRIVE_PLACEHOLDERS.map(([token, desc]) => (
-            <div key={token} className="contents">
-              <dt className="font-data text-ink">{token}</dt>
-              <dd>{desc}</dd>
-            </div>
-          ))}
-        </dl>
+        <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
+        <PromptPreview text={compileDrivePreview(d.prompt)} />
       </div>
       <div>
         <label className={fieldLabel} htmlFor="settings-unattended-reminder">Unattended reminder</label>
@@ -410,14 +395,8 @@ function DriveFields({
           onChange={(e) => onChange({ ...d, unattendedReminder: e.target.value })}
         />
         <FieldError message={fieldErrors['drive.unattendedReminder']} />
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
-          {TASK_ID_PLACEHOLDER.map(([token, desc]) => (
-            <div key={token} className="contents">
-              <dt className="font-data text-ink">{token}</dt>
-              <dd>{desc}</dd>
-            </div>
-          ))}
-        </dl>
+        <PlaceholderList placeholders={TASK_ID_PLACEHOLDER} />
+        <PromptPreview text={compileTaskIdPreview(d.unattendedReminder)} />
       </div>
       <div>
         <label className={fieldLabel} htmlFor="settings-continue-prompt">Continue prompt</label>
@@ -431,14 +410,8 @@ function DriveFields({
           onChange={(e) => onChange({ ...d, continuePrompt: e.target.value })}
         />
         <FieldError message={fieldErrors['drive.continuePrompt']} />
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small text-muted">
-          {TASK_ID_PLACEHOLDER.map(([token, desc]) => (
-            <div key={token} className="contents">
-              <dt className="font-data text-ink">{token}</dt>
-              <dd>{desc}</dd>
-            </div>
-          ))}
-        </dl>
+        <PlaceholderList placeholders={TASK_ID_PLACEHOLDER} />
+        <PromptPreview text={compileTaskIdPreview(d.continuePrompt)} />
       </div>
       <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
         <div>

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 import { workspaces } from '../src/db/schema.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { verificationCommandSchema } from '../src/config.js';
@@ -33,6 +33,8 @@ const tmpDirs: string[] = [];
  * resolves a real (no-op-close) adapter and the auto-merge Run reaches
  * `completed` rather than escalating on a missing tracker.
  */
+const REF_BASE = 1540; // distinct trackerRef base for this file's mirrored Tasks
+
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), 'harmonic-recover-'));
   tmpDirs.push(dir);
@@ -42,6 +44,10 @@ function makeRepo(): string {
   writeFileSync(join(dir, 'README.md'), '# repo\n');
   mkdirSync(join(dir, 'docs', 'agents'), { recursive: true });
   writeFileSync(join(dir, 'docs', 'agents', 'issue-tracker.md'), '# Issue tracker: local-markdown\n\nPath: tickets\n');
+  // Commit an already-`closed` ticket per candidate ref so the close-after-land
+  // status write (f705011) is a no-op — the direct-isolation Run then keeps a
+  // clean worktree and `main` stays at `startOid` when nothing lands.
+  for (let r = REF_BASE; r < REF_BASE + 20; r++) seedLocalMarkdownTicket(dir, r, 'closed');
   git(dir, 'add', '-A');
   git(dir, 'commit', '-m', 'init');
   return dir;
@@ -53,7 +59,7 @@ afterAll(() => {
 
 describe('deterministic recovery landing at validating (issue #154)', () => {
   let server: TestServer;
-  let ref = 1540; // distinct trackerRef per mirrored Task
+  let ref = REF_BASE; // distinct trackerRef per mirrored Task
 
   beforeAll(async () => {
     // autoRetry/continueAttempts 0 → the first terminal settle stands, so no

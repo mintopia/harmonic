@@ -1,8 +1,8 @@
-import { describe, it, expect, afterAll, beforeAll } from 'vitest';
+import { describe, it, expect, afterAll, afterEach, beforeAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, waitFor, type TestServer } from './helpers.js';
+import { startServer, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
 /**
@@ -52,6 +52,11 @@ describe('GET /api/activity snapshot (issue #51)', () => {
       },
     } as DeepPartial<AppConfig>;
     server = await startServer(config);
+  });
+  afterEach(async () => {
+    // Release the process-global Claude harness lock (#237) that this file's
+    // hanging Runs would otherwise hold into the next test.
+    await cancelRunningTasks(server);
   });
   afterAll(async () => {
     await server.close();

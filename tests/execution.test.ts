@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
 import { guardrailEvents, runs, executionChains, runToolCalls } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
 
@@ -14,6 +14,12 @@ describe('run execution over ACP (direct mode)', () => {
 
   beforeAll(async () => {
     server = await startServer(stubHarness());
+  });
+  afterEach(async () => {
+    // Drain the process-global Claude harness lock (#237) so a hung Run this
+    // describe leaves behind doesn't wedge later Claude Runs (e.g. the guardrail
+    // describes' fresh-server Runs) in the same file.
+    await cancelRunningTasks(server);
   });
   afterAll(async () => {
     await server.close();
@@ -415,6 +421,12 @@ describe('Work Context lease (issue #119)', () => {
 
   beforeAll(async () => {
     server = await startServer(stubHarness());
+  });
+  afterEach(async () => {
+    // Drain the process-global Claude harness lock (#237) so a hung Run this
+    // describe leaves behind doesn't wedge later Claude Runs (e.g. the guardrail
+    // describes' fresh-server Runs) in the same file.
+    await cancelRunningTasks(server);
   });
   afterAll(async () => {
     await server.close();

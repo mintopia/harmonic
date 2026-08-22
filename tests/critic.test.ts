@@ -12,6 +12,7 @@ import {
   type CriticDriveRequest,
 } from '../src/verification/critic.js';
 import { defaultConfig, type HarnessConfig } from '../src/config.js';
+import type { DriveFields } from '../src/execution/prompt-template.js';
 import { combineVerdicts } from '../web/src/verification-model.js';
 import type { VerifierVerdict } from '../web/src/verification-model.js';
 import { openAsyncDb } from '../src/db/async.js';
@@ -45,6 +46,15 @@ const FAKE_HARNESS: HarnessConfig = {
   defaultModel: 'stub-model',
 };
 
+/** Sample Drive-Prompt interpolation fields for the critic prompt. */
+const FIELDS: DriveFields = {
+  skill: '/implement',
+  ref: '77',
+  url: 'https://tracker.example/issues/77',
+  title: 'Sample ticket',
+  body: 'Sample body.',
+};
+
 describe('runCritic (issue #136)', () => {
   const tmpDirs: string[] = [];
   const freshWorktreePath = (prefix: string) => {
@@ -59,12 +69,11 @@ describe('runCritic (issue #136)', () => {
 
   /** Build a fresh candidate against a throwaway repo, returning both the
    * repo and the candidate OID a test can hand to `runCritic`. */
-  async function makeCandidate(ref: string): Promise<{ repo: string; baseOid: string; oid: string }> {
+  async function makeCandidate(ref: string): Promise<{ repo: string; oid: string }> {
     const repo = makeRepo();
-    const baseOid = git(repo, 'rev-parse', 'main');
     writeFileSync(join(repo, 'README.md'), `# repo (changed for ${ref})\n`);
     const oid = await buildCandidate({ repoDir: repo, workspaceDir: repo, baseRev: 'main', ref, message: 'c' });
-    return { repo, baseOid, oid };
+    return { repo, oid };
   }
 
   it.each([
@@ -72,14 +81,14 @@ describe('runCritic (issue #136)', () => {
     ['fail', { verdict: 'fail', summary: 'the change breaks the build' }],
     ['inconclusive', { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' }],
   ] as const)('a fake drive returning a valid %s verdict resolves to a matching CriticAttempt', async (_name, value) => {
-    const { repo, baseOid, oid } = await makeCandidate(`refs/harmonic/candidate/run-critic-${value.verdict}`);
+    const { repo, oid } = await makeCandidate(`refs/harmonic/candidate/run-critic-${value.verdict}`);
     const output = JSON.stringify(value);
     const drive: CriticHarnessDrive = { run: async () => ({ output, permissionRequests: [] }) };
 
     const attempt = await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath(`harmonic-critic-wt-${value.verdict}-`),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -98,13 +107,13 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a fake drive returning garbage resolves to inconclusive, never throwing', async () => {
-    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-garbage');
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-garbage');
     const drive: CriticHarnessDrive = { run: async () => ({ output: 'not json at all, just prose', permissionRequests: [] }) };
 
     const attempt = await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath('harmonic-critic-wt-garbage-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -120,7 +129,7 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a throwing drive (timeout/death/spawn-fail stand-in) resolves to inconclusive, never throwing', async () => {
-    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-drive-throws');
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-drive-throws');
     const drive: CriticHarnessDrive = {
       run: async () => {
         throw new Error('harness exited before finishing');
@@ -130,7 +139,7 @@ describe('runCritic (issue #136)', () => {
     const attempt = await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath('harmonic-critic-wt-drive-throws-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -143,8 +152,8 @@ describe('runCritic (issue #136)', () => {
     expect(attempt.mutated).toBe(false);
   });
 
-  it('read-only: the request the drive receives carries no tracker credentials on the harness config, and the prompt delimits the untrusted diff with the given nonce', async () => {
-    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-readonly');
+  it('no tracker credentials on the harness config, and the prompt is the interpolated operator note plus read-only scaffolding (no diff)', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-readonly');
 
     let captured: CriticDriveRequest | undefined;
     const drive: CriticHarnessDrive = {
@@ -157,13 +166,12 @@ describe('runCritic (issue #136)', () => {
     await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath('harmonic-critic-wt-readonly-'),
-      critic: { prompt: 'Review the diff for correctness against the ticket.', model: 'stub-model' },
+      critic: { prompt: 'Review issue {ref}: {title}.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
       drive,
-      nonce: 'fixed-test-nonce',
     });
 
     expect(captured).toBeDefined();
@@ -172,15 +180,16 @@ describe('runCritic (issue #136)', () => {
     // injects HARMONIC_API_KEY/HARMONIC_MCP_URL into it.
     expect(captured!.harness.env).not.toHaveProperty('HARMONIC_API_KEY');
     expect(captured!.harness.env).not.toHaveProperty('HARMONIC_MCP_URL');
-    expect(captured!.prompt).toContain('Review the diff for correctness against the ticket.');
-    expect(captured!.prompt).toContain('<<<HARMONIC_UNTRUSTED_DIFF fixed-test-nonce>>>');
-    expect(captured!.prompt).toContain('<<<END fixed-test-nonce>>>');
-    // The diff between the markers is the real README diff produced above.
-    expect(captured!.prompt).toContain('diff --git a/README.md b/README.md');
+    // The operator note is interpolated with the Drive fields; no diff is injected.
+    expect(captured!.prompt).toContain('Review issue 77: Sample ticket.');
+    expect(captured!.prompt).not.toContain('HARMONIC_UNTRUSTED_DIFF');
+    expect(captured!.prompt).not.toContain('diff --git');
+    expect(captured!.prompt).toMatch(/READ-ONLY/i);
+    expect(captured!.prompt).toContain('"verdict":"pass|fail|inconclusive"');
   });
 
   it('a drive whose turn mutates the disposable worktree forces the verdict to inconclusive, with mutated:true', async () => {
-    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-mutate');
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-mutate');
 
     const drive: CriticHarnessDrive = {
       run: async (req) => {
@@ -194,7 +203,7 @@ describe('runCritic (issue #136)', () => {
     const attempt = await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath('harmonic-critic-wt-mutate-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -207,13 +216,13 @@ describe('runCritic (issue #136)', () => {
   });
 
   it('a no-op drive does not flip mutated, and the verdict is trusted as reported', async () => {
-    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-noop');
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-noop');
     const drive: CriticHarnessDrive = { run: async () => ({ output: '{"verdict":"pass","summary":"clean"}', permissionRequests: [] }) };
 
     const attempt = await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath('harmonic-critic-wt-noop-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -233,13 +242,13 @@ describe('runCritic (issue #136)', () => {
     ] as const;
 
     for (const c of cases) {
-      const { repo, baseOid, oid } = await makeCandidate(`refs/harmonic/candidate/run-critic-combine-${c.verdict}`);
+      const { repo, oid } = await makeCandidate(`refs/harmonic/candidate/run-critic-combine-${c.verdict}`);
       const drive: CriticHarnessDrive = { run: async () => ({ output: c.output, permissionRequests: [] }) };
 
       const attempt = await runCritic({
         repoDir: repo,
         candidateOid: oid,
-        baseRev: baseOid,
+        fields: FIELDS,
         worktreePath: freshWorktreePath(`harmonic-critic-wt-combine-${c.verdict}-`),
         critic: { prompt: 'Review the diff.', model: 'stub-model' },
         harness: FAKE_HARNESS,
@@ -259,14 +268,14 @@ describe('runCritic (issue #136)', () => {
     // list -> map row to a VerifierVerdict -> combineVerdicts. The glue under
     // test is `criticAttemptToInput` mapping `verifier:'critic'` to the store's
     // `mechanism` (the field the integration ticket will persist through).
-    const { repo, baseOid, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-persist');
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-persist');
     const drive: CriticHarnessDrive = {
       run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
     };
     const attempt = await runCritic({
       repoDir: repo,
       candidateOid: oid,
-      baseRev: baseOid,
+      fields: FIELDS,
       worktreePath: freshWorktreePath('harmonic-critic-wt-persist-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
@@ -305,7 +314,7 @@ describe('runCritic (issue #136)', () => {
   });
 });
 
-describe('createAcpCriticDrive (issue #136): the real ACP drive is read-only end to end', () => {
+describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equivalent tool access, no tracker path', () => {
   const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
   const tmpDirs: string[] = [];
   const freshCwd = () => {
@@ -329,7 +338,7 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive is read-only end
     defaultModel: 'stub-model',
   };
 
-  it('registers no MCP servers, strips tracker credentials from the spawned env, and denies every permission request', async () => {
+  it('registers no MCP servers, strips tracker credentials from the spawned env, and grants tool permission requests', async () => {
     const drive = createAcpCriticDrive();
     const scenario = {
       echoSessionNew: true,
@@ -346,14 +355,17 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive is read-only end
       timeoutMs: 15_000,
     });
 
-    // mcpServers:[] reached session/new — no Harmonic MCP tools available.
+    // mcpServers:[] reached session/new — no Harmonic MCP tools available, so
+    // the critic has no path to the tracker (`finish_task`/`accept_task`).
     expect(result.output).toContain('"mcpServers":[]');
     // The credentials configured on harness.env never reached the child's
     // actual process environment.
     expect(result.output).toContain('"HARMONIC_API_KEY":null');
     expect(result.output).toContain('"HARMONIC_MCP_URL":null');
-    // The one permission request the stub made was denied outright.
-    expect(result.output).toContain('permission:{"outcome":"cancelled"}');
+    // The critic has the builder's tool access — a permission request is
+    // GRANTED (allow_always → optionId 'always'), not declined. Read-only-ness
+    // is the prompt's + the mutation fingerprint's job, not the handler's.
+    expect(result.output).toContain('permission:{"outcome":"selected","optionId":"always"}');
     expect(result.permissionRequests).toHaveLength(1);
   }, 20_000);
 

@@ -13,7 +13,7 @@ import { Runner } from '../src/execution/runner.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { MergeTrainMember } from '../src/execution/merge-train-coordinator.js';
 import { turnQueue } from '../src/db/schema.js';
-import { startServer, stubHarness, waitFor, allWorkspaces, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, allWorkspaces, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 
 /**
  * Issue #163 — the single-writer merge train wired into the Epic member-finish
@@ -207,6 +207,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
   async function launchEpicMember(epicBranch: string): Promise<{ taskId: number; runId: number; trackerRef: number }> {
     const trackerRef = ref++;
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
+    seedLocalMarkdownTicket(task.workingDir, trackerRef);
     expect(task.drive).toBe('afk');
     await server.app.ctx.tasks.setBaseBranch(task.id, epicBranch);
     await server.app.ctx.tasks.setState(task.id, 'running');

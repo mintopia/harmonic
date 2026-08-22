@@ -3,10 +3,44 @@ import type { HarnessConfig, VerificationCritic } from '../config.js';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from '../execution/harness/adapter.js';
 import { withDetachedWorktree } from '../execution/candidate.js';
-import { Git } from '../execution/git.js';
-import { buildCriticPrompt, newNonce } from './critic-prompt.js';
+import type { DriveFields } from '../execution/drive-prompt.js';
+import { buildCriticPrompt } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
+
+/**
+ * ACP session modes the critic tries, in order, to get the SAME unattended tool
+ * access the afk builder gets (issue #136, containment relaxed by the 2026-08
+ * ADR-0021 amendment): the critic is an independent evaluator that may need to
+ * execute tools (read files, grep, run a build) to judge the change — it is held
+ * read-only by its PROMPT and by the mutation fingerprint (`runCritic`), not by
+ * withholding tools. `bypassPermissions` (no callback) is preferred, then Claude's
+ * `auto`; a request-gated harness (Codex) uses its full-access mode id instead
+ * (`agent-full-access`, mirroring the Runner's `afkFullAccessMode`). */
+const CRITIC_PERMISSION_MODES = ['bypassPermissions', 'auto'] as const;
+const CRITIC_FULL_ACCESS_MODES: Partial<Record<string, string>> = { codex: 'agent-full-access' };
+
+/** The best available permissive session mode for the critic, or undefined. */
+function criticPermissionMode(harnessId: string, available: readonly string[]): string | undefined {
+  return (
+    CRITIC_PERMISSION_MODES.find((m) => available.includes(m)) ??
+    (CRITIC_FULL_ACCESS_MODES[harnessId] && available.includes(CRITIC_FULL_ACCESS_MODES[harnessId]!)
+      ? CRITIC_FULL_ACCESS_MODES[harnessId]
+      : undefined)
+  );
+}
+
+/** The option id that grants a permission request — `allow_always` preferred,
+ * then `allow_once`, then anything. Mirrors the Runner builder's `grant()`
+ * (`runner.ts`). A request-gated harness that still asks mid-turn is granted, so
+ * the critic can execute tools; read-only-ness is the prompt's + the fingerprint's
+ * job, not the handler's. */
+function grantOptionId(request: unknown): string | null {
+  const options = ((request as { options?: unknown } | null)?.options ?? []) as { kind?: string; optionId?: string }[];
+  const pick =
+    options.find((o) => o.kind === 'allow_always') ?? options.find((o) => o.kind === 'allow_once') ?? options[0];
+  return pick?.optionId ?? null;
+}
 
 /**
  * The agent critic (issue #136, ADR-0021, reliability-design Unit B): a
@@ -94,22 +128,21 @@ function criticSpawnEnv(
  * Containment, in the order reliability-design Unit B lists it:
  *
  * - **No credentials**: {@link criticSpawnEnv} strips the tracker env vars.
- * - **No tools**: `handshake({ mcpServers: [] })` — the harness never learns
- *   about the Harmonic MCP server (`finish_task`/`accept_task`/anything that
- *   could mutate the tracker), unlike a builder Run which registers it
- *   (`runner.ts:657-661`).
- * - **Deny-all permissions**: every `session/request_permission` is declined
- *   (`outcome: 'cancelled'`) regardless of the tool's claimed kind — a
- *   critic has no legitimate reason to write, execute, or fetch, so nothing
- *   is auto-approved the way the Runner's afk `'auto'`-mode path approves
- *   safe tools (`runner.ts:711-727`). Every other agent→client method
- *   (fs/terminal capability probes) returns `null`, advertising nothing —
- *   same as `runner.ts:729-730`.
- * - **Read-only permission mode**: `'auto'` is set if the harness offers it
- *   (informational — it changes what the harness *asks about*, not what gets
- *   *approved*, since the handler above denies every ask regardless); if no
- *   suitable mode is offered the turn still runs, because the deny-all
- *   handler is what actually enforces read-only, not the mode.
+ * - **No Harmonic MCP**: `handshake({ mcpServers: [] })` — the harness never
+ *   learns about the Harmonic MCP server (`finish_task`/`accept_task`/anything
+ *   that could mutate the tracker), unlike a builder Run which registers it
+ *   (`runner.ts:657-661`). The critic keeps its own harness-native tools (read,
+ *   execute, fetch) but has no path to the tracker: it cannot close/accept a
+ *   Task, only return a verdict.
+ * - **Builder-equivalent tool access**: the critic gets the same unattended
+ *   access the afk builder gets, so it can execute tools to judge the change.
+ *   A permissive session mode is set ({@link criticPermissionMode}:
+ *   `bypassPermissions`/`auto`, or Codex's `agent-full-access`), and any
+ *   `session/request_permission` that still arrives is GRANTED
+ *   ({@link grantOptionId}) rather than declined. Read-only-ness is enforced by
+ *   the PROMPT (`buildCriticPrompt`) and the post-turn mutation fingerprint in
+ *   {@link runCritic}, NOT by withholding tools. Every other agent→client method
+ *   (fs/terminal capability probes) returns `null`.
  *
  * Timeout and child death both reject the in-flight `handshake`/`prompt`
  * call — `AcpDriver` already races every request against child exit
@@ -140,9 +173,11 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         onRequest: async (method, params) => {
           if (method === 'session/request_permission') {
             permissionRequests.push(params);
-            // Deny every request outright, whatever kind the harness claims
-            // for it — the critic has no legitimate mutating tool call.
-            return { outcome: 'cancelled' };
+            // Grant, matching the afk builder: the critic may need to execute
+            // tools to judge the change. It is held read-only by its prompt and
+            // the mutation fingerprint, not by declining tool calls.
+            const optionId = grantOptionId(params);
+            return optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' };
           }
           // Advertise no fs/terminal capability; anything else gets null.
           return null;
@@ -172,8 +207,11 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         const modelId = adapterFor(req.harnessId).sessionModelId?.(req.model);
         await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId }), timeout]);
 
-        if (driver.availableModes.includes('auto')) {
-          await Promise.race([driver.setMode('auto'), timeout]);
+        // Give the critic the afk builder's unattended tool access; the
+        // grant-all `onRequest` above backstops any harness that still asks.
+        const mode = criticPermissionMode(req.harnessId, driver.availableModes);
+        if (mode) {
+          await Promise.race([driver.setMode(mode), timeout]);
         }
 
         await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
@@ -190,13 +228,16 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
 export interface RunCriticArgs {
   /** The base repo owning the candidate ref and object store. */
   repoDir: string;
-  /** The frozen candidate commit (`execution/candidate.ts` `buildCandidate`, #134). */
+  /** The frozen candidate commit (`execution/candidate.ts` `buildCandidate`, #134)
+   * — checked out into the disposable worktree the critic reads from. */
   candidateOid: string;
-  /** The commit the candidate was built against — the other end of the diff. */
-  baseRev: string;
   /** Where to check out the disposable detached worktree for this attempt. */
   worktreePath: string;
   critic: VerificationCritic;
+  /** The Drive-Prompt interpolation tokens (`drive-prompt.ts` `driveFields`) —
+   * the ticket ref/url/title/body + skill filled into the operator's review
+   * prompt so the critic can name and read the issue it validates against. */
+  fields: DriveFields;
   harness: HarnessConfig;
   harnessId: string;
   /** An operator's ad-hoc note for a Note-to-critic re-verification (issue
@@ -205,8 +246,6 @@ export interface RunCriticArgs {
   operatorNote?: string;
   /** Injectable drive seam; defaults to {@link createAcpCriticDrive}. */
   drive?: CriticHarnessDrive;
-  /** Injectable nonce (tests); defaults to a fresh {@link newNonce}. */
-  nonce?: string;
   /** Hard bound on the single prompt turn; generous default for a read-only review. */
   timeoutMs?: number;
 }
@@ -228,31 +267,26 @@ export interface CriticAttempt {
  * verification indefinitely. */
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Diff text past this many characters is truncated before it reaches the
- * prompt — an unbounded diff could blow the context window or the stored
- * `output`/prompt size; the prompt itself notes the truncation so the critic
- * judges only what it was actually shown, rather than silently guessing at
- * a cut-off change. */
-const DIFF_CHAR_CAP = 200_000;
-
 /**
  * Run the agent critic against a candidate OID and resolve a
- * {@link CriticAttempt} (issue #136, reliability-design Unit B).
+ * {@link CriticAttempt} (issue #136, reliability-design Unit B; containment
+ * relaxed by the 2026-08 ADR-0021 amendment).
  *
  * 1. Checks the candidate out in a disposable detached worktree
  *    (`withDetachedWorktree`, #134), bracketed by the before/after
  *    fingerprint that proves whether the critic mutated anything.
- * 2. Computes the candidate's diff against `baseRev` (`Git.diffRange`),
- *    caps it at {@link DIFF_CHAR_CAP}, and builds the injection-contained
- *    prompt (`buildCriticPrompt`).
+ * 2. Builds the read-only review prompt (`buildCriticPrompt`) from the
+ *    operator's configured note — Drive-Prompt tokens interpolated from
+ *    {@link RunCriticArgs.fields} — plus the read-only + verdict scaffolding.
+ *    No diff is injected: the critic reads the candidate checkout itself.
  * 3. Drives one turn (`drive.run`) and parses the result
  *    (`parseCriticOutput`); a parse failure resolves to `inconclusive` with
  *    the parser's reason, never a thrown error.
  * 4. If the drive itself throws — timeout, child death, spawn failure, or
  *    any other plumbing failure — that resolves to `inconclusive` too, with
  *    the error's message as the reason. Same for a failure setting up the
- *    worktree/computing the diff: this function is a `CriticAttempt`
- *    factory, not a thing that fails a Run.
+ *    worktree: this function is a `CriticAttempt` factory, not a thing that
+ *    fails a Run.
  * 5. After the bracket closes: if the fingerprint shows the critic mutated
  *    the checkout (`proof.mutated`), the verdict is force-overridden to
  *    `inconclusive` regardless of what the critic said — a read-only critic
@@ -274,25 +308,9 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
   let proof: { mutated: boolean };
   try {
     proof = await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
-      let diff: string;
-      try {
-        diff = await Git.diffRange(args.repoDir, args.baseRev, args.candidateOid);
-      } catch (err) {
-        summary = `could not compute the candidate diff: ${err instanceof Error ? err.message : String(err)}`;
-        return;
-      }
-
-      const truncated = diff.length > DIFF_CHAR_CAP;
-      if (truncated) diff = diff.slice(0, DIFF_CHAR_CAP);
-
-      const operatorPrompt = truncated
-        ? `${args.critic.prompt}\n\n(Note: the diff below was truncated to the first ${DIFF_CHAR_CAP} characters; judge only what you can see, and treat anything past the cut as unreviewed.)`
-        : args.critic.prompt;
-      const nonce = args.nonce ?? newNonce();
       const prompt = buildCriticPrompt({
-        operatorPrompt,
-        diff,
-        nonce,
+        operatorPrompt: args.critic.prompt,
+        fields: args.fields,
         ...(args.operatorNote !== undefined ? { operatorNote: args.operatorNote } : {}),
       });
 

@@ -53,3 +53,34 @@ explicit origin × verifier × verdict × merge-fate table. **Mirrored closes th
 ticket only after verify + land**, Merge-Fate-specific, reopening/escalating on
 every non-success disposition. `agentReview` removal is an **authorization
 migration**. See `docs/reliability-design.md` Unit B.
+
+## Amendment (2026-08-22): the critic is a tool-enabled independent evaluator
+
+The original containment ("read-only, no mutating tools/creds ... a delimited
+untrusted diff") made the critic almost useless in practice: with no tools and only
+a capped diff, it could neither read the surrounding code nor read the issue it was
+meant to validate against, so it fell to `inconclusive` far too often. The critic is
+now an **independent evaluator** that reviews the candidate the way a human reviewer
+would:
+
+- **No injected diff.** `buildCriticPrompt` no longer embeds a diff (and the
+  nonce/delimiter machinery is gone). The critic reads the candidate itself from the
+  disposable detached worktree it already runs in.
+- **Operator-authored, interpolated prompt.** The whole review note is the operator's
+  configured `verification.critic.prompt`, supporting the **same
+  `{skill}/{ref}/{url}/{title}/{body}` interpolation as the Drive Prompt** (issue #33),
+  so it can name and reach the issue. Harmonic still appends the read-only instruction
+  and the strict JSON verdict contract — the settings UI shows the full compiled prompt.
+- **Builder-equivalent tool access.** The critic gets the **same unattended permission
+  posture as the afk builder** (a permissive session mode; any `request_permission` is
+  granted) and **may execute tools** (read, grep, run a build, fetch the issue). It is
+  held read-only by its **prompt** and by the post-turn **mutation fingerprint** (a
+  critic that mutated the tree it reviewed is forced to `inconclusive`), **not** by
+  withholding tools.
+
+What is retained from the original containment: **no Harmonic MCP server** and
+**stripped tracker credentials** (`HARMONIC_API_KEY`/`HARMONIC_MCP_URL`), so the critic
+can never reach the tracker — it cannot `finish_task`/`accept_task`, only return a
+verdict; the disposable-worktree mutation fingerprint; and the strict schema verdict
+with inconclusive/malformed → Escalate. The verdict's role in `combineVerdicts` and the
+rest of Unit B are unchanged.

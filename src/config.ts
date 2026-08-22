@@ -122,7 +122,10 @@ export type VerificationCommand = z.infer<typeof verificationCommandSchema>;
  * only in #132 — no critic runs yet.
  */
 export const verificationCriticSchema = z.object({
-  prompt: z.string().min(1).meta({ example: 'Review the diff for correctness against the ticket.' }),
+  prompt: z
+    .string()
+    .min(1)
+    .meta({ example: 'Review the change against issue {ref}: {title}. Read the code and the issue to decide.' }),
   model: z.string().min(1).meta({ example: 'claude-opus-5' }),
   /** Reviewer harness; omitted = reuse the builder task's harness. */
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),

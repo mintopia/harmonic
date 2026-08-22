@@ -465,6 +465,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (runId) => auth.deleteKeysForRun(runId),
     },
     autoDrive,
+    // The critic's `{url}` interpolation token (same resolver AutoDrive uses);
+    // independent of autoDrive so native Runs interpolate too.
+    urlFor: (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
     getWorkspace: async (id) => {
       if (id == null) return undefined;
       try {
