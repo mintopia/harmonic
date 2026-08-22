@@ -116,6 +116,28 @@ const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
 const AFK_REQUEST_GATED_HARNESSES = ['codex'] as const;
 const afkRequestGated = (harness: string): boolean => (AFK_REQUEST_GATED_HARNESSES as readonly string[]).includes(harness);
 
+const HARNESS_MUTEX_KEYS = {
+  claude: 'claude',
+} as const satisfies Partial<Record<string, string>>;
+
+const harnessMutexChains = new Map<string, Promise<void>>();
+
+async function acquireHarnessMutex(key: string): Promise<() => void> {
+  const prev = harnessMutexChains.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = prev.then(() => gate);
+  harnessMutexChains.set(key, tail);
+  await prev.catch(() => {});
+
+  return () => {
+    release();
+    if (harnessMutexChains.get(key) === tail) harnessMutexChains.delete(key);
+  };
+}
+
 /**
  * Default review SLA (issue #114): how long a native Run may sit parked in
  * `phase:'review'` awaiting a human accept/reject before the review-SLA sweep
@@ -2181,6 +2203,7 @@ export class Runner {
     // draining the pipe also prevents backpressure on a chatty process.
     let stderrTail = '';
     let stderrFlushed: Promise<void> = Promise.resolve();
+    let releaseHarnessMutex: (() => void) | null = null;
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined || remergeCtx !== undefined);
       // Workspace prep (its git ops) succeeded — clear any accumulated git
@@ -2204,6 +2227,8 @@ export class Runner {
       // record interrupted — exactly as the post-verify guard below does — rather
       // than spawn on shutdown timing.
       if (this.shuttingDown) return { kind: 'terminal' };
+      const harnessMutexKey = HARNESS_MUTEX_KEYS[task.harness as keyof typeof HARNESS_MUTEX_KEYS];
+      if (harnessMutexKey) releaseHarnessMutex = await acquireHarnessMutex(harnessMutexKey);
       child = this.spawnHarness(task, harness, workspace.cwd, workspace.env);
       const stderr = child.stderr;
       if (stderr) {
@@ -2229,6 +2254,8 @@ export class Runner {
       if (directIsolation) {
         await this.restoreDirectCheckout(task, run, directIsolation);
       }
+      releaseHarnessMutex?.();
+      releaseHarnessMutex = null;
       if (err instanceof EpicBaseNotReady) {
         // A member raced ahead of its Epic integration branch (issue #159): the
         // branch is transiently missing, not a permanent fault. Settle the Run
@@ -2286,6 +2313,8 @@ export class Runner {
       await flushToolCalls().catch(() => {});
       this.readers.delete(run.id);
       this.kill(active);
+      releaseHarnessMutex?.();
+      releaseHarnessMutex = null;
       try {
         void Promise.resolve(this.keys?.revoke(run.id)).catch(() => {});
       } catch {

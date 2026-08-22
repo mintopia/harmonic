@@ -28,6 +28,7 @@ import { taskKey } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { ArmedButton } from './ArmedButton';
 import { Icon } from './Icon';
+import { ModelLabel, ProviderChip, TaskIdentity } from './TaskIdentity';
 
 /** The Deck-language column grid (DESIGN.md § 6): the header and every row —
  * flat, banded or ungrouped — share one template so they line up. It sheds
@@ -235,15 +236,18 @@ export function TableView({
         >
           {task.prompt}
         </button>
+        <div className="mt-1 lg:hidden">
+          <TaskIdentity harness={task.harness} model={task.model} compact className="text-small" />
+        </div>
       </div>
       <div role="cell">
         <span className={stateChip(task.state)}>{task.state}</span>
       </div>
-      <div role="cell" className="hidden text-muted lg:block">
-        {task.harness}
+      <div role="cell" className="hidden lg:block">
+        <ProviderChip harness={task.harness} />
       </div>
-      <div role="cell" className="hidden text-muted lg:block">
-        {task.model}
+      <div role="cell" className="hidden lg:block">
+        <ModelLabel model={task.model} className="text-muted" />
       </div>
       <div
         role="cell"

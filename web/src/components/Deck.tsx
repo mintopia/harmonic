@@ -15,6 +15,7 @@ import { subscribe } from '../ws';
 import { toastError, toastLandOutcome } from '../toast';
 import { ArmedButton } from './ArmedButton';
 import { Icon } from './Icon';
+import { TaskIdentity } from './TaskIdentity';
 import {
   btnGhost,
   btnPrimary,
@@ -46,14 +47,6 @@ function rowId(task: Task): string {
   return task.origin === 'mirrored' && task.trackerRef != null
     ? issueRef(task.trackerRef)
     : taskKey(task.id);
-}
-
-/** One quiet identity fact: harness · model, plus a non-direct isolation
- * deviation (the Mono Is Code Rule keeps these names sans, never chips). */
-function metaLine(task: Task): string {
-  const bits = [`${task.harness} · ${task.model}`];
-  if (task.isolationMode !== 'direct') bits.push(task.isolationMode);
-  return bits.join('  ·  ');
 }
 
 /** The row's small set of meaningful chips (DESIGN.md § 6: "Escalated and
@@ -118,7 +111,8 @@ function DeckRow({
         </div>
         <div className="mt-1 flex items-center gap-2 text-small text-faint">
           <RowChips task={task} />
-          <span className="truncate text-muted">{metaLine(task)}</span>
+          <TaskIdentity harness={task.harness} model={task.model} compact className="flex-1" />
+          {task.isolationMode !== 'direct' && <span className="truncate text-muted">{task.isolationMode}</span>}
         </div>
       </div>
       {aside && <div className="relative z-10 flex items-center gap-2.5 justify-self-end">{aside}</div>}

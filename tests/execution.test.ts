@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -163,6 +163,63 @@ describe('run execution over ACP (direct mode)', () => {
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('failed');
     expect(run.body.reason).toBeTruthy();
+  });
+
+  it('serialises Claude harness processes globally, releasing the lock when the first run stops (#237)', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'harmonic-claude-lock-'));
+    const firstStartFile = join(tempDir, 'first-start.json');
+    const secondStartFile = join(tempDir, 'second-start.json');
+    const firstWorkdir = join(tempDir, 'first-workdir');
+    const secondWorkdir = join(tempDir, 'second-workdir');
+    mkdirSync(firstWorkdir);
+    mkdirSync(secondWorkdir);
+    const firstCreated = await server.api('POST', '/api/tasks', {
+      workingDir: firstWorkdir,
+      prompt: scenario({
+        echoEnv: ['HARMONIC_API_KEY'],
+        echoEnvFile: firstStartFile,
+        exit: 'hang',
+      }),
+    });
+    expect(firstCreated.status).toBe(201);
+    const firstStarted = await server.api('POST', `/api/tasks/${firstCreated.body.id}/run`);
+    expect(firstStarted.status).toBe(201);
+    await waitFor(async () => (existsSync(firstStartFile) ? true : undefined));
+
+    const secondCreated = await server.api('POST', '/api/tasks', {
+      workingDir: secondWorkdir,
+      prompt: scenario({
+        echoEnv: ['HARMONIC_API_KEY'],
+        echoEnvFile: secondStartFile,
+        exit: 'hang',
+      }),
+    });
+    expect(secondCreated.status).toBe(201);
+    const secondStarted = await server.api('POST', `/api/tasks/${secondCreated.body.id}/run`);
+    expect(secondStarted.status).toBe(201);
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${secondCreated.body.id}`);
+      return body.state === 'running' ? true : undefined;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(existsSync(secondStartFile)).toBe(false);
+
+    const cancelledFirst = await server.api('POST', `/api/tasks/${firstCreated.body.id}/cancel`);
+    expect(cancelledFirst.status).toBe(200);
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${firstStarted.body.id}`);
+      return body.state === 'cancelled' ? true : undefined;
+    });
+
+    await waitFor(async () => (existsSync(secondStartFile) ? true : undefined));
+
+    const cancelledSecond = await server.api('POST', `/api/tasks/${secondCreated.body.id}/cancel`);
+    expect(cancelledSecond.status).toBe(200);
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${secondStarted.body.id}`);
+      return body.state === 'cancelled' ? true : undefined;
+    });
   });
 
   it('cancelling a running task kills the harness process and the run', async () => {
