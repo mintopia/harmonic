@@ -2,22 +2,15 @@ import { useState } from 'react';
 import { api } from '../api';
 import type { Task, VerificationAttempt } from '../types';
 import { taskActions, showsEscalationRecovery, type TaskAction } from '../task-actions-model';
-import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject, sectionTitle } from '../ui';
+import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '../ui';
 import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
-import type { VerificationOutcome } from '../verification-model';
 import { RejectDialog } from './RejectDialog';
 import { ReattemptDialog } from './ReattemptDialog';
 import { NoteToCriticDialog } from './NoteToCriticDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
 import { taskLabel } from '../id-format.js';
-
-const DECISION_TONE: Record<VerificationOutcome, string> = {
-  proceed: 'text-muted',
-  block: 'text-fail',
-  escalate: 'text-fail',
-};
 
 /** Cancel, armed with a two-step confirm. Its own component so the hook is
  * called unconditionally (rules of hooks), not inside the action switch. */
@@ -169,12 +162,14 @@ export function TaskActions({
     }
   };
 
-  const isReviewGate = variant === 'footer' && task.state === 'awaiting-review';
-  const container = isReviewGate
-    ? 'flex flex-wrap items-center gap-2.5 border-t border-await bg-raised px-4 py-3'
-    : variant === 'footer'
-      ? 'flex flex-wrap items-center justify-end gap-2.5 border-t border-hairline px-4 py-3'
+  // Footer (ticket rail gate) stacks the review verbs vertically and full-width
+  // to match the Paper mockup — Accept on top, the quiet Delete escape hatch
+  // last. `card` keeps the original inline row.
+  const container =
+    variant === 'footer'
+      ? 'flex flex-col gap-2 [&>button]:w-full [&>button]:justify-center'
       : 'flex flex-wrap items-center justify-end gap-2.5';
+  const ordered = variant === 'footer' ? [...actions].reverse() : actions;
   const done = (close: () => void) => () => {
     close();
     onChanged();
@@ -183,17 +178,6 @@ export function TaskActions({
   return (
     <>
       <div className={container}>
-        {isReviewGate && (
-          <div className="mr-auto">
-            <div className={sectionTitle}>Review gate</div>
-            <div className="text-small text-muted">Read the changes, then accept to merge.</div>
-            {decision && (
-              <div className={`mt-0.5 max-w-sm truncate text-small ${DECISION_TONE[decision.outcome]}`}>
-                <span className="font-semibold">{decision.outcome}</span> — {decision.reason}
-              </div>
-            )}
-          </div>
-        )}
         {task.escalated && (
           <button className={secondary} onClick={act(() => api.unescalateTask(task.id))}>
             Un-escalate
@@ -212,7 +196,7 @@ export function TaskActions({
             </button>
           </>
         )}
-        {actions.map(button)}
+        {ordered.map(button)}
       </div>
       {rejecting && (
         <RejectDialog taskId={task.id} onClose={() => setRejecting(false)} onDone={done(() => setRejecting(false))} />

@@ -368,6 +368,12 @@ export const Git = {
   diffStat: (dir: string, baseBranch: string, branch: string) =>
     git(dir, 'diff', '--stat', `${baseBranch}...${branch}`),
 
+  /** Full unified diff of what the run's branch adds over the merge base — the
+   * same `baseBranch...branch` range {@link diffStat} counts, so a parsed
+   * per-file hunk view and the diffstat agree. */
+  diffUnified: (dir: string, baseBranch: string, branch: string) =>
+    git(dir, 'diff', `${baseBranch}...${branch}`),
+
   /**
    * The full unified diff `oid` adds over `base` — the untrusted content a
    * Verification unit (issue #136, ADR-0021) hands to a command or the agent

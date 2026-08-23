@@ -345,6 +345,26 @@ export type ContinuationPreview =
       };
     };
 
+export type DiffLineKind = 'add' | 'del' | 'context' | 'hunk';
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  /** Pre-image line number; null on an added or hunk-header line. */
+  oldLn: number | null;
+  /** Post-image line number; null on a deleted or hunk-header line. */
+  newLn: number | null;
+  /** The line's content, without the leading +/-/space diff marker. */
+  text: string;
+}
+
+export interface DiffFile {
+  path: string;
+  status: 'M' | 'A' | 'D';
+  additions: number;
+  deletions: number;
+  lines: DiffLine[];
+}
+
 export interface RunEvent {
   id: number;
   runId: number;

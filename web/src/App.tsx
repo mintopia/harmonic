@@ -24,6 +24,7 @@ import { NewWorkspaceForm, WorkspaceSwitcher } from './components/WorkspaceSwitc
 import { WorkspaceSettingsPage } from './components/WorkspaceSettingsPage';
 import { EmptyState } from './components/EmptyState';
 import { RAIL_GROUPS, VIEW_LABELS, isWorkspaceScopedView, loadRailCollapsed, storeRailCollapsed } from './rail-model';
+import { CrumbBar } from './components/CrumbBar';
 import type { View } from './rail-model';
 import { parseRoute, serializeRoute, type Route, type TableFilters } from './router-model';
 import {
@@ -589,7 +590,10 @@ export function App() {
                   sectionLabel register. Hidden — not unmounted — when the rail
                   collapses to icons, so the icon-only nav keeps its order and
                   grouping gap without a header. */}
-              <div id={groupId} className={`${sectionLabel} px-2.5 pb-1 ${railCollapsed ? 'rail:hidden' : ''}`}>
+              <div
+                id={groupId}
+                className={`${sectionLabel} px-2.5 pb-1 ${group.label === 'Instance' ? 'sr-only' : ''} ${railCollapsed ? 'rail:hidden' : ''}`}
+              >
                 {group.label}
               </div>
               {group.views.map((v) => {
@@ -708,34 +712,37 @@ export function App() {
               }
             >
               <span
-                className="font-medium text-muted"
+                className="text-[13px] text-muted"
                 title={`Machine Ceiling: ${config.autoRunner.maxConcurrentRuns}`}
               >
-                Auto-runner
+                Auto-runner <b className="font-semibold text-ink">{config.autoRunner.enabled ? 'on' : 'off'}</b>
               </span>
             </Switch>
           )}
-          {config && <span aria-hidden="true" className="h-5 w-px shrink-0 bg-hairline" />}
           {config && (
-            <span className="flex items-center gap-2 text-muted">
+            <span className="flex items-center gap-2 text-[13px] text-muted">
               <span
                 aria-hidden="true"
-                className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot' : 'bg-faint'}`}
+                className={`size-[7px] rounded-full ${runningCount > 0 ? 'bg-running-dot motion-safe:animate-pulse' : 'bg-faint'}`}
               />
               <span>
-                <span className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>
+                <b className={`font-semibold ${runningCount > 0 ? 'text-ink' : 'text-muted'}`}>{runningCount}</b> running
+              </span>
+              <span aria-hidden="true" className="text-faint">
+                ·
+              </span>
+              <span title="Machine worker slots in use / ceiling">
+                <span className="tabular-nums">
                   {runningCount}/{config.autoRunner.maxConcurrentRuns}
                 </span>{' '}
-                running
+                machine
               </span>
             </span>
           )}
-          {config && cost24h && (
-            <span aria-hidden="true" className="h-5 w-px shrink-0 bg-hairline" />
-          )}
           {cost24h && (
-            <span className="text-muted" title="Cost over the last 24 hours">
-              <span className="font-semibold tabular-nums text-ink">{cost24h}</span> today
+            <span className="text-[13px] text-muted" title="Cost over the last 24 hours">
+              <span className="text-faint">today</span>{' '}
+              <b className="font-semibold tabular-nums text-ink">{cost24h}</b>
             </span>
           )}
           <div className="flex-1" />
@@ -768,7 +775,8 @@ export function App() {
               <Icon name="logout" />
             </button>
           )}
-          <button onClick={() => setEditing('new')} className={btnPrimary}>
+          <button onClick={() => setEditing('new')} className={`${btnPrimary} gap-1.5`}>
+            <Icon name="plus" className="size-3.5" />
             New task
           </button>
         </header>
@@ -854,10 +862,12 @@ export function App() {
                   {view === 'board' && (
                     <>
                       {/* Breadcrumb bar — just the Workspace name on the Board home
-                          (no "/ Board" suffix); the mockup's top crumb. */}
-                      <nav aria-label="Breadcrumb" className="mb-4 text-small text-muted">
-                        {activeWorkspaceName ?? instanceName}
-                      </nav>
+                          (no "/ Board" suffix); the shared crumb bar the Ticket
+                          page uses, broken out of the padded main and pinned. */}
+                      <CrumbBar
+                        className="-mx-6 -mt-5 mb-5 sticky -top-5 z-[3]"
+                        crumbs={[{ node: <span className="font-semibold text-ink">{activeWorkspaceName ?? instanceName}</span> }]}
+                      />
                       {/* Manual tracker refresh — only when this Workspace mirrors a
                           tracker; otherwise there's nothing to re-poll. */}
                       {activeWorkspace?.trackerEnabled && (

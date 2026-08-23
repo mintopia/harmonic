@@ -6,6 +6,7 @@ import type {
   Conversation,
   ConversationEvent,
   Cost,
+  DiffFile,
   FsListing,
   GuardrailEvent,
   PermissionRule,
@@ -207,6 +208,7 @@ export const api = {
       'GET',
       `/api/runs/${id}/diff`,
     ),
+  runDiffFiles: (id: number) => request<{ files: DiffFile[] }>('GET', `/api/runs/${id}/diff/files`),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
 

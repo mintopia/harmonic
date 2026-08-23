@@ -4,7 +4,7 @@ import type { Workspace } from '../types';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
 import { DirectoryPicker } from './DirectoryPicker';
-import { btnGhost, btnPrimary, field, labelType, panelTitle, selectField } from '../ui';
+import { btnGhost, btnPrimary, field, labelType, panelTitle } from '../ui';
 
 export function NewWorkspaceForm({ onClose, onCreated }: { onClose: () => void; onCreated: (w: Workspace) => void }) {
   const [name, setName] = useState('');
@@ -92,34 +92,42 @@ export function WorkspaceSwitcher({
 
   if (workspaces.length === 0) return null;
 
+  const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
+  if (!active) return null;
+  // The parent directory, tilde-abbreviated, as the "~/src/" locator line.
+  const parent = (() => {
+    const dir = active.workingDir ?? '';
+    const p = dir.replace(/\/[^/]*\/?$/, '');
+    if (!p) return '~/';
+    return `${p.replace(/^\/home\/[^/]+/, '~')}/`;
+  })();
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="relative rounded-md border border-edge bg-field px-[11px] py-[9px]">
+      <div className="truncate font-data text-[11px] text-faint">{parent}</div>
+      <div className="mt-px flex items-center justify-between gap-2 font-semibold text-ink">
+        <span className="truncate">{active.name}</span>
+        <Icon name="chevron-down" className="size-3.5 shrink-0 text-muted" />
+      </div>
       <select
         aria-label="Active workspace"
-        className={`${selectField} min-w-0 flex-1`}
+        className="absolute inset-0 cursor-pointer opacity-0"
         value={activeId ?? ''}
-        onChange={(e) => onSwitch(Number(e.target.value))}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === '__new') setCreating(true);
+          else onSwitch(Number(v));
+        }}
       >
         {workspaces.map((w) => (
           <option key={w.id} value={w.id}>
             {w.name}
           </option>
         ))}
+        <option value="__new">+ New workspace…</option>
       </select>
 
-      <button
-        type="button"
-        className={`${btnGhost} shrink-0 px-2`}
-        aria-label="Add workspace"
-        title="Add workspace"
-        onClick={() => setCreating(true)}
-      >
-        <Icon name="plus" />
-      </button>
-
-      {creating && (
-        <NewWorkspaceForm onClose={() => setCreating(false)} onCreated={onCreated} />
-      )}
+      {creating && <NewWorkspaceForm onClose={() => setCreating(false)} onCreated={onCreated} />}
     </div>
   );
 }

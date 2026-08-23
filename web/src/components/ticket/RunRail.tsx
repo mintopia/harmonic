@@ -6,7 +6,7 @@ import {
   type RunDot,
 } from '../../run-rail-model';
 import type { Run } from '../../types';
-import { dot, runChip, runChipActive, runDotFill, sectionLabel } from '../../ui';
+import { runDotFill } from '../../ui';
 import { Icon } from '../Icon';
 
 const WORD_TONE: Record<RunDot, string> = {
@@ -17,15 +17,24 @@ const WORD_TONE: Record<RunDot, string> = {
   neutral: 'text-muted',
 };
 
+const ssechd = 'mb-2.5 flex items-center gap-2 text-label font-bold uppercase tracking-[0.1em] text-faint';
+const ssecCount = 'rounded-full bg-raised px-[7px] text-[10.5px] font-bold normal-case tracking-normal text-muted';
+
 function ChipDot({ chip }: { chip: RunChip }) {
   return (
     <span
       role="img"
       aria-label={chip.stateWord}
-      className={`${dot} ${runDotFill[chip.dot]} ${chip.pulse ? 'motion-safe:animate-dot-pulse' : ''}`}
+      className={`size-2 shrink-0 rounded-full ${runDotFill[chip.dot]} ${chip.pulse ? 'motion-safe:animate-dot-pulse' : ''}`}
     />
   );
 }
+
+const FADED: Record<'M' | 'A' | 'D', string> = {
+  M: 'bg-running-tint text-running',
+  A: 'bg-merged-tint text-merged',
+  D: 'bg-fail-tint text-fail',
+};
 
 export function RunRail({
   runs,
@@ -56,34 +65,38 @@ export function RunRail({
   const isRunSelected = (runId: number) => selectedFile === null && runId === selectedRunId;
 
   return (
-    <aside aria-label="Run navigation" className="flex h-full min-h-0 flex-col gap-6">
-      <section>
-        <div className={`${sectionLabel} mb-2`}>
-          Runs · {chips.length} attempt{chips.length === 1 ? '' : 's'}
+    <div aria-label="Run navigation">
+      <section className="border-b border-hairline px-3.5 py-3.5">
+        <div className={ssechd}>
+          Run attempts <span className={ssecCount}>{chips.length}</span>
         </div>
         {chips.length === 0 ? (
           <p className="text-small text-muted">This task hasn't run yet.</p>
         ) : (
-          <div className="flex flex-col gap-2">
-          {chips.map((c) => (
-            <button
-              key={c.runId}
-              type="button"
-              aria-pressed={isRunSelected(c.runId)}
-              onClick={() => onSelectRun(c.runId)}
-              className={`w-full ${isRunSelected(c.runId) ? runChipActive : runChip}`}
-            >
-              <span className="flex items-center gap-2 text-data font-semibold text-ink">
+          <div className="flex flex-col gap-1">
+            {chips.map((c) => (
+              <button
+                key={c.runId}
+                type="button"
+                aria-pressed={isRunSelected(c.runId)}
+                onClick={() => onSelectRun(c.runId)}
+                className={`flex min-h-11 w-full items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors ${
+                  isRunSelected(c.runId)
+                    ? 'border-await bg-await-tint'
+                    : 'border-transparent hover:bg-raised'
+                }`}
+              >
                 <ChipDot chip={c} />
-                {c.label}
-              </span>
-              <span className="flex gap-2.5 pl-[15px] text-small text-faint">
-                <span className={`font-semibold ${WORD_TONE[c.dot]}`}>{c.stateWord}</span>
-                {c.cost && <span>{c.cost}</span>}
-                {c.duration && <span>{c.duration}</span>}
-              </span>
-            </button>
-          ))}
+                <span className="text-data font-semibold text-ink">{c.label}</span>
+                <span className="ml-auto text-right text-[11.5px] leading-[1.35] tabular-nums text-faint">
+                  <span className={`text-label font-bold uppercase tracking-[0.03em] ${WORD_TONE[c.dot]}`}>
+                    {c.stateWord}
+                  </span>
+                  <br />
+                  {[c.cost, c.duration].filter(Boolean).join(' · ')}
+                </span>
+              </button>
+            ))}
           </div>
         )}
         {note && (
@@ -94,58 +107,78 @@ export function RunRail({
         )}
       </section>
 
-      <section>
-        <div className={`${sectionLabel} mb-2`}>Worktree</div>
+      <section className="px-3.5 py-3.5">
+        <div className={ssechd}>Worktree</div>
         {hasWorktree ? (
-          <button
-            type="button"
-            onClick={onSelectChanges}
-            className="min-h-11 w-full rounded-md border border-hairline bg-field px-3 py-2 text-left text-small transition-colors hover:border-edge"
-          >
-            <span className="block font-data text-data text-tool">{worktree.branch}</span>
-            <span className="mt-1 block text-faint">
-              {worktree.baseBranch ? <>from <span className="font-data text-data">{worktree.baseBranch}</span></> : 'worktree'}
-            </span>
-          </button>
+          <>
+            <div className="flex min-w-0 items-center gap-2 font-data text-data text-ink">
+              <Icon name="branch" className="size-3.5 shrink-0 text-muted opacity-80" />
+              <span className="truncate">{worktree.branch}</span>
+            </div>
+            <div className="mt-[7px] flex flex-wrap gap-2 pl-[22px] text-[12px] text-faint">
+              <span>
+                base <span className="font-data text-muted">{worktree.baseBranch ?? 'HEAD'}</span>
+              </span>
+              <span className="text-edge">·</span>
+              <span>
+                isolation <span className="font-data text-muted">{worktree.isolationMode}</span>
+              </span>
+            </div>
+          </>
         ) : (
           <p className="text-small text-muted">Direct mode — no worktree.</p>
         )}
-      </section>
 
-      <section className="min-h-0">
-        <button
-          type="button"
-          onClick={onSelectChanges}
-          className={`${sectionLabel} mb-2 flex min-h-11 items-center text-left hover:text-ink`}
-        >
-          Changed files{files.length > 0 ? ` · ${files.length}` : ''}
-        </button>
-        {!hasWorktree ? (
-          <p className="text-small text-muted">Changes are available for worktree runs.</p>
-        ) : files.length === 0 ? (
-          <p className="text-small text-muted">No changed files yet.</p>
-        ) : (
-          <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
-            {files.map((file) => (
-              <button
-                key={file.path}
-                type="button"
-                aria-pressed={selectedFile === file.path}
-                onClick={() => onSelectFile(file.path)}
-                className={`grid min-h-11 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-small transition-colors hover:bg-raised ${
-                  selectedFile === file.path ? 'bg-await-tint text-ink' : 'text-muted'
-                }`}
-              >
-                <span className="rounded bg-raised px-1 font-data text-label font-semibold text-faint">{file.kind}</span>
-                <span className="truncate font-data text-data">{file.path}</span>
-                <span className="text-label tabular-nums text-faint">
-                  +{file.additions} −{file.deletions}
-                </span>
-              </button>
-            ))}
-          </div>
+        {hasWorktree && (
+          <>
+            <button
+              type="button"
+              onClick={onSelectChanges}
+              className={`${ssechd} mt-4 hover:text-ink`}
+            >
+              Changed files{files.length > 0 && <span className={ssecCount}>{files.length}</span>}
+            </button>
+            {files.length === 0 ? (
+              <p className="text-small text-muted">No changed files yet.</p>
+            ) : (
+              <div className="mt-0.5 flex flex-col">
+                {files.map((file) => {
+                  // The stat model only tags 'M'; a file with additions and no
+                  // deletions reads as newly added — surface it as 'A'.
+                  const kind: 'M' | 'A' = file.deletions === 0 && file.additions > 0 ? 'A' : 'M';
+                  const sel = selectedFile === file.path;
+                  return (
+                    <button
+                      key={file.path}
+                      type="button"
+                      aria-pressed={sel}
+                      onClick={() => onSelectFile(file.path)}
+                      className={`flex items-center gap-2.5 rounded-sm px-[9px] py-2 text-left text-small transition-colors ${
+                        sel ? 'bg-accent-tint' : 'hover:bg-raised'
+                      }`}
+                    >
+                      <span
+                        className={`grid size-[15px] shrink-0 place-items-center rounded-[4px] font-data text-[9px] font-bold ${FADED[kind]}`}
+                      >
+                        {kind}
+                      </span>
+                      <span
+                        className={`min-w-0 flex-1 truncate font-data text-[12px] ${sel ? 'text-accent' : 'text-ink'}`}
+                      >
+                        {file.path}
+                      </span>
+                      <span className="shrink-0 font-data text-[11px] tabular-nums">
+                        {file.additions > 0 && <span className="text-merged">+{file.additions}</span>}
+                        {file.deletions > 0 && <span className="ml-1 text-fail">−{file.deletions}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </section>
-    </aside>
+    </div>
   );
 }

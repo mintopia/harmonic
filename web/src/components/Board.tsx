@@ -170,7 +170,7 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
   const showFoot = !!task.branch || hasReadout || !!action;
 
   return (
-    <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex h-full w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 hover:shadow-float`}>
+    <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float`}>
       <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${CARD_ACCENT[task.state]}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
@@ -193,7 +193,7 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
           type="button"
           onClick={onOpen}
           title={task.prompt}
-          className="mt-2 line-clamp-2 text-left text-[15px] font-semibold leading-[1.3] text-ink underline-offset-4 group-hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
+          className="mt-2 line-clamp-2 cursor-pointer text-left text-[15px] font-semibold leading-[1.3] text-ink focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
         >
           {cardTitle(task.prompt)}
         </button>
@@ -373,7 +373,7 @@ function FrontierNodeCard({
 }) {
   const runnable = node.runnable && node.taskId != null;
   return (
-    <div className={`bold-wash ${node.state ?? ''} relative w-[300px] shrink-0 rounded-lg border bg-surface p-2.5 ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
+    <div className={`bold-wash ${node.state ?? ''} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} />
         <span className="font-data text-small text-faint">#{node.ref}</span>
@@ -384,7 +384,7 @@ function FrontierNodeCard({
         disabled={node.taskId == null}
         onClick={() => node.taskId != null && onOpenTask(node.taskId)}
         title={node.title}
-        className="mt-1 block w-full min-w-0 truncate pr-7 text-left text-small font-medium text-ink underline-offset-4 hover:underline disabled:cursor-default disabled:no-underline"
+        className="mt-1 block w-full min-w-0 cursor-pointer truncate pr-7 text-left text-small font-medium text-ink disabled:cursor-pointer focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent enabled:after:absolute enabled:after:inset-0 enabled:after:content-['']"
       >
         {node.title}
       </button>
@@ -409,7 +409,7 @@ function FrontierNodeCard({
             e.stopPropagation();
             api.runTask(node.taskId!).then(onChanged, toastError);
           }}
-          className="absolute right-2.5 top-2.5 grid size-[23px] place-items-center rounded-md border border-ready-dot/40 bg-ready-tint text-ready transition-colors duration-150 hover:bg-ready-dot hover:text-white after:absolute after:-inset-2.5 after:content-['']"
+          className="absolute right-2.5 top-2.5 z-10 grid size-[23px] place-items-center rounded-md border border-ready-dot/40 bg-ready-tint text-ready transition-colors duration-150 hover:bg-ready-dot hover:text-white after:absolute after:-inset-2.5 after:content-['']"
         >
           <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
             <path d="M7 5l12 7-12 7V5z" />
