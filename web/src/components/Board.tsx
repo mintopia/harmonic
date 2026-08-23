@@ -3,7 +3,7 @@ import type { Task } from '../types';
 import type { Epic, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
 import { railSegments } from '../epic-model';
 import { boardSections, cardTitle, fmtElapsed } from '../board-sections-model';
-import { deriveEpicFrontier, deriveStandaloneFrontier, type EpicFrontier, type FrontierNode } from '../epic-frontier-model';
+import { deriveEpicFrontier, type EpicFrontier, type FrontierNode } from '../epic-frontier-model';
 import { issueRef, taskKey } from '../id-format.js';
 import { api } from '../api';
 import { subscribe } from '../ws';
@@ -459,7 +459,7 @@ function EpicBand({
           className={`${touchTargetInline} min-w-0 flex-1 gap-2.5 text-left`}
         >
           <span className="shrink-0 rounded bg-tool-tint px-1.5 py-0.5 text-label font-bold text-tool">
-            {epic.kind.charAt(0).toUpperCase() + epic.kind.slice(1)}
+            {epic.kind === 'map' ? 'Map' : 'Epic'}
           </span>
           <span className="shrink-0 font-data text-small text-faint">epic/{epic.ref}</span>
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
@@ -584,10 +584,6 @@ export function Board({
   onClearFocus?: () => void;
 }) {
   const sections = useMemo(() => boardSections(tasks, epics), [tasks, epics]);
-  const standaloneFrontier = useMemo(
-    () => deriveStandaloneFrontier(sections.standalone, tasks),
-    [sections.standalone, tasks],
-  );
 
   if (loading) return <BoardSkeleton />;
 
@@ -649,8 +645,10 @@ export function Board({
 
       {standalone.length > 0 && (
         <BoardSection label="Standalone" count={String(standalone.length)}>
-          <div className={panel} data-board-layout="standalone-frontier">
-            <FrontierColumns frontier={standaloneFrontier} onOpenTask={onOpenTask} onChanged={onChanged} />
+          <div data-board-layout="loose-cards" className="flex flex-wrap gap-3">
+            {standalone.map((task) => (
+              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
+            ))}
           </div>
         </BoardSection>
       )}
