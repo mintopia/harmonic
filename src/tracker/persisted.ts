@@ -1,6 +1,6 @@
 import type { TaskRow, TrackerContainerRow, TrackerFacts } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
-import type { Ticket } from './adapter.js';
+import { MAP_LABEL, type Ticket } from './adapter.js';
 
 type StoredFacts = Pick<
   TaskRow,
@@ -59,7 +59,7 @@ export async function persistedTickets(rows: TaskRow[], containers: TrackerConta
   });
   await forEachYielding(containers, (row) => {
     const facts = factsFrom(row);
-    if (facts) tickets.push(ticketFrom(row.trackerRef, facts, true));
+    if (facts) tickets.push(ticketFrom(row.trackerRef, facts, facts.labels.includes(MAP_LABEL)));
   });
   return tickets;
 }

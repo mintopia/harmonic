@@ -3,7 +3,14 @@ import type { Task } from '../types';
 import type { Epic, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
 import { railSegments } from '../epic-model';
 import { boardSections, cardTitle, fmtElapsed } from '../board-sections-model';
-import { deriveEpicFrontier, type EpicFrontier, type FrontierNode } from '../epic-frontier-model';
+import {
+  deriveEpicFrontier,
+  deriveStandaloneColumns,
+  resolveBlockers,
+  type EpicFrontier,
+  type FrontierDependency,
+  type FrontierNode,
+} from '../epic-frontier-model';
 import { issueRef, taskKey } from '../id-format.js';
 import { api } from '../api';
 import { subscribe } from '../ws';
@@ -16,7 +23,6 @@ import {
   displayTitle,
   panel,
   sectionLabel,
-  sectionLabelAttn,
   stateChip,
   stateDot,
   toolChip,
@@ -40,7 +46,7 @@ function OpenButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      className={`relative inline-flex items-center rounded-md border border-edge bg-surface px-[13px] py-[7px] text-small font-medium text-ink transition-colors hover:border-faint ${HIT44}`}
+      className={`relative inline-flex items-center rounded-md border border-edge bg-surface px-[13px] py-[7px] text-[13px] font-medium text-ink transition-colors hover:border-muted ${HIT44}`}
       onClick={(e) => {
         e.stopPropagation();
         onOpen();
@@ -109,7 +115,7 @@ function RunNowButton({ taskId, onChanged, icon }: { taskId: number; onChanged: 
   return (
     <button
       type="button"
-      className={`relative inline-flex items-center rounded-md border border-accent bg-accent-tint px-[13px] py-[7px] text-small font-semibold text-accent transition-colors hover:bg-accent hover:text-on-accent ${HIT44}`}
+      className={`relative inline-flex items-center rounded-md border border-accent bg-accent px-[13px] py-[7px] text-[13px] font-semibold text-on-accent transition-colors hover:opacity-90 ${HIT44}`}
       onClick={run}
     >
       Run now
@@ -121,7 +127,7 @@ function ReviewButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      className={`relative inline-flex items-center rounded-md border border-await bg-await-tint px-[13px] py-[7px] text-small font-semibold text-await transition-colors hover:bg-await hover:text-on-await ${HIT44}`}
+      className={`relative inline-flex items-center rounded-md border border-await bg-await px-[13px] py-[7px] text-[13px] font-semibold text-on-await transition-colors hover:opacity-90 ${HIT44}`}
       onClick={onOpen}
     >
       Review →
@@ -148,8 +154,9 @@ function WhoLine({ harness, model }: { harness: string; model: string }) {
   );
 }
 
-function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void; onChanged: () => void }) {
+function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: () => void; onChanged: () => void; blockers?: FrontierDependency[] }) {
   const hasReadout = task.runStartedAt != null;
+  const openBlockers = (blockers ?? []).filter((blocker) => !blocker.satisfied);
   const action =
     task.drive === 'hitl' ? (
       <OpenButton onOpen={onOpen} />
@@ -164,7 +171,7 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
 
   return (
     <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex h-full w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 hover:shadow-float`}>
-      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-1 ${CARD_ACCENT[task.state]}`} />
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${CARD_ACCENT[task.state]}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
           {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}
@@ -186,32 +193,42 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
           type="button"
           onClick={onOpen}
           title={task.prompt}
-          className="mt-3 line-clamp-2 text-left text-title font-semibold text-ink underline-offset-4 group-hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
+          className="mt-2 line-clamp-2 text-left text-[15px] font-semibold leading-[1.3] text-ink underline-offset-4 group-hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
         >
           {cardTitle(task.prompt)}
         </button>
         {(task.state === 'awaiting-review' || task.origin === 'mirrored') && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-small text-muted">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+            {task.origin === 'mirrored' && (
+              <span className="rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
+            )}
             {task.state === 'awaiting-review' && task.drive !== 'hitl' && (
               <span className="text-merged">✓ verification proceed</span>
             )}
-            {task.origin === 'mirrored' && (
-              <span className="rounded bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
-            )}
           </div>
         )}
-        <div className="mt-2">
+        <div className="-mt-1">
           <WhoLine harness={task.harness} model={task.model} />
         </div>
+        {openBlockers.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-small text-muted">
+            <span className="text-faint">Blocked by</span>
+            {openBlockers.map((blocker) => (
+              <span key={blocker.taskId} className={chip}>
+                {blocker.label}
+              </span>
+            ))}
+          </div>
+        )}
         {showFoot && (
-          <div className="mt-auto flex items-center gap-3 pt-4 text-small text-muted">
+          <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
             {task.branch && (
               <span className="flex min-w-0 items-center gap-1.5">
-                <Icon name="branch" className="text-faint" />
+                <Icon name="branch" className="shrink-0 text-faint" />
                 <span className="min-w-0 truncate font-data">{task.branch}</span>
               </span>
             )}
-            <span className="ml-auto flex items-center gap-3">
+            <span className="ml-auto flex shrink-0 items-center gap-2.5 whitespace-nowrap">
               {hasReadout && <RunningReadoutLine task={task} />}
               {action && <span className="relative z-10">{action}</span>}
             </span>
@@ -226,10 +243,12 @@ function CardStrip({
   tasks,
   onOpen,
   onChanged,
+  blockersFor,
 }: {
   tasks: Task[];
   onOpen: (task: Task) => void;
   onChanged: () => void;
+  blockersFor?: (task: Task) => FrontierDependency[];
 }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(0);
@@ -255,7 +274,7 @@ function CardStrip({
     <div className="relative">
       <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin]">
         {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
+          <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} blockers={blockersFor?.(task)} />
         ))}
       </div>
       {more > 0 && (
@@ -291,15 +310,19 @@ function BoardSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-6 first:mt-3">
-      <div className="mb-2 flex items-baseline gap-2 px-1">
-        <h2 className={attn ? sectionLabelAttn : sectionLabel}>{label}</h2>
+    <section className="mb-[26px]">
+      <div className="mb-[13px] flex items-center gap-2.5 px-0.5">
+        <h2 className={`text-[11px] font-bold uppercase tracking-[0.11em] ${attn ? 'text-await' : 'text-ink'}`}>{label}</h2>
         {count != null && (
-          <span aria-atomic="true" aria-live={attn ? 'polite' : undefined} className="text-small font-semibold text-muted">
+          <span
+            aria-atomic="true"
+            aria-live={attn ? 'polite' : undefined}
+            className={`rounded-full px-2 py-px text-[10.5px] font-bold ${attn ? 'bg-await text-on-await' : 'bg-raised text-muted'}`}
+          >
             {count}
           </span>
         )}
-        <span aria-hidden="true" className="ml-auto" />
+        <span aria-hidden="true" className="h-px flex-1 bg-edge" />
       </div>
       {children}
     </section>
@@ -584,6 +607,9 @@ export function Board({
   onClearFocus?: () => void;
 }) {
   const sections = useMemo(() => boardSections(tasks, epics), [tasks, epics]);
+  const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
+  const standaloneColumns = useMemo(() => deriveStandaloneColumns(sections.standalone, tasks), [sections.standalone, tasks]);
+  const blockersFor = (task: Task): FrontierDependency[] => resolveBlockers(task, tasksById);
 
   if (loading) return <BoardSkeleton />;
 
@@ -645,9 +671,14 @@ export function Board({
 
       {standalone.length > 0 && (
         <BoardSection label="Standalone" count={String(standalone.length)}>
-          <div data-board-layout="loose-cards" className="flex flex-wrap gap-3">
-            {standalone.map((task) => (
-              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
+          <div data-board-layout="standalone-columns" className="flex items-start gap-4 overflow-x-auto pb-2 [scrollbar-width:thin]">
+            {standaloneColumns.map((column) => (
+              <div key={column.label} className="flex shrink-0 flex-col gap-3">
+                <div className={sectionLabel}>{column.label}</div>
+                {column.tasks.map((task) => (
+                  <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} blockers={blockersFor(task)} />
+                ))}
+              </div>
             ))}
           </div>
         </BoardSection>

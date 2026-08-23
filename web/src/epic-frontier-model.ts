@@ -137,3 +137,65 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
   }
   return { columns };
 }
+
+const isSettled = (state: Task['state'] | undefined): boolean => state === 'completed' || state === 'cancelled';
+
+/** The blockers of a Task — its `dependsOn` edges resolved to display labels and
+ * whether each is already settled (satisfied). */
+export function resolveBlockers(task: Task, tasksById: ReadonlyMap<number, Task>): FrontierDependency[] {
+  return (task.dependsOn ?? []).map((taskId) => ({
+    taskId,
+    label: dependencyLabel(tasksById.get(taskId), taskId),
+    satisfied: isSettled(tasksById.get(taskId)?.state),
+  }));
+}
+
+export interface TaskColumn {
+  label: 'Frontier' | `Depth ${number}`;
+  tasks: Task[];
+}
+
+/**
+ * Lay out standalone (non-Epic) Tasks in the same Frontier→Depth columns as an
+ * Epic band, by unsatisfied-dependency depth: Frontier = running or no open
+ * blocker; Depth N = blocked, one past its deepest open blocker in the set.
+ */
+export function deriveStandaloneColumns(standalone: Task[], allTasks: Task[]): TaskColumn[] {
+  const tasksById = new Map(allTasks.map((task) => [task.id, task]));
+  const standaloneIds = new Set(standalone.map((task) => task.id));
+  const openDeps = (task: Task): number[] =>
+    resolveBlockers(task, tasksById).filter((dep) => !dep.satisfied).map((dep) => dep.taskId);
+  const inFrontier = (task: Task): boolean => task.state === 'running' || openDeps(task).length === 0;
+
+  const depthByTaskId = new Map<number, number>();
+  const depthFor = (task: Task, visiting: Set<number>): number => {
+    if (inFrontier(task)) return 0;
+    const known = depthByTaskId.get(task.id);
+    if (known != null) return known;
+    if (visiting.has(task.id)) return 1;
+    visiting.add(task.id);
+    const depths = openDeps(task).map((id) => {
+      const dep = standaloneIds.has(id) ? tasksById.get(id) : undefined;
+      return dep ? depthFor(dep, visiting) + 1 : 1;
+    });
+    visiting.delete(task.id);
+    const depth = Math.max(1, ...depths);
+    depthByTaskId.set(task.id, depth);
+    return depth;
+  };
+
+  const byDepth = new Map<number, Task[]>();
+  for (const task of standalone) {
+    const depth = depthFor(task, new Set());
+    const column = byDepth.get(depth) ?? [];
+    column.push(task);
+    byDepth.set(depth, column);
+  }
+  const columns: TaskColumn[] = [];
+  const frontier = byDepth.get(0);
+  if (frontier && frontier.length > 0) columns.push({ label: 'Frontier', tasks: frontier });
+  for (const [depth, tasks] of [...byDepth.entries()].filter(([value]) => value > 0).sort(([left], [right]) => left - right)) {
+    columns.push({ label: `Depth ${depth}`, tasks });
+  }
+  return columns;
+}

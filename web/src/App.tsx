@@ -853,6 +853,11 @@ export function App() {
                 <>
                   {view === 'board' && (
                     <>
+                      {/* Breadcrumb bar — just the Workspace name on the Board home
+                          (no "/ Board" suffix); the mockup's top crumb. */}
+                      <nav aria-label="Breadcrumb" className="mb-4 text-small text-muted">
+                        {activeWorkspaceName ?? instanceName}
+                      </nav>
                       {/* Manual tracker refresh — only when this Workspace mirrors a
                           tracker; otherwise there's nothing to re-poll. */}
                       {activeWorkspace?.trackerEnabled && (
