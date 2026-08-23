@@ -1,7 +1,7 @@
 import type { AppContext } from './app.js';
 import type { ConversationRow, ConversationState, RunRow, RunState } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import { costOfUsages, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
+import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 
 /**
@@ -71,6 +71,10 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   runId: number | null;
   /** The running run's phase, for the Board's Active-card badge; null unless the Task is running (or a pre-phase-machine run). */
   phase: RunRow['phase'];
+  /** The running run's current context-window occupancy in tokens; null unless running (or unreported). Live via the `run_usage` firehose (issue #52). */
+  contextTokens: number | null;
+  /** The model's effective context window (config override, else shipped default); null when unknown. The board card shows `ctx %` = contextTokens/contextWindow — never a fabricated percentage (issue #52). */
+  contextWindow: number | null;
   /** The current scheduler reason this Task was not picked for, such as a
    * dependency, capacity, disabled Workspace, or missing integration branch;
    * null when it is not waiting (issue #238). */
@@ -121,7 +125,10 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
 }
 
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
-  const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
+  // A review-parked run is still `state:'running'` (phase 'review'), so an
+  // awaiting-review card surfaces the same live elapsed + `ctx %` as an active
+  // one — matched to the Paper mockup's Needs-you cards.
+  const running = runs.find((r) => r.state === 'running');
   return {
     ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
@@ -134,6 +141,8 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     toolCount,
     runId: running?.id ?? null,
     phase: running?.phase ?? null,
+    contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
+    contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     candidateRef: runs.at(-1)?.candidateRef ?? null,
   };
@@ -269,10 +278,11 @@ async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Pro
   return (await ctx.workspaces.get(atRestWorkspaceId(workspaceId))).name;
 }
 
-/** A model's configured context window (exact id, then the undated base id), or null when unconfigured — mirrors `conversationToApi` (issue #52). */
+/** A model's effective context window: config override, then the shipped
+ * default (`DEFAULT_CONTEXT_WINDOWS`); null when neither knows the model — the
+ * gauge then shows raw tokens, never a fabricated percentage (issue #52). */
 function contextWindowOf(ctx: AppContext, model: string): number | null {
-  const info = ctx.configStore.get().modelInfo;
-  return (info[model] ?? info[model.replace(/-\d{8}$/, '')])?.contextWindow ?? null;
+  return resolveContextWindow(model, ctx.configStore.get().modelInfo);
 }
 
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {

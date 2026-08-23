@@ -169,6 +169,13 @@ const taskSchema = taskWithDepsSchema
      * landing → terminal), so the Board's Active card can badge it; null unless
      * the Task is running (or a pre-phase-machine run). */
     phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
+    /** The running run's context-window occupancy in tokens; null unless running
+     * (or unreported). Live via the run_usage firehose (issue #52). */
+    contextTokens: z.number().nullable().meta({ example: 48210 }),
+    /** The model's effective context window (config override, else shipped
+     * default); null when unknown. The Board card shows `ctx %` =
+     * contextTokens/contextWindow — never a fabricated percentage (issue #52). */
+    contextWindow: z.number().nullable().meta({ example: 200000 }),
     /** The current scheduler reason this Task is waiting, such as a blocker,
      * capacity limit, disabled Workspace, or missing integration branch;
      * null when it is not waiting (issue #238). */

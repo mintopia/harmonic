@@ -21,6 +21,10 @@ export interface RunUsage {
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   /** Tool-call tallies from the Run's aggregate store. */
   toolCalls: Record<string, number>;
+  /** The run's context-window occupancy in tokens at the time this usage was
+   * recorded; absent on runs/harnesses that don't report it. The live gauge
+   * prefers the run_usage snapshot; this is the persisted fallback (issue #52). */
+  contextTokens?: number | null;
   source: 'acp' | 'session-log' | 'combined' | null;
 }
 

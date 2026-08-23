@@ -1,3 +1,4 @@
+import { cardTitle } from './board-sections-model.js';
 import type { Epic, EpicMember } from './epic-model.js';
 import { issueRef, taskKey } from './id-format.js';
 import { TASK_STATES, type Task } from './types.js';
@@ -46,12 +47,33 @@ function isTaskState(state: string | null): state is Task['state'] {
  * state supplies dependency edges and the running frontier.
  */
 export function deriveEpicFrontier(epic: Epic, tasks: Task[]): EpicFrontier {
+  return frontierFromMembers(epic.members, tasks);
+}
+
+/**
+ * The Standalone (non-Epic) frontier-DAG: the loose Board tasks sorted into a
+ * Frontier + Depth columns by dependency, exactly like an Epic band (Jess #11).
+ */
+export function deriveStandaloneFrontier(standalone: Task[], tasks: Task[]): EpicFrontier {
+  const members: EpicMember[] = standalone.map((task) => ({
+    ref: task.trackerRef ?? task.id,
+    title: cardTitle(task.prompt),
+    taskId: task.id,
+    state: task.state,
+    escalated: task.escalated,
+    landStatus: task.state === 'completed' ? 'completed' : 'pending',
+    ready: task.state === 'ready',
+  }));
+  return frontierFromMembers(members, tasks);
+}
+
+function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier {
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const membersByTaskId = new Map<number, EpicMember>();
-  for (const member of epic.members) {
+  for (const member of members) {
     if (member.taskId != null) membersByTaskId.set(member.taskId, member);
   }
-  const visibleMembers = epic.members.filter((member) => !isMerged(member));
+  const visibleMembers = members.filter((member) => !isMerged(member));
   const visibleTaskIds = new Set(
     visibleMembers.flatMap((member) => (member.taskId == null ? [] : [member.taskId])),
   );

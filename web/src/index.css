@@ -53,6 +53,7 @@
 
   /* Depth: real shadows in light… */
   --hm-shadow-card: 0 1px 2px rgb(27 30 36 / 0.06), 0 6px 18px rgb(27 30 36 / 0.07);
+  --hm-shadow-float: 0 8px 20px rgb(23 26 34 / 0.12), 0 24px 60px rgb(23 26 34 / 0.16);
   --hm-shadow-bar: 0 16px 44px rgb(27 30 36 / 0.16), 0 0 0 1px var(--hm-hairline);
   --hm-shadow-btn: 0 1px 2px rgb(13 114 113 / 0.32);
 }
@@ -108,6 +109,7 @@
   --hm-tool-tint: #123330;
 
   --hm-shadow-card: 0 0 0 1px var(--hm-hairline);
+  --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
   --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
   --hm-shadow-btn: none;
 }
@@ -162,6 +164,7 @@
     --hm-tool-tint: #123330;
 
     --hm-shadow-card: 0 0 0 1px var(--hm-hairline);
+    --hm-shadow-float: 0 12px 40px rgb(0 0 0 / 0.55);
     --hm-shadow-bar: 0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5);
     --hm-shadow-btn: none;
   }
@@ -213,6 +216,7 @@
   --color-tool-tint: var(--hm-tool-tint);
 
   --shadow-card: var(--hm-shadow-card);
+  --shadow-float: var(--hm-shadow-float);
   --shadow-bar: var(--hm-shadow-bar);
   --shadow-btn: var(--hm-shadow-btn);
 }

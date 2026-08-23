@@ -74,6 +74,46 @@ export function resolvePrices(overrides: PriceTable): PriceTable {
   return { ...DEFAULT_PRICES, ...overrides };
 }
 
+/**
+ * Shipped default context-window sizes (tokens) for the models the supported
+ * Harnesses use — mirrors DEFAULT_PRICES so a board/activity card can show a
+ * real `ctx %` out of the box. Config `modelInfo.<model>.contextWindow`
+ * overrides these; a model with neither shows raw tokens, never a fabricated %.
+ */
+export const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
+  // Anthropic Claude — 200k standard context.
+  'claude-fable-5': 200_000, 'claude-mythos-5': 200_000, 'claude-opus-5': 200_000,
+  'claude-sonnet-5': 200_000, 'claude-opus-4-8': 200_000, 'claude-opus-4-7': 200_000,
+  'claude-opus-4-6': 200_000, 'claude-sonnet-4-6': 200_000, 'claude-haiku-4-5': 200_000,
+  'claude-sonnet-4.6': 200_000, 'claude-sonnet-4.5': 200_000, 'claude-haiku-4.5': 200_000,
+  'claude-opus-4.8': 200_000, 'claude-opus-4.7': 200_000, 'claude-opus-4.6': 200_000, 'claude-opus-4.5': 200_000,
+  // OpenAI GPT-5 family — 400k context.
+  'gpt-5.6-sol': 400_000, 'gpt-5.6-terra': 400_000, 'gpt-5.6-luna': 400_000,
+  'gpt-5.5': 400_000, 'gpt-5.4': 400_000, 'gpt-5.4-mini': 400_000, 'gpt-5.2': 400_000,
+  'gpt-5.2-codex': 400_000, 'gpt-5.2-codex-mini': 400_000, 'gpt-5.3-codex': 400_000,
+  'gpt-5-mini': 400_000, 'gpt-5-codex': 400_000,
+  // OpenAI GPT-4.1 — 1M context.
+  'gpt-4.1': 1_047_576,
+  // Bare family aliases some Harnesses report.
+  opus: 200_000, sonnet: 200_000, haiku: 200_000,
+};
+
+/** Effective context window (tokens): config override, then shipped default,
+ * dated-suffix aware like `priceFor`; null when neither knows the model. */
+export function resolveContextWindow(
+  model: string,
+  overrides: Record<string, { contextWindow?: number | undefined }>,
+): number | null {
+  const base = model.replace(/-\d{8}$/, '');
+  return (
+    overrides[model]?.contextWindow ??
+    overrides[base]?.contextWindow ??
+    DEFAULT_CONTEXT_WINDOWS[model] ??
+    DEFAULT_CONTEXT_WINDOWS[base] ??
+    null
+  );
+}
+
 /** Session logs use dated ids (claude-haiku-4-5-20251001); fall back to the base id. */
 function priceFor(model: string, prices: PriceTable): ModelPrice | undefined {
   return prices[model] ?? prices[model.replace(/-\d{8}$/, '')];

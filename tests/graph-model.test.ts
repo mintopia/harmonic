@@ -57,6 +57,8 @@ const task = (
   toolCount: null,
   runId: null,
   phase: null,
+  contextTokens: null,
+  contextWindow: null,
   candidateRef: null,
   skipReason: null,
   ...extra,

@@ -248,6 +248,10 @@ export interface Task {
   runId: number | null;
   /** The running run's phase, for the Board's Active-card status badge; null unless the Task is running (or a pre-phase-machine run). */
   phase: RunPhase | null;
+  /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the run_usage firehose (issue #52). */
+  contextTokens: number | null;
+  /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
+  contextWindow: number | null;
   /** The latest run's frozen verification candidate ref (issue #134's Run
    * `candidateRef`), surfaced here so an escalated Task's stranded candidate
    * can be adopted for review without a fresh builder run (issue #191); null
