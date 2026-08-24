@@ -13,6 +13,7 @@ import { debounce } from './debounce';
 import { Login } from './components/Login';
 import { ApiPage } from './components/ApiPage';
 import { StatsPage } from './components/StatsPage';
+import { OperationsPage } from './components/OperationsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { TableView } from './components/TableView';
 import { ActivityView } from './components/ActivityView';
@@ -943,6 +944,7 @@ export function App() {
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}
+                  {view === 'operations' && <OperationsPage />}
                   {view === 'api' && <ApiPage />}
                   {view === 'settings' && <SettingsPage onSaved={setConfig} />}
                   {view === 'workspace' && config && activeWorkspace && (

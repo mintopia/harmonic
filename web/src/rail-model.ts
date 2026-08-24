@@ -39,8 +39,8 @@ export function storeRailCollapsed(storage: StorageLike, collapsed: boolean): vo
 // to the global Settings it mirrors — Settings holds machine + default config,
 // Workspace holds one Workspace's identity and its overrides of those defaults.
 // Graph (issue #85, ADR 0015) is the read-only Dependency Graph view — a
-// workspace-scoped sibling of Board/Table, so it sits beside Table in the rail.
-export const VIEWS = ['board', 'activity', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
+// workspace-scoped sibling of Deck/Table, so it sits beside Table in the rail.
+export const VIEWS = ['deck', 'activity', 'operations', 'table', 'graph', 'stats', 'api', 'settings', 'workspace'] as const;
 export type View = (typeof VIEWS)[number];
 
 /**
@@ -62,13 +62,13 @@ export interface RailGroup {
   views: readonly View[];
 }
 
-/** The rail's two labelled groups (DESIGN.md §5, Paper mockup): the Workspace's
- * working views, then the Instance surfaces (the API surface + the per-Workspace
- * Settings page). Global Settings stays a status-strip icon, not a rail item
- * (ADR 0012). */
+/** The rail's single labelled group (DESIGN.md §5): the Workspace's working
+ * views, its API surface, then the per-Workspace Settings page (formerly the
+ * "Workspace" item, under a separate "Instance" group — collapsed into one so
+ * the per-Workspace settings sit with the views they scope). Global Settings
+ * stays a status-strip icon, not a rail item (ADR 0012). */
 export const RAIL_GROUPS: readonly RailGroup[] = [
-  { label: 'Workspace', views: ['board', 'activity', 'table', 'graph', 'stats'] },
-  { label: 'Instance', views: ['api', 'workspace'] },
+  { label: 'Workspace', views: ['deck', 'activity', 'operations', 'table', 'graph', 'stats', 'api', 'workspace'] },
 ];
 
 /**
@@ -80,15 +80,16 @@ export const RAIL_GROUPS: readonly RailGroup[] = [
  */
 export function isWorkspaceScopedView(view: View): boolean {
   return (
-    view === 'board' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
+    view === 'deck' || view === 'table' || view === 'graph' || view === 'stats' || view === 'workspace'
   );
 }
 export const VIEW_LABELS: Record<View, string> = {
-  board: 'Board',
+  deck: 'Deck',
   activity: 'Activity',
   table: 'Table',
   graph: 'Graph',
   stats: 'Stats',
+  operations: 'Operations',
   api: 'API',
   settings: 'Settings',
   workspace: 'Settings',

@@ -16,6 +16,7 @@ describe('parseRoute', () => {
   it('reads the active view', () => {
     expect(parseRoute('/', '?view=table').view).toBe('table');
     expect(parseRoute('/', '?view=stats').view).toBe('stats');
+    expect(parseRoute('/', '?view=operations').view).toBe('operations');
   });
 
   it('falls back to the deck for an unknown or missing view', () => {
@@ -91,6 +92,7 @@ describe('serializeRoute', () => {
   it('omits the view param for the deck, emits it otherwise', () => {
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'board' })).toBe('/');
     expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'table' })).toBe('/?view=table');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, view: 'operations' })).toBe('/?view=operations');
   });
 
   it('emits peeked columns in TASK_STATES order regardless of input order', () => {
