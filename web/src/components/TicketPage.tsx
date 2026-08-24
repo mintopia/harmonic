@@ -911,14 +911,24 @@ export function TicketPage({
       }
       setEvents((current) => appendRunLogEvents(current, [event]));
     });
-    api.runLog(selectedRunId).then((log) => {
-      if (!live) return;
-      setLogUnavailable(log.status === 'unavailable');
-      const hydratedEvents = appendRunLogEvents(log.status === 'available' ? log.events : [], pending);
-      cursor = runLogCursor(hydratedEvents);
-      setEvents(hydratedEvents);
-      hydrated = true;
-    }, toastError);
+    api.runLog(selectedRunId).then(
+      (log) => {
+        if (!live) return;
+        setLogUnavailable(log.status === 'unavailable');
+        const hydratedEvents = appendRunLogEvents(log.status === 'available' ? log.events : [], pending);
+        cursor = runLogCursor(hydratedEvents);
+        setEvents(hydratedEvents);
+        hydrated = true;
+      },
+      (error: unknown) => {
+        if (!live) return;
+        const hydratedEvents = appendRunLogEvents([], pending);
+        cursor = runLogCursor(hydratedEvents);
+        setEvents(hydratedEvents);
+        hydrated = true;
+        toastError(error);
+      },
+    );
     return () => {
       live = false;
       unsubscribe();

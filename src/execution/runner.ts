@@ -183,6 +183,7 @@ async function acquireHarnessMutex(key: string): Promise<() => void> {
  * queue never trips it, short enough that an abandoned review can't wedge a Work
  * Context lease forever. */
 const REVIEW_SLA_MS = 7 * 24 * 60 * 60 * 1000;
+const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
@@ -2436,7 +2437,7 @@ export class Runner {
         // the browser can merge them with its one-time native-log hydration
         // without colliding with parser-assigned transcript ids.
         this.events.onRunLogEvent?.({
-          id: 1_000_000_000 + seq,
+          id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
           runId: run.id,
           seq,
           ts: Date.now(),

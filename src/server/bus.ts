@@ -36,15 +36,10 @@ export class EventBus {
     this.emitter.emit(event, ...args);
   }
 
-  /**
-   * Add a transient ACP update to the bounded per-Run replay window before
-   * notifying sockets. A reconnect asks for the cursor it last applied, so it
-   * receives every missed update exactly once without re-reading `/log`.
-   */
+  /** Add a transient ACP update to the active Run's reconnect buffer. */
   emitRunLog(event: LiveRunEvent): void {
     const events = this.runLogEvents.get(event.runId) ?? [];
     events.push(event);
-    if (events.length > 2_000) events.shift();
     this.runLogEvents.set(event.runId, events);
     this.emitter.emit('run_log_event', event);
   }
