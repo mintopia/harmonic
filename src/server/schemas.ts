@@ -186,3 +186,19 @@ export const activityProcessSchema = z
     cost: costSchema.nullable(),
   })
   .meta({ id: 'ActivityProcess' });
+
+/** One recurring, centrally registered Scheduled Job (ADR-0038). */
+export const scheduledJobSchema = z
+  .object({
+    jobKey: z.string().meta({ example: 'session-retirement:global' }),
+    name: z.string().meta({ example: 'Session retirement drain' }),
+    workspaceId: z.number().nullable().meta({ example: null }),
+    intervalMs: z.number().int().positive().meta({ example: 300000 }),
+    status: z.enum(['active', 'disabled']).meta({ example: 'active' }),
+    lastRunAt: z.number().nullable().meta({ example: 1784032260000 }),
+    lastStatus: z.enum(['ok', 'error']).nullable().meta({ example: 'ok' }),
+    lastDurationMs: z.number().int().nonnegative().nullable().meta({ example: 124 }),
+    lastError: z.string().nullable().meta({ example: null }),
+    nextRunAt: z.number().nullable().meta({ example: 1784032560000 }),
+  })
+  .meta({ id: 'ScheduledJob' });

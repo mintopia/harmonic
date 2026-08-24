@@ -138,6 +138,23 @@ export const workspaces = sqliteTable('workspaces', {
 
 export type WorkspaceRow = typeof workspaces.$inferSelect;
 
+/**
+ * Durable bookkeeping for recurring Scheduled Jobs (ADR-0038). `jobKey` is a
+ * canonical identity assembled from the job name and optional Workspace id;
+ * it avoids SQLite's NULL-unique semantics making global job rows duplicate.
+ */
+export const scheduledJobs = sqliteTable('scheduled_jobs', {
+  jobKey: text('job_key').primaryKey(),
+  name: text('name').notNull(),
+  workspaceId: integer('workspace_id').references(() => workspaces.id),
+  lastRunAt: integer('last_run_at'),
+  lastStatus: text('last_status').$type<'ok' | 'error'>(),
+  lastDurationMs: integer('last_duration_ms'),
+  lastError: text('last_error'),
+});
+
+export type ScheduledJobRow = typeof scheduledJobs.$inferSelect;
+
 export const tasks = sqliteTable('tasks', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   prompt: text('prompt').notNull(),
