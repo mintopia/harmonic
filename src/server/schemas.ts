@@ -202,3 +202,21 @@ export const scheduledJobSchema = z
     nextRunAt: z.number().nullable().meta({ example: 1784032560000 }),
   })
   .meta({ id: 'ScheduledJob' });
+
+/** One live or recently-completed Operation, recursive through `children`. */
+export const operationSchema = z
+  .object({
+    type: z.string().meta({ example: 'tracker.poll' }),
+    name: z.string().meta({ example: 'harmonic.tracker.poll' }),
+    traceId: z.string().meta({ example: '0af7651916cd43dd8448eb211c80319c' }),
+    spanId: z.string().meta({ example: 'b7ad6b7169203331' }),
+    parentSpanId: z.string().nullable().meta({ example: null }),
+    attributes: z.record(z.string(), z.unknown()).meta({ example: { 'tracker.name': 'github' } }),
+    startedAt: z.number().meta({ example: 1784032260000 }),
+    endedAt: z.number().nullable().meta({ example: null }),
+    status: z.object({ code: z.number(), message: z.string().nullable() }),
+    get children() {
+      return z.array(operationSchema);
+    },
+  })
+  .meta({ id: 'Operation' });

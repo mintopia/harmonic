@@ -68,6 +68,7 @@ import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
 import { activityRoutes } from './routes/activity.js';
+import { operationRoutes } from './routes/operations.js';
 import { channelRoutes } from './routes/channels.js';
 import { scheduledJobRoutes } from './routes/scheduled-jobs.js';
 import { fsRoutes } from './routes/fs.js';
@@ -175,6 +176,7 @@ function readScopeAllowed(path: string, method: string): boolean {
   if (path.startsWith('/api/runs')) return true;
   if (path === '/api/maps' || path.startsWith('/api/maps/')) return true;
   if (path === '/api/activity') return true;
+  if (path === '/api/operations') return true;
   if (path === '/api/scheduled-jobs') return true;
   return false;
 }
@@ -699,7 +701,7 @@ paths): every run event, run state change, task state change/removal, and
 Conversation event/change is broadcast to every connected client as JSON
 messages of the form \`{ type: 'run_event' | 'run_changed' | 'run_usage' |
 'task_changed' | 'task_removed' | 'conversation_event' | 'conversation_changed' |
-'permission_request' | 'scheduled-jobs', ... }\`, using the same Task/Run/Conversation/Scheduled Job shapes
+'permission_request' | 'scheduled-jobs' | 'operations', ... }\`, using the same Task/Run/Conversation/Scheduled Job/Operation shapes
 served over REST. \`run_usage\` is a live-usage snapshot for a running Run
 (tokens, context fill, derived Cost, current-activity line, and Process
 Tree), pushed about once a second while the Run tails its native log.
@@ -707,19 +709,21 @@ Tree), pushed about once a second while the Run tails its native log.
 'task_removed', id }\`) — the row is gone, not another state change.
 \`scheduled-jobs\` announces the full Scheduled Job registry snapshot, matching
 \`GET /api/scheduled-jobs\` (ADR-0038).
+\`operations\` announces an Operation lifecycle event, matching the operation shape
+served by \`GET /api/operations\`.
 \`permission_request\` announces a Harness blocked on an
 operator permission decision in a Conversation (ADR-0007), answered via
 \`POST /conversations/:id/permissions/:reqId\`. Authenticate by passing the
 session token or an API key as \`?token=\` (WebSocket clients cannot set an
 Authorization header). A \`read\`-scoped key gets a filtered firehose — only
-\`task_changed\`, \`task_removed\`, \`run_changed\`, \`run_event\`, and
-\`run_usage\` — with the Conversation and permission traffic dropped.
+\`task_changed\`, \`task_removed\`, \`run_changed\`, \`run_event\`, \`run_usage\`, and
+\`operations\` — with the Conversation and permission traffic dropped.
 
 ## Read scope
 
 A \`read\`-scoped API key (created via \`POST /api/keys\` with
 \`{ "scope": "read" }\`) is a viz-client credential: it may \`GET\` tasks,
-runs, maps, and the instance-wide Activity snapshot (\`/api/activity\`,
+runs, maps, Operations (\`/api/operations\`), and the instance-wide Activity snapshot (\`/api/activity\`,
 filtered to Runs only for a read key), and open the WebSocket (filtered as
 above). Every mutation and the whole operator surface (keys, config,
 channels, Conversations) is blocked. There is no \`map_changed\` event — a
@@ -836,6 +840,7 @@ not resolved yet.`;
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(statsRoutes, { prefix: '/api' });
   await app.register(activityRoutes, { prefix: '/api' });
+  await app.register(operationRoutes, { prefix: '/api' });
   await app.register(scheduledJobRoutes, { prefix: '/api' });
   await app.register(channelRoutes, { prefix: '/api' });
   await app.register(fsRoutes, { prefix: '/api' });

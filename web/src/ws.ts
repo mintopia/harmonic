@@ -9,6 +9,22 @@ import type {
   Task,
 } from './types.js';
 
+export interface OperationEvent {
+  type: 'op-started' | 'op-updated' | 'op-ended';
+  operation: {
+    type: string;
+    name: string;
+    traceId: string;
+    spanId: string;
+    parentSpanId: string | null;
+    attributes: Record<string, unknown>;
+    startedAt: number;
+    endedAt: number | null;
+    status: { code: number; message: string | null };
+    children: OperationEvent['operation'][];
+  };
+}
+
 export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
   | { type: 'run_log_event'; event: RunLogEvent }
@@ -20,6 +36,7 @@ export type ServerMessage =
   // Live Run usage (ADR 0010): the Activity view merges these deltas into its
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'run_usage' } & RunUsageEvent)
+  | { type: 'operations'; event: OperationEvent }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // Issue #11: the Harness is blocked on this ACP permission request until

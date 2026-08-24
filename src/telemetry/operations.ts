@@ -35,24 +35,27 @@ function timestampMs([seconds, nanoseconds]: readonly [number, number]): number 
   return seconds * 1_000 + nanoseconds / 1_000_000;
 }
 
-function snapshot(span: ReadableSpan | Span): OperationSnapshot {
-  const readable = span as ReadableSpan;
+function snapshot(span: ReadableSpan): OperationSnapshot {
   return {
-    type: readable.name.slice('harmonic.'.length),
-    name: readable.name,
+    type: span.name.slice('harmonic.'.length),
+    name: span.name,
     spanContext: span.spanContext(),
-    parentSpanContext: readable.parentSpanContext,
-    attributes: { ...readable.attributes },
-    startedAt: timestampMs(readable.startTime),
-    ...(readable.ended ? { endedAt: timestampMs(readable.endTime) } : {}),
-    status: { ...readable.status },
+    parentSpanContext: span.parentSpanContext,
+    attributes: { ...span.attributes },
+    startedAt: timestampMs(span.startTime),
+    ...(span.ended ? { endedAt: timestampMs(span.endTime) } : {}),
+    status: { ...span.status },
   };
 }
 
 /** The in-memory source of truth for operations currently in progress. */
 export class OperationRegistry implements SpanProcessor {
   private readonly live = new Map<string, Span>();
+  private readonly rootSpanIds = new Set<string>();
+  private readonly recent: OperationSnapshot[] = [];
   private bus: EventBus | undefined;
+
+  constructor(private readonly recentLimit = 100) {}
 
   setBus(bus: EventBus): void {
     this.bus = bus;
@@ -62,16 +65,32 @@ export class OperationRegistry implements SpanProcessor {
     return [...this.live.values()].map(snapshot);
   }
 
+  recentRoots(): OperationSnapshot[] {
+    return this.recent.map((operation) => ({
+      ...operation,
+      spanContext: { ...operation.spanContext },
+      ...(operation.parentSpanContext ? { parentSpanContext: { ...operation.parentSpanContext } } : {}),
+      attributes: { ...operation.attributes },
+      status: { ...operation.status },
+    }));
+  }
+
   onStart(span: Span, _parentContext: Context): void {
-    this.live.set(span.spanContext().spanId, span);
-    registryForSpan.set(span.spanContext().spanId, this);
+    const spanId = span.spanContext().spanId;
+    const parentSpanId = span.parentSpanContext?.spanId;
+    if (!parentSpanId || !registryForSpan.has(parentSpanId)) this.rootSpanIds.add(spanId);
+    this.live.set(spanId, span);
+    registryForSpan.set(spanId, this);
     this.emit('op-started', snapshot(span));
   }
 
   onEnd(span: ReadableSpan): void {
-    this.live.delete(span.spanContext().spanId);
-    registryForSpan.delete(span.spanContext().spanId);
-    this.emit('op-ended', snapshot(span));
+    const spanId = span.spanContext().spanId;
+    const completed = snapshot(span);
+    this.live.delete(spanId);
+    registryForSpan.delete(spanId);
+    if (this.rootSpanIds.delete(spanId)) this.remember(completed);
+    this.emit('op-ended', completed);
   }
 
   update(span: Span): void {
@@ -89,7 +108,15 @@ export class OperationRegistry implements SpanProcessor {
 
   shutdown(): Promise<void> {
     this.live.clear();
+    this.rootSpanIds.clear();
+    this.recent.length = 0;
     return Promise.resolve();
+  }
+
+  private remember(operation: OperationSnapshot): void {
+    if (this.recentLimit <= 0) return;
+    this.recent.push(operation);
+    if (this.recent.length > this.recentLimit) this.recent.shift();
   }
 
   private emit(type: OperationEventType, operation: OperationSnapshot): void {
@@ -99,23 +126,16 @@ export class OperationRegistry implements SpanProcessor {
 
 export const operationRegistry = new OperationRegistry();
 
-/**
- * Start a child only when the current span is a live Harmonic Operation.
- * Instrumented primitives use this to stay silent when called on their own,
- * rather than creating unhelpful root operations for every low-level action.
- */
-export function startActiveChildOperation(type: string, attributes: Attributes): Operation | undefined {
-  const active = trace.getActiveSpan();
-  if (!active || !registryForSpan.has(active.spanContext().spanId)) return undefined;
-  return startOperation(type, attributes);
-}
-
-export function startOperation(
-  type: string,
-  attributes: Attributes,
-  options: { parent?: SpanContext | undefined } = {},
-): Operation {
-  const parentContext = options.parent ? trace.setSpanContext(context.active(), options.parent) : context.active();
+export function startOperation({
+  type,
+  attributes,
+  parent,
+}: {
+  type: string;
+  attributes: Attributes;
+  parent?: SpanContext | undefined;
+}): Operation {
+  const parentContext = parent ? trace.setSpanContext(context.active(), parent) : context.active();
   const span = trace.getTracer('harmonic').startSpan(
     `harmonic.${type}`,
     { attributes: { 'harmonic.operation.type': type, ...attributes } },

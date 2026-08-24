@@ -4,6 +4,7 @@ import type { ConversationRow, ConversationState, RunRow, RunState } from '../db
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolvePrices, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
+import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
@@ -23,6 +24,62 @@ export const atRestWorkspaceId = (workspaceId: number | null): number => workspa
 
 /** Kept as an explicit serializer so REST and the firehose share one DTO seam. */
 export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSnapshot[] => jobs;
+
+export interface ApiOperation {
+  type: string;
+  name: string;
+  traceId: string;
+  spanId: string;
+  parentSpanId: string | null;
+  attributes: Record<string, unknown>;
+  startedAt: number;
+  endedAt: number | null;
+  status: { code: number; message: string | null };
+  children: ApiOperation[];
+}
+
+export interface ApiOperationEvent {
+  type: OperationEvent['type'];
+  operation: ApiOperation;
+}
+
+function operationToApi(operation: OperationSnapshot): ApiOperation {
+  return {
+    type: operation.type,
+    name: operation.name,
+    traceId: operation.spanContext.traceId,
+    spanId: operation.spanContext.spanId,
+    parentSpanId: operation.parentSpanContext?.spanId ?? null,
+    attributes: { ...operation.attributes },
+    startedAt: operation.startedAt,
+    endedAt: operation.endedAt ?? null,
+    status: { code: operation.status.code, message: operation.status.message ?? null },
+    children: [],
+  };
+}
+
+/** Builds a stable forest from the registry's flat live-operation view. */
+export function operationsToApi(operations: readonly OperationSnapshot[]): ApiOperation[] {
+  const bySpanId = new Map(operations.map((operation) => {
+    const api = operationToApi(operation);
+    return [api.spanId, api] as const;
+  }));
+  const roots: ApiOperation[] = [];
+  for (const operation of bySpanId.values()) {
+    const parent = operation.parentSpanId ? bySpanId.get(operation.parentSpanId) : undefined;
+    if (parent) parent.children.push(operation);
+    else roots.push(operation);
+  }
+  return roots;
+}
+
+export const recentOperationsToApi = (operations: readonly OperationSnapshot[]): ApiOperation[] =>
+  operations.map(operationToApi);
+
+export const operationEventToApi = (event: OperationEvent): ApiOperationEvent => ({
+  type: event.type,
+  operation: operationToApi(event.operation),
+});
 
 export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage'> & { usage: RunUsage | null; cost: Cost | null };
 

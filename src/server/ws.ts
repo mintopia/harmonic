@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { conversationToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
+import { conversationToApi, operationEventToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
 
 /**
  * One firehose socket at /api/ws. Every run event, run state change, and
@@ -35,6 +35,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       // its task list, same board traffic as task_changed above.
       ctx.bus.on('task_removed', ({ id }) => send({ type: 'task_removed', id })),
       ctx.bus.on('scheduled_jobs', (jobs) => send({ type: 'scheduled-jobs', jobs: scheduledJobsToApi(jobs) })),
+      ctx.bus.on('operations', (event) => send({ type: 'operations', event: operationEventToApi(event) })),
     ];
     if (!readOnly) {
       unsubscribes.push(
