@@ -65,10 +65,66 @@ describe('native transcript log parser', () => {
       ].join('\n'),
     );
 
-    const result = await readTranscriptLog({ harness: 'codex', path: file, startedAt: 0, finishedAt: null });
-    expect(result).toMatchObject({ status: 'available' });
-    const texts = (result as { events: { payload: { content?: { text?: string } } }[] }).events.map((e) => e.payload.content?.text);
-    expect(texts).toEqual(['the same message']);
+    await expect(readTranscriptLog({ harness: 'codex', path: file, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
+      status: 'available',
+      events: [{ payload: { content: { text: 'the same message' } } }],
+    });
+  });
+
+  it('keeps a response whose matching event_msg is outside the selected Run window', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'harmonic-codex-log-')), 'rollout.jsonl');
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({ timestamp: '2026-08-21T10:00:00.000Z', type: 'event_msg', payload: { type: 'agent_message', message: 'same message' } }),
+        JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'same message' }] } }),
+      ].join('\n'),
+    );
+
+    await expect(
+      readTranscriptLog({ harness: 'codex', path: file, startedAt: Date.parse('2026-08-21T10:00:30.000Z'), finishedAt: null }),
+    ).resolves.toMatchObject({
+      status: 'available',
+      events: [{ payload: { content: { text: 'same message' } } }],
+    });
+  });
+
+  it('keeps consecutive identical Claude messages', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'harmonic-claude-log-')), 'session.jsonl');
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'assistant', message: { content: [{ type: 'text', text: 'repeat this' }] } }),
+        JSON.stringify({ timestamp: '2026-08-21T10:01:01.000Z', type: 'assistant', message: { content: [{ type: 'text', text: 'repeat this' }] } }),
+      ].join('\n'),
+    );
+
+    await expect(readTranscriptLog({ harness: 'claude', path: file, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
+      status: 'available',
+      events: [
+        { payload: { content: { text: 'repeat this' } } },
+        { payload: { content: { text: 'repeat this' } } },
+      ],
+    });
+  });
+
+  it('keeps consecutive identical Codex response messages', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'harmonic-codex-log-')), 'rollout.jsonl');
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'repeat this' }] } }),
+        JSON.stringify({ timestamp: '2026-08-21T10:01:01.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'repeat this' }] } }),
+      ].join('\n'),
+    );
+
+    await expect(readTranscriptLog({ harness: 'codex', path: file, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
+      status: 'available',
+      events: [
+        { payload: { content: { text: 'repeat this' } } },
+        { payload: { content: { text: 'repeat this' } } },
+      ],
+    });
   });
 
   it('folds the command into an exec title and the file path into a Claude tool title', async () => {
@@ -77,15 +133,19 @@ describe('native transcript log parser', () => {
       codex,
       JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'c1', name: 'exec', input: '{"command":["bash","-lc","npm test"]}' } }),
     );
-    const codexLog = await readTranscriptLog({ harness: 'codex', path: codex, startedAt: 0, finishedAt: null });
-    expect((codexLog as { events: { payload: { title?: string } }[] }).events[0]!.payload.title).toBe('exec bash -lc npm test');
+    await expect(readTranscriptLog({ harness: 'codex', path: codex, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
+      status: 'available',
+      events: [{ payload: { title: 'exec bash -lc npm test' } }],
+    });
 
     const claude = join(mkdtempSync(join(tmpdir(), 'harmonic-claude-log-')), 'session.jsonl');
     writeFileSync(
       claude,
       JSON.stringify({ timestamp: '2026-08-21T10:01:00.000Z', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Edit', input: { file_path: 'web/src/ui.ts' } }] } }),
     );
-    const claudeLog = await readTranscriptLog({ harness: 'claude', path: claude, startedAt: 0, finishedAt: null });
-    expect((claudeLog as { events: { payload: { title?: string } }[] }).events[0]!.payload.title).toBe('Edit web/src/ui.ts');
+    await expect(readTranscriptLog({ harness: 'claude', path: claude, startedAt: 0, finishedAt: null })).resolves.toMatchObject({
+      status: 'available',
+      events: [{ payload: { title: 'Edit web/src/ui.ts' } }],
+    });
   });
 });

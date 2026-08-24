@@ -43,6 +43,7 @@ export async function readTranscriptLog(input: { harness: string; path: string |
 
   const events: TranscriptLogEvent[] = [];
   let recognized = false;
+  let previousCodexEventMessage: string | null = null;
   const lines = text.split('\n');
   await forEachYielding(lines, (line) => {
     if (!line.trim()) return;
@@ -52,18 +53,18 @@ export async function readTranscriptLog(input: { harness: string; path: string |
     } catch {
       return; // an incomplete final write is normal for a live JSONL file
     }
+    const codexEventMessage = input.harness === 'codex' ? codexEventMessageText(entry) : null;
+    const codexResponseMessage = input.harness === 'codex' ? codexResponseMessageText(entry) : null;
+    const duplicateCodexResponse = codexResponseMessage !== null && codexResponseMessage === previousCodexEventMessage;
     const parsed = input.harness === 'claude' ? claudeEvents(entry, events.length + 1) : input.harness === 'codex' ? codexEvents(entry, events.length + 1) : [];
     if (parsed.length > 0) recognized = true;
     for (const event of parsed) {
       if (event.ts !== 0 && (event.ts < input.startedAt || (input.finishedAt !== null && event.ts > input.finishedAt))) continue;
-      // Codex logs one assistant message as BOTH an `event_msg` and a durable
-      // `response_item`, so drop the identical back-to-back copy (it otherwise
-      // coalesces into the message rendered twice).
-      const text = messageChunkText(event);
-      const prev = events[events.length - 1];
-      if (text !== null && prev && messageChunkText(prev) === text) continue;
-      events.push(event);
+      if (!duplicateCodexResponse) events.push(event);
     }
+    const ts = timestamp(asRecord(entry)?.timestamp);
+    const eventInRunWindow = ts === 0 || (ts >= input.startedAt && (input.finishedAt === null || ts <= input.finishedAt));
+    previousCodexEventMessage = codexEventMessage !== null && eventInRunWindow ? codexEventMessage : null;
   });
 
   if (!recognized) return { status: 'unavailable' };
@@ -104,7 +105,7 @@ function codexEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
     events.push({ id, seq: id, ts, type: 'session_update', payload: update });
   };
 
-  const message = record.type === 'response_item' && payload.type === 'message' && payload.role === 'assistant' ? contentText(payload.content) : record.type === 'event_msg' && payload.type === 'agent_message' ? contentText(payload.message) : null;
+  const message = codexResponseMessageText(entry) ?? codexEventMessageText(entry);
   if (message !== null) push({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: message } });
 
   // Reasoning summaries only ever carry plaintext in `summary`; `encrypted_content` is opaque and never surfaced.
@@ -165,11 +166,16 @@ function oneLine(text: string): string {
   return collapsed.length > 240 ? `${collapsed.slice(0, 240)}…` : collapsed;
 }
 
-function messageChunkText(event: TranscriptLogEvent): string | null {
-  const payload = event.payload as { sessionUpdate?: string; content?: { text?: unknown } } | null;
-  return payload?.sessionUpdate === 'agent_message_chunk' && typeof payload.content?.text === 'string'
-    ? payload.content.text
-    : null;
+function codexEventMessageText(entry: unknown): string | null {
+  const record = asRecord(entry);
+  const payload = asRecord(record?.payload);
+  return record?.type === 'event_msg' && payload?.type === 'agent_message' ? contentText(payload.message) : null;
+}
+
+function codexResponseMessageText(entry: unknown): string | null {
+  const record = asRecord(entry);
+  const payload = asRecord(record?.payload);
+  return record?.type === 'response_item' && payload?.type === 'message' && payload.role === 'assistant' ? contentText(payload.content) : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
