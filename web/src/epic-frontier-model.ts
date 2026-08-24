@@ -55,7 +55,13 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
   for (const member of members) {
     if (member.taskId != null) membersByTaskId.set(member.taskId, member);
   }
-  const visibleMembers = members.filter((member) => !isMerged(member));
+  // Running and escalated members are promoted to the Board's Active / Needs you
+  // sections, so they leave the band's DAG — like merged members do.
+  const promotedToTop = (member: EpicMember): boolean => {
+    const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
+    return task != null && (task.escalated || task.state === 'running');
+  };
+  const visibleMembers = members.filter((member) => !isMerged(member) && !promotedToTop(member));
   const visibleTaskIds = new Set(
     visibleMembers.flatMap((member) => (member.taskId == null ? [] : [member.taskId])),
   );

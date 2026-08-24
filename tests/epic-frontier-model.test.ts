@@ -70,12 +70,13 @@ const epic = (members: EpicMember[]): Epic => ({
 });
 
 describe('deriveEpicFrontier (issue #264)', () => {
-  it('puts ready and running visible members in Frontier, then layers blocked members by dependency depth', () => {
+  it('puts ready members in Frontier and layers blocked members by depth (running members are promoted out)', () => {
     const tasks = [task(1, 'ready'), task(2, 'running'), task(3, 'blocked', [1]), task(4, 'blocked', [3])];
     const model = deriveEpicFrontier(epic(tasks.map((t) => member(t.id, t.id))), tasks);
 
+    // The running member (2) is surfaced in the Board's Active section, not here.
     expect(model.columns.map((column) => [column.label, column.nodes.map((node) => node.ref)])).toEqual([
-      ['Frontier', [1, 2]],
+      ['Frontier', [1]],
       ['Depth 1', [3]],
       ['Depth 2', [4]],
     ]);
@@ -98,18 +99,17 @@ describe('deriveEpicFrontier (issue #264)', () => {
     ]);
   });
 
-  it('keeps running work in Frontier without exposing Run now, and excludes HITL ready work from the action', () => {
+  it('promotes running members out of the band and excludes HITL ready work from Run now', () => {
     const running = task(1, 'running');
     const hitl = task(2, 'ready');
     hitl.drive = 'hitl';
     const model = deriveEpicFrontier(epic([member(1, 1), member(2, 2)]), [running, hitl]);
 
+    // Running member (1) is promoted to Active; only the HITL ready member
+    // remains, and it is not runnable.
     expect(model.columns[0]).toMatchObject({
       label: 'Frontier',
-      nodes: [
-        { ref: 1, runnable: false },
-        { ref: 2, runnable: false },
-      ],
+      nodes: [{ ref: 2, runnable: false }],
     });
   });
 

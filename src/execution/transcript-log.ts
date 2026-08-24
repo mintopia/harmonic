@@ -54,7 +54,16 @@ export async function readTranscriptLog(input: { harness: string; path: string |
     }
     const parsed = input.harness === 'claude' ? claudeEvents(entry, events.length + 1) : input.harness === 'codex' ? codexEvents(entry, events.length + 1) : [];
     if (parsed.length > 0) recognized = true;
-    events.push(...parsed.filter((event) => event.ts === 0 || (event.ts >= input.startedAt && (input.finishedAt === null || event.ts <= input.finishedAt))));
+    for (const event of parsed) {
+      if (event.ts !== 0 && (event.ts < input.startedAt || (input.finishedAt !== null && event.ts > input.finishedAt))) continue;
+      // Codex logs one assistant message as BOTH an `event_msg` and a durable
+      // `response_item`, so drop the identical back-to-back copy (it otherwise
+      // coalesces into the message rendered twice).
+      const text = messageChunkText(event);
+      const prev = events[events.length - 1];
+      if (text !== null && prev && messageChunkText(prev) === text) continue;
+      events.push(event);
+    }
   });
 
   if (!recognized) return { status: 'unavailable' };
@@ -77,7 +86,8 @@ function claudeEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
     } else if (value.type === 'thinking' && typeof value.thinking === 'string') {
       events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: value.thinking } } });
     } else if (value.type === 'tool_use' && typeof value.id === 'string') {
-      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: value.id, title: typeof value.name === 'string' ? value.name : 'Tool call', status: 'completed' } });
+      const name = typeof value.name === 'string' ? value.name : 'Tool call';
+      events.push({ id, seq: id, ts, type: 'session_update', payload: { sessionUpdate: 'tool_call', toolCallId: value.id, title: withTarget(name, value.input), status: 'completed' } });
     }
   }
   return events;
@@ -108,12 +118,58 @@ function codexEvents(entry: unknown, firstId: number): TranscriptLogEvent[] {
 
   if (record.type === 'response_item' && (payload.type === 'custom_tool_call' || payload.type === 'function_call')) {
     const name = typeof payload.name === 'string' ? payload.name : 'Tool call';
-    const title = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
-    const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : title;
+    const qualified = typeof payload.namespace === 'string' && payload.namespace ? `${payload.namespace}.${name}` : name;
+    const title = withTarget(qualified, payload.input ?? payload.arguments);
+    const callId = typeof payload.call_id === 'string' ? payload.call_id : typeof payload.id === 'string' ? payload.id : qualified;
     push({ sessionUpdate: 'tool_call', toolCallId: callId, title, status: 'completed' });
   }
 
   return events;
+}
+
+/** The transcript row shows a tool as `<verb> <target>` (event-stream-model
+ * splits the title on the first space), so fold the tool's own argument — the
+ * shell command it runs, the file it touches — into the title. Without it an
+ * `exec` row is a bare verb with no hint of what actually ran. */
+function withTarget(name: string, rawInput: unknown): string {
+  const target = toolTarget(rawInput);
+  return target ? `${name} ${target}` : name;
+}
+
+/** A concise one-line command/target from a tool's input, which arrives as an
+ * object (Claude `tool_use`) or a JSON/plain string (Codex `input`/`arguments`). */
+function toolTarget(raw: unknown): string {
+  let value: unknown = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      return oneLine(trimmed);
+    }
+  }
+  if (typeof value === 'string') return oneLine(value);
+  const record = asRecord(value);
+  if (!record) return '';
+  for (const key of ['command', 'cmd', 'script', 'file_path', 'path', 'filename', 'pattern', 'query', 'url']) {
+    const field = record[key];
+    if (Array.isArray(field)) return oneLine(field.map(String).join(' '));
+    if (typeof field === 'string' && field) return oneLine(field);
+  }
+  return '';
+}
+
+function oneLine(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  return collapsed.length > 240 ? `${collapsed.slice(0, 240)}…` : collapsed;
+}
+
+function messageChunkText(event: TranscriptLogEvent): string | null {
+  const payload = event.payload as { sessionUpdate?: string; content?: { text?: unknown } } | null;
+  return payload?.sessionUpdate === 'agent_message_chunk' && typeof payload.content?.text === 'string'
+    ? payload.content.text
+    : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

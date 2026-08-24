@@ -556,7 +556,8 @@ function runPillState(run: Run): string {
   if (run.state === 'failed') return 'failed';
   if (run.state === 'cancelled') return 'cancelled';
   if (run.state === 'completed' || run.review === 'accepted') return 'completed';
-  return 'awaiting-review';
+  // Still running: awaiting-review only once parked at the human gate.
+  return run.phase === 'review' ? 'awaiting-review' : 'running';
 }
 
 function RunHeader({ run }: { run: Run }) {

@@ -72,14 +72,25 @@ const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Ep
 });
 
 describe('boardSections', () => {
-  it('puts review ahead of escalated standalone tasks and excludes active Epic members', () => {
+  it('puts review ahead of escalated tasks and promotes a running Epic member to Active', () => {
     const sections = boardSections(
       [task(1, 'ready', { escalated: true }), task(2, 'awaiting-review'), task(3, 'running'), task(4, 'running')],
       [epic(30, [member(1, 4, { state: 'running' })])],
     );
     expect(sections.needsYou.map((entry) => entry.id)).toEqual([2, 1]);
-    expect(sections.active.map((entry) => entry.id)).toEqual([3]);
+    // Task 4 is a running Epic member — surfaced in Active alongside standalone 3.
+    expect(sections.active.map((entry) => entry.id)).toEqual([3, 4]);
     expect(sections.epics.map((entry) => entry.ref)).toEqual([30]);
+  });
+
+  it('promotes an escalated Epic member to Needs you', () => {
+    const sections = boardSections(
+      [task(5, 'running', { escalated: true })],
+      [epic(40, [member(1, 5, { state: 'running', escalated: true })])],
+    );
+    expect(sections.needsYou.map((entry) => entry.id)).toEqual([5]);
+    expect(sections.active.map((entry) => entry.id)).toEqual([]);
+    expect(sections.epics.map((entry) => entry.ref)).toEqual([40]);
   });
 
   it('orders standalone work ready, blocked, then draft and excludes terminal tasks', () => {
@@ -93,7 +104,9 @@ describe('boardSections', () => {
       [epic(30, [member(31, 2, { state: 'running' })])],
     );
     expect(sections.standalone.map((entry) => entry.id)).toEqual([1]);
-    expect(sections.active.map((entry) => entry.id)).toEqual([]);
+    // The driver ticket (task 9) is neither standalone nor Active; its running
+    // member (task 2) is promoted to Active.
+    expect(sections.active.map((entry) => entry.id)).toEqual([2]);
     expect(sections.epics.map((entry) => entry.ref)).toEqual([30]);
   });
 

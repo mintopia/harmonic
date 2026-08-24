@@ -8,12 +8,11 @@ import type { Epic } from './epic-model.js';
  * surface is ordered by the operator's attention:
  * `Needs you → Active → Epics → Standalone`.
  *
- * **Standalone (non-Epic) work is first-class.** A Task is only pulled OUT of
- * the flat sections when it is a member of an *active* Epic — one still in the
- * Landing section — because that Epic's band renders the member itself
- * (DESIGN.md § 5: "an Epic member that is running shows inside its Epic band,
- * not duplicated here"). A member of an already-landed Epic falls back to
- * standalone treatment, so its now-completed Task still surfaces in Recent.
+ * **Attention is promoted above the band.** A running Epic member surfaces in
+ * Active and an escalated one in Needs you — the top sections gather all work
+ * of that kind, so the Epic band's DAG shows only members that are neither
+ * in-progress nor escalated (nor merged). A member of an already-landed Epic
+ * falls back to standalone treatment, so its Task still surfaces normally.
  */
 
 const TERMINAL: readonly TaskState[] = ['completed', 'failed', 'cancelled'];
@@ -47,11 +46,11 @@ function needsYouRank(t: Task): number {
 const QUEUED_RANK: Partial<Record<TaskState, number>> = { ready: 0, blocked: 1, draft: 2 };
 
 export interface BoardSections {
-  /** Awaiting-review + escalated standalone Tasks — the sacred core, always
-   * first, always above the fold (DESIGN.md § 5 Needs you). */
+  /** Awaiting-review standalone Tasks + any escalated Task (standalone or Epic
+   * member) — the sacred core, always first, above the fold (DESIGN.md § 5). */
   needsYou: Task[];
-  /** Running standalone Tasks; an escalated running Task is promoted to
-   * Needs you, and an active-Epic member runs inside its band, not here. */
+  /** Running Tasks, standalone and active-Epic members alike (an escalated
+   * running Task is promoted to Needs you instead). */
   active: Task[];
   /** Active Epics, each rendered as a band; ascending by ref. */
   epics: Epic[];
@@ -92,11 +91,25 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   );
   const isTerminal = (t: Task): boolean => TERMINAL.includes(t.state);
 
-  const needsYou = standalone
-    .filter((t) => !isTerminal(t) && (t.state === 'awaiting-review' || t.escalated))
+  const needsYou = tasks
+    .filter((t) => {
+      if (t.trackerRef != null && epicRefs.has(t.trackerRef)) return false; // not the Epic driver ticket
+      if (isTerminal(t)) return false;
+      // An escalated Epic member is promoted to the top; its other members
+      // (incl. awaiting-review) stay in the Epic band.
+      if (excluded.has(t.id)) return t.escalated;
+      return t.state === 'awaiting-review' || t.escalated;
+    })
     .sort((a, b) => needsYouRank(a) - needsYouRank(b) || byProcessingOrder(a, b));
 
-  const active = standalone.filter((t) => t.state === 'running' && !t.escalated).sort(byProcessingOrder);
+  // All running work is surfaced together at the top of the Board, including
+  // active-Epic members (promoted out of their band); the Epic's own driver
+  // ticket is not a Task card, so it stays excluded.
+  const active = tasks
+    .filter(
+      (t) => t.state === 'running' && !t.escalated && !(t.trackerRef != null && epicRefs.has(t.trackerRef)),
+    )
+    .sort(byProcessingOrder);
 
   const standaloneTasks = standalone
     .filter((t) => !t.escalated && QUEUED_RANK[t.state] !== undefined)
