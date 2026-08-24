@@ -6,7 +6,7 @@ import type {
   RunEvent,
   RunUsageEvent,
   Task,
-} from './types';
+} from './types.js';
 
 export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
@@ -26,25 +26,51 @@ export type ServerMessage =
   // `conversation_event` (payload.reqId) or on conversation end.
   | { type: 'permission_request'; conversationId: number; reqId: string; request: PermissionAcpRequest };
 
-/** Auto-reconnecting subscription to the server's event firehose. */
-export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
-  let ws: WebSocket | null = null;
-  let closed = false;
-  let retry: ReturnType<typeof setTimeout> | null = null;
+const listeners = new Set<{ onMessage: (msg: ServerMessage) => void }>();
+let ws: WebSocket | null = null;
+let retry: ReturnType<typeof setTimeout> | null = null;
 
-  const connect = () => {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/api/ws`);
-    ws.onmessage = (ev) => onMessage(JSON.parse(String(ev.data)));
-    ws.onclose = () => {
-      if (!closed) retry = setTimeout(connect, 1500);
-    };
+function connect(): void {
+  if (listeners.size === 0 || ws !== null) return;
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${proto}://${location.host}/api/ws`);
+  ws = socket;
+  socket.onmessage = (ev) => {
+    const message: ServerMessage = JSON.parse(String(ev.data));
+    for (const listener of listeners) listener.onMessage(message);
   };
+  socket.onclose = () => {
+    if (ws !== socket) return;
+    ws = null;
+    if (listeners.size > 0 && retry === null) {
+      retry = setTimeout(() => {
+        retry = null;
+        connect();
+      }, 1500);
+    }
+  };
+}
+
+/** Auto-reconnecting shared subscription to the server's event firehose. */
+export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
+  const listener = { onMessage };
+  let subscribed = true;
+  listeners.add(listener);
   connect();
 
   return () => {
-    closed = true;
-    if (retry) clearTimeout(retry);
-    ws?.close();
+    if (!subscribed) return;
+    subscribed = false;
+    listeners.delete(listener);
+    if (listeners.size > 0) return;
+
+    if (retry !== null) {
+      clearTimeout(retry);
+      retry = null;
+    }
+    const socket = ws;
+    ws = null;
+    socket?.close();
   };
 }
