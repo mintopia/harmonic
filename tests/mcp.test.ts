@@ -3,10 +3,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
-async function mcpClient(server: TestServer, token: string): Promise<Client> {
+async function mcpClient(
+  server: TestServer,
+  token: string,
+  opts: { headers?: Record<string, string>; queryToken?: string } = {},
+): Promise<Client> {
   const client = new Client({ name: 'test', version: '0.0.0' });
-  const transport = new StreamableHTTPClientTransport(new URL(`${server.baseUrl}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${token}` } },
+  const url = new URL(`${server.baseUrl}/mcp`);
+  if (opts.queryToken) url.searchParams.set('token', opts.queryToken);
+  const transport = new StreamableHTTPClientTransport(url, {
+    requestInit: { headers: { authorization: `Bearer ${token}`, ...opts.headers } },
   });
   // as any: SDK transport types vs exactOptionalPropertyTypes.
   await client.connect(transport as any);
@@ -92,6 +98,23 @@ describe('mcp server & scoped keys', () => {
 
     await server.api('DELETE', `/api/keys/${key.body.id}`);
     await expect(mcpClient(server, key.body.token)).rejects.toThrow();
+  });
+
+  it('falls back to operator cookie/query credentials when the Bearer credential is not an operator key (#276)', async () => {
+    const runKey = await server.app.ctx.auth.createKey('run-1', { scope: 'run', runId: 1 });
+    const readKey = await server.app.ctx.auth.createKey('read-1', { scope: 'read' });
+
+    for (const bearer of ['adk_bogus', runKey.token, readKey.token, token]) {
+      const cookieClient = await mcpClient(server, bearer, { headers: { cookie: `harmonic_session=${server.sessionToken}` } });
+      const cookieResult = await cookieClient.callTool({ name: 'list_leases', arguments: {} });
+      expect(cookieResult.isError).not.toBe(true);
+      await cookieClient.close();
+
+      const queryClient = await mcpClient(server, bearer, { queryToken: token });
+      const queryResult = await queryClient.callTool({ name: 'list_leases', arguments: {} });
+      expect(queryResult.isError).not.toBe(true);
+      await queryClient.close();
+    }
   });
 
   it('injects a Run Key and the MCP endpoint into the harness env, deleting the key after the run', async () => {

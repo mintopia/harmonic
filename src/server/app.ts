@@ -120,7 +120,7 @@ function readScopeAllowed(path: string, method: string): boolean {
 async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promise<boolean> {
   if (!(await auth.hasPassword())) return true;
   const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-  if (bearer) return (await auth.verifyKey(bearer))?.scope === 'full';
+  if (bearer && (await auth.verifyKey(bearer))?.scope === 'full') return true;
   if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
   const queryToken = (req.query as Record<string, string | undefined>)?.token;
   if (queryToken) return auth.validateSession(queryToken) || (await auth.verifyKey(queryToken))?.scope === 'full';
@@ -499,11 +499,12 @@ not resolved yet.`;
         : scopedKeyAllowed(path));
 
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+    let scopedKeyRejected = false;
     if (bearer) {
       const key = await auth.verifyKey(bearer);
       if (key) {
-        if (!scopeAllows(key.scope)) return forbidden();
-        return;
+        if (scopeAllows(key.scope)) return;
+        scopedKeyRejected = true;
       }
     }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
@@ -512,11 +513,12 @@ not resolved yet.`;
       if (auth.validateSession(queryToken)) return;
       const key = await auth.verifyKey(queryToken);
       if (key) {
-        if (!scopeAllows(key.scope)) return forbidden();
-        return;
+        if (scopeAllows(key.scope)) return;
+        scopedKeyRejected = true;
       }
     }
 
+    if (scopedKeyRejected) return forbidden();
     return reply.status(401).send({ error: { code: 'unauthenticated', message: 'authentication required' } });
   });
 
