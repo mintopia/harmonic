@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
+import { appendRunLogEvents, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
 import { DiffViewer } from './DiffViewer';
@@ -13,7 +14,7 @@ import { changedFilesFromStat } from '../run-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
-import { subscribe } from '../ws';
+import { subscribe, subscribeRunLog } from '../ws';
 import { gateForRun } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
 import { RunRail, RunAttempts } from './ticket/RunRail';
@@ -894,19 +895,33 @@ export function TicketPage({
   useEffect(() => {
     if (selectedRunId === null) return;
     let live = true;
+    let hydrated = false;
+    const pending: RunLogEvent[] = [];
+    let cursor = 0;
     setEvents([]);
     setLogUnavailable(false);
-    const load = () =>
-      api.runLog(selectedRunId).then((log) => {
-        if (!live) return;
-        setLogUnavailable(log.status === 'unavailable');
-        setEvents(log.status === 'available' ? log.events : []);
-      });
-    load();
-    const interval = window.setInterval(load, 1_000);
+    // Subscribe before hydrating so output produced during the request is
+    // buffered rather than lost. Once hydration completes, reconnects ask
+    // for the latest applied transcript seq instead of replaying from zero.
+    const unsubscribe = subscribeRunLog(selectedRunId, () => cursor, (event) => {
+      cursor = Math.max(cursor, event.seq);
+      if (!hydrated) {
+        pending.push(event);
+        return;
+      }
+      setEvents((current) => appendRunLogEvents(current, [event]));
+    });
+    api.runLog(selectedRunId).then((log) => {
+      if (!live) return;
+      setLogUnavailable(log.status === 'unavailable');
+      const hydratedEvents = appendRunLogEvents(log.status === 'available' ? log.events : [], pending);
+      cursor = runLogCursor(hydratedEvents);
+      setEvents(hydratedEvents);
+      hydrated = true;
+    }, toastError);
     return () => {
       live = false;
-      window.clearInterval(interval);
+      unsubscribe();
     };
   }, [selectedRunId]);
 
@@ -948,7 +963,7 @@ export function TicketPage({
     };
   }, [selectedRunId]);
 
-  const selectedRun = runs.find((r) => r.id === selectedRunId);
+  const selectedRun = runs.find((run) => run.id === selectedRunId);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(false);

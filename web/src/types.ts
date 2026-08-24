@@ -380,10 +380,12 @@ export interface RunEvent {
 /** A renderer-compatible event parsed from a native harness transcript. */
 export interface RunLogEvent {
   id: number;
+  /** Present for live WebSocket events; REST transcript hydration is already scoped by URL. */
+  runId?: number;
   seq: number;
   ts: number;
   type: 'session_update';
-  payload: unknown;
+  payload: { sessionUpdate: string; [key: string]: unknown };
 }
 
 /**

@@ -187,6 +187,8 @@ const REVIEW_SLA_MS = 7 * 24 * 60 * 60 * 1000;
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
   onRunEvent?: (event: PersistedRunEvent) => void;
+  /** ACP session updates are transient: streamed to clients, never persisted. */
+  onRunLogEvent?: (event: LiveRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onRunFinished?: (run: RunRow) => void;
   /** Fired on each mid-run phase transition (executing → validating → verifying
@@ -196,6 +198,16 @@ export interface RunnerEvents {
   onRunPhaseChanged?: (run: RunRow) => void;
   /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
   onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
+}
+
+/** A live ACP update, with a Run-local monotonic id for reconnect de-duplication. */
+export interface LiveRunEvent {
+  id: number;
+  runId: number;
+  seq: number;
+  ts: number;
+  type: 'session_update';
+  payload: { sessionUpdate: string; [key: string]: unknown };
 }
 
 export interface RunnerOptions {
@@ -2419,6 +2431,18 @@ export class Runner {
         if (replay) return;
         const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
         this.progressSequences.set(run.id, seq);
+        // Session updates are intentionally transient (ADR-0031), but the
+        // operator transcript needs them live. Reserve a separate id range so
+        // the browser can merge them with its one-time native-log hydration
+        // without colliding with parser-assigned transcript ids.
+        this.events.onRunLogEvent?.({
+          id: 1_000_000_000 + seq,
+          runId: run.id,
+          seq,
+          ts: Date.now(),
+          type: 'session_update',
+          payload: update,
+        });
         const progress = toProgressEvents([{ seq, type: 'session_update', payload: update }]);
         if (progress.length > 0) {
           const event = progress[0]!;

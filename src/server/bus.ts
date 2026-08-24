@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { ConversationRow, RunRow, TaskRow } from '../db/schema.js';
 import type { PersistedRunEvent } from '../domain/runs.js';
+import type { LiveRunEvent } from '../execution/runner.js';
 import type { PersistedConversationEvent } from '../domain/conversations.js';
 import type { PendingPermissionBroadcast } from '../execution/conversation-driver.js';
 import type { RunUsageSnapshot } from '../execution/usage.js';
@@ -9,6 +10,7 @@ import type { OperationEvent } from '../telemetry/operations.js';
 export interface BusEvents {
   operations: (event: OperationEvent) => void;
   run_event: (event: PersistedRunEvent) => void;
+  run_log_event: (event: LiveRunEvent) => void;
   run_changed: (run: RunRow) => void;
   /** Live-usage snapshot pushed ~1s while a run tails its native log (ADR 0010). */
   run_usage: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
@@ -24,6 +26,7 @@ export interface BusEvents {
 /** In-process pub/sub feeding the WebSocket stream (and later, notifications). */
 export class EventBus {
   private emitter = new EventEmitter();
+  private readonly runLogEvents = new Map<number, LiveRunEvent[]>();
 
   constructor() {
     this.emitter.setMaxListeners(100);
@@ -31,6 +34,23 @@ export class EventBus {
 
   emit<K extends keyof BusEvents>(event: K, ...args: Parameters<BusEvents[K]>): void {
     this.emitter.emit(event, ...args);
+  }
+
+  /**
+   * Add a transient ACP update to the bounded per-Run replay window before
+   * notifying sockets. A reconnect asks for the cursor it last applied, so it
+   * receives every missed update exactly once without re-reading `/log`.
+   */
+  emitRunLog(event: LiveRunEvent): void {
+    const events = this.runLogEvents.get(event.runId) ?? [];
+    events.push(event);
+    if (events.length > 2_000) events.shift();
+    this.runLogEvents.set(event.runId, events);
+    this.emitter.emit('run_log_event', event);
+  }
+
+  replayRunLog(runId: number, after: number): LiveRunEvent[] {
+    return (this.runLogEvents.get(runId) ?? []).filter((event) => event.seq > after);
   }
 
   on<K extends keyof BusEvents>(event: K, listener: BusEvents[K]): () => void {
