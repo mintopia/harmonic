@@ -122,8 +122,6 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
   const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
   if (bearer && (await auth.verifyKey(bearer))?.scope === 'full') return true;
   if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
-  const queryToken = (req.query as Record<string, string | undefined>)?.token;
-  if (queryToken) return auth.validateSession(queryToken) || (await auth.verifyKey(queryToken))?.scope === 'full';
   return false;
 }
 
@@ -508,13 +506,15 @@ not resolved yet.`;
       }
     }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
-    const queryToken = (req.query as Record<string, string | undefined>)?.token;
-    if (queryToken) {
-      if (auth.validateSession(queryToken)) return;
-      const key = await auth.verifyKey(queryToken);
-      if (key) {
-        if (scopeAllows(key.scope)) return;
-        scopedKeyRejected = true;
+    if (path === '/api/ws') {
+      const queryToken = (req.query as Record<string, string | undefined>)?.token;
+      if (queryToken) {
+        if (auth.validateSession(queryToken)) return;
+        const key = await auth.verifyKey(queryToken);
+        if (key) {
+          if (scopeAllows(key.scope)) return;
+          scopedKeyRejected = true;
+        }
       }
     }
 
