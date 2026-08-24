@@ -4,12 +4,14 @@ import type {
   PermissionAcpRequest,
   Run,
   RunEvent,
+  RunLogEvent,
   RunUsageEvent,
   Task,
 } from './types.js';
 
 export type ServerMessage =
   | { type: 'run_event'; event: RunEvent }
+  | { type: 'run_log_event'; event: RunLogEvent }
   | { type: 'run_changed'; run: Run }
   | { type: 'task_changed'; task: Task }
   // Hard-delete (issue #162): the Task is gone server-side (Runs/history
@@ -26,7 +28,10 @@ export type ServerMessage =
   // `conversation_event` (payload.reqId) or on conversation end.
   | { type: 'permission_request'; conversationId: number; reqId: string; request: PermissionAcpRequest };
 
-const listeners = new Set<{ onMessage: (msg: ServerMessage) => void }>();
+const listeners = new Set<{
+  onMessage: (msg: ServerMessage) => void;
+  onOpen?: (socket: WebSocket) => void;
+}>();
 let ws: WebSocket | null = null;
 let retry: ReturnType<typeof setTimeout> | null = null;
 
@@ -36,6 +41,9 @@ function connect(): void {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const socket = new WebSocket(`${proto}://${location.host}/api/ws`);
   ws = socket;
+  socket.onopen = () => {
+    for (const listener of listeners) listener.onOpen?.(socket);
+  };
   socket.onmessage = (ev) => {
     const message: ServerMessage = JSON.parse(String(ev.data));
     for (const listener of listeners) listener.onMessage(message);
@@ -53,11 +61,12 @@ function connect(): void {
 }
 
 /** Auto-reconnecting shared subscription to the server's event firehose. */
-export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
-  const listener = { onMessage };
+function subscribeWithOpen(onMessage: (msg: ServerMessage) => void, onOpen?: (socket: WebSocket) => void): () => void {
+  const listener = onOpen ? { onMessage, onOpen } : { onMessage };
   let subscribed = true;
   listeners.add(listener);
   connect();
+  if (ws?.readyState === WebSocket.OPEN) onOpen?.(ws);
 
   return () => {
     if (!subscribed) return;
@@ -73,4 +82,30 @@ export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
     ws = null;
     socket?.close();
   };
+}
+
+/** Auto-reconnecting shared subscription to the server's event firehose. */
+export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
+  return subscribeWithOpen(onMessage);
+}
+
+/** A cursor-resumable subscription to one Run's transient ACP transcript. */
+export function subscribeRunLog({
+  runId,
+  after,
+  onEvent,
+}: {
+  runId: number;
+  after: () => number;
+  onEvent: (event: RunLogEvent) => void;
+}): () => void {
+  let firstSubscription = true;
+  return subscribeWithOpen((message) => {
+    if (message.type === 'run_log_event' && message.event.runId === runId && message.event.seq > after()) {
+      onEvent(message.event);
+    }
+  }, (socket) => {
+    socket.send(JSON.stringify({ type: 'run_log_subscribe', runId, after: after(), replay: !firstSubscription }));
+    firstSubscription = false;
+  });
 }

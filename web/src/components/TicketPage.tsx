@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
+import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
 import { DiffViewer } from './DiffViewer';
@@ -13,7 +14,7 @@ import { changedFilesFromStat } from '../run-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
-import { subscribe } from '../ws';
+import { subscribe, subscribeRunLog } from '../ws';
 import { gateForRun } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
 import { RunRail, RunAttempts } from './ticket/RunRail';
@@ -894,19 +895,46 @@ export function TicketPage({
   useEffect(() => {
     if (selectedRunId === null) return;
     let live = true;
+    let hydrated = false;
+    const pending: RunLogEvent[] = [];
+    let cursor = 0;
     setEvents([]);
     setLogUnavailable(false);
-    const load = () =>
-      api.runLog(selectedRunId).then((log) => {
+    // Subscribe before hydrating but deliberately skip the existing replay:
+    // the REST snapshot already contains it, in a different id space. Events
+    // arriving during hydration are buffered and cut over at its live cursor.
+    const unsubscribe = subscribeRunLog({ runId: selectedRunId, after: () => cursor, onEvent: (event) => {
+      cursor = Math.max(cursor, event.seq);
+      if (!hydrated) {
+        pending.push(event);
+        return;
+      }
+      setEvents((current) => appendRunLogEvents({ current, additions: [event] }));
+    } });
+    api.runLog(selectedRunId).then(
+      (log) => {
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
-        setEvents(log.status === 'available' ? log.events : []);
-      });
-    load();
-    const interval = window.setInterval(load, 1_000);
+        const hydratedEvents = appendRunLogEvents({
+          current: log.status === 'available' ? log.events : [],
+          additions: log.status === 'available' ? eventsAfterLiveCursor({ events: pending, liveCursor: log.liveCursor }) : pending,
+        });
+        cursor = Math.max(log.liveCursor, runLogCursor({ events: pending }));
+        setEvents(hydratedEvents);
+        hydrated = true;
+      },
+      (error: unknown) => {
+        if (!live) return;
+        const hydratedEvents = appendRunLogEvents({ current: [], additions: pending });
+        cursor = runLogCursor({ events: pending });
+        setEvents(hydratedEvents);
+        hydrated = true;
+        toastError(error);
+      },
+    );
     return () => {
       live = false;
-      window.clearInterval(interval);
+      unsubscribe();
     };
   }, [selectedRunId]);
 
@@ -948,7 +976,7 @@ export function TicketPage({
     };
   }, [selectedRunId]);
 
-  const selectedRun = runs.find((r) => r.id === selectedRunId);
+  const selectedRun = runs.find((run) => run.id === selectedRunId);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(false);

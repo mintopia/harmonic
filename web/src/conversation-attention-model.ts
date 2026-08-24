@@ -61,7 +61,7 @@ export interface AttentionCandidate {
   event?: {
     type?: string;
     conversationId?: number;
-    payload?: { event?: string };
+    payload?: Record<string, unknown> & { event?: string };
   };
 }
 

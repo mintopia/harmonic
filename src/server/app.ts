@@ -291,6 +291,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const runner = new Runner(runs, tasks, leases, asyncDb, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
+      onRunLogEvent: (event) => bus.emitRunLog(event),
       onRunFinished: (run) => bus.emit('run_changed', run),
       onRunPhaseChanged: (run) => bus.emit('run_changed', run),
       onRunUsage: (payload) => bus.emit('run_usage', payload),

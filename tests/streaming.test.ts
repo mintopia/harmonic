@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 
 /** Collect WS messages into an inspectable list. */
-async function connectWs(server: TestServer): Promise<{ messages: any[]; close: () => void }> {
+async function connectWs(server: TestServer): Promise<{ messages: any[]; send: (message: unknown) => void; close: () => void }> {
   const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
   const messages: any[] = [];
   ws.addEventListener('message', (ev) => messages.push(JSON.parse(String(ev.data))));
@@ -10,7 +10,7 @@ async function connectWs(server: TestServer): Promise<{ messages: any[]; close: 
     ws.addEventListener('open', resolve);
     ws.addEventListener('error', reject);
   });
-  return { messages, close: () => ws.close() };
+  return { messages, send: (message) => ws.send(JSON.stringify(message)), close: () => ws.close() };
 }
 
 describe('live structured run event streaming and replay', () => {
@@ -23,7 +23,7 @@ describe('live structured run event streaming and replay', () => {
     await server.close();
   });
 
-  it('keeps the ACP stream out of WebSocket events and replay', async () => {
+  it('streams ACP updates without persisting them for REST replay', async () => {
     const updates = [
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'one' } },
       { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'hmm' } },
@@ -37,6 +37,9 @@ describe('live structured run event streaming and replay', () => {
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     const runId = started.body.id;
+    // The log firehose is opt-in and cursor-resumable, unlike global board
+    // events. Start at zero to receive this Run's complete live stream.
+    ws.send({ type: 'run_log_subscribe', runId, after: 0 });
 
     // A native Run parks non-terminal in `phase:'review'` at agent-finish
     // (issue #114) — it stays `state:'running'`, so "done executing" is the
@@ -46,15 +49,41 @@ describe('live structured run event streaming and replay', () => {
     );
 
     const streamed = ws.messages.filter(
-      (m) => m.type === 'run_event' && m.event.runId === runId && m.event.type === 'session_update',
+      (m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.type === 'session_update',
     );
-    expect(streamed).toEqual([]);
+    expect(streamed.map((m) => m.event.payload.sessionUpdate)).toEqual(updates.map((update) => update.sessionUpdate));
+    expect(streamed.map((m) => m.event.id)).toEqual([1_000_000_001, 1_000_000_002, 1_000_000_003, 1_000_000_004]);
 
     const replay = await server.api('GET', `/api/runs/${runId}/events`);
     const replayUpdates = replay.body.events.filter((e: any) => e.type === 'session_update');
     expect(replayUpdates).toEqual([]);
 
     ws.close();
+  });
+
+  it('replays missed transient log events in order after a WebSocket reconnect', async () => {
+    const updates = [
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'one' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'two' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'three' } },
+    ];
+    const first = await connectWs(server);
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ updates, delayMs: 80 }),
+    });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    const runId = started.body.id;
+    first.send({ type: 'run_log_subscribe', runId, after: 0 });
+    await waitFor(async () => first.messages.some((m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.seq === 1));
+    first.close();
+
+    await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.phase === 'review');
+    const reconnected = await connectWs(server);
+    reconnected.send({ type: 'run_log_subscribe', runId, after: 1 });
+    await waitFor(async () => reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId).length === 2);
+    const replayed = reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId);
+    expect(replayed.map((m) => m.event.seq)).toEqual([2, 3]);
+    reconnected.close();
   });
 
   it('broadcasts task state changes so the board updates without polling', async () => {
