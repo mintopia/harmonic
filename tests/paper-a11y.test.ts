@@ -11,8 +11,7 @@ describe('Paper accessibility contract (issue #266)', () => {
     const epicPeek = source('web/src/components/EpicPeek.tsx');
     const toasts = source('web/src/toast.tsx');
 
-    expect(app).toContain('setStateAnnouncement');
-    expect(app).toContain('Needs you: {needsYouCount}');
+    expect(app).toContain('advanceReviewAnnouncements');
     expect(board).toContain("aria-live={attn ? 'polite' : undefined}");
     expect(epicPeek).toContain('aria-live="assertive"');
     expect(toasts).toContain('aria-live="assertive"');

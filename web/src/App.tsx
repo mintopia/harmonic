@@ -44,6 +44,12 @@ import {
 } from './onboarding-model';
 import { btnPrimary, btnQuiet, railBadge, sectionLabel, touchTarget } from './ui';
 import { Toaster, toastError } from './toast';
+import { ReviewLiveRegions } from './components/ReviewLiveRegions';
+import {
+  advanceReviewAnnouncements,
+  EMPTY_REVIEW_ANNOUNCEMENT_CURSOR,
+  type ReviewAnnouncementCursor,
+} from './review-announce-model';
 
 // The Dependency Graph is the only surface that pulls in elkjs (the app's single
 // heaviest asset), and it's rarely opened — so it's code-split out of the main
@@ -71,10 +77,6 @@ const railItem = (active: boolean, collapsed: boolean) =>
   `flex w-full min-h-11 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-2.5 py-2 text-left transition-colors duration-150 ${
     collapsed ? 'rail:justify-center rail:px-0' : ''
   } ${active ? 'bg-accent-tint font-semibold text-accent' : 'font-medium text-muted hover:bg-raised hover:text-ink'}`;
-
-function taskStateLabel(state: Task['state']): string {
-  return state.replaceAll('-', ' ');
-}
 
 // Client routing (issue #103): the active view and its per-view filter/sort/
 // peek state live in the URL, so a refresh restores where the operator was
@@ -408,19 +410,22 @@ export function App() {
     () => boardSections(tasks ?? [], epics).needsYou.length,
     [tasks, epics],
   );
-  const previousTaskStates = useRef<Map<number, Task['state']> | null>(null);
-  const [stateAnnouncement, setStateAnnouncement] = useState('');
+  const reviewAnnouncementCursor = useRef<ReviewAnnouncementCursor>(EMPTY_REVIEW_ANNOUNCEMENT_CURSOR);
+  const [politeReviewAnnouncement, setPoliteReviewAnnouncement] = useState('');
+  const [assertiveMergeAnnouncement, setAssertiveMergeAnnouncement] = useState('');
 
   useEffect(() => {
-    if (tasks === null) return;
-    const nextStates = new Map(tasks.map((task) => [task.id, task.state]));
-    const previousStates = previousTaskStates.current;
-    if (previousStates) {
-      const changed = tasks.find((task) => previousStates.get(task.id) !== undefined && previousStates.get(task.id) !== task.state);
-      if (changed) setStateAnnouncement(`${changed.prompt} is now ${taskStateLabel(changed.state)}.`);
+    if (tasks === null) {
+      reviewAnnouncementCursor.current = EMPTY_REVIEW_ANNOUNCEMENT_CURSOR;
+      setPoliteReviewAnnouncement('');
+      setAssertiveMergeAnnouncement('');
+      return;
     }
-    previousTaskStates.current = nextStates;
-  }, [tasks]);
+    const next = advanceReviewAnnouncements(tasks, needsYouCount, reviewAnnouncementCursor.current);
+    reviewAnnouncementCursor.current = next.cursor;
+    setPoliteReviewAnnouncement(next.polite);
+    setAssertiveMergeAnnouncement(next.assertive);
+  }, [tasks, needsYouCount]);
 
   // EpicPeek's deep-link into the Ticket, and TaskDetail's skip-holder link:
   // both navigate to /task/:id so the focus is a real, bookmarkable route.
@@ -645,12 +650,7 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden rail:flex-row">
-      <div className="sr-only" aria-atomic="true" aria-live="polite">
-        {stateAnnouncement}
-      </div>
-      <div className="sr-only" aria-atomic="true" aria-live="polite">
-        Needs you: {needsYouCount}
-      </div>
+      <ReviewLiveRegions polite={politeReviewAnnouncement} assertive={assertiveMergeAnnouncement} />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-md focus:bg-surface focus:px-4 focus:font-medium focus:text-ink focus:shadow-card"
