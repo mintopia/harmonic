@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './server/app.js';
 import { defaultDataDir } from './config.js';
 import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeDaemon } from './daemon.js';
+import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
 Usage:
-  harmonic serve [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
-  harmonic start [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>]
+  harmonic serve [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>] [telemetry options]
+  harmonic start [--port <n>] [--host <h>] [--data-dir <dir>] [--password <pw>] [telemetry options]
   harmonic status [--data-dir <dir>]
   harmonic stop [--data-dir <dir>]
 
@@ -28,6 +29,12 @@ Options:
   --password  Set/update the operator password (or $HARMONIC_PASSWORD).
               Optional; pass an empty value (--password '') to remove it and
               run ungated
+  --otel-endpoint <url>       OTLP/HTTP base endpoint (or $OTEL_EXPORTER_OTLP_ENDPOINT)
+  --otel-headers <headers>    Comma-separated key=value headers (or $OTEL_EXPORTER_OTLP_HEADERS)
+  --otel-export <true|false>  Enable OTLP export (or $OTEL_EXPORTER_OTLP_ENABLED)
+  --otel-stdout-log-level <level>
+                              debug, info, warn, error, or none
+                              (or $OTEL_STDOUT_LOG_LEVEL)
 `;
 
 /** 0.0.0.0 binds everywhere but isn't a clickable URL — show localhost. */
@@ -68,6 +75,10 @@ async function main(): Promise<void> {
       host: { type: 'string', default: '0.0.0.0' },
       'data-dir': { type: 'string' },
       password: { type: 'string' },
+      'otel-endpoint': { type: 'string' },
+      'otel-headers': { type: 'string' },
+      'otel-export': { type: 'string' },
+      'otel-stdout-log-level': { type: 'string' },
     },
   });
 
@@ -119,7 +130,22 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const password = values.password ?? process.env.HARMONIC_PASSWORD;
-  const app = await buildApp({ dataDir, password });
+  const telemetry = initializeTelemetry(
+    resolveTelemetryOptions({
+      endpoint: values['otel-endpoint'],
+      headers: values['otel-headers'],
+      exportEnabled: values['otel-export'],
+      stdoutLogLevel: values['otel-stdout-log-level'],
+    }),
+  );
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  try {
+    app = await buildApp({ dataDir, password });
+  } catch (error) {
+    await telemetry.shutdown();
+    releaseLock(dataDir);
+    throw error;
+  }
   if (!app.ctx.auth.hasPassword()) {
     const loopback = host === '127.0.0.1' || host === '::1' || host === 'localhost';
     console.warn(
@@ -131,13 +157,17 @@ async function main(): Promise<void> {
   await app.listen({ port, host });
   console.log(`Harmonic listening on ${displayUrl(host, port)} (bound to ${host}, data: ${dataDir})`);
 
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     await app.close();
+    await telemetry.shutdown();
     releaseLock(dataDir);
     process.exit(0);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 main().catch((err) => {

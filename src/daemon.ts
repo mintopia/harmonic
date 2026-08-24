@@ -71,7 +71,9 @@ export async function stopDaemon(dataDir: string): Promise<boolean> {
   if (!info) return false;
   if (running) {
     process.kill(info.pid, 'SIGTERM');
-    for (let i = 0; i < 50 && isAlive(info.pid); i++) {
+    // Give shutdown handlers enough time to flush OTLP batches before the
+    // SIGKILL fallback. The telemetry exporters default to a 30-second timeout.
+    for (let i = 0; i < 400 && isAlive(info.pid); i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (isAlive(info.pid)) process.kill(info.pid, 'SIGKILL');
