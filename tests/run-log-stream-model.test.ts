@@ -30,6 +30,10 @@ describe('appendRunLogEvents', () => {
     ]);
   });
 
+  it('drops a live event already included by the hydration response', () => {
+    expect(appendRunLogEvents([event(1)], [{ ...event(1_000_000_001), seq: 1 }])).toEqual([event(1)]);
+  });
+
   it('sets the reconnect cursor from the latest hydrated or buffered event', () => {
     expect(runLogCursor([event(1), event(2), event(1_000_000_003)])).toBe(1_000_000_003);
     expect(runLogCursor([])).toBe(0);

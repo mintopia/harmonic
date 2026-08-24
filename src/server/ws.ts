@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
 import { conversationToApi, runToApi, runUsageToApi, taskToApi } from './serialize.js';
+import { forEachYielding } from '../reliability/yield.js';
 
 export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as unknown as App;
@@ -32,7 +33,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         ctx.bus.on('permission_request', (pending) => send({ type: 'permission_request', ...pending })),
       );
     }
-    socket.on('message', (raw) => {
+    socket.on('message', async (raw) => {
       let message: unknown;
       try {
         message = JSON.parse(String(raw));
@@ -41,14 +42,20 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       }
       if (!isRunLogSubscription(message)) return;
       unsubscribeRunLog?.();
-      // Replay first, then install the live listener synchronously. Since the
-      // bus emits synchronously, no update can fall between these two steps.
-      for (const event of ctx.bus.replayRunLog(message.runId, message.after)) {
-        send({ type: 'run_log_event', event });
-      }
+      const queued: ReturnType<typeof ctx.bus.replayRunLog> = [];
+      let replaying = true;
       unsubscribeRunLog = ctx.bus.on('run_log_event', (event) => {
-        if (event.runId === message.runId && event.seq > message.after) send({ type: 'run_log_event', event });
+        if (event.runId !== message.runId || event.seq <= message.after) return;
+        if (replaying) queued.push(event);
+        else send({ type: 'run_log_event', event });
       });
+      await forEachYielding(ctx.bus.replayRunLog(message.runId, message.after), (event) => {
+        send({ type: 'run_log_event', event });
+      });
+      while (queued.length > 0) {
+        await forEachYielding(queued.splice(0), (event) => send({ type: 'run_log_event', event }));
+      }
+      replaying = false;
     });
     socket.on('close', () => {
       unsubscribeRunLog?.();
