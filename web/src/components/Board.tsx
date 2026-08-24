@@ -307,7 +307,7 @@ function BoardSection({
           <span
             aria-atomic="true"
             aria-live={attn ? 'polite' : undefined}
-            className={`rounded-full px-2 py-px text-[10.5px] font-bold ${attn ? 'bg-await text-on-await' : 'bg-raised text-muted'}`}
+            className={`rounded-full px-2 py-px text-[11px] font-bold ${attn ? 'bg-await text-on-await' : 'bg-raised text-muted'}`}
           >
             {count}
           </span>

@@ -11,7 +11,7 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   return (
-    <section className={`${card} max-w-3xl p-5`}>
+    <section className={`${card} p-5`}>
       <h2 className="text-title font-semibold">{title}</h2>
       <p className="mb-4 mt-0.5 text-muted">{description}</p>
       {children}

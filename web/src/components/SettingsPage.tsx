@@ -497,7 +497,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </p>
       </div>
 
-      <div className="mt-5 flex flex-col gap-4">
+      <div className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start">
         <SettingsSection
           title="Instance"
           description="A display name for this Harmonic instance. Shows in the sidebar and the browser title as “Harmonic - {name} - {workspace}”. Leave blank to just show “Harmonic”."

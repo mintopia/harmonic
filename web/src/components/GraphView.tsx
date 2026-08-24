@@ -23,6 +23,19 @@ import { displayTitle, labelType, touchTarget, touchTargetInline } from '../ui';
 const NODE_W = 196;
 const NODE_H = 60;
 
+// Below this zoom node labels stop being readable, so fit-to-all on a large
+// graph lands on an illegible thumbnail. The default view clamps to the floor
+// and parks on the frontier (layout flows RIGHT → the frontier is the left
+// edge) instead; explicit Fit still fits the whole graph.
+const FIT_FLOOR = 0.8;
+function initialTransform(w: number, h: number, vw: number, vh: number): Transform {
+  const fit = fitTransform(w, h, vw, vh);
+  if (fit.k >= FIT_FLOOR) return fit;
+  const k = FIT_FLOOR;
+  const pad = 24;
+  return { k, tx: pad, ty: h * k <= vh ? (vh - h * k) / 2 : pad };
+}
+
 export function GraphView({
   tasks,
   loading,
@@ -97,7 +110,7 @@ export function GraphView({
 
   const fit = () => setT(fitTransform(layout?.width ?? 0, layout?.height ?? 0, vp.w, vp.h));
   useEffect(() => {
-    if (layout && layout.width > 0 && vp.w > 0) setT(fitTransform(layout.width, layout.height, vp.w, vp.h));
+    if (layout && layout.width > 0 && vp.w > 0) setT(initialTransform(layout.width, layout.height, vp.w, vp.h));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, vp.w, vp.h]);
 

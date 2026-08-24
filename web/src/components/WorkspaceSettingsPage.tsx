@@ -125,7 +125,7 @@ export function WorkspaceSettingsPage({
         </p>
       </div>
 
-      <div className="mt-5 flex flex-col gap-4">
+      <div className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start">
         <SettingsSection title="Identity" description="This Workspace's name and the project directory it points at.">
           <div className="grid gap-3.5 sm:grid-cols-2">
             <div>

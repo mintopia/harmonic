@@ -15,7 +15,7 @@ import { Icon } from './Icon';
 import { subscribe } from '../ws';
 import { gateForRun } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
-import { RunRail } from './ticket/RunRail';
+import { RunRail, RunAttempts } from './ticket/RunRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { labelType } from '../ui';
@@ -36,6 +36,7 @@ function humanState(state: string): string {
 
 const STATE_PILL: Record<string, string> = {
   'awaiting-review': 'bg-await-tint text-await',
+  rejected: 'bg-fail-tint text-fail',
   running: 'bg-running-tint text-running',
   ready: 'bg-ready-tint text-ready',
   blocked: 'bg-blocked-tint text-muted',
@@ -361,7 +362,9 @@ function Verification({ attempts, run }: { attempts: VerificationAttempt[]; run:
 
 // ─── session + agents ────────────────────────────────────────────────────────
 
-const U = { read: 'bg-tool', write: 'bg-running', cached: 'bg-blocked' } as const;
+// Usage categories ride a neutral monochrome ramp, never state hues — an amber
+// "write" or slate "cached" here would pre-read as running/blocked (Two Voices).
+const U = { read: 'bg-ink', write: 'bg-muted', cached: 'bg-edge' } as const;
 
 function Swatch({ tone, children }: { tone: keyof typeof U; children: ReactNode }) {
   return (
@@ -401,7 +404,7 @@ function SessionAgents({ run }: { run: Run }) {
         <div>
           <div className="flex items-center justify-between">
             <span className={sectionCaps}>
-              Agents <span className="ml-1 rounded-full bg-raised px-[7px] text-[10.5px] font-bold normal-case tracking-normal text-muted">{agents.length}</span>
+              Agents <span className="ml-1 rounded-full bg-raised px-[7px] text-[11px] font-bold normal-case tracking-normal text-muted">{agents.length}</span>
             </span>
             <span className="flex gap-3.5 text-[11px] text-faint">
               <Swatch tone="read">read</Swatch>
@@ -429,18 +432,25 @@ function SessionAgents({ run }: { run: Run }) {
                     <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-ink">
                       {role || key}
                       {sub && (
-                        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.05em] text-muted">
+                        <span className="rounded-[4px] bg-raised px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.05em] text-muted">
                           subagent
                         </span>
                       )}
                     </div>
                     {model && <div className="mt-[3px] font-data text-[11.5px] text-faint">{model}</div>}
+                    {/* Bar is hidden at narrow; keep the token breakdown as text. */}
+                    <div className="mt-1.5 hidden flex-wrap gap-3 text-[11px] tabular-nums text-faint max-rail:flex">
+                      <Swatch tone="read">{fmtK(read)}</Swatch>
+                      <Swatch tone="write">{fmtK(write)}</Swatch>
+                      <Swatch tone="cached">{fmtK(cached)}</Swatch>
+                      <span>{fmtK(total)} tok</span>
+                    </div>
                   </div>
                   <div className="max-rail:hidden">
                     <div className="flex h-[7px] gap-0.5 overflow-hidden rounded-full">
-                      <span className="bg-tool" style={{ flex: read || 1 }} />
-                      <span className="bg-running" style={{ flex: write || 1 }} />
-                      <span className="bg-blocked" style={{ flex: cached || 1 }} />
+                      <span className={U.read} style={{ flex: read || 1 }} />
+                      <span className={U.write} style={{ flex: write || 1 }} />
+                      <span className={U.cached} style={{ flex: cached || 1 }} />
                     </div>
                     <div className="mt-2 flex flex-wrap gap-3 text-[11px] tabular-nums text-faint">
                       <Swatch tone="read">{fmtK(read)}</Swatch>
@@ -468,7 +478,7 @@ function Transcript({ events, unavailable }: { events: RunLogEvent[]; unavailabl
       <div className="mb-2.5 flex items-center gap-2">
         <span className={sectionCaps}>Transcript</span>
         {events.length > 0 && (
-          <span className="rounded-full bg-raised px-[7px] text-[10.5px] font-bold text-muted">
+          <span className="rounded-full bg-raised px-[7px] text-[11px] font-bold text-muted">
             {events.length} event{events.length === 1 ? '' : 's'}
           </span>
         )}
@@ -539,11 +549,21 @@ function SteerBox({ taskId }: { taskId: number }) {
 
 // ─── run header + pane ───────────────────────────────────────────────────────
 
+// A merged/accepted run must never wear the indigo awaiting-review pill — that
+// lies about the operator's turn on the review surface (and misreads for AT).
+function runPillState(run: Run): string {
+  if (run.review === 'rejected') return 'rejected';
+  if (run.state === 'failed') return 'failed';
+  if (run.state === 'cancelled') return 'cancelled';
+  if (run.state === 'completed' || run.review === 'accepted') return 'completed';
+  return 'awaiting-review';
+}
+
 function RunHeader({ run }: { run: Run }) {
   return (
     <div className="mx-0.5 mb-2.5 mt-4 flex items-center gap-2.5">
       <span className="text-[16.5px] font-bold leading-none tracking-[-0.01em]">Run {run.attempt}</span>
-      <StatePill state={run.review === 'rejected' ? 'rejected' : run.state === 'failed' ? 'failed' : 'awaiting-review'} />
+      <StatePill state={runPillState(run)} />
       {run.attempt > 1 && (
         <span className="ml-auto flex items-center gap-1.5 text-[12px] text-faint">
           <Icon name="refresh" className="size-3.5" />
@@ -784,7 +804,7 @@ export function TicketPage({
                 {
                   node: (
                     <span className="inline-flex items-center gap-[7px] text-tool">
-                      <span className="rounded-[5px] bg-tool-tint px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.06em]">
+                      <span className="rounded-[5px] bg-tool-tint px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.06em]">
                         Epic
                       </span>
                       <span className="font-data text-[12.5px]">epic/{task.mapRef}</span>
@@ -855,6 +875,21 @@ export function TicketPage({
                 <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{alert.text}</div>
               </div>
             )}
+
+            {/* Narrow: the rail stacks below the fold, so a sticky strip keeps
+                run-switching reachable at the tool's core side-monitor width. */}
+            <div className="sticky top-0 z-20 -mx-[30px] mb-1 border-y border-hairline bg-canvas px-[30px] py-2.5 rail:hidden">
+              <RunAttempts
+                runs={runs}
+                selectedRunId={selectedRunId}
+                selectedFile={selectedFile}
+                onSelectRun={(runId) => {
+                  setSelectedFile(null);
+                  setSelectedRunId(runId);
+                }}
+                layout="strip"
+              />
+            </div>
 
             {/* main run pane */}
             <div className="min-w-0 border-t border-hairline">

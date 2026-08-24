@@ -69,6 +69,7 @@ const STATES = [
 const HELPERS: Record<string, () => readonly string[]> = {
   stateChip: () => STATES.map(ui.stateChip),
   stateDot: () => STATES.map(ui.stateDot),
+  stateFill: () => STATES.map(ui.stateFill),
   laneBorder: () => STATES.map(ui.laneBorder),
   laneDot: () => STATES.map(ui.laneDot),
   stateCountColor: () => STATES.flatMap((s) => [ui.stateCountColor(s, 0), ui.stateCountColor(s, 3)]),

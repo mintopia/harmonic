@@ -77,7 +77,7 @@ export const field =
  * the caller: full-width settings selects pass `w-full`, compact toolbar
  * filters size to their content. */
 export const selectField =
-  'min-h-11 rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none';
+  'hm-select min-h-11 rounded-md border border-edge bg-field px-2.5 py-1.5 text-ink focus:border-accent focus:outline-none';
 
 /** The text-input style for compact toolbar controls (issue #104 search box):
  * the `field` look plus the ≥44px touch-target floor baked in, so the floor is
