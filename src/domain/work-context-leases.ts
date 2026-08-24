@@ -52,6 +52,28 @@ export function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
+/** Matches the SQLite message for a violated FOREIGN KEY constraint, as a
+ * fallback when a wrapped error's `.code` isn't populated. */
+const FOREIGN_KEY_VIOLATION_MESSAGE = /FOREIGN KEY constraint failed/;
+
+/**
+ * Detect a FOREIGN-KEY-constraint violation across both DB drivers, mirroring
+ * {@link isUniqueViolation}'s cause-chain walk (ADR-0029): drizzle-libsql wraps
+ * the driver error so the real `.code`/`.extendedCode`
+ * (`SQLITE_CONSTRAINT`/`SQLITE_CONSTRAINT_FOREIGNKEY`) and the message live on
+ * `.cause`, not the top-level `DrizzleQueryError`.
+ */
+export function isForeignKeyViolation(err: unknown): boolean {
+  for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
+    const { code, extendedCode } = e as { code?: string; extendedCode?: string };
+    if (code === 'SQLITE_CONSTRAINT_FOREIGNKEY' || extendedCode === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+      return true;
+    }
+    if (FOREIGN_KEY_VIOLATION_MESSAGE.test(e.message)) return true;
+  }
+  return false;
+}
+
 /**
  * The Work Context lease store (issue #118, ADR-0022, reliability-design
  * §0.5): persists exclusive occupancy claims over a `workContextKey`. The

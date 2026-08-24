@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { Workspace } from '../types';
 import { Modal } from './Modal';
@@ -89,43 +89,83 @@ export function WorkspaceSwitcher({
   onCreated: (workspace: Workspace) => void;
 }) {
   const [creating, setCreating] = useState(false);
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   if (workspaces.length === 0) return null;
 
   const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
   if (!active) return null;
-  // The parent directory, tilde-abbreviated, as the "~/src/" locator line.
-  const parent = (() => {
-    const dir = active.workingDir ?? '';
-    const p = dir.replace(/\/[^/]*\/?$/, '');
-    if (!p) return '~/';
-    return `${p.replace(/^\/home\/[^/]+/, '~')}/`;
-  })();
 
   return (
-    <div className="relative rounded-md border border-edge bg-field px-[11px] py-[9px]">
-      <div className="truncate font-data text-[11px] text-faint">{parent}</div>
-      <div className="mt-px flex items-center justify-between gap-2 font-semibold text-ink">
-        <span className="truncate">{active.name}</span>
-        <Icon name="chevron-down" className="size-3.5 shrink-0 text-muted" />
-      </div>
-      <select
+    <div className="relative" ref={wrap}>
+      <button
+        type="button"
         aria-label="Active workspace"
-        className="absolute inset-0 cursor-pointer opacity-0"
-        value={activeId ?? ''}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === '__new') setCreating(true);
-          else onSwitch(Number(v));
-        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 rounded-md border border-edge bg-field px-[11px] py-[9px] font-semibold text-ink"
       >
-        {workspaces.map((w) => (
-          <option key={w.id} value={w.id}>
-            {w.name}
-          </option>
-        ))}
-        <option value="__new">+ New workspace…</option>
-      </select>
+        <span className="truncate">{active.name}</span>
+        <Icon
+          name="chevron-down"
+          className={`size-3.5 shrink-0 text-muted transition-transform duration-150 ${open ? 'rotate-0' : '-rotate-90'}`}
+        />
+      </button>
+
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-10 mt-1 max-h-72 w-full overflow-auto rounded-md bg-surface py-1 shadow-bar"
+        >
+          {workspaces.map((w) => (
+            <li
+              key={w.id}
+              role="option"
+              aria-selected={w.id === active.id}
+              className={`flex cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 font-medium ${
+                w.id === active.id ? 'bg-raised text-ink' : 'text-muted'
+              }`}
+              onPointerDown={() => {
+                onSwitch(w.id);
+                setOpen(false);
+              }}
+            >
+              <span className="truncate">{w.name}</span>
+              {w.id === active.id && <Icon name="check" className="shrink-0 text-accent" />}
+            </li>
+          ))}
+          <li role="presentation" className="mx-1 my-1 border-t border-edge" />
+          <li
+            role="option"
+            aria-selected={false}
+            className="cursor-pointer px-2.5 py-1.5 font-medium text-muted"
+            onPointerDown={() => {
+              setCreating(true);
+              setOpen(false);
+            }}
+          >
+            + New workspace…
+          </li>
+        </ul>
+      )}
 
       {creating && <NewWorkspaceForm onClose={() => setCreating(false)} onCreated={onCreated} />}
     </div>

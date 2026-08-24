@@ -83,7 +83,13 @@ function activeMemberTaskIds(epics: Epic[]): Set<number> {
 
 export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const excluded = activeMemberTaskIds(epics);
-  const standalone = tasks.filter((t) => !excluded.has(t.id));
+  // An Epic's own driver ticket (the parent issue the members hang off) is not
+  // standalone work — the Epic band represents it. Its mirrored Task carries the
+  // Epic's ref as its `trackerRef`, so drop those from the flat sections too.
+  const epicRefs = new Set(epics.map((e) => e.ref));
+  const standalone = tasks.filter(
+    (t) => !excluded.has(t.id) && !(t.trackerRef != null && epicRefs.has(t.trackerRef)),
+  );
   const isTerminal = (t: Task): boolean => TERMINAL.includes(t.state);
 
   const needsYou = standalone

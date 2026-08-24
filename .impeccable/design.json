@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-22T18:37:00Z",
+  "generatedAt": "2026-08-24T00:00:00Z",
   "title": "Design System: Harmonic — Paper",
   "extensions": {
     "colorMeta": {
@@ -12,18 +12,22 @@
       "failed-text-light": { "role": "secondary", "displayName": "Failed Rose", "canonical": "#AF3C52", "tonalRamp": ["#3B1D24", "#762637", "#AF3C52", "#CF566C", "#F0768A", "#F2ABB6", "#F9E4E8", "#FDF5F6"] }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "Ticket titles only." },
-      "title": { "displayName": "Title", "purpose": "Board bands, task titles, and sidebar card labels." },
-      "body": { "displayName": "Body", "purpose": "Operator-facing language." },
-      "label": { "displayName": "Label", "purpose": "Uppercase field and section labels only." },
-      "code": { "displayName": "Code", "purpose": "Paths, branches, commands, hashes, and session IDs." }
+      "hero": { "displayName": "Hero", "purpose": "The single giant figure — the Stats headline cost number (3.25rem). Never a title." },
+      "display": { "displayName": "Display", "purpose": "The Ticket page title — the one real headline (1.4375rem)." },
+      "title": { "displayName": "Title", "purpose": "Board bands, run headers, section labels, and sidebar card labels (0.9375rem)." },
+      "body": { "displayName": "Body", "purpose": "Operator-facing language (0.875rem)." },
+      "label": { "displayName": "Label", "purpose": "Uppercase field and section labels only (0.625rem, +0.09em)." },
+      "code": { "displayName": "Code", "purpose": "Paths, branches, commands, hashes, and session IDs (0.8125rem, JetBrains Mono)." }
     },
     "shadows": [
-      { "name": "card-light", "value": "0 2px 8px rgb(27 30 36 / 0.08), 0 1px 2px rgb(27 30 36 / 0.05)", "purpose": "Quiet lift for Paper cards in light mode." },
-      { "name": "dialog-light", "value": "0 18px 48px rgb(27 30 36 / 0.20)", "purpose": "Floating dialog depth." }
+      { "name": "card-light", "value": "0 1px 2px rgb(27 30 36 / 0.06), 0 6px 18px rgb(27 30 36 / 0.07)", "purpose": "Quiet two-layer lift for Paper cards in light mode (--hm-shadow-card)." },
+      { "name": "card-dark-ring", "value": "0 0 0 1px var(--hm-hairline)", "purpose": "In dark, shadows fade on the dark field — a 1px hairline ring stands in for card lift." },
+      { "name": "float", "value": "0 12px 40px rgb(0 0 0 / 0.55)", "purpose": "Floating dialog depth (--hm-shadow-float)." },
+      { "name": "bar", "value": "0 0 0 1px var(--hm-edge), 0 14px 40px rgb(0 0 0 / 0.5)", "purpose": "Status/command bar float with an edge ring (--hm-shadow-bar)." }
     ],
     "motion": [
       { "name": "ui-transition", "value": "150ms ease", "purpose": "Hover and focus transitions." },
+      { "name": "ease-out-quint", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Standard easing curve (--ease-out-quint)." },
       { "name": "running-pulse", "value": "pulse, disabled by prefers-reduced-motion", "purpose": "Running state dot only." }
     ],
     "breakpoints": [
@@ -62,7 +66,7 @@
       "refersTo": "board-card",
       "description": "Scannable Board card with a state bar and restrained metadata.",
       "html": "<article class=\"ds-card\"><i></i><small>T-172</small><strong>Refresh Paper design artifacts</strong><span>main · 18m</span></article>",
-      "css": ".ds-card{position:relative;display:grid;gap:8px;overflow:hidden;padding:16px 16px 16px 20px;border-radius:13px;background:#fff;box-shadow:0 2px 8px rgb(27 30 36/.08);color:#1B1E24;font:14px system-ui}.ds-card i{position:absolute;inset:0 auto 0 0;width:4px;background:#0D7271}.ds-card small,.ds-card span{color:#656B73}.ds-card strong{font-size:16px}.ds-card:hover{transform:translateY(-1px)}"
+      "css": ".ds-card{position:relative;display:grid;gap:8px;overflow:hidden;padding:16px 16px 16px 20px;border-radius:13px;background:#fff;box-shadow:0 1px 2px rgb(27 30 36/.06),0 6px 18px rgb(27 30 36/.07);color:#1B1E24;font:14px system-ui}.ds-card i{position:absolute;inset:0 auto 0 0;width:5px;background:#0D7271}.ds-card small,.ds-card span{color:#656B73}.ds-card strong{font-size:15px}.ds-card:hover{transform:translateY(-1px)}"
     },
     {
       "name": "State pill",
@@ -70,7 +74,7 @@
       "refersTo": "chip-awaiting-review",
       "description": "Tinted state signal with text, never color alone.",
       "html": "<span class=\"ds-chip\">Awaiting review</span>",
-      "css": ".ds-chip{display:inline-block;border-radius:999px;padding:4px 8px;background:#ECEDF7;color:#4B4FA6;font:700 10px system-ui;letter-spacing:.1em;text-transform:uppercase}"
+      "css": ".ds-chip{display:inline-block;border-radius:999px;padding:4px 8px;background:#ECEDF7;color:#4B4FA6;font:700 10px system-ui;letter-spacing:.09em;text-transform:uppercase}"
     },
     {
       "name": "Active navigation",
@@ -88,9 +92,11 @@
     "rules": [
       { "name": "Two Voices", "body": "Teal means action, tooling, and ready. Indigo means review and needs-you. Neither decorates generic content.", "section": "colors" },
       { "name": "Mono Is Code", "body": "Use monospace only for code identities such as paths, branch refs, commands, hashes, and session IDs.", "section": "typography" },
-      { "name": "Review Gate", "body": "Reject is ghost and Accept & merge is teal, last, and sticky on the current run.", "section": "components" }
+      { "name": "Review Gate", "body": "Reject is ghost and Accept & merge is teal, last, and sticky on the current run.", "section": "components" },
+      { "name": "Ink-Flip", "body": "White-on-solid await/merged fills fail AA in dark; never darken the fill — flip the glyph ink per theme via --on-await / --on-done (white in light, dark ink in dark).", "section": "colors" },
+      { "name": "Amber Exception (ADR-0033)", "body": "Running amber measures 3.1–3.7:1 at ~10px — an accepted bounded exception because running is never carried by colour alone (pulsing dot + label + position). If amber ever becomes the sole carrier, it must meet AA independently.", "section": "colors" }
     ],
-    "dos": ["Do order the Board by what needs the operator now.", "Do use teal for ordinary actions and indigo only for review.", "Do use merged and merging in operator-facing copy."],
-    "donts": ["Don't use teal for review state.", "Don't use monospace for ordinary prose or figures.", "Don't reintroduce Deck row lists, connector lines, or a Kanban board."]
+    "dos": ["Do order the Board by what needs the operator now.", "Do use teal for ordinary actions and indigo only for review.", "Do use merged and merging in operator-facing copy.", "Do flip glyph ink per theme on bright await/merged fills to hold AA."],
+    "donts": ["Don't use teal for review state.", "Don't use monospace for ordinary prose or figures.", "Don't give ready its own green — ready is teal, merged is emerald.", "Don't darken the await/merged fills to chase AA, and don't restyle the Bold density (locked).", "Don't reintroduce Deck row lists, connector lines, or a Kanban board."]
   }
 }

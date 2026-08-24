@@ -72,7 +72,7 @@ import {
 } from '../verification/combine.js';
 import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
-import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
+import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import {
   evaluateAdmission,
   AdmissionRejected,
@@ -875,7 +875,16 @@ export class Runner {
    * Run `cancelled`. The Task was already cancelled by the caller, so the
    * projection leaves it untouched (taskAction none). */
   async cancelForTask(taskId: number): Promise<void> {
-    await this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
+    // Every caller invokes this fire-and-forget (REST/MCP cancel + delete), so a
+    // rejection here has no awaiter and would surface as an unhandled rejection
+    // that takes the daemon down. A cancel is a best-effort operational action:
+    // contain its own errors (the run-gone race is already a no-op in
+    // settleTaskRun; anything else is logged, not fatal).
+    try {
+      await this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
+    } catch (err) {
+      console.error(`cancelForTask(${taskId}) failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**
@@ -906,12 +915,35 @@ export class Runner {
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
       handled = true;
-      await this.coordinateSettle(await this.taskService.get(taskId), await this.runStore.get(active.runId), type, projection);
+      await this.settleRunIfPresent(taskId, active.runId, type, projection);
       this.kill(active);
     }
     if (handled) return;
     const parked = (await this.runStore.listForTask(taskId)).find((r) => r.state === 'running');
-    if (parked) await this.coordinateSettle(await this.taskService.get(taskId), parked, type, projection);
+    if (parked) await this.settleRunIfPresent(taskId, parked.id, type, projection);
+  }
+
+  /**
+   * Settle a run, tolerating its row having been deleted concurrently. The
+   * get→append settle spans awaits and does not hold the run's existence stable,
+   * so a racing delete — `beginRun`'s lease-conflict compensating delete
+   * (which explicitly leaves a transient `running` row) or a task-delete cascade
+   * — can land after the row was read (an FK violation on the fact insert) or
+   * before it (a `not_found` read). A run that no longer exists cannot be
+   * cancelled, so both mean the settle is a no-op, not an error.
+   */
+  private async settleRunIfPresent(
+    taskId: number,
+    runId: number,
+    type: RunFactType,
+    projection: SettleProjection,
+  ): Promise<void> {
+    try {
+      await this.coordinateSettle(await this.taskService.get(taskId), await this.runStore.get(runId), type, projection);
+    } catch (err) {
+      if (isForeignKeyViolation(err) || (err instanceof DomainError && err.code === 'not_found')) return;
+      throw err;
+    }
   }
 
   /**

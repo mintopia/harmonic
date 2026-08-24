@@ -101,44 +101,54 @@ colors:
   btn-go-fill-light: "#4B4FA6"
   btn-go-fill-dark: "#5B60C2"
 typography:
-  display:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
-    fontSize: "1.625rem"
+  hero:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "3.25rem"
     fontWeight: 800
-    lineHeight: 1.15
+    lineHeight: 1
     letterSpacing: "-0.03em"
+  display:
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "1.4375rem"
+    fontWeight: 800
+    lineHeight: 1.2
+    letterSpacing: "-0.025em"
   title:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
-    fontSize: "1rem"
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "0.9375rem"
     fontWeight: 700
-    lineHeight: 1.3
+    lineHeight: 1.4
   body:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
-    fontSize: "0.90625rem"
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+    fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.5
   small:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 400
+    lineHeight: 1.45
   label:
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
     fontSize: "0.625rem"
     fontWeight: 700
-    letterSpacing: "0.1em"
+    lineHeight: 1.2
+    letterSpacing: "0.09em"
   code:
     fontFamily: "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace"
-    fontSize: "0.78125rem"
+    fontSize: "0.8125rem"
     fontWeight: 400
     lineHeight: 1.5
 rounded:
   sm: "8px"
   md: "10px"
   lg: "13px"
+  xl: "13px"
   pill: "999px"
   bold-sm: "3px"
   bold-md: "3px"
   bold-lg: "4px"
+  bold-xl: "4px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -210,18 +220,19 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 
 ## 3. Typography
 
-**Display / UI / Body:** system sans (`system-ui, -apple-system, Segoe UI, Roboto, …`). The 2026-08-21 audit **dropped the Google-hosted Inter/JetBrains `<link>`s** — no external font requests; character comes from scale, weight, and spacing, not an exotic face.
-**Code:** JetBrains Mono (`ui-monospace` fallback) — **code only.**
+**Display / UI / Body:** system sans (`--font-display`: `ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif`). No CDN font `<link>`s — character comes from scale, weight, and spacing, not an exotic face.
+**Code:** JetBrains Mono (`--font-data`, `ui-monospace` fallback) — **code only**, self-hosted via `@fontsource/jetbrains-mono` (weights 400 / 600), so no external request.
 
 Working weights: 400 body / 500–600 UI emphasis / 700–800 headings. `tabular-nums` is inherent everywhere digits appear, so numbers line up in sans without mono.
 
 ### Hierarchy
-- **Display** (800, ~1.625rem, −0.03em): the Ticket page title — the one real headline.
-- **Title** (600–700, ~1rem): band titles, run headers, sidebar-card labels.
-- **Body** (400, ~0.906rem/1.5): prose, agent messages, UI copy. Prose caps ~72–78ch; streams and diffs may run wider.
-- **Small** (~0.75rem): metadata lines, notes, telemetry, run-chip sublines.
-- **Label** (700, 0.625rem, +0.1em, uppercase): section headers, field labels, table headers. The only uppercase.
-- **Code** (mono, ~0.78rem): file paths, shell commands, branch/epic refs, commit oids, session ids, inline code.
+- **Hero** (800, 3.25rem/1, −0.03em): the single giant figure — the Stats headline cost number. Not used for titles.
+- **Display** (800, 1.4375rem/1.2, −0.025em): the Ticket page title — the one real headline.
+- **Title** (700, 0.9375rem/1.4): band titles, run headers, section labels, sidebar-card labels.
+- **Body** (400, 0.875rem/1.5): prose, agent messages, UI copy. Prose caps ~72–78ch; streams and diffs may run wider.
+- **Small** (400, 0.75rem/1.45): metadata lines, notes, telemetry, run-chip sublines.
+- **Label** (700, 0.625rem, +0.09em, uppercase): section headers, field labels, table headers. The only uppercase.
+- **Code** (mono, 0.8125rem/1.5): file paths, shell commands, branch/epic refs, commit oids, session ids, inline code.
 
 ### Named rules
 **The Mono Is Code Rule.** Monospace appears *only* where the operator reads genuine code or a code-identity token. Everything read as language or a plain figure is sans with `tabular-nums` — model/harness names, costs, token counts, ordinary ids, timestamps, statuses. A whole metadata line in mono is a regression.
@@ -237,8 +248,10 @@ Working weights: 400 body / 500–600 UI emphasis / 700–800 headings. `tabular
 Depth is real but quiet, **declared once per element** (never a border *and* a wide shadow — that ghost-card pairing is banned):
 - **Cards, bands, dialogs — Light:** Surface fill on the canvas with a soft two-layer shadow. **Dark:** shadows fade on a dark field, so an element is a lightness step (canvas → shell → surface → raised) with a 1px hairline ring standing in for the shadow. This is the `border-color:transparent` trick: elevation is declared once — the shadow carries lift in light, the hairline ring in dark.
 - **Floating elements** (dialogs): a stronger float shadow in light; in dark, a heavier shadow plus an Edge ring.
-- **Cards carry a colored left accent bar** in their state's colour (`.card::before`, 4px / 5px in Bold). This is **Jess-directed and deliberately overrides** the craft-floor "no side-stripe borders" default — the bar is the fastest state read on a scannable strip.
-- The focus ring is a 2px teal outline, offset 2px, on `:focus-visible`, everywhere; `:focus{outline:none}` is paired with `:focus-visible` rules (not a bare removal).
+- **Cards carry a colored left accent bar** in their state's colour — a rendered `<span aria-hidden>` at `absolute inset-y-0 left-0 w-[5px]`, tinted per state via `CARD_ACCENT[state]` (Board.tsx), **not** a `::before` pseudo. This is **Jess-directed and deliberately overrides** the craft-floor "no side-stripe borders" default — the bar is the fastest state read on a scannable strip.
+- The focus ring is a 2px teal outline (`outline-accent`), offset 2px, on `:focus-visible`, everywhere; the global `:focus-visible` rule in index.css sets `outline: 2px solid var(--hm-accent); outline-offset: 2px`.
+
+**Implementation note (reconciled to `web/src/index.css` + `web/src/components`, 2026-08-24).** Paper ships as **Tailwind v4 utilities over the `@theme` tokens** in `index.css` — the primitives are `--hm-*` (light `:root`, dark `:root:not([data-theme='light'])` / `:root[data-theme='dark']`), aliased to `--color-*` via `@theme inline` and consumed as utilities (`bg-accent`, `text-ready`, `bg-ready-tint`, `border-edge`, `text-faint`, `tabular-nums`). Class-name selectors named in this file (`.card`, `.tkshell`, `.bandhd`, `.navitem`) are **illustrative structure from the mockup**, not authored CSS classes; the utilities above are the real styling hooks. Dark hover accent is `--hm-accent-hot` (`#4CD0C7`); the switch off-track is `--hm-switch-off` (`#696C73` dark).
 
 ## 5. Layout & Information Architecture
 

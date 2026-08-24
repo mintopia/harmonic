@@ -8,9 +8,20 @@ export interface Crumb {
 /**
  * The shared breadcrumb bar (the mockup's `.crumbbar`) — one component for the
  * Board home and the Ticket page so the two never drift. A crumb with `onClick`
- * renders as a button (back navigation); the last crumb is plain text.
+ * renders as a button (back navigation); the last crumb is plain text. An
+ * optional `right` node is pinned to the bar's trailing edge for a page-level
+ * action (e.g. the Board's tracker refresh) so it reads as header chrome
+ * rather than floating above the content.
  */
-export function CrumbBar({ crumbs, className = '' }: { crumbs: Crumb[]; className?: string }) {
+export function CrumbBar({
+  crumbs,
+  right,
+  className = '',
+}: {
+  crumbs: Crumb[];
+  right?: ReactNode;
+  className?: string;
+}) {
   return (
     <nav
       aria-label="Breadcrumb"
@@ -32,6 +43,7 @@ export function CrumbBar({ crumbs, className = '' }: { crumbs: Crumb[]; classNam
           )}
         </Fragment>
       ))}
+      {right && <div className="ml-auto flex items-center">{right}</div>}
     </nav>
   );
 }

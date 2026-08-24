@@ -87,6 +87,16 @@ describe('boardSections', () => {
     expect(sections.standalone.map((entry) => entry.id)).toEqual([3, 2, 1]);
   });
 
+  it("excludes an Epic's own driver ticket (trackerRef === epic.ref) from the flat sections", () => {
+    const sections = boardSections(
+      [task(9, 'ready', { trackerRef: 30 }), task(1, 'ready'), task(2, 'running')],
+      [epic(30, [member(31, 2, { state: 'running' })])],
+    );
+    expect(sections.standalone.map((entry) => entry.id)).toEqual([1]);
+    expect(sections.active.map((entry) => entry.id)).toEqual([]);
+    expect(sections.epics.map((entry) => entry.ref)).toEqual([30]);
+  });
+
   it('drops fully merged Epics and returns their members to standalone treatment', () => {
     const merged = epic(50, [member(1, 501, { landStatus: 'completed', state: 'completed' })]);
     const sections = boardSections([task(501, 'ready')], [merged]);

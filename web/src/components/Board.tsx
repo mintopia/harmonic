@@ -25,6 +25,7 @@ import {
   sectionLabel,
   stateChip,
   stateDot,
+  stateFill,
   toolChip,
   touchTargetInline,
 } from '../ui';
@@ -135,17 +136,6 @@ function ReviewButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-const CARD_ACCENT: Record<Task['state'], string> = {
-  draft: 'bg-muted',
-  blocked: 'bg-blocked',
-  ready: 'bg-ready-dot',
-  running: 'bg-running-dot',
-  'awaiting-review': 'bg-await-dot',
-  completed: 'bg-merged-dot',
-  failed: 'bg-fail-dot',
-  cancelled: 'bg-faint',
-};
-
 function WhoLine({ harness, model }: { harness: string; model: string }) {
   return (
     <span className="min-w-0 truncate text-small text-muted">
@@ -171,7 +161,7 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
 
   return (
     <article data-task-id={task.id} className={`group bold-wash ${task.state} relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float`}>
-      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${CARD_ACCENT[task.state]}`} />
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${stateFill(task.state)}`} />
       <div className="flex flex-1 flex-col px-4 py-4 pl-5">
         <div className="flex items-center gap-2">
           {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}

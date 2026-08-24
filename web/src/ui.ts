@@ -270,7 +270,11 @@ const LANE_BORDER: Record<TaskState, string> = {
   failed: 'border-fail-dot',
   cancelled: 'border-faint',
 };
-const LANE_DOT: Record<TaskState, string> = {
+/** State fill: the state's solid dot/bar colour with no shape or size — the one
+ * source of truth for every element that IS the state colour (the lane dot, the
+ * board card's 5px left accent bar). State-hued rows take their dot colour;
+ * the neutral draft/cancelled rows take Faint (no state hue). */
+const STATE_FILL: Record<TaskState, string> = {
   draft: 'bg-faint',
   blocked: 'bg-blocked',
   ready: 'bg-ready-dot',
@@ -284,8 +288,11 @@ const LANE_DOT: Record<TaskState, string> = {
 export function laneBorder(state: TaskState): string {
   return LANE_BORDER[state];
 }
+export function stateFill(state: TaskState): string {
+  return STATE_FILL[state];
+}
 export function laneDot(state: TaskState): string {
-  return LANE_DOT[state];
+  return STATE_FILL[state];
 }
 
 /* ── Deck primitives (DESIGN.md § 5–6) ────────────────────────────────

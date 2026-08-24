@@ -578,7 +578,7 @@ export function App() {
 
   const navItems = (
     <>
-      <nav aria-label="Views" className="flex flex-col gap-4 rail:flex-1">
+      <nav aria-label="Views" className="flex flex-col gap-0.5 rail:flex-1">
         {RAIL_GROUPS.map((group) => {
           // Wire each group's uppercase Label header to its buttons so a screen
           // reader announces the Workspace grouping the sighted user sees
@@ -843,49 +843,67 @@ export function App() {
               onOpenTask={openTaskById}
             />
           ) : (
-            <main id="main-content" tabIndex={-1} className="h-full min-w-0 overflow-y-auto px-6 py-5">
-              {showWorkspaceEmptyState ? (
-                <EmptyState
-                  title="No workspace open"
-                  className="mt-24"
-                  action={
-                    <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
-                      Open a workspace
-                    </button>
+            // Full-view surface (issue: shared crumb bar): the breadcrumb is
+            // pinned above the scrolling <main> — the same shrink-0 crumb /
+            // flex-1 scroll split the Ticket page uses — so every view carries
+            // the same navigation header and full-height views (Graph) still
+            // fill the region below it without fighting a sticky in-flow crumb.
+            <div className="flex h-full flex-col">
+              {/* Global Settings is a header-icon surface outside the Workspace
+                  nav hierarchy, so it carries no breadcrumb. */}
+              {!showWorkspaceEmptyState && view !== 'settings' && (
+                <CrumbBar
+                  className="shrink-0"
+                  crumbs={
+                    view === 'board'
+                      ? [{ node: <span className="font-semibold text-ink">{activeWorkspaceName ?? instanceName}</span> }]
+                      : [
+                          {
+                            node: <span className="font-semibold text-ink">{activeWorkspaceName ?? instanceName}</span>,
+                            onClick: () => pickView('board'),
+                          },
+                          { node: <span className="text-ink">{VIEW_LABELS[view]}</span> },
+                        ]
                   }
-                >
-                  A workspace points Harmonic at a project directory — its tasks, runs, and cost all
-                  scope to it. Open one to get started.
-                </EmptyState>
-              ) : (
-                <>
-                  {view === 'board' && (
-                    <>
-                      {/* Breadcrumb bar — just the Workspace name on the Board home
-                          (no "/ Board" suffix); the shared crumb bar the Ticket
-                          page uses, broken out of the padded main and pinned. */}
-                      <CrumbBar
-                        className="-mx-6 -mt-5 mb-5 sticky -top-5 z-[3]"
-                        crumbs={[{ node: <span className="font-semibold text-ink">{activeWorkspaceName ?? instanceName}</span> }]}
-                      />
-                      {/* Manual tracker refresh — only when this Workspace mirrors a
-                          tracker; otherwise there's nothing to re-poll. */}
-                      {activeWorkspace?.trackerEnabled && (
-                        <div className="mb-4 flex">
-                          <button
-                            className={`${btnQuiet} inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 hover:bg-raised disabled:opacity-60`}
-                            disabled={refreshingTracker}
-                            title="Rescan the tracker and mirror ticket changes now"
-                            onClick={refreshTracker}
-                          >
-                            <Icon
-                              name="refresh"
-                              className={refreshingTracker ? 'motion-safe:animate-spin' : ''}
-                            />
-                            {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
-                          </button>
-                        </div>
-                      )}
+                  right={
+                    // Manual tracker refresh lives in the crumb bar's trailing
+                    // edge — header chrome, not a control floating over the
+                    // Board — and only when this Workspace mirrors a tracker.
+                    view === 'board' && activeWorkspace?.trackerEnabled ? (
+                      <button
+                        className={`${btnQuiet} inline-flex items-center gap-1.5 rounded-md border border-hairline px-2.5 py-1.5 text-muted hover:bg-raised hover:text-ink disabled:opacity-60`}
+                        disabled={refreshingTracker}
+                        title="Rescan the tracker and mirror ticket changes now"
+                        onClick={refreshTracker}
+                      >
+                        <Icon name="refresh" className={refreshingTracker ? 'motion-safe:animate-spin' : ''} />
+                        {refreshingTracker ? 'Refreshing…' : 'Refresh tickets'}
+                      </button>
+                    ) : undefined
+                  }
+                />
+              )}
+              <main
+                id="main-content"
+                tabIndex={-1}
+                className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pt-5 pb-16"
+              >
+                {showWorkspaceEmptyState ? (
+                  <EmptyState
+                    title="No workspace open"
+                    className="mt-24"
+                    action={
+                      <button className={btnPrimary} onClick={() => setCreatingWorkspace(true)}>
+                        Open a workspace
+                      </button>
+                    }
+                  >
+                    A workspace points Harmonic at a project directory — its tasks, runs, and cost all
+                    scope to it. Open one to get started.
+                  </EmptyState>
+                ) : (
+                  <>
+                    {view === 'board' && (
                       <Board
                         tasks={taskList}
                         loading={tasks === null}
@@ -899,8 +917,7 @@ export function App() {
                         focusEpic={focusEpic}
                         onClearFocus={() => setFocusEpic(null)}
                       />
-                    </>
-                  )}
+                    )}
                   {view === 'activity' && <ActivityView config={config} />}
                   {view === 'table' && (
                     <TableView
@@ -937,9 +954,10 @@ export function App() {
                       onDeleted={handleWorkspaceDeleted}
                     />
                   )}
-                </>
-              )}
-            </main>
+                  </>
+                )}
+              </main>
+            </div>
           )}
 
           {!noWorkspaces && (
