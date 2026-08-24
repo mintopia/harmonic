@@ -190,6 +190,11 @@ export interface RunnerEvents {
   onRunEvent?: (event: PersistedRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onRunFinished?: (run: RunRow) => void;
+  /** Fired on each mid-run phase transition (executing → validating → verifying
+   * …), so the live board/ticket phase stepper advances without waiting for the
+   * settle-time `onRunFinished`. Carries the freshly-updated run row; wired to
+   * the same `run_changed` broadcast. */
+  onRunPhaseChanged?: (run: RunRow) => void;
   /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
   onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
 }
@@ -2247,6 +2252,7 @@ export class Runner {
       for (const phase of phasePath(from, to, gate)) {
         await this.runStore.update(run.id, { phase });
         record('lifecycle', { event: 'phase', phase });
+        this.events.onRunPhaseChanged?.(await this.runStore.get(run.id));
       }
     };
 
@@ -2267,6 +2273,7 @@ export class Runner {
     if (healCtx || remergeCtx) {
       await this.runStore.update(run.id, { phase: 'executing' });
       record('lifecycle', { event: 'phase', phase: 'executing' });
+      this.events.onRunPhaseChanged?.(await this.runStore.get(run.id));
     }
 
     let child: ChildProcess;

@@ -905,6 +905,17 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
    * reported (`verification/critic.ts`'s fail-safe rule); this column is the
    * persisted trace of that override having fired. */
   mutated: integer('mutated', { mode: 'boolean' }).notNull().default(false),
+  /** Locator for the critic's native harness transcript (ADR-0040): resolved
+   * from its harness `sessionId` before the disposable worktree is disposed, so
+   * the operator can read the critic's own session log (reads, greps, builds)
+   * on demand. Null for the command verifier, for a harness that writes no
+   * native JSONL, and for every attempt recorded before this column existed —
+   * all rendered "log unavailable". Server-only; never served raw to a client. */
+  transcriptPath: text('transcript_path'),
+  /** The critic harness id (`claude`/`codex`/…) that produced {@link transcriptPath},
+   * kept so the log parser can be picked without re-deriving it from config —
+   * the critic harness can differ from the builder's (`critic.harness ?? task.harness`). */
+  harness: text('harness'),
 }, (t) => [
   uniqueIndex('verification_attempts_run_seq_unique').on(t.runId, t.seq),
 ]);

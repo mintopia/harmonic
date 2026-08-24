@@ -64,6 +64,9 @@ export interface VerificationAttempt {
   output: string;
   phase: RunPhase;
   mutated: boolean;
+  /** Whether a critic-session transcript can be read for this attempt
+   * (ADR-0040) — fetch it with `api.criticLog(id)`. */
+  hasTranscript: boolean;
 }
 
 /** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */

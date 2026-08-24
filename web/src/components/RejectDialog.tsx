@@ -13,6 +13,30 @@ import {
 import type { ContinuationPreview } from '../types';
 import { taskLabel } from '../id-format.js';
 
+type AvailablePreview = Extract<ContinuationPreview, { available: true }>;
+
+/** Turn the raw continuation estimate into a plain-language warmth headline and
+ * a recommended path, so the operator can tell at a glance whether the session
+ * is still warm and which re-attempt is cheapest — the bare warm/cold chips
+ * alone read as a ticket status, not a cost. */
+export function warmthGuidance(p: AvailablePreview): { headline: string; recommend: 'full' | 'condensed' | null } {
+  const e = p.continueFull.estimate;
+  if (!e.warmthKnown) {
+    return { headline: "Session warmth is unknown — cost can't be estimated, so either path is fine.", recommend: null };
+  }
+  if (e.warm) {
+    const left = e.msUntilCold != null ? ` (~${Math.max(1, Math.round(e.msUntilCold / 60_000))}m of cache left)` : '';
+    return {
+      headline: `This session is still warm${left} — "Continue full conversation" reuses its cache and is the cheapest re-attempt.`,
+      recommend: 'full',
+    };
+  }
+  return {
+    headline: 'This session has gone cold — "Continue full" re-reads the whole history, so "Start condensed" is the cheaper re-attempt.',
+    recommend: 'condensed',
+  };
+}
+
 export function RejectDialog({
   taskId,
   onClose,
@@ -90,19 +114,24 @@ export function RejectDialog({
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
         {preview?.available && (
-          <div className="mb-2 space-y-1 text-small">
-            <p>
-              <span className={`${continuationCostChip(preview.continueFull.estimate.band)} mr-2`}>
-                {preview.continueFull.estimate.band}
-              </span>
-              <span className="text-muted">{preview.continueFull.estimate.note}</span>
-            </p>
-            <p>
-              <span className={`${continuationCostChip(preview.startCondensed.estimate.band)} mr-2`}>
-                {preview.startCondensed.estimate.band}
-              </span>
-              <span className="text-muted">{preview.startCondensed.estimate.note}</span>
-            </p>
+          <div className="mb-3 rounded-md border border-edge p-3 text-small">
+            <p className="mb-2 text-ink">{warmthGuidance(preview).headline}</p>
+            <div className="space-y-1">
+              <p>
+                <span className={`${continuationCostChip(preview.continueFull.estimate.band)} mr-2`}>
+                  {preview.continueFull.estimate.band}
+                </span>
+                <span className="font-medium text-ink">Continue full</span>{' '}
+                <span className="text-muted">— {preview.continueFull.estimate.note}</span>
+              </p>
+              <p>
+                <span className={`${continuationCostChip(preview.startCondensed.estimate.band)} mr-2`}>
+                  {preview.startCondensed.estimate.band}
+                </span>
+                <span className="font-medium text-ink">Start condensed</span>{' '}
+                <span className="text-muted">— {preview.startCondensed.estimate.note}</span>
+              </p>
+            </div>
           </div>
         )}
         <div className="flex flex-wrap justify-end gap-2">
@@ -112,10 +141,10 @@ export function RejectDialog({
           {preview?.available ? (
             <>
               <button type="button" onClick={submit(true, 'full')} disabled={busy} className={btnGhost}>
-                Continue full conversation
+                Continue full conversation{warmthGuidance(preview).recommend === 'full' ? ' (recommended)' : ''}
               </button>
               <button type="button" onClick={submit(true, 'condensed')} disabled={busy} className={btnGhost}>
-                Start condensed
+                Start condensed{warmthGuidance(preview).recommend === 'condensed' ? ' (recommended)' : ''}
               </button>
             </>
           ) : (

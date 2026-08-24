@@ -20,6 +20,11 @@ export interface VerificationAttemptInput {
    * in today (mirrors the schema column's default). */
   phase?: RunPhase;
   mutated: boolean;
+  /** Locator for the critic's native transcript + the harness that wrote it
+   * (ADR-0040). Both null for the command verifier and where no transcript was
+   * resolved; the pair is what the attempt-log endpoint parses on demand. */
+  transcriptPath?: string | null;
+  harness?: string | null;
 }
 
 /**
@@ -72,10 +77,18 @@ export class VerificationAttemptStore {
           output: attempt.output,
           phase: attempt.phase ?? 'verifying',
           mutated: attempt.mutated,
+          transcriptPath: attempt.transcriptPath ?? null,
+          harness: attempt.harness ?? null,
         })
         .returning()
         .get();
     });
+  }
+
+  /** One attempt by id, or undefined — backs the attempt-log endpoint, which
+   * reads back the row's `transcriptPath`/`harness` to parse its critic log. */
+  get(id: number): Promise<VerificationAttemptRow | undefined> {
+    return this.db.read((db) => db.select().from(verificationAttempts).where(eq(verificationAttempts.id, id)).get());
   }
 
   /** A Run's Verification attempt log in `seq` order. */

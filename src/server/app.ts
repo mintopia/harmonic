@@ -273,6 +273,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunFinished: (run) => bus.emit('run_changed', run),
+      onRunPhaseChanged: (run) => bus.emit('run_changed', run),
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
     mergeTrain,

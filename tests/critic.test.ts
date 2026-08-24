@@ -103,6 +103,9 @@ describe('runCritic (issue #136)', () => {
       output,
       mutated: false,
       inputOid: oid,
+      // The fake drive reports no sessionId, so no transcript resolves (ADR-0040).
+      transcriptPath: null,
+      harness: 'claude',
     });
   });
 

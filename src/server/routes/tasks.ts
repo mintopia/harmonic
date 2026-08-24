@@ -300,6 +300,10 @@ const verificationAttemptSchema = z.object({
   phase: z.enum(RUN_PHASES).meta({ example: 'verifying' }),
   /** Whether the verifier mutated the worktree. */
   mutated: z.boolean().meta({ example: false }),
+  /** Whether a critic-session transcript is available for this attempt
+   * (ADR-0040). The raw path is server-only; fetch the parsed log from
+   * `GET /api/verification-attempts/:id/log`. */
+  hasTranscript: z.boolean().meta({ example: false }),
 });
 
 const verificationAttemptsListResponseSchema = z.object({ verificationAttempts: z.array(verificationAttemptSchema) });
@@ -952,7 +956,41 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.runs.assertExists(req.params.id);
-      return { verificationAttempts: await ctx.verificationAttempts.list(req.params.id) };
+      const attempts = await ctx.verificationAttempts.list(req.params.id);
+      // The raw `transcriptPath`/`harness` columns stay server-only (an absolute
+      // FS path is not the client's business); the response schema strips them
+      // and the client reads the parsed log by attempt id when `hasTranscript`.
+      return { verificationAttempts: attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })) };
+    },
+  );
+
+  app.get(
+    '/verification-attempts/:id/log',
+    {
+      schema: {
+        tags: ['Runs'],
+        description:
+          "Read a critic verification attempt's native harness transcript (ADR-0040) — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+        params: idParamsSchema,
+        response: {
+          200: runLogResponseSchema.describe('The critic session transcript events, or an explicit unavailable state.'),
+        },
+      },
+    },
+    async (req) => {
+      const attempt = await ctx.verificationAttempts.get(req.params.id);
+      if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const };
+      // No Run window to bound against — a critic attempt has its own single-turn
+      // transcript, so accept every event in the file.
+      const log = await readTranscriptLog({
+        harness: attempt.harness,
+        path: attempt.transcriptPath,
+        startedAt: 0,
+        finishedAt: null,
+      });
+      return log.status === 'available'
+        ? { ...log, events: log.events.map((event) => ({ ...event, runId: attempt.runId })) }
+        : log;
     },
   );
 

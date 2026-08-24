@@ -29,6 +29,7 @@ const attempt = (
   output: '',
   phase: 'verifying',
   mutated: false,
+  hasTranscript: false,
   ...overrides,
 });
 

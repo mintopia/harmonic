@@ -70,6 +70,10 @@ export interface CriticDriveResult {
   /** Every `session/request_permission` the harness asked during the turn,
    * verbatim — kept for audit even though every one of them is denied. */
   permissionRequests: unknown[];
+  /** The harness's own `sessionId` for this turn (ADR-0040), used to resolve
+   * the native transcript locator. Absent/null if the handshake never yielded
+   * one (or for a fake drive that does not model a session). */
+  sessionId?: string | null;
 }
 
 export interface CriticDriveRequest {
@@ -201,7 +205,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         // `sessionModelId` fills it via `session/set_model`; absent for the
         // rest, exactly mirroring the Runner's own handshake call.
         const modelId = adapterFor(req.harnessId).sessionModelId?.(req.model);
-        await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId }), timeout]);
+        const sessionId = await Promise.race([driver.handshake({ cwd: req.cwd, mcpServers: [], modelId }), timeout]);
 
         const mode = criticPermissionMode(req.harnessId, driver.availableModes);
         if (mode) {
@@ -209,7 +213,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
         }
 
         await Promise.race([driver.prompt([{ type: 'text', text: req.prompt }]), timeout]);
-        return { output, permissionRequests };
+        return { output, permissionRequests, sessionId: sessionId ?? null };
       } finally {
         if (timer) clearTimeout(timer);
         driver.dispose();
@@ -254,6 +258,11 @@ export interface CriticAttempt {
   mutated: boolean;
   /** The candidate OID this attempt verified. */
   inputOid: string;
+  /** The critic's native transcript locator + the harness that wrote it
+   * (ADR-0040), for the operator's on-demand critic-session log. Both null when
+   * no session id was captured or the harness resolves no transcript. */
+  transcriptPath: string | null;
+  harness: string | null;
 }
 
 /** Generous default for a single read-only review turn — long enough for a
@@ -298,6 +307,7 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
   let verdict: Verdict = 'inconclusive';
   let summary = '';
   let output = '';
+  let sessionId: string | null = null;
 
   let proof: { mutated: boolean };
   try {
@@ -318,6 +328,7 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
           timeoutMs,
         });
         output = result.output;
+        sessionId = result.sessionId ?? null;
         const parsed = parseCriticOutput(result.output);
         if (parsed.ok) {
           verdict = parsed.value.verdict;
@@ -340,6 +351,8 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
       output: '',
       mutated: false,
       inputOid: args.candidateOid,
+      transcriptPath: null,
+      harness: args.harnessId,
     };
   }
 
@@ -349,7 +362,34 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
     verdict = 'inconclusive';
   }
 
-  return { verifier: 'critic', verdict, summary, output, mutated: proof.mutated, inputOid: args.candidateOid };
+  // Resolve the native transcript locator now the turn is done (ADR-0040): the
+  // JSONL lives in the harness's session-log dir, outside the disposable
+  // worktree, so it survives the bracket closing above. Best-effort — an
+  // unresolved path (harness with no usage parser, or log not yet flushed)
+  // stays null and the operator sees "log unavailable".
+  let transcriptPath: string | null = null;
+  if (sessionId) {
+    try {
+      transcriptPath =
+        (await adapterFor(args.harnessId).usage?.resolveTranscriptPath?.({
+          sessionLogDir: args.harness.sessionLogDir,
+          sessionId,
+        })) ?? null;
+    } catch {
+      transcriptPath = null;
+    }
+  }
+
+  return {
+    verifier: 'critic',
+    verdict,
+    summary,
+    output,
+    mutated: proof.mutated,
+    inputOid: args.candidateOid,
+    transcriptPath,
+    harness: args.harnessId,
+  };
 }
 
 /**
@@ -371,5 +411,7 @@ export function criticAttemptToInput(attempt: CriticAttempt): VerificationAttemp
     summary: attempt.summary,
     output: attempt.output,
     mutated: attempt.mutated,
+    transcriptPath: attempt.transcriptPath,
+    harness: attempt.harness,
   };
 }

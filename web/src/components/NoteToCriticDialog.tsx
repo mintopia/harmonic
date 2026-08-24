@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
+import { toastSuccess } from '../toast';
 import type { Task } from '../types';
 import { Modal } from './Modal';
 import { btnGhost, field, panelTitle, labelType } from '../ui';
@@ -17,7 +18,12 @@ export function NoteToCriticDialog({ task, onClose, onDone }: { task: Task; onCl
     setBusy(true);
     setError(null);
     try {
-      await api.noteToCritic(task.id, trimmed);
+      const updated = await api.noteToCritic(task.id, trimmed);
+      toastSuccess(
+        updated.state === 'awaiting-review'
+          ? `${taskLabel(task.id)} — critic passed; now awaiting review`
+          : `${taskLabel(task.id)} — critic re-reviewed; still escalated (see Verification)`,
+      );
       onDone();
     } catch (e) {
       setBusy(false);
@@ -45,10 +51,15 @@ export function NoteToCriticDialog({ task, onClose, onDone }: { task: Task; onCl
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
+        {busy && (
+          <p className="mb-3 text-muted" role="status" aria-live="polite">
+            Critic is re-reviewing {taskLabel(task.id)}'s candidate — this can take a minute…
+          </p>
+        )}
         {error && <p className="mb-3 text-fail">{error}</p>}
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={submit} disabled={busy || !trimmed} className={btnGhost}>
-            Send to critic
+            {busy ? 'Critic reviewing…' : 'Send to critic'}
           </button>
         </div>
       </div>

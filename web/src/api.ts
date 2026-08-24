@@ -203,6 +203,14 @@ export const api = {
   // `runGuardrailEvents`'s shape and 404 behaviour.
   runVerificationAttempts: (id: number) =>
     request<{ verificationAttempts: VerificationAttempt[] }>('GET', `/api/runs/${id}/verification-attempts`),
+  // A critic verification attempt's own native session transcript (ADR-0040) —
+  // same shape as `runLog`, keyed by attempt id, "unavailable" when no
+  // transcript was captured.
+  criticLog: (attemptId: number) =>
+    request<{ status: 'available'; events: RunLogEvent[] } | { status: 'unavailable' }>(
+      'GET',
+      `/api/verification-attempts/${attemptId}/log`,
+    ),
   runDiff: (id: number) =>
     request<{ branch: string | null; baseBranch: string | null; stat: string | null }>(
       'GET',

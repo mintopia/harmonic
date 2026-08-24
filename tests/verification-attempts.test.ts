@@ -155,6 +155,32 @@ describe('VerificationAttemptStore (issue #136)', () => {
     raw.close();
   });
 
+  it('round-trips the critic transcript locator, defaulting both columns to null (ADR-0040)', async () => {
+    const withLocator = await attempts.append(runId, {
+      mechanism: 'critic',
+      inputOid: 'a'.repeat(40),
+      verdict: 'pass',
+      summary: 'looks good',
+      output: 'o',
+      mutated: false,
+      transcriptPath: '/home/u/.claude/projects/x/sess.jsonl',
+      harness: 'claude',
+    });
+    expect(withLocator).toMatchObject({ transcriptPath: '/home/u/.claude/projects/x/sess.jsonl', harness: 'claude' });
+    expect(await attempts.get(withLocator.id)).toEqual(withLocator);
+
+    // The command verifier (and any attempt that resolved no session) leaves both null.
+    const noLocator = await attempts.append(runId, {
+      mechanism: 'command',
+      inputOid: 'a'.repeat(40),
+      verdict: 'pass',
+      summary: 'ok',
+      output: 'o',
+      mutated: false,
+    });
+    expect(noLocator).toMatchObject({ transcriptPath: null, harness: null });
+  });
+
   it('mechanism reserves the "command" value for the sibling verifier ticket', async () => {
     const row = await attempts.append(runId, {
       mechanism: 'command',
