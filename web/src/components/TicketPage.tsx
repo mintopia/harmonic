@@ -916,14 +916,14 @@ export function TicketPage({
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
         const hydratedEvents = appendRunLogEvents(log.status === 'available' ? log.events : [], pending);
-        cursor = runLogCursor(hydratedEvents);
+        cursor = runLogCursor(pending);
         setEvents(hydratedEvents);
         hydrated = true;
       },
       (error: unknown) => {
         if (!live) return;
         const hydratedEvents = appendRunLogEvents([], pending);
-        cursor = runLogCursor(hydratedEvents);
+        cursor = runLogCursor(pending);
         setEvents(hydratedEvents);
         hydrated = true;
         toastError(error);

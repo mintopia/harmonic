@@ -16,7 +16,7 @@ describe('run log firehose', () => {
     const bus = new EventBus();
     for (let seq = 1; seq <= 2_001; seq += 1) bus.emitRunLog(event(seq));
 
-    expect(bus.replayRunLog(42, 0).map((update) => update.seq)).toEqual(
+    expect([...bus.replayRunLog(42, 0)].map((update) => update.seq)).toEqual(
       Array.from({ length: 2_001 }, (_, index) => index + 1),
     );
   });

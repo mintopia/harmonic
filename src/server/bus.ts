@@ -44,8 +44,10 @@ export class EventBus {
     this.emitter.emit('run_log_event', event);
   }
 
-  replayRunLog(runId: number, after: number): LiveRunEvent[] {
-    return (this.runLogEvents.get(runId) ?? []).filter((event) => event.seq > after);
+  *replayRunLog(runId: number, after: number): IterableIterator<LiveRunEvent> {
+    for (const event of this.runLogEvents.get(runId) ?? []) {
+      if (event.seq > after) yield event;
+    }
   }
 
   on<K extends keyof BusEvents>(event: K, listener: BusEvents[K]): () => void {

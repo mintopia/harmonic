@@ -42,7 +42,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
       }
       if (!isRunLogSubscription(message)) return;
       unsubscribeRunLog?.();
-      const queued: ReturnType<typeof ctx.bus.replayRunLog> = [];
+      const queued: Array<ReturnType<typeof ctx.bus.replayRunLog> extends IterableIterator<infer Event> ? Event : never> = [];
       let replaying = true;
       unsubscribeRunLog = ctx.bus.on('run_log_event', (event) => {
         if (event.runId !== message.runId || event.seq <= message.after) return;
