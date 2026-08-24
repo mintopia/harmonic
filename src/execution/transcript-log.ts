@@ -14,6 +14,41 @@ export interface TranscriptLogEvent {
 
 export type TranscriptLog = { status: 'available'; events: TranscriptLogEvent[] } | { status: 'unavailable' };
 
+/** An operator steer message (Harmonic's own `steer_injected`/`steer_queued`
+ * run-event, ADR-0031's "small structured fact") to interleave into a parsed
+ * transcript so the operator's redirections show alongside the agent's turns. */
+export interface OperatorMessage {
+  ts: number;
+  text: string;
+  /** Queued for the next turn boundary vs injected mid-turn — informational. */
+  queued: boolean;
+}
+
+/**
+ * Merge operator steer messages into a parsed transcript, stable-sorted with
+ * the harness events by timestamp and re-sequenced. The harness JSONL only
+ * records the agent's side; the operator's messages live in Harmonic's run-event
+ * log, so this is where the two rejoin for the transcript view. A steer renders
+ * as its own `operator_message` row (see `web/event-stream-model.ts`).
+ */
+export function withOperatorMessages(events: TranscriptLogEvent[], operator: OperatorMessage[]): TranscriptLogEvent[] {
+  if (operator.length === 0) return events;
+  const merged: TranscriptLogEvent[] = [
+    ...events,
+    ...operator.map((m) => ({
+      id: 0,
+      seq: 0,
+      ts: m.ts,
+      type: 'session_update' as const,
+      payload: { sessionUpdate: 'operator_message', queued: m.queued, content: { type: 'text', text: m.text } },
+    })),
+  ]
+    // Stable sort by ts: agent events keep their file order (their timestamps are
+    // monotonic), and each steer slots in at the moment it was sent.
+    .sort((a, b) => a.ts - b.ts);
+  return merged.map((e, i) => ({ ...e, id: i + 1, seq: i + 1 }));
+}
+
 /**
  * Read the tail of a native transcript for the operator log. The cap matches
  * EventStream's render bound, and the yielding parser keeps a large live log

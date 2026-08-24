@@ -19,7 +19,7 @@ import { RUN_PHASES } from '../../domain/run-phases.js';
 import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
-import { readTranscriptLog } from '../../execution/transcript-log.js';
+import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
 import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi } from '../serialize.js';
 import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
@@ -899,7 +899,20 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
       });
-      return log.status === 'available' ? { ...log, events: log.events.map((event) => ({ ...event, runId: run.id })) } : log;
+      if (log.status !== 'available') return log;
+      // The JSONL is only the agent's side; fold in the operator's steer
+      // messages (Harmonic's own run-events) so the transcript shows the
+      // back-and-forth, not just the agent's turns.
+      const operator: OperatorMessage[] = (await ctx.runs.listEvents(run.id)).flatMap((e) => {
+        const p = e.payload as { event?: string; text?: unknown } | null;
+        return (p?.event === 'steer_injected' || p?.event === 'steer_queued') && typeof p.text === 'string'
+          ? [{ ts: e.ts, text: p.text, queued: p.event === 'steer_queued' }]
+          : [];
+      });
+      return {
+        status: 'available' as const,
+        events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, runId: run.id })),
+      };
     },
   );
 

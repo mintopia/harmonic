@@ -69,12 +69,26 @@ interface Row {
   label: string;
   ok: boolean;
   failed: boolean;
+  /** An operator steer message — a human turn, marked distinctly from the agent. */
+  operator?: boolean;
   text?: { body: string; muted: boolean };
   path?: string;
 }
 
 function toRow(item: StreamItem<RunLogEvent>, ts: number): Row {
   if (item.kind === 'text') {
+    if (item.variant === 'operator') {
+      return {
+        key: item.key,
+        ts,
+        glyph: 'chat',
+        label: 'Operator',
+        ok: false,
+        failed: false,
+        operator: true,
+        text: { body: item.text, muted: false },
+      };
+    }
     const thought = item.variant === 'thought';
     return {
       key: item.key,
@@ -133,11 +147,13 @@ export function TranscriptTimeline({ events }: { events: RunLogEvent[] }) {
   return (
     <ol className="overflow-hidden rounded-xl border border-hairline bg-surface py-1.5">
       {rows.map((row, i) => {
-        const chip = row.ok
-          ? 'bg-merged-tint text-merged'
-          : row.failed
-            ? 'bg-raised text-fail'
-            : 'bg-raised text-muted';
+        const chip = row.operator
+          ? 'bg-ink text-surface'
+          : row.ok
+            ? 'bg-merged-tint text-merged'
+            : row.failed
+              ? 'bg-raised text-fail'
+              : 'bg-raised text-muted';
         return (
           <li key={row.key} className="relative flex gap-[14px] px-[18px] py-[11px]">
             <span

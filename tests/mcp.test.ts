@@ -100,7 +100,10 @@ describe('mcp server & scoped keys', () => {
     await expect(mcpClient(server, key.body.token)).rejects.toThrow();
   });
 
-  it('falls back to operator cookie/query credentials when the Bearer credential is not an operator key (#276)', async () => {
+  it('falls back to the operator cookie credential when the Bearer is not an operator key (#276)', async () => {
+    // The cookie is the surviving fallback: #273 restricted query-token auth to
+    // websockets (a `?token=` in a URL leaks via logs/referrer), so a query
+    // token no longer authenticates `/mcp` — only the session cookie does.
     const runKey = await server.app.ctx.auth.createKey('run-1', { scope: 'run', runId: 1 });
     const readKey = await server.app.ctx.auth.createKey('read-1', { scope: 'read' });
 
@@ -109,12 +112,13 @@ describe('mcp server & scoped keys', () => {
       const cookieResult = await cookieClient.callTool({ name: 'list_leases', arguments: {} });
       expect(cookieResult.isError).not.toBe(true);
       await cookieClient.close();
-
-      const queryClient = await mcpClient(server, bearer, { queryToken: token });
-      const queryResult = await queryClient.callTool({ name: 'list_leases', arguments: {} });
-      expect(queryResult.isError).not.toBe(true);
-      await queryClient.close();
     }
+  });
+
+  it('does not accept a query-token credential on /mcp — query tokens are websocket-only (#273)', async () => {
+    // Even a valid operator token in the query string must not authenticate an
+    // /mcp call that carries no other operator credential.
+    await expect(mcpClient(server, 'adk_bogus', { queryToken: token })).rejects.toThrow();
   });
 
   it('injects a Run Key and the MCP endpoint into the harness env, deleting the key after the run', async () => {

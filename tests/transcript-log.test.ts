@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readTranscriptLog } from '../src/execution/transcript-log.js';
+import { readTranscriptLog, withOperatorMessages } from '../src/execution/transcript-log.js';
 
 describe('native transcript log parser', () => {
   it('reads Codex JSONL and keeps only the selected Run window', async () => {
@@ -147,5 +147,34 @@ describe('native transcript log parser', () => {
       status: 'available',
       events: [{ payload: { title: 'Edit web/src/ui.ts' } }],
     });
+  });
+});
+
+describe('withOperatorMessages', () => {
+  const ev = (id: number, ts: number, text: string) => ({
+    id,
+    seq: id,
+    ts,
+    type: 'session_update' as const,
+    payload: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+  });
+
+  it('returns the events untouched when there are no operator messages', () => {
+    const events = [ev(1, 100, 'a'), ev(2, 200, 'b')];
+    expect(withOperatorMessages(events, [])).toBe(events);
+  });
+
+  it('interleaves steers by timestamp, re-sequencing, as operator_message rows', () => {
+    const events = [ev(1, 100, 'first'), ev(2, 300, 'second')];
+    const merged = withOperatorMessages(events, [{ ts: 200, text: 'try the other file', queued: false }]);
+    expect(merged.map((e) => e.seq)).toEqual([1, 2, 3]);
+    expect(merged.map((e) => (e.payload as { content?: { text?: string } }).content?.text)).toEqual([
+      'first',
+      'try the other file',
+      'second',
+    ]);
+    const op = merged[1]!.payload as { sessionUpdate: string; queued: boolean };
+    expect(op.sessionUpdate).toBe('operator_message');
+    expect(op.queued).toBe(false);
   });
 });

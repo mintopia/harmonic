@@ -687,7 +687,17 @@ function RunHeader({ run }: { run: Run }) {
   );
 }
 
-function ChangesPane({ task, runId, selectedFile }: { task: Task; runId: number | null; selectedFile: string }) {
+function ChangesPane({
+  task,
+  runId,
+  selectedFile,
+  running,
+}: {
+  task: Task;
+  runId: number | null;
+  selectedFile: string;
+  running: boolean;
+}) {
   const [files, setFiles] = useState<DiffFile[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -698,14 +708,20 @@ function ChangesPane({ task, runId, selectedFile }: { task: Task; runId: number 
     let live = true;
     setFiles(null);
     setFailed(false);
-    api.runDiffFiles(runId).then(
-      ({ files }) => live && setFiles(files),
-      () => live && setFailed(true),
-    );
+    const load = () =>
+      api.runDiffFiles(runId).then(
+        ({ files }) => live && setFiles(files),
+        () => live && setFailed(true),
+      );
+    load();
+    // While the run is live the diff keeps growing — refresh so the hunks track
+    // the agent's edits, matching the rail's live changed-file list.
+    const timer = running ? window.setInterval(load, 2_000) : undefined;
     return () => {
       live = false;
+      if (timer) window.clearInterval(timer);
     };
-  }, [runId]);
+  }, [runId, running]);
 
   const add = (files ?? []).reduce((s, f) => s + f.additions, 0);
   const del = (files ?? []).reduce((s, f) => s + f.deletions, 0);
@@ -796,6 +812,11 @@ export function TicketPage({
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [liveUsage, setLiveUsage] = useState<Map<number, RunUsageEvent>>(() => new Map());
   const [now, setNow] = useState(() => Date.now());
+  // The worktree diffstat while a run is in flight. `task.stat` is only
+  // snapshotted at settle, so the rail's changed-file list would be empty for
+  // the whole run; poll the live diffstat instead so files appear as the agent
+  // writes them, falling back to the settled `task.stat` once it lands.
+  const [liveStat, setLiveStat] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -846,6 +867,29 @@ export function TicketPage({
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, [anyRunning]);
+
+  // Poll the live worktree diffstat while the latest run is in flight so the
+  // rail's changed-file list fills as the agent edits, instead of staying empty
+  // until settle. Idle → clear it and fall back to the settled `task.stat`.
+  const latestRunId = runs[runs.length - 1]?.id ?? null;
+  useEffect(() => {
+    if (!anyRunning || latestRunId === null) {
+      setLiveStat(null);
+      return;
+    }
+    let live = true;
+    const load = () =>
+      api
+        .runDiff(latestRunId)
+        .then((d) => live && setLiveStat(d.stat))
+        .catch(() => {});
+    load();
+    const timer = window.setInterval(load, 2_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [anyRunning, latestRunId]);
 
   useEffect(() => {
     if (selectedRunId === null) return;
@@ -1030,7 +1074,7 @@ export function TicketPage({
             {/* main run pane */}
             <div className="min-w-0 border-t border-hairline">
               {selectedFile !== null ? (
-                <ChangesPane task={task} runId={selectedRunId} selectedFile={selectedFile} />
+                <ChangesPane task={task} runId={selectedRunId} selectedFile={selectedFile} running={anyRunning} />
               ) : selectedRun ? (
                 <>
                   <RunHeader run={selectedRun} />
@@ -1057,7 +1101,7 @@ export function TicketPage({
                 branch: task.branch,
                 baseBranch: task.baseBranch,
                 isolationMode: task.isolationMode,
-                stat: task.stat,
+                stat: liveStat ?? task.stat,
               }}
               selectedRunId={selectedRunId}
               selectedFile={selectedFile}

@@ -38,13 +38,16 @@ export interface ToolCallView {
  * else stays one item per event.
  */
 export type StreamItem<E extends StreamEvent = StreamEvent> =
-  | { kind: 'text'; variant: 'message' | 'thought'; text: string; key: number }
+  | { kind: 'text'; variant: 'message' | 'thought' | 'operator'; text: string; key: number }
   | { kind: 'tool'; tool: ToolCallView; key: number }
   | { kind: 'event'; event: E; key: number };
 
-const TEXT_VARIANT: Record<string, 'message' | 'thought'> = {
+const TEXT_VARIANT: Record<string, 'message' | 'thought' | 'operator'> = {
   agent_message_chunk: 'message',
   agent_thought_chunk: 'thought',
+  // An operator steer message folded into the transcript (server merges these
+  // from Harmonic's own run-events); rendered as its own "Operator" row.
+  operator_message: 'operator',
 };
 
 /**
