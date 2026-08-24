@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { GuardrailEvent, Run, RunLogEvent, Task, VerificationAttempt } from '../types';
+import type { Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
 import { DiffViewer } from './DiffViewer';
@@ -10,6 +10,7 @@ import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
 import { latestAttempts, overallDecision } from '../verification-attempts-model';
 import { changedFilesFromStat } from '../run-rail-model';
+import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
 import { Icon } from './Icon';
 import { subscribe } from '../ws';
@@ -106,22 +107,54 @@ function fmtDur(ms: number): string {
   return `${s}s`;
 }
 
-function runTokens(run: Run): number {
-  const t = run.usage?.totals;
+type TokenUsage =
+  | {
+      totals?: { inputTokens?: number | null; outputTokens?: number | null; totalTokens?: number | null } | null;
+      models?: Record<string, { inputTokens?: number | null; outputTokens?: number | null; cacheReadTokens?: number | null }>;
+    }
+  | null
+  | undefined;
+
+function usageTokens(usage: TokenUsage): number {
+  const t = usage?.totals;
   const fromTotals = t?.totalTokens ?? (t ? (t.inputTokens ?? 0) + (t.outputTokens ?? 0) : 0);
   if (fromTotals > 0) return fromTotals;
   // ACP harnesses report only the per-model breakdown — sum it as the fallback.
-  return Object.values(run.usage?.models ?? {}).reduce(
+  return Object.values(usage?.models ?? {}).reduce(
     (s, m) => s + (m.inputTokens ?? 0) + (m.outputTokens ?? 0) + (m.cacheReadTokens ?? 0),
     0,
   );
 }
 
-function Metrics({ task, runs }: { task: Task; runs: Run[] }) {
-  const tokens = runs.reduce((s, r) => s + runTokens(r), 0);
-  // Only finished runs contribute wall time; a run parked at the review gate is
-  // still `running` and would otherwise inflate this by its idle wait.
-  const elapsed = runs.reduce((s, r) => s + (r.finishedAt ? Math.max(0, r.finishedAt - r.startedAt) : 0), 0);
+function Metrics({
+  task,
+  runs,
+  live,
+  now,
+}: {
+  task: Task;
+  runs: Run[];
+  live: Map<number, RunUsageEvent>;
+  now: number;
+}) {
+  // A live Run reads its freshest `run_usage` snapshot; a settled Run its
+  // persisted totals/cost — so Cost, Tokens, and Elapsed all tick as it runs.
+  const usageFor = (r: Run): TokenUsage => (r.state === 'running' ? live.get(r.id)?.usage ?? r.usage : r.usage);
+  const costFor = (r: Run) => (r.state === 'running' ? live.get(r.id)?.cost ?? r.cost : r.cost);
+  const tokens = runs.reduce((s, r) => s + usageTokens(usageFor(r)), 0);
+  const cost = sumCosts(runs.map(costFor)) ?? task.cost;
+  // A finished Run contributes its settled span; a live Run its wall-clock so
+  // far (now − startedAt), which the 1s `now` tick advances while it executes.
+  const elapsed = runs.reduce(
+    (s, r) =>
+      s +
+      (r.finishedAt
+        ? Math.max(0, r.finishedAt - r.startedAt)
+        : r.state === 'running'
+          ? Math.max(0, now - r.startedAt)
+          : 0),
+    0,
+  );
   const files = changedFilesFromStat(task.stat);
   const add = files.reduce((s, f) => s + f.additions, 0);
   const del = files.reduce((s, f) => s + f.deletions, 0);
@@ -135,7 +168,7 @@ function Metrics({ task, runs }: { task: Task; runs: Run[] }) {
       </>
     );
   const items: Array<[string, ReactNode]> = [
-    ['Cost', formatCost(task.cost) ?? '—'],
+    ['Cost', formatCost(cost) ?? '—'],
     ['Tokens', fmtK(tokens)],
     ['Elapsed', runs.length ? fmtDur(elapsed) : '—'],
     ['Runs', `${runs.length}`],
@@ -375,16 +408,20 @@ function Swatch({ tone, children }: { tone: keyof typeof U; children: ReactNode 
   );
 }
 
-function agentCost(run: Run, key: string, model: string): string | null {
-  const by = run.cost?.byModel ?? {};
+function agentCost(cost: Cost | null, key: string, model: string): string | null {
+  const by = cost?.byModel ?? {};
   const n = by[key] ?? by[model] ?? null;
   return typeof n === 'number' ? `$${n.toFixed(2)}` : null;
 }
 
-function SessionAgents({ run }: { run: Run }) {
-  const models = run.usage?.models ?? {};
+function SessionAgents({ run, snapshot }: { run: Run; snapshot: RunUsageEvent | undefined }) {
+  // While the Run is live its settled usage/cost are still null — read the
+  // `run_usage` snapshot instead so the table fills as the agents work.
+  const usage = run.state === 'running' ? snapshot?.usage ?? run.usage : run.usage;
+  const runCost = run.state === 'running' ? snapshot?.cost ?? run.cost : run.cost;
+  const models = usage?.models ?? {};
   const agents = Object.entries(models);
-  const cost = formatCost(run.cost);
+  const cost = formatCost(runCost);
   return (
     <div className="mt-[18px] border-t border-hairline pt-[15px]">
       <div className="mb-4 flex flex-wrap justify-between gap-x-10 gap-y-3">
@@ -422,7 +459,7 @@ function SessionAgents({ run }: { run: Run }) {
               const cached = u.cacheReadTokens ?? 0;
               const total = read + write + cached;
               const sub = Boolean(model) && role.toLowerCase() !== 'claude';
-              const c = agentCost(run, key, model ?? key);
+              const c = agentCost(runCost, key, model ?? key);
               return (
                 <div
                   key={key}
@@ -682,6 +719,8 @@ export function TicketPage({
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [liveUsage, setLiveUsage] = useState<Map<number, RunUsageEvent>>(() => new Map());
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let live = true;
@@ -711,6 +750,27 @@ export function TicketPage({
       unsubscribe();
     };
   }, [task.id]);
+
+  // Live token/cost deltas for the in-flight Run (the `run_usage` firehose, ~1s)
+  // — `run_changed` only lands at phase edges, so without this the metric row
+  // holds the stale settled figures while the Run is executing.
+  useEffect(
+    () =>
+      subscribe((msg) => {
+        if (msg.type !== 'run_usage') return;
+        setLiveUsage((prev) => new Map(prev).set(msg.runId, msg));
+      }),
+    [],
+  );
+
+  // Tick a 1s clock only while a Run is live, so Elapsed advances in real time
+  // without re-rendering the page once everything has settled.
+  const anyRunning = runs.some((r) => r.state === 'running');
+  useEffect(() => {
+    if (!anyRunning) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [anyRunning]);
 
   useEffect(() => {
     if (selectedRunId === null) return;
@@ -842,7 +902,7 @@ export function TicketPage({
             </div>
 
             <Description task={task} />
-            <Metrics task={task} runs={runs} />
+            <Metrics task={task} runs={runs} live={liveUsage} now={now} />
             <MetaLine task={task} allTasks={allTasks} />
 
             {task.skipReason && (
@@ -902,7 +962,7 @@ export function TicketPage({
                   <Stepper run={selectedRun} />
                   <Verification attempts={verificationAttempts} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />
-                  <SessionAgents run={selectedRun} />
+                  <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />
                   <Transcript events={events} unavailable={logUnavailable} />
                   {selectedRun.state === 'running' && <SteerBox taskId={selectedRun.taskId} />}
                 </>
