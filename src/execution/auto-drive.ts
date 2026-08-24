@@ -2,12 +2,7 @@ import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { Git } from './git.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
-import { buildDrivePrompt, driveFields, skillFor, splitTitleBody } from './drive-prompt.js';
-
-// Re-exported from the pure `drive-prompt.ts` module (shared with the critic
-// verifier and the web settings preview); kept here so existing importers of
-// `auto-drive.js` are unaffected.
-export { buildDrivePrompt, driveFields, skillFor, splitTitleBody };
+import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
 
 /**
  * The auto-drive half of afk mirrored-Task execution (issue #33): the Drive
@@ -32,7 +27,7 @@ export class AutoDrive {
 
   /** The Drive Prompt for a mirrored afk Task — the global template filled from it. */
   prompt(task: TaskRow): string {
-    const drive = buildDrivePrompt(this.getConfig().drive.prompt, driveFields(task, this.urlFor));
+    const drive = fillTemplate(this.getConfig().drive.prompt, driveFields(task, this.urlFor));
     // A re-queued mirrored Task carries operator feedback in its column (the
     // prompt is re-derived from the ticket each poll). Append it so the retry
     // sees it — same section the native review/re-attempt path uses (run-prompt.ts).

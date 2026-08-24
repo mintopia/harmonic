@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTaskPrompt, promptForTask } from '../src/execution/run-prompt.js';
+import { fillTemplate, promptForTask } from '../src/execution/prompt-template.js';
 import { DEFAULT_TASK_PROMPT } from '../src/config.js';
 
 /** A native Task's fields as promptForTask consumes them. */
@@ -38,9 +38,9 @@ describe('promptForTask', () => {
   });
 });
 
-describe('buildTaskPrompt', () => {
+describe('fillTemplate', () => {
   it('fills every placeholder from the Task, leaving unknown braces untouched', () => {
-    const out = buildTaskPrompt('{harness}/{model} on #{id}: {prompt} [{workingDir}] {unknown}', {
+    const out = fillTemplate('{harness}/{model} on #{id}: {prompt} [{workingDir}] {unknown}', {
       prompt: 'ship it',
       id: 42,
       workingDir: '/repo',
@@ -48,5 +48,9 @@ describe('buildTaskPrompt', () => {
       model: 'gpt-5.6-sol',
     });
     expect(out).toBe('codex/gpt-5.6-sol on #42: ship it [/repo] {unknown}');
+  });
+
+  it('does not interpolate placeholder-shaped text inside field values', () => {
+    expect(fillTemplate('{prompt} / {id}', { prompt: 'Keep {id} literal', id: 42 })).toBe('Keep {id} literal / 42');
   });
 });

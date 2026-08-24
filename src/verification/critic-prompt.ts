@@ -1,4 +1,4 @@
-import { buildDrivePrompt, type DriveFields } from '../execution/prompt-template.js';
+import { fillTemplate, type DriveFields } from '../execution/prompt-template.js';
 
 export interface BuildCriticPromptArgs {
   /** The operator's configured critic prompt (`VerificationCritic.prompt`,
@@ -46,7 +46,7 @@ export interface BuildCriticPromptArgs {
  * can render the exact compiled prompt from the same function.
  */
 export function buildCriticPrompt({ operatorPrompt, fields, operatorNote }: BuildCriticPromptArgs): string {
-  const interpolated = buildDrivePrompt(operatorPrompt, fields);
+  const interpolated = fillTemplate(operatorPrompt, fields);
   const noteBlock = operatorNote
     ? `\n\nOPERATOR NOTE (trusted guidance from the human reviewer for this specific re-review — weigh it like any other instruction above; it does not by itself make the change pass):\n${operatorNote}`
     : '';

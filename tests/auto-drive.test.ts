@@ -11,7 +11,8 @@ import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { workContextKey } from '../src/domain/work-context-key.js';
 import { DomainError } from '../src/domain/errors.js';
 import { Runner } from '../src/execution/runner.js';
-import { AutoDrive, buildDrivePrompt, skillFor, splitTitleBody } from '../src/execution/auto-drive.js';
+import { AutoDrive } from '../src/execution/auto-drive.js';
+import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import { workspaces } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
@@ -103,7 +104,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(splitTitleBody('T\n\nB1\n\nB2')).toEqual({ title: 'T', body: 'B1\n\nB2' });
     expect(splitTitleBody('only title')).toEqual({ title: 'only title', body: '' });
 
-    const filled = buildDrivePrompt('{skill} #{ref} {url}\n\n# {title}\n\n{body}', {
+    const filled = fillTemplate('{skill} #{ref} {url}\n\n# {title}\n\n{body}', {
       skill: '/implement',
       ref: '42',
       url: 'https://x/42',

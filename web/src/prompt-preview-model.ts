@@ -1,5 +1,4 @@
-import { buildDrivePrompt, type DriveFields } from '../../src/execution/prompt-template.js';
-import { buildTaskPrompt } from '../../src/execution/run-prompt.js';
+import { fillTemplate, type DriveFields } from '../../src/execution/prompt-template.js';
 import { buildCriticPrompt } from '../../src/verification/critic-prompt.js';
 
 /**
@@ -45,12 +44,12 @@ export const TASK_PLACEHOLDERS: [string, string][] = [
 
 /** Fill the five Drive tokens with the sample values. */
 export function compileDrivePreview(template: string): string {
-  return buildDrivePrompt(template, SAMPLE_DRIVE_FIELDS);
+  return fillTemplate(template, SAMPLE_DRIVE_FIELDS);
 }
 
 /** Fill the five Task-prompt tokens with sample values. */
 export function compileTaskPreview(template: string): string {
-  return buildTaskPrompt(template, {
+  return fillTemplate(template, {
     prompt: 'Example task prompt.',
     id: 123,
     workingDir: '/repo',

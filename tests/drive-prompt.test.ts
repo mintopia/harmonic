@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildDrivePrompt } from '../src/execution/prompt-template.js';
-import { driveFields, skillFor, splitTitleBody } from '../src/execution/drive-prompt.js';
+import { driveFields, fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
 import type { TaskRow } from '../src/db/schema.js';
 
 const task = (over: Partial<TaskRow>): TaskRow =>
   ({ prompt: 'Title\n\nBody', harness: 'claude', wayfinderType: 'task', trackerRef: 42, ...over }) as TaskRow;
 
-describe('buildDrivePrompt (prompt-template.ts)', () => {
+describe('fillTemplate (prompt-template.ts)', () => {
   it('fills every token and leaves none behind', () => {
-    const out = buildDrivePrompt('{skill} {ref} {url} {title} — {body}', {
+    const out = fillTemplate('{skill} {ref} {url} {title} — {body}', {
       skill: '/implement',
       ref: '42',
       url: 'http://x/42',

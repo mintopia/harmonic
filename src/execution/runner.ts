@@ -15,9 +15,8 @@ import {
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
-import { promptForTask } from './run-prompt.js';
+import { driveFields, promptForTask } from './prompt-template.js';
 import type { AutoDrive } from './auto-drive.js';
-import { driveFields } from './drive-prompt.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
