@@ -15,6 +15,7 @@ import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { logger } from '../logger.js';
 
 interface Entry {
   poller: TrackerPoller;
@@ -57,7 +58,7 @@ export class TrackerPollerManager {
       repoRoot: string,
       featureIndex?: FeatureIndex,
     ) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    private readonly onError: (msg: string) => void = (msg) => console.error(msg),
+    private readonly onError: (msg: string) => void = logger.error,
     /** A mirrored Task whose ticket closed while it was still running (board-refresh backstop) — routed to the Runner to stop the parked agent and settle it done. */
     private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
     /**

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from '../src/server/app.js';
+import { logger } from '../src/logger.js';
 
 const outPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'website', 'src', 'openapi.json');
 
@@ -26,7 +27,7 @@ try {
   const spec = app.swagger();
   writeFileSync(outPath, `${JSON.stringify(spec, null, 2)}\n`);
   await app.close();
-  console.log(`Wrote ${outPath}`);
+  logger.info(`Wrote ${outPath}`);
 } finally {
   rmSync(dataDir, { recursive: true, force: true });
 }

@@ -9,6 +9,7 @@ import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.j
 import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
 import { failuresByReason, isExecutionFailure, isReviewRejected } from '../../domain/run-failure.js';
+import { logger } from '../../logger.js';
 import type { DispositionFact } from '../../domain/run-disposition.js';
 
 /**
@@ -229,7 +230,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
 
       const elapsedMs = Date.now() - startedAtMs;
       if (elapsedMs >= SLOW_STATS_MS) {
-        console.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} runs — consider narrowing the range`);
+        logger.warn(`[stats] slow aggregation: ${elapsedMs}ms over ${rows.length} runs — consider narrowing the range`);
       }
 
       return {

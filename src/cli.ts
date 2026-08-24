@@ -7,6 +7,7 @@ import { buildApp } from './server/app.js';
 import { defaultDataDir } from './config.js';
 import { acquireLock, daemonStatus, logFilePath, releaseLock, stopDaemon, writeDaemon } from './daemon.js';
 import { initializeTelemetry, resolveTelemetryOptions } from './telemetry.js';
+import { logger } from './logger.js';
 
 const HELP = `harmonic — queue, run, and review autonomous agent tasks
 
@@ -48,15 +49,15 @@ async function main(): Promise<void> {
     const { values } = parseArgs({ args: rest, options: { 'data-dir': { type: 'string' } } });
     const dataDir = values['data-dir'] ?? defaultDataDir();
     if (command === 'stop') {
-      console.log((await stopDaemon(dataDir)) ? 'Stopped.' : 'Not running.');
+      logger.info((await stopDaemon(dataDir)) ? 'Stopped.' : 'Not running.');
       return;
     }
     const { running, info } = daemonStatus(dataDir);
     if (!running || !info) {
-      console.log('Not running.');
+      logger.info('Not running.');
       process.exit(1);
     }
-    console.log(
+    logger.info(
       `Running (pid ${info.pid}) — ${displayUrl(info.host, info.port)}, ` +
         `up since ${new Date(info.startedAt).toLocaleString()}\nLogs: ${logFilePath(dataDir)}`,
     );
@@ -88,7 +89,7 @@ async function main(): Promise<void> {
     const host = values.host!;
     const existing = daemonStatus(dataDir);
     if (existing.running && existing.info) {
-      console.error(
+      logger.error(
         `Already running (pid ${existing.info.pid}) — ${displayUrl(existing.info.host, existing.info.port)}. ` +
           '`harmonic stop` first.',
       );
@@ -105,11 +106,11 @@ async function main(): Promise<void> {
     // Give the child a moment so first-run mistakes (no password) fail loudly here.
     await new Promise((resolve) => setTimeout(resolve, 1500));
     if (!daemonStatus(dataDir).running) {
-      console.error(`Failed to start — see ${logFilePath(dataDir)}`);
+      logger.error(`Failed to start — see ${logFilePath(dataDir)}`);
       await stopDaemon(dataDir);
       process.exit(1);
     }
-    console.log(
+    logger.info(
       `Harmonic running in the background (pid ${child.pid}) — ${displayUrl(host, port)}\n` +
         `Logs: ${logFilePath(dataDir)}\nStop with: harmonic stop`,
     );
@@ -123,7 +124,7 @@ async function main(): Promise<void> {
   // recovery would mark the other instance's in-flight runs interrupted (#40).
   const holder = acquireLock(dataDir, { port, host });
   if (holder) {
-    console.error(
+    logger.error(
       `Another Harmonic instance is using ${dataDir} (pid ${holder.pid}, ${displayUrl(holder.host, holder.port)}).\n` +
         '  Stop it first (harmonic stop), or use a different --data-dir.',
     );
@@ -148,14 +149,14 @@ async function main(): Promise<void> {
   }
   if (!app.ctx.auth.hasPassword()) {
     const loopback = host === '127.0.0.1' || host === '::1' || host === 'localhost';
-    console.warn(
+    logger.warn(
       `No operator password set — Harmonic is running ungated${loopback ? '' : ` and reachable on ${host}`}.\n` +
         (loopback ? '' : '  Anyone who can reach this address has full access. Bind to 127.0.0.1 or set a password.\n') +
         '  Set one any time: harmonic serve --password <password>   (or HARMONIC_PASSWORD)',
     );
   }
   await app.listen({ port, host });
-  console.log(`Harmonic listening on ${displayUrl(host, port)} (bound to ${host}, data: ${dataDir})`);
+  logger.info(`Harmonic listening on ${displayUrl(host, port)} (bound to ${host}, data: ${dataDir})`);
 
   let shuttingDown = false;
   const shutdown = async () => {
@@ -170,7 +171,7 @@ async function main(): Promise<void> {
   process.once('SIGTERM', shutdown);
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((err: unknown) => {
+  logger.error(err instanceof Error ? err.stack ?? err.message : String(err));
   process.exit(1);
 });

@@ -5,7 +5,11 @@ import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './a
 import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { persistedTickets } from './persisted.js';
+<<<<<<< HEAD
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+=======
+import { logger } from '../logger.js';
+>>>>>>> 57ddb1d (feat: add trace-correlated logger)
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
 export interface MirrorSync {
@@ -45,7 +49,7 @@ export class TrackerPoller {
     private readonly workingDir: string,
     private readonly pollIntervalMs: number,
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    private readonly onError: (msg: string) => void = (msg) => console.error(msg),
+    private readonly onError: (msg: string) => void = logger.error,
     private readonly mirror?: MirrorSync,
     /** Report each cycle's Resolved Tracker so the manager's cache stays fresh at poll time (issue #83). */
     private readonly onResolved: (r: ResolvedTracker) => void = () => {},

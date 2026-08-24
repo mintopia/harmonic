@@ -4,6 +4,7 @@ import { deriveEpics } from '../domain/epic-derivation.js';
 import type { MemberLandState } from '../domain/epic-land.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { Git } from './git.js';
+import { logger } from '../logger.js';
 
 /**
  * The integration branch Harmonic cuts for an Epic (ADR-0024): `epic/<ref>`,
@@ -116,7 +117,7 @@ export class EpicIntegrationCoordinator {
     private readonly tasks: TaskService,
     private readonly workingDir: string,
     private readonly git: EpicGit = Git,
-    private readonly onError: (msg: string) => void = (msg) => console.error(msg),
+    private readonly onError: (msg: string) => void = logger.error,
     /**
      * The whole-Epic land trigger (issue #161). Absent ⇒ no automatic land (the
      * base-set half of the lifecycle runs unchanged, #159). When present, each

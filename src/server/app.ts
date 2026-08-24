@@ -46,6 +46,7 @@ import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
 import { GitCircuitBreaker } from '../execution/git-failure.js';
 import { EventLoopMonitor } from '../reliability/event-loop-monitor.js';
+import { logger } from '../logger.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { Scheduler, type ScheduledJobRegistration } from '../scheduler/scheduler.js';
 import { AutoDrive } from '../execution/auto-drive.js';
@@ -260,7 +261,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb);
   const channels = new ChannelService(asyncDb);
-  const notifier = new Notifier(channels, (msg) => console.error(msg));
+  const notifier = new Notifier(channels, logger.error);
   const tasks = new TaskService(
     asyncDb,
     () => configStore.get(),

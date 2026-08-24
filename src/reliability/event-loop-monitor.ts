@@ -15,6 +15,7 @@
  * Named "monitor", not "watchdog": CONTEXT.md reserves watchdog/timeout/limit
  * vocabulary for the per-Run Guardrail concept, which this is not.
  */
+import { logger } from '../logger.js';
 
 export interface StallInfo {
   /** Time the loop was blocked beyond the nominal probe delay, in ms. */
@@ -33,7 +34,7 @@ export interface EventLoopMonitorOptions {
    * than on every probe behind it. Default 5000.
    */
   reportThrottleMs?: number | undefined;
-  /** Sink for a detected stall. Default: a structured `console.warn`. */
+/** Sink for a detected stall. Default: the shared logger. */
   onStall?: ((info: StallInfo) => void) | undefined;
   /** Monotonic clock in ms. Default `Date.now`. */
   now?: (() => number) | undefined;
@@ -53,7 +54,7 @@ function defaultSetTimer(fn: () => void, ms: number): unknown {
 }
 
 function defaultOnStall(info: StallInfo): void {
-  console.warn(
+  logger.warn(
     `[event-loop] stalled ${info.lagMs}ms (probe delayed to ${info.delayMs}ms) — a sync query or a non-yielding loop blocked the event loop`,
   );
 }

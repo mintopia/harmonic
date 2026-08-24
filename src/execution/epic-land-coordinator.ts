@@ -3,6 +3,7 @@ import { integrationBranchName } from './epic-integration.js';
 import { landBranch, type LandBranchArgs, type LandBranchOutcome } from './branch-landing.js';
 import { decideEpicLand, type MemberLandState } from '../domain/epic-land.js';
 import type { VerificationDecision } from '../verification/combine.js';
+import { logger } from '../logger.js';
 
 /**
  * The whole-Epic land coordinator (issue #161, parallel-epic tranche). The
@@ -178,7 +179,7 @@ export class EpicLandCoordinator {
     this.landLeaseHeld = deps.landLeaseHeld ?? true;
     this.now = deps.now ?? (() => Date.now());
     this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
-    this.onError = deps.onError ?? ((msg) => console.error(msg));
+    this.onError = deps.onError ?? logger.error;
   }
 
   /**

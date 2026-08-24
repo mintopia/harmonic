@@ -11,9 +11,9 @@ import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk
 import { AlwaysOnSampler, BatchSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { operationRegistry } from './telemetry/operations.js';
+import { configureLogger, type StdoutLogLevel } from './logger.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:4318';
-type StdoutLogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
 
 const diagLevels: Record<StdoutLogLevel, DiagLogLevel> = {
   debug: DiagLogLevel.DEBUG,
@@ -107,6 +107,8 @@ export function initializeTelemetry(
   initOptions: InitializeTelemetryOptions = {},
 ): TelemetryController {
   if (controller) return controller;
+
+  configureLogger({ stdoutLogLevel: options.stdoutLogLevel });
 
   const resource = resourceFromAttributes({
     [SEMRESATTRS_SERVICE_NAME]: 'harmonic',

@@ -9,8 +9,8 @@ import { resolveTelemetryOptions } from '../src/telemetry.js';
 import { stopDaemon, writeDaemon } from '../src/daemon.js';
 
 const telemetryUrl = pathToFileURL(new URL('../src/telemetry.ts', import.meta.url).pathname).href;
+const loggerUrl = pathToFileURL(new URL('../src/logger.ts', import.meta.url).pathname).href;
 const apiUrl = pathToFileURL(new URL('../node_modules/@opentelemetry/api/build/src/index.js', import.meta.url).pathname).href;
-const logsApiUrl = pathToFileURL(new URL('../node_modules/@opentelemetry/api-logs/build/src/index.js', import.meta.url).pathname).href;
 
 const savedEnv = {
   endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
@@ -57,12 +57,18 @@ describe('telemetry configuration', () => {
   });
 });
 
-it('flushes a span, log, and metric before daemon stop returns', async () => {
-  const received: { path: string; authorization: string | undefined }[] = [];
+it('flushes a trace-correlated log, span, and metric before daemon stop returns', async () => {
+  const received: { path: string; authorization: string | undefined; body: string }[] = [];
+  let stdout = '';
   const server = createServer((request, response) => {
+    let body = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk: string) => {
+      body += chunk;
+    });
     request.resume();
     request.on('end', () => {
-      received.push({ path: request.url ?? '', authorization: request.headers.authorization });
+      received.push({ path: request.url ?? '', authorization: request.headers.authorization, body });
       response.writeHead(200).end();
     });
   });
@@ -72,11 +78,10 @@ it('flushes a span, log, and metric before daemon stop returns', async () => {
 
   const script = [
     `import { initializeTelemetry, resolveTelemetryOptions } from '${telemetryUrl}';`,
-    `import { trace, metrics } from '${apiUrl}';`,
-    `import { logs, SeverityNumber } from '${logsApiUrl}';`,
+    `import { context, metrics, trace } from '${apiUrl}';`,
+    `import { logger } from '${loggerUrl}';`,
     `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token' }));`,
-    "const span = trace.getTracer('smoke').startSpan('smoke-span'); span.end();",
-    "logs.getLogger('smoke').emit({ body: 'smoke-log', severityNumber: SeverityNumber.INFO });",
+    "const span = trace.getTracer('smoke').startSpan('smoke-span'); context.with(trace.setSpan(context.active(), span), () => logger.info('smoke-log')); span.end();",
     "metrics.getMeter('smoke').createCounter('smoke_counter').add(1);",
     "process.once('SIGTERM', async () => { await telemetry.shutdown(); process.exit(0); });",
     "console.log('ready');",
@@ -85,6 +90,7 @@ it('flushes a span, log, and metric before daemon stop returns', async () => {
   const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '--eval', script], { stdio: 'pipe' });
   await new Promise<void>((resolve, reject) => {
     child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
       if (chunk.toString().includes('ready')) resolve();
     });
     child.on('exit', (code) => reject(new Error(`Telemetry child exited before ready: ${code}`)));
@@ -103,11 +109,18 @@ it('flushes a span, log, and metric before daemon stop returns', async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 
   expect(childResult).toEqual({ code: 0, stderr: '' });
-  expect(received).toEqual(
+  expect(received.map(({ path, authorization }) => ({ path, authorization }))).toEqual(
     expect.arrayContaining([
       { path: '/v1/traces', authorization: 'smoke-token' },
       { path: '/v1/logs', authorization: 'smoke-token' },
       { path: '/v1/metrics', authorization: 'smoke-token' },
     ]),
   );
+  const logsPayload = received.find((request) => request.path === '/v1/logs')?.body;
+  expect(logsPayload).toContain('smoke-log');
+  expect(logsPayload).toMatch(/\"traceId\":\"[^\"]+\"/);
+  expect(logsPayload).toMatch(/\"spanId\":\"[^\"]+\"/);
+  expect(stdout).toContain('"message":"smoke-log"');
+  expect(stdout).toMatch(/"traceId":"[^"]+"/);
+  expect(stdout).toMatch(/"spanId":"[^"]+"/);
 });

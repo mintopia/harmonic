@@ -104,9 +104,9 @@ describe('EventLoopMonitor', () => {
     expect(stalls).toHaveLength(1);
   });
 
-  it('defaults to a console.warn sink', () => {
+  it('defaults to the shared logger sink', () => {
     const sched = new FakeScheduler();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const monitor = new EventLoopMonitor({
       probeMs: 1000,
       stallMs: 200,
@@ -116,8 +116,8 @@ describe('EventLoopMonitor', () => {
     });
     monitor.start();
     sched.fireAt(1500);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(String(warn.mock.calls[0]?.[0])).toContain('event-loop');
-    warn.mockRestore();
+    expect(write).toHaveBeenCalledOnce();
+    expect(String(write.mock.calls[0]?.[0])).toContain('event-loop');
+    write.mockRestore();
   });
 });
