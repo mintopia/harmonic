@@ -91,10 +91,30 @@ import { landBranch } from './branch-landing.js';
 import { parseIntegrationBranch } from './epic-integration.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
+import { startActiveChildOperation } from '../telemetry/operations.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
 const STDERR_TAIL_CAP = 8000;
+
+async function prepareWorktree<T>(
+  attributes: { 'git.branch': string; 'git.ref': string },
+  work: () => Promise<T>,
+): Promise<T> {
+  const operation = startActiveChildOperation('git.prepare-workspace', attributes);
+  if (!operation) return work();
+  try {
+    const result = await work();
+    operation.update({ 'git.result': 'ok' });
+    operation.end();
+    return result;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    operation.update({ 'git.result': 'error' });
+    operation.fail(reason);
+    throw error;
+  }
+}
 
 /** The single nudge the progress Guardrail delivers through the steer channel
  * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
@@ -1275,7 +1295,9 @@ export class Runner {
       // resumed Run resolves the same base a fresh one would (issue #157).
       const baseBranch = persisted.baseBranch ?? (await this.resolveBaseBranch(task));
       if (!existsSync(path)) {
-        await Git.addWorktreeCheckout(task.workingDir, path, branch);
+        await prepareWorktree({ 'git.branch': branch, 'git.ref': baseBranch }, () =>
+          Git.addWorktreeCheckout(task.workingDir, path, branch),
+        );
       }
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
@@ -1292,7 +1314,9 @@ export class Runner {
       );
     }
     const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
-    await Git.addWorktree(task.workingDir, path, branch, baseBranch);
+    await prepareWorktree({ 'git.branch': branch, 'git.ref': baseBranch }, () =>
+      Git.addWorktree(task.workingDir, path, branch, baseBranch),
+    );
     await this.runStore.update(run.id, { branch, baseBranch });
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.

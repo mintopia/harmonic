@@ -99,6 +99,17 @@ export class OperationRegistry implements SpanProcessor {
 
 export const operationRegistry = new OperationRegistry();
 
+/**
+ * Start a child only when the current span is a live Harmonic Operation.
+ * Instrumented primitives use this to stay silent when called on their own,
+ * rather than creating unhelpful root operations for every low-level action.
+ */
+export function startActiveChildOperation(type: string, attributes: Attributes): Operation | undefined {
+  const active = trace.getActiveSpan();
+  if (!active || !registryForSpan.has(active.spanContext().spanId)) return undefined;
+  return startOperation(type, attributes);
+}
+
 export function startOperation(
   type: string,
   attributes: Attributes,

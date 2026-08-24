@@ -4,7 +4,9 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import type { Attributes } from '@opentelemetry/api';
 import { withRepoLock } from './repo-lock.js';
+import { startActiveChildOperation } from '../telemetry/operations.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -56,6 +58,43 @@ async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[
     // Conflict explanations land on stdout, other failures on stderr.
     const output = [err.stderr?.trim(), err.stdout?.trim()].filter(Boolean).join('\n');
     throw new GitError(`git ${args.join(' ')} failed: ${output || err.message}`, err.stderr ?? '');
+  }
+}
+
+function failureReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isGitFailure(result: unknown): result is { ok: false; detail?: unknown } {
+  return typeof result === 'object' && result !== null && 'ok' in result && result.ok === false;
+}
+
+/** Run a high-level git action as a child Operation when a Harmonic Operation
+ * is active. Direct callers stay uninstrumented: Git is also used by probes
+ * and recovery paths that do not have a meaningful operation parent. */
+async function withGitOperation<T>(
+  type: string,
+  attributes: Attributes,
+  work: () => Promise<T>,
+): Promise<T> {
+  const operation = startActiveChildOperation(type, attributes);
+  if (!operation) return work();
+  try {
+    const result = await work();
+    if (isGitFailure(result)) {
+      const reason = typeof result.detail === 'string' ? result.detail : 'git operation failed';
+      operation.update({ 'git.result': 'error' });
+      operation.fail(reason);
+    } else {
+      operation.update({ 'git.result': 'ok' });
+      operation.end();
+    }
+    return result;
+  } catch (error) {
+    const reason = failureReason(error);
+    operation.update({ 'git.result': 'error' });
+    operation.fail(reason);
+    throw error;
   }
 }
 
@@ -296,7 +335,9 @@ export const Git = {
    * the base-repo lock like the other base-repo mutations below.
    */
   createBranch: (dir: string, name: string, startPoint: string) =>
-    withRepoLock(dir, () => git(dir, 'branch', name, startPoint)),
+    withGitOperation('git.branch-cut', { 'git.branch': name, 'git.ref': startPoint }, () =>
+      withRepoLock(dir, () => git(dir, 'branch', name, startPoint)),
+    ),
 
   /**
    * Delete local branch `name` (`-D`, force) — retiring an Epic integration
@@ -316,8 +357,10 @@ export const Git = {
   // that is *not* checked out is fine: git reads it as a start-point and never
   // moves or checks out the base repo's own HEAD.
   addWorktree: (dir: string, worktreePath: string, newBranch: string, startPoint?: string) =>
-    withRepoLock(dir, () =>
-      git(dir, 'worktree', 'add', '-b', newBranch, worktreePath, ...(startPoint ? [startPoint] : [])),
+    withGitOperation('git.branch-cut', { 'git.branch': newBranch, 'git.ref': startPoint ?? 'HEAD' }, () =>
+      withRepoLock(dir, () =>
+        git(dir, 'worktree', 'add', '-b', newBranch, worktreePath, ...(startPoint ? [startPoint] : [])),
+      ),
     ),
 
   /**
@@ -346,22 +389,27 @@ export const Git = {
    * the merge is aborted and { ok: false } returned with git's output.
    */
   async merge(dir: string, baseBranch: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
-    return withRepoLock(dir, async () => {
-      const current = await Git.currentBranch(dir);
-      if (current !== baseBranch) await git(dir, 'checkout', baseBranch);
-      try {
-        await git(dir, ...IDENTITY, 'merge', '--no-edit', branch);
-        return { ok: true };
-      } catch (err) {
-        const detail = err instanceof GitError ? err.message : String(err);
-        try {
-          await git(dir, 'merge', '--abort');
-        } catch {
-          // No merge in progress (e.g. the merge failed before starting).
-        }
-        return { ok: false, detail };
-      }
-    });
+    return withGitOperation(
+      'git.merge',
+      { 'git.branch': branch, 'git.ref': baseBranch },
+      () =>
+        withRepoLock(dir, async () => {
+          const current = await Git.currentBranch(dir);
+          if (current !== baseBranch) await git(dir, 'checkout', baseBranch);
+          try {
+            await git(dir, ...IDENTITY, 'merge', '--no-edit', branch);
+            return { ok: true };
+          } catch (err) {
+            const detail = err instanceof GitError ? err.message : String(err);
+            try {
+              await git(dir, 'merge', '--abort');
+            } catch {
+              // No merge in progress (e.g. the merge failed before starting).
+            }
+            return { ok: false, detail };
+          }
+        }),
+    );
   },
 
   /** Diffstat of what the run's branch adds over the merge base. */
@@ -486,18 +534,24 @@ export const Git = {
    * commit is created — either way HEAD ends at a descendant of the base.
    */
   async mergeNoEdit(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
-    try {
-      await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
-      return { ok: true };
-    } catch (err) {
-      const detail = err instanceof GitError ? err.message : String(err);
-      try {
-        await git(worktreeDir, 'merge', '--abort');
-      } catch {
-        // No merge in progress (e.g. it failed before starting).
-      }
-      return { ok: false, detail };
-    }
+    return withGitOperation(
+      'git.merge',
+      { 'git.branch': branch, 'git.ref': 'HEAD' },
+      async () => {
+        try {
+          await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          return { ok: true };
+        } catch (err) {
+          const detail = err instanceof GitError ? err.message : String(err);
+          try {
+            await git(worktreeDir, 'merge', '--abort');
+          } catch {
+            // No merge in progress (e.g. it failed before starting).
+          }
+          return { ok: false, detail };
+        }
+      },
+    );
   },
 
   /**
@@ -511,19 +565,25 @@ export const Git = {
     worktreeDir: string,
     ontoOid: string,
   ): Promise<{ ok: true; rebasedTip: string } | { ok: false; conflict: true; detail: string }> {
-    try {
-      await git(worktreeDir, ...IDENTITY, 'rebase', ontoOid);
-      const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
-      return { ok: true, rebasedTip };
-    } catch (err) {
-      const detail = err instanceof GitError ? err.message : String(err);
-      try {
-        await git(worktreeDir, 'rebase', '--abort');
-      } catch {
-        // No rebase in progress (e.g. it failed before starting).
-      }
-      return { ok: false, conflict: true, detail };
-    }
+    return withGitOperation(
+      'git.rebase',
+      { 'git.branch': 'HEAD', 'git.ref': ontoOid },
+      async () => {
+        try {
+          await git(worktreeDir, ...IDENTITY, 'rebase', ontoOid);
+          const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
+          return { ok: true, rebasedTip };
+        } catch (err) {
+          const detail = err instanceof GitError ? err.message : String(err);
+          try {
+            await git(worktreeDir, 'rebase', '--abort');
+          } catch {
+            // No rebase in progress (e.g. it failed before starting).
+          }
+          return { ok: false, conflict: true, detail };
+        }
+      },
+    );
   },
 
   /**
@@ -538,13 +598,15 @@ export const Git = {
    * abort is needed.
    */
   async ffOnly(dir: string, oid: string): Promise<{ ok: boolean; detail?: string }> {
-    return withRepoLock(dir, async () => {
-      try {
-        await git(dir, 'merge', '--ff-only', oid);
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
-      }
-    });
+    return withGitOperation('git.ff-only', { 'git.ref': oid }, () =>
+      withRepoLock(dir, async () => {
+        try {
+          await git(dir, 'merge', '--ff-only', oid);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
+        }
+      }),
+    );
   },
 };
