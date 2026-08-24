@@ -90,14 +90,22 @@ export function subscribe(onMessage: (msg: ServerMessage) => void): () => void {
 }
 
 /** A cursor-resumable subscription to one Run's transient ACP transcript. */
-export function subscribeRunLog(
-  runId: number,
-  after: () => number,
-  onEvent: (event: RunLogEvent) => void,
-): () => void {
+export function subscribeRunLog({
+  runId,
+  after,
+  onEvent,
+}: {
+  runId: number;
+  after: () => number;
+  onEvent: (event: RunLogEvent) => void;
+}): () => void {
+  let firstSubscription = true;
   return subscribeWithOpen((message) => {
     if (message.type === 'run_log_event' && message.event.runId === runId && message.event.seq > after()) {
       onEvent(message.event);
     }
-  }, (socket) => socket.send(JSON.stringify({ type: 'run_log_subscribe', runId, after: after() })));
+  }, (socket) => {
+    socket.send(JSON.stringify({ type: 'run_log_subscribe', runId, after: after(), replay: !firstSubscription }));
+    firstSubscription = false;
+  });
 }

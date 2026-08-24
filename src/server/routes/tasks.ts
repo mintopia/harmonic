@@ -254,8 +254,8 @@ const runEventSchema = z.object({
 
 const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
 const runLogResponseSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('available'), events: z.array(runEventSchema) }),
-  z.object({ status: z.literal('unavailable') }),
+  z.object({ status: z.literal('available'), events: z.array(runEventSchema), liveCursor: z.number() }),
+  z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
 ]);
 
 /** A Guardrail-trip event as the REST API serves it (`domain/guardrail-events.ts` `GuardrailEventRow`, issue #171). */
@@ -886,12 +886,12 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const run = await ctx.runs.get(req.params.id);
-      if (run.sessionRowId === null) return { status: 'unavailable' as const };
+      if (run.sessionRowId === null) return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
       let session;
       try {
         session = await ctx.sessions.get(run.sessionRowId);
       } catch {
-        return { status: 'unavailable' as const };
+        return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
       }
       const log = await readTranscriptLog({
         harness: session.harness,
@@ -899,7 +899,8 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
       });
-      if (log.status !== 'available') return log;
+      const liveCursor = ctx.bus.latestRunLogSeq({ runId: run.id });
+      if (log.status !== 'available') return { ...log, liveCursor };
       // The JSONL is only the agent's side; fold in the operator's steer
       // messages (Harmonic's own run-events) so the transcript shows the
       // back-and-forth, not just the agent's turns.
@@ -911,6 +912,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       });
       return {
         status: 'available' as const,
+        liveCursor,
         events: withOperatorMessages(log.events, operator).map((event) => ({ ...event, runId: run.id })),
       };
     },
@@ -992,7 +994,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const attempt = await ctx.verificationAttempts.get(req.params.id);
-      if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const };
+      if (!attempt?.transcriptPath || !attempt.harness) return { status: 'unavailable' as const, liveCursor: 0 };
       // No Run window to bound against — a critic attempt has its own single-turn
       // transcript, so accept every event in the file.
       const log = await readTranscriptLog({
@@ -1002,8 +1004,8 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         finishedAt: null,
       });
       return log.status === 'available'
-        ? { ...log, events: log.events.map((event) => ({ ...event, runId: attempt.runId })) }
-        : log;
+        ? { ...log, liveCursor: 0, events: log.events.map((event) => ({ ...event, runId: attempt.runId })) }
+        : { ...log, liveCursor: 0 };
     },
   );
 

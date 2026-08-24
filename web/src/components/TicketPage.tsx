@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
-import { appendRunLogEvents, runLogCursor } from '../run-log-stream-model';
+import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
 import { DiffViewer } from './DiffViewer';
@@ -900,30 +900,33 @@ export function TicketPage({
     let cursor = 0;
     setEvents([]);
     setLogUnavailable(false);
-    // Subscribe before hydrating so output produced during the request is
-    // buffered rather than lost. Once hydration completes, reconnects ask
-    // for the latest applied transcript seq instead of replaying from zero.
-    const unsubscribe = subscribeRunLog(selectedRunId, () => cursor, (event) => {
+    // Subscribe before hydrating but deliberately skip the existing replay:
+    // the REST snapshot already contains it, in a different id space. Events
+    // arriving during hydration are buffered and cut over at its live cursor.
+    const unsubscribe = subscribeRunLog({ runId: selectedRunId, after: () => cursor, onEvent: (event) => {
       cursor = Math.max(cursor, event.seq);
       if (!hydrated) {
         pending.push(event);
         return;
       }
-      setEvents((current) => appendRunLogEvents(current, [event]));
-    });
+      setEvents((current) => appendRunLogEvents({ current, additions: [event] }));
+    } });
     api.runLog(selectedRunId).then(
       (log) => {
         if (!live) return;
         setLogUnavailable(log.status === 'unavailable');
-        const hydratedEvents = appendRunLogEvents(log.status === 'available' ? log.events : [], pending);
-        cursor = runLogCursor(pending);
+        const hydratedEvents = appendRunLogEvents({
+          current: log.status === 'available' ? log.events : [],
+          additions: log.status === 'available' ? eventsAfterLiveCursor({ events: pending, liveCursor: log.liveCursor }) : pending,
+        });
+        cursor = Math.max(log.liveCursor, runLogCursor({ events: pending }));
         setEvents(hydratedEvents);
         hydrated = true;
       },
       (error: unknown) => {
         if (!live) return;
-        const hydratedEvents = appendRunLogEvents([], pending);
-        cursor = runLogCursor(pending);
+        const hydratedEvents = appendRunLogEvents({ current: [], additions: pending });
+        cursor = runLogCursor({ events: pending });
         setEvents(hydratedEvents);
         hydrated = true;
         toastError(error);

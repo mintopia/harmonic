@@ -49,9 +49,11 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
         if (replaying) queued.push(event);
         else send({ type: 'run_log_event', event });
       });
-      await forEachYielding(ctx.bus.replayRunLog(message.runId, message.after), (event) => {
-        send({ type: 'run_log_event', event });
-      });
+      if (message.replay !== false) {
+        await forEachYielding(ctx.bus.replayRunLog({ runId: message.runId, after: message.after }), (event) => {
+          send({ type: 'run_log_event', event });
+        });
+      }
       while (queued.length > 0) {
         await forEachYielding(queued.splice(0), (event) => send({ type: 'run_log_event', event }));
       }
@@ -64,10 +66,11 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
   });
 }
 
-function isRunLogSubscription(message: unknown): message is { type: 'run_log_subscribe'; runId: number; after: number } {
+function isRunLogSubscription(message: unknown): message is { type: 'run_log_subscribe'; runId: number; after: number; replay?: boolean } {
   if (typeof message !== 'object' || message === null) return false;
   const type = Reflect.get(message, 'type');
   const runId = Reflect.get(message, 'runId');
   const after = Reflect.get(message, 'after');
-  return type === 'run_log_subscribe' && typeof runId === 'number' && Number.isInteger(runId) && typeof after === 'number' && Number.isInteger(after) && after >= 0;
+  const replay = Reflect.get(message, 'replay');
+  return type === 'run_log_subscribe' && typeof runId === 'number' && Number.isInteger(runId) && typeof after === 'number' && Number.isInteger(after) && after >= 0 && (replay === undefined || typeof replay === 'boolean');
 }

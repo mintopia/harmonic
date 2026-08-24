@@ -193,7 +193,7 @@ export const api = {
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
   runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
   runLog: (id: number) =>
-    request<{ status: 'available'; events: RunLogEvent[] } | { status: 'unavailable' }>('GET', `/api/runs/${id}/log`),
+    request<{ status: 'available'; events: RunLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/runs/${id}/log`),
   // Guardrail-trip event log for a Run (issue #171): the REST surface over
   // `GuardrailEventStore.list`, mirroring `runEvents`'s shape and 404 behaviour.
   runGuardrailEvents: (id: number) =>
@@ -207,7 +207,7 @@ export const api = {
   // same shape as `runLog`, keyed by attempt id, "unavailable" when no
   // transcript was captured.
   criticLog: (attemptId: number) =>
-    request<{ status: 'available'; events: RunLogEvent[] } | { status: 'unavailable' }>(
+    request<{ status: 'available'; events: RunLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>(
       'GET',
       `/api/verification-attempts/${attemptId}/log`,
     ),

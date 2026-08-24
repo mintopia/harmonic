@@ -27,6 +27,7 @@ export interface BusEvents {
 export class EventBus {
   private emitter = new EventEmitter();
   private readonly runLogEvents = new Map<number, LiveRunEvent[]>();
+  private static readonly maxRunLogEvents = 2_048;
 
   constructor() {
     this.emitter.setMaxListeners(100);
@@ -40,14 +41,21 @@ export class EventBus {
   emitRunLog(event: LiveRunEvent): void {
     const events = this.runLogEvents.get(event.runId) ?? [];
     events.push(event);
+    if (events.length > EventBus.maxRunLogEvents) events.splice(0, events.length - EventBus.maxRunLogEvents);
     this.runLogEvents.set(event.runId, events);
     this.emitter.emit('run_log_event', event);
   }
 
-  *replayRunLog(runId: number, after: number): IterableIterator<LiveRunEvent> {
+  *replayRunLog({ runId, after }: { runId: number; after: number }): IterableIterator<LiveRunEvent> {
     for (const event of this.runLogEvents.get(runId) ?? []) {
       if (event.seq > after) yield event;
     }
+  }
+
+  /** The current live-stream watermark, used to cut REST hydration over to WS. */
+  latestRunLogSeq({ runId }: { runId: number }): number {
+    const events = this.runLogEvents.get(runId);
+    return events?.[events.length - 1]?.seq ?? 0;
   }
 
   on<K extends keyof BusEvents>(event: K, listener: BusEvents[K]): () => void {
