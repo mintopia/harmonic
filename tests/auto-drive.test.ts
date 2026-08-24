@@ -195,6 +195,20 @@ describe('Drive Prompt fill (issue #33)', () => {
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => inboundOnly);
     expect(await drive.closeCompleted(worktreeTask())).toBe(true);
   });
+
+  it('closeCompleted closes an open mirrored ticket via the adapter (issue #139)', async () => {
+    const { adapter, calls } = fakeAdapter('open');
+    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
+    expect(await drive.closeCompleted(worktreeTask())).toBe(true);
+    expect(calls.close).toEqual([7]); // worktreeTask trackerRef
+  });
+
+  it('closeCompleted is idempotent — an already-closed ticket is not re-closed', async () => {
+    const { adapter, calls } = fakeAdapter('closed');
+    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
+    expect(await drive.closeCompleted(worktreeTask())).toBe(true);
+    expect(calls.close).toEqual([]); // a closed issue needs no second close (would error on gh)
+  });
 });
 
 describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {

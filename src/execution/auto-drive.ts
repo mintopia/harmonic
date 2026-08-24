@@ -165,10 +165,13 @@ export class AutoDrive {
       // authoritative if the tracker changes independently.
       if (!adapter.close) return true;
       const { title } = splitTitleBody(task.prompt);
-      await adapter.close(
-        { number: task.trackerRef, title, state: 'open' },
-        `Completed and landed by Harmonic (task ${task.id}).`,
-      );
+      const ref = { number: task.trackerRef, title, state: 'open' as const };
+      // Idempotent close: a ticket already closed (a replayed landing effect, or
+      // a re-accept after a prior close) needs no second close — and closing an
+      // already-closed issue errors on some trackers (`gh issue close`), which
+      // would otherwise report failure and repark the accept for review in a loop.
+      if ((await adapter.readTicket(ref)).state === 'closed') return true;
+      await adapter.close(ref, `Completed and landed by Harmonic (task ${task.id}).`);
       return true;
     } catch {
       return false;

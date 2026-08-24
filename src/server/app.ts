@@ -241,11 +241,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
   );
   const landingEffectsFor = (task: TaskRow, run: RunRow): LandingEffectExec[] => {
-    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return [];
-    const baseBranch = run.baseBranch;
-    const branch = run.branch;
-    return [
-      {
+    const effects: LandingEffectExec[] = [];
+    if (task.isolationMode === 'worktree' && run.branch && run.baseBranch) {
+      const baseBranch = run.baseBranch;
+      const branch = run.branch;
+      effects.push({
         effect: 'target-ref',
         idempotencyKey: `${baseBranch}<-${branch}`,
         expected: { baseBranch, branch },
@@ -260,8 +260,27 @@ export async function buildApp(opts: AppOptions): Promise<App> {
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
-      },
-    ];
+      });
+    }
+    // Close the mirrored ticket as the final landing step — Harmonic owns the
+    // close (#139), same as the afk auto path's `closeCompleted`. Without this a
+    // human Accept (or auto-accept) of a mirrored Task lands the work but leaves
+    // the ticket open, so the next poll's completed→ready reopen flip re-runs it
+    // forever. Runs for every isolation mode (direct mode has no target-ref
+    // effect but still owns the close). Idempotent in `closeTicket`.
+    if (task.trackerRef != null) {
+      const trackerRef = task.trackerRef;
+      effects.push({
+        effect: 'ticket-close',
+        idempotencyKey: `ticket-close:${trackerRef}`,
+        expected: { trackerRef },
+        apply: async () =>
+          (await autoDrive.closeCompleted(task))
+            ? { ok: true, observed: { trackerRef, closed: true } }
+            : { ok: false, detail: `failed to close tracker issue #${trackerRef}` },
+      });
+    }
+    return effects;
   };
   let runnerRef: Runner | undefined;
   const mergeTrain = new MergeTrainCoordinator({
