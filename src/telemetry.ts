@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { diag, DiagConsoleLogger, DiagLogLevel, metrics, trace } from '@opentelemetry/api';
+import { diag, DiagConsoleLogger, DiagLogLevel, metrics } from '@opentelemetry/api';
 import { logs } from '@opentelemetry/api-logs';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
@@ -8,8 +8,9 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import { SEMRESATTRS_SERVICE_NAME, SEMRESATTRS_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
-import { AlwaysOnSampler, BatchSpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { AlwaysOnSampler, BatchSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { operationRegistry } from './telemetry/operations.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:4318';
 type StdoutLogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
@@ -38,6 +39,10 @@ export interface TelemetryOverrides {
 
 export interface TelemetryController {
   shutdown(): Promise<void>;
+}
+
+export interface InitializeTelemetryOptions {
+  extraSpanProcessors?: readonly SpanProcessor[] | undefined;
 }
 
 function parseHeaders(value: string | undefined): Record<string, string> {
@@ -97,7 +102,10 @@ export function resolveTelemetryOptions(overrides: TelemetryOverrides = {}): Tel
 
 let controller: TelemetryController | undefined;
 
-export function initializeTelemetry(options: TelemetryOptions): TelemetryController {
+export function initializeTelemetry(
+  options: TelemetryOptions,
+  initOptions: InitializeTelemetryOptions = {},
+): TelemetryController {
   if (controller) return controller;
 
   const resource = resourceFromAttributes({
@@ -107,9 +115,13 @@ export function initializeTelemetry(options: TelemetryOptions): TelemetryControl
   const tracerProvider = new NodeTracerProvider({
     resource,
     sampler: new AlwaysOnSampler(),
-    spanProcessors: options.exportEnabled
-      ? [new BatchSpanProcessor(new OTLPTraceExporter({ url: endpointFor(options.endpoint, 'traces'), headers: options.headers }))]
-      : [],
+    spanProcessors: [
+      operationRegistry,
+      ...(initOptions.extraSpanProcessors ?? []),
+      ...(options.exportEnabled
+        ? [new BatchSpanProcessor(new OTLPTraceExporter({ url: endpointFor(options.endpoint, 'traces'), headers: options.headers }))]
+        : []),
+    ],
   });
   const loggerProvider = new LoggerProvider({
     resource,
@@ -124,7 +136,7 @@ export function initializeTelemetry(options: TelemetryOptions): TelemetryControl
       : [],
   });
 
-  trace.setGlobalTracerProvider(tracerProvider);
+  tracerProvider.register();
   logs.setGlobalLoggerProvider(loggerProvider);
   metrics.setGlobalMeterProvider(meterProvider);
   diag.setLogger(new DiagConsoleLogger(), diagLevels[options.stdoutLogLevel]);
@@ -133,6 +145,7 @@ export function initializeTelemetry(options: TelemetryOptions): TelemetryControl
     async shutdown(): Promise<void> {
       await Promise.allSettled([tracerProvider.forceFlush(), loggerProvider.forceFlush(), meterProvider.forceFlush()]);
       await Promise.allSettled([tracerProvider.shutdown(), loggerProvider.shutdown(), meterProvider.shutdown()]);
+      controller = undefined;
     },
   };
   return controller;

@@ -63,6 +63,7 @@ import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
+import { operationRegistry } from '../telemetry/operations.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
@@ -163,6 +164,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // growing Stats range scans a dedicated worker and typed request shape.
   const statsReader = openStatsReader(opts.dataDir);
   const bus = new EventBus();
+  operationRegistry.setBus(bus);
   const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb);
   const channels = new ChannelService(asyncDb);
