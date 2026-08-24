@@ -153,6 +153,25 @@ describe('auth and api keys', () => {
     expect(revoked.status).toBe(401);
   });
 
+  it('accepts query tokens for WebSocket upgrades but not HTTP API requests', async () => {
+    const apiWithQueryToken = await fetch(`${server.baseUrl}/api/keys?token=${server.sessionToken}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'query-token' }),
+    });
+    expect(apiWithQueryToken.status).toBe(401);
+
+    const ws = new WebSocket(`${server.baseUrl.replace('http', 'ws')}/api/ws?token=${server.sessionToken}`);
+    const opened = await new Promise<boolean>((resolve) => {
+      ws.addEventListener('error', () => resolve(false));
+      ws.addEventListener('open', () => {
+        ws.close();
+        resolve(true);
+      });
+    });
+    expect(opened).toBe(true);
+  });
+
   it('password-only login works even when a legacy auth record carries a username', async () => {
     const legacy = await startServer();
     const row = (await legacy.app.ctx.asyncDb.read((d) => d.select().from(settings).where(eq(settings.key, 'auth')).get()))!;
