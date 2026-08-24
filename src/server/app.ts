@@ -520,7 +520,7 @@ not resolved yet.`;
     return reply.status(401).send({ error: { code: 'unauthenticated', message: 'authentication required' } });
   });
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof DomainError) {
       return reply.status(err.httpStatus).send({ error: { code: err.code, message: err.message } });
     }
@@ -539,9 +539,8 @@ not resolved yet.`;
         error: { code: 'validation', message: err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') },
       });
     }
-    app.log.error(err);
-    const message = err instanceof Error ? err.message : String(err);
-    return reply.status(500).send({ error: { code: 'internal', message } });
+    req.log.error({ err }, 'unexpected request error');
+    return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
 
   await app.register(taskRoutes, { prefix: '/api' });
