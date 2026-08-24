@@ -12,6 +12,7 @@ import { AlwaysOnSampler, BatchSpanProcessor, type SpanProcessor } from '@opente
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { operationRegistry } from './telemetry/operations.js';
 import { configureLogger, type StdoutLogLevel } from './logger.js';
+import { operationRegistry } from './telemetry/operations.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:4318';
 

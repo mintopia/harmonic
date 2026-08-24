@@ -5,8 +5,10 @@ import type { PersistedConversationEvent } from '../domain/conversations.js';
 import type { PendingPermissionBroadcast } from '../execution/conversation-driver.js';
 import type { RunUsageSnapshot } from '../execution/usage.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
+import type { OperationEvent } from '../telemetry/operations.js';
 
 export interface BusEvents {
+  operations: (event: OperationEvent) => void;
   run_event: (event: PersistedRunEvent) => void;
   run_changed: (run: RunRow) => void;
   /** Live-usage snapshot pushed ~1s while a run tails its native log (ADR 0010). */

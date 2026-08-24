@@ -63,6 +63,7 @@ import { permissionRuleRoutes } from './routes/permission-rules.js';
 import { configRoutes } from './routes/config.js';
 import { wsRoutes } from './ws.js';
 import { EventBus } from './bus.js';
+import { operationRegistry } from '../telemetry/operations.js';
 import { AuthService } from './auth.js';
 import { authRoutes, SESSION_COOKIE } from './routes/auth.js';
 import { statsRoutes } from './routes/stats.js';
@@ -258,6 +259,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     run: () => scheduler.prune(),
   });
   for (const registration of opts.scheduledJobRegistrations ?? []) scheduler.register(registration);
+  operationRegistry.setBus(bus);
   const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
   const workspaces = new WorkspaceService(asyncDb);
   const channels = new ChannelService(asyncDb);
