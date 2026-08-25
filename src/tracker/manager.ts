@@ -87,6 +87,7 @@ export class TrackerPollerManager {
     private readonly mergeTrain?: MergeTrainCoordinator,
     private readonly dispatchEpicRefreshResolution: (
       target: EpicRefreshTarget,
+      detail: string,
       escalate: (epicRef: number, reason: string) => void,
     ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
     private readonly postLand?: PostLandHook,
@@ -168,7 +169,7 @@ export class TrackerPollerManager {
       };
       epics.attachRefreshTrigger(new EpicRefreshCoordinator({
         train: this.mergeTrain,
-        dispatchResolve: (target) => this.dispatchEpicRefreshResolution(target, escalateRefresh),
+        dispatchResolve: (target, detail) => this.dispatchEpicRefreshResolution(target, detail, escalateRefresh),
         escalate: escalateRefresh,
       }));
     }

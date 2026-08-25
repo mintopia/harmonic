@@ -655,7 +655,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     scheduler,
     undefined,
     mergeTrain,
-    (target, escalate) => runnerRef!.enqueueEpicRefreshResolution(target, escalate),
+    (target, detail, escalate) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate),
     postLand,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above

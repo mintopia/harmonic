@@ -2226,6 +2226,7 @@ export class Runner {
    */
   async enqueueEpicRefreshResolution(
     target: EpicRefreshTarget,
+    detail: string,
     escalate: (epicRef: number, reason: string) => void | Promise<void>,
   ): Promise<EpicRefreshResolveDispatchOutcome> {
     const branch = `epic/${target.ref}`;
@@ -2237,7 +2238,7 @@ export class Runner {
       if (rowId !== null) this.pendingMemberReMerge.set(run.id, rowId);
       return { status: 'dispatched' };
     }
-    const reason = `no active Epic member is available to resolve refresh conflict for ${branch}`;
+    const reason = `no active Epic member is available to resolve refresh conflict for ${branch}: ${detail}`;
     await escalate(target.ref, reason);
     return { status: 'escalated', reason };
   }
