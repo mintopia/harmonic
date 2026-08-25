@@ -28,8 +28,10 @@ import {
   sessionWarmthFacts,
   decideAttemptContinuation,
   type ContinuationTrigger,
+  type DeterministicContinuation,
 } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
+import { buildResumeFallbackSummary } from '../domain/session-fallback.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
@@ -390,6 +392,8 @@ interface HealContext {
   reason: string;
   output: string;
   attempt: number;
+  continuation: DeterministicContinuation;
+  condensedContext: string | null;
 }
 
 /**
@@ -680,7 +684,15 @@ export class Runner {
     const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
     if (run.attempt >= maxAttempts) return await this.taskService.escalate(task.id);
 
-    await this.taskService.requeue(task.id, feedback);
+    const nextAttempt = await this.attempts.ensureForRun(task.id, run.attempt + 1, Date.now());
+    const continuation = await this.decideContinuation(task, run, workspace);
+    await this.attempts.setContinuation(nextAttempt.id, continuation);
+    const condensedContext = continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null;
+    await this.taskService.requeue(
+      task.id,
+      [condensedContext, feedback].filter((part): part is string => Boolean(part)).join('\n\n'),
+      continuation.path === 'continued-session' ? 'full' : 'condensed',
+    );
     await this.start(task.id);
     return await this.taskService.get(task.id);
   }
@@ -2130,25 +2142,15 @@ export class Runner {
       // a post-crash resume all resolve the current Attempt through runs.attempt.
       run = await this.runStore.update(run.id, { attempt: attemptNumber });
       const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
-      const now = Date.now();
-      const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
-      const contextWindow = this.getConfig().modelInfo[task.model]?.contextWindow;
-      const snapshot = await this.latestSnapshot(run.id);
-      const contextUsage = contextWindow && snapshot?.contextTokens !== null && snapshot?.contextTokens !== undefined
-        ? snapshot.contextTokens / contextWindow
-        : null;
-      const continuation = decideAttemptContinuation({
-        harness: task.harness,
-        contextUsage,
-        lastActiveAt: session?.lastActiveAt ?? now,
-        contextReuseThreshold: workspace?.contextReuseThreshold ?? this.getConfig().contextReuseThreshold,
-        now,
-      });
+      const continuation = await this.decideContinuation(task, run, workspace);
       await this.attempts.setContinuation(nextAttempt.id, continuation);
-      if (continuation.path === 'new-session-condensed') {
-        run = await this.runStore.update(run.id, { sessionId: null, sessionRowId: null });
-      }
-      healCtx = { reason: outcome.reason, output: outcome.output, attempt: attemptNumber - 1 };
+      healCtx = {
+        reason: outcome.reason,
+        output: outcome.output,
+        attempt: attemptNumber - 1,
+        continuation,
+        condensedContext: continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null,
+      };
       remergeCtx = undefined;
       inFlightTurn = await this.enqueueCorrectiveAttempt(run, sessionKey);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
@@ -2161,6 +2163,43 @@ export class Runner {
       this.progressSequences.delete(run.id);
       this.outstandingProgressActions.delete(run.id);
     }
+  }
+
+  private async decideContinuation(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Awaited<ReturnType<NonNullable<RunnerOptions['getWorkspace']>>>,
+  ): Promise<DeterministicContinuation> {
+    const now = Date.now();
+    const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
+    const contextWindow = this.getConfig().modelInfo[task.model]?.contextWindow;
+    const snapshot = await this.latestSnapshot(run.id);
+    const contextUsage = contextWindow && snapshot?.contextTokens !== null && snapshot?.contextTokens !== undefined
+      ? snapshot.contextTokens / contextWindow
+      : null;
+    return decideAttemptContinuation({
+      harness: task.harness,
+      contextUsage,
+      lastActiveAt: session?.lastActiveAt ?? now,
+      contextReuseThreshold: workspace?.contextReuseThreshold ?? this.getConfig().contextReuseThreshold,
+      now,
+    });
+  }
+
+  private async condensedContext(run: RunRow): Promise<string | null> {
+    if (run.sessionRowId === null) return null;
+    const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
+    if (!session) return null;
+    const current = await this.runStore.get(run.id);
+    return buildResumeFallbackSummary({
+      trigger: 'continuation-threshold',
+      detail: 'Attempt N+1 started a fresh Session under the deterministic continuation rule.',
+      session,
+      candidate: { oid: current.candidateOid, status: null },
+      facts: await this.runFacts.list(run.id),
+      events: await this.runStore.listEvents(run.id),
+      trackerLinks: [],
+    });
   }
 
   /**
@@ -3222,16 +3261,13 @@ export class Runner {
       const onInitialize = (result: AcpInitializeResult) => {
         sessionInit = result;
       };
-      // Retry & reject continuation (issue #147): a first (non-corrective) turn
-      // on a Run pre-bound to a prior Session (`bindContinuationIfEligible`)
-      // reloads that conversation via `session/load` instead of a cold
-      // `session/new`, so the agent still remembers what it tried and the
-      // feedback it got. A corrective turn (self-heal #137 / re-merge #155)
-      // re-drives the SAME live process and must NOT reload — it carries its
-      // correction as prompt text below — so it always takes the fresh
-      // handshake. On any load incompatibility Harmonic fails forward to a fresh
-      // Session rather than leaving the Run session-less.
-      const continueSessionId = healCtx === undefined && remergeCtx === undefined ? run.sessionId : null;
+      // A corrective Attempt follows the recorded continuation decision. Reuse
+      // reloads the prior Session with feedback appended below. A condensed path
+      // starts a fresh Session and retains the prior Session row for transcript
+      // lookup until the new dispatch replaces the Run binding.
+      const continueSessionId = remergeCtx === undefined && (healCtx === undefined || healCtx.continuation.path === 'continued-session')
+        ? run.sessionId
+        : null;
       if (continueSessionId) {
         const outcome = await driver.load({
           sessionId: continueSessionId,
@@ -3329,7 +3365,7 @@ export class Runner {
       // cause, then finish, and the full suite reruns against the new candidate.
       if (healCtx) {
         promptText =
-          `${promptText}\n\n## Verification failed — fix required (self-heal ${healCtx.attempt})\n` +
+          `${healCtx.condensedContext ? `${healCtx.condensedContext}\n\n` : ''}${promptText}\n\n## Verification failed — fix required (self-heal ${healCtx.attempt})\n` +
           `Your previous attempt did not pass verification:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.`;
       } else if (remergeCtx) {

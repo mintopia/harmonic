@@ -44,7 +44,7 @@ export interface Attempt {
   feedback: string | null;
   continuation: {
     path: 'continued-session' | 'new-session-condensed';
-    reason: 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
+    reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
     contextUsage: number | null;
     contextReuseThreshold: number;
     lastActiveAt: number;

@@ -52,7 +52,8 @@ export const FALLBACK_TRIGGER_REASONS = [
   'cwd-mismatch',
   'permission-mode-unestablishable',
   'additional-directories-unsupported',
-] as const satisfies readonly UpstreamReloadFailure[];
+  'continuation-threshold',
+] as const;
 
 export type FallbackTriggerReason = (typeof FALLBACK_TRIGGER_REASONS)[number];
 

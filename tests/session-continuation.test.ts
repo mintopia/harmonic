@@ -32,6 +32,10 @@ describe('decideAttemptContinuation (issue #311)', () => {
   it('starts condensed when context usage is unavailable', () => {
     expect(decideAttemptContinuation({ ...input, contextUsage: null })).toMatchObject({ path: 'new-session-condensed', reason: 'missing-context-usage' });
   });
+
+  it('starts condensed when the harness has no fixed warm window', () => {
+    expect(decideAttemptContinuation({ ...input, harness: 'unknown' })).toMatchObject({ path: 'new-session-condensed', reason: 'missing-warm-window' });
+  });
 });
 
 /**

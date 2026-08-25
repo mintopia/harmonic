@@ -44,7 +44,7 @@ export const HARNESS_SESSION_WARM_WINDOWS_MS: Readonly<Record<string, number>> =
 
 export type DeterministicContinuation = {
   path: 'continued-session' | 'new-session-condensed';
-  reason: 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
+  reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
   contextUsage: number | null;
   contextReuseThreshold: number;
   lastActiveAt: number;
@@ -67,7 +67,7 @@ export function decideAttemptContinuation(input: {
   if (warmWindowMs ===null) return { path: 'new-session-condensed', reason: 'missing-warm-window', ...facts };
   if (input.contextUsage >= input.contextReuseThreshold) return { path: 'new-session-condensed', reason: 'context-usage', ...facts };
   if (lastActiveAgeMs >= warmWindowMs) return { path: 'new-session-condensed', reason: 'session-cold', ...facts };
-  return { path: 'continued-session', reason: 'context-usage', ...facts };
+  return { path: 'continued-session', reason: 'continued-within-limits', ...facts };
 }
 
 /**

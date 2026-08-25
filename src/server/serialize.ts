@@ -61,7 +61,7 @@ export interface ApiAttempt {
 
 const attemptContinuationSchema = z.object({
   path: z.enum(['continued-session', 'new-session-condensed']),
-  reason: z.enum(['context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
+  reason: z.enum(['continued-within-limits', 'context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
   contextUsage: z.number().nullable(),
   contextReuseThreshold: z.number(),
   lastActiveAt: z.number(),

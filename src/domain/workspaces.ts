@@ -173,6 +173,7 @@ export class WorkspaceService {
           maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
           autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
           maxAttempts: patch(input.maxAttempts, current.maxAttempts),
+          contextReuseThreshold: patch(input.contextReuseThreshold, current.contextReuseThreshold),
           verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
           verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
           verificationAutoAccept: patch(input.verificationAutoAccept, current.verificationAutoAccept),
