@@ -90,7 +90,7 @@ describe('command verifier end-to-end (issue #135)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.phase).toBe('review');
-    expect(run.candidateOid).toBeNull();
+    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC3/AC5: the attempt is persisted at the branch head the command saw.
     const rows = await attempts(runId);
@@ -152,9 +152,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(rows[0]!.verdict).toBe('inconclusive');
   });
 
-  // Kept last: an unrelated dirty direct checkout does not affect a committed
-  // branch head, which is the only tree verification is allowed to inspect.
-  it('verifies the committed branch head even when a direct checkout is dirty', async () => {
+  it('a configured command with no committed implementation fails closed', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCommand: exitCommand(0),
@@ -164,18 +162,18 @@ describe('command verifier end-to-end (issue #135)', () => {
     const { taskId, runId } = await createAndRun();
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
-      return body.phase === 'review' ? body : undefined;
+      return body.state === 'failed' ? body : undefined;
     });
-    expect(run.state).toBe('running');
-    expect(run.phase).toBe('review');
+    expect(run.state).toBe('failed');
+    expect(run.phase).not.toBe('review');
     expect(run.candidateOid).toBeNull();
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass', inputOid: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
   });
 });
 

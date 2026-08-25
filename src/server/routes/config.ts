@@ -11,8 +11,8 @@ import {
   verificationCommandSchema,
   verificationCriticSchema,
   verificationReviewSchema,
-  type DeepPartial,
   type AppConfig,
+  type LegacyConfig,
 } from '../../config.js';
 
 /**
@@ -105,6 +105,8 @@ const configPatchBodySchema = z
       .describe(
         'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.',
       ),
+    /** Migration-only input for clients saved before #312. It is converted to
+     * `verify` before storage and never appears in the response. */
     verification: z
       .object({
         /** The command verifier; null clears it. Send the whole object to set one (deep-merged, then re-parsed). */
@@ -168,7 +170,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      const updated = await ctx.configStore.update(req.body as DeepPartial<AppConfig>);
+      const updated = await ctx.configStore.update(req.body as LegacyConfig);
       ctx.autoRunner.poke();
       return updated;
     },

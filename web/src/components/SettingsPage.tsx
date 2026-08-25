@@ -3,7 +3,7 @@ import { api } from '../api';
 import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
-import type { AppConfig, VerificationCommand, VerificationCritic } from '../types';
+import type { AppConfig, VerificationCommand, VerificationCritic, VerificationReview } from '../types';
 import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
 import { FieldError, PlaceholderList, PromptPreview, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
@@ -211,75 +211,99 @@ function VerificationFields({
 }: {
   config: AppConfig;
   fieldErrors: Record<string, string>;
-  onChange: (verification: AppConfig['verification']) => void;
+  onChange: (verify: AppConfig['verify']) => void;
 }) {
-  const v = config.verification;
-  const setCommand = (command: VerificationCommand | null) => onChange({ ...v, command });
-  const setCritic = (critic: VerificationCritic | null) => onChange({ ...v, critic });
+  const v = config.verify;
+  const setCommands = (commands: VerificationCommand[]) => onChange({ ...v, commands });
+  const setCommand = (index: number, command: VerificationCommand) =>
+    setCommands(v.commands.map((current, currentIndex) => (currentIndex === index ? command : current)));
+  const setReview = (review: VerificationReview) => onChange({ ...v, review });
+  const reviewCritic: VerificationCritic = {
+    prompt: v.review.prompt ?? '',
+    model: v.review.model ?? '',
+    ...(v.review.harness ? { harness: v.review.harness } : {}),
+  };
+  const setCritic = (critic: VerificationCritic) => setReview({ enabled: true, ...critic });
   return (
     <div className="flex flex-col gap-4 sm:max-w-md">
       <div>
         <div className="flex items-center justify-between">
-          <span className={fieldLabel}>Command verifier</span>
-          <Switch checked={v.command !== null} onChange={(on) => setCommand(on ? EMPTY_COMMAND : null)}>
-            Enabled
-          </Switch>
+          <span className={fieldLabel}>Verification commands</span>
+          <button type="button" className="text-small text-accent" onClick={() => setCommands([...v.commands, EMPTY_COMMAND])}>
+            Add command
+          </button>
         </div>
-        {v.command !== null && (
-          <div className="mt-3 flex flex-col gap-3">
+        {v.commands.length === 0 ? (
+          <p className="mt-2 text-small text-muted">No commands configured.</p>
+        ) : (
+          <div className="mt-3 flex flex-col gap-5">
+            {v.commands.map((command, index) => (
+              <div key={index} className="flex flex-col gap-3 border-l-2 border-edge pl-3">
+                <div className="flex items-center justify-between">
+                  <span className={fieldLabel}>Command {index + 1}</span>
+                  <button
+                    type="button"
+                    className="text-small text-failed"
+                    onClick={() => setCommands(v.commands.filter((_, commandIndex) => commandIndex !== index))}
+                  >
+                    Remove
+                  </button>
+                </div>
             <div>
-              <label className={fieldLabel} htmlFor="settings-verify-command">Command</label>
+                  <label className={fieldLabel} htmlFor={`settings-verify-command-${index}`}>Command</label>
               <input
-                id="settings-verify-command"
+                    id={`settings-verify-command-${index}`}
                 className={`${field} font-data`}
                 placeholder="npm"
-                value={v.command.command}
-                onChange={(e) => setCommand(setCommandField(v.command!, 'command', e.target.value))}
+                    value={command.command}
+                    onChange={(e) => setCommand(index, setCommandField(command, 'command', e.target.value))}
               />
-              <FieldError message={fieldErrors['verification.command.command']} />
+                  <FieldError message={fieldErrors[`verify.commands.${index}.command`]} />
             </div>
             <div>
-              <label className={fieldLabel} htmlFor="settings-verify-args">
+                  <label className={fieldLabel} htmlFor={`settings-verify-args-${index}`}>
                 Arguments <span className="normal-case text-muted">(space-separated)</span>
               </label>
               <input
-                id="settings-verify-args"
+                    id={`settings-verify-args-${index}`}
                 className={`${field} font-data`}
                 placeholder="test"
-                value={argsText(v.command)}
-                onChange={(e) => setCommand(setCommandField(v.command!, 'args', e.target.value))}
+                    value={argsText(command)}
+                    onChange={(e) => setCommand(index, setCommandField(command, 'args', e.target.value))}
               />
             </div>
             <div>
-              <label className={fieldLabel} htmlFor="settings-verify-timeout">Timeout (seconds)</label>
+                  <label className={fieldLabel} htmlFor={`settings-verify-timeout-${index}`}>Timeout (seconds)</label>
               <input
-                id="settings-verify-timeout"
+                    id={`settings-verify-timeout-${index}`}
                 type="number"
                 min={1}
                 className={`${field} w-40 tabular-nums`}
-                value={v.command.timeoutSeconds}
-                onChange={(e) => setCommand(setCommandField(v.command!, 'timeoutSeconds', e.target.value))}
+                    value={command.timeoutSeconds}
+                    onChange={(e) => setCommand(index, setCommandField(command, 'timeoutSeconds', e.target.value))}
               />
             </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
       <div>
         <div className="flex items-center justify-between">
-          <span className={fieldLabel}>Agent critic</span>
-          <Switch checked={v.critic !== null} onChange={(on) => setCritic(on ? EMPTY_CRITIC : null)}>
+          <span className={fieldLabel}>Review</span>
+          <Switch checked={v.review.enabled} onChange={(enabled) => setReview(enabled ? { enabled: true, ...EMPTY_CRITIC } : { enabled: false })}>
             Enabled
           </Switch>
         </div>
-        {v.critic !== null && (
+        {v.review.enabled && (
           <div className="mt-3 flex flex-col gap-3">
             <div>
               <label className={fieldLabel} htmlFor="settings-critic-harness">Harness</label>
               <select
                 id="settings-critic-harness"
                 className={`${selectField} w-full`}
-                value={v.critic.harness ?? ''}
-                onChange={(e) => setCritic(setCriticField(v.critic!, 'harness', e.target.value))}
+                value={reviewCritic.harness ?? ''}
+                onChange={(e) => setCritic(setCriticField(reviewCritic, 'harness', e.target.value))}
               >
                 <option value="">Same as task</option>
                 {Object.keys(config.harnesses).map((h) => (
@@ -288,17 +312,17 @@ function VerificationFields({
                   </option>
                 ))}
               </select>
-              <FieldError message={fieldErrors['verification.critic.harness']} />
+              <FieldError message={fieldErrors['verify.review.harness']} />
             </div>
             <div>
               <label className={fieldLabel} htmlFor="settings-critic-model">Model</label>
               <ModelCombobox
                 id="settings-critic-model"
-                value={v.critic.model}
-                onChange={(m) => setCritic(setCriticField(v.critic!, 'model', m))}
-                options={v.critic.harness ? (config.harnesses[v.critic.harness]?.models ?? []) : []}
+                value={reviewCritic.model}
+                onChange={(m) => setCritic(setCriticField(reviewCritic, 'model', m))}
+                options={reviewCritic.harness ? (config.harnesses[reviewCritic.harness]?.models ?? []) : []}
               />
-              <FieldError message={fieldErrors['verification.critic.model']} />
+              <FieldError message={fieldErrors['verify.review.model']} />
             </div>
             <div>
               <label className={fieldLabel} htmlFor="settings-critic-prompt">Review prompt</label>
@@ -311,12 +335,12 @@ function VerificationFields({
                 rows={3}
                 className={field}
                 placeholder="Review the change against issue {ref}: {title}. Read the code and the issue to decide."
-                value={v.critic.prompt}
-                onChange={(e) => setCritic(setCriticField(v.critic!, 'prompt', e.target.value))}
+                value={reviewCritic.prompt}
+                onChange={(e) => setCritic(setCriticField(reviewCritic, 'prompt', e.target.value))}
               />
-              <FieldError message={fieldErrors['verification.critic.prompt']} />
+              <FieldError message={fieldErrors['verify.review.prompt']} />
               <PlaceholderList placeholders={DRIVE_PLACEHOLDERS} />
-              <PromptPreview text={compileCriticPreview(v.critic.prompt)} />
+              <PromptPreview text={compileCriticPreview(reviewCritic.prompt)} />
             </div>
           </div>
         )}
@@ -328,7 +352,7 @@ function VerificationFields({
             Land a passing Run without the human review gate
           </Switch>
         </div>
-        <FieldError message={fieldErrors['verification.autoAccept']} />
+        <FieldError message={fieldErrors['verify.autoAccept']} />
       </div>
     </div>
   );
@@ -559,12 +583,12 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
 
         <SettingsSection
           title="Verification"
-          description="The global default for how a Run is checked before it lands (ADR-0021): a command verifier (your test/lint), an agent critic that reviews the diff, and whether a passing Run auto-accepts past the human review gate. Each Workspace can override these."
+          description="Commands run in order and stop at the first failure. An optional review runs after every command passes. Each Workspace can override these defaults."
         >
           <VerificationFields
             config={local}
             fieldErrors={fieldErrors}
-            onChange={(verification) => setLocal({ ...local, verification })}
+            onChange={(verify) => setLocal({ ...local, verify })}
           />
         </SettingsSection>
 

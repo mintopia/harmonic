@@ -7,6 +7,7 @@ import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
 import {
   detachForDirectRun,
   captureDirectHead,
+  directRefFor,
   restoreLiveCheckout,
   reattachBareDetachedHead,
   rematerializeCandidate,
@@ -283,9 +284,7 @@ interface Workspace {
   cwd: string;
   env: Record<string, string>;
   worktree?: { repoDir: string; path: string };
-  /** The validated base the candidate snapshot is parented on (issue #134):
-   * the base branch (worktree mode) or the start `HEAD` OID (direct mode).
-   * Unset when the working dir is not a git repo, so no candidate is built. */
+  /** The branch tip the implementation started from. */
   baseRev?: string;
   /** Whether a direct-mode context was already dirty at Run start — captured
    * before the agent touches it, so a dirty/concurrently-editable context is
@@ -1418,11 +1417,13 @@ export class Runner {
    * {@link runVerification} so a new verifier can't diverge on this fail-safe.
    */
   private async noVerifiedHeadVerdict(
+    task: TaskRow,
+    run: RunRow,
     runId: number,
     mechanism: 'command' | 'critic',
     record: (type: 'lifecycle', payload: unknown) => void,
   ): Promise<VerifierVerdict> {
-    await this.verificationAttempts.append(runId, {
+    const persisted = await this.verificationAttempts.append(runId, {
       mechanism,
       inputOid: '',
       verdict: 'inconclusive',
@@ -1430,6 +1431,16 @@ export class Runner {
       output: '',
       mutated: false,
     });
+    const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+    if (attempt) {
+      const timeline = await this.attempts.createTask(attempt.id, {
+        type: mechanism === 'command' ? 'verification' : 'review',
+        logLocator: `verification_attempt:${persisted.id}`,
+      });
+      await this.attempts.updateTask(timeline.id, {
+        state: 'failed', verdict: 'inconclusive', startedAt: persisted.ts, endedAt: Date.now(),
+      });
+    }
     record('lifecycle', { event: 'verification', mechanism, verdict: 'inconclusive' });
     return { verifier: mechanism, verdict: 'inconclusive' };
   }
@@ -1467,6 +1478,7 @@ export class Runner {
   private async runVerification(
     task: TaskRow,
     run: RunRow,
+    head: string | null,
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
     parent: SpanContext,
@@ -1484,11 +1496,11 @@ export class Runner {
     // (dirty direct context) or failed (#134): a configured verifier then has
     // nothing to characterize, which every branch below treats as infra doubt
     // → inconclusive → Escalate, never a silent pass.
-    const oid = await Git.revParse(task.workingDir, run.branch ?? 'HEAD').catch(() => null);
+    const oid = head;
 
     for (const command of commands) {
       if (!oid) {
-        verdicts.push(await this.noVerifiedHeadVerdict(run.id, 'command', record));
+        verdicts.push(await this.noVerifiedHeadVerdict(task, run, run.id, 'command', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         const attempt = await runCommandVerifier({
@@ -1534,7 +1546,7 @@ export class Runner {
       // disposable read-only worktree (read + fetch tools, no mutation), never
       // the live checkout, with the operator's interpolated review prompt.
       if (!oid) {
-        verdicts.push(await this.noVerifiedHeadVerdict(run.id, 'critic', record));
+        verdicts.push(await this.noVerifiedHeadVerdict(task, run, run.id, 'critic', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         // The critic's own harness (issue #174 FIX 2): reuses the builder's
@@ -2144,7 +2156,7 @@ export class Runner {
         run.id,
         'self-heal',
         {
-          expectedPhase: 'validating',
+          expectedPhase: 'verifying',
           expectedGeneration: run.attempt,
           expectedWorkspaceOID: oid,
           expectedFingerprint: oid,
@@ -2180,7 +2192,7 @@ export class Runner {
         run.id,
         're-merge',
         {
-          expectedPhase: 'validating',
+          expectedPhase: 'verifying',
           expectedGeneration: run.attempt,
           expectedWorkspaceOID: oid,
           expectedFingerprint: oid,
@@ -3381,6 +3393,7 @@ export class Runner {
       // decision up to the `drive` loop, which dispatches exactly one corrective
       // turn. Carries the branch-contract violation for the corrective prompt.
       let remergeNeeded: { reason: string; detail: string } | null = null;
+      let implementationHead: string | null = null;
       // The branch contract is checked at implementation end. It is a fact and
       // escalation trigger, never a user-facing validation stage.
       if (!escalating && !afkUnresolved) {
@@ -3434,6 +3447,22 @@ export class Runner {
             escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
           }
         }
+        // Verification must see the commit the agent actually left behind,
+        // before direct isolation restores the live checkout. A run with no new
+        // commit has no verifiable work and fails closed below.
+        const [head, base] = await Promise.all([
+          Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
+          workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
+        ]);
+        if (head && head !== base) {
+          implementationHead = head;
+          if (workspace.directIsolation) {
+            await captureDirectHead(task.workingDir, run.id);
+            await this.runStore.update(run.id, { branch: directRefFor(run.id), candidateOid: head, candidateRef: directRefFor(run.id) });
+          } else {
+            await this.runStore.update(run.id, { candidateOid: head });
+          }
+        }
       }
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
@@ -3482,6 +3511,7 @@ export class Runner {
         const { decision, ran, autoAccept } = await this.runVerification(
           task,
           run,
+          implementationHead,
           active.verifyAbort.signal,
           record,
           parent,

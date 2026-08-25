@@ -133,6 +133,18 @@ async function handlePrompt(msg) {
     writeFileSync(path, content);
   }
 
+  // The production contract requires the implementation agent to commit its
+  // work. Make fixture edits obey that contract so verification has a real
+  // branch head rather than a synthetic snapshot.
+  if (Object.keys(scenario.writeFiles ?? {}).length > 0) {
+    try {
+      execFileSync('git', ['-C', process.cwd(), 'add', '-A'], { stdio: 'ignore' });
+      execFileSync('git', ['-C', process.cwd(), '-c', 'user.name=Stub Agent', '-c', 'user.email=stub@example.test', 'commit', '-m', 'stub implementation'], { stdio: 'ignore' });
+    } catch {
+      // Non-git fixture directories intentionally have nothing to commit.
+    }
+  }
+
   // Simulate an agent running raw git in its working directory (issue #151
   // branch-contract tests): each entry is an argv array run as `git -C <cwd>
   // ...argv`, e.g. `["checkout","-b","stray"]`. Best-effort — a failing command

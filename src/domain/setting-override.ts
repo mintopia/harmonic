@@ -1,5 +1,13 @@
 import type { WorkspaceRow } from '../db/schema.js';
-import type { AppConfig, VerificationCommand, VerificationCritic, VerificationReview, BudgetGuardrail } from '../config.js';
+import {
+  verificationReviewSchema,
+  verificationCriticSchema,
+  type AppConfig,
+  type VerificationCommand,
+  type VerificationCritic,
+  type VerificationReview,
+  type BudgetGuardrail,
+} from '../config.js';
 
 /**
  * Setting Overrides (ADR-0012, issue #59). An overridable setting resolves as
@@ -53,27 +61,16 @@ export type ResolvedVerifiers = {
  */
 export function resolveVerifiers(
   ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic' | 'verificationAutoAccept'>,
-  config: { verify?: AppConfig['verify']; verification?: AppConfig['verification'] },
+  config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
-  const verify = config.verify ?? legacyVerify(config as never);
-  const commands = resolveCommands(ws.verificationCommand, verify.commands);
-  const review = resolveReview(ws.verificationCritic, verify.review);
+  const commands = resolveCommands(ws.verificationCommand, config.verify.commands);
+  const review = resolveReview(ws.verificationCritic, config.verify.review);
   return {
     commands,
     review,
     command: commands[0] ?? null,
     critic: review.enabled && review.prompt && review.model ? { prompt: review.prompt, model: review.model, ...(review.harness ? { harness: review.harness } : {}) } : null,
-    autoAccept: ws.verificationAutoAccept ?? verify.autoAccept,
-  };
-}
-
-/** Compatibility for in-memory callers and configs written before #312. */
-function legacyVerify(config: { verification?: { command?: VerificationCommand | null; critic?: VerificationCritic | null; autoAccept?: boolean; maxSelfHeals?: number } }) {
-  return {
-    commands: config.verification?.command ? [config.verification.command] : [],
-    review: config.verification?.critic ? { enabled: true, ...config.verification.critic } : { enabled: false },
-    autoAccept: config.verification?.autoAccept ?? false,
-    maxSelfHeals: config.verification?.maxSelfHeals ?? 1,
+    autoAccept: ws.verificationAutoAccept ?? config.verify.autoAccept,
   };
 }
 
@@ -95,11 +92,11 @@ function resolveCommands(stored: string | null | undefined, globalDefault: Verif
 }
 
 function resolveReview(stored: string | null | undefined, globalDefault: VerificationReview): VerificationReview {
-  if (!stored) return globalDefault;
+  if (!stored) return verificationReviewSchema.parse(globalDefault);
   const parsed = JSON.parse(stored) as unknown;
   if (isVerifierOff(parsed)) return { enabled: false };
-  if (typeof parsed === 'object' && parsed !== null && 'enabled' in parsed) return parsed as VerificationReview;
-  return { enabled: true, ...(parsed as VerificationCritic) };
+  if (typeof parsed === 'object' && parsed !== null && 'enabled' in parsed) return verificationReviewSchema.parse(parsed);
+  return { enabled: true, ...verificationCriticSchema.parse(parsed) };
 }
 
 /** A Workspace's effective Guardrail config: the budget bounds, progress

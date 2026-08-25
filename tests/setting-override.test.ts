@@ -39,7 +39,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
   describe('resolveVerifiers (issue #132, ADR-0021)', () => {
     it('resolves an empty verifier set when nothing is configured anywhere', () => {
-      const config = { verification: { command: null, critic: null, autoAccept: false, maxSelfHeals: 1 } };
+      const config = { verify: { commands: [], review: { enabled: false }, autoAccept: false, maxSelfHeals: 1 } };
       expect(
         resolveVerifiers(
           { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },

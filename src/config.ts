@@ -350,15 +350,6 @@ export const appConfigSchema = z.object({
       maxSelfHeals: z.number().int().min(0).default(1),
     })
     .prefault({}),
-  /** Compatibility input retained while persisted configurations migrate to `verify`. */
-  verification: z
-    .object({
-      command: verificationCommandSchema.nullable().default(null),
-      critic: verificationCriticSchema.nullable().default(null),
-      autoAccept: z.boolean().default(false),
-      maxSelfHeals: z.number().int().min(0).default(1),
-    })
-    .prefault({}),
   /**
    * Global-default Guardrail config (issue #108/#126, ADR-0019): the budget
    * Guardrail (mandatory wall-clock, optional tokens/cost) and the progress
@@ -521,7 +512,6 @@ export function defaultConfig(): AppConfig {
       autoAccept: false,
       maxSelfHeals: 1,
     },
-    verification: { command: null, critic: null, autoAccept: false, maxSelfHeals: 1 },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
       progress: false,
@@ -550,25 +540,25 @@ export type LegacyConfig = DeepPartial<AppConfig> & {
 };
 
 /**
- * Fold the retired `agentReview` flag (ADR-0021) into the verification config.
- * A `agentReview: true` maps to `verification.autoAccept: true` — the verifier's
- * pass now IS the accept. The legacy key is ALWAYS dropped so it never lingers in
- * stored config nor re-exposes the removed accept/reject surface. An explicit
- * `verification.autoAccept` already present in the same object wins (not overridden).
+ * Fold retired verification input into `verify`. Legacy keys are accepted only at
+ * this boundary and are never returned or persisted. An explicit `verify` value
+ * always wins, including an empty command list or a disabled review.
  */
 export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
   const { agentReview, verification: legacyVerification, ...rest } = raw;
-  const verify = { ...rest.verify };
+  const verify: DeepPartial<AppConfig['verify']> = { ...rest.verify };
   if (legacyVerification) {
-    if (verify.commands === undefined && legacyVerification.command) verify.commands = [legacyVerification.command];
-    if (verify.review === undefined && legacyVerification.critic) verify.review = { enabled: true, ...legacyVerification.critic };
+    if (verify.commands === undefined && 'command' in legacyVerification) {
+      verify.commands = legacyVerification.command === null ? [] : [legacyVerification.command!];
+    }
+    if (verify.review === undefined && 'critic' in legacyVerification) {
+      verify.review = legacyVerification.critic === null ? { enabled: false } : { enabled: true, ...legacyVerification.critic! };
+    }
     if (verify.autoAccept === undefined && legacyVerification.autoAccept !== undefined) verify.autoAccept = legacyVerification.autoAccept;
     if (verify.maxSelfHeals === undefined && legacyVerification.maxSelfHeals !== undefined) verify.maxSelfHeals = legacyVerification.maxSelfHeals;
   }
   if (agentReview === true && verify.autoAccept === undefined) verify.autoAccept = true;
-  // Keep the old property in this return value only for old in-process callers;
-  // ConfigStore merges it away on the next parse because the schema is strict.
-  return Object.keys(verify).length === 0 ? rest : { ...rest, verify, verification: { autoAccept: verify.autoAccept } } as DeepPartial<AppConfig>;
+  return Object.keys(verify).length === 0 ? rest : { ...rest, verify };
 }
 
 export function defaultDataDir(): string {

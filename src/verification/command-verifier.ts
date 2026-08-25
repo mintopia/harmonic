@@ -17,7 +17,7 @@ import type { VerificationAttemptInput } from '../domain/verification-attempts.j
  *
  * Like the sibling critic (`verification/critic.ts`, #136) this is a
  * self-contained, fully-tested unit: everything the command sees is bracketed
- * by `withDetachedWorktree` (`execution/candidate.ts`, #134), so the command
+ * by `withDetachedWorktree` (`execution/detached-worktree.ts`), so the command
  * runs against a stable, detached candidate checkout it can never land, and it
  * never throws for a verdict — every plumbing failure (missing command, spawn
  * error, timeout, cancellation, a checkout that could not be created) folds
@@ -210,7 +210,7 @@ export function exitCodeToVerdict(r: CommandSpawnResult): { verdict: Verdict; su
 export interface RunCommandVerifierArgs {
   /** The base repo owning the candidate ref and object store. */
   repoDir: string;
-  /** The frozen candidate commit (`execution/candidate.ts` `buildCandidate`, #134). */
+  /** The fixed commit the command verifies. */
   candidateOid: string;
   /** Where to check out the disposable detached worktree for this attempt. */
   worktreePath: string;
