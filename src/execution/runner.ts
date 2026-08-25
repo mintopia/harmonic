@@ -705,7 +705,7 @@ export class Runner {
     const created = await this.runStore.create(task.id, snapshot, chainId);
     const attempt = await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
     const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation' });
-    await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: `session:${created.id}` });
+    await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: 'session:pending' });
     const key = this.workContextKeyFor(task, created);
     // Resolved ahead of the claim: look up whoever holds the Work Context key and
     // whether they share this Run's line of work, exactly what `sharesLineOfWork`
@@ -2317,9 +2317,21 @@ export class Runner {
       if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
       const rows = await this.attempts.listTasks(attempt.id);
       const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
-      if (to === 'validating' && implementation) return;
+      if (to === 'validating' && implementation) {
+        await this.attempts.updateTask(implementation.id, { startedAt: implementation.startedAt ?? Date.now() });
+        return;
+      }
       if (to === 'verifying' && implementation) {
         await this.attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
+        return;
+      }
+      if (to === 'review') {
+        const review = rows.find((row) => row.type === 'review' && row.state === 'pending');
+        if (review) await this.attempts.updateTask(review.id, { state: 'running', startedAt: Date.now() });
+        return;
+      }
+      if (to === 'landing') {
+        await this.attempts.finish(attempt.id, 'passed');
       }
     };
 
@@ -2604,6 +2616,17 @@ export class Runner {
         if (active.externallySettled) return; // already ended some other way
         const now = await this.runStore.get(run.id);
         if (now.state !== 'running') return; // settled/terminal — nothing to trip
+        const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+        const attemptTasks = attempt ? await this.attempts.listTasks(attempt.id) : [];
+        const activeTask = [...attemptTasks].reverse().find((row) => row.state === 'running');
+        const guardrailPhase: RunPhase | null =
+          activeTask?.type === 'rebase'
+            ? 'validating'
+            : activeTask?.type === 'implementation'
+              ? 'executing'
+              : activeTask?.type === 'verification'
+                ? 'verifying'
+                : null;
         // Phase-scoped (issue #127, reliability-design Unit A): a trip only
         // counts when observed inside an execution phase. `now - startedAt` is
         // the execution clock precisely because the counted phases are a
@@ -2612,12 +2635,12 @@ export class Runner {
         // `finally` clears the timer at that point. If the timer nonetheless
         // fires mid-`review`/`landing`, `wallClockTrip` returns null (that phase
         // does not count) and the Run is left alone.
-        const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, phase: now.phase ?? null, budget });
+        const trip = wallClockTrip({ elapsedMs: Date.now() - now.startedAt, phase: guardrailPhase, budget });
         if (!trip) return; // fired in a non-counted phase, or not actually over budget
         // Structured evidence first — the card reason derives from this row.
         await this.guardrailEvents.append(now.id, {
           dimension: trip.dimension,
-          phase: now.phase ?? 'executing',
+          phase: guardrailPhase ?? 'executing',
           limitValue: trip.limitMs,
           observedValue: trip.observedMs,
           configSource,
@@ -3029,6 +3052,11 @@ export class Runner {
           });
           sessionRowId = session.id;
           void this.runStore.update(run.id, { sessionRowId: session.id }).catch(() => {});
+          const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+          if (attempt) {
+            const implementation = (await this.attempts.listTasks(attempt.id)).find((row) => row.type === 'implementation' && row.state === 'running');
+            if (implementation) await this.attempts.updateTask(implementation.id, { logLocator: `session:${session.id}` });
+          }
           if (transcriptPath === null && transcriptResolver) {
             void this.captureTranscriptPath({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
           }

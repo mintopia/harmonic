@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, cancelRunningTasks, type TestServer } from './helpers.js';
 import { guardrailEvents, runs, executionChains, runToolCalls } from '../src/db/schema.js';
 import type { DeepPartial, AppConfig } from '../src/config.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
@@ -559,6 +560,34 @@ describe('wall-clock guardrail (issue #127)', () => {
       expect(event).toMatchObject({ dimension: 'wall-clock', configSource: 'default' });
       expect(['executing', 'validating', 'verifying']).toContain(event.phase);
       expect(event.observedValue).toBeGreaterThanOrEqual(event.limitValue);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('does not kill an over-budget run after its attempt tasks enter landing', async () => {
+    const server = await startServer({
+      ...stubHarness(),
+      guardrails: { budget: { wallClockMinutes: 0.02 } },
+    });
+    try {
+      const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
+      const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+      const attempts = new AttemptStore(server.app.ctx.asyncDb);
+      const attempt = await waitFor(async () => (await attempts.listForTask(created.body.id))[0]);
+      const implementation = await waitFor(async () => (await attempts.listTasks(attempt.id))[0]);
+
+      await attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
+      await attempts.finish(attempt.id, 'passed');
+      await new Promise((resolve) => setTimeout(resolve, 1_400));
+
+      const observedRun = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+      if (observedRun.state !== 'running') throw new Error(JSON.stringify(observedRun));
+      expect(
+        await server.app.ctx.asyncDb.read((db) =>
+          db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, started.body.id)).all(),
+        ),
+      ).toEqual([]);
     } finally {
       await server.close();
     }

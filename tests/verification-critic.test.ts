@@ -82,6 +82,20 @@ describe('agent critic end-to-end (issue #164)', () => {
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
+    // Keep Session and Run ids intentionally out of step so the Attempt
+    // timeline proves its implementation locator uses the durable Session row,
+    // not the legacy Run id (issue #309).
+    await server.app.ctx.sessions.recordDispatch({
+      harness: 'claude',
+      harnessSessionId: 'issue-309-locator-offset',
+      model: 'stub-model',
+      cwd: repoDir,
+      workspaceId,
+      mcpTemplates: [],
+      capabilities: undefined,
+      adapterVersion: 'stub@1',
+      now: Date.now(),
+    });
     // Exercise the verify GATE in isolation: a fail Escalates directly rather
     // than heal→re-verify→escalate (two attempts). Self-heal has its own file.
     await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
@@ -240,6 +254,49 @@ describe('agent critic end-to-end (issue #164)', () => {
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'critic:pass']);
+  });
+
+  it('records implementation, verification, and review outcomes in the Attempt timeline', async () => {
+    criticResult = { verdict: 'pass', summary: 'correct and complete' };
+    const command = exitCommand(0);
+    await server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: command,
+      verificationCritic: critic(),
+    });
+    const { taskId, runId } = await createAndRun();
+
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? true : undefined;
+    });
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.sessionRowId).not.toBe(runId);
+
+    const response = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(response.status).toBe(200);
+    expect(response.body.attempts).toHaveLength(1);
+    expect(response.body.attempts[0].tasks).toMatchObject([
+      {
+        type: 'implementation',
+        state: 'passed',
+        verdict: 'pass',
+        logLocator: `session:${run.sessionRowId}`,
+      },
+      {
+        type: 'verification',
+        state: 'passed',
+        verdict: 'pass',
+        command: command.command,
+        logLocator: expect.stringMatching(/^verification_attempt:\d+$/),
+      },
+      {
+        type: 'review',
+        state: 'passed',
+        verdict: 'pass',
+        logLocator: expect.stringMatching(/^verification_attempt:\d+$/),
+      },
+    ]);
   });
 
   it('a configured critic with no candidate snapshot (dirty direct context) → inconclusive → Escalate', async () => {
