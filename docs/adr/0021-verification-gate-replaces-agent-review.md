@@ -84,3 +84,23 @@ can never reach the tracker. It cannot `finish_task`/`accept_task`, only return 
 verdict. Also retained: the disposable-worktree mutation fingerprint, and the strict schema verdict
 with inconclusive/malformed going to Escalate. The verdict's role in `combineVerdicts` and the
 rest of Unit B are unchanged.
+
+## Amendment (2026-08-25): the Runner injects merge-cleanliness as a trusted fact
+
+The critic must never run git. It reviews inside a disposable detached worktree
+whose before/after fingerprint force-downgrades any mutating turn to
+`inconclusive` (the fail-safe above), so a `git merge`/`git rebase` the critic
+runs to check merge-cleanliness mutates the worktree and wrongly turns a genuine
+`pass` into `inconclusive`. An operator critic prompt that told the critic to do
+exactly that was the observed cause.
+
+So the Runner computes merge-cleanliness itself, read-only, in the base repo (never
+the disposable worktree), via `Git.mergeCleanliness` — `git merge-tree --write-tree
+<baseBranch> <candidateOid>`, which writes only objects, moves no ref, and touches
+no working tree — and injects the result into the critic prompt as a TRUSTED fact
+(`buildCriticPrompt`'s `mergeCleanliness`), alongside the operator prompt and
+operator note. The critic judges "does it merge cleanly into the base branch?" from
+that fact without running any git command. A missing/unresolvable base branch or an
+errored `merge-tree` yields no fact (omitted, backward compatible) and never fails
+the Run. The mutation fail-safe itself is unchanged — this removes the critic's
+*reason* to touch git, it does not weaken the guard.

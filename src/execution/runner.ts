@@ -1560,12 +1560,30 @@ export class Runner {
         if (!criticHarness) {
           throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
         }
+        // Compute merge-cleanliness ourselves, read-only, in the base repo (never
+        // the critic's disposable worktree) and hand it to the critic as a trusted
+        // fact — so the critic can judge "does it merge cleanly?" without running
+        // any git command, which would mutate its worktree and force-downgrade its
+        // verdict to inconclusive (ADR-0021 mutation fail-safe). Unknown base
+        // branch / errored merge-tree ⇒ null ⇒ the fact is simply omitted.
+        const mergeResult = run.baseBranch
+          ? await Git.mergeCleanliness(task.workingDir, run.baseBranch, oid)
+          : null;
         const attempt = await runCritic({
           repoDir: task.workingDir,
           candidateOid: oid,
           worktreePath: join(this.worktreesDir, `critic-${run.id}`),
           critic,
           fields: driveFields(task, this.urlFor),
+          ...(mergeResult && run.baseBranch
+            ? {
+                mergeCleanliness: {
+                  baseBranch: run.baseBranch,
+                  clean: mergeResult.clean,
+                  ...(mergeResult.conflicts ? { conflicts: mergeResult.conflicts } : {}),
+                },
+              }
+            : {}),
           // `runCritic` strips the tracker credentials and registers no MCP
           // servers, and only approves read/fetch tool calls, so the turn is
           // contained (issue #136) regardless of which harness runs it.

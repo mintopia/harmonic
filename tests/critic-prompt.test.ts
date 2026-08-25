@@ -93,4 +93,57 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
       expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
     });
   });
+
+  describe('mergeCleanliness (Runner-injected trusted fact — critic never runs git)', () => {
+    it('renders nothing when the merge fact is absent (backward compatible)', () => {
+      const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+      expect(prompt).not.toMatch(/MERGE CHECK/i);
+    });
+
+    it('states a clean merge against the named base branch as a trusted fact', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        mergeCleanliness: { baseBranch: 'main', clean: true },
+      });
+      expect(prompt).toMatch(/MERGE CHECK/);
+      expect(prompt).toMatch(/computed by Harmonic itself, not by the change/i);
+      expect(prompt).toContain('merges cleanly into the base branch `main`');
+      // The fact tells the critic not to re-run git itself.
+      expect(prompt).toMatch(/do not run git yourself/i);
+    });
+
+    it('states a conflicting merge and lists the conflicting paths', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        mergeCleanliness: { baseBranch: 'develop', clean: false, conflicts: 'src/a.ts\nsrc/b.ts' },
+      });
+      expect(prompt).toContain('does NOT merge cleanly into the base branch `develop`');
+      expect(prompt).toContain('src/a.ts');
+      expect(prompt).toContain('src/b.ts');
+    });
+
+    it('sits in the trusted preamble, before the read-only contract', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'OPERATOR-INSTRUCTIONS-MARKER',
+        fields: FIELDS,
+        mergeCleanliness: { baseBranch: 'main', clean: true },
+      });
+      const opIdx = prompt.indexOf('OPERATOR-INSTRUCTIONS-MARKER');
+      const mergeIdx = prompt.indexOf('MERGE CHECK');
+      const contractIdx = prompt.indexOf('READ-ONLY');
+      expect(mergeIdx).toBeGreaterThan(opIdx);
+      expect(contractIdx).toBeGreaterThan(mergeIdx);
+    });
+
+    it('keeps the reply schema intact with the merge fact present', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        mergeCleanliness: { baseBranch: 'main', clean: false },
+      });
+      expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
+    });
+  });
 });

@@ -242,6 +242,12 @@ export interface RunCriticArgs {
    * #191) — forwarded into {@link buildCriticPrompt}'s trusted preamble.
    * Omitted for the ordinary verify-gate invocation from `runVerification`. */
   operatorNote?: string;
+  /** Runner-injected, read-only merge-cleanliness of the candidate against the
+   * Run's base branch (`Git.mergeCleanliness`, computed in the base repo — never
+   * this disposable worktree), forwarded verbatim into {@link buildCriticPrompt}'s
+   * trusted preamble so the critic never has to run git to check it. Omitted when
+   * the base branch is unknown or `merge-tree` could not be computed. */
+  mergeCleanliness?: { baseBranch: string; clean: boolean; conflicts?: string };
   /** Injectable drive seam; defaults to {@link createAcpCriticDrive}. */
   drive?: CriticHarnessDrive;
   /** Hard bound on the single prompt turn; generous default for a read-only review. */
@@ -316,6 +322,7 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
         operatorPrompt: args.critic.prompt,
         fields: args.fields,
         ...(args.operatorNote !== undefined ? { operatorNote: args.operatorNote } : {}),
+        ...(args.mergeCleanliness !== undefined ? { mergeCleanliness: args.mergeCleanliness } : {}),
       });
 
       try {

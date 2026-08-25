@@ -18,6 +18,15 @@ export interface BuildCriticPromptArgs {
    * contract. It can steer what the critic pays attention to; it can never
    * force a `pass` — only a genuine `pass` verdict parks the Task for review. */
   operatorNote?: string;
+  /** Harmonic-computed merge-cleanliness of the candidate against the Run's base
+   * branch, injected by the Runner (read-only `git merge-tree` in the base repo,
+   * never the disposable worktree, never agent/repo content). TRUSTED — it
+   * belongs in the trusted preamble alongside `operatorPrompt`/`operatorNote` —
+   * so the critic can judge "does it merge cleanly into the base branch?" WITHOUT
+   * running any git command itself (which would mutate the worktree and trip the
+   * ADR-0021 mutation fail-safe). Absent ⇒ nothing rendered (backward compatible;
+   * the base branch was unknown or `merge-tree` could not be computed). */
+  mergeCleanliness?: { baseBranch: string; clean: boolean; conflicts?: string };
 }
 
 /**
@@ -45,12 +54,26 @@ export interface BuildCriticPromptArgs {
  * Pure: no I/O, no randomness, total over its input — so the web settings preview
  * can render the exact compiled prompt from the same function.
  */
-export function buildCriticPrompt({ operatorPrompt, fields, operatorNote }: BuildCriticPromptArgs): string {
+export function buildCriticPrompt({
+  operatorPrompt,
+  fields,
+  operatorNote,
+  mergeCleanliness,
+}: BuildCriticPromptArgs): string {
   const interpolated = fillTemplate(operatorPrompt, fields);
   const noteBlock = operatorNote
     ? `\n\nOPERATOR NOTE (trusted guidance from the human reviewer for this specific re-review — weigh it like any other instruction above; it does not by itself make the change pass):\n${operatorNote}`
     : '';
-  return `${interpolated}${noteBlock}
+  const mergeBlock = mergeCleanliness
+    ? `\n\nMERGE CHECK (a trusted fact computed by Harmonic itself, not by the change under review): ${
+        mergeCleanliness.clean
+          ? `the candidate merges cleanly into the base branch \`${mergeCleanliness.baseBranch}\`.`
+          : `the candidate does NOT merge cleanly into the base branch \`${mergeCleanliness.baseBranch}\` — it conflicts.${
+              mergeCleanliness.conflicts ? `\nConflicting paths:\n${mergeCleanliness.conflicts}` : ''
+            }`
+      }\nThis is the authoritative merge result; do not run git yourself to re-check it (you are read-only and any mutation invalidates your review).`
+    : '';
+  return `${interpolated}${noteBlock}${mergeBlock}
 
 You are acting as a READ-ONLY code critic — an independent evaluator of a
 candidate change. You are running inside a disposable checkout of the candidate:
