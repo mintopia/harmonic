@@ -419,6 +419,26 @@ export async function buildApp(opts: AppOptions): Promise<App> {
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+  // Treat an empty `application/json` body as no body. The optional-body POSTs
+  // (cancel/requeue/uncancel/reattempt — `.nullish()` schemas) are routinely
+  // called with a JSON content-type but no bytes; Fastify's default parser
+  // throws FST_ERR_CTP_EMPTY_JSON_BODY on that, which the error handler doesn't
+  // recognise and turns into a 500. Parse empty (or whitespace-only) as
+  // `undefined` so the optional schema accepts it; a non-empty body parses as
+  // before (and still surfaces malformed JSON as an error), so `/mcp`'s reliance
+  // on the parsed `req.body` is unaffected.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = (body as string).trim();
+    if (text === '') {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(text));
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
   const pkg = readPackageManifest();
   const specDescription = `${pkg.description}
 

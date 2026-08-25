@@ -114,6 +114,19 @@ describe('dependencies', () => {
     expect((await getTask(unrelated.id)).state).toBe('ready');
   });
 
+  it('cancels with an empty application/json body — optional-body POST must not 500', async () => {
+    const t = await createTask({});
+    // A client that sets a JSON content-type but sends no bytes: the default
+    // Fastify parser threw FST_ERR_CTP_EMPTY_JSON_BODY, which the error handler
+    // turned into a 500. The tolerant parser treats empty as no body.
+    const res = await fetch(`${server.baseUrl}/api/tasks/${t.id}/cancel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `harmonic_session=${server.sessionToken}` },
+    });
+    expect(res.status).toBe(200);
+    expect((await getTask(t.id)).state).toBe('cancelled');
+  });
+
   it('surfaces dependencies in both directions', async () => {
     const dep = await createTask({});
     const dependent = await createTask({ dependsOn: [dep.id] });
