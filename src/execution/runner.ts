@@ -25,6 +25,7 @@ import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '.
 import {
   planSessionContinuation,
   sessionWarmthFacts,
+  decideAttemptContinuation,
   type ContinuationTrigger,
 } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
@@ -228,6 +229,7 @@ export interface RunnerOptions {
         | 'verificationCritic'
         | 'verificationAutoAccept'
         | 'maxAttempts'
+        | 'contextReuseThreshold'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -2141,7 +2143,25 @@ export class Runner {
       // this before driving the corrective turn: timeline rows, settling, and
       // a post-crash resume all resolve the current Attempt through runs.attempt.
       run = await this.runStore.update(run.id, { attempt: attemptNumber });
-      await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      const now = Date.now();
+      const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
+      const contextWindow = this.getConfig().modelInfo[task.model]?.contextWindow;
+      const snapshot = await this.latestSnapshot(run.id);
+      const contextUsage = contextWindow && snapshot?.contextTokens !== null && snapshot?.contextTokens !== undefined
+        ? snapshot.contextTokens / contextWindow
+        : null;
+      const continuation = decideAttemptContinuation({
+        harness: task.harness,
+        contextUsage,
+        lastActiveAt: session?.lastActiveAt ?? now,
+        contextReuseThreshold: workspace?.contextReuseThreshold ?? this.getConfig().contextReuseThreshold,
+        now,
+      });
+      await this.attempts.setContinuation(nextAttempt.id, continuation);
+      if (continuation.path === 'new-session-condensed') {
+        run = await this.runStore.update(run.id, { sessionId: null, sessionRowId: null });
+      }
       healCtx = { reason: outcome.reason, output: outcome.output, attempt: attemptNumber - 1 };
       remergeCtx = undefined;
       inFlightTurn = await this.enqueueCorrectiveAttempt(run, sessionKey);

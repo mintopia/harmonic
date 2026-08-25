@@ -12,6 +12,7 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
+import { z } from 'zod';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
@@ -53,8 +54,21 @@ export interface ApiAttempt {
   startedAt: number;
   endedAt: number | null;
   feedback: string | null;
+  continuation: z.infer<typeof attemptContinuationSchema> | null;
   tasks: ApiAttemptTask[];
 }
+
+const attemptContinuationSchema = z.object({
+  path: z.enum(['continued-session', 'new-session-condensed']),
+  reason: z.enum(['context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
+  contextUsage: z.number().nullable(),
+  contextReuseThreshold: z.number(),
+  lastActiveAt: z.number(),
+  lastActiveAgeMs: z.number(),
+  warmWindowMs: z.number().nullable(),
+});
+
+const continuationToApi = (raw: string | null) => raw ? attemptContinuationSchema.parse(JSON.parse(raw) as unknown) : null;
 
 export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
@@ -85,6 +99,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
       startedAt: attempt.startedAt,
       endedAt: attempt.endedAt,
       feedback: attempt.feedback,
+      continuation: continuationToApi(attempt.continuation),
       tasks: (await ctx.attempts.listTasks(attempt.id)).map(attemptTaskToApi),
     }))),
   };

@@ -51,6 +51,7 @@ export const workspaceOverridesSchema = z.object({
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
+  contextReuseThreshold: z.number().min(0).max(1).nullable().optional().meta({ example: 0.2 }),
   /**
    * Command-verifier override (issue #132), tri-state (issue #174): null/absent
    * inherits `config.verification.command`, a verifier object overrides it, and

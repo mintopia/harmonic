@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, integer, real, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 // Type-only import (erased at compile) so the db layer can brand `runs.phase`
 // with the phase-machine enum without a runtime db→domain import cycle
 // (domain/run-facts.ts already imports this schema).
@@ -131,6 +131,8 @@ export const workspaces = sqliteTable('workspaces', {
   verificationAutoAccept: integer('verification_auto_accept', { mode: 'boolean' }),
   /** Per-Workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: integer('max_attempts'),
+  /** Per-Workspace continuation threshold; null inherits the global default. */
+  contextReuseThreshold: real('context_reuse_threshold'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
@@ -425,6 +427,8 @@ export const attempts = sqliteTable('attempts', {
   endedAt: integer('ended_at'),
   /** Feedback from the failure that led to the following attempt. */
   feedback: text('feedback'),
+  /** Recorded deterministic session choice for this attempt. */
+  continuation: text('continuation'),
 }, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
 export type AttemptRow = typeof attempts.$inferSelect;
 
