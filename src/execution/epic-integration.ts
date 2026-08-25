@@ -3,6 +3,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { deriveEpics } from '../domain/epic-derivation.js';
 import type { MemberLandState } from '../domain/epic-land.js';
 import type { Ticket } from '../tracker/adapter.js';
+import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
@@ -159,7 +160,10 @@ export class EpicIntegrationCoordinator {
    */
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
     if (!this.epicRefresh) return;
-    const epics = deriveEpics(this.latestTickets);
+    const tickets = this.latestTickets.length > 0
+      ? this.latestTickets
+      : await persistedTickets(await this.tasks.list(), await this.tasks.listTrackerContainers());
+    const epics = deriveEpics(tickets);
     for (const epic of epics) {
       const branch = integrationBranchName(epic.ref);
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
