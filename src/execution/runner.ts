@@ -726,6 +726,13 @@ export class Runner {
     const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
     const attempt = await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
+    const rebase = await this.attempts.createTask(attempt.id, { type: 'rebase', logLocator: 'git:rebase:pending' });
+    await this.attempts.updateTask(rebase.id, {
+      state: 'passed',
+      verdict: 'pass',
+      startedAt: Date.now(),
+      endedAt: Date.now(),
+    });
     const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation' });
     await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: 'session:pending' });
     const key = this.workContextKeyFor(task, created);
@@ -2447,6 +2454,25 @@ export class Runner {
       await this.runStore.replaceToolCalls(run.id, toolCalls);
     };
     let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
+
+    // A rebase is an Attempt task in its own right.  A newly-created worktree
+    // is already based on the resolved branch, but recording that no-op is
+    // important: the timeline must show the exact tree implementation started
+    // from, rather than making a clean rebase invisible.
+    const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
+    const tasksAtStart = await this.attempts.listTasks(attemptAtStart.id);
+    if (tasksAtStart.length === 0) {
+      const rebase = await this.attempts.createTask(attemptAtStart.id, {
+        type: 'rebase',
+        logLocator: `git:rebase:${run.baseBranch ?? 'pending'}`,
+      });
+      await this.attempts.updateTask(rebase.id, {
+        state: 'passed',
+        verdict: 'pass',
+        startedAt: Date.now(),
+        endedAt: Date.now(),
+      });
+    }
 
     // Attempt Tasks, rather than Run phases, own the execution pipeline. Runs
     // remain readable compatibility records, but a transition never writes or

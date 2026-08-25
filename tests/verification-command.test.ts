@@ -255,6 +255,25 @@ describe('command verifier end-to-end (issue #135)', () => {
     await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(false);
   });
 
+  it('opens every Attempt with a recorded Rebase Task, including a clean no-op rebase', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'worktree',
+      verificationCommand: exitCommand(0),
+    });
+    const { taskId } = await createAndRun();
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts[0].tasks[0]).toMatchObject({
+      type: 'rebase',
+      state: 'passed',
+      verdict: 'pass',
+    });
+  });
+
   it('ordered commands run in sequence and fail fast: a red command blocks the rest', async () => {
     const echoExit = (marker: string, code: number) =>
       verificationCommandSchema.parse({
