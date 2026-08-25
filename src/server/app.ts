@@ -540,19 +540,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Session whose retention deadline lapsed while the process was down. Runs
   // after the review sweep so a just-settled review-SLA Session is included.
   await drainRetirement();
-  // Live periodic Work Context lease sweep (issue #122): flips a lapsed `held`
-  // lease to `suspect` on a wall-clock cadence, independent of the Runner's own
-  // coordinator heartbeat — this complements, not replaces, the boot-only
-  // reconciliation (#123), which is the backstop for a lease that never got a
-  // live TTL (e.g. it predates this machinery, or its owner died before the
-  // first heartbeat). Best-effort: a sweep hiccup just means the next tick
-  // retries, never a reason to crash the process.
-  const leaseSweep = setInterval(() => {
-    // Fire-and-forget now that sweepExpired is async (ADR-0029): a swallowed
-    // rejection keeps a DB hiccup off the loop, and the next tick retries.
-    void leases.sweepExpired().catch(() => {});
-  }, opts.leaseTuning?.sweepMs ?? 60_000);
-  leaseSweep.unref?.();
+  // Recurring operational drains are Scheduler Jobs so their timing and result
+  // facts share one visible, durable surface (issue #305).
+  scheduler.register({
+    name: 'Work Context lease sweep',
+    intervalMs: opts.leaseTuning?.sweepMs ?? 60_000,
+    run: async () => { await leases.sweepExpired(); },
+  });
+  scheduler.register({
+    name: 'Review-SLA sweep',
+    intervalMs: 60_000,
+    run: async () => { await review.sweepExpiredReviews(); },
+  });
   // Event-loop stall monitor (issue #200 / ADR-0029 §5): synchronous SQLite
   // shares the loop with every request, so a slow query or a non-yielding loop
   // freezes the whole server. This probes loop delay and logs a stall as a
@@ -607,8 +606,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // (issue #161): read per poll so a config change follows without a rebuild.
     () => configStore.get(),
     epicOperations,
+    scheduler,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
+  scheduler.register({
+    name: 'Epic reconcile',
+    intervalMs: 60_000,
+    run: () => trackerManager.reconcileEpics(),
+  });
   // A settled Run frees a Machine Ceiling slot, so it must immediately refill
   // without waiting for the scheduler interval.
   bus.on('run_changed', () => autoRunner.poke());
@@ -658,7 +663,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     autoRunner.stop();
     runner.shutdown();
     conversationDriver.shutdown();
-    clearInterval(leaseSweep);
     loopMonitor?.stop();
     // The async libsql clients (`asyncDb`, and the `asyncReadDb` read sibling)
     // are deliberately NOT closed here: shutdown races best-effort background

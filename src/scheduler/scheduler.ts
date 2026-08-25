@@ -90,6 +90,11 @@ export class Scheduler {
     }
   }
 
+  /** Request an immediate Job pass through the same single-flight/recording path as its timer. */
+  async runNow(name: string, workspaceId?: number): Promise<void> {
+    await this.jobs.get(jobKey(name, workspaceId))?.tick();
+  }
+
   /** Remove durable facts for Jobs no longer registered in this process. */
   async prune(): Promise<void> {
     const live = new Set(this.jobs.keys());

@@ -15,8 +15,9 @@ import { EpicOperations } from '../execution/epic-operations.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
-import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { logger } from '../logger.js';
+import type { Scheduler } from '../scheduler/scheduler.js';
 
 interface Entry {
   poller: TrackerPoller;
@@ -28,6 +29,7 @@ interface Entry {
   epicLand?: EpicLandCoordinator;
   /** `${workingDir}|${intervalMs}` — a change here means tear down and rebuild. */
   sig: string;
+  unregister: () => void;
 }
 
 const sigOf = (ws: WorkspaceRow): string => `${ws.workingDir}|${ws.trackerPollIntervalSeconds * 1000}`;
@@ -70,44 +72,47 @@ export class TrackerPollerManager {
      */
     private readonly getConfig?: () => Pick<AppConfig, 'verification'>,
     private readonly epicOperations: EpicOperations = new EpicOperations(),
-    private readonly opts: { yieldOptions?: YieldOptions } = {},
+    /** The central recurring-work owner (issue #305). Omitted only by focused legacy unit tests. */
+    private readonly scheduler?: Scheduler,
   ) {}
 
   /**
-   * Reconcile running pollers to the current set of tracker-enabled Workspaces.
-   * Idempotent. Async because starting a loop is now gated on resolving the
-   * Workspace's tracker (issue #83): an enabled-but-unresolvable Workspace
-   * caches its failure reason and never starts a loop, rather than erroring
-   * every cycle. A Workspace that already has a running loop isn't re-resolved
-   * here — its own poll cycles keep the cached Resolved Tracker fresh (the
-   * poller's `onResolved`), and a manual {@link pollNow} forces it immediately.
+   * Reconcile Scheduler-owned tracker Jobs to the current tracker-enabled
+   * Workspaces. An enabled-but-unresolvable Workspace keeps a disabled Job so
+   * operators can see why it has no next run. A running Job isn't re-resolved
+   * here — its own poll cycles keep the cached Resolved Tracker fresh, and a
+   * manual {@link pollNow} forces it immediately.
    */
   async sync(): Promise<void> {
-    const workspaces = await this.getWorkspaces();
-    const wsById = new Map<number, WorkspaceRow>();
-    await forEachYielding(workspaces, (ws) => {
-      wsById.set(ws.id, ws);
-    }, this.opts.yieldOptions);
-    await forEachYielding(this.entries, ([id, entry]) => {
+    const wsById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
+    // Stop pollers whose Workspace is gone, disabled tracking, or changed its repo/interval.
+    await forEachYielding(this.entries, async ([id, entry]) => {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled || entry.sig !== sigOf(ws)) {
         entry.poller.stop();
+        entry.unregister();
         this.entries.delete(id);
       }
-    }, this.opts.yieldOptions);
-    await forEachYielding(this.resolved.keys(), (id) => {
+    });
+    // Drop cached resolutions for Workspaces gone or with tracking off — no poll, no Resolved Tracker.
+    await forEachYielding(this.resolved.keys(), async (id) => {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled) this.resolved.delete(id);
-    }, this.opts.yieldOptions);
+    });
+    // For every tracker-enabled Workspace lacking a Job: resolve its tracker,
+    // cache the result, then register the Job even if disabled.
     await forEachYielding(wsById.values(), async (ws) => {
       if (!ws.trackerEnabled || this.entries.has(ws.id)) return;
       const resolved = await resolveTracker(ws.workingDir, this.resolveAdapter);
       this.resolved.set(ws.id, resolved);
-      if (resolved.ok) this.startLoop(ws);
-    }, this.opts.yieldOptions);
+      // Production keeps an unresolvable Workspace as a disabled Scheduler Job.
+      // The no-Scheduler branch is retained for focused manager tests and the
+      // pre-registry embedding, where a loop-less failure had no Job to expose.
+      if (resolved.ok || this.scheduler) this.startLoop(ws);
+    });
   }
 
-  /** Build and start a poll loop for a Workspace (its tracker already resolved). */
+  /** Register one Scheduler-owned tracker poll Job for a Workspace. */
   private startLoop(ws: WorkspaceRow): void {
     const mirror = new MirrorCoordinator(this.tasks, ws.id);
     // Harmonic-owned per-Epic integration branches for this Workspace (issue
@@ -153,10 +158,27 @@ export class TrackerPollerManager {
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
       this.onClosedWhileRunning,
       epics,
-      this.opts,
+      this.scheduler === undefined,
     );
-    this.entries.set(ws.id, { poller, mirror, epics, ...(epicLand ? { epicLand } : {}), sig: sigOf(ws) });
-    poller.start();
+    const unregister = this.scheduler
+      ? this.scheduler.register({
+          name: 'Tracker poll',
+          workspaceId: ws.id,
+          intervalMs: ws.trackerPollIntervalSeconds * 1000,
+          run: async () => {
+            await poller.poll();
+            // A fresh scan changes the persisted facts the global Job consumes;
+            // request it through Scheduler rather than retaining a hidden
+            // per-poll reconcile loop.
+            await this.scheduler!.runNow('Epic reconcile');
+          },
+          // An unresolvable tracker remains visible to operators, but never invents
+          // a next run or repeatedly emits failed scans. Manual refresh re-resolves
+          // it and makes this same Job active again.
+          enabled: () => this.resolved.get(ws.id)?.ok === true,
+        })
+      : (poller.start(), () => poller.stop());
+    this.entries.set(ws.id, { poller, mirror, epics, ...(epicLand ? { epicLand } : {}), sig: sigOf(ws), unregister });
   }
 
   /**
@@ -327,8 +349,11 @@ export class TrackerPollerManager {
     this.resolved.set(ws.id, resolved);
     const entry = this.entries.get(ws.id);
     if (!resolved.ok) {
-      entry?.poller.stop();
-      this.entries.delete(ws.id);
+      if (!this.scheduler) {
+        entry?.poller.stop();
+        entry?.unregister();
+        this.entries.delete(ws.id);
+      }
       return;
     }
     if (entry) {
@@ -340,7 +365,17 @@ export class TrackerPollerManager {
 
   /** Stop every poll loop (server shutdown). */
   stopAll(): void {
-    for (const entry of this.entries.values()) entry.poller.stop();
+    for (const entry of this.entries.values()) {
+      entry.poller.stop();
+      entry.unregister();
+    }
     this.entries.clear();
+  }
+
+  /** Reconcile every live Workspace's Epic integration state as one global Job. */
+  async reconcileEpics(): Promise<void> {
+    await forEachYielding(this.entries, async ([id, entry]) => {
+      if (this.resolved.get(id)?.ok) await entry.poller.reconcileEpics();
+    });
   }
 }

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { startServer, waitFor, type TestServer } from './helpers.js';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { seedLocalMarkdownTicket, startServer, waitFor, type TestServer } from './helpers.js';
 
 describe('Scheduled Job registry (ADR-0038)', () => {
   let server: TestServer | undefined;
@@ -59,5 +62,74 @@ describe('Scheduled Job registry (ADR-0038)', () => {
     const restored = afterRestart.body.jobs.find((job: { name: string }) => job.name === 'test exemplar');
     expect(restored).toMatchObject({ lastStatus: 'ok', status: 'disabled', nextRunAt: null });
     expect(restored.lastRunAt).toEqual(expect.any(Number));
+  });
+
+  it('registers global sweeps and keeps an unresolved Workspace tracker job disabled until its Workspace is deleted', async () => {
+    server = await startServer();
+    const initial = await server.api('GET', '/api/scheduled-jobs');
+    expect(initial.body.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Work Context lease sweep', workspaceId: null }),
+        expect.objectContaining({ name: 'Review-SLA sweep', workspaceId: null }),
+        expect.objectContaining({ name: 'Epic reconcile', workspaceId: null }),
+      ]),
+    );
+
+    const workingDir = mkdtempSync(join(tmpdir(), 'harmonic-unresolved-tracker-'));
+    try {
+      const created = await server.api('POST', '/api/workspaces', {
+        name: 'Unresolved tracker',
+        workingDir,
+        trackerEnabled: true,
+        trackerPollIntervalSeconds: 37,
+      });
+      expect(created.status).toBe(201);
+
+      const withWorkspace = await server.api('GET', '/api/scheduled-jobs');
+      expect(withWorkspace.body.jobs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'Tracker poll',
+            workspaceId: created.body.id,
+            intervalMs: 37_000,
+            status: 'disabled',
+            nextRunAt: null,
+          }),
+        ]),
+      );
+
+      expect((await server.api('DELETE', `/api/workspaces/${created.body.id}`)).status).toBe(204);
+      const afterDelete = await server.api('GET', '/api/scheduled-jobs');
+      expect(afterDelete.body.jobs.some((job: { workspaceId: number | null }) => job.workspaceId === created.body.id)).toBe(false);
+    } finally {
+      rmSync(workingDir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs each resolvable Workspace tracker poll at that Workspace interval', async () => {
+    server = await startServer();
+    const workingDir = mkdtempSync(join(tmpdir(), 'harmonic-scheduled-tracker-'));
+    try {
+      mkdirSync(join(workingDir, 'docs/agents'), { recursive: true });
+      writeFileSync(join(workingDir, 'docs/agents/issue-tracker.md'), '# Issue tracker: Local Markdown\nPath: tickets\n');
+      seedLocalMarkdownTicket(workingDir, 1);
+      const created = await server.api('POST', '/api/workspaces', {
+        name: 'Scheduled tracker',
+        workingDir,
+        trackerEnabled: true,
+        trackerPollIntervalSeconds: 41,
+      });
+      expect(created.status).toBe(201);
+
+      const trackerJob = await waitFor(async () => {
+        const jobs = (await server!.api('GET', '/api/scheduled-jobs')).body.jobs;
+        return jobs.find((job: { name: string; workspaceId: number; lastStatus: string | null }) =>
+          job.name === 'Tracker poll' && job.workspaceId === created.body.id && job.lastStatus === 'ok',
+        );
+      });
+      expect(trackerJob).toMatchObject({ intervalMs: 41_000, status: 'active', lastStatus: 'ok' });
+    } finally {
+      rmSync(workingDir, { recursive: true, force: true });
+    }
   });
 });

@@ -5,11 +5,7 @@ import { resolutionFailure, resolutionSuccess, resolveTrackerAdapter } from './a
 import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { persistedTickets } from './persisted.js';
-<<<<<<< HEAD
-import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
-=======
 import { logger } from '../logger.js';
->>>>>>> 57ddb1d (feat: add trace-correlated logger)
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
 export interface MirrorSync {
@@ -70,7 +66,8 @@ export class TrackerPoller {
      * current-branch fallback rather than wedging the poll.
      */
     private readonly epics?: EpicIntegrationSync,
-    private readonly opts: { yieldOptions?: YieldOptions } = {},
+    /** Scheduler-backed deployments reconcile Epics through their global Job. */
+    private readonly reconcileOnPoll = true,
   ) {}
 
   /**
@@ -102,14 +99,8 @@ export class TrackerPoller {
     }
     this.onResolved(resolutionSuccess(adapter));
     const tickets = await adapter.scan();
-    this.urlByRef = new Map();
-    this.titleByRef = new Map();
-    const closedRefs = new Set<number>();
-    await forEachYielding(tickets, (ticket) => {
-      this.urlByRef.set(ticket.number, ticket.url);
-      this.titleByRef.set(ticket.number, ticket.title);
-      if (ticket.state === 'closed') closedRefs.add(ticket.number);
-    }, this.opts.yieldOptions);
+    this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
+    this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter);
     // `!!adapter.close` is the writable-tracker signal (issue #237): an
     // inbound-only adapter with no close capability must not have its completed
@@ -118,13 +109,9 @@ export class TrackerPoller {
     // Set each ready Epic member's base branch before the scheduler's next pick
     // (issue #159), so it forks its worktree Run from the Epic's integration branch.
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
-    if (this.epics) {
+    if (this.epics && this.reconcileOnPoll) {
       try {
-        const persisted = await persistedTickets(
-          await this.tasks.list({ workspaceId: this.workspaceId }),
-          await this.tasks.listTrackerContainers(this.workspaceId),
-        );
-        await this.epics.reconcile(persisted, mirrored);
+        await this.reconcileEpics();
       } catch (err) {
         this.onError(`epic integration reconcile failed: ${String(err)}`);
       }
@@ -134,11 +121,12 @@ export class TrackerPoller {
     // operator) leaves the Task stuck running with a parked agent. Under the
     // close-after-verify model (#139) that close is premature — hand those to the
     // Runner to stop the agent, reopen the ticket, and Escalate.
-    await forEachYielding(mirrored, (task) => {
+    const closedRefs = new Set(tickets.filter((t) => t.state === 'closed').map((t) => t.number));
+    for (const task of mirrored) {
       if (task.state === 'running' && task.trackerRef != null && closedRefs.has(task.trackerRef)) {
         this.onClosedWhileRunning(task.id);
       }
-    }, this.opts.yieldOptions);
+    }
     await this.mirror?.reconcile();
   }
 
@@ -150,6 +138,17 @@ export class TrackerPoller {
   /** The Map ticket's title for a mirrored Task's mapRef, from the last scan; null when unmapped or before a poll (issue #34). */
   titleForMap(ref: number | null): string | null {
     return ref === null ? null : (this.titleByRef.get(ref) ?? null);
+  }
+
+  /** Reconcile persisted tracker facts into this Workspace's Epic integration state. */
+  async reconcileEpics(): Promise<void> {
+    if (!this.epics) return;
+    const persisted = await persistedTickets(
+      await this.tasks.list({ workspaceId: this.workspaceId }),
+      await this.tasks.listTrackerContainers(this.workspaceId),
+    );
+    const mirrored = (await this.tasks.list({ workspaceId: this.workspaceId })).filter((task) => task.origin === 'mirrored');
+    await this.epics.reconcile(persisted, mirrored);
   }
 
   /**
