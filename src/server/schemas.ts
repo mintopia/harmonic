@@ -54,6 +54,13 @@ export const modelUsageSchema = z
   })
   .meta({ id: 'ModelUsage' });
 
+/** Output-token attribution for a tool or the no-tool reasoning bucket. */
+export const toolTokenUsageSchema = z.object({
+  outputTokens: z.number().meta({ example: 3610 }),
+  /** API-equivalent output cost; absent when that turn's model was unpriced. */
+  cost: z.number().optional().meta({ example: 0.05415 }),
+});
+
 /** Usage aggregate for a run or a rolled-up set of runs (execution/usage.ts `RunUsage`). */
 export const runUsageSchema = z
   .object({
@@ -72,6 +79,11 @@ export const runUsageSchema = z
           root: { inputTokens: 40120, outputTokens: 5200, cacheReadTokens: 60300, cacheWriteTokens: 2400 },
         },
       }),
+    /** Output tokens + API-equivalent cost attributed from parsed turns. Absent
+     * when this harness did not expose enough turn-level evidence. */
+    toolTokens: z.record(z.string(), toolTokenUsageSchema).optional(),
+    /** Parsed output from turns that called no tool. */
+    reasoning: toolTokenUsageSchema.optional(),
     /** Aggregate token counts; null when no source reported tokens. */
     totals: modelUsageSchema.extend({ totalTokens: z.number().meta({ example: 49450 }).nullable() }).nullable(),
     /** Tool-call tallies from the run's events. */

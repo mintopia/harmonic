@@ -111,6 +111,61 @@
               }
             }
           },
+          "agents": {
+            "example": {
+              "root": {
+                "inputTokens": 40120,
+                "outputTokens": 5200,
+                "cacheReadTokens": 60300,
+                "cacheWriteTokens": 2400
+              }
+            },
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModelUsageInput"
+            }
+          },
+          "toolTokens": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "outputTokens": {
+                  "type": "number",
+                  "example": 3610
+                },
+                "cost": {
+                  "example": 0.05415,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "outputTokens"
+              ]
+            }
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "outputTokens": {
+                "type": "number",
+                "example": 3610
+              },
+              "cost": {
+                "example": 0.05415,
+                "type": "number"
+              }
+            },
+            "required": [
+              "outputTokens"
+            ]
+          },
           "totals": {
             "anyOf": [
               {
@@ -1183,6 +1238,47 @@
             ],
             "example": 41
           },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "executing",
+                  "validating",
+                  "verifying",
+                  "review",
+                  "landing",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "verifying"
+          },
+          "contextTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 48210
+          },
+          "contextWindow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 200000
+          },
           "skipReason": {
             "anyOf": [
               {
@@ -1192,7 +1288,18 @@
                 "type": "null"
               }
             ],
-            "example": "Work Context held by task #12 (running)"
+            "example": "blocked-by #12"
+          },
+          "candidateRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "refs/harmonic/candidate/run-9137"
           }
         },
         "required": [
@@ -1231,7 +1338,11 @@
           "runStartedAt",
           "toolCount",
           "runId",
-          "skipReason"
+          "phase",
+          "contextTokens",
+          "contextWindow",
+          "skipReason",
+          "candidateRef"
         ]
       },
       "RunInput": {
@@ -1628,6 +1739,210 @@
           "key"
         ]
       },
+      "EpicMemberInput": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 4821
+          },
+          "title": {
+            "type": "string",
+            "example": "Wire the peek modal"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "running"
+          },
+          "escalated": {
+            "type": "boolean"
+          },
+          "landStatus": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "blocked",
+              "pending"
+            ],
+            "example": "pending"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "taskId",
+          "state",
+          "escalated",
+          "landStatus",
+          "ready"
+        ]
+      },
+      "EpicIntegrationInput": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "example": "epic/42"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "tip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "a1b2c3d"
+          }
+        },
+        "required": [
+          "branch",
+          "exists",
+          "tip"
+        ]
+      },
+      "EpicVerificationInput": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "fail",
+                  "pending"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "EpicLandStateInput": {
+        "type": "object",
+        "properties": {
+          "inFlight": {
+            "type": "boolean"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "already escalated for this member state; awaiting operator or a state change"
+          }
+        },
+        "required": [
+          "inFlight",
+          "held"
+        ]
+      },
+      "EpicInput": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 42
+          },
+          "title": {
+            "type": "string",
+            "example": "Parallel Epic operator UI"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "map",
+              "spec"
+            ]
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicMemberInput"
+            }
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "integration": {
+            "$ref": "#/components/schemas/EpicIntegrationInput"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/EpicVerificationInput"
+          },
+          "land": {
+            "$ref": "#/components/schemas/EpicLandStateInput"
+          },
+          "foldedCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "kind",
+          "members",
+          "ready",
+          "integration",
+          "verification",
+          "land",
+          "foldedCount",
+          "memberCount"
+        ]
+      },
       "EpicLandOutcomeInput": {
         "oneOf": [
           {
@@ -1951,50 +2266,66 @@
           "verificationCommand": {
             "anyOf": [
               {
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "type": "string",
-                    "minLength": 1,
-                    "example": "npm"
-                  },
-                  "args": {
-                    "default": [],
-                    "example": [
-                      "test"
-                    ],
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "cwd": {
-                    "example": "packages/api",
-                    "type": "string"
-                  },
-                  "env": {
-                    "default": {},
-                    "example": {
-                      "CI": "1"
-                    },
+                "anyOf": [
+                  {
                     "type": "object",
-                    "propertyNames": {
-                      "type": "string"
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "npm"
+                      },
+                      "args": {
+                        "default": [],
+                        "example": [
+                          "test"
+                        ],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "cwd": {
+                        "example": "packages/api",
+                        "type": "string"
+                      },
+                      "env": {
+                        "default": {},
+                        "example": {
+                          "CI": "1"
+                        },
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "timeoutSeconds": {
+                        "default": 600,
+                        "example": 600,
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
                     },
-                    "additionalProperties": {
-                      "type": "string"
-                    }
+                    "required": [
+                      "command"
+                    ]
                   },
-                  "timeoutSeconds": {
-                    "default": 600,
-                    "example": 600,
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                  {
+                    "type": "object",
+                    "properties": {
+                      "off": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "off"
+                    ]
                   }
-                },
-                "required": [
-                  "command"
                 ]
               },
               {
@@ -2006,22 +2337,47 @@
           "verificationCritic": {
             "anyOf": [
               {
-                "type": "object",
-                "properties": {
-                  "prompt": {
-                    "type": "string",
-                    "minLength": 1,
-                    "example": "Review the diff for correctness against the ticket."
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "claude-opus-5"
+                      },
+                      "harness": {
+                        "example": "claude",
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "prompt",
+                      "model"
+                    ]
                   },
-                  "model": {
-                    "type": "string",
-                    "minLength": 1,
-                    "example": "claude-opus-5"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "off": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "off"
+                    ]
                   }
-                },
-                "required": [
-                  "prompt",
-                  "model"
                 ]
               },
               {
@@ -2487,7 +2843,15 @@
             "properties": {
               "prompt": {
                 "type": "string",
-                "example": "{skill}\n\nResolve #{ref} ({url}) end to end.\n\n## {title}\n\n{body}"
+                "example": "{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
+              },
+              "unattendedReminder": {
+                "type": "string",
+                "example": "## Running unattended\n\nYou are Harmonic Task {taskId}…"
+              },
+              "continuePrompt": {
+                "type": "string",
+                "example": "Your last turn ended but Task {taskId} isn't finished…"
               },
               "mergeFate": {
                 "type": "string",
@@ -2510,6 +2874,123 @@
             "example": false,
             "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.",
             "type": "boolean"
+          },
+          "verification": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "npm"
+                      },
+                      "args": {
+                        "default": [],
+                        "example": [
+                          "test"
+                        ],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "cwd": {
+                        "example": "packages/api",
+                        "type": "string"
+                      },
+                      "env": {
+                        "default": {},
+                        "example": {
+                          "CI": "1"
+                        },
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "timeoutSeconds": {
+                        "default": 600,
+                        "example": 600,
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": {
+                  "command": "npm",
+                  "args": [
+                    "test"
+                  ]
+                }
+              },
+              "critic": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "claude-opus-5"
+                      },
+                      "harness": {
+                        "example": "claude",
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "prompt",
+                      "model"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": {
+                  "prompt": "Review the diff for correctness.",
+                  "model": "claude-opus-5"
+                }
+              },
+              "autoAccept": {
+                "type": "boolean",
+                "example": true
+              },
+              "maxSelfHeals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "example": 1
+              }
+            },
+            "example": {
+              "autoAccept": true
+            }
           }
         }
       },
@@ -2718,6 +3199,63 @@
                 "cacheWriteTokens": 1200
               }
             }
+          },
+          "agents": {
+            "example": {
+              "root": {
+                "inputTokens": 40120,
+                "outputTokens": 5200,
+                "cacheReadTokens": 60300,
+                "cacheWriteTokens": 2400
+              }
+            },
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModelUsage"
+            }
+          },
+          "toolTokens": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "outputTokens": {
+                  "type": "number",
+                  "example": 3610
+                },
+                "cost": {
+                  "example": 0.05415,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "outputTokens"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "outputTokens": {
+                "type": "number",
+                "example": 3610
+              },
+              "cost": {
+                "example": 0.05415,
+                "type": "number"
+              }
+            },
+            "required": [
+              "outputTokens"
+            ],
+            "additionalProperties": false
           },
           "totals": {
             "anyOf": [
@@ -3799,6 +4337,47 @@
             ],
             "example": 41
           },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "executing",
+                  "validating",
+                  "verifying",
+                  "review",
+                  "landing",
+                  "terminal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "verifying"
+          },
+          "contextTokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 48210
+          },
+          "contextWindow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 200000
+          },
           "skipReason": {
             "anyOf": [
               {
@@ -3808,7 +4387,18 @@
                 "type": "null"
               }
             ],
-            "example": "Work Context held by task #12 (running)"
+            "example": "blocked-by #12"
+          },
+          "candidateRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "refs/harmonic/candidate/run-9137"
           }
         },
         "required": [
@@ -3847,7 +4437,11 @@
           "runStartedAt",
           "toolCount",
           "runId",
-          "skipReason"
+          "phase",
+          "contextTokens",
+          "contextWindow",
+          "skipReason",
+          "candidateRef"
         ],
         "additionalProperties": false
       },
@@ -4249,6 +4843,215 @@
         ],
         "additionalProperties": false
       },
+      "EpicMember": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 4821
+          },
+          "title": {
+            "type": "string",
+            "example": "Wire the peek modal"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": 12
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "running"
+          },
+          "escalated": {
+            "type": "boolean"
+          },
+          "landStatus": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "blocked",
+              "pending"
+            ],
+            "example": "pending"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "taskId",
+          "state",
+          "escalated",
+          "landStatus",
+          "ready"
+        ],
+        "additionalProperties": false
+      },
+      "EpicIntegration": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "example": "epic/42"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "tip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "a1b2c3d"
+          }
+        },
+        "required": [
+          "branch",
+          "exists",
+          "tip"
+        ],
+        "additionalProperties": false
+      },
+      "EpicVerification": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "pass",
+                  "fail",
+                  "pending"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "EpicLandState": {
+        "type": "object",
+        "properties": {
+          "inFlight": {
+            "type": "boolean"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": "already escalated for this member state; awaiting operator or a state change"
+          }
+        },
+        "required": [
+          "inFlight",
+          "held"
+        ],
+        "additionalProperties": false
+      },
+      "Epic": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "example": 42
+          },
+          "title": {
+            "type": "string",
+            "example": "Parallel Epic operator UI"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "map",
+              "spec"
+            ]
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EpicMember"
+            }
+          },
+          "ready": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "integration": {
+            "$ref": "#/components/schemas/EpicIntegration"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/EpicVerification"
+          },
+          "land": {
+            "$ref": "#/components/schemas/EpicLandState"
+          },
+          "foldedCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "ref",
+          "title",
+          "kind",
+          "members",
+          "ready",
+          "integration",
+          "verification",
+          "land",
+          "foldedCount",
+          "memberCount"
+        ],
+        "additionalProperties": false
+      },
       "EpicLandOutcome": {
         "oneOf": [
           {
@@ -4580,55 +5383,72 @@
           "verificationCommand": {
             "anyOf": [
               {
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "type": "string",
-                    "minLength": 1,
-                    "example": "npm"
-                  },
-                  "args": {
-                    "default": [],
-                    "example": [
-                      "test"
-                    ],
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "cwd": {
-                    "example": "packages/api",
-                    "type": "string"
-                  },
-                  "env": {
-                    "default": {},
-                    "example": {
-                      "CI": "1"
-                    },
+                "anyOf": [
+                  {
                     "type": "object",
-                    "propertyNames": {
-                      "type": "string"
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "npm"
+                      },
+                      "args": {
+                        "default": [],
+                        "example": [
+                          "test"
+                        ],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "cwd": {
+                        "example": "packages/api",
+                        "type": "string"
+                      },
+                      "env": {
+                        "default": {},
+                        "example": {
+                          "CI": "1"
+                        },
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "timeoutSeconds": {
+                        "default": 600,
+                        "example": 600,
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
                     },
-                    "additionalProperties": {
-                      "type": "string"
-                    }
+                    "required": [
+                      "command",
+                      "args",
+                      "env",
+                      "timeoutSeconds"
+                    ],
+                    "additionalProperties": false
                   },
-                  "timeoutSeconds": {
-                    "default": 600,
-                    "example": 600,
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                  {
+                    "type": "object",
+                    "properties": {
+                      "off": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "off"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "command",
-                  "args",
-                  "env",
-                  "timeoutSeconds"
-                ],
-                "additionalProperties": false
+                ]
               },
               {
                 "type": "null"
@@ -4639,24 +5459,50 @@
           "verificationCritic": {
             "anyOf": [
               {
-                "type": "object",
-                "properties": {
-                  "prompt": {
-                    "type": "string",
-                    "minLength": 1,
-                    "example": "Review the diff for correctness against the ticket."
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "claude-opus-5"
+                      },
+                      "harness": {
+                        "example": "claude",
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "prompt",
+                      "model"
+                    ],
+                    "additionalProperties": false
                   },
-                  "model": {
-                    "type": "string",
-                    "minLength": 1,
-                    "example": "claude-opus-5"
+                  {
+                    "type": "object",
+                    "properties": {
+                      "off": {
+                        "type": "boolean",
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "off"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "prompt",
-                  "model"
-                ],
-                "additionalProperties": false
+                ]
               },
               {
                 "type": "null"
@@ -5135,7 +5981,15 @@
             "properties": {
               "prompt": {
                 "type": "string",
-                "example": "{skill}\n\nResolve #{ref} ({url}) end to end.\n\n## {title}\n\n{body}"
+                "example": "{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself."
+              },
+              "unattendedReminder": {
+                "type": "string",
+                "example": "## Running unattended\n\nYou are Harmonic Task {taskId}…"
+              },
+              "continuePrompt": {
+                "type": "string",
+                "example": "Your last turn ended but Task {taskId} isn't finished…"
               },
               "mergeFate": {
                 "type": "string",
@@ -5159,6 +6013,129 @@
             "example": false,
             "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.",
             "type": "boolean"
+          },
+          "verification": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "npm"
+                      },
+                      "args": {
+                        "default": [],
+                        "example": [
+                          "test"
+                        ],
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "cwd": {
+                        "example": "packages/api",
+                        "type": "string"
+                      },
+                      "env": {
+                        "default": {},
+                        "example": {
+                          "CI": "1"
+                        },
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "timeoutSeconds": {
+                        "default": 600,
+                        "example": 600,
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "command",
+                      "args",
+                      "env",
+                      "timeoutSeconds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": {
+                  "command": "npm",
+                  "args": [
+                    "test"
+                  ]
+                }
+              },
+              "critic": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "example": "claude-opus-5"
+                      },
+                      "harness": {
+                        "example": "claude",
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "prompt",
+                      "model"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "example": {
+                  "prompt": "Review the diff for correctness.",
+                  "model": "claude-opus-5"
+                }
+              },
+              "autoAccept": {
+                "type": "boolean",
+                "example": true
+              },
+              "maxSelfHeals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991,
+                "example": 1
+              }
+            },
+            "additionalProperties": false,
+            "example": {
+              "autoAccept": true
+            }
           }
         },
         "additionalProperties": false
@@ -5415,16 +6392,26 @@
           {
             "schema": {
               "example": "awaiting-review",
-              "type": "string",
-              "enum": [
-                "draft",
-                "blocked",
-                "ready",
-                "running",
-                "awaiting-review",
-                "completed",
-                "failed",
-                "cancelled"
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "draft",
+                    "blocked",
+                    "ready",
+                    "running",
+                    "awaiting-review",
+                    "completed",
+                    "failed",
+                    "cancelled"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "open"
+                  ]
+                }
               ]
             },
             "in": "query",
@@ -6435,6 +7422,122 @@
         }
       }
     },
+    "/api/tasks/{id}/adopt-review": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Operator escape hatch (issue #191): park an escalated task's existing stranded candidate at awaiting-review — no fresh builder run — so the ordinary accept (accept-anyway) can land it. Human-only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The task, now awaiting-review with the escalated flag cleared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The task is not escalated, or its latest run has no candidate to adopt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/note-to-critic": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "Operator escape hatch (issue #191): re-run ONLY the agent critic against an escalated task's existing stranded candidate, with a human note folded into its trusted preamble, and re-fold the verdict. A `proceed` result parks the task at awaiting-review (never auto-landed); otherwise the task stays escalated with the new attempt recorded. Human-only.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "The rate limiter must be shared across worker processes, not per-process."
+                  }
+                },
+                "required": [
+                  "note"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The task — awaiting-review on a proceed verdict, still escalated otherwise.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The note is empty (blank/whitespace-only), or the resolved critic harness is not configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The task is not escalated, its latest run has no candidate, or no critic is configured.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{id}/continuation": {
       "get": {
         "tags": [
@@ -6577,11 +7680,33 @@
                               "enum": [
                                 "condensed"
                               ]
+                            },
+                            "estimate": {
+                              "type": "object",
+                              "properties": {
+                                "band": {
+                                  "type": "string",
+                                  "enum": [
+                                    "warm",
+                                    "cold",
+                                    "unknown"
+                                  ]
+                                },
+                                "note": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "band",
+                                "note"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
                             "session",
-                            "conversation"
+                            "conversation",
+                            "estimate"
                           ],
                           "additionalProperties": false
                         }
@@ -6727,6 +7852,125 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{id}/log": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "description": "Read a Run's native harness transcript. Missing or unreadable transcripts are explicitly unavailable.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The native transcript events, or an explicit unavailable state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "available"
+                          ]
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "number",
+                                "example": 55210
+                              },
+                              "runId": {
+                                "type": "number",
+                                "example": 9137
+                              },
+                              "seq": {
+                                "type": "number",
+                                "example": 42
+                              },
+                              "ts": {
+                                "type": "number",
+                                "example": 1784032140000
+                              },
+                              "type": {
+                                "type": "string",
+                                "example": "session_update"
+                              },
+                              "payload": {
+                                "example": {
+                                  "sessionUpdate": "tool_call",
+                                  "toolCallId": "call_7",
+                                  "kind": "edit",
+                                  "title": "src/server/rate-limit.ts"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "runId",
+                              "seq",
+                              "ts",
+                              "type",
+                              "payload"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "liveCursor": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "events",
+                        "liveCursor"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable"
+                          ]
+                        },
+                        "liveCursor": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "liveCursor"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "The native transcript events, or an explicit unavailable state."
                 }
               }
             }
@@ -6948,6 +8192,263 @@
         }
       }
     },
+    "/api/runs/{id}/verification-attempts": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "description": "Replay a run's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The run's verification attempts in sequence order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verificationAttempts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "number",
+                            "example": 4210
+                          },
+                          "runId": {
+                            "type": "number",
+                            "example": 9137
+                          },
+                          "seq": {
+                            "type": "number",
+                            "example": 1
+                          },
+                          "ts": {
+                            "type": "number",
+                            "example": 1784032140000
+                          },
+                          "mechanism": {
+                            "type": "string",
+                            "enum": [
+                              "critic",
+                              "command"
+                            ],
+                            "example": "command"
+                          },
+                          "inputOid": {
+                            "type": "string",
+                            "example": "a1b2c3d4"
+                          },
+                          "verdict": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail",
+                              "inconclusive"
+                            ],
+                            "example": "pass"
+                          },
+                          "summary": {
+                            "type": "string",
+                            "example": "all checks passed"
+                          },
+                          "output": {
+                            "type": "string",
+                            "example": ""
+                          },
+                          "phase": {
+                            "type": "string",
+                            "enum": [
+                              "executing",
+                              "validating",
+                              "verifying",
+                              "review",
+                              "landing",
+                              "terminal"
+                            ],
+                            "example": "verifying"
+                          },
+                          "mutated": {
+                            "type": "boolean",
+                            "example": false
+                          },
+                          "hasTranscript": {
+                            "type": "boolean",
+                            "example": false
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "runId",
+                          "seq",
+                          "ts",
+                          "mechanism",
+                          "inputOid",
+                          "verdict",
+                          "summary",
+                          "output",
+                          "phase",
+                          "mutated",
+                          "hasTranscript"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "verificationAttempts"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The run's verification attempts in sequence order."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No run has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/verification-attempts/{id}/log": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "description": "Read a critic verification attempt's native harness transcript (ADR-0040) — what the critic itself read, ran, and reasoned. Missing or unreadable transcripts are explicitly unavailable.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The critic session transcript events, or an explicit unavailable state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "available"
+                          ]
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "number",
+                                "example": 55210
+                              },
+                              "runId": {
+                                "type": "number",
+                                "example": 9137
+                              },
+                              "seq": {
+                                "type": "number",
+                                "example": 42
+                              },
+                              "ts": {
+                                "type": "number",
+                                "example": 1784032140000
+                              },
+                              "type": {
+                                "type": "string",
+                                "example": "session_update"
+                              },
+                              "payload": {
+                                "example": {
+                                  "sessionUpdate": "tool_call",
+                                  "toolCallId": "call_7",
+                                  "kind": "edit",
+                                  "title": "src/server/rate-limit.ts"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "runId",
+                              "seq",
+                              "ts",
+                              "type",
+                              "payload"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "liveCursor": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "events",
+                        "liveCursor"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable"
+                          ]
+                        },
+                        "liveCursor": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "liveCursor"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ],
+                  "description": "The critic session transcript events, or an explicit unavailable state."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{id}/usage": {
       "get": {
         "tags": [
@@ -6991,6 +8492,63 @@
                           "cacheWriteTokens": 1200
                         }
                       }
+                    },
+                    "agents": {
+                      "example": {
+                        "root": {
+                          "inputTokens": 40120,
+                          "outputTokens": 5200,
+                          "cacheReadTokens": 60300,
+                          "cacheWriteTokens": 2400
+                        }
+                      },
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/ModelUsage"
+                      }
+                    },
+                    "toolTokens": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "outputTokens": {
+                            "type": "number",
+                            "example": 3610
+                          },
+                          "cost": {
+                            "example": 0.05415,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "outputTokens"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reasoning": {
+                      "type": "object",
+                      "properties": {
+                        "outputTokens": {
+                          "type": "number",
+                          "example": 3610
+                        },
+                        "cost": {
+                          "example": 0.05415,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "outputTokens"
+                      ],
+                      "additionalProperties": false
                     },
                     "totals": {
                       "anyOf": [
@@ -7173,6 +8731,129 @@
                   ],
                   "additionalProperties": false,
                   "description": "The run's branch and its diffstat against the base; nulls outside worktree mode."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{id}/diff/files": {
+      "get": {
+        "tags": [
+          "Runs"
+        ],
+        "description": "Per-file unified-diff hunks for the review pane (worktree-mode runs only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The run's changed files with parsed +/- hunks; empty outside worktree mode.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "example": "src/server/rate-limit.ts"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "M",
+                              "A",
+                              "D"
+                            ]
+                          },
+                          "additions": {
+                            "type": "number",
+                            "example": 96
+                          },
+                          "deletions": {
+                            "type": "number",
+                            "example": 4
+                          },
+                          "lines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "add",
+                                    "del",
+                                    "context",
+                                    "hunk"
+                                  ]
+                                },
+                                "oldLn": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "newLn": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "oldLn",
+                                "newLn",
+                                "text"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "status",
+                          "additions",
+                          "deletions",
+                          "lines"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "files"
+                  ],
+                  "additionalProperties": false,
+                  "description": "The run's changed files with parsed +/- hunks; empty outside worktree mode."
                 }
               }
             }
@@ -7591,50 +9272,68 @@
                   "verificationCommand": {
                     "anyOf": [
                       {
-                        "type": "object",
-                        "properties": {
-                          "command": {
-                            "type": "string",
-                            "minLength": 1,
-                            "example": "npm"
-                          },
-                          "args": {
-                            "default": [],
-                            "example": [
-                              "test"
-                            ],
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
-                          },
-                          "cwd": {
-                            "example": "packages/api",
-                            "type": "string"
-                          },
-                          "env": {
-                            "default": {},
-                            "example": {
-                              "CI": "1"
-                            },
+                        "anyOf": [
+                          {
                             "type": "object",
-                            "propertyNames": {
-                              "type": "string"
+                            "properties": {
+                              "command": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "npm"
+                              },
+                              "args": {
+                                "default": [],
+                                "example": [
+                                  "test"
+                                ],
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "cwd": {
+                                "example": "packages/api",
+                                "type": "string"
+                              },
+                              "env": {
+                                "default": {},
+                                "example": {
+                                  "CI": "1"
+                                },
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              },
+                              "timeoutSeconds": {
+                                "default": 600,
+                                "example": 600,
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              }
                             },
-                            "additionalProperties": {
-                              "type": "string"
-                            }
+                            "required": [
+                              "command"
+                            ]
                           },
-                          "timeoutSeconds": {
-                            "default": 600,
-                            "example": 600,
-                            "type": "integer",
-                            "exclusiveMinimum": 0,
-                            "maximum": 9007199254740991
+                          {
+                            "type": "object",
+                            "properties": {
+                              "off": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              }
+                            },
+                            "required": [
+                              "off"
+                            ]
                           }
-                        },
-                        "required": [
-                          "command"
                         ]
                       },
                       {
@@ -7645,22 +9344,49 @@
                   "verificationCritic": {
                     "anyOf": [
                       {
-                        "type": "object",
-                        "properties": {
-                          "prompt": {
-                            "type": "string",
-                            "minLength": 1,
-                            "example": "Review the diff for correctness against the ticket."
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "prompt": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1,
+                                "example": "claude-opus-5"
+                              },
+                              "harness": {
+                                "example": "claude",
+                                "type": "string",
+                                "enum": [
+                                  "claude",
+                                  "codex",
+                                  "copilot"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "prompt",
+                              "model"
+                            ]
                           },
-                          "model": {
-                            "type": "string",
-                            "minLength": 1,
-                            "example": "claude-opus-5"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "off": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              }
+                            },
+                            "required": [
+                              "off"
+                            ]
                           }
-                        },
-                        "required": [
-                          "prompt",
-                          "model"
                         ]
                       },
                       {
@@ -9067,8 +10793,18 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                          "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                          "type": "string"
+                        },
+                        "unattendedReminder": {
+                          "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                          "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                          "type": "string"
+                        },
+                        "continuePrompt": {
+                          "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
+                          "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -9098,6 +10834,8 @@
                       },
                       "required": [
                         "prompt",
+                        "unattendedReminder",
+                        "continuePrompt",
                         "mergeFate",
                         "autoRetry",
                         "continueAttempts"
@@ -9186,12 +10924,21 @@
                                 "prompt": {
                                   "type": "string",
                                   "minLength": 1,
-                                  "example": "Review the diff for correctness against the ticket."
+                                  "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
                                 },
                                 "model": {
                                   "type": "string",
                                   "minLength": 1,
                                   "example": "claude-opus-5"
+                                },
+                                "harness": {
+                                  "example": "claude",
+                                  "type": "string",
+                                  "enum": [
+                                    "claude",
+                                    "codex",
+                                    "copilot"
+                                  ]
                                 }
                               },
                               "required": [
@@ -9603,8 +11350,18 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                          "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                          "type": "string"
+                        },
+                        "unattendedReminder": {
+                          "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                          "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                          "type": "string"
+                        },
+                        "continuePrompt": {
+                          "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
+                          "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -9634,6 +11391,8 @@
                       },
                       "required": [
                         "prompt",
+                        "unattendedReminder",
+                        "continuePrompt",
                         "mergeFate",
                         "autoRetry",
                         "continueAttempts"
@@ -9722,12 +11481,21 @@
                                 "prompt": {
                                   "type": "string",
                                   "minLength": 1,
-                                  "example": "Review the diff for correctness against the ticket."
+                                  "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
                                 },
                                 "model": {
                                   "type": "string",
                                   "minLength": 1,
                                   "example": "claude-opus-5"
+                                },
+                                "harness": {
+                                  "example": "claude",
+                                  "type": "string",
+                                  "enum": [
+                                    "claude",
+                                    "codex",
+                                    "copilot"
+                                  ]
                                 }
                               },
                               "required": [
@@ -10112,8 +11880,18 @@
                     "type": "object",
                     "properties": {
                       "prompt": {
-                        "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
-                        "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                        "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                        "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                        "type": "string"
+                      },
+                      "unattendedReminder": {
+                        "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                        "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                        "type": "string"
+                      },
+                      "continuePrompt": {
+                        "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
+                        "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
                         "type": "string"
                       },
                       "mergeFate": {
@@ -10221,12 +11999,21 @@
                               "prompt": {
                                 "type": "string",
                                 "minLength": 1,
-                                "example": "Review the diff for correctness against the ticket."
+                                "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
                               },
                               "model": {
                                 "type": "string",
                                 "minLength": 1,
                                 "example": "claude-opus-5"
+                              },
+                              "harness": {
+                                "example": "claude",
+                                "type": "string",
+                                "enum": [
+                                  "claude",
+                                  "codex",
+                                  "copilot"
+                                ]
                               }
                             },
                             "required": [
@@ -10593,8 +12380,18 @@
                       "type": "object",
                       "properties": {
                         "prompt": {
-                          "default": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
-                          "example": "{skill}\n\nYou are resolving tracker issue #{ref} ({url}) autonomously, end to end. When the work is done, comment on the issue summarising what you did, then call `finish_task`. Do NOT close the tracker ticket yourself — Harmonic verifies the work and closes the ticket itself once it lands; a ticket you close early is reopened and the task escalated. Harmonic owns branching and worktrees: do all your work on the branch you start on — do not create, switch, or delete git branches.\n\n## {title}\n\n{body}",
+                          "default": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                          "example": "{skill}\n\nResolve tracker issue #{ref} ({url}) autonomously, end to end — read the issue yourself for the details. Work only on the branch you start on; Harmonic owns branching and closes the ticket once it verifies your work, so don't create branches or close the ticket yourself. When the work is done, comment a summary on the issue and call `finish_task`.",
+                          "type": "string"
+                        },
+                        "unattendedReminder": {
+                          "default": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                          "example": "## Running unattended\n\nYou are Harmonic Task {taskId} — no human is watching this turn. Ending a turn is a checkpoint, not a handoff, and Harmonic re-prompts you only a limited number of times, so don't idle-wait on background work (CI, watchers) or input. Keep working until the task is genuinely done, then call `finish_task` (taskId={taskId}). If you're blocked on a decision only a human can make, call `escalate_task` (taskId={taskId}) with a reason instead of guessing or waiting.",
+                          "type": "string"
+                        },
+                        "continuePrompt": {
+                          "default": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
+                          "example": "Your last turn ended but Task {taskId} isn't finished — you haven't called `finish_task`. Pick the work back up and drive it to completion now; don't idle-wait, then call `finish_task` when it's done.",
                           "type": "string"
                         },
                         "mergeFate": {
@@ -10624,6 +12421,8 @@
                       },
                       "required": [
                         "prompt",
+                        "unattendedReminder",
+                        "continuePrompt",
                         "mergeFate",
                         "autoRetry",
                         "continueAttempts"
@@ -10712,12 +12511,21 @@
                                 "prompt": {
                                   "type": "string",
                                   "minLength": 1,
-                                  "example": "Review the diff for correctness against the ticket."
+                                  "example": "Review the change against issue {ref}: {title}. Read the code and the issue to decide."
                                 },
                                 "model": {
                                   "type": "string",
                                   "minLength": 1,
                                   "example": "claude-opus-5"
+                                },
+                                "harness": {
+                                  "example": "claude",
+                                  "type": "string",
+                                  "enum": [
+                                    "claude",
+                                    "codex",
+                                    "copilot"
+                                  ]
                                 }
                               },
                               "required": [
@@ -11430,6 +13238,55 @@
                         "failed": 1
                       }
                     },
+                    "failedRuns": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "rejectedRuns": {
+                      "type": "number",
+                      "example": 1
+                    },
+                    "failuresByReason": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "example": {
+                        "failed": 4,
+                        "escalate": 1,
+                        "process-death": 1
+                      }
+                    },
+                    "durationMs": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "p50": {
+                              "type": "number"
+                            },
+                            "p95": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "p50",
+                            "p95"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "example": {
+                        "p50": 142000,
+                        "p95": 512000
+                      }
+                    },
                     "totals": {
                       "anyOf": [
                         {
@@ -11498,6 +13355,69 @@
                         }
                       }
                     },
+                    "agents": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/ModelUsage"
+                      },
+                      "example": {
+                        "root": {
+                          "inputTokens": 40120,
+                          "outputTokens": 5200,
+                          "cacheReadTokens": 60300,
+                          "cacheWriteTokens": 2400
+                        },
+                        "code-reviewer": {
+                          "inputTokens": 8100,
+                          "outputTokens": 1400,
+                          "cacheReadTokens": 12000,
+                          "cacheWriteTokens": 600
+                        }
+                      }
+                    },
+                    "toolTokens": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "outputTokens": {
+                            "type": "number",
+                            "example": 3610
+                          },
+                          "cost": {
+                            "example": 0.05415,
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "outputTokens"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reasoning": {
+                      "type": "object",
+                      "properties": {
+                        "outputTokens": {
+                          "type": "number",
+                          "example": 3610
+                        },
+                        "cost": {
+                          "example": 0.05415,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "outputTokens"
+                      ],
+                      "additionalProperties": false
+                    },
                     "toolCalls": {
                       "type": "object",
                       "propertyNames": {
@@ -11545,12 +13465,27 @@
                           "incomplete": {
                             "type": "boolean",
                             "example": false
+                          },
+                          "tokens": {
+                            "type": "number",
+                            "example": 21850
+                          },
+                          "runs": {
+                            "type": "number",
+                            "example": 3
+                          },
+                          "fails": {
+                            "type": "number",
+                            "example": 1
                           }
                         },
                         "required": [
                           "day",
                           "totalUsd",
-                          "incomplete"
+                          "incomplete",
+                          "tokens",
+                          "runs",
+                          "fails"
                         ],
                         "additionalProperties": false
                       }
@@ -11561,8 +13496,13 @@
                     "to",
                     "runCount",
                     "runsByState",
+                    "failedRuns",
+                    "rejectedRuns",
+                    "failuresByReason",
+                    "durationMs",
                     "totals",
                     "models",
+                    "agents",
                     "toolCalls",
                     "cost",
                     "series"
@@ -11581,7 +13521,7 @@
         "tags": [
           "Activity"
         ],
-        "description": "Instance-wide snapshot of every live process across Workspaces (ADR 0010): in-flight Runs and warm Conversations from the in-memory registries, each joined with its latest Usage, context fill, derived Cost, and (Runs only) current-activity line and Process Tree. The Activity view loads this once on page-load, then follows the live `run_usage` firehose. A Read Key (a read-scoped API key) sees Runs only — Conversations are excluded, matching the firehose filter.",
+        "description": "Instance-wide snapshot of every capacity-consuming Run and warm Conversation across Workspaces (ADR 0010). Runs come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live `run_usage` firehose. A Read Key (a read-scoped API key) sees Runs only — Conversations are excluded, matching the firehose filter.",
         "security": [
           {
             "bearerAuth": []
@@ -12345,6 +14285,132 @@
           },
           "404": {
             "description": "No lease is held for that key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its member land state, integration-branch tip, and whole-Epic land/verification state. Operator only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every derived Epic for this Workspace's last scan (possibly empty).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "epics": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Epic"
+                      }
+                    }
+                  },
+                  "required": [
+                    "epics"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Every derived Epic for this Workspace's last scan (possibly empty)."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/epics/{epicRef}": {
+      "get": {
+        "tags": [
+          "Epics"
+        ],
+        "description": "One derived Epic by its tracker ref, from the Workspace's last poll scan (issue #167, ADR-0026). 404s when the scan derives no leaf-most Epic with that ref. Operator only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 1
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 42
+            },
+            "in": "path",
+            "name": "epicRef",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The derived Epic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Epic"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Workspace has that id, or its last scan derives no Epic with that ref.",
             "content": {
               "application/json": {
                 "schema": {

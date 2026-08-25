@@ -30,6 +30,14 @@ const STATE_DONUT_COLOR: Record<string, string> = {
   cancelled: 'var(--hm-faint)',
 };
 
+const TOOL_TOKEN_COLORS = [
+  'var(--hm-accent)',
+  'var(--hm-ink)',
+  'var(--hm-muted)',
+  'var(--hm-faint)',
+  'var(--hm-edge-strong)',
+];
+
 /** Friendly labels for the failures-by-reason buckets (the winning terminal
  * disposition). Any bucket not mapped falls back to its raw key, so a newer
  * disposition still renders rather than vanishing. */
@@ -64,6 +72,8 @@ interface Stats {
   models: Record<string, ModelUsage>;
   /** Per-agent-type token breakdown (root + each Subagent type); may be absent on older data. */
   agents?: Record<string, ModelUsage>;
+  toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
+  reasoning?: { outputTokens: number; cost?: number };
   toolCalls: Record<string, number>;
   cost: Cost | null;
   series: DayCost[];
@@ -191,6 +201,37 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         color: STATE_DONUT_COLOR[state] ?? 'var(--hm-edge)',
       }))
     : [];
+  const toolTokenSegments: DonutSegment[] = stats
+    ? [
+        ...Object.entries(stats.toolTokens ?? {})
+          .filter(([, attribution]) => attribution.outputTokens > 0)
+          .sort(([, a], [, b]) => b.outputTokens - a.outputTokens)
+          .map(([key, attribution], index) => ({
+            key,
+            value: attribution.outputTokens,
+            valueLabel:
+              attribution.cost === undefined
+                ? compact.format(attribution.outputTokens)
+                : `${compact.format(attribution.outputTokens)} · ${usd(attribution.cost)}`,
+            color: TOOL_TOKEN_COLORS[index % TOOL_TOKEN_COLORS.length]!,
+          })),
+        ...(stats.reasoning && stats.reasoning.outputTokens > 0
+          ? [
+              {
+                key: 'reasoning',
+                label: 'Reasoning',
+                value: stats.reasoning.outputTokens,
+                valueLabel:
+                  stats.reasoning.cost === undefined
+                    ? compact.format(stats.reasoning.outputTokens)
+                    : `${compact.format(stats.reasoning.outputTokens)} · ${usd(stats.reasoning.cost)}`,
+                color: 'var(--hm-muted)',
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const toolTokenTotal = toolTokenSegments.reduce((sum, segment) => sum + segment.value, 0);
   const reasonBars: Bar[] = stats
     ? orderedFailureReasons(stats.failuresByReason).map(({ reason, count }) => ({
         key: reason,
@@ -343,6 +384,18 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
             <section className={`${card} mt-4 p-5`}>
               <h2 className="mb-3 text-title font-semibold">Tokens per agent</h2>
               <BarChart bars={agentBars} ariaLabel="Tokens per agent type" />
+            </section>
+          )}
+
+          {toolTokenSegments.length > 0 && (
+            <section className={`${card} mt-4 p-5`}>
+              <h2 className="mb-3 text-title font-semibold">Tokens by tool</h2>
+              <Donut
+                segments={toolTokenSegments}
+                total={toolTokenTotal}
+                totalLabel="TOKENS"
+                ariaLabel="Output tokens and cost by tool"
+              />
             </section>
           )}
         </>

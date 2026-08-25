@@ -526,6 +526,10 @@ export interface RunUsage {
   models: Record<string, ModelUsage>;
   /** Per-agent-type breakdown (root session + each Subagent type); absent when the harness parsed no Process Tree. */
   agents?: Record<string, ModelUsage>;
+  /** Output tokens and API-equivalent cost attributed from parseable turns. */
+  toolTokens?: Record<string, { outputTokens: number; cost?: number }>;
+  /** Parsed output from turns that did not call a tool. */
+  reasoning?: { outputTokens: number; cost?: number };
   /** Aggregate token counts; null when no source reported tokens. */
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   /** Tool-call tallies from the process's events. */

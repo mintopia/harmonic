@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from './harness/adapter.js';
 import { accumulateUsage, collectUsageWithRetry, contextInputTokens, type RunUsage } from './usage.js';
+import { resolvePrices } from './pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
@@ -420,6 +421,7 @@ export class ConversationDriver {
           cwd: convo.workingDir,
           sessionId: convo.sessionId,
           promptResult: result,
+          prices: resolvePrices(this.getConfig().prices),
           // Conversation events share the run-event shape the collector reads.
           events: (await this.store.listEvents(conversationId)) as unknown as Parameters<typeof collectUsageWithRetry>[0]['events'],
         });

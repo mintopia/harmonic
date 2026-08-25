@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
+import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
 
@@ -10,6 +10,7 @@ const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 interface RolloutScan {
   models: Record<string, ModelUsage>;
   contextTokens: number | null;
+  turns: UsageTurn[];
 }
 
 /**
@@ -39,6 +40,9 @@ class RolloutAcc implements LineAccumulator {
   private model: string | null = null;
   private contextTokens: number | null = null;
   private readonly prev = { input: 0, cached: 0, output: 0 };
+  private tools: string[] = [];
+  private readonly seenToolCalls = new Set<string>();
+  readonly turns: UsageTurn[] = [];
 
   fold(line: string): void {
     if (!line.trim()) return;
@@ -50,6 +54,18 @@ class RolloutAcc implements LineAccumulator {
     }
     if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
       this.model = entry.payload.model;
+      return;
+    }
+    if (
+      entry?.type === 'response_item' &&
+      (entry.payload?.type === 'custom_tool_call' || entry.payload?.type === 'function_call') &&
+      typeof entry.payload?.name === 'string'
+    ) {
+      const id = entry.payload.call_id ?? entry.payload.id;
+      if (typeof id !== 'string' || !this.seenToolCalls.has(id)) {
+        if (typeof id === 'string') this.seenToolCalls.add(id);
+        this.tools.push(entry.payload.namespace ? `${entry.payload.namespace}.${entry.payload.name}` : entry.payload.name);
+      }
       return;
     }
     const info = entry?.type === 'event_msg' && entry.payload?.type === 'token_count' ? entry.payload.info : null;
@@ -77,14 +93,25 @@ class RolloutAcc implements LineAccumulator {
       bucket.inputTokens += delta.input - delta.cached;
       bucket.cacheReadTokens += delta.cached;
       bucket.outputTokens += delta.output;
+      this.turns.push({
+        model: this.model,
+        usage: {
+          inputTokens: delta.input - delta.cached,
+          outputTokens: delta.output,
+          cacheReadTokens: delta.cached,
+          cacheWriteTokens: 0,
+        },
+        tools: this.tools,
+      });
     }
+    this.tools = [];
     this.prev.input = input;
     this.prev.cached = cached;
     this.prev.output = output;
   }
 
   snapshot(): RolloutScan {
-    return { models: this.models, contextTokens: this.contextTokens };
+    return { models: this.models, contextTokens: this.contextTokens, turns: this.turns };
   }
 }
 
@@ -120,7 +147,7 @@ function buildRolloutTree(rootId: string, scan: RolloutScan): ParsedSession {
     toolUseId: null,
     children: [],
   };
-  return { usage: usageFromModels(scan.models), tree: root } satisfies ParsedSession;
+  return { usage: usageFromModels(scan.models), tree: root, turns: scan.turns } satisfies ParsedSession;
 }
 
 /**

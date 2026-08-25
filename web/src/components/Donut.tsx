@@ -2,6 +2,7 @@ export interface DonutSegment {
   key: string;
   label?: string;
   value: number;
+  valueLabel?: string;
   color: string;
 }
 
@@ -22,7 +23,17 @@ function wedge(a0: number, a1: number): string {
   return `M${x0o} ${y0o} A${R} ${R} 0 ${large} 1 ${x1o} ${y1o} L${x1i} ${y1i} A${R_INNER} ${R_INNER} 0 ${large} 0 ${x0i} ${y0i} Z`;
 }
 
-export function Donut({ segments, total, ariaLabel }: { segments: DonutSegment[]; total: number; ariaLabel?: string }) {
+export function Donut({
+  segments,
+  total,
+  totalLabel = total === 1 ? 'RUN' : 'RUNS',
+  ariaLabel,
+}: {
+  segments: DonutSegment[];
+  total: number;
+  totalLabel?: string;
+  ariaLabel?: string;
+}) {
   const sum = segments.reduce((a, s) => a + s.value, 0) || 1;
   let angle = -Math.PI / 2;
   const arcs = segments.map((s) => {
@@ -44,7 +55,7 @@ export function Donut({ segments, total, ariaLabel }: { segments: DonutSegment[]
           {total.toLocaleString()}
         </text>
         <text x={CX} y={CY + 9} textAnchor="middle" className="fill-muted" fontSize="6.5" letterSpacing="0.5">
-          {total === 1 ? 'RUN' : 'RUNS'}
+          {totalLabel}
         </text>
       </svg>
       <ul className="flex min-w-[8rem] flex-col gap-1.5">
@@ -53,7 +64,7 @@ export function Donut({ segments, total, ariaLabel }: { segments: DonutSegment[]
             <span className="size-2.5 shrink-0 rounded-[3px]" style={{ backgroundColor: s.color }} aria-hidden="true" />
             <span className="text-ink">{s.label ?? s.key}</span>
             <span className="ml-auto pl-3 tabular-nums text-muted">
-              {s.value.toLocaleString()}
+              {s.valueLabel ?? s.value.toLocaleString()}
               <span className="ml-1.5 text-faint">{Math.round((s.value / sum) * 100)}%</span>
             </span>
           </li>

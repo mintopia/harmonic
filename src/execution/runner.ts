@@ -3631,12 +3631,14 @@ export class Runner {
     promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
   ): Promise<RunUsage | null> {
     try {
+      const current = await this.runStore.get(run.id);
       const usage = await collectUsageWithRetry({
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
-        sessionId: (await this.runStore.get(run.id)).sessionId,
+        sessionId: current.sessionId,
         promptResult,
+        prices: current.priceTable ? (JSON.parse(current.priceTable) as PriceTable) : resolvePrices(this.getConfig().prices),
       });
       return usage
         ? { ...usage, toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))) }
@@ -3680,6 +3682,7 @@ export class Runner {
           harness,
           cwd,
           sessionId: run.sessionId,
+          prices: run.priceTable ? (JSON.parse(run.priceTable) as PriceTable) : resolvePrices(config.prices),
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
         fresh.toolCalls = Object.fromEntries(await this.runStore.listToolCalls(run.id));

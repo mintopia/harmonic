@@ -203,6 +203,103 @@ describe('usage aggregation with AI Units', () => {
   });
 });
 
+describe('per-tool output-token attribution (issue #195)', () => {
+  it('splits each turn across parallel calls, collapses repeated tools, and sends no-tool output to reasoning', async () => {
+    const { attributeTurnTokens } = await import('../src/execution/usage.js');
+
+    const attributed = attributeTurnTokens([
+      { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 11, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: ['Read', 'Write', 'Read'] },
+      { model: 'claude-sonnet-5', usage: { inputTokens: 0, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: [] },
+    ]);
+
+    // The final parallel call receives the integer remainder, so every turn
+    // reconciles exactly even when its output cannot divide evenly by calls.
+    expect(attributed).toEqual({
+      toolTokens: {
+        Read: { outputTokens: 8, cost: 0.00010999999999999999 },
+        Write: { outputTokens: 3, cost: 0.000055 },
+      },
+      reasoning: { outputTokens: 5, cost: 0.000075 },
+    });
+  });
+
+  it('leaves output cost absent for an unpriced model rather than inventing a zero', async () => {
+    const { attributeTurnTokens } = await import('../src/execution/usage.js');
+
+    expect(attributeTurnTokens([{ model: 'unknown', usage: { inputTokens: 0, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 }, tools: ['Read'] }])).toEqual({
+      toolTokens: { Read: { outputTokens: 3 } },
+    });
+  });
+});
+
+describe('per-tool output attribution', () => {
+  const assistantTurn = (model: string, outputTokens: number, toolNames: string[]) =>
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        id: `${model}-${outputTokens}-${toolNames.join('-') || 'reasoning'}`,
+        model,
+        usage: { input_tokens: 0, output_tokens: outputTokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        content: toolNames.map((name, i) => ({ type: 'tool_use', id: `toolu_${outputTokens}_${i}`, name })),
+      },
+    });
+
+  it('splits one turn by tool-call count, collapses repeated tools, and routes no-tool turns to reasoning', async () => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-tool-logs-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'harmonic-tool-work-'));
+    const sessionId = 'tool-session';
+    const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+    mkdirSync(join(logRoot, slug), { recursive: true });
+    writeFileSync(
+      join(logRoot, slug, `${sessionId}.jsonl`),
+      [
+        assistantTurn('claude-sonnet-5', 5, ['Read', 'Read', 'Bash']),
+        assistantTurn('claude-sonnet-5', 4, []),
+        assistantTurn('claude-sonnet-5', 5, ['Edit', 'Write']),
+      ].join('\n'),
+    );
+
+    const usage = collectUsage({
+      harnessId: 'claude',
+      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+      cwd,
+      sessionId,
+      events: [],
+    })!;
+
+    expect(usage.toolTokens).toEqual({
+      Read: { outputTokens: 2, cost: 0.000049999999999999996 },
+      Bash: { outputTokens: 3, cost: 0.000024999999999999998 },
+      Edit: { outputTokens: 2, cost: 0.0000375 },
+      Write: { outputTokens: 3, cost: 0.0000375 },
+    });
+    expect(usage.reasoning).toEqual({ outputTokens: 4, cost: 0.00006 });
+  });
+
+  it('mergeUsage sums tool attribution across runs without inventing missing buckets', async () => {
+    const { mergeUsage } = await import('../src/execution/usage.js');
+    const attributed = (over: Partial<RunUsage>): RunUsage => ({
+      models: {},
+      totals: null,
+      toolCalls: {},
+      source: 'session-log',
+      ...over,
+    });
+
+    const merged = mergeUsage([
+      attributed({ toolTokens: { Read: { outputTokens: 2 }, Bash: { outputTokens: 3 } }, reasoning: { outputTokens: 4 } }),
+      attributed({ toolTokens: { Read: { outputTokens: 5 }, Edit: { outputTokens: 1 } } }),
+    ])!;
+
+    expect(merged.toolTokens).toEqual({
+      Read: { outputTokens: 7 },
+      Bash: { outputTokens: 3 },
+      Edit: { outputTokens: 1 },
+    });
+    expect(merged.reasoning).toEqual({ outputTokens: 4 });
+  });
+});
+
 describe('Process Tree roll-up (T1)', () => {
   const mu = (input: number, output: number, aiUnits?: number) => ({
     inputTokens: input,

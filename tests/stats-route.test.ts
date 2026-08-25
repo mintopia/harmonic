@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type TestServer } from './helpers.js';
 import { runFacts, runs } from '../src/db/schema.js';
 import type { RunState } from '../src/db/schema.js';
+import type { RunUsage } from '../src/execution/usage.js';
 
 /**
  * The KPI-band ingredients the stats route now derives (issue #196, ADR-0028):
@@ -133,5 +134,85 @@ describe('GET /api/stats — empty range', () => {
     expect(body.runCount).toBe(0);
     expect(body.failedRuns).toBe(0);
     expect(body.durationMs).toBeNull();
+  });
+});
+
+describe('GET /api/stats — per-tool output attribution', () => {
+  let server: TestServer;
+  let taskId: number;
+
+  const usageJson = (usage: Partial<RunUsage>): string =>
+    JSON.stringify({
+      models: {},
+      totals: null,
+      toolCalls: {},
+      source: 'session-log',
+      ...usage,
+    } satisfies RunUsage);
+
+  beforeAll(async () => {
+    server = await startServer();
+    const task = await server.api('POST', '/api/tasks', { prompt: 'tool stats seed' });
+    taskId = task.body.id;
+
+    await server.app.ctx.asyncDb.write((d) =>
+      d
+        .insert(runs)
+        .values([
+          {
+            taskId,
+            attempt: 1,
+            state: 'completed',
+            startedAt: 1_000,
+            finishedAt: 2_000,
+            usage: usageJson({
+              toolTokens: { Read: { outputTokens: 2, cost: 0.02 }, Bash: { outputTokens: 3, cost: 0.03 } },
+              reasoning: { outputTokens: 4, cost: 0.04 },
+            }),
+          },
+          {
+            taskId,
+            attempt: 2,
+            state: 'completed',
+            startedAt: 3_000,
+            finishedAt: 4_000,
+            usage: usageJson({
+              toolTokens: { Read: { outputTokens: 5, cost: 0.05 }, Edit: { outputTokens: 1, cost: 0.01 } },
+            }),
+          },
+          {
+            taskId,
+            attempt: 3,
+            state: 'completed',
+            startedAt: 5_000,
+            finishedAt: 6_000,
+            usage: usageJson({}),
+          },
+        ])
+        .run(),
+    );
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('aggregates tool buckets and reasoning across the range, keeping missing attribution absent', async () => {
+    const { status, body } = await server.api('GET', '/api/stats?from=0');
+    expect(status).toBe(200);
+    expect(body.toolTokens).toEqual({
+      Read: { outputTokens: 7, cost: 0.07 },
+      Bash: { outputTokens: 3, cost: 0.03 },
+      Edit: { outputTokens: 1, cost: 0.01 },
+    });
+    expect(body.reasoning).toEqual({ outputTokens: 4, cost: 0.04 });
+  });
+
+  it('omits attribution for a range containing only legacy or unparseable usage', async () => {
+    const { status, body } = await server.api('GET', '/api/stats?from=5000&to=6000');
+    expect(status).toBe(200);
+    expect(body.runCount).toBe(1);
+    expect(body).not.toHaveProperty('toolTokens');
+    expect(body).not.toHaveProperty('reasoning');
   });
 });

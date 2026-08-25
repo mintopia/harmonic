@@ -2,7 +2,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode } from '../usage.js';
+import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
 
@@ -25,6 +25,9 @@ interface Transcript {
   contextTokens: number | null;
   /** tool_use ids that received a tool_result here — a spawned Subagent that has finished. */
   completed: Set<string>;
+  /** Assistant messages are native turn boundaries; their tool_use blocks and
+   * output counters make exact output-token attribution possible. */
+  turns: UsageTurn[];
 }
 
 /**
@@ -39,6 +42,7 @@ class TranscriptAcc implements LineAccumulator {
   readonly models: Record<string, ModelUsage> = {};
   private readonly seen = new Set<string>();
   readonly completed = new Set<string>();
+  readonly turns: UsageTurn[] = [];
   contextTokens: number | null = null;
 
   fold(line: string): void {
@@ -66,10 +70,26 @@ class TranscriptAcc implements LineAccumulator {
     bucket.cacheReadTokens += num(u.cache_read_input_tokens);
     bucket.cacheWriteTokens += num(u.cache_creation_input_tokens);
     this.contextTokens = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
+    const tools = Array.isArray(message.content)
+      ? message.content
+          .filter((block: unknown) => (block as { type?: unknown })?.type === 'tool_use')
+          .map((block: unknown) => (block as { name?: unknown }).name)
+          .filter((name: unknown): name is string => typeof name === 'string')
+      : [];
+    this.turns.push({
+      model: message.model,
+      usage: {
+        inputTokens: num(u.input_tokens),
+        outputTokens: num(u.output_tokens),
+        cacheReadTokens: num(u.cache_read_input_tokens),
+        cacheWriteTokens: num(u.cache_creation_input_tokens),
+      },
+      tools,
+    });
   }
 
   snapshot(): Transcript {
-    return { models: this.models, contextTokens: this.contextTokens, completed: this.completed };
+    return { models: this.models, contextTokens: this.contextTokens, completed: this.completed, turns: this.turns };
   }
 }
 
@@ -126,7 +146,7 @@ function readSubagents(subDir: string): Subagent[] {
         /* incomplete write mid-run: default meta */
       }
     }
-    subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : { models: {}, contextTokens: null, completed: new Set() } });
+    subs.push({ id, meta: parsed, scan: jsonl ? scanTranscript(jsonl) : { models: {}, contextTokens: null, completed: new Set(), turns: [] } });
   }
   return subs;
 }
@@ -185,10 +205,10 @@ function buildParsed(rootId: string, rootScan: Transcript, subs: Subagent[]): Pa
   const rolled: Record<string, ModelUsage> = {};
   mergeInto(rolled, rootScan.models);
   for (const s of subs) mergeInto(rolled, s.scan.models);
-  return { usage: usageFromModels(rolled), tree: root } satisfies ParsedSession;
+  return { usage: usageFromModels(rolled), tree: root, turns: [...rootScan.turns, ...subs.flatMap((sub) => sub.scan.turns)] } satisfies ParsedSession;
 }
 
-const emptyTranscript = (): Transcript => ({ models: {}, contextTokens: null, completed: new Set<string>() });
+const emptyTranscript = (): Transcript => ({ models: {}, contextTokens: null, completed: new Set<string>(), turns: [] });
 
 function claudeProjectsDir(sessionLogDir: string | undefined): string {
   if (!sessionLogDir) return join(homedir(), '.claude', 'projects');

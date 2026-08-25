@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import type { HarnessConfig } from '../config.js';
 import type { PersistedRunEvent } from '../domain/runs.js';
 import { isReplay } from '../domain/replay-quarantine.js';
+import { DEFAULT_PRICES, turnCost, type PriceTable } from './pricing.js';
 import { adapterFor, type ModelUsage } from './harness/adapter.js';
 
 export type { ModelUsage };
@@ -17,6 +18,12 @@ export interface RunUsage {
    * the Stats aggregation treats a missing map as "no per-agent data".
    */
   agents?: Record<string, ModelUsage>;
+  /** Output tokens and API-equivalent cost attributed to tools, when the
+   * harness transcript exposes per-turn tool calls. */
+  toolTokens?: Record<string, ToolTokenUsage>;
+  /** Output from parsed turns that called no tool. Absent with `toolTokens`
+   * when a harness cannot expose per-turn attribution. */
+  reasoning?: ToolTokenUsage;
   /** Aggregate token counts; null when no source reported tokens. */
   totals: (ModelUsage & { totalTokens: number | null }) | null;
   /** Tool-call tallies from the Run's aggregate store. */
@@ -26,6 +33,20 @@ export interface RunUsage {
    * prefers the run_usage snapshot; this is the persisted fallback (issue #52). */
   contextTokens?: number | null;
   source: 'acp' | 'session-log' | 'combined' | null;
+}
+
+/** Output token/cost attribution for one tool or the no-tool reasoning bucket. */
+export interface ToolTokenUsage {
+  outputTokens: number;
+  /** API-equivalent output cost. Absent for an unpriced model, never zeroed. */
+  cost?: number;
+}
+
+/** One parsed model turn, including every tool call it made. */
+export interface UsageTurn {
+  model: string;
+  usage: ModelUsage;
+  tools: string[];
 }
 
 /** The reserved agent name for the root session in a per-agent breakdown —
@@ -114,6 +135,9 @@ export interface ParsedSession {
    */
   usage: RunUsage;
   tree: ProcessTree;
+  /** Present only for harnesses whose native transcript exposes turn boundaries
+   * and tool calls, the evidence required for honest tool attribution. */
+  turns?: UsageTurn[];
 }
 
 /**
@@ -143,6 +167,9 @@ export interface CollectUsageInput {
   promptResult?: { usage?: Record<string, unknown>; _meta?: unknown } | undefined;
   /** Conversation-only ACP events, retained while Conversations still persist their transcript. */
   events?: PersistedRunEvent[] | undefined;
+  /** Effective per-model prices at collection time, used to freeze the
+   * API-equivalent output cost alongside token attribution. */
+  prices?: PriceTable | undefined;
 }
 
 /**
@@ -181,15 +208,72 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
     }
   }
   const agents = parsed ? agentsFromTree(parsed.tree) : undefined;
+  const attribution = parsed?.turns ? attributeTurnTokens(parsed.turns, input.prices) : undefined;
   const toolCalls = tallyToolCalls(input.events ?? [], (payload) => collector?.toolName(payload) ?? null);
 
   if (!acpTotals && Object.keys(models).length === 0) return null;
   return {
     models,
     ...(agents && Object.keys(agents).length > 0 ? { agents } : {}),
+    ...(attribution ?? {}),
     totals: acpTotals ?? sumModels(models),
     toolCalls,
     source: acpTotals && Object.keys(models).length > 0 ? 'combined' : acpTotals ? 'acp' : 'session-log',
+  };
+}
+
+/**
+ * Attribute a parsed turn's output tokens across its tool calls. Calls divide
+ * by count (not distinct name), then fold under a name; the final call absorbs
+ * the remainder so integer token totals reconcile exactly. A no-tool turn is
+ * reasoning rather than fabricated tool usage.
+ */
+export function attributeTurnTokens(
+  turns: UsageTurn[],
+  prices: PriceTable = DEFAULT_PRICES,
+): Pick<RunUsage, 'toolTokens' | 'reasoning'> {
+  const toolTokens: Record<string, ToolTokenUsage> = {};
+  let reasoning: ToolTokenUsage | undefined;
+  const unpriced = new Set<ToolTokenUsage>();
+
+  const add = (target: ToolTokenUsage, outputTokens: number, cost: number | undefined): void => {
+    target.outputTokens += outputTokens;
+    if (cost === undefined) {
+      delete target.cost;
+      unpriced.add(target);
+    } else if (!unpriced.has(target)) {
+      target.cost = (target.cost ?? 0) + cost;
+    }
+  };
+
+  for (const turn of turns) {
+    const outputTokens = turn.usage.outputTokens;
+    if (outputTokens === 0) continue;
+    const cost = turnCost(turn.model, turn.usage, prices);
+    if (turn.tools.length === 0) {
+      reasoning ??= { outputTokens: 0 };
+      add(reasoning, outputTokens, cost);
+      continue;
+    }
+
+    const share = Math.floor(outputTokens / turn.tools.length);
+    const costShare = cost === undefined ? undefined : cost / turn.tools.length;
+    let outputAssigned = 0;
+    let costAssigned = 0;
+    for (const [index, tool] of turn.tools.entries()) {
+      const tokens = index === turn.tools.length - 1 ? outputTokens - outputAssigned : share;
+      const toolCost =
+        cost === undefined ? undefined : index === turn.tools.length - 1 ? cost - costAssigned : costShare;
+      const bucket = (toolTokens[tool] ??= { outputTokens: 0 });
+      add(bucket, tokens, toolCost);
+      outputAssigned += tokens;
+      costAssigned += toolCost ?? 0;
+    }
+  }
+
+  return {
+    ...(Object.keys(toolTokens).length > 0 ? { toolTokens } : {}),
+    ...(reasoning ? { reasoning } : {}),
   };
 }
 
@@ -457,6 +541,29 @@ export function mergeUsage(usages: RunUsage[]): RunUsage | null {
         bucket.cacheWriteTokens += au.cacheWriteTokens;
         if (au.aiUnits !== undefined) bucket.aiUnits = (bucket.aiUnits ?? 0) + au.aiUnits;
       }
+    }
+    if (usage.toolTokens) {
+      const toolTokens = (merged.toolTokens ??= {});
+      for (const [tool, attribution] of Object.entries(usage.toolTokens)) {
+        const bucket = toolTokens[tool];
+        if (!bucket) {
+          toolTokens[tool] = { ...attribution };
+          continue;
+        }
+        bucket.outputTokens += attribution.outputTokens;
+        if (bucket.cost !== undefined && attribution.cost !== undefined) bucket.cost += attribution.cost;
+        else if (attribution.cost === undefined) delete bucket.cost;
+      }
+    }
+    if (usage.reasoning) {
+      if (!merged.reasoning) {
+        merged.reasoning = { ...usage.reasoning };
+        continue;
+      }
+      const reasoning = merged.reasoning;
+      reasoning.outputTokens += usage.reasoning.outputTokens;
+      if (reasoning.cost !== undefined && usage.reasoning.cost !== undefined) reasoning.cost += usage.reasoning.cost;
+      else if (usage.reasoning.cost === undefined) delete reasoning.cost;
     }
   }
   merged.totals = totals;

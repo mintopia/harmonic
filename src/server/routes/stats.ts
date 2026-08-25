@@ -5,7 +5,7 @@ import type { App } from '../app.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { costOfRuns } from '../serialize.js';
 import { buildDaySeries } from '../stats-series.js';
-import { costSchema, modelUsageSchema } from '../schemas.js';
+import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.js';
 import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
 import { failuresByReason, isExecutionFailure, isReviewRejected } from '../../domain/run-failure.js';
@@ -118,6 +118,12 @@ const statsResponseSchema = z.object({
       'code-reviewer': { inputTokens: 8100, outputTokens: 1400, cacheReadTokens: 12000, cacheWriteTokens: 600 },
     },
   }),
+  /** Output-token attribution across turns whose native transcripts exposed
+   * tool calls; absent when no run in the range had that evidence. */
+  toolTokens: z.record(z.string(), toolTokenUsageSchema).optional(),
+  /** Parsed output from no-tool turns; absent with toolTokens when attribution
+   * could not be collected. */
+  reasoning: toolTokenUsageSchema.optional(),
   toolCalls: z.record(z.string(), z.number()).meta({ example: { read: 14, edit: 6, bash: 3 } }),
   cost: costSchema.nullable(),
   /** Per-day cost buckets (only days with runs), ordered by day. */
@@ -238,6 +244,8 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         totals: merged?.totals ?? null,
         models: merged?.models ?? {},
         agents: merged?.agents ?? {},
+        ...(merged?.toolTokens ? { toolTokens: merged.toolTokens } : {}),
+        ...(merged?.reasoning ? { reasoning: merged.reasoning } : {}),
         toolCalls,
         cost: flooredCost,
         series,

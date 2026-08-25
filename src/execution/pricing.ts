@@ -124,7 +124,7 @@ export function isModelPriced(model: string, prices: PriceTable): boolean {
   return priceFor(model, prices) !== undefined;
 }
 
-function priceUsage(usage: ModelUsage, price: ModelPrice): number {
+export function modelUsageCost(usage: ModelUsage, price: ModelPrice): number {
   return (
     (usage.inputTokens * price.input +
       usage.outputTokens * price.output +
@@ -132,6 +132,14 @@ function priceUsage(usage: ModelUsage, price: ModelPrice): number {
       usage.cacheWriteTokens * price.cacheWrite) /
     1_000_000
   );
+}
+
+/** API-equivalent cost of one model turn, including its input and cache
+ * footprint. The per-tool breakdown allocates this full turn cost by output
+ * share while preserving the output-token count as its primary measure. */
+export function turnCost(model: string, usage: ModelUsage, prices: PriceTable): number | undefined {
+  const price = priceFor(model, prices);
+  return price ? modelUsageCost(usage, price) : undefined;
 }
 
 /**
@@ -168,7 +176,7 @@ export function costOfUsages(usages: (RunUsage | null)[], prices: PriceTable): C
       incomplete = true;
       continue;
     }
-    const usd = priceUsage(mu, price);
+    const usd = modelUsageCost(mu, price);
     byModel[model] = usd;
     totalUsd = (totalUsd ?? 0) + usd;
   }
