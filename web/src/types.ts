@@ -17,6 +17,33 @@ export type TaskState = (typeof TASK_STATES)[number];
 export const RUN_PHASES = ['executing', 'validating', 'verifying', 'review', 'landing', 'terminal'] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
 
+export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
+export type AttemptTaskType = 'rebase' | 'implementation' | 'verification' | 'review';
+export type AttemptTaskState = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled';
+
+export interface AttemptTask {
+  id: number;
+  attemptId: number;
+  type: AttemptTaskType;
+  position: number;
+  state: AttemptTaskState;
+  command: string | null;
+  verdict: string | null;
+  logLocator: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+export interface Attempt {
+  id: number;
+  taskId: number;
+  number: number;
+  state: AttemptState;
+  startedAt: number;
+  endedAt: number | null;
+  tasks: AttemptTask[];
+}
+
 /** A budget dimension a Guardrail can trip on (ADR-0019, issue #171); mirrors
  * the server's `GUARDRAIL_DIMENSIONS` (`db/schema.ts`). */
 export type GuardrailDimension = 'wall-clock' | 'tokens' | 'cost' | 'progress' | 'tool-timeout';

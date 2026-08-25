@@ -27,9 +27,10 @@ describe('AttemptStore', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('numbers attempts per ticket and orders their task timeline', async () => {
-    const first = await attempts.create(taskId, 10);
-    const second = await attempts.create(taskId, 20);
+  it('ensures numbered attempts per ticket and orders their task timeline', async () => {
+    const first = await attempts.ensureForRun(taskId, 1, 10);
+    const second = await attempts.ensureForRun(taskId, 2, 20);
+    expect(await attempts.ensureForRun(taskId, 1, 99)).toEqual(first);
     expect((await attempts.listForTask(taskId)).map((attempt) => attempt.number)).toEqual([1, 2]);
 
     const implementation = await attempts.createTask(first.id, { type: 'implementation', logLocator: 'session:1' });

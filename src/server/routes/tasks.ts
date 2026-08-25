@@ -20,8 +20,8 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
-import { atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi } from '../serialize.js';
-import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
+import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi } from '../serialize.js';
+import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
 /** The reviewer's note, carried onto the re-attempt or back to the queue. */
 const feedbackExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -858,12 +858,12 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Attempts'],
         description: "A ticket's attempt timeline. Tasks are ordered exactly as they ran.",
         params: idParamsSchema,
+        response: { 200: attemptTimelineResponseSchema },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      const attempts = await ctx.attempts.listForTask(req.params.id);
-      return { attempts: await Promise.all(attempts.map(async (attempt) => ({ ...attempt, tasks: await ctx.attempts.listTasks(attempt.id) }))) };
+      return attemptTimelineToApi(ctx, req.params.id);
     },
   );
 

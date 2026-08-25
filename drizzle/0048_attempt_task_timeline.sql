@@ -27,6 +27,15 @@ CREATE UNIQUE INDEX `attempt_tasks_attempt_position_unique` ON `attempt_tasks` (
 INSERT INTO `attempts` (`task_id`, `number`, `state`, `started_at`, `ended_at`)
 SELECT `task_id`, `attempt`, CASE `state` WHEN 'completed' THEN 'passed' WHEN 'failed' THEN 'failed' ELSE 'running' END, `started_at`, `finished_at` FROM `runs`;
 --> statement-breakpoint
+INSERT INTO `attempt_tasks` (`attempt_id`, `type`, `position`, `state`, `verdict`, `log_locator`, `started_at`, `ended_at`)
+SELECT `attempts`.`id`, 'implementation', 1,
+  CASE `runs`.`state` WHEN 'completed' THEN 'passed' WHEN 'failed' THEN 'failed' WHEN 'cancelled' THEN 'cancelled' ELSE 'running' END,
+  CASE `runs`.`state` WHEN 'completed' THEN 'pass' WHEN 'failed' THEN 'fail' ELSE NULL END,
+  CASE WHEN `runs`.`session_row_id` IS NOT NULL THEN 'session:' || `runs`.`session_row_id` ELSE NULL END,
+  `runs`.`started_at`, `runs`.`finished_at`
+FROM `runs`
+JOIN `attempts` ON `attempts`.`task_id` = `runs`.`task_id` AND `attempts`.`number` = `runs`.`attempt`;
+--> statement-breakpoint
 ALTER TABLE `run_facts` ADD `attempt_id` integer REFERENCES `attempts`(`id`);
 --> statement-breakpoint
 UPDATE `run_facts` SET `attempt_id` = (

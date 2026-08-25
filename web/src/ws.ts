@@ -1,4 +1,5 @@
 import type {
+  Attempt,
   Conversation,
   ConversationEvent,
   PermissionAcpRequest,
@@ -31,6 +32,7 @@ export type ServerMessage =
   | { type: 'run_log_event'; event: RunLogEvent }
   | { type: 'run_changed'; run: Run }
   | { type: 'task_changed'; task: Task }
+  | { type: 'attempt_timeline_changed'; taskId: number; attempts: Attempt[] }
   // Hard-delete (issue #162): the Task is gone server-side (Runs/history
   // cascaded); drop it from local state so the board/graph lose it too.
   | { type: 'task_removed'; id: number }

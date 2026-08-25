@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { App } from './app.js';
-import { conversationToApi, operationEventToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
+import { attemptTimelineToApi, conversationToApi, operationEventToApi, runToApi, runUsageToApi, scheduledJobsToApi, taskToApi } from './serialize.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**
@@ -15,6 +15,11 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     const send = (msg: unknown) => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
     };
+    const sendAttemptTimeline = (taskId: number) => {
+      void attemptTimelineToApi(ctx, taskId)
+        .then(({ attempts }) => send({ type: 'attempt_timeline_changed', taskId, attempts }))
+        .catch(() => {});
+    };
     // A read-scoped key (issue #35) gets a filtered firehose: the board's
     // task/run/run-event traffic only, with Conversation and permission
     // events dropped. Auth already passed in the onRequest hook; this just
@@ -24,7 +29,10 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     let unsubscribeRunLog: (() => void) | undefined;
     const unsubscribes = [
       ctx.bus.on('run_event', (event) => send({ type: 'run_event', event })),
-      ctx.bus.on('run_changed', (run) => send({ type: 'run_changed', run: runToApi(ctx, run) })),
+      ctx.bus.on('run_changed', (run) => {
+        send({ type: 'run_changed', run: runToApi(ctx, run) });
+        sendAttemptTimeline(run.taskId);
+      }),
       // Live Run usage (ADR 0010) is board/viz traffic — sent to read keys too;
       // the Conversation's usage rides conversation_changed, already dropped below.
       ctx.bus.on('run_usage', ({ runId, snapshot }) =>

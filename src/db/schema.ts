@@ -783,8 +783,7 @@ export const runFacts = sqliteTable('run_facts', {
   uniqueIndex('run_facts_run_seq_unique').on(t.runId, t.seq),
 ]);
 
-/** `attemptId` is optional in compatibility fixtures created before ADR-0041. */
-export type RunFactRow = Omit<typeof runFacts.$inferSelect, 'attemptId'> & { attemptId?: number | null };
+export type RunFactRow = typeof runFacts.$inferSelect;
 
 /**
  * The journaled non-interruptible landing log (issue #115, reliability-design

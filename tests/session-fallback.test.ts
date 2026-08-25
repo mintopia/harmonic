@@ -197,7 +197,7 @@ describe('buildResumeFallbackSummary — deterministic Harmonic-built summary (i
   });
 
   it('accepts the store row types directly (structural assignability)', () => {
-    const factRow: RunFactRow = { id: 9, runId: 1, seq: 1, ts: 100, type: 'escalate', payload: '{"why":"x"}' };
+    const factRow: RunFactRow = { id: 9, runId: 1, attemptId: null, seq: 1, ts: 100, type: 'escalate', payload: '{"why":"x"}' };
     const eventRow: RunEventRow = { id: 8, runId: 1, seq: 1, ts: 100, type: 'lifecycle', payload: '{"event":"candidate"}' };
     const persisted: PersistedRunEvent = { id: 7, runId: 1, seq: 2, ts: 101, type: 'session_update', payload: { c: 1 } };
     const out = buildResumeFallbackSummary(

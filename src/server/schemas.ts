@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { RUN_STATES, CONVERSATION_STATES } from '../db/schema.js';
+import {
+  ATTEMPT_STATES,
+  ATTEMPT_TASK_STATES,
+  ATTEMPT_TASK_TYPES,
+  RUN_STATES,
+  CONVERSATION_STATES,
+} from '../db/schema.js';
 
 /**
  * Shared response schemas for zod-declared routes (ADR-0005). Every route's
@@ -41,6 +47,40 @@ export const okResponseSchema = z
 
 /** A numeric `:id` path param, coerced from the route string — shared by tasks/runs/channels. */
 export const idParamsSchema = z.object({ id: z.coerce.number().int().meta({ example: 4821 }) });
+
+/** One persisted step in an Attempt's ordered ticket timeline (ADR-0041). */
+export const attemptTaskSchema = z
+  .object({
+    id: z.number().meta({ example: 73 }),
+    attemptId: z.number().meta({ example: 19 }),
+    type: z.enum(ATTEMPT_TASK_TYPES).meta({ example: 'verification' }),
+    position: z.number().int().positive().meta({ example: 2 }),
+    state: z.enum(ATTEMPT_TASK_STATES).meta({ example: 'passed' }),
+    command: z.string().nullable().meta({ example: 'npm test' }),
+    verdict: z.string().nullable().meta({ example: 'pass' }),
+    logLocator: z.string().nullable().meta({ example: 'verification_attempt:31' }),
+    startedAt: z.number().nullable().meta({ example: 1784032140000 }),
+    endedAt: z.number().nullable().meta({ example: 1784032200000 }),
+  })
+  .meta({ id: 'AttemptTask' });
+
+/** One implementation-to-verification iteration and its ordered work rows. */
+export const attemptSchema = z
+  .object({
+    id: z.number().meta({ example: 19 }),
+    taskId: z.number().meta({ example: 4821 }),
+    number: z.number().int().positive().meta({ example: 1 }),
+    state: z.enum(ATTEMPT_STATES).meta({ example: 'passed' }),
+    startedAt: z.number().meta({ example: 1784032020000 }),
+    endedAt: z.number().nullable().meta({ example: 1784032200000 }),
+    tasks: z.array(attemptTaskSchema),
+  })
+  .meta({ id: 'Attempt' });
+
+/** The ticket timeline shape shared by REST and the WebSocket firehose. */
+export const attemptTimelineResponseSchema = z
+  .object({ attempts: z.array(attemptSchema) })
+  .meta({ id: 'AttemptTimelineResponse' });
 
 /** Per-model token counters (execution/usage.ts `ModelUsage`) — the four counters Cost prices. */
 export const modelUsageSchema = z

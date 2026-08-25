@@ -398,7 +398,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // the Task's current working directory). Whether the reload succeeds or the
   // compatibility matrix forces a fresh summarized Session, the decision is
   // idempotent across repeat boots.
-  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(asyncDb), new RunFactStore(asyncDb), (session) => ({
+  await new BootResumeCoordinator(runs, attempts, tasks, sessionStore, new TurnQueueStore(asyncDb), new RunFactStore(asyncDb), (session) => ({
     harness: session.harness,
     adapterVersion: adapterVersion(session.harness),
     model: session.model,

@@ -465,3 +465,29 @@ describe('durable tracker facts migration (issue #233, ADR-0030 expand)', () => 
     rmSync(migrationsFolder, { recursive: true, force: true });
   });
 });
+
+describe('attempt timeline migration (issue #309, ADR-0041)', () => {
+  it('preserves historical Run implementation work and re-keys its facts', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-attempt-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0048');
+    const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await migrate(drizzle(client, { schema }), { migrationsFolder });
+    const taskId = Number((await client.execute(`insert into tasks (prompt, working_dir, state, created_at, updated_at) values ('legacy', '/tmp/p', 'failed', 10, 20)`)).lastInsertRowid);
+    const sessionId = Number((await client.execute(`insert into sessions (harness, harness_session_id, model, cwd, last_active_at, created_at, updated_at) values ('claude', 'legacy-session', 'sonnet', '/tmp/p', 20, 10, 20)`)).lastInsertRowid);
+    const runId = Number((await client.execute({ sql: `insert into runs (task_id, attempt, state, session_row_id, started_at, finished_at) values (?, 1, 'failed', ?, 10, 20)`, args: [taskId, sessionId] })).lastInsertRowid);
+    await client.execute({ sql: `insert into run_facts (run_id, seq, ts, type, payload) values (?, 1, 20, 'failed', '{}')`, args: [runId] });
+    client.close();
+
+    const db = await openAsyncDb(dataDir);
+    const attempt = await db.read((database) => database.select().from(schema.attempts).get());
+    expect(attempt).toMatchObject({ taskId, number: 1, state: 'failed', startedAt: 10, endedAt: 20 });
+    expect(await db.read((database) => database.select().from(schema.attemptTasks).get())).toMatchObject({
+      attemptId: attempt!.id, type: 'implementation', position: 1, state: 'failed', verdict: 'fail',
+      logLocator: `session:${sessionId}`, startedAt: 10, endedAt: 20,
+    });
+    expect(await db.read((database) => database.select().from(schema.runFacts).get())).toMatchObject({ runId, attemptId: attempt!.id });
+    await db.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});

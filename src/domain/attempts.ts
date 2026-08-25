@@ -12,13 +12,6 @@ export interface AttemptTaskInput {
 export class AttemptStore {
   constructor(private readonly db: AsyncDbHandle) {}
 
-  create(taskId: number, now = Date.now()): Promise<AttemptRow> {
-    return this.db.write(async (db) => {
-      const number = ((await db.select({ n: sql<number>`coalesce(max(${attempts.number}), 0)` }).from(attempts).where(eq(attempts.taskId, taskId)).get())?.n ?? 0) + 1;
-      return db.insert(attempts).values({ taskId, number, startedAt: now }).returning().get();
-    });
-  }
-
   async ensureForRun(taskId: number, number: number, startedAt: number): Promise<AttemptRow> {
     return this.db.write(async (db) => {
       const existing = await db.select().from(attempts).where(and(eq(attempts.taskId, taskId), eq(attempts.number, number))).get();

@@ -36,7 +36,7 @@ import { LandingJournalStore } from '../domain/landing-journal.js';
 import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
-import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
+import type { RunPhase } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, type ResolvedGuardrails } from '../domain/setting-override.js';
@@ -705,7 +705,7 @@ export class Runner {
     const created = await this.runStore.create(task.id, snapshot, chainId);
     const attempt = await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
     const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation' });
-    await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: `run:${created.id}` });
+    await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: `session:${created.id}` });
     const key = this.workContextKeyFor(task, created);
     // Resolved ahead of the claim: look up whoever holds the Work Context key and
     // whether they share this Run's line of work, exactly what `sharesLineOfWork`
@@ -2309,18 +2309,17 @@ export class Runner {
     };
     let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
 
-    // Advance the Run through the phase machine (issue #114) up to and including
-    // `to`, following `gate` at the verifying branch. Each intermediate phase is
-    // persisted on the Run row (`runs.phase`, the current-phase pointer surfaced
-    // on the API + card) and recorded as a lifecycle event, so the *sequence* of
-    // phases the Run passed through survives a restart and is reconstructable
-    // from the event log — never inferred from Task columns.
-    const advancePhase = async (to: RunPhase, gate: ReviewGate) => {
-      const from = (await this.runStore.get(run.id)).phase ?? 'executing';
-      for (const phase of phasePath(from, to, gate)) {
-        await this.runStore.update(run.id, { phase });
-        record('lifecycle', { event: 'phase', phase });
-        this.events.onRunPhaseChanged?.(await this.runStore.get(run.id));
+    // Attempt Tasks, rather than Run phases, own the execution pipeline. Runs
+    // remain readable compatibility records, but a transition never writes or
+    // consults `runs.phase`.
+    const advanceTask = async (to: 'validating' | 'verifying' | 'review' | 'landing') => {
+      const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+      if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
+      const rows = await this.attempts.listTasks(attempt.id);
+      const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
+      if (to === 'validating' && implementation) return;
+      if (to === 'verifying' && implementation) {
+        await this.attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
       }
     };
 
@@ -2329,19 +2328,12 @@ export class Runner {
     let escalating: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
 
-    // A corrective turn — a self-heal (issue #137) or a bounded agent re-merge
-    // (issue #155) — re-enters the pipeline at `validating` (§0.4). The phase
-    // machine is acyclic — it cannot step back from `verifying` on its own — so
-    // reset the pointer to `executing` and record the re-entry as a lifecycle
-    // event, exactly as `advancePhase` would, so the phase sequence stays
-    // reconstructable from the event log. This re-drives the SAME Run / Work
-    // Context lease / branch; the ACP transcript is not reloaded (`session/load`
-    // isn't built), so the prior failure/violation is carried forward as the
-    // corrective prompt below rather than as conversation history.
+    // A corrective turn opens a fresh Implementation Task on the same Attempt.
     if (healCtx || remergeCtx) {
-      await this.runStore.update(run.id, { phase: 'executing' });
-      record('lifecycle', { event: 'phase', phase: 'executing' });
-      this.events.onRunPhaseChanged?.(await this.runStore.get(run.id));
+      const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+      if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
+      const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation', logLocator: `session:${run.sessionRowId ?? run.id}` });
+      await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now() });
     }
 
     let child: ChildProcess;
@@ -3265,7 +3257,7 @@ export class Runner {
       // escalating Run (never reaches `verifying`, #134) and for an
       // afkUnresolved Run (no completion to verify).
       if (!escalating && !afkUnresolved) {
-        await advancePhase('validating', autoDriven ? 'auto' : 'human');
+        await advanceTask('validating');
         await this.runCandidateSnapshot(
           task,
           run,
@@ -3366,7 +3358,7 @@ export class Runner {
         // bounded self-heal; an **inconclusive** (`escalate`) never heals and
         // Escalates in place with its cause — so broken work never lands, but a
         // flaky environment is never mistaken for a code defect.
-        await advancePhase('verifying', autoDriven ? 'auto' : 'human');
+        await advanceTask('verifying');
         const { decision, ran, autoAccept } = await this.runVerification(
           task,
           run,
@@ -3468,7 +3460,7 @@ export class Runner {
               record('lifecycle', { event: 'escalated', reason: 'ticket close failed after merge-train land' });
               await this.settleEscalated(task, run, 'ticket close failed after merge-train land', patch);
             } else {
-              await advancePhase('landing', 'auto');
+              await advanceTask('landing');
               await this.settleAutoCompleted(task, run, patch);
             }
             return { kind: 'terminal' };
@@ -3491,7 +3483,7 @@ export class Runner {
             } else {
               // The Merge Fate landed in onCompleted → record `landing`, then settle
               // terminal (the coordinator marks the Run `phase:'terminal'`).
-              await advancePhase('landing', 'auto');
+              await advanceTask('landing');
               await this.settleAutoCompleted(task, run, patch);
             }
           }
@@ -3504,7 +3496,7 @@ export class Runner {
           // verifier configured `combineVerdicts([])` is also `proceed`, but
           // there's nothing verified to auto-accept, so that case falls through
           // to the human-gated branch below instead.
-          await advancePhase('landing', 'auto');
+          await advanceTask('landing');
           // Re-fetch: `run` (the drive-loop's original parameter) predates
           // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
           // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
@@ -3539,7 +3531,7 @@ export class Runner {
           // non-terminal, holding its Work Context lease — until the human
           // accepts (lands) or rejects it, or its review SLA lapses (#114). It
           // does NOT settle here.
-          await advancePhase('review', 'human');
+          await advanceTask('review');
           // Snapshot the diffstat once, here, so the awaiting-review board card can
           // show it without an N+1 git spawn per refresh (issue #36).
           await this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });

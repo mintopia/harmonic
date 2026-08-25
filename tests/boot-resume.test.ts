@@ -6,6 +6,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { SessionStore } from '../src/domain/sessions.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
@@ -32,6 +33,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
+  let attemptStore: AttemptStore;
   let sessions: SessionStore;
   let runFacts: RunFactStore;
   let turnQueue: TurnQueueStore;
@@ -41,6 +43,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
+    attemptStore = new AttemptStore(asyncDb);
     sessions = new SessionStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
     turnQueue = new TurnQueueStore(asyncDb);
@@ -96,7 +99,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     resolveCaps: (s: SessionRow) => ResumeCapabilities,
     opts: { now?: () => number; yielding?: YieldOptions } = {},
   ): BootResumeCoordinator {
-    return new BootResumeCoordinator(runStore, tasks, sessions, turnQueue, runFacts, resolveCaps, opts);
+    return new BootResumeCoordinator(runStore, attemptStore, tasks, sessions, turnQueue, runFacts, resolveCaps, opts);
   }
 
   it('compatible → resumes the SAME Session as a new Run + a crash-recovery turn on its harness id', async () => {
@@ -107,6 +110,8 @@ describe('BootResumeCoordinator (issue #146)', () => {
     const runsForTask = (await runStore.listForTask(task.id)).filter((r) => r.id !== run.id);
     expect(runsForTask).toHaveLength(1);
     const resumeRun = runsForTask[0]!;
+    const resumeAttempt = await attemptStore.getForTaskNumber(task.id, resumeRun.attempt);
+    expect(resumeAttempt).toMatchObject({ taskId: task.id, number: resumeRun.attempt });
     expect(resumeRun.sessionRowId).toBe(session.id); // same Session
     expect(resumeRun.sessionId).toBe(session.harnessSessionId);
     expect(resumeRun.prompt).toBe(CRASH_RECOVERY_PROMPT);
@@ -118,7 +123,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
 
     // Idempotency ledger + Task re-driven.
     expect((await runFacts.list(run.id)).some((f) => f.type === 'session-resumed')).toBe(true);
-    expect((await runFacts.list(resumeRun.id)).some((f) => f.type === 'resume-entry')).toBe(true);
+    expect((await runFacts.list(resumeRun.id)).find((f) => f.type === 'resume-entry')).toMatchObject({ attemptId: resumeAttempt!.id });
     expect((await tasks.get(task.id)).state).toBe('running');
   });
 
@@ -183,7 +188,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     let clock = 0;
     let yields = 0;
     const order: string[] = [];
-    const coord = new BootResumeCoordinator(runStore, tasks, sessions, turnQueue, runFacts, capsFor(), {
+    const coord = new BootResumeCoordinator(runStore, attemptStore, tasks, sessions, turnQueue, runFacts, capsFor(), {
       yielding: {
         budgetMs: 0,
         now: () => clock++,
