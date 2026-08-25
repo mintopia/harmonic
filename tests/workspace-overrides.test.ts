@@ -142,8 +142,13 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(JSON.parse(updated.verificationCritic!)).toEqual({ off: true });
     // A configured global default is overridden by the off sentinel, not inherited.
     const resolved = resolveVerifiers(updated, {
-      verification: { command: null, critic: { prompt: 'global review', model: 'claude-opus-5' }, autoAccept: false },
+      verify: {
+        commands: [],
+        review: { enabled: true, prompt: 'global review', model: 'claude-opus-5' },
+        autoAccept: false,
+      },
     } as any);
+    expect(resolved.review).toEqual({ enabled: false });
     expect(resolved.critic).toBeNull();
   });
 
