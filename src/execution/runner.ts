@@ -2312,22 +2312,12 @@ export class Runner {
     // Attempt Tasks, rather than Run phases, own the execution pipeline. Runs
     // remain readable compatibility records, but a transition never writes or
     // consults `runs.phase`.
-    const advanceTask = async (to: 'validating' | 'verifying' | 'review' | 'landing') => {
-      const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-      if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
+    const advanceTask = async (to: 'verifying' | 'landing') => {
+      const attempt = await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
       const rows = await this.attempts.listTasks(attempt.id);
       const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
-      if (to === 'validating' && implementation) {
-        await this.attempts.updateTask(implementation.id, { startedAt: implementation.startedAt ?? Date.now() });
-        return;
-      }
       if (to === 'verifying' && implementation) {
         await this.attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
-        return;
-      }
-      if (to === 'review') {
-        const review = rows.find((row) => row.type === 'review' && row.state === 'pending');
-        if (review) await this.attempts.updateTask(review.id, { state: 'running', startedAt: Date.now() });
         return;
       }
       if (to === 'landing') {
@@ -2619,14 +2609,15 @@ export class Runner {
         const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
         const attemptTasks = attempt ? await this.attempts.listTasks(attempt.id) : [];
         const activeTask = [...attemptTasks].reverse().find((row) => row.state === 'running');
-        const guardrailPhase: RunPhase | null =
+        if (!activeTask) return; // Attempt has reached review/landing; neither charges execution time.
+        const guardrailPhase: RunPhase =
           activeTask?.type === 'rebase'
             ? 'validating'
             : activeTask?.type === 'implementation'
               ? 'executing'
               : activeTask?.type === 'verification'
                 ? 'verifying'
-                : null;
+                : 'review';
         // Phase-scoped (issue #127, reliability-design Unit A): a trip only
         // counts when observed inside an execution phase. `now - startedAt` is
         // the execution clock precisely because the counted phases are a
@@ -2640,7 +2631,7 @@ export class Runner {
         // Structured evidence first — the card reason derives from this row.
         await this.guardrailEvents.append(now.id, {
           dimension: trip.dimension,
-          phase: guardrailPhase ?? 'executing',
+          phase: guardrailPhase,
           limitValue: trip.limitMs,
           observedValue: trip.observedMs,
           configSource,
@@ -3285,7 +3276,7 @@ export class Runner {
       // escalating Run (never reaches `verifying`, #134) and for an
       // afkUnresolved Run (no completion to verify).
       if (!escalating && !afkUnresolved) {
-        await advanceTask('validating');
+        record('lifecycle', { event: 'phase', phase: 'validating' });
         await this.runCandidateSnapshot(
           task,
           run,
@@ -3387,6 +3378,7 @@ export class Runner {
         // Escalates in place with its cause — so broken work never lands, but a
         // flaky environment is never mistaken for a code defect.
         await advanceTask('verifying');
+        record('lifecycle', { event: 'phase', phase: 'verifying' });
         const { decision, ran, autoAccept } = await this.runVerification(
           task,
           run,
@@ -3489,6 +3481,7 @@ export class Runner {
               await this.settleEscalated(task, run, 'ticket close failed after merge-train land', patch);
             } else {
               await advanceTask('landing');
+              record('lifecycle', { event: 'phase', phase: 'landing' });
               await this.settleAutoCompleted(task, run, patch);
             }
             return { kind: 'terminal' };
@@ -3512,6 +3505,7 @@ export class Runner {
               // The Merge Fate landed in onCompleted → record `landing`, then settle
               // terminal (the coordinator marks the Run `phase:'terminal'`).
               await advanceTask('landing');
+              record('lifecycle', { event: 'phase', phase: 'landing' });
               await this.settleAutoCompleted(task, run, patch);
             }
           }
@@ -3525,6 +3519,7 @@ export class Runner {
           // there's nothing verified to auto-accept, so that case falls through
           // to the human-gated branch below instead.
           await advanceTask('landing');
+          record('lifecycle', { event: 'phase', phase: 'landing' });
           // Re-fetch: `run` (the drive-loop's original parameter) predates
           // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
           // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
@@ -3559,7 +3554,7 @@ export class Runner {
           // non-terminal, holding its Work Context lease — until the human
           // accepts (lands) or rejects it, or its review SLA lapses (#114). It
           // does NOT settle here.
-          await advanceTask('review');
+          record('lifecycle', { event: 'phase', phase: 'review' });
           // Snapshot the diffstat once, here, so the awaiting-review board card can
           // show it without an N+1 git spawn per refresh (issue #36).
           await this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
