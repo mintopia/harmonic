@@ -154,7 +154,7 @@ export function initializeTelemetry(
           new PeriodicExportingMetricReader({
             exporter: new OTLPMetricExporter({ url: endpointFor(options.endpoint, 'metrics'), headers: options.headers }),
             exportIntervalMillis: options.metricExportIntervalMillis,
-            exportTimeoutMillis: Math.max(options.metricExportIntervalMillis, 5_000),
+            exportTimeoutMillis: Math.min(options.metricExportIntervalMillis, 5_000),
           }),
         ]
       : [],
