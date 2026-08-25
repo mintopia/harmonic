@@ -9,7 +9,7 @@ import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
 import { forEachYielding } from '../reliability/yield.js';
-import { startOperation } from '../telemetry/operations.js';
+import { startOperation, type Operation } from '../telemetry/operations.js';
 
 function failureReason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -211,26 +211,32 @@ export class AutoRunner {
       return;
     }
     this.filling = true;
-    const tick = startOperation({ type: 'auto-runner.tick', attributes: {} });
+    // An idle pass — no Task attempted — is not a meaningful Operation, and at
+    // the 1s scheduler cadence a per-tick span floods the Operations page,
+    // firehose, and OTLP with heartbeat noise of no trace value. Start the tick
+    // span lazily on the first pick attempt; a pass that picks nothing produces
+    // no span at all. Picks parent off the returned SpanContext, so the tick
+    // still nests them.
+    let tick: Operation | undefined;
+    const tickParent = (): SpanContext =>
+      (tick ??= startOperation({ type: 'auto-runner.tick', attributes: {} })).spanContext;
     try {
-      await tick.run(async () => {
-        do {
-          this.refill = false;
-          // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
-          // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
-          const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
-          const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
-          // Refresh before the capacity loop: a full machine never reaches
-          // `pickNext`, but its queued Tasks still need to say why they wait.
-          await this.refreshSkipReasons({ master, ceiling, workspacesById });
-          if (!master) return;
-          await this.fillSlots(workspacesById, ceiling, tick.spanContext);
-          await this.refreshSkipReasons({ master, ceiling, workspacesById });
-        } while (this.refill);
-      });
-      tick.end();
+      do {
+        this.refill = false;
+        // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
+        // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
+        const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
+        const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
+        // Refresh before the capacity loop: a full machine never reaches
+        // `pickNext`, but its queued Tasks still need to say why they wait.
+        await this.refreshSkipReasons({ master, ceiling, workspacesById });
+        if (!master) break;
+        await this.fillSlots(workspacesById, ceiling, tickParent);
+        await this.refreshSkipReasons({ master, ceiling, workspacesById });
+      } while (this.refill);
+      tick?.end();
     } catch (error) {
-      tick.fail(failureReason(error));
+      tick?.fail(failureReason(error));
       // Filling is best-effort; the next poke retries.
     } finally {
       this.filling = false;
@@ -241,10 +247,10 @@ export class AutoRunner {
    * Claim one picked Task, then spawn it. The conditional DB claim is the local
    * ownership lock; only its winner may advertise a mirrored claim or launch.
    */
-  private async startPicked(task: TaskRow, skip: Set<number>, tickParent: SpanContext): Promise<boolean> {
+  private async startPicked(task: TaskRow, skip: Set<number>, tickParent: () => SpanContext): Promise<boolean> {
     const pick = startOperation({
       type: 'auto-runner.pick-start',
-      parent: tickParent,
+      parent: tickParent(),
       attributes: taskOperationAttributes(task),
     });
     try {
@@ -420,7 +426,7 @@ export class AutoRunner {
   private async fillSlots(
     workspacesById: Map<number, WorkspaceRow>,
     ceiling: number,
-    tickParent: SpanContext,
+    tickParent: () => SpanContext,
   ): Promise<void> {
     // Tasks parked this cycle because they are un-spawnable, so the slow claim
     // path can't spin re-picking the same one before a re-scan.

@@ -222,6 +222,43 @@ describe('Auto-Runner operations (issue #289)', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  it('starts no tick Operation for an idle pass that attempts no Task', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-idle-'));
+    const db = await openAsyncDb(directory);
+    const { exporter, registry } = installOperations();
+    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const tasks = new TaskService(db, () => config, allWorkspaces(db));
+    let launchAttempts = 0;
+    const autoRunner = new AutoRunner(
+      tasks,
+      {
+        countRunning: async () => 0,
+        countRunningByWorkspace: async () => new Map<number, number>(),
+      },
+      {
+        launchClaimed: async () => {
+          launchAttempts += 1;
+        },
+      },
+      () => config,
+      allWorkspaces(db),
+    );
+
+    try {
+      autoRunner.poke();
+      // The empty pass only awaits in-memory reads; let it settle, then assert
+      // it left no heartbeat span behind — no page row, firehose, or export.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(launchAttempts).toBe(0);
+      expect(exporter.getFinishedSpans().some((span) => span.name === 'harmonic.auto-runner.tick')).toBe(false);
+      expect(registry.list()).toEqual([]);
+    } finally {
+      autoRunner.stop();
+      await db.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('Run operations (issue #290)', () => {
