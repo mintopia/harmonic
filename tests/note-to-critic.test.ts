@@ -83,9 +83,13 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     });
   });
 
+  // An accepted run merges its file into main, so a repeated identical write
+  // would leave the next stub agent nothing to commit (and thus no verifiable
+  // head). A unique file per run keeps every run's commit real.
+  let implSeq = 0;
   async function createAndRun(): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ writeFiles: { 'note-to-critic-feature.txt': 'work\n' } }),
+      prompt: JSON.stringify({ writeFiles: { [`note-to-critic-feature-${++implSeq}.txt`]: 'work\n' } }),
       workingDir: repoDir,
       isolationMode: 'worktree',
     });
@@ -313,11 +317,11 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
       criticResult = { verdict: 'fail', summary: 'original critic verdict' };
       const { taskId, runId } = await escalateViaCriticFail();
+      // Commands are ordered and fail-fast, and the critic only runs once every
+      // command passes — so a red command means the critic never saw the work.
       expect((await attempts(runId)).map((a) => `${a.mechanism}:${a.verdict}`).sort()).toEqual([
         'command:fail',
         'command:fail',
-        'critic:fail',
-        'critic:fail',
       ]);
 
       criticResult = { verdict: 'pass', summary: 'the note resolved the critic concern' };
@@ -331,8 +335,8 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       expect(res.body.escalated).toBe(true);
 
       const rows = await attempts(runId);
-      expect(rows).toHaveLength(5);
-      expect(rows[4]).toMatchObject({ mechanism: 'critic', verdict: 'pass' });
+      expect(rows).toHaveLength(3);
+      expect(rows[2]).toMatchObject({ mechanism: 'critic', verdict: 'pass' });
     });
 
     it('400s when the note is empty', async () => {

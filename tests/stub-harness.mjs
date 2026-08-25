@@ -135,8 +135,9 @@ async function handlePrompt(msg) {
 
   // The production contract requires the implementation agent to commit its
   // work. Make fixture edits obey that contract so verification has a real
-  // branch head rather than a synthetic snapshot.
-  if (Object.keys(scenario.writeFiles ?? {}).length > 0) {
+  // branch head rather than a synthetic snapshot. `commit: false` scripts a
+  // misbehaving agent that leaves the work dirty (the commit-nudge cases).
+  if (scenario.commit !== false && Object.keys(scenario.writeFiles ?? {}).length > 0) {
     try {
       execFileSync('git', ['-C', process.cwd(), 'add', '-A'], { stdio: 'ignore' });
       execFileSync('git', ['-C', process.cwd(), '-c', 'user.name=Stub Agent', '-c', 'user.email=stub@example.test', 'commit', '-m', 'stub implementation'], { stdio: 'ignore' });

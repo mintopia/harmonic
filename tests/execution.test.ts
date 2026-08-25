@@ -62,12 +62,12 @@ describe('run execution over ACP (direct mode)', () => {
     // holds `state:'running'` until the human accepts/rejects it (issue #114).
     expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'running', phase: 'review', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeNull();
-    // Agent-finish took it executing → validating → verifying → review, never
-    // jumping straight to a terminal phase.
+    // Agent-finish took it executing → verifying → review, never jumping
+    // straight to a terminal phase (`validating` retired by the reshape).
     const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phaseEvents).toEqual(['validating', 'verifying', 'review']);
+    expect(phaseEvents).toEqual(['verifying', 'review']);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -106,13 +106,14 @@ describe('run execution over ACP (direct mode)', () => {
     expect(landed.finishedAt).toBeGreaterThan(0);
 
     // The full phase path is reconstructable from the persisted event log:
-    // executing → validating → verifying → review (drive loop) then landing on
-    // Accept (§0.2: landing happens after Accept). `terminal` is the coordinator's
-    // row write, not a drive-loop phase event.
+    // executing → verifying → review (drive loop) then landing on Accept
+    // (§0.2: landing happens after Accept; `validating` retired by the
+    // reshape). `terminal` is the coordinator's row write, not a drive-loop
+    // phase event.
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['validating', 'verifying', 'review', 'landing']);
+    expect(phases).toEqual(['verifying', 'review', 'landing']);
     // A second accept refuses — the Task is terminal.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
   });
