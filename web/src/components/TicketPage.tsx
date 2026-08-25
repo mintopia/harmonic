@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
+import type { Attempt, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
 import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -20,6 +20,7 @@ import { cardTitle } from '../board-sections-model';
 import { RunRail, RunAttempts } from './ticket/RunRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
+import { AttemptTimeline } from './ticket/AttemptTimeline';
 import { labelType } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -804,6 +805,7 @@ export function TicketPage({
   onOpenTask: (taskId: number) => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
@@ -824,6 +826,19 @@ export function TicketPage({
     api.tasks().then(({ tasks }) => live && setAllTasks(tasks), toastError);
     return () => {
       live = false;
+    };
+  }, [task.id]);
+
+  useEffect(() => {
+    let live = true;
+    const load = () => api.taskAttempts(task.id).then(({ attempts: next }) => live && setAttempts(next), toastError);
+    load();
+    const unsubscribe = subscribe((msg) => {
+      if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) setAttempts(msg.attempts);
+    });
+    return () => {
+      live = false;
+      unsubscribe();
     };
   }, [task.id]);
 
@@ -1052,6 +1067,13 @@ export function TicketPage({
             <Metrics task={task} runs={runs} live={liveUsage} now={now} />
             <MetaLine task={task} allTasks={allTasks} />
 
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline py-3 text-small text-muted">
+              <span><span className="font-semibold text-ink">Ticket flow</span> · {humanState(task.state)}</span>
+              <MetaSep />
+              <span>Attempt {attempts.at(-1)?.number ?? 0} / {task.maxAttempts ?? '—'}</span>
+              {task.verifiedSha && <><MetaSep /><span>verified <span className="font-data text-ink">{task.verifiedSha}</span></span></>}
+            </div>
+
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
@@ -1099,8 +1121,10 @@ export function TicketPage({
               />
             </div>
 
-            {/* main run pane */}
+            {/* Timeline facts are authoritative for ticket lifecycle. Legacy Run
+                records below only retain the already-shipped usage and diff views. */}
             <div className="min-w-0 border-t border-hairline">
+              <AttemptTimeline attempts={attempts} now={now} />
               {selectedFile !== null ? (
                 <ChangesPane task={task} runId={selectedRunId} selectedFile={selectedFile} running={anyRunning} />
               ) : selectedRun ? (

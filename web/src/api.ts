@@ -1,4 +1,5 @@
 import type {
+  Attempt,
   AppConfig,
   BudgetGuardrail,
   Channel,
@@ -184,6 +185,8 @@ export const api = {
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
   unescalateTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/unescalate`),
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
+  /** Ordered durable Attempt/Task history for the ticket page. */
+  taskAttempts: (id: number) => request<{ attempts: Attempt[] }>('GET', `/api/tasks/${id}/attempts`),
   taskUsage: (id: number) =>
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
@@ -199,6 +202,8 @@ export const api = {
   // `runGuardrailEvents`'s shape and 404 behaviour.
   runVerificationAttempts: (id: number) =>
     request<{ verificationAttempts: VerificationAttempt[] }>('GET', `/api/runs/${id}/verification-attempts`),
+  verificationAttempt: (id: number) =>
+    request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   // A critic verification attempt's own native session transcript (ADR-0040) —
   // same shape as `runLog`, keyed by attempt id, "unavailable" when no
   // transcript was captured.
