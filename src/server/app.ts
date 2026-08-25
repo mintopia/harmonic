@@ -28,6 +28,7 @@ import { ReviewService } from '../domain/review.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
+import { OrphanWorktreeReconciler } from '../domain/orphan-worktree-reconciler.js';
 import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
@@ -251,6 +252,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // already booted the file, so this connection only attaches — no migrate, no
   // backfill, no write.
   const asyncReadDb = openAsyncReadHandle(opts.dataDir);
+  const worktreesDir = join(opts.dataDir, 'worktrees');
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
   // A real, low-frequency exemplar for the registry itself. It removes durable
@@ -324,6 +326,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runs,
     leases,
     (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
+  );
+  const orphanWorktrees = new OrphanWorktreeReconciler(
+    sessionStore,
+    runs,
+    () => workspaces.list(),
+    Git,
+    worktreesDir,
   );
   // Single-flight the retirement drain (issue #219): it is fired on every
   // `run_changed`, so a burst of settling Runs would otherwise fan out
@@ -476,7 +485,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // ref (like the Auto-Runner gate), so a hand-started member is blocked
     // identically to an auto-picked one.
     epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
-    worktreesDir: join(opts.dataDir, 'worktrees'),
+    worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
     criticDrive: opts.criticDrive,
@@ -556,6 +565,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     name: 'Session retirement drain',
     intervalMs: 5 * 60_000,
     run: async () => { await drainRetirement(); },
+  });
+  scheduler.register({
+    name: 'Orphan worktree reconcile',
+    intervalMs: 30 * 60 * 1000,
+    run: async () => { await orphanWorktrees.reconcile(); },
   });
   // Event-loop stall monitor (issue #200 / ADR-0029 §5): synchronous SQLite
   // shares the loop with every request, so a slow query or a non-yielding loop

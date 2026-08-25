@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, ne } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { sessions, type SessionRow, type SessionRetireReason } from '../db/schema.js';
 import type { AcpInitializeResult } from '../acp/driver.js';
@@ -369,6 +369,16 @@ export class SessionStore {
    * leaves it here for the next boot to re-drive. */
   async listRetiring(): Promise<SessionRow[]> {
     return this.db.read((db) => db.select().from(sessions).where(eq(sessions.status, 'retiring')).all());
+  }
+
+  /**
+   * Every non-retired Session that still owns a builder worktree. The orphan
+   * worktree reconcile uses this as its exclusion set: active and idle
+   * Sessions are live, while a retiring Session remains owned by the retirement
+   * coordinator until it records `retired` after removal.
+   */
+  async listWorktreeOwners(): Promise<SessionRow[]> {
+    return this.db.read((db) => db.select().from(sessions).where(and(isNotNull(sessions.worktreePath), ne(sessions.status, 'retired'))).all());
   }
 
   /** Every `idle` Session whose retention deadline has lapsed as of `now` (issue

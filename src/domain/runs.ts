@@ -103,6 +103,12 @@ export class RunStore {
     return this.db.read((db) => db.select().from(runs).all());
   }
 
+  /** Every running Run. Its builder and disposable verification worktrees are
+   * live until the Run settles, even when no durable Session owns them. */
+  listAllRunning(): Promise<RunRow[]> {
+    return this.db.read((db) => db.select().from(runs).where(eq(runs.state, 'running')).all());
+  }
+
   /** Every Run bound to one durable Session (issue #148), oldest first — the
    * Runs that share the Session's builder worktree across a retry / reject
    * continuation. Session retirement uses this to check no live Run still leases
