@@ -477,6 +477,11 @@ function EpicBand({
           <span className="shrink-0 font-data text-small text-faint">epic/{epic.ref}</span>
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
         </button>
+        {epic.land.held != null && (
+          <span className={`${chip} shrink-0 bg-running-tint text-running`} title={epic.land.held}>
+            Merge escalated — needs you
+          </span>
+        )}
         {attention.length > 0 && (
           <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} need you</span>
         )}
