@@ -339,8 +339,6 @@ function frontierDot(state: FrontierNode['state']): string {
       return 'bg-ready-dot';
     case 'awaiting-review':
       return 'bg-await-dot';
-    case 'blocked':
-      return 'bg-blocked';
     case 'failed':
       return 'bg-fail-dot';
     case 'cancelled':

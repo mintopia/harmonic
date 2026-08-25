@@ -9,7 +9,7 @@
  * and ready frontier. No database, no clock, no I/O: the same seam as
  * `run-disposition.ts`.
  */
-import { READY_FOR_AGENT_LABEL, type Ticket, type TicketRef } from '../tracker/adapter.js';
+import type { Ticket } from '../tracker/adapter.js';
 
 export type EpicKind = 'map' | 'spec';
 
@@ -29,25 +29,19 @@ export interface DerivedEpic {
   ready: number[];
 }
 
-/** `state:'open'` for a blocker resolved in this scan; else the edge's own captured state. */
-function blockerOpen(edge: TicketRef, byRef: ReadonlyMap<number, Ticket>): boolean {
-  return (byRef.get(edge.number)?.state ?? edge.state) === 'open';
+/** The task facts used to derive an Epic member's ready-frontier status. */
+export interface EpicMemberReadiness {
+  agentWorkable: boolean;
 }
 
 /**
- * A member is ready when it carries `ready-for-agent` — the same positive
- * opt-in gate `deriveRole` applies (issue #230): a member without the label is
- * never auto-run, so it must not enter the frontier either — and is open with
- * no open blocker. Assignment is never consulted (ADR-0030). A blocker whose
- * target is itself an Epic ref is containment, not a real dependency, and is
- * ignored (mirror.ts applies the same filter).
+ * A member is ready when its mirrored Task is agent-workable. This deliberately
+ * reuses the Task's derived flag, which incorporates the persisted Blocker
+ * edges and the `ready-for-agent` label, rather than reinterpreting tracker
+ * labels or `Ticket.blockedBy` here.
  */
-function isReady(child: Ticket, epicRefs: ReadonlySet<number>, byRef: ReadonlyMap<number, Ticket>): boolean {
-  return (
-    child.labels.includes(READY_FOR_AGENT_LABEL) &&
-    child.state === 'open' &&
-    child.blockedBy.filter((b) => !epicRefs.has(b.number)).every((b) => !blockerOpen(b, byRef))
-  );
+function isReady(child: Ticket, readinessByRef: ReadonlyMap<number, EpicMemberReadiness>): boolean {
+  return child.state === 'open' && readinessByRef.get(child.number)?.agentWorkable === true;
 }
 
 /**
@@ -57,7 +51,10 @@ function isReady(child: Ticket, epicRefs: ReadonlySet<number>, byRef: ReadonlyMa
  * rather than throwing, so callers can fall back to per-Run behaviour. See
  * issue #158 / ADR-0024.
  */
-export function deriveEpics(tickets: Ticket[]): DerivedEpic[] {
+export function deriveEpics(
+  tickets: Ticket[],
+  readinessByRef: ReadonlyMap<number, EpicMemberReadiness> = new Map(),
+): DerivedEpic[] {
   const byRef = new Map(tickets.map((t) => [t.number, t]));
   const epicRefs = new Set(tickets.map((t) => t.parent).filter((p): p is number => p != null));
 
@@ -87,7 +84,7 @@ export function deriveEpics(tickets: Ticket[]): DerivedEpic[] {
       title: epic.title,
       kind: epic.isMap ? 'map' : 'spec',
       members: children.map((c) => c.number).sort((a, b) => a - b),
-      ready: children.filter((c) => isReady(c, epicRefs, byRef)).map((c) => c.number).sort((a, b) => a - b),
+      ready: children.filter((c) => isReady(c, readinessByRef)).map((c) => c.number).sort((a, b) => a - b),
     });
   }
 

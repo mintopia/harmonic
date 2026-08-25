@@ -139,6 +139,10 @@ const taskWithDepsSchema = z
     dependents: z.array(z.number()).meta({ example: [4830] }),
     /** blocked, and at least one dependency is failed or cancelled. */
     blockedOnFailed: z.boolean().meta({ example: false }),
+    /** Number of blocker edges whose blocker has not completed. */
+    openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
+    /** Whether the Auto-Runner may work this ticket now. */
+    agentWorkable: z.boolean().meta({ example: false }),
     /** Task ids that re-attempt this one (reverse of reattemptOf). */
     reattempts: z.array(z.number()).meta({ example: [] }),
     /** The four Task-default overrides as stored (ADR-0012): `null` ⇒ this field

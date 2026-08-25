@@ -138,15 +138,16 @@ describe('mirrorScan upsert', () => {
     expect(second.escalated).toBe(true);
   });
 
-  it('closed ticket → completed; open blocker → blocked via a real edge; Maps not mirrored', async () => {
+  it('closed ticket → completed; open blocker → a real edge; Maps not mirrored', async () => {
     const results = await mscan([
       ticket({ number: 1 }), // open blocker
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
       ticket({ number: 3, isMap: true, labels: ['wayfinder:map'] }),
     ]);
-    expect(results.map((t) => t.state)).toEqual(['ready', 'blocked']); // map skipped → only 2
+    expect(results.map((t) => t.state)).toEqual(['ready', 'ready']); // map skipped → only 2
     const [blocker, dependent] = results;
     expect(await tasks.dependsOn(dependent!.id)).toEqual([blocker!.id]); // blockedBy → Dependency edge
+    expect((await tasks.withDeps(await tasks.get(dependent!.id))).openBlockerCount).toBe(1);
     expect((await tasks.list()).some((t) => t.trackerRef === 3)).toBe(false);
   });
 

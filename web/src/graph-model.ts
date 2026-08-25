@@ -122,7 +122,6 @@ export interface Signal {
  */
 export const SIGNAL: Record<TaskState, Signal> = {
   draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
-  blocked: { color: 'var(--hm-blocked)', text: 'var(--hm-blocked)' },
   ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
   running: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
   'awaiting-review': { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
@@ -134,7 +133,6 @@ export const SIGNAL: Record<TaskState, Signal> = {
 /** Short, human state word for the node's state label (uppercased at render). */
 export const STATE_LABEL: Record<TaskState, string> = {
   draft: 'Draft',
-  blocked: 'Blocked',
   ready: 'Ready',
   running: 'Running',
   'awaiting-review': 'Review',

@@ -7,9 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { deriveEpics } from '../src/domain/epic-derivation.js';
 import { type Ticket } from '../src/tracker/adapter.js';
 
-// Members default to `ready-for-agent` — the positive afk opt-in the frontier
-// now requires (issue #230). Parent/Map tickets carry it too, harmlessly: a
-// parent's own labels never enter readiness (Epic-ness is structural).
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
   title: 'A ticket',
@@ -28,6 +25,15 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
+/** The Task-layer readiness facts are intentionally separate from tracker tickets. */
+const derive = (tickets: Ticket[], unworkable: number[] = []) => {
+  const unworkableRefs = new Set(unworkable);
+  return deriveEpics(
+    tickets,
+    new Map(tickets.map((ticket) => [ticket.number, { agentWorkable: !unworkableRefs.has(ticket.number) }])),
+  );
+};
+
 describe('deriveEpics', () => {
   it('1. simple Spec: parent with two open, unassigned, unblocked children', () => {
     const tickets = [
@@ -35,7 +41,7 @@ describe('deriveEpics', () => {
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10 }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result).toEqual([{ ref: 10, title: 'Spec', kind: 'spec', members: [11, 12], ready: [11, 12] }]);
   });
 
@@ -45,7 +51,7 @@ describe('deriveEpics', () => {
       ticket({ number: 20, parent: 19 }),
       ticket({ number: 21, parent: 19 }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result).toHaveLength(1);
     expect(result[0]?.kind).toBe('map');
   });
@@ -56,7 +62,7 @@ describe('deriveEpics', () => {
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10, blockedBy: [{ number: 11, title: 'x', state: 'open' }] }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets, [12]);
     expect(result[0]?.members).toEqual([11, 12]);
     expect(result[0]?.ready).toEqual([11]);
   });
@@ -67,7 +73,7 @@ describe('deriveEpics', () => {
       ticket({ number: 11, parent: 10, state: 'closed' }),
       ticket({ number: 12, parent: 10, blockedBy: [{ number: 11, title: 'x', state: 'closed' }] }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result[0]?.members).toEqual([11, 12]);
     expect(result[0]?.ready).toEqual([12]);
   });
@@ -78,7 +84,7 @@ describe('deriveEpics', () => {
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10, assignees: ['alice'] }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result[0]?.ready).toEqual([11, 12]);
   });
 
@@ -89,7 +95,7 @@ describe('deriveEpics', () => {
       ticket({ number: 157, parent: 156 }),
       ticket({ number: 158, parent: 156 }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result).toHaveLength(1);
     expect(result[0]?.ref).toBe(156);
     expect(result[0]?.members).toEqual([157, 158]);
@@ -101,20 +107,20 @@ describe('deriveEpics', () => {
       ticket({ number: 11, parent: 10 }),
       ticket({ number: 12, parent: 10, blockedBy: [{ number: 10, title: 'Spec', state: 'open' }] }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result[0]?.ready).toEqual([11, 12]);
   });
 
   it('8. prose-only / no parent links yields no Epic, never throws', () => {
     const tickets = [ticket({ number: 1 }), ticket({ number: 2 })];
-    expect(() => deriveEpics(tickets)).not.toThrow();
-    expect(deriveEpics(tickets)).toEqual([]);
+    expect(() => derive(tickets)).not.toThrow();
+    expect(derive(tickets)).toEqual([]);
   });
 
   it('9. dangling parent (no matching ticket) is not derived, no throw', () => {
     const tickets = [ticket({ number: 1, parent: 999 })];
-    expect(() => deriveEpics(tickets)).not.toThrow();
-    expect(deriveEpics(tickets)).toEqual([]);
+    expect(() => derive(tickets)).not.toThrow();
+    expect(derive(tickets)).toEqual([]);
   });
 
   it('10. multiple leaf-most Epics in one scan, sorted by ref ascending', () => {
@@ -124,7 +130,7 @@ describe('deriveEpics', () => {
       ticket({ number: 10, title: 'First Epic' }),
       ticket({ number: 11, parent: 10 }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result.map((e) => e.ref)).toEqual([10, 20]);
   });
 
@@ -133,13 +139,13 @@ describe('deriveEpics', () => {
       ticket({ number: 10, title: 'Spec' }),
       ticket({ number: 12, parent: 10, blockedBy: [{ number: 500, title: 'gone', state: 'open' }] }),
     ];
-    expect(deriveEpics(blocked)[0]?.ready).toEqual([]);
+    expect(derive(blocked, [12])[0]?.ready).toEqual([]);
 
     const unblocked = [
       ticket({ number: 10, title: 'Spec' }),
       ticket({ number: 12, parent: 10, blockedBy: [{ number: 500, title: 'gone', state: 'closed' }] }),
     ];
-    expect(deriveEpics(unblocked)[0]?.ready).toEqual([12]);
+    expect(derive(unblocked)[0]?.ready).toEqual([12]);
   });
 
   it('12. a node with one Epic child is a spine parent — the whole node is suppressed', () => {
@@ -152,7 +158,7 @@ describe('deriveEpics', () => {
       ticket({ number: 12, parent: 10 }),
       ticket({ number: 99, parent: 11 }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     expect(result.map((e) => e.ref)).toEqual([11]);
     expect(result[0]?.members).toEqual([99]);
   });
@@ -169,21 +175,21 @@ describe('deriveEpics', () => {
       // removed from epicRefs when it was skipped as a derived Epic.
       ticket({ number: 21, parent: 20, blockedBy: [{ number: 10, title: 'Closed Spec', state: 'closed' }] }),
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets);
     // The closed Epic is absent; only the open sibling is derived.
     expect(result.map((e) => e.ref)).toEqual([20]);
     // Containment holds: #21 stays on the ready frontier.
     expect(result.find((e) => e.ref === 20)?.ready).toEqual([21]);
   });
 
-  it('14. a member without ready-for-agent is a member but never on the ready frontier (issue #230)', () => {
+  it('14. a member that is not agent-workable is a member but never on the ready frontier', () => {
     const tickets = [
       ticket({ number: 10, title: 'Spec' }),
       ticket({ number: 11, parent: 10 }), // ready-for-agent (builder default)
       ticket({ number: 12, parent: 10, labels: [] }), // no opt-in — not auto-runnable
       ticket({ number: 13, parent: 10, labels: ['needs-triage'] }), // some other label, still no opt-in
     ];
-    const result = deriveEpics(tickets);
+    const result = derive(tickets, [12, 13]);
     expect(result[0]?.members).toEqual([11, 12, 13]);
     expect(result[0]?.ready).toEqual([11]);
   });
