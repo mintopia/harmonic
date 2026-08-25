@@ -118,8 +118,8 @@ it('flushes a trace-correlated log, span, and metric before daemon stop returns'
   );
   const logsPayload = received.find((request) => request.path === '/v1/logs')?.body;
   expect(logsPayload).toContain('smoke-log');
-  expect(logsPayload).toMatch(/\"traceId\":\"[^\"]+\"/);
-  expect(logsPayload).toMatch(/\"spanId\":\"[^\"]+\"/);
+  expect(logsPayload).toMatch(/"traceId":"[^"]+"/);
+  expect(logsPayload).toMatch(/"spanId":"[^"]+"/);
   expect(stdout).toContain('"message":"smoke-log"');
   expect(stdout).toMatch(/"traceId":"[^"]+"/);
   expect(stdout).toMatch(/"spanId":"[^"]+"/);
