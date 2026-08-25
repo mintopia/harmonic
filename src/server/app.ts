@@ -552,6 +552,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     intervalMs: 60_000,
     run: async () => { await review.sweepExpiredReviews(); },
   });
+  scheduler.register({
+    name: 'Session retirement drain',
+    intervalMs: 5 * 60_000,
+    run: async () => { await drainRetirement(); },
+  });
   // Event-loop stall monitor (issue #200 / ADR-0029 §5): synchronous SQLite
   // shares the loop with every request, so a slow query or a non-yielding loop
   // freezes the whole server. This probes loop delay and logs a stall as a

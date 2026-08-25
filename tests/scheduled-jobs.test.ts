@@ -72,6 +72,7 @@ describe('Scheduled Job registry (ADR-0038)', () => {
         expect.objectContaining({ name: 'Work Context lease sweep', workspaceId: null }),
         expect.objectContaining({ name: 'Review-SLA sweep', workspaceId: null }),
         expect.objectContaining({ name: 'Epic reconcile', workspaceId: null }),
+        expect.objectContaining({ name: 'Session retirement drain', workspaceId: null, intervalMs: 5 * 60_000 }),
       ]),
     );
 
@@ -104,6 +105,33 @@ describe('Scheduled Job registry (ADR-0038)', () => {
     } finally {
       rmSync(workingDir, { recursive: true, force: true });
     }
+  });
+
+  it('reclaims an idle Session through the retirement Scheduled Job without run activity', async () => {
+    server = await startServer();
+    const [workspace] = await server.app.ctx.workspaces.list();
+    const session = await server.app.ctx.sessions.recordDispatch({
+      harness: 'claude',
+      harnessSessionId: 'idle-session',
+      model: 'test-model',
+      cwd: '/tmp/work',
+      workspaceId: workspace!.id,
+      mcpTemplates: [],
+      capabilities: undefined,
+      adapterVersion: 'claude@test',
+      now: 0,
+    });
+    await server.app.ctx.sessions.markIdle(session.id, 0, 'retention-ttl', 0);
+
+    await server.app.ctx.scheduler.runNow('Session retirement drain');
+
+    expect((await server.app.ctx.sessions.get(session.id)).status).toBe('retired');
+    const jobs = await server.api('GET', '/api/scheduled-jobs');
+    expect(jobs.body.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Session retirement drain', lastStatus: 'ok', lastRunAt: expect.any(Number) }),
+      ]),
+    );
   });
 
   it('runs each resolvable Workspace tracker poll at that Workspace interval', async () => {
