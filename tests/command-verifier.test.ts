@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { buildCandidate } from '../src/execution/candidate.js';
 import type { VerificationCommand } from '../src/config.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import {
@@ -23,6 +22,12 @@ const providers: NodeTracerProvider[] = [];
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
+
+async function buildCandidate({ workspaceDir }: { workspaceDir: string }): Promise<string> {
+  git(workspaceDir, 'add', '-A');
+  git(workspaceDir, 'commit', '-m', 'verification fixture');
+  return git(workspaceDir, 'rev-parse', 'HEAD');
+}
 
 /** A throwaway git repo on branch main with one committed README. */
 function makeRepo(): string {
@@ -68,13 +73,7 @@ describe('command verifier (issue #135)', () => {
     repos.push(repo);
     // A candidate that differs from base, so a verifier has a real tree to run.
     writeFileSync(join(repo, 'work.txt'), 'candidate work\n');
-    const oid = await buildCandidate({
-      repoDir: repo,
-      workspaceDir: repo,
-      baseRev: 'main',
-      ref: `refs/harmonic/candidate/run-${repos.length}`,
-      message: 'candidate',
-    });
+    const oid = await buildCandidate({ workspaceDir: repo });
     return { repo, oid };
   };
 

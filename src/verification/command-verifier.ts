@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { VerificationCommand } from '../config.js';
-import { withDetachedWorktree } from '../execution/candidate.js';
+import { withDetachedWorktree } from '../execution/detached-worktree.js';
 import { startOperation } from '../telemetry/operations.js';
 import type { Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';

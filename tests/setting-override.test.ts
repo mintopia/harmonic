@@ -46,6 +46,8 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
           config,
         ),
       ).toEqual({
+        commands: [],
+        review: { enabled: false },
         command: null,
         critic: null,
         autoAccept: false,

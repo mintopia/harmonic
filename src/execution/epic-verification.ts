@@ -38,17 +38,18 @@ export async function verifyEpicIntegration(args: {
 }): Promise<VerificationDecision> {
   const verdicts: VerifierVerdict[] = [];
 
-  if (args.verifiers.command) {
+  for (const [index, command] of args.verifiers.commands.entries()) {
     const parent = mkdtempSync(join(args.worktreeParent ?? tmpdir(), 'harmonic-epic-verify-'));
     try {
       const attempt = await runCommandVerifier({
         repoDir: args.repoDir,
         candidateOid: args.candidateOid,
-        worktreePath: join(parent, 'candidate'),
-        command: args.verifiers.command,
+        worktreePath: join(parent, `command-${index}`),
+        command,
         ...(args.signal ? { signal: args.signal } : {}),
       });
       verdicts.push({ verifier: 'command', verdict: attempt.verdict });
+      if (attempt.verdict !== 'pass') break;
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }

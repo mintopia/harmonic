@@ -1,5 +1,5 @@
 import type { WorkspaceRow } from '../db/schema.js';
-import type { AppConfig, VerificationCommand, VerificationCritic, BudgetGuardrail } from '../config.js';
+import type { AppConfig, VerificationCommand, VerificationCritic, VerificationReview, BudgetGuardrail } from '../config.js';
 
 /**
  * Setting Overrides (ADR-0012, issue #59). An overridable setting resolves as
@@ -31,6 +31,9 @@ export function resolveCap(workspaceCap: number | null | undefined, machineCeili
 
 /** A Workspace's effective Verification verifiers, each null when unconfigured. */
 export type ResolvedVerifiers = {
+  commands: VerificationCommand[];
+  review: VerificationReview;
+  /** Compatibility aliases during the Run-to-Attempt migration. */
   command: VerificationCommand | null;
   critic: VerificationCritic | null;
   /** Auto-accept (issue #138, ADR-0021): when true, a native Run whose
@@ -50,12 +53,27 @@ export type ResolvedVerifiers = {
  */
 export function resolveVerifiers(
   ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic' | 'verificationAutoAccept'>,
-  config: Pick<AppConfig, 'verification'>,
+  config: { verify?: AppConfig['verify']; verification?: AppConfig['verification'] },
 ): ResolvedVerifiers {
+  const verify = config.verify ?? legacyVerify(config as never);
+  const commands = resolveCommands(ws.verificationCommand, verify.commands);
+  const review = resolveReview(ws.verificationCritic, verify.review);
   return {
-    command: resolveVerifier<VerificationCommand>(ws.verificationCommand, config.verification.command),
-    critic: resolveVerifier<VerificationCritic>(ws.verificationCritic, config.verification.critic),
-    autoAccept: ws.verificationAutoAccept ?? config.verification.autoAccept,
+    commands,
+    review,
+    command: commands[0] ?? null,
+    critic: review.enabled && review.prompt && review.model ? { prompt: review.prompt, model: review.model, ...(review.harness ? { harness: review.harness } : {}) } : null,
+    autoAccept: ws.verificationAutoAccept ?? verify.autoAccept,
+  };
+}
+
+/** Compatibility for in-memory callers and configs written before #312. */
+function legacyVerify(config: { verification?: { command?: VerificationCommand | null; critic?: VerificationCritic | null; autoAccept?: boolean; maxSelfHeals?: number } }) {
+  return {
+    commands: config.verification?.command ? [config.verification.command] : [],
+    review: config.verification?.critic ? { enabled: true, ...config.verification.critic } : { enabled: false },
+    autoAccept: config.verification?.autoAccept ?? false,
+    maxSelfHeals: config.verification?.maxSelfHeals ?? 1,
   };
 }
 
@@ -69,11 +87,19 @@ function isVerifierOff(v: unknown): boolean {
  * the global default, a stored `{ off: true }` sentinel resolves to null (off)
  * regardless of the global default, and any other stored object overrides it.
  */
-function resolveVerifier<T>(stored: string | null | undefined, globalDefault: T | null): T | null {
+function resolveCommands(stored: string | null | undefined, globalDefault: VerificationCommand[]): VerificationCommand[] {
   if (!stored) return globalDefault;
   const parsed = JSON.parse(stored) as unknown;
-  if (isVerifierOff(parsed)) return null;
-  return parsed as T;
+  if (isVerifierOff(parsed)) return [];
+  return Array.isArray(parsed) ? parsed as VerificationCommand[] : [parsed as VerificationCommand];
+}
+
+function resolveReview(stored: string | null | undefined, globalDefault: VerificationReview): VerificationReview {
+  if (!stored) return globalDefault;
+  const parsed = JSON.parse(stored) as unknown;
+  if (isVerifierOff(parsed)) return { enabled: false };
+  if (typeof parsed === 'object' && parsed !== null && 'enabled' in parsed) return parsed as VerificationReview;
+  return { enabled: true, ...(parsed as VerificationCritic) };
 }
 
 /** A Workspace's effective Guardrail config: the budget bounds, progress

@@ -77,7 +77,7 @@ export class TrackerPollerManager {
      * automatic whole-Epic land is wired (the integration-branch base-set half,
      * #159, still runs) — used by tests that don't exercise the land path.
      */
-    private readonly getConfig?: () => Pick<AppConfig, 'verification'>,
+    private readonly getConfig?: () => Pick<AppConfig, 'verify' | 'verification'>,
     private readonly epicOperations: EpicOperations = new EpicOperations(),
     /** The central recurring-work owner (issue #305). Omitted only by focused legacy unit tests. */
     private readonly scheduler?: Scheduler,

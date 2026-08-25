@@ -11,7 +11,6 @@ import {
   reattachBareDetachedHead,
   rematerializeCandidate,
 } from '../src/execution/execution-isolation.js';
-import { buildCandidate } from '../src/execution/candidate.js';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { workspaces } from '../src/db/schema.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
@@ -42,6 +41,12 @@ function agentCommit(dir: string, file: string, contents: string, message: strin
   // Committing under an explicit identity mirrors an agent's own git config.
   git(dir, '-c', 'user.name=Agent', '-c', 'user.email=agent@example.com', 'commit', '-m', message);
   return git(dir, 'rev-parse', 'HEAD');
+}
+
+async function buildCandidate({ workspaceDir }: { workspaceDir: string; [key: string]: unknown }): Promise<string> {
+  git(workspaceDir, 'add', '-A');
+  git(workspaceDir, 'commit', '-m', 'verification fixture');
+  return git(workspaceDir, 'rev-parse', 'HEAD');
 }
 
 function isDetached(dir: string): boolean {

@@ -146,13 +146,13 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.phase).toBe('review');
-    expect(run.candidateOid).toBeTruthy();
+    expect(run.candidateOid).toBeNull();
 
-    // AC2: a critic attempt persisted during a real Run, at exactly the frozen OID.
+    // AC2: a critic attempt persisted during a real Run, at the verified branch head.
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', summary: 'looks correct' });
-    expect(rows[0]!.inputOid).toBe(run.candidateOid);
+    expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
 
     expect(await verdictEvents(runId)).toEqual([
       { event: 'verification', mechanism: 'critic', verdict: 'pass', summary: 'looks correct' },
@@ -180,7 +180,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'fail', inputOid: run.candidateOid });
+    expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'fail', inputOid: expect.stringMatching(/^[0-9a-f]{40}$/) });
 
     // The base branch never moved — nothing landed.
     expect(git(repoDir, 'rev-parse', 'main')).toBe(baseOidBefore);
@@ -299,10 +299,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
   });
 
-  it('a configured critic with no candidate snapshot (dirty direct context) → inconclusive → Escalate', async () => {
-    // Direct mode + a dirty tree skips the candidate snapshot, so there is
-    // nothing frozen for the critic to review — infra doubt the gate Escalates
-    // on, without ever spawning the critic drive.
+  it('reviews the committed branch head even when a direct checkout is dirty', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCritic: critic(),
@@ -319,15 +316,15 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
-      return body.state === 'failed' ? body : undefined;
+      return body.phase === 'review' ? body : undefined;
     });
-    expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
+    expect(run.state).toBe('running');
+    expect(run.phase).toBe('review');
     expect(run.candidateOid).toBeNull();
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive', inputOid: '' });
+    expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', inputOid: expect.stringMatching(/^[0-9a-f]{40}$/) });
 
     rmSync(join(repoDir, 'uncommitted-critic.txt'), { force: true });
   });

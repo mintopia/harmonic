@@ -751,6 +751,8 @@ export const RUN_FACT_TYPES = [
   'session-resumed',
   'resume-entry',
   'session-continuation',
+  /** Immutable proof that verification ran against this branch tip. */
+  'verified-head',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 

@@ -10,6 +10,7 @@ import {
   appConfigSchema,
   verificationCommandSchema,
   verificationCriticSchema,
+  verificationReviewSchema,
   type DeepPartial,
   type AppConfig,
 } from '../../config.js';
@@ -117,6 +118,15 @@ const configPatchBodySchema = z
       })
       .partial()
       .meta({ example: { autoAccept: true } })
+      .optional(),
+    verify: z
+      .object({
+        commands: z.array(verificationCommandSchema),
+        review: verificationReviewSchema,
+        autoAccept: z.boolean(),
+        maxSelfHeals: z.number().int().min(0),
+      })
+      .partial()
       .optional(),
   })
   .partial()

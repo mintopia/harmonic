@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git, GitError } from './git.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
-import { snapshotCandidate } from './candidate.js';
 import {
   detachForDirectRun,
   captureDirectHead,
@@ -1411,64 +1410,6 @@ export class Runner {
   }
 
   /**
-   * Freeze the agent's work into a verification candidate (issue #134): a
-   * `commit-tree` snapshot pinned to a private Harmonic ref that never moves
-   * the target branch, proven safe by checking it out in a disposable detached
-   * worktree with before/after fingerprints. Runs in `validating`, while the
-   * leased workspace still exists (before `finalizeWorkspace` tears a worktree
-   * down). No verifier consumes the candidate yet — this is the frozen tree +
-   * the safety proof only. A snapshot failure is recorded, not fatal: the phase
-   * machine still advances (nothing downstream depends on the candidate yet).
-   */
-  private async runCandidateSnapshot(
-    task: TaskRow,
-    run: RunRow,
-    workspace: Workspace,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    // A self-heal turn (issue #137) re-snapshots against the Run's existing
-    // candidate ref, so it must overwrite rather than create-only-pin.
-    force = false,
-  ): Promise<void> {
-    if (!workspace.baseRev) return; // no git base captured → nothing to snapshot
-    const repoDir = workspace.worktree?.repoDir ?? task.workingDir;
-    // Keyed on the globally-unique run id. The ref persists after the Run: the
-    // candidate is rematerialized from it for verification, a corrective turn,
-    // or a review-reject continuation. Its cleanup is owned by the later
-    // verify/landing + Session-retirement units (reliability-design Unit B/C),
-    // not this substrate ticket — nothing here deletes it.
-    const ref = `refs/harmonic/candidate/run-${run.id}`;
-    try {
-      // Inside the try so an mkdir failure (ENOSPC/EACCES) is recorded like any
-      // other snapshot failure, honouring the non-fatal contract above rather
-      // than propagating out and failing the whole Run.
-      mkdirSync(this.worktreesDir, { recursive: true });
-      const result = await snapshotCandidate({
-        repoDir,
-        workspaceDir: workspace.cwd,
-        baseRev: workspace.baseRev,
-        ref,
-        message: `harmonic: candidate task ${task.id} run ${run.attempt}`,
-        isolationMode: task.isolationMode,
-        startDirty: workspace.startDirty ?? false,
-        worktreePath: join(this.worktreesDir, `verify-${run.id}`),
-        force,
-      });
-      if (result.status === 'skipped') {
-        record('lifecycle', { event: 'candidate', status: 'skipped', reason: result.reason });
-        return;
-      }
-      await this.runStore.update(run.id, { candidateOid: result.oid, candidateRef: result.ref });
-      record('lifecycle', { event: 'candidate', status: 'created', oid: result.oid, mutated: result.mutated });
-    } catch (err) {
-      record('lifecycle', {
-        event: 'candidate',
-        status: 'error',
-        reason: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  /**
    * The shared "verifier configured but no frozen candidate to review" outcome
    * (issue #135/#136): the snapshot was skipped or failed (#134), so there is
    * nothing to characterize — infra doubt. Persist an `inconclusive` attempt and
@@ -1476,7 +1417,7 @@ export class Runner {
    * silently passing work it never verified. Shared by every verifier branch in
    * {@link runVerification} so a new verifier can't diverge on this fail-safe.
    */
-  private async noCandidateVerdict(
+  private async noVerifiedHeadVerdict(
     runId: number,
     mechanism: 'command' | 'critic',
     record: (type: 'lifecycle', payload: unknown) => void,
@@ -1485,7 +1426,7 @@ export class Runner {
       mechanism,
       inputOid: '',
       verdict: 'inconclusive',
-      summary: 'no candidate snapshot to verify',
+      summary: 'no committed branch head to verify',
       output: '',
       mutated: false,
     });
@@ -1532,7 +1473,7 @@ export class Runner {
   ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
-    const { command, critic, autoAccept } = resolveVerifiers(
+    const { commands, review, autoAccept } = resolveVerifiers(
       ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
       config,
     );
@@ -1543,11 +1484,11 @@ export class Runner {
     // (dirty direct context) or failed (#134): a configured verifier then has
     // nothing to characterize, which every branch below treats as infra doubt
     // → inconclusive → Escalate, never a silent pass.
-    const oid = (await this.runStore.get(run.id)).candidateOid;
+    const oid = await Git.revParse(task.workingDir, run.branch ?? 'HEAD').catch(() => null);
 
-    if (command) {
+    for (const command of commands) {
       if (!oid) {
-        verdicts.push(await this.noCandidateVerdict(run.id, 'command', record));
+        verdicts.push(await this.noVerifiedHeadVerdict(run.id, 'command', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         const attempt = await runCommandVerifier({
@@ -1580,24 +1521,27 @@ export class Runner {
           summary: attempt.summary,
         });
         verdicts.push({ verifier: attempt.verifier, verdict: attempt.verdict });
+        // Commands are ordered and fail-fast. A red command makes later output
+        // irrelevant and prevents the review from seeing a broken branch head.
+        if (attempt.verdict !== 'pass') break;
       }
     }
 
-    if (critic) {
+    if (review.enabled && verdicts.every((entry) => entry.verdict === 'pass')) {
       // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B;
       // containment relaxed by the 2026-08 amendment): a second verdict folded
       // into the same `combineVerdicts`. It reads the frozen candidate from a
       // disposable read-only worktree (read + fetch tools, no mutation), never
       // the live checkout, with the operator's interpolated review prompt.
       if (!oid) {
-        verdicts.push(await this.noCandidateVerdict(run.id, 'critic', record));
+        verdicts.push(await this.noVerifiedHeadVerdict(run.id, 'critic', record));
       } else {
         mkdirSync(this.worktreesDir, { recursive: true });
         // The critic's own harness (issue #174 FIX 2): reuses the builder's
         // harness only when `critic.harness` is unset ("Same as task"); a
         // configured critic harness is resolved independently, mirroring the
         // builder's own lookup/guard in `beginRun`.
-        const criticHarnessId = critic.harness ?? task.harness;
+        const criticHarnessId = review.harness ?? task.harness;
         const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
         if (!criticHarness) {
           throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
@@ -1606,7 +1550,7 @@ export class Runner {
           repoDir: task.workingDir,
           candidateOid: oid,
           worktreePath: join(this.worktreesDir, `critic-${run.id}`),
-          critic,
+          critic: { prompt: review.prompt!, model: review.model!, ...(review.harness ? { harness: review.harness } : {}) },
           fields: driveFields(task, this.urlFor),
           // `runCritic` strips the tracker credentials and registers no MCP
           // servers, and only approves read/fetch tool calls, so the turn is
@@ -1641,7 +1585,27 @@ export class Runner {
       }
     }
 
+    if (oid && verdicts.length > 0 && verdicts.every((entry) => entry.verdict === 'pass')) {
+      await this.runFacts.append(run.id, 'verified-head', { sha: oid, branch: run.branch ?? null });
+    }
+
     return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0, autoAccept };
+  }
+
+  /** Landing may only consume the exact branch tip that verification recorded. */
+  private async verifiedHeadStillCurrent(task: TaskRow, run: RunRow): Promise<boolean> {
+    const facts = await this.runFacts.list(run.id);
+    const fact = [...facts].reverse().find((entry) => entry.type === 'verified-head');
+    if (!fact) return true; // zero configured verifiers has no SHA gate.
+    let expected: unknown;
+    try {
+      expected = (JSON.parse(fact.payload) as { sha?: unknown }).sha;
+    } catch {
+      return false;
+    }
+    if (typeof expected !== 'string') return false;
+    const current = await Git.revParse(task.workingDir, run.branch ?? 'HEAD').catch(() => null);
+    return current === expected;
   }
 
   /**
@@ -2007,7 +1971,7 @@ export class Runner {
    * defect. Every other ending settles inside the single turn.
    */
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
-    const maxHeals = this.getConfig().verification.maxSelfHeals;
+    const maxHeals = this.getConfig().verify.maxSelfHeals;
     // The Session key for this Run's turn queue. There is no first-class Session
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
     // it — stable across heal turns even as each turn's ACP session id changes.
@@ -3417,22 +3381,9 @@ export class Runner {
       // decision up to the `drive` loop, which dispatches exactly one corrective
       // turn. Carries the branch-contract violation for the corrective prompt.
       let remergeNeeded: { reason: string; detail: string } | null = null;
-      // Enter `validating` and freeze the verification candidate there, while
-      // the leased workspace still exists — finalize() tears a worktree down.
-      // The phase is persisted *before* the git work so `runs.phase` reads
-      // `validating` for its duration; the branch-specific advance below then
-      // continues from `validating` to `verifying`/`review`. Skipped for an
-      // escalating Run (never reaches `verifying`, #134) and for an
-      // afkUnresolved Run (no completion to verify).
+      // The branch contract is checked at implementation end. It is a fact and
+      // escalation trigger, never a user-facing validation stage.
       if (!escalating && !afkUnresolved) {
-        record('lifecycle', { event: 'phase', phase: 'validating' });
-        await this.runCandidateSnapshot(
-          task,
-          run,
-          workspace,
-          record,
-          healCtx !== undefined || remergeCtx !== undefined,
-        );
         // Branch-contract enforcement (issue #151, reliability-design Unit D):
         // still in `validating`, before any checkout restore / worktree teardown,
         // classify the Run's git outcome against the recorded start-state (#149)
@@ -3458,7 +3409,7 @@ export class Runner {
             autoDriven &&
             !!workspace.directIsolation &&
             this.autoDrive?.mergeFateFor(task) === 'auto-merge' &&
-            (await this.runStore.get(run.id)).candidateOid != null;
+            (await Git.revParse(task.workingDir, run.branch ?? 'HEAD').catch(() => null)) != null;
           if (remergeEligible) {
             remergeNeeded = { reason: verdict.reason, detail: verdict.detail };
           } else {
@@ -3568,6 +3519,12 @@ export class Runner {
           record('lifecycle', { event: 'escalated', reason });
           await this.settleEscalated(task, run, reason, patch);
         } else if (autoDriven) {
+          if (!(await this.verifiedHeadStillCurrent(task, run))) {
+            const reason = 'branch head moved after verification';
+            record('lifecycle', { event: 'escalated', reason });
+            await this.settleEscalated(task, run, reason, patch);
+            return { kind: 'terminal' };
+          }
           // A mirrored Run has no human gate, so it runs the auto branch:
           // executing → validating → verifying → landing → terminal. The Merge
           // Fate lands the work *and* (for auto-merge) closes the ticket in
@@ -4106,16 +4063,16 @@ export class Runner {
 
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
-    const { critic } = resolveVerifiers(
+    const { review } = resolveVerifiers(
       ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
       config,
     );
-    if (!critic) throw new DomainError('invalid_state', 'no critic configured for this workspace');
+    if (!review.enabled || !review.prompt || !review.model) throw new DomainError('invalid_state', 'no review configured for this workspace');
 
     // The critic's own harness (mirrors `runVerification`'s resolution,
     // issue #174 FIX 2): reuses the builder task's harness only when
     // `critic.harness` is unset ("Same as task").
-    const criticHarnessId = critic.harness ?? task.harness;
+    const criticHarnessId = review.harness ?? task.harness;
     const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
     if (!criticHarness) {
       throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
@@ -4126,7 +4083,7 @@ export class Runner {
       repoDir: task.workingDir,
       candidateOid: oid,
       worktreePath: join(this.worktreesDir, `critic-reverify-${run.id}`),
-      critic,
+      critic: { prompt: review.prompt, model: review.model, ...(review.harness ? { harness: review.harness } : {}) },
       fields: driveFields(task, this.urlFor),
       harness: criticHarness,
       harnessId: criticHarnessId,
