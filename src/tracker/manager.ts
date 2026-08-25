@@ -89,6 +89,9 @@ export class TrackerPollerManager {
       target: EpicRefreshTarget,
       detail: string,
       escalate: (epicRef: number, reason: string) => void,
+      /** Re-runs the refresh once the corrective turn's worktree is gone — a
+       * resolved merge completes it, an unresolved one escalates (issue #315). */
+      retry: () => Promise<unknown>,
     ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
     private readonly postLand?: PostLandHook,
   ) {}
@@ -167,11 +170,13 @@ export class TrackerPollerManager {
         if (epicLand) epicLand.escalateRefresh(ref, reason);
         else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
       };
-      epics.attachRefreshTrigger(new EpicRefreshCoordinator({
+      const refresh: EpicRefreshCoordinator = new EpicRefreshCoordinator({
         train: this.mergeTrain,
-        dispatchResolve: (target, detail) => this.dispatchEpicRefreshResolution(target, detail, escalateRefresh),
+        dispatchResolve: (target, detail) =>
+          this.dispatchEpicRefreshResolution(target, detail, escalateRefresh, () => refresh.refresh(target)),
         escalate: escalateRefresh,
-      }));
+      });
+      epics.attachRefreshTrigger(refresh);
     }
     // Bind this Workspace's persistent feature-id index so local-markdown feature
     // bases stay small and stable across scans (see TaskService.mdFeatureIndex).

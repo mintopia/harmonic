@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultBranchPostLand, landBranch, landBranchAndRunPostLand } from '../src/execution/branch-landing.js';
+import { defaultBranchPostLand, landBranch, landBranchAndRunPostLand, resolveRepositoryDefaultBranch } from '../src/execution/branch-landing.js';
 import { Git } from '../src/execution/git.js';
 
 /**
@@ -21,10 +21,10 @@ const tmpPath = (prefix: string) => {
   return p;
 };
 
-/** A throwaway git repo on branch main with one committed README. */
-function makeRepo(): string {
+/** A throwaway git repo on `branch` (default main) with one committed README. */
+function makeRepo(branch = 'main'): string {
   const dir = tmpPath('harmonic-land-repo-');
-  execFileSync('git', ['init', '-b', 'main', dir], { encoding: 'utf8' });
+  execFileSync('git', ['init', '-b', branch, dir], { encoding: 'utf8' });
   git(dir, 'config', 'user.name', 'Test');
   git(dir, 'config', 'user.email', 'test@example.com');
   writeFileSync(join(dir, 'README.md'), '# repo\n');
@@ -65,12 +65,12 @@ describe('branch landing (issue #153)', () => {
     expect(refreshAfterDefaultBranchAdvance).toHaveBeenCalledWith(repo, 'main');
   });
 
-  it('does not refresh Epics when a direct-mode land targets a non-default branch', async () => {
-    const repo = makeRepo();
-    makeBranchAhead(repo, 'feature-base', 'base.txt', 'base\n');
+  it('does not refresh Epics when a land targets a non-default base branch (real resolver)', async () => {
+    const repo = makeRepo('develop'); // the base repo's live symbolic HEAD is develop
+    makeBranchAhead(repo, 'feature-base', 'base.txt', 'base\n', 'develop');
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n', 'feature-base');
     const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
-    const postLand = defaultBranchPostLand(async () => 'main', refreshAfterDefaultBranchAdvance);
+    const postLand = defaultBranchPostLand(refreshAfterDefaultBranchAdvance);
 
     await expect(landBranchAndRunPostLand(
       { repoDir: repo, baseBranch: 'feature-base', branch: 'feat' },
@@ -78,6 +78,39 @@ describe('branch landing (issue #153)', () => {
     )).resolves.toMatchObject({ ok: true });
 
     expect(refreshAfterDefaultBranchAdvance).not.toHaveBeenCalled();
+  });
+
+  it('refreshes on a default-branch land even when invoked from a task checkout parked on another branch (real resolver)', async () => {
+    const repo = makeRepo('develop');
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n', 'develop');
+    // A direct-mode land runs from the task's own checkout, parked on the task
+    // branch — resolving the default there would compare task-branch to
+    // task-branch and fire on every land. The threaded `baseRepoDir` makes the
+    // hook resolve against the base repo's symbolic HEAD instead.
+    const taskCheckout = join(tmpPath('harmonic-land-task-'), 'checkout');
+    git(repo, 'worktree', 'add', '-b', 'task-branch', taskCheckout, 'develop');
+    const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
+    const postLand = defaultBranchPostLand(refreshAfterDefaultBranchAdvance);
+
+    await expect(landBranchAndRunPostLand(
+      { repoDir: taskCheckout, baseRepoDir: repo, baseBranch: 'develop', branch: 'feat', leaseHeld: true },
+      postLand,
+    )).resolves.toMatchObject({ ok: true });
+
+    expect(refreshAfterDefaultBranchAdvance).toHaveBeenCalledTimes(1);
+    expect(refreshAfterDefaultBranchAdvance).toHaveBeenCalledWith(repo, 'develop');
+  });
+
+  it('resolveRepositoryDefaultBranch reads the base repo symbolic HEAD, falling back to origin/HEAD when detached', async () => {
+    const repo = makeRepo('develop');
+    await expect(resolveRepositoryDefaultBranch(repo)).resolves.toBe('develop');
+
+    git(repo, 'checkout', '--detach');
+    await expect(resolveRepositoryDefaultBranch(repo)).resolves.toBeNull();
+
+    git(repo, 'update-ref', 'refs/remotes/origin/develop', 'develop');
+    git(repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop');
+    await expect(resolveRepositoryDefaultBranch(repo)).resolves.toBe('develop');
   });
 
   it('AC1 (not checked out): lands via CAS ref-update, leaving the base repo pristine and no admin worktree behind', async () => {

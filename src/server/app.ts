@@ -338,7 +338,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   let trackerManagerRef: TrackerPollerManager | undefined;
   const pendingPostLand: Parameters<PostLandHook>[0][] = [];
   const postLand: PostLandHook = defaultBranchPostLand(
-    (repoDir) => Git.defaultBranch(repoDir),
     async (repoDir, defaultBranch) => {
       try {
       if (!trackerManagerRef) {
@@ -655,7 +654,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     scheduler,
     undefined,
     mergeTrain,
-    (target, detail, escalate) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate),
+    (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
     postLand,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above

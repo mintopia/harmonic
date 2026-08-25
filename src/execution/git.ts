@@ -658,6 +658,30 @@ export const Git = {
   },
 
   /**
+   * Merge `branch` into the worktree at `worktreeDir`'s checked-out HEAD,
+   * LEAVING a conflicted merge in progress (conflict markers + `MERGE_HEAD`)
+   * instead of aborting — unlike {@link mergeNoEdit}, whose abort-on-conflict
+   * contract suits a land that must leave its admin worktree pristine. This is
+   * the reproduction step for an integration-refresh corrective turn (issue
+   * #315): the agent resolves the markers in place and completes the merge. A
+   * clean merge commits immediately (`--no-edit`) and returns `{ ok: true }`.
+   */
+  async mergeLeavingConflict(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
+    return withGitOperation(
+      'git.merge',
+      { 'git.branch': branch, 'git.ref': 'HEAD' },
+      async () => {
+        try {
+          await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
+        }
+      },
+    );
+  },
+
+  /**
    * Rebase the branch checked out at `worktreeDir` onto `ontoOid` (linear replay).
    * On conflict, aborts (`git rebase --abort`) so the worktree is left clean for
    * the member Session's bounded corrective turn, and returns the conflict signal
