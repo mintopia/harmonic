@@ -62,7 +62,10 @@ function parseHeaders(value: string | undefined): Record<string, string> {
 }
 
 function parseExportEnabled(value: string | undefined): boolean {
-  if (value === undefined) return true;
+  // Opt-in: an ambient OTEL_EXPORTER_OTLP_ENDPOINT (e.g. a Coder workspace's gRPC
+  // collector) must not auto-enable the HTTP exporter — that mismatch spams
+  // non-retryable parse errors. Export only when explicitly turned on.
+  if (value === undefined) return false;
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error('OTLP export must be true or false');

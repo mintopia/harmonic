@@ -55,6 +55,12 @@ describe('telemetry configuration', () => {
     });
   });
 
+  it('defaults OTLP export off so an ambient endpoint cannot auto-enable it', () => {
+    delete process.env.OTEL_EXPORTER_OTLP_ENABLED;
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://10.0.0.1:4317';
+    expect(resolveTelemetryOptions().exportEnabled).toBe(false);
+  });
+
   it('rejects invalid telemetry settings before the app boots', () => {
     expect(() => resolveTelemetryOptions({ exportEnabled: 'yes' })).toThrow('OTLP export must be true or false');
     expect(() => resolveTelemetryOptions({ headers: 'not-a-header' })).toThrow('Invalid OTLP header');
@@ -93,7 +99,7 @@ it('flushes a trace-correlated log, span, and metric before daemon stop returns'
     // tight export timeout from flaking under load) during the child's short
     // life: the flush under test is the deterministic shutdown `forceFlush`, so
     // the metrics still arrive without a racing periodic export polluting stderr.
-    `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token', metricExportIntervalMillis: '60000' }));`,
+    `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token', exportEnabled: 'true', metricExportIntervalMillis: '60000' }));`,
     "const span = trace.getTracer('smoke').startSpan('smoke-span'); context.with(trace.setSpan(context.active(), span), () => logger.info('smoke-log')); span.end();",
     "const success = startOperation({ type: 'smoke-success', attributes: {} }); success.end();",
     "const failure = startOperation({ type: 'smoke-failure', attributes: {} }); failure.fail('smoke failure');",

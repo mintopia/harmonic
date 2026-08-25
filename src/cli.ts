@@ -32,7 +32,7 @@ Options:
               run ungated
   --otel-endpoint <url>       OTLP/HTTP base endpoint (or $OTEL_EXPORTER_OTLP_ENDPOINT)
   --otel-headers <headers>    Comma-separated key=value headers (or $OTEL_EXPORTER_OTLP_HEADERS)
-  --otel-export <true|false>  Enable OTLP export (or $OTEL_EXPORTER_OTLP_ENABLED)
+  --otel-export <true|false>  Enable OTLP export; default off (or $OTEL_EXPORTER_OTLP_ENABLED)
   --otel-metric-export-interval <milliseconds>
                               Metric export and stdout summary interval
                               (or $OTEL_METRIC_EXPORT_INTERVAL)
