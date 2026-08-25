@@ -53,7 +53,9 @@ describe('mcp server & scoped keys', () => {
     const dep = parse(await client.callTool({ name: 'create_task', arguments: { prompt: 'dep' } }));
     parse(await client.callTool({ name: 'add_dependency', arguments: { taskId: created.id, dependsOnId: dep.id } }));
     const queued = parse(await client.callTool({ name: 'queue_task', arguments: { taskId: created.id } }));
-    expect(queued.state).toBe('blocked');
+    expect(queued.state).toBe('ready');
+    expect(queued.openBlockerCount).toBe(1);
+    expect(queued.agentWorkable).toBe(false);
     expect(queued.dependsOn).toEqual([dep.id]);
 
     parse(await client.callTool({ name: 'remove_dependency', arguments: { taskId: created.id, dependsOnId: dep.id } }));
@@ -211,7 +213,9 @@ describe('mcp server & scoped keys', () => {
     const all = await server.api('GET', '/api/tasks');
     const followUp = all.body.tasks.find((t: any) => t.prompt === 'follow-up work');
     expect(followUp).toBeDefined();
-    expect(followUp.state).toBe('blocked');
+    expect(followUp.state).toBe('ready');
+    expect(followUp.openBlockerCount).toBe(1);
+    expect(followUp.agentWorkable).toBe(false);
     expect(followUp.dependsOn).toEqual([created.body.id]);
 
     // Accepting the parent unblocks the agent-scheduled follow-up.

@@ -54,7 +54,6 @@ export interface TrackerFacts {
 
 export const TASK_STATES = [
   'draft',
-  'blocked',
   'ready',
   'running',
   'awaiting-review',

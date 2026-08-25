@@ -190,7 +190,6 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
  * Rule — only true states get a color). */
 export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   draft: 'bg-raised text-muted',
-  blocked: 'bg-blocked-tint text-muted',
   ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
   'awaiting-review': 'bg-await-tint text-await',
@@ -224,7 +223,6 @@ export function conversationStateChip(state: Conversation['state']): string {
  * only where it means state, and only when the count is non-zero. */
 const STATE_COUNT_COLORS: Record<TaskState, string> = {
   draft: 'text-muted',
-  blocked: 'text-blocked',
   ready: 'text-ready',
   running: 'text-running',
   'awaiting-review': 'text-await',
@@ -240,7 +238,6 @@ export function stateCountColor(state: TaskState, count: number): string {
 /** Board column-header count pill: raised neutral until the count means
  * a state worth coloring (running amber, failed red, completed green). */
 const STATE_COUNT_PILLS: Partial<Record<TaskState, string>> = {
-  blocked: 'bg-blocked-tint text-muted',
   ready: 'bg-ready-tint text-ready',
   running: 'bg-running-tint text-running',
   'awaiting-review': 'bg-await-tint text-await',
@@ -262,7 +259,6 @@ export function stateCountPill(state: TaskState, count: number): string {
  * header underline used to fall back to (issue #87). */
 const LANE_BORDER: Record<TaskState, string> = {
   draft: 'border-faint',
-  blocked: 'border-blocked',
   ready: 'border-ready-dot',
   running: 'border-running-dot',
   'awaiting-review': 'border-await',
@@ -276,7 +272,6 @@ const LANE_BORDER: Record<TaskState, string> = {
  * the neutral draft/cancelled rows take Faint (no state hue). */
 const STATE_FILL: Record<TaskState, string> = {
   draft: 'bg-faint',
-  blocked: 'bg-blocked',
   ready: 'bg-ready-dot',
   running: 'bg-running-dot',
   'awaiting-review': 'bg-await-dot',

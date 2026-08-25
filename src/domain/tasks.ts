@@ -248,7 +248,7 @@ export class TaskService {
   private agentWorkable(task: TaskRow, openBlockerCount: number): boolean {
     if (openBlockerCount > 0) return false;
     if (task.origin !== 'mirrored') return true;
-    return task.trackerLabels === null ? task.drive !== 'hitl' : task.trackerLabels.includes('ready-for-agent');
+    return task.trackerLabels?.includes('ready-for-agent') === true;
   }
 
   /** The raw stored row (four defaults nullable); TaskService-internal. */
@@ -1050,8 +1050,8 @@ export class TaskService {
     const task = await this.get(taskId);
     this.assertOperatorEditable(task);
     await this.get(dependsOnId);
-    if (!EDITABLE_STATES.includes(task.state) && task.state !== 'blocked') {
-      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft, ready, or blocked tasks`);
+    if (!EDITABLE_STATES.includes(task.state)) {
+      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft or ready tasks`);
     }
     if (taskId === dependsOnId || (await this.reaches(dependsOnId, taskId))) {
       throw new DomainError('conflict', `dependency ${taskId} → ${dependsOnId} would create a cycle`);
@@ -1195,7 +1195,7 @@ export class TaskService {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
-      blockedOnFailed: depStates.some((s) => s === 'failed' || s === 'cancelled'),
+      blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
       openBlockerCount,
       agentWorkable: this.agentWorkable(task, openBlockerCount),
       reattempts: await this.reattempts(task.id),
@@ -1284,7 +1284,7 @@ export class TaskService {
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
-      blockedOnFailed: failedDependencies.has(task.id),
+      blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
       agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0),
       reattempts: reattempts.get(task.id) ?? [],

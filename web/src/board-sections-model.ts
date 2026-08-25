@@ -40,10 +40,8 @@ function needsYouRank(t: Task): number {
 }
 
 // Queued tiers so the section reads in the scheduler's reach order (DESIGN.md
-// § 5 Queued: "the ready frontier + blocked Tasks … the auto-runner's pick
-// order implied"): the ready frontier the runner picks from sits on top, then
-// blocked (waiting on a dep), then draft (not yet promoted).
-const QUEUED_RANK: Partial<Record<TaskState, number>> = { ready: 0, blocked: 1, draft: 2 };
+// § 5 Queued: ready work appears before draft work.
+const QUEUED_RANK: Partial<Record<TaskState, number>> = { ready: 0, draft: 1 };
 
 export interface BoardSections {
   /** Awaiting-review standalone Tasks + any escalated Task (standalone or Epic
@@ -54,7 +52,7 @@ export interface BoardSections {
   active: Task[];
   /** Active Epics, each rendered as a band; ascending by ref. */
   epics: Epic[];
-  /** Ready + blocked + draft standalone Tasks, frontier-first. */
+  /** Ready + draft standalone Tasks, frontier-first. */
   standalone: Task[];
 }
 

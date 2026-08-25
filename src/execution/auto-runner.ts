@@ -317,7 +317,7 @@ export class AutoRunner {
     workspacesById: Map<number, WorkspaceRow>;
   }): Promise<void> {
     const [all, ordered, running, runningByWorkspace] = await Promise.all([
-      this.taskService.list(),
+      this.taskService.listWithDeps(),
       this.taskService.orderedEligibleWork(),
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
@@ -331,9 +331,8 @@ export class AutoRunner {
     this.schedulerSkipReasons.clear();
 
     await forEachYielding(all, async (task) => {
-      const orderedTask = orderedById.get(task.id);
-      if (orderedTask?.blockedBy.length) {
-        const blocker = orderedTask.blockedBy[0];
+      if (task.openBlockerCount > 0) {
+        const blocker = task.dependsOn[0];
         this.recordSkipReason(task.id, blocker === undefined ? 'blocked by a dependency' : `blocked-by #${blocker}`);
         return;
       }
