@@ -8,7 +8,7 @@ import type { TurnQueueStore } from './turn-queue-store.js';
 import { foldJournal, type LandingEffect, type ObservedState } from './landing.js';
 import { isMutating, survivesRestart } from './turn-queue.js';
 import { Git } from '../execution/git.js';
-import { landBranch } from '../execution/branch-landing.js';
+import { landBranchAndRunPostLand, type PostLandHook } from '../execution/branch-landing.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
@@ -60,6 +60,7 @@ export class CrashRecoveryCoordinator {
       now?: () => number;
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
       isDirectContextClean?: (workingDir: string) => Promise<boolean>;
+      postLand?: PostLandHook;
       yieldOptions?: YieldOptions;
     } = {},
   ) {}
@@ -168,7 +169,10 @@ export class CrashRecoveryCoordinator {
           // Re-drive the land through the same admin-worktree + CAS operation as
           // the live path (issue #153); idempotent, so a target already advanced
           // by the pre-crash attempt is an "Already up to date" no-op here.
-          const outcome = await landBranch({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true });
+          const outcome = await landBranchAndRunPostLand(
+            { repoDir: task.workingDir, baseBranch, branch, leaseHeld: true },
+            this.opts.postLand,
+          );
           return outcome.ok ? { ok: true, observed: { baseBranch, branch } } : { ok: false, detail: outcome.detail };
         },
       };

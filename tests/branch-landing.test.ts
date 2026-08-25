@@ -1,9 +1,9 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { landBranch } from '../src/execution/branch-landing.js';
+import { landBranch, landBranchAndRunPostLand } from '../src/execution/branch-landing.js';
 import { Git } from '../src/execution/git.js';
 
 /**
@@ -52,6 +52,19 @@ afterAll(() => {
 });
 
 describe('branch landing (issue #153)', () => {
+  it('runs the shared post-land hook after a successful land', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
+    const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
+
+    await expect(landBranchAndRunPostLand(
+      { repoDir: repo, baseBranch: 'main', branch: 'feat', leaseHeld: true },
+      async ({ repoDir, baseBranch }) => refreshAfterDefaultBranchAdvance(repoDir, baseBranch),
+    )).resolves.toMatchObject({ ok: true });
+
+    expect(refreshAfterDefaultBranchAdvance).toHaveBeenCalledWith(repo, 'main');
+  });
+
   it('AC1 (not checked out): lands via CAS ref-update, leaving the base repo pristine and no admin worktree behind', async () => {
     const repo = makeRepo();
     const base = oid(repo, 'main');

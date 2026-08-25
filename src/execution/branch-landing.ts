@@ -72,9 +72,23 @@ export interface LandBranchArgs {
   attributes?: Attributes;
 }
 
+/** Best-effort notification after a branch land has succeeded. */
+export type PostLandHook = (args: Pick<LandBranchArgs, 'repoDir' | 'baseBranch'>) => void | Promise<void>;
+
 export type LandBranchOutcome =
   | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
   | { ok: false; reason: 'conflict' | 'target-advanced' | 'fallback-pr-manual'; detail: string };
+
+/** Run the one shared success-only post-land hook around a branch land. */
+export async function landBranchAndRunPostLand(
+  args: LandBranchArgs,
+  postLand: PostLandHook | undefined,
+  land: (args: LandBranchArgs) => Promise<LandBranchOutcome> = landBranch,
+): Promise<LandBranchOutcome> {
+  const outcome = await land(args);
+  if (outcome.ok) await postLand?.({ repoDir: args.repoDir, baseBranch: args.baseBranch });
+  return outcome;
+}
 
 /**
  * Land `branch` into `baseBranch` per the module contract. Never throws for an

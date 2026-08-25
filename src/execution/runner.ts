@@ -87,8 +87,12 @@ import {
   type BranchClassification,
 } from '../domain/branch-recovery.js';
 import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
-import { landBranch } from './branch-landing.js';
+import { landBranchAndRunPostLand, type PostLandHook } from './branch-landing.js';
 import { parseIntegrationBranch } from './epic-integration.js';
+import type {
+  EpicRefreshResolveDispatchOutcome,
+  EpicRefreshTarget,
+} from './epic-refresh-coordinator.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
@@ -276,6 +280,7 @@ export interface RunnerOptions {
    * integration branch — the hand-started counterpart to the Auto-Runner's pick
    * gate. Async (the branch-existence check hits git). Absent → not gated. */
   epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
+  postLand?: PostLandHook;
 }
 
 interface Workspace {
@@ -493,6 +498,7 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly autoAcceptLand: RunnerOptions['autoAcceptLand'];
+  private readonly postLand: RunnerOptions['postLand'];
   /** The single-writer merge train an Epic member's Run lands through (issue
    * #163); undefined on a server with no parallel-Epic execution. */
   private readonly mergeTrain: MergeTrainCoordinator | undefined;
@@ -575,6 +581,7 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.autoAcceptLand = options.autoAcceptLand;
+    this.postLand = options.postLand;
     this.mergeTrain = options.mergeTrain;
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
@@ -1826,14 +1833,14 @@ export class Runner {
         });
         return 'escalate';
       }
-      const outcome = await landBranch({
+      const outcome = await landBranchAndRunPostLand({
         repoDir: dir,
         baseBranch: plan.baseBranch,
         branch: plan.landCommit,
         leaseHeld: true,
         parent,
         attributes: { 'task.id': task.id, 'run.id': run.id },
-      });
+      }, this.postLand);
       if (!outcome.ok) {
         record('lifecycle', { event: 'recovery-landing-failed', reason: outcome.detail });
         return 'escalate';
@@ -1929,14 +1936,14 @@ export class Runner {
       if (currentBase !== start.startCommit) {
         return await reject('branch-diverged', `intended branch '${start.startBranch}' advanced from the recorded start commit`);
       }
-      const outcome = await landBranch({
+      const outcome = await landBranchAndRunPostLand({
         repoDir: dir,
         baseBranch: start.startBranch,
         branch: candidateOid,
         leaseHeld: true,
         parent,
         attributes: { 'task.id': task.id, 'run.id': run.id },
-      });
+      }, this.postLand);
       if (!outcome.ok) {
         return await reject('land-failed', outcome.detail);
       }
@@ -2217,17 +2224,22 @@ export class Runner {
    * active member's real Session. The refresh changes that member's base, so
    * its existing worktree is the correct place for the agent to resolve it.
    */
-  async enqueueEpicRefreshResolution(epicRef: number): Promise<void> {
-    const branch = `epic/${epicRef}`;
+  async enqueueEpicRefreshResolution(
+    target: EpicRefreshTarget,
+    escalate: (epicRef: number, reason: string) => void | Promise<void>,
+  ): Promise<EpicRefreshResolveDispatchOutcome> {
+    const branch = `epic/${target.ref}`;
     const members = (await this.taskService.list({ state: 'running' })).filter((task) => task.baseBranch === branch);
     for (const task of members) {
       const run = (await this.runStore.listForTask(task.id)).find((candidate) => candidate.state === 'running');
       if (!run) continue;
       const rowId = await this.enqueueReMerge(run, `run-${run.id}`);
       if (rowId !== null) this.pendingMemberReMerge.set(run.id, rowId);
-      return;
+      return { status: 'dispatched' };
     }
-    throw new Error(`no active Epic member is available to resolve refresh conflict for ${branch}`);
+    const reason = `no active Epic member is available to resolve refresh conflict for ${branch}`;
+    await escalate(target.ref, reason);
+    return { status: 'escalated', reason };
   }
 
   /**

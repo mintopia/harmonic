@@ -1,6 +1,6 @@
 import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
-import { landBranch, type LandBranchArgs, type LandBranchOutcome } from './branch-landing.js';
+import { landBranch, landBranchAndRunPostLand, type LandBranchArgs, type LandBranchOutcome, type PostLandHook } from './branch-landing.js';
 import { decideEpicLand, type MemberLandState } from '../domain/epic-land.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
@@ -103,6 +103,7 @@ export class EpicLandCoordinator {
   private readonly git: EpicLandGit;
   private readonly verify: EpicVerify;
   private readonly land: (args: LandBranchArgs) => Promise<LandBranchOutcome>;
+  private readonly postLand: PostLandHook | undefined;
   private readonly retire: (epicRef: number) => Promise<void>;
   private readonly escalateFn: (epicRef: number, reason: string) => void;
   private readonly landLeaseHeld: boolean;
@@ -151,6 +152,7 @@ export class EpicLandCoordinator {
     verify: EpicVerify;
     /** Default = real {@link landBranch}. */
     land?: (args: LandBranchArgs) => Promise<LandBranchOutcome>;
+    postLand?: PostLandHook;
     /** Retire the integration branch after a successful land — wired to
      * `EpicIntegrationCoordinator.retireIntegrationBranch`. */
     retire: (epicRef: number) => Promise<void>;
@@ -177,6 +179,7 @@ export class EpicLandCoordinator {
     this.git = deps.git ?? Git;
     this.verify = deps.verify;
     this.land = deps.land ?? landBranch;
+    this.postLand = deps.postLand;
     this.retire = deps.retire;
     this.escalateFn = deps.escalate;
     this.landLeaseHeld = deps.landLeaseHeld ?? true;
@@ -341,7 +344,11 @@ export class EpicLandCoordinator {
       epicRef: target.ref,
       type: 'merge',
       attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
-      work: () => this.land({ repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld }),
+      work: () => landBranchAndRunPostLand(
+        { repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld },
+        this.postLand,
+        this.land,
+      ),
     });
     if (!landed.ok) {
       return this.escalate(target, force, `whole-Epic land into '${defaultBranch}' failed (${landed.reason}): ${landed.detail}`);

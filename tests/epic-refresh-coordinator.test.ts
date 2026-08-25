@@ -23,7 +23,7 @@ describe('EpicRefreshCoordinator', () => {
         calls.push(`${baseBranch}<-${branch}`);
         return { ok: true, mode: 'cas', oid: 'merge-oid', baseBranch, branch };
       },
-      dispatchResolve: async () => {},
+      dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: () => {},
     });
 
@@ -40,7 +40,10 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       land: async () => outcomes.shift()!,
-      dispatchResolve: async (_target, detail) => { resolutions.push(detail); },
+      dispatchResolve: async (_target, detail) => {
+        resolutions.push(detail);
+        return { status: 'dispatched' };
+      },
       escalate: (ref, reason) => { escalations.push({ ref, reason }); },
     });
 
@@ -65,7 +68,7 @@ describe('EpicRefreshCoordinator', () => {
         if (starts.length === 1) await first;
         return { ok: true, mode: 'cas', oid: `oid-${starts.length}`, baseBranch: 'epic/9', branch: 'develop' };
       },
-      dispatchResolve: async () => {},
+      dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: () => {},
     });
 
@@ -83,7 +86,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       land: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
-      dispatchResolve: async () => {},
+      dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: (_ref, reason) => { escalations.push(reason); },
     });
 
@@ -91,5 +94,45 @@ describe('EpicRefreshCoordinator', () => {
       status: 'deferred', reason: 'branch is checked out',
     });
     expect(escalations).toEqual([]);
+  });
+
+  it('does not record a resolution attempt until dispatch succeeds', async () => {
+    const dispatches: string[] = [];
+    const escalations: string[] = [];
+    const coordinator = new EpicRefreshCoordinator({
+      train: train(),
+      land: async () => conflict('refresh conflict'),
+      dispatchResolve: async (_target, detail) => {
+        dispatches.push(detail);
+        if (dispatches.length === 1) throw new Error('no corrective turn was dispatched');
+        return { status: 'dispatched' };
+      },
+      escalate: (_ref, reason) => { escalations.push(reason); },
+    });
+    const target = { ref: 13, repoDir: '/repo', defaultBranch: 'develop' };
+
+    await expect(coordinator.refresh(target)).rejects.toThrow('no corrective turn was dispatched');
+    await expect(coordinator.refresh(target)).resolves.toEqual({
+      status: 'resolving', detail: 'refresh conflict',
+    });
+    expect(dispatches).toEqual(['refresh conflict', 'refresh conflict']);
+    expect(escalations).toEqual([]);
+  });
+
+  it('returns an escalation when no running member can host a refresh resolution', async () => {
+    const coordinator = new EpicRefreshCoordinator({
+      train: train(),
+      land: async () => conflict('refresh conflict'),
+      dispatchResolve: async () => ({
+        status: 'escalated',
+        reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
+      }),
+      escalate: () => {},
+    });
+
+    await expect(coordinator.refresh({ ref: 14, repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
+      status: 'escalated',
+      reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
+    });
   });
 });

@@ -15,6 +15,10 @@ export type EpicRefreshOutcome =
   | { status: 'deferred'; reason: string }
   | { status: 'escalated'; reason: string };
 
+export type EpicRefreshResolveDispatchOutcome =
+  | { status: 'dispatched' }
+  | { status: 'escalated'; reason: string };
+
 /**
  * Merges a newly advanced default branch into live Epic integration branches.
  *
@@ -28,7 +32,10 @@ export class EpicRefreshCoordinator {
   constructor(private readonly deps: {
     train: MergeTrainCoordinator;
     land?: (args: LandBranchArgs) => Promise<LandBranchOutcome>;
-    dispatchResolve: (target: EpicRefreshTarget, detail: string) => Promise<void>;
+    dispatchResolve: (
+      target: EpicRefreshTarget,
+      detail: string,
+    ) => Promise<EpicRefreshResolveDispatchOutcome>;
     escalate: (epicRef: number, reason: string) => void;
   }) {}
 
@@ -60,8 +67,9 @@ export class EpicRefreshCoordinator {
         this.deps.escalate(target.ref, reason);
         return { status: 'escalated', reason };
       }
+      const dispatch = await this.deps.dispatchResolve(target, outcome.detail);
+      if (dispatch.status === 'escalated') return dispatch;
       this.resolving.add(target.ref);
-      await this.deps.dispatchResolve(target, outcome.detail);
       return { status: 'resolving', detail: outcome.detail };
     });
   }

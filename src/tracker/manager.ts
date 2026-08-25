@@ -12,8 +12,13 @@ import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/
 import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
-import { EpicRefreshCoordinator } from '../execution/epic-refresh-coordinator.js';
+import {
+  EpicRefreshCoordinator,
+  type EpicRefreshResolveDispatchOutcome,
+  type EpicRefreshTarget,
+} from '../execution/epic-refresh-coordinator.js';
 import type { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
+import type { PostLandHook } from '../execution/branch-landing.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
@@ -80,7 +85,11 @@ export class TrackerPollerManager {
      * set (issue #200); default yields on the standard wall-clock budget. */
     private readonly opts: { yieldOptions?: YieldOptions } = {},
     private readonly mergeTrain?: MergeTrainCoordinator,
-    private readonly dispatchEpicRefreshResolution: (epicRef: number) => Promise<void> = async () => {},
+    private readonly dispatchEpicRefreshResolution: (
+      target: EpicRefreshTarget,
+      escalate: (epicRef: number, reason: string) => void,
+    ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
+    private readonly postLand?: PostLandHook,
   ) {}
 
   /**
@@ -148,17 +157,19 @@ export class TrackerPollerManager {
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic land escalated: ${reason}`),
         operations: this.epicOperations,
+        ...(this.postLand ? { postLand: this.postLand } : {}),
       });
       epics.attachLandTrigger(epicLand);
     }
     if (this.mergeTrain) {
+      const escalateRefresh = (ref: number, reason: string): void => {
+        if (epicLand) epicLand.escalateRefresh(ref, reason);
+        else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
+      };
       epics.attachRefreshTrigger(new EpicRefreshCoordinator({
         train: this.mergeTrain,
-        dispatchResolve: ({ ref }) => this.dispatchEpicRefreshResolution(ref),
-        escalate: (ref, reason) => {
-          if (epicLand) epicLand.escalateRefresh(ref, reason);
-          else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
-        },
+        dispatchResolve: (target) => this.dispatchEpicRefreshResolution(target, escalateRefresh),
+        escalate: escalateRefresh,
       }));
     }
     // Bind this Workspace's persistent feature-id index so local-markdown feature
