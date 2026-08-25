@@ -142,7 +142,15 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     await manager.pollNow(workspace.id);
 
     const mirrored = (await tasks.list({ workspaceId: workspace.id })).filter((task) => task.origin === 'mirrored');
-    const legacyEpics = deriveEpics(fixture);
+    const mirroredWithDeps = (await tasks.listWithDeps({ workspaceId: workspace.id })).filter((task) => task.origin === 'mirrored');
+    const legacyEpics = deriveEpics(
+      fixture,
+      new Map(
+        mirroredWithDeps
+          .filter((task) => task.trackerRef !== null)
+          .map((task) => [task.trackerRef!, { agentWorkable: task.agentWorkable }]),
+      ),
+    );
     const legacyMaps = deriveMaps(fixture, mirrored, workspace.id);
     const beforeRestart = await manager.listEpics(workspace.id);
     expect(beforeRestart.map((epic) => ({
