@@ -331,8 +331,9 @@ export class AutoRunner {
     this.schedulerSkipReasons.clear();
 
     await forEachYielding(all, async (task) => {
-      if (task.state === 'blocked') {
-        const blocker = orderedById.get(task.id)?.blockedBy[0];
+      const orderedTask = orderedById.get(task.id);
+      if (orderedTask?.blockedBy.length) {
+        const blocker = orderedTask.blockedBy[0];
         this.recordSkipReason(task.id, blocker === undefined ? 'blocked by a dependency' : `blocked-by #${blocker}`);
         return;
       }

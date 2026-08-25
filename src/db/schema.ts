@@ -278,7 +278,7 @@ export const settings = sqliteTable('settings', {
   value: text('value').notNull(),
 });
 
-/** Directed edge: `taskId` depends on `dependsOnId`. */
+/** A blocker edge: `taskId` cannot be worked until `blockerId` completes. */
 export const taskDependencies = sqliteTable(
   'task_dependencies',
   {
@@ -289,7 +289,10 @@ export const taskDependencies = sqliteTable(
       .notNull()
       .references(() => tasks.id),
   },
-  (t) => [primaryKey({ columns: [t.taskId, t.dependsOnId] })],
+  (t) => [
+    primaryKey({ columns: [t.taskId, t.dependsOnId] }),
+    index('task_dependencies_depends_on_id_idx').on(t.dependsOnId),
+  ],
 );
 
 export const RUN_STATES = ['running', 'completed', 'failed', 'cancelled'] as const;
