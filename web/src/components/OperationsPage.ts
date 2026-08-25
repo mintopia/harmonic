@@ -2,6 +2,7 @@ import { createElement, useEffect, useState, type ReactNode } from 'react';
 import { operationForest, type Operation, type OperationForest } from '../operations-model.js';
 import { card, displayTitle, labelType, sectionTitle } from '../ui.js';
 import { subscribe, type OperationEvent } from '../ws.js';
+import { ScheduledJobsView } from './ScheduledJobsView.js';
 
 export interface OperationsPageProps {
   scheduledJobs?: ReactNode;
@@ -120,7 +121,7 @@ export function OperationsPage({ scheduledJobs, spanTree }: OperationsPageProps)
         'section',
         { 'aria-labelledby': 'scheduled-jobs-heading' },
         createElement('h2', { id: 'scheduled-jobs-heading', className: sectionTitle }, 'Scheduled jobs'),
-        scheduledJobs,
+        scheduledJobs ?? createElement(ScheduledJobsView),
       ),
       createElement(
         'section',

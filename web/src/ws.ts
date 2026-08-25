@@ -8,6 +8,7 @@ import type {
   RunUsageEvent,
   Task,
 } from './types.js';
+import type { ScheduledJob } from './scheduled-jobs-model.js';
 
 export interface OperationEvent {
   type: 'op-started' | 'op-updated' | 'op-ended';
@@ -37,6 +38,7 @@ export type ServerMessage =
   // rows so tokens/context/cost tick live. Sent to read keys too.
   | ({ type: 'run_usage' } & RunUsageEvent)
   | { type: 'operations'; event: OperationEvent }
+  | { type: 'scheduled-jobs'; jobs: ScheduledJob[] }
   | { type: 'conversation_event'; event: ConversationEvent }
   | { type: 'conversation_changed'; conversation: Conversation }
   // Issue #11: the Harness is blocked on this ACP permission request until
