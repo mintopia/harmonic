@@ -176,4 +176,38 @@ describe('linked re-attempts continue in the same Session (issue #147)', () => {
     const preview = (await server.api('GET', `/api/tasks/${t.id}/continuation`)).body;
     expect(preview).toEqual({ available: false });
   });
+
+  // Regression: a Task requeued to `ready` after its last Run was rejected must
+  // still be re-attemptable. Live symptom (task 295 / run 364): rejecting a
+  // reviewed run whose Task had since gone back to `ready` failed with
+  // `invalid_state: ... only a finished task ... can be re-attempted`, because
+  // the reject dialog re-attempts as a second call and the terminal-state guard
+  // refused the now-`ready` Task.
+  it('re-attempts a task requeued to ready whose last run was rejected, and re-fails the original', async () => {
+    const original = (await server.api('POST', '/api/tasks', { prompt: 'do the thing' })).body;
+    await server.api('POST', `/api/tasks/${original.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${original.id}`)).body.state === 'awaiting-review');
+
+    // Reject → the Task settles `failed` and its Run records review=rejected.
+    await server.api('POST', `/api/tasks/${original.id}/reject`, { feedback: 'not quite' });
+    expect((await server.api('GET', `/api/tasks/${original.id}`)).body.state).toBe('failed');
+    // Something requeues it (e.g. an operator/agent re-queue) → back to `ready`
+    // while its last Run is still failed+rejected.
+    await server.api('POST', `/api/tasks/${original.id}/requeue`);
+    expect((await server.api('GET', `/api/tasks/${original.id}`)).body.state).toBe('ready');
+
+    // The re-attempt now succeeds (previously 409'd on the `ready` Task)…
+    const res = await server.api('POST', `/api/tasks/${original.id}/reattempt`, { feedback: 'try again' });
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ reattemptOf: original.id, state: 'ready' });
+    // …and the requeued original is brought back to `failed` so it is not also
+    // scheduled alongside the re-attempt (no duplicate work).
+    expect((await server.api('GET', `/api/tasks/${original.id}`)).body.state).toBe('failed');
+  });
+
+  it('still refuses to re-attempt a fresh ready task that never produced a finished run', async () => {
+    const t = (await server.api('POST', '/api/tasks', { prompt: 'never ran' })).body; // ready, no runs
+    const res = await server.api('POST', `/api/tasks/${t.id}/reattempt`, { feedback: 'x' });
+    expect(res.status).toBe(409);
+  });
 });

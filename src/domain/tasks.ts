@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
 import {
@@ -722,10 +722,28 @@ export class TaskService {
     // inherited, not frozen to the value it happened to resolve to today.
     const original = await this.getRaw(originalId);
     if (!TERMINAL_STATES.includes(original.state)) {
-      throw new DomainError(
-        'invalid_state',
-        `task ${originalId} is ${original.state}; only a finished task (completed, failed, or cancelled) can be re-attempted`,
+      // A Task requeued to `ready`/`blocked` after its latest Run was rejected or
+      // failed is still genuinely re-attemptable — it HAS a finished attempt to
+      // clone. This is the reject-dialog path (reject → re-attempt as two calls)
+      // when something requeues the Task in the window between them: observed
+      // live as a `ready` Task whose last Run is failed+rejected, where the
+      // strict terminal-state guard wrongly 409'd the follow-up re-attempt. A
+      // fresh `ready` Task that never produced a finished Run is still refused
+      // below — cloning not-yet-done work would duplicate it (the guard's point).
+      const latest = await this.db.read((db) =>
+        db.select().from(runs).where(eq(runs.taskId, originalId)).orderBy(desc(runs.attempt)).limit(1).get(),
       );
+      if (!latest || (latest.state !== 'failed' && latest.review !== 'rejected')) {
+        throw new DomainError(
+          'invalid_state',
+          `task ${originalId} is ${original.state}; only a finished task (completed, failed, or cancelled) or one whose last run was rejected or failed can be re-attempted`,
+        );
+      }
+      // Settle the anomalous non-terminal row to its correct finished state
+      // (`failed`, matching its rejected/failed Run) so the requeued original is
+      // not ALSO scheduled alongside the re-attempt — the duplicate work the
+      // terminal-state guard exists to prevent.
+      await this.setState(originalId, 'failed');
     }
     const dependsOn = await this.dependsOn(originalId);
     // Snapshot the original's dependents before the write rewires (and thereby
