@@ -1,5 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { AcpConnection } from './connection.js';
+import { startOperation } from '../telemetry/operations.js';
 
 export interface AcpDriverHandlers {
   /**
@@ -190,19 +191,30 @@ export class AcpDriver {
 
   /** initialize → session/new → optional session/set_model. Sets sessionId. */
   async handshake(opts: AcpHandshake): Promise<string> {
-    await this.initialize(opts.onInitialize);
-    const session = (await this.race(
-      this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
-    )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };
-    this.sessionId = session.sessionId;
-    this.availableModes = AcpDriver.modeIdsOf(session.modes);
-    await opts.onSessionCreated?.(this.sessionId);
-    if (opts.modelId !== undefined) {
-      await this.race(
-        this.connection.request('session/set_model', { sessionId: this.sessionId, modelId: opts.modelId }),
-      );
+    const operation = startOperation({ type: 'session.create', attributes: {} });
+    try {
+      const sessionId = await operation.run(async () => {
+        await this.initialize(opts.onInitialize);
+        const session = (await this.race(
+          this.connection.request('session/new', { cwd: opts.cwd, mcpServers: opts.mcpServers ?? [] }),
+        )) as { sessionId: string; modes?: { availableModes?: { id: string }[] } };
+        this.sessionId = session.sessionId;
+        this.availableModes = AcpDriver.modeIdsOf(session.modes);
+        await opts.onSessionCreated?.(this.sessionId);
+        if (opts.modelId !== undefined) {
+          await this.race(
+            this.connection.request('session/set_model', { sessionId: this.sessionId, modelId: opts.modelId }),
+          );
+        }
+        return this.sessionId;
+      });
+      operation.update({ 'session.id': sessionId });
+      operation.end();
+      return sessionId;
+    } catch (error) {
+      operation.fail(error instanceof Error ? error.message : String(error));
+      throw error;
     }
-    return this.sessionId;
   }
 
   /**
@@ -226,6 +238,19 @@ export class AcpDriver {
    * current-turn measurement downstream.
    */
   async load(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
+    const operation = startOperation({ type: 'session.load', attributes: { 'session.id': opts.sessionId } });
+    try {
+      const outcome = await operation.run(() => this.loadSession(opts));
+      operation.update({ 'session.loaded': outcome.loaded, ...(outcome.loaded ? {} : { 'session.load.reason': outcome.reason }) });
+      operation.end();
+      return outcome;
+    } catch (error) {
+      operation.fail(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  private async loadSession(opts: AcpLoadHandshake): Promise<AcpLoadOutcome> {
     const initResult = await this.initialize(opts.onInitialize);
 
     // AC2: the LIVE harness — not the capability snapshot taken at the

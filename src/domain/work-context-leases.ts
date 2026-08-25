@@ -8,6 +8,7 @@ import {
 } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import { DEFAULT_LEASE_TTL, leaseExpiryFor, type LeaseTtl } from './lease-ttl.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /** The row an `acquire`/`acquireOrTransfer` INSERT persists — shared by the
  * standalone `acquire` (its own write unit) and the `acquireOrTransfer`
@@ -299,20 +300,31 @@ export class WorkContextLeaseStore {
    * gap. Returns the swept rows in their post-flip `state: 'suspect'` shape.
    */
   sweepExpired(now: number = Date.now()): Promise<WorkContextLeaseRow[]> {
-    return this.db.write((db) =>
-      db
-        .update(workContextLeases)
-        .set({ state: 'suspect' })
-        .where(
-          and(
-            eq(workContextLeases.state, 'held'),
-            isNotNull(workContextLeases.expiry),
-            lte(workContextLeases.expiry, now),
-          ),
-        )
-        .returning()
-        .all(),
-    );
+    const operation = startOperation({ type: 'lease.sweep', attributes: {} });
+    return operation.run(async () => {
+      try {
+        const swept = await this.db.write((db) =>
+          db
+            .update(workContextLeases)
+            .set({ state: 'suspect' })
+            .where(
+              and(
+                eq(workContextLeases.state, 'held'),
+                isNotNull(workContextLeases.expiry),
+                lte(workContextLeases.expiry, now),
+              ),
+            )
+            .returning()
+            .all(),
+        );
+        operation.update({ 'lease.swept.count': swept.length });
+        operation.end();
+        return swept;
+      } catch (error) {
+        operation.fail(error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    });
   }
 
   /** Every lease currently `suspect` (issue #122): feeds boot reconciliation

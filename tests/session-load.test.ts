@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
+import { trace } from '@opentelemetry/api';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { AcpDriver } from '../src/acp/driver.js';
 import { graftMcpCredentials } from '../src/domain/sessions.js';
 
@@ -34,6 +37,7 @@ interface Rig {
 }
 
 let activeChild: ChildProcess | undefined;
+const providers: NodeTracerProvider[] = [];
 
 function spawnRig(envOverrides: Record<string, string> = {}): Rig {
   const child = spawn(process.execPath, [STUB_HARNESS], {
@@ -67,9 +71,39 @@ function lastEchoedJson(updates: Rig['updates']): unknown {
 afterEach(() => {
   activeChild?.kill();
   activeChild = undefined;
+  trace.disable();
+  return Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
 });
 
 describe('AcpDriver.load() — the session/load resume handshake (issue #143)', () => {
+  it('records session/new as an Operation', async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+    provider.register();
+    providers.push(provider);
+    const { driver } = spawnRig({ STUB_SESSION_ID: 'operation-create' });
+
+    await driver.handshake({ cwd: '/tmp/new-cwd' });
+
+    const span = exporter.getFinishedSpans().find((candidate) => candidate.name === 'harmonic.session.create');
+    expect(span?.attributes).toMatchObject({ 'session.id': 'operation-create' });
+    expect(span?.status.code).toBe(0);
+  });
+
+  it('records the session/load handshake as an Operation', async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+    provider.register();
+    providers.push(provider);
+    const { driver } = spawnRig({ STUB_SESSION_ID: 'operation-load' });
+
+    await driver.load({ sessionId: 'operation-load', cwd: '/tmp/reload-cwd' });
+
+    const span = exporter.getFinishedSpans().find((candidate) => candidate.name === 'harmonic.session.load');
+    expect(span?.attributes).toMatchObject({ 'session.id': 'operation-load' });
+    expect(span?.status.code).toBe(0);
+  });
+
   it('reloads a stored Session, re-verifies modes, and rebinds fresh MCP credentials onto the wire', async () => {
     const { driver, updates } = spawnRig({ STUB_SESSION_ID: 'resume-sess-1' });
     const templates = [{ name: 'harmonic', type: 'http', url: 'http://x' }]; // credential-free, as stored

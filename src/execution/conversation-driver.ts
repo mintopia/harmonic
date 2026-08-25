@@ -9,6 +9,7 @@ import type { AppConfig } from '../config.js';
 import type { ConversationStore, PersistedConversationEvent } from '../domain/conversations.js';
 import type { PermissionRuleStore } from '../domain/permission-rules.js';
 import type { ConversationRow } from '../db/schema.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /** The ACP tool kind of a permission request (read / edit / execute / fetch), or null. */
 function permissionKind(request: unknown): string | null {
@@ -338,17 +339,25 @@ export class ConversationDriver {
 
   private async runTurn(entry: ActiveConversation, text: string): Promise<void> {
     try {
-      const result = await entry.driver.prompt([{ type: 'text', text }]);
-      await this.record(entry.conversationId, 'lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
-      await this.accumulateTurnUsage(entry.conversationId, result);
-    } catch (err) {
-      // The harness died mid-Turn: the warm session is gone, so the
-      // Conversation ends honestly (it cannot resume) rather than silently
-      // re-spawning a fresh, context-less session.
-      const message = err instanceof Error ? err.message : String(err);
-      await this.record(entry.conversationId, 'lifecycle', { event: 'error', message });
-      this.teardown(entry);
-      await this.store.end(entry.conversationId);
+      const operation = startOperation({ type: 'conversation.turn', attributes: { 'conversation.id': entry.conversationId } });
+      await operation.run(async () => {
+        try {
+          const result = await entry.driver.prompt([{ type: 'text', text }]);
+          await this.record(entry.conversationId, 'lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
+          await this.accumulateTurnUsage(entry.conversationId, result);
+          operation.update({ ...(result.stopReason === undefined ? {} : { 'conversation.turn.stop-reason': result.stopReason }) });
+          operation.end();
+        } catch (err) {
+          // The harness died mid-Turn: the warm session is gone, so the
+          // Conversation ends honestly (it cannot resume) rather than silently
+          // re-spawning a fresh, context-less session.
+          const message = err instanceof Error ? err.message : String(err);
+          operation.fail(message);
+          await this.record(entry.conversationId, 'lifecycle', { event: 'error', message });
+          this.teardown(entry);
+          await this.store.end(entry.conversationId);
+        }
+      });
     } finally {
       entry.turning = false;
       // Send the next queued follow-up, if the Conversation is still warm;

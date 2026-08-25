@@ -7,7 +7,7 @@ import type { SessionRow } from '../db/schema.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from './session-resume.js';
 import { buildResumeFallbackSummary, classifyReloadFailure } from './session-fallback.js';
 import { repoKey } from '../execution/repo-lock.js';
-import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /** The capability half of the resume environment — every axis of the
  * compatibility key except cwd, which the coordinator owns (it canonicalises the
@@ -65,16 +65,27 @@ export class BootResumeCoordinator {
      * (current adapter version, model, live permission modes). The coordinator
      * supplies the cwd axis itself — see {@link ResumeCapabilities}. */
     private readonly resolveCapabilities: (session: SessionRow) => ResumeCapabilities,
-    private readonly opts: { now?: () => number; yielding?: YieldOptions } = {},
+    private readonly opts: { now?: () => number } = {},
   ) {}
 
   /** Resume every interrupted, Session-bound Run not already resumed. Safe to
    * call repeatedly (idempotent — see the class doc comment). */
   async resume(now?: number): Promise<void> {
+    const operation = startOperation({ type: 'startup.boot-resume', attributes: {} });
+    try {
+      await operation.run(() => this.resumeInterrupted(now));
+      operation.end();
+    } catch (error) {
+      operation.fail(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  private async resumeInterrupted(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
-    await forEachYielding(await this.runStore.listResumableInterrupted(), async (orphan) => {
-      if (await this.alreadyHandled(orphan.id)) return; // once-only (AC3)
-      if (orphan.sessionRowId === null) return; // narrowing; the query already excludes null
+    for (const orphan of await this.runStore.listResumableInterrupted()) {
+      if (await this.alreadyHandled(orphan.id)) continue; // once-only (AC3)
+      if (orphan.sessionRowId === null) continue; // narrowing; the query already excludes null
 
       const session = await this.sessionStore.get(orphan.sessionRowId);
       const task = await this.taskService.get(orphan.taskId);
@@ -143,7 +154,7 @@ export class BootResumeCoordinator {
       // `running` Task, from being re-orphaned on a later boot — see
       // `RunStore.markInterrupted` and the boot Task sweep in `app.ts`).
       await this.taskService.setState(orphan.taskId, 'running');
-    }, this.opts.yielding);
+    }
   }
 
   /** Whether `runId` is already part of a resume — it was resumed

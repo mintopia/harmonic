@@ -9,7 +9,7 @@ import { foldJournal, type LandingEffect, type ObservedState } from './landing.j
 import { isMutating, survivesRestart } from './turn-queue.js';
 import { Git } from '../execution/git.js';
 import { landBranch } from '../execution/branch-landing.js';
-import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /**
  * Unified crash recovery across facts/journal/queue (issue #117): one boot-time
@@ -59,11 +59,21 @@ export class CrashRecoveryCoordinator {
       now?: () => number;
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
       isDirectContextClean?: (workingDir: string) => Promise<boolean>;
-      yieldOptions?: YieldOptions;
     } = {},
   ) {}
 
   async reconcile(now?: number): Promise<void> {
+    const operation = startOperation({ type: 'startup.crash-reconcile', attributes: {} });
+    try {
+      await operation.run(() => this.reconcileInterrupted(now));
+      operation.end();
+    } catch (error) {
+      operation.fail(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  private async reconcileInterrupted(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
     await this.reconcileLandingOrphans(ts);
     await this.reconcileTurnQueue(ts);
@@ -97,19 +107,19 @@ export class CrashRecoveryCoordinator {
    */
   private async reconcileLeases(): Promise<void> {
     const isClean = this.opts.isDirectContextClean ?? directContextProvablyClean;
-    await forEachYielding(await this.leaseStore.listAll(), async (lease) => {
-      if (lease.state === 'suspect') return; // already reconciled — idempotent
+    for (const lease of await this.leaseStore.listAll()) {
+      if (lease.state === 'suspect') continue; // already reconciled — idempotent
       const run = await this.runStore.get(lease.ownerRunId);
       const task = await this.taskService.get(run.taskId);
       const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
       if (releasable) await this.leaseStore.release(lease.key);
       else await this.leaseStore.markSuspect(lease.key);
-    }, this.opts.yieldOptions);
+    }
   }
 
   /** Pass A: resolve every Run mid-landing when the process died. */
   private async reconcileLandingOrphans(now: number): Promise<void> {
-    await forEachYielding(await this.runStore.listLandingOrphans(), async (run) => {
+    for (const run of await this.runStore.listLandingOrphans()) {
       const task = await this.taskService.get(run.taskId);
       const poncSeq = await this.landingJournal.ponc(run.id);
       if (poncSeq === null) {
@@ -117,7 +127,7 @@ export class CrashRecoveryCoordinator {
         // started (see landing.ts's module doc comment). Settle it as an
         // interrupted orphan, the same disposition the generic sweep would use.
         await this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
-        return;
+        continue;
       }
 
       // A landing died between intent and result: ask the world (a worktree
@@ -127,21 +137,7 @@ export class CrashRecoveryCoordinator {
       // effect with an `ok:true` result is `'already-applied'`
       // (landing.ts's `reconcile`) and never reaches `observed` at all, so a
       // fully-applied landing reconciles hermetically, no process spawned.
-      const journalViews = await this.landingJournal.views(run.id);
-      const priorEntries = foldJournal(journalViews);
-      const latestResults = new Map<string, typeof journalViews[number]>();
-      for (const row of journalViews) {
-        if (row.kind === 'result' && row.idempotencyKey !== null) latestResults.set(row.idempotencyKey, row);
-      }
-      const failedResult = [...latestResults.values()].find((row) => row.payload['ok'] === false);
-      if (failedResult) {
-        const detail = failedResult.payload['detail'];
-        await this.landing.reparkForReview(run);
-        await this.runStore.update(run.id, {
-          reviewFeedback: typeof detail === 'string' ? detail : 'landing failed; retry accept or land via PR/manual',
-        });
-        return;
-      }
+      const priorEntries = foldJournal(await this.landingJournal.views(run.id));
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
       let merged = false;
       if (needsWorldCheck && run.branch && run.baseBranch) {
@@ -182,13 +178,13 @@ export class CrashRecoveryCoordinator {
       // conflict) — leave the Run parked in `landing` / the Task in
       // `awaiting-review` for a human to retry accept. A later boot
       // re-reconciles idempotently.
-    }, this.opts.yieldOptions);
+    }
   }
 
   /** Pass B: the turn queue — cancel every pending turn, resolve whatever is
    * still `in_flight` (no live harness survives a restart). */
   private async reconcileTurnQueue(now: number): Promise<void> {
-    await forEachYielding(await this.turnQueue.listUnsettled(), async (row) => {
+    for (const row of await this.turnQueue.listUnsettled()) {
       if (row.status === 'queued' || row.status === 'claimed') {
         // A pending resume re-entry (`crash-recovery`, issue #146) is *meant* to
         // survive a restart and be picked up by the next running process — the
@@ -197,9 +193,9 @@ export class CrashRecoveryCoordinator {
         // enqueued it. (An in_flight one still falls through below: it is
         // non-mutating, so it just settles `failed`, never blocking single-flight
         // on the next boot.)
-        if (survivesRestart(row.purpose)) return;
+        if (survivesRestart(row.purpose)) continue;
         await this.turnQueue.cancel(row.id, 'execution-closed', now);
-        return;
+        continue;
       }
       // in_flight: no live harness for it now. A mutating corrective turn
       // (self-heal/re-merge) touched the workspace out from under the crash —
@@ -223,7 +219,7 @@ export class CrashRecoveryCoordinator {
         }
       }
       await this.turnQueue.settle(row.id, 'failed', now);
-    }, this.opts.yieldOptions);
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import { sessions, type SessionRow, type SessionRetireReason } from '../db/schem
 import type { AcpInitializeResult } from '../acp/driver.js';
 import { DomainError } from './errors.js';
 import { canTransition, isRetentionElapsed } from './session-retirement.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /**
  * Keys on an MCP server template that can carry a secret. `session/new`
@@ -156,57 +157,68 @@ export class SessionStore {
     const supportsLoadSession = readLoadSessionCapability(input.capabilities);
     const mcpTemplates = JSON.stringify(stripMcpCredentials(input.mcpTemplates));
     const estimatedWarmUntil = estimateWarmUntil(input.harness, input.now);
-    return this.db.write(async (db) => {
-      const existing = await db
-        .select()
-        .from(sessions)
-        .where(and(eq(sessions.harness, input.harness), eq(sessions.harnessSessionId, input.harnessSessionId)))
-        .get();
-      if (existing) {
-        return (await db
-          .update(sessions)
-          .set({
-            model: input.model,
-            cwd: input.cwd,
-            workspaceId: input.workspaceId,
-            ...(input.transcriptPath ? { transcriptPath: input.transcriptPath } : {}),
-            mcpTemplates,
-            ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
-            capabilitySnapshot,
-            supportsLoadSession,
-            adapterVersion: input.adapterVersion,
-            estimatedWarmUntil,
-            status: 'active',
-            lastActiveAt: input.now,
-            updatedAt: input.now,
-          })
-          .where(eq(sessions.id, existing.id))
-          .returning()
-          .get())!;
-      }
-      return db
-        .insert(sessions)
-        .values({
-          harness: input.harness,
-          harnessSessionId: input.harnessSessionId,
-          model: input.model,
-          cwd: input.cwd,
-          workspaceId: input.workspaceId,
-          transcriptPath: input.transcriptPath ?? null,
-          mcpTemplates,
-          permissionMode: input.permissionMode ?? null,
-          capabilitySnapshot,
-          supportsLoadSession,
-          adapterVersion: input.adapterVersion,
-          status: 'active',
-          lastActiveAt: input.now,
-          estimatedWarmUntil,
-          createdAt: input.now,
-          updatedAt: input.now,
-        })
-        .returning()
-        .get();
-    });
+    const operation = startOperation({ type: 'session.create', attributes: { 'session.harness': input.harness } });
+    try {
+      const session = await operation.run(() =>
+        this.db.write(async (db) => {
+          const existing = await db
+            .select()
+            .from(sessions)
+            .where(and(eq(sessions.harness, input.harness), eq(sessions.harnessSessionId, input.harnessSessionId)))
+            .get();
+          if (existing) {
+            return (await db
+              .update(sessions)
+              .set({
+                model: input.model,
+                cwd: input.cwd,
+                workspaceId: input.workspaceId,
+                ...(input.transcriptPath ? { transcriptPath: input.transcriptPath } : {}),
+                mcpTemplates,
+                ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+                capabilitySnapshot,
+                supportsLoadSession,
+                adapterVersion: input.adapterVersion,
+                estimatedWarmUntil,
+                status: 'active',
+                lastActiveAt: input.now,
+                updatedAt: input.now,
+              })
+              .where(eq(sessions.id, existing.id))
+              .returning()
+              .get())!;
+          }
+          return db
+            .insert(sessions)
+            .values({
+              harness: input.harness,
+              harnessSessionId: input.harnessSessionId,
+              model: input.model,
+              cwd: input.cwd,
+              workspaceId: input.workspaceId,
+              transcriptPath: input.transcriptPath ?? null,
+              mcpTemplates,
+              permissionMode: input.permissionMode ?? null,
+              capabilitySnapshot,
+              supportsLoadSession,
+              adapterVersion: input.adapterVersion,
+              status: 'active',
+              lastActiveAt: input.now,
+              estimatedWarmUntil,
+              createdAt: input.now,
+              updatedAt: input.now,
+            })
+            .returning()
+            .get();
+        }),
+      );
+      operation.update({ 'session.id': session.id, 'session.supports-load': session.supportsLoadSession });
+      operation.end();
+      return session;
+    } catch (error) {
+      operation.fail(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   /** Record the ACP permission mode once it is set on the Session (afk Runs set

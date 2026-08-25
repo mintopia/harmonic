@@ -3,6 +3,7 @@ import type { SessionStore } from './sessions.js';
 import type { RunStore } from './runs.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { startOperation } from '../telemetry/operations.js';
 import {
   decideRetirement,
   DEFAULT_RETENTION,
@@ -101,6 +102,19 @@ export class SessionRetirementCoordinator {
    * spawns instead of firing them in one uninterrupted burst.
    */
   async drain(now: number = this.clock()): Promise<number> {
+    const operation = startOperation({ type: 'session.retire', attributes: {} });
+    try {
+      const retired = await operation.run(() => this.drainSessions(now));
+      operation.update({ 'session.retired.count': retired });
+      operation.end();
+      return retired;
+    } catch (error) {
+      operation.fail(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  private async drainSessions(now: number): Promise<number> {
     // 1. Retention deadlines: an idle Session whose window lapsed is owed removal.
     await forEachYielding(await this.sessions.listRetentionDue(now), async (session) => {
       await this.sessions.beginRetiring(session.id, session.retireReason ?? 'retention-ttl', now);
