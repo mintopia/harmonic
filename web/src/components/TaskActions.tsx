@@ -199,7 +199,12 @@ export function TaskActions({
         {ordered.map(button)}
       </div>
       {rejecting && (
-        <RejectDialog taskId={task.id} onClose={() => setRejecting(false)} onDone={done(() => setRejecting(false))} />
+        <RejectDialog
+          taskId={task.id}
+          origin={task.origin}
+          onClose={() => setRejecting(false)}
+          onDone={done(() => setRejecting(false))}
+        />
       )}
       {reattempting && (
         <ReattemptDialog

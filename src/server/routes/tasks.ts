@@ -25,7 +25,16 @@ import { errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSc
 
 /** The reviewer's note, carried onto the re-attempt or back to the queue. */
 const feedbackExample = 'The limiter is per-process; it needs to be shared across workers.';
-const requeueInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
+const requeueInputSchema = z
+  .object({
+    feedback: z.string().optional().meta({ example: feedbackExample }),
+    /** How the re-run continues the rejected Run's Session (issue #170), for the
+     * re-run-in-place path a mirrored Task takes instead of reattempt: `'full'`
+     * (default) re-binds the warm Session, `'condensed'` starts fresh carrying
+     * only the feedback. Omit to keep the historical full-continuation. */
+    continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
+  })
+  .nullish();
 const reattemptInputSchema = z
   .object({
     feedback: z.string().optional().meta({ example: feedbackExample }),
@@ -623,7 +632,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Send a failed task back to ready for another attempt, with optional feedback for the retry. Native tasks append it to the prompt; mirrored tasks carry it in the feedback field (their prompt is re-derived from the ticket each poll). Reachable with a run-scoped Run Key.",
+          "Send a failed task back to ready for another attempt, re-running the SAME task in place, with optional feedback for the retry. Native tasks append it to the prompt; mirrored tasks carry it in the feedback field (their prompt is re-derived from the ticket each poll). This is the reject re-run path for a mirrored task (which cannot be re-attempted as a new task), so it also accepts the issue #170 Session `continuation` choice. Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
         body: requeueInputSchema,
         response: {
@@ -632,7 +641,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async (req) => await withDeps(await ctx.tasks.requeue(req.params.id, req.body?.feedback)),
+    async (req) => await withDeps(await ctx.tasks.requeue(req.params.id, req.body?.feedback, req.body?.continuation)),
   );
 
   app.post(

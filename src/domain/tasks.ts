@@ -660,7 +660,7 @@ export class TaskService {
    * feedback is appended to the prompt so the retry learns from what
    * went wrong.
    */
-  async requeue(id: number, feedback?: string): Promise<TaskRow> {
+  async requeue(id: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     const task = await this.get(id);
     if (task.state !== 'failed') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only failed tasks can be re-queued`);
@@ -671,6 +671,11 @@ export class TaskService {
       updatedAt: Date.now(),
       // Default: clear any stale re-attempt feedback (set below when supplied).
       feedback: null,
+      // How the next Run continues the rejected Run's Session (issue #170), read
+      // by the Runner's bindContinuationIfEligible. Cleared unless the operator
+      // picked one in the reject dialog — this is the re-run-in-place equivalent
+      // of reattempt's continuationChoice for a mirrored Task.
+      continuationChoice: continuation ?? null,
     };
     if (trimmed) {
       if (task.origin === 'mirrored') {
@@ -721,6 +726,15 @@ export class TaskService {
     // Copy from the raw row so an inherited default (`null`) is re-attempted as
     // inherited, not frozen to the value it happened to resolve to today.
     const original = await this.getRaw(originalId);
+    if (original.origin === 'mirrored') {
+      // A mirrored Task IS its ticket (unique on trackerRef): cloning it would
+      // drop origin/trackerRef/mapRef and detach the copy from its ticket and
+      // Epic. Reject must re-run it in place via `requeue`, never here.
+      throw new DomainError(
+        'conflict',
+        `task ${originalId} is mirrored; it cannot be re-attempted as a new task (that would detach it from its ticket and Epic) — re-run it in place via requeue`,
+      );
+    }
     if (!TERMINAL_STATES.includes(original.state)) {
       // A Task requeued to `ready`/`blocked` after its latest Run was rejected or
       // failed is still genuinely re-attemptable — it HAS a finished attempt to

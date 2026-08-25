@@ -151,9 +151,14 @@ export const api = {
   steerTask: (id: number, text: string) =>
     request<{ ok: true }>('POST', `/api/tasks/${id}/steer`, { text }),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
-  /** Send a failed task back to ready in place (failed → ready), carrying optional feedback. */
-  requeueTask: (id: number, feedback?: string) =>
-    request<Task>('POST', `/api/tasks/${id}/requeue`, feedback ? { feedback } : {}),
+  /** Send a failed task back to ready in place (failed → ready), carrying optional
+   * feedback and, for the mirrored-reject re-run path, the issue #170 continuation
+   * choice ('full' resumes the same Session, 'condensed' starts fresh). */
+  requeueTask: (id: number, feedback?: string, continuation?: 'full' | 'condensed') =>
+    request<Task>('POST', `/api/tasks/${id}/requeue`, {
+      ...(feedback ? { feedback } : {}),
+      ...(continuation ? { continuation } : {}),
+    }),
   addDependency: (id: number, dependsOnId: number) =>
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
   removeDependency: (id: number, depId: number) =>

@@ -211,3 +211,88 @@ describe('linked re-attempts continue in the same Session (issue #147)', () => {
     expect(res.status).toBe(409);
   });
 });
+
+// A mirrored Task IS its ticket (unique on trackerRef). Re-attempting it would
+// clone a native copy with no trackerRef/mapRef — detached from the ticket and
+// its Epic (the live bug). Reject must re-run the SAME task in place instead.
+describe('rejecting a mirrored task re-runs it in place, never detaching a native clone', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer(stubHarness());
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  const seedMirroredHitl = async (trackerRef: number, mapRef: number | null) => {
+    // A native seed pins the workspace; upsertMirrored then projects the ticket
+    // into it. drive:'hitl' makes the Run park in awaiting-review (like the
+    // afk→hitl escalation escape hatch) instead of auto-completing.
+    const seeded = (await server.api('POST', '/api/tasks', { prompt: 'seed for workspace' })).body;
+    const ws = (await server.app.ctx.tasks.get(seeded.id)).workspaceId ?? undefined;
+    return await server.app.ctx.tasks.upsertMirrored(
+      {
+        trackerRef,
+        prompt: `ticket ${trackerRef}`,
+        workflow: 'implement',
+        wayfinderType: null,
+        drive: 'hitl',
+        mapRef,
+        closed: false,
+      },
+      ws,
+    );
+  };
+
+  it('reattempt() refuses a mirrored original with a 409', async () => {
+    const mirrored = await seedMirroredHitl(55501, 42);
+    const res = await server.api('POST', `/api/tasks/${mirrored.id}/reattempt`, { feedback: 'x' });
+    expect(res.status).toBe(409);
+    // No native clone was spawned: the only task on that ticket is the original.
+    expect((await server.api('GET', `/api/tasks/${mirrored.id}`)).body.origin).toBe('mirrored');
+  });
+
+  it('reject → re-run re-queues the SAME task, keeping origin/trackerRef/mapRef and carrying feedback', async () => {
+    const mirrored = await seedMirroredHitl(55502, 77);
+    await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'awaiting-review');
+
+    // Reject settles the Run failed and moves the Task to failed.
+    await server.api('POST', `/api/tasks/${mirrored.id}/reject`, { feedback: 'needs the header row' });
+    expect((await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state).toBe('failed');
+
+    // The web's mirrored-reject path re-runs in place via requeue (NOT reattempt).
+    const requeued = (await server.api('POST', `/api/tasks/${mirrored.id}/requeue`, { feedback: 'needs the header row' }))
+      .body;
+    // Same task id — no new task was created…
+    expect(requeued.id).toBe(mirrored.id);
+    // …still mirrored, still on its ticket and Epic map…
+    expect(requeued.origin).toBe('mirrored');
+    expect(requeued.trackerRef).toBe(55502);
+    expect(requeued.mapRef).toBe(77);
+    expect(requeued.state).toBe('ready');
+    // …and the reviewer feedback rides the feedback column (composed into the
+    // next Run's prompt at run time), since a mirrored prompt is re-derived from
+    // the ticket each poll.
+    expect(requeued.feedback).toBe('needs the header row');
+    expect(requeued.reattemptOf).toBeNull();
+
+    // The ticket still has exactly one task — no detached native duplicate.
+    const all = (await server.api('GET', '/api/tasks')).body.tasks as { trackerRef: number | null }[];
+    expect(all.filter((t) => t.trackerRef === 55502)).toHaveLength(1);
+  });
+
+  it('re-run carries the issue #170 condensed continuation choice onto the same task', async () => {
+    const mirrored = await seedMirroredHitl(55503, null);
+    await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'awaiting-review');
+    await server.api('POST', `/api/tasks/${mirrored.id}/reject`, { feedback: 'try again' });
+
+    const requeued = (
+      await server.api('POST', `/api/tasks/${mirrored.id}/requeue`, { feedback: 'try again', continuation: 'condensed' })
+    ).body;
+    expect(requeued.id).toBe(mirrored.id);
+    expect(requeued.continuationChoice).toBe('condensed');
+  });
+});

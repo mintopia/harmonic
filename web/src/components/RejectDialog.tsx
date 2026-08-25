@@ -10,7 +10,7 @@ import {
   panelTitle,
   labelType,
 } from '../ui';
-import type { ContinuationPreview } from '../types';
+import type { ContinuationPreview, TaskOrigin } from '../types';
 import { taskLabel } from '../id-format.js';
 
 type AvailablePreview = Extract<ContinuationPreview, { available: true }>;
@@ -39,13 +39,19 @@ export function warmthGuidance(p: AvailablePreview): { headline: string; recomme
 
 export function RejectDialog({
   taskId,
+  origin,
   onClose,
   onDone,
 }: {
   taskId: number;
+  origin: TaskOrigin;
   onClose: () => void;
   onDone: () => void;
 }) {
+  // A mirrored Task IS its ticket: re-attempting it as a new task would detach it
+  // from the ticket and its Epic, so its retry re-runs the SAME task in place
+  // (requeue) instead. Native tasks spawn a linked re-attempt as before.
+  const mirrored = origin === 'mirrored';
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,11 +84,14 @@ export function RejectDialog({
         await api.rejectTask(taskId, fb);
         rejected.current = true;
       }
-      if (retry) await api.reattempt(taskId, fb, continuation);
+      // Mirrored → re-run the same task in place (requeue); native → linked re-attempt.
+      if (retry) await (mirrored ? api.requeueTask(taskId, fb, continuation) : api.reattempt(taskId, fb, continuation));
       const suffix = continuation ? ` (${continuation})` : '';
       toastSuccess(
         retry
-          ? `${taskLabel(taskId)} rejected — re-attempt created${suffix}`
+          ? mirrored
+            ? `${taskLabel(taskId)} rejected — re-running${suffix}`
+            : `${taskLabel(taskId)} rejected — re-attempt created${suffix}`
           : `${taskLabel(taskId)} rejected — marked failed`,
       );
       onDone();
@@ -97,8 +106,9 @@ export function RejectDialog({
       <div className="p-5">
         <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)}</h2>
         <p className="mb-4 text-muted">
-          Feedback is saved on the run. Create a re-attempt to spawn a new task linked to this one, with the notes added
-          to its prompt — or mark it failed to stop here.
+          {mirrored
+            ? 'Feedback is saved on the run. Re-run this ticket to send the same task back to the queue for another attempt, carrying the notes — or mark it failed to stop here.'
+            : 'Feedback is saved on the run. Create a re-attempt to spawn a new task linked to this one, with the notes added to its prompt — or mark it failed to stop here.'}
         </p>
         <label className={`${labelType} mb-1 block text-muted`} htmlFor="reject-feedback">
           Feedback (optional)
@@ -149,7 +159,7 @@ export function RejectDialog({
             </>
           ) : (
             <button type="button" onClick={submit(true)} disabled={busy} className={btnGhost}>
-              Create re-attempt
+              {mirrored ? 'Re-run ticket' : 'Create re-attempt'}
             </button>
           )}
         </div>

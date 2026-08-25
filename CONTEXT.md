@@ -348,8 +348,12 @@ rejected. Re-queueable to *ready*, optionally with feedback.
 The review decision on an *awaiting-review* Task. Accept completes it (and
 in worktree mode merges the Run's branch into its base branch; a conflict
 returns it to *awaiting-review*). Reject fails it and, within the cache window,
-its fix continues in the same Session. Human-only unless a Verification agent is
-configured to auto-accept on a *pass*.
+its fix continues in the same Session. The re-run target depends on origin: a
+native Task spawns a **new linked Task** (re-attempt, `reattemptOf`), whereas a
+mirrored Task is **re-run in place** (Re-queue on the SAME Task) — a mirrored
+Task IS its ticket (unique on tracker ref), so cloning it would detach a native
+copy from its ticket and Epic; `reattempt()` refuses a mirrored original.
+Human-only unless a Verification agent is configured to auto-accept on a *pass*.
 _Avoid_: approve, merge (as the verb for the decision)
 
 ### Execution
