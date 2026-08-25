@@ -248,7 +248,7 @@ export class TaskService {
   private agentWorkable(task: TaskRow, openBlockerCount: number): boolean {
     if (openBlockerCount > 0) return false;
     if (task.origin !== 'mirrored') return true;
-    return task.trackerLabels?.includes('ready-for-agent') === true;
+    return task.trackerLabels === null ? task.drive !== 'hitl' : task.trackerLabels.includes('ready-for-agent');
   }
 
   /** The raw stored row (four defaults nullable); TaskService-internal. */

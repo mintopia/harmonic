@@ -153,6 +153,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     );
     const legacyMaps = deriveMaps(fixture, mirrored, workspace.id);
     const beforeRestart = await manager.listEpics(workspace.id);
+    // #13 is excluded through the real TaskService Blocker edge and its
+    // derived agentWorkable flag, not a hand-built frontier input.
+    expect(beforeRestart.find((epic) => epic.ref === 10)?.ready).toEqual([11]);
     expect(beforeRestart.map((epic) => ({
       ref: epic.ref,
       title: epic.title,

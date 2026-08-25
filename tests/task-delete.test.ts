@@ -64,10 +64,12 @@ describe('TaskService.delete (issue #162)', () => {
     expect(await asyncDb.read((d) => d.select().from(runFacts).where(eq(runFacts.runId, runId)).all())).toHaveLength(0);
   });
 
-  it('removes dependency edges in both directions and re-derives a former dependent blocked→ready', async () => {
+  it('removes dependency edges in both directions and makes a former dependent agent-workable', async () => {
     const blocker = await tasksSvc.create({ prompt: 'blocker' });
     const dependent = await tasksSvc.create({ prompt: 'dependent', dependsOn: [blocker.id] });
-    expect((await tasksSvc.get(dependent.id)).state).toBe('blocked');
+    expect((await tasksSvc.get(dependent.id)).state).toBe('ready');
+    expect((await tasksSvc.withDeps(await tasksSvc.get(dependent.id))).openBlockerCount).toBe(1);
+    expect((await tasksSvc.withDeps(await tasksSvc.get(dependent.id))).agentWorkable).toBe(false);
 
     // Also give the blocker a dependency of its own, to prove the taskId-side edge is removed too.
     const grandBlocker = await tasksSvc.create({ prompt: 'grand-blocker' });
@@ -80,6 +82,8 @@ describe('TaskService.delete (issue #162)', () => {
     );
     expect(remaining).toHaveLength(0);
     expect((await tasksSvc.get(dependent.id)).state).toBe('ready');
+    expect((await tasksSvc.withDeps(await tasksSvc.get(dependent.id))).openBlockerCount).toBe(0);
+    expect((await tasksSvc.withDeps(await tasksSvc.get(dependent.id))).agentWorkable).toBe(true);
   });
 
   it('nulls a re-attempt reattemptOf instead of deleting it when the original is deleted', async () => {
