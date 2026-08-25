@@ -1,3 +1,4 @@
+import type { SpanContext } from '@opentelemetry/api';
 import type { AppConfig } from '../config.js';
 import type { OrderedEligibleTask, TaskService } from '../domain/tasks.js';
 import type { RunStore } from '../domain/runs.js';
@@ -8,6 +9,20 @@ import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
 import type { Runner } from './runner.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { startOperation } from '../telemetry/operations.js';
+
+function failureReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function taskOperationAttributes(task: Pick<TaskRow, 'id' | 'origin' | 'priority' | 'workspaceId'>): Record<string, string | number> {
+  return {
+    'task.id': task.id,
+    'task.origin': task.origin,
+    'task.priority': task.priority,
+    ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
+  };
+}
 
 /**
  * The direct-mode Work Context identity a Task would occupy, or `undefined` in
@@ -60,7 +75,7 @@ export interface MirrorClaim {
   advertiseClaim(task: TaskRow): Promise<void>;
 }
 
-type RunLauncher = (taskId: Parameters<Runner['launchClaimed']>[0]) => Promise<unknown>;
+type RunLauncher = (taskId: Parameters<Runner['launchClaimed']>[0], parent?: SpanContext) => Promise<unknown>;
 
 export interface AutoRunnerOptions {
   mirror?: MirrorClaim;
@@ -196,21 +211,26 @@ export class AutoRunner {
       return;
     }
     this.filling = true;
+    const tick = startOperation({ type: 'auto-runner.tick', attributes: {} });
     try {
-      do {
-        this.refill = false;
-        // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
-        // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
-        const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
-        const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
-        // Refresh before the capacity loop: a full machine never reaches
-        // `pickNext`, but its queued Tasks still need to say why they wait.
-        await this.refreshSkipReasons({ master, ceiling, workspacesById });
-        if (!master) return;
-        await this.fillSlots(workspacesById, ceiling);
-        await this.refreshSkipReasons({ master, ceiling, workspacesById });
-      } while (this.refill);
-    } catch {
+      await tick.run(async () => {
+        do {
+          this.refill = false;
+          // `enabled` is the fleet-wide master switch; `maxConcurrentRuns` the
+          // Machine Ceiling. Master off ⇒ nothing runs, whatever a Workspace enable says.
+          const { enabled: master, maxConcurrentRuns: ceiling } = this.getConfig().autoRunner;
+          const workspacesById = new Map((await this.getWorkspaces()).map((w) => [w.id, w]));
+          // Refresh before the capacity loop: a full machine never reaches
+          // `pickNext`, but its queued Tasks still need to say why they wait.
+          await this.refreshSkipReasons({ master, ceiling, workspacesById });
+          if (!master) return;
+          await this.fillSlots(workspacesById, ceiling, tick.spanContext);
+          await this.refreshSkipReasons({ master, ceiling, workspacesById });
+        } while (this.refill);
+      });
+      tick.end();
+    } catch (error) {
+      tick.fail(failureReason(error));
       // Filling is best-effort; the next poke retries.
     } finally {
       this.filling = false;
@@ -221,29 +241,46 @@ export class AutoRunner {
    * Claim one picked Task, then spawn it. The conditional DB claim is the local
    * ownership lock; only its winner may advertise a mirrored claim or launch.
    */
-  private async startPicked(task: TaskRow, skip: Set<number>): Promise<boolean> {
-    const claimed = await this.taskService.claimReady(task.id);
-    if (!claimed) {
-      skip.add(task.id);
-      return false;
-    }
-    this.schedulerSkipReasons.delete(task.id);
-    this.contextWaitingSince.delete(task.id);
-    this.missingEpicBaseSince.delete(task.id);
-    if (claimed.origin === 'mirrored' && this.mirror) {
-      try {
-        await this.mirror.advertiseClaim(claimed);
-      } catch {
-        // Advisory claim failed — proceed; reconcile retries the assignment.
-      }
-    }
+  private async startPicked(task: TaskRow, skip: Set<number>, tickParent: SpanContext): Promise<boolean> {
+    const pick = startOperation({
+      type: 'auto-runner.pick',
+      parent: tickParent,
+      attributes: taskOperationAttributes(task),
+    });
     try {
-      await this.runner.launchClaimed(task.id);
-      return true;
-    } catch {
-      await this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
-      skip.add(task.id);
-      return false;
+      const started = await pick.run(async () => {
+        const claimed = await this.taskService.claimReady(task.id);
+        if (!claimed) {
+          pick.update({ 'auto-runner.claimed': false });
+          skip.add(task.id);
+          return false;
+        }
+        pick.update({ 'auto-runner.claimed': true });
+        this.schedulerSkipReasons.delete(task.id);
+        this.contextWaitingSince.delete(task.id);
+        this.missingEpicBaseSince.delete(task.id);
+        if (claimed.origin === 'mirrored' && this.mirror) {
+          try {
+            await this.mirror.advertiseClaim(claimed);
+          } catch {
+            // Advisory claim failed — proceed; reconcile retries the assignment.
+          }
+        }
+        try {
+          await this.runner.launchClaimed(task.id, tickParent);
+          return true;
+        } catch (error) {
+          pick.fail(failureReason(error));
+          await this.taskService.setState(task.id, 'ready'); // couldn't spawn (e.g. bad harness) — don't strand it running
+          skip.add(task.id);
+          return false;
+        }
+      });
+      pick.end();
+      return started;
+    } catch (error) {
+      pick.fail(failureReason(error));
+      throw error;
     }
   }
 
@@ -380,7 +417,11 @@ export class AutoRunner {
    * context. A Task started earlier this pass is folded into `occupied`, so it
    * correctly blocks a same-context sibling visited later.
    */
-  private async fillSlots(workspacesById: Map<number, WorkspaceRow>, ceiling: number): Promise<void> {
+  private async fillSlots(
+    workspacesById: Map<number, WorkspaceRow>,
+    ceiling: number,
+    tickParent: SpanContext,
+  ): Promise<void> {
     // Tasks parked this cycle because they are un-spawnable, so the slow claim
     // path can't spin re-picking the same one before a re-scan.
     const skip = new Set<number>();
@@ -416,7 +457,7 @@ export class AutoRunner {
       if (!this.slotCandidate(task, { skip, workspacesById, runningByWorkspace, ceiling, occupied, epicGate })) {
         continue;
       }
-      const started = await this.startPicked(task, skip);
+      const started = await this.startPicked(task, skip, tickParent);
       if (!started) continue;
       // Local bookkeeping mirrors what a fresh count query would report after the
       // claim: a Workspace can now reach its own cap mid-fill while the ceiling

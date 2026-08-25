@@ -1,10 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { context, trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { defaultConfig } from '../src/config.js';
+import { openAsyncDb } from '../src/db/async.js';
+import { TaskService } from '../src/domain/tasks.js';
+import { AutoRunner } from '../src/execution/auto-runner.js';
 import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
+import { allWorkspaces } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -106,5 +114,92 @@ describe('operations (issue #284)', () => {
     if (!parentSpan || !childSpan) throw new Error('Expected exported parent and child spans');
     expect(childSpan.parentSpanContext?.spanId).toBe(parentSpan.spanContext().spanId);
     await telemetry.shutdown();
+  });
+});
+
+describe('Auto-Runner operations (issue #289)', () => {
+  it('nests a task pick and its Run under the scheduler tick', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-'));
+    const db = await openAsyncDb(directory);
+    const { exporter, registry } = installOperations();
+    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const tasks = new TaskService(db, () => config, allWorkspaces(db));
+    const task = await tasks.create({ prompt: 'trace a scheduled pick', isolationMode: 'worktree' });
+    const started: number[] = [];
+    const autoRunner = new AutoRunner(
+      tasks,
+      {
+        countRunning: async () => 0,
+        countRunningByWorkspace: async () => new Map<number, number>(),
+      },
+      {
+        launchClaimed: async (taskId) => {
+          started.push(taskId);
+          const run = startOperation({ type: 'run', attributes: { 'task.id': taskId } });
+          run.end();
+        },
+      },
+      () => config,
+      allWorkspaces(db),
+    );
+
+    try {
+      autoRunner.poke();
+      await vi.waitFor(() => expect(started).toEqual([task.id]));
+
+      const spans = exporter.getFinishedSpans();
+      const tick = spans.find((span) => span.name === 'harmonic.auto-runner.tick');
+      const pick = spans.find((span) => span.name === 'harmonic.auto-runner.pick-start');
+      const run = spans.find((span) => span.name === 'harmonic.run');
+      if (!tick || !pick || !run) throw new Error('Expected scheduler tick, pick/start, and Run Operations');
+      expect(pick.parentSpanContext?.spanId).toBe(tick.spanContext().spanId);
+      expect(run.parentSpanContext?.spanId).toBe(pick.spanContext().spanId);
+      expect(pick.attributes).toMatchObject({ 'task.id': task.id });
+      expect(registry.list()).toEqual([]);
+    } finally {
+      autoRunner.stop();
+      await db.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('marks a failed task start as an error and returns the Task to ready', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-failure-'));
+    const db = await openAsyncDb(directory);
+    const { exporter, registry } = installOperations();
+    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
+    const tasks = new TaskService(db, () => config, allWorkspaces(db));
+    const task = await tasks.create({ prompt: 'fail a scheduled start', isolationMode: 'worktree' });
+    let launchAttempts = 0;
+    const autoRunner = new AutoRunner(
+      tasks,
+      {
+        countRunning: async () => 0,
+        countRunningByWorkspace: async () => new Map<number, number>(),
+      },
+      {
+        launchClaimed: async () => {
+          launchAttempts += 1;
+          throw new Error('launch failed');
+        },
+      },
+      () => config,
+      allWorkspaces(db),
+    );
+
+    try {
+      autoRunner.poke();
+      await vi.waitFor(() => expect(launchAttempts).toBe(1));
+      expect((await tasks.get(task.id)).state).toBe('ready');
+
+      const pick = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.auto-runner.pick-start');
+      if (!pick) throw new Error('Expected failed pick/start Operation');
+      expect(pick.status).toEqual({ code: 2, message: 'launch failed' });
+      expect(registry.list()).toEqual([]);
+    } finally {
+      autoRunner.stop();
+      await db.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
