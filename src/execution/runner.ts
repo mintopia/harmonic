@@ -3564,11 +3564,11 @@ export class Runner {
           return { kind: 'terminal' };
         }
         if (decision.outcome === 'block') {
-          // Actionable fail (issue #137): the sole heal-eligible verdict. Do NOT
-          // settle — hand the failure up to the `drive` heal loop with the failing
-          // verifier's output as corrective feedback. `finalize()` already
-          // committed this turn's work onto the Run's branch and the candidate ref
-          // holds it, so the self-heal turn resumes and fixes it.
+          // Actionable fail (issue #137): do NOT settle — hand the failure up to
+          // the unified Attempt loop with the failing verifier's output as
+          // corrective feedback. `finalize()` already committed this turn's work
+          // onto the Run's branch and the candidate ref holds it, so the
+          // corrective turn resumes and fixes it.
           const attempts = await this.verificationAttempts.list(run.id);
           const output = attempts[attempts.length - 1]?.output ?? '';
           record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
