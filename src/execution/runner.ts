@@ -92,7 +92,7 @@ import { parseIntegrationBranch } from './epic-integration.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
-import { startOperation } from '../telemetry/operations.js';
+import { startOperation, type Operation } from '../telemetry/operations.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
@@ -222,6 +222,7 @@ export interface RunnerOptions {
     task: TaskRow,
     run: RunRow,
     patch: Partial<RunRow>,
+    parent: SpanContext,
   ) => Promise<{ ok: boolean; detail?: string | undefined }>;
   /** Injectable agent-critic drive (issue #164): the seam `runCritic` speaks an
    * ACP turn over. Absent → the real drive (`createAcpCriticDrive`) spawns the
@@ -458,6 +459,7 @@ type TurnOutcome =
   | { kind: 'merge-train-heal'; detail: string };
 
 export class Runner {
+  private readonly runOperations = new Map<number, Operation>();
   private active = new Map<number, ActiveRun>(); // by run id
   /** Set once {@link shutdown} kills the harnesses on process/server close, so a
    * drive loop reacting to its SIGKILLed harness leaves the Run `running` for
@@ -731,11 +733,38 @@ export class Runner {
         ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
       },
     });
-    void operation.run(() => this.drive(task, bound, harness)).then(
-      () => operation.end(),
-      (error: unknown) => operation.fail(error instanceof Error ? error.message : String(error)),
-    );
+    this.runOperations.set(bound.id, operation);
+    void operation.run(async () => {
+      try {
+        await this.drive(task, bound, harness, operation.spanContext);
+        await this.finishRunOperation(bound.id);
+      } catch (error) {
+        operation.fail(error instanceof Error ? error.message : String(error));
+        this.runOperations.delete(bound.id);
+      }
+    });
     return bound;
+  }
+
+  operationParent(runId: number): SpanContext | undefined {
+    return this.runOperations.get(runId)?.spanContext;
+  }
+
+  async finishRunOperation(runId: number): Promise<void> {
+    const operation = this.runOperations.get(runId);
+    if (!operation) return;
+    const run = await this.runStore.get(runId);
+    if (run.state === 'running') return;
+    this.runOperations.delete(runId);
+    operation.update({
+      'run.state': run.state,
+      ...(run.reason ? { 'run.reason': run.reason } : {}),
+    });
+    if (run.state === 'failed') {
+      operation.fail(run.reason ?? 'run failed');
+    } else {
+      operation.end();
+    }
   }
 
   /** Whether the Run currently holding a Work Context is a predecessor that
@@ -1434,6 +1463,7 @@ export class Runner {
     run: RunRow,
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
   ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
@@ -1464,6 +1494,8 @@ export class Runner {
           worktreePath: join(this.worktreesDir, `cmdverify-${run.id}`),
           command,
           signal,
+          parent,
+          attributes: { 'task.id': task.id, 'run.id': run.id },
         });
         await this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
         record('lifecycle', {
@@ -1506,6 +1538,8 @@ export class Runner {
           // contained (issue #136) regardless of which harness runs it.
           harness: criticHarness,
           harnessId: criticHarnessId,
+          parent,
+          attributes: { 'task.id': task.id, 'run.id': run.id },
           // Only pass the seam when injected — `exactOptionalPropertyTypes`
           // forbids an explicit `undefined`, and `runCritic` defaults it to the
           // real `createAcpCriticDrive`.
@@ -1705,6 +1739,7 @@ export class Runner {
     run: RunRow,
     branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null,
     record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
   ): Promise<'skip' | 'landed' | 'escalate'> {
     if (!branchClass || branchClass.verdict.outcome !== 'recoverable') return 'skip';
     // Only land when the fate is auto-merge — open-PR/artifact leave the branch
@@ -1742,6 +1777,8 @@ export class Runner {
         baseBranch: plan.baseBranch,
         branch: plan.landCommit,
         leaseHeld: true,
+        parent,
+        attributes: { 'task.id': task.id, 'run.id': run.id },
       });
       if (!outcome.ok) {
         record('lifecycle', { event: 'recovery-landing-failed', reason: outcome.detail });
@@ -1793,6 +1830,7 @@ export class Runner {
     run: RunRow,
     remergeCtx: ReMergeContext,
     record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
   ): Promise<'landed' | 'escalate'> {
     const start = await this.startStateOf(run.id);
     const candidateOid = (await this.runStore.get(run.id)).candidateOid;
@@ -1842,6 +1880,8 @@ export class Runner {
         baseBranch: start.startBranch,
         branch: candidateOid,
         leaseHeld: true,
+        parent,
+        attributes: { 'task.id': task.id, 'run.id': run.id },
       });
       if (!outcome.ok) {
         return await reject('land-failed', outcome.detail);
@@ -1875,7 +1915,7 @@ export class Runner {
    * in place with its cause — so a flaky environment is never mistaken for a code
    * defect. Every other ending settles inside the single turn.
    */
-  private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig): Promise<void> {
+  private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
     const maxHeals = this.getConfig().verification.maxSelfHeals;
     // The Session key for this Run's turn queue. There is no first-class Session
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
@@ -1904,7 +1944,7 @@ export class Runner {
     let inFlightTurn: number | null = null;
     try {
       for (;;) {
-      const outcome = await this.driveOnce(task, run, harness, healCtx, remergeCtx);
+      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, remergeCtx);
       if (inFlightTurn !== null) {
         // The corrective turn we dispatched has run its course — settle its queue
         // row regardless of the verdict; a further fail enqueues the next one.
@@ -2171,6 +2211,7 @@ export class Runner {
     task: TaskRow,
     run: RunRow,
     harness: HarnessConfig,
+    parent: SpanContext,
     healCtx?: HealContext,
     remergeCtx?: ReMergeContext,
   ): Promise<TurnOutcome> {
@@ -3237,6 +3278,7 @@ export class Runner {
           run,
           active.verifyAbort.signal,
           record,
+          parent,
         );
         // Verification can take up to the command's timeout (minutes). Re-check
         // the two ways the Run may have been settled out from under us during
@@ -3339,8 +3381,8 @@ export class Runner {
           }
 
           const recovered = remergeCtx
-            ? await this.landReMerge(task, run, remergeCtx, record)
-            : await this.recoverAndLand(task, run, branchClass, record);
+              ? await this.landReMerge(task, run, remergeCtx, record, parent)
+              : await this.recoverAndLand(task, run, branchClass, record, parent);
           if (recovered === 'escalate') {
             const reason = remergeCtx
               ? 'agent re-merge did not resolve the branch ambiguity'
@@ -3374,7 +3416,7 @@ export class Runner {
           // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
           // afk branch above already uses, so `landingEffectsFor` sees the real
           // branch to merge rather than a stale null.
-          const landed = await this.autoAcceptLand(task, await this.runStore.get(run.id), patch);
+          const landed = await this.autoAcceptLand(task, await this.runStore.get(run.id), patch, parent);
           if (!landed.ok) {
             // CRITICAL: `LandingCoordinator.land` writes the land fact + PONC
             // BEFORE the (possibly failing) merge (#115). Calling any settle here
@@ -3636,6 +3678,7 @@ export class Runner {
     patch: Partial<RunRow> = {},
   ): Promise<void> {
     await this.settleCoordinator.settle(task, run, type, projection, patch);
+    await this.finishRunOperation(run.id);
   }
 
   /**

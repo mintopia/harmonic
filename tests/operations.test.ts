@@ -223,3 +223,35 @@ describe('Auto-Runner operations (issue #289)', () => {
     }
   });
 });
+
+describe('Run operations (issue #290)', () => {
+  it('keeps a Run open through review and parents landing from the saved span context', async () => {
+    const { exporter, registry } = installOperations();
+    const server = await startServer(stubHarness());
+    try {
+      const task = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
+      const started = await server.api('POST', `/api/tasks/${task.body.id}/run`);
+      expect(started.status).toBe(201);
+
+      await vi.waitFor(async () => {
+        expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('awaiting-review');
+      });
+      const runId = started.body.id;
+      const live = registry.list().find((operation) => operation.name === 'harmonic.run' && operation.attributes['run.id'] === runId);
+      expect(live).toBeDefined();
+      expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.run' && span.attributes['run.id'] === runId)).toBeUndefined();
+
+      expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
+      await vi.waitFor(() => {
+        const spans = exporter.getFinishedSpans();
+        const run = spans.find((span) => span.name === 'harmonic.run' && span.attributes['run.id'] === runId);
+        const land = spans.find((span) => span.name === 'harmonic.land' && span.attributes['run.id'] === runId);
+        expect(run).toBeDefined();
+        expect(land).toBeDefined();
+        expect(land?.parentSpanContext?.spanId).toBe(run?.spanContext().spanId);
+      });
+    } finally {
+      await server.close();
+    }
+  });
+});

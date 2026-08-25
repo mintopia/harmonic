@@ -1,10 +1,14 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { trace } from '@opentelemetry/api';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { buildCandidate } from '../src/execution/candidate.js';
 import type { VerificationCommand } from '../src/config.js';
+import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import {
   runCommandVerifier,
   commandAttemptToInput,
@@ -14,6 +18,8 @@ import {
   type CommandSpawn,
   type CommandSpawnResult,
 } from '../src/verification/command-verifier.js';
+
+const providers: NodeTracerProvider[] = [];
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -76,6 +82,11 @@ describe('command verifier (issue #135)', () => {
     for (const d of [...tmpDirs, ...repos]) rmSync(d, { recursive: true, force: true });
   });
 
+  afterEach(async () => {
+    trace.disable();
+    await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
+  });
+
   describe('exitCodeToVerdict table (AC2)', () => {
     it('exit 0 → pass', () => {
       expect(exitCodeToVerdict({ code: 0, signal: null, output: '' })).toEqual({
@@ -129,6 +140,43 @@ describe('command verifier (issue #135)', () => {
 
     const input = commandAttemptToInput(attempt);
     expect(input).toMatchObject({ mechanism: 'command', verdict: 'pass', inputOid: oid, output: 'ok' });
+  });
+
+  it('opens a verify.command child operation under the run span when a parent context is supplied', async () => {
+    const { repo, oid } = await repoWithCandidate();
+    const exporter = new InMemorySpanExporter();
+    const registry = new OperationRegistry();
+    const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
+    provider.register();
+    providers.push(provider);
+    const parent = startOperation({ type: 'run', attributes: { 'run.id': 7 } });
+
+    const attempt = await parent.run(() =>
+      runCommandVerifier({
+        repoDir: repo,
+        candidateOid: oid,
+        worktreePath: freshWorktreePath(),
+        command: nodeCommand('process.exit(1)'),
+        spawn: fakeSpawn({ code: 1, signal: null, output: 'nope' }),
+        parent: parent.spanContext,
+        attributes: { 'task.id': 3, 'run.id': 7 },
+      }),
+    );
+    parent.end();
+
+    expect(attempt.verdict).toBe('fail');
+    const spans = exporter.getFinishedSpans();
+    const run = spans.find((span) => span.name === 'harmonic.run');
+    const verify = spans.find((span) => span.name === 'harmonic.verify.command');
+    if (!run || !verify) throw new Error('Expected exported run and command verification spans');
+    expect(verify.parentSpanContext?.spanId).toBe(run.spanContext().spanId);
+    expect(verify.attributes).toMatchObject({
+      'verification.mechanism': 'command',
+      'verification.verdict': 'fail',
+      'task.id': 3,
+      'run.id': 7,
+    });
+    expect(verify.status.message).toContain('command exited 1');
   });
 
   it('AC2: non-zero exit → fail', async () => {

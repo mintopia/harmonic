@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig, VerificationCritic } from '../config.js';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from '../execution/harness/adapter.js';
@@ -7,6 +8,7 @@ import type { DriveFields } from '../execution/prompt-template.js';
 import { buildCriticPrompt } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /**
  * ACP session modes the critic tries, in order, to get the SAME unattended tool
@@ -252,6 +254,8 @@ export interface RunCriticArgs {
   drive?: CriticHarnessDrive;
   /** Hard bound on the single prompt turn; generous default for a read-only review. */
   timeoutMs?: number;
+  parent?: SpanContext;
+  attributes?: Attributes;
 }
 
 export interface CriticAttempt {
@@ -307,6 +311,22 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
  * into an `inconclusive` `CriticAttempt`, not an exception.
  */
 export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
+  const operation = args.parent
+    ? startOperation({ type: 'verify.critic', parent: args.parent, attributes: { 'verification.mechanism': 'critic', ...args.attributes } })
+    : undefined;
+  try {
+    const attempt = operation ? await operation.run(() => runCriticUnchecked(args)) : await runCriticUnchecked(args);
+    operation?.update({ 'verification.verdict': attempt.verdict });
+    if (attempt.verdict === 'pass') operation?.end();
+    else operation?.fail(attempt.summary);
+    return attempt;
+  } catch (error) {
+    operation?.fail(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   const drive = args.drive ?? createAcpCriticDrive();
   const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 

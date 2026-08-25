@@ -1,8 +1,11 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { trace } from '@opentelemetry/api';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { buildCandidate } from '../src/execution/candidate.js';
 import {
   runCritic,
@@ -19,7 +22,10 @@ import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
+import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { allWorkspaces } from './helpers.js';
+
+const providers: NodeTracerProvider[] = [];
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -67,6 +73,11 @@ describe('runCritic (issue #136)', () => {
     for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
   });
 
+  afterEach(async () => {
+    trace.disable();
+    await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
+  });
+
   /** Build a fresh candidate against a throwaway repo, returning both the
    * repo and the candidate OID a test can hand to `runCritic`. */
   async function makeCandidate(ref: string): Promise<{ repo: string; oid: string }> {
@@ -107,6 +118,46 @@ describe('runCritic (issue #136)', () => {
       transcriptPath: null,
       harness: 'claude',
     });
+  });
+
+  it('opens a verify.critic child operation under the run span when a parent context is supplied', async () => {
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-operation');
+    const exporter = new InMemorySpanExporter();
+    const registry = new OperationRegistry();
+    const provider = new NodeTracerProvider({ spanProcessors: [registry, new SimpleSpanProcessor(exporter)] });
+    provider.register();
+    providers.push(provider);
+    const parent = startOperation({ type: 'run', attributes: { 'run.id': 11 } });
+
+    const attempt = await parent.run(() =>
+      runCritic({
+        repoDir: repo,
+        candidateOid: oid,
+        fields: FIELDS,
+        worktreePath: freshWorktreePath('harmonic-critic-wt-operation-'),
+        critic: { prompt: 'Review the diff.', model: 'stub-model' },
+        harness: FAKE_HARNESS,
+        harnessId: 'claude',
+        drive: { run: async () => ({ output: '{"verdict":"fail","summary":"wrong behavior"}', permissionRequests: [] }) },
+        parent: parent.spanContext,
+        attributes: { 'task.id': 5, 'run.id': 11 },
+      }),
+    );
+    parent.end();
+
+    expect(attempt.verdict).toBe('fail');
+    const spans = exporter.getFinishedSpans();
+    const run = spans.find((span) => span.name === 'harmonic.run');
+    const verify = spans.find((span) => span.name === 'harmonic.verify.critic');
+    if (!run || !verify) throw new Error('Expected exported run and critic verification spans');
+    expect(verify.parentSpanContext?.spanId).toBe(run.spanContext().spanId);
+    expect(verify.attributes).toMatchObject({
+      'verification.mechanism': 'critic',
+      'verification.verdict': 'fail',
+      'task.id': 5,
+      'run.id': 11,
+    });
+    expect(verify.status.message).toContain('wrong behavior');
   });
 
   it('a fake drive returning garbage resolves to inconclusive, never throwing', async () => {

@@ -6,6 +6,8 @@ import { appendLandingJournalTx, type LandingJournalStore } from './landing-jour
 import type { RunSettleCoordinator } from './run-settle.js';
 import type { SettleProjection } from './run-coordinator.js';
 import { reconcile, type LandingEffect, type ObservedState, type ReconcileAction } from './landing.js';
+import type { SpanContext } from '@opentelemetry/api';
+import { startOperation } from '../telemetry/operations.js';
 
 /**
  * The journaled, non-interruptible landing operation (issue #115,
@@ -40,7 +42,12 @@ export class LandingCoordinator {
     private readonly db: AsyncDbHandle,
     private readonly journal: LandingJournalStore,
     private readonly settle: RunSettleCoordinator,
-    private readonly opts: { timeoutMs?: number; now?: () => number } = {},
+    private readonly opts: {
+      timeoutMs?: number;
+      now?: () => number;
+      parentForRun?: (runId: number) => SpanContext | undefined;
+      onTerminalRun?: (runId: number) => Promise<void>;
+    } = {},
   ) {}
 
   /**
@@ -104,6 +111,35 @@ export class LandingCoordinator {
     effects: readonly LandingEffectExec[],
     patch: Partial<RunRow> = {},
     landFactType: RunFactType = LAND_FACT_TYPE,
+    parent = this.opts.parentForRun?.(run.id),
+  ): Promise<LandingOutcome> {
+    const operation = parent
+      ? startOperation({ type: 'land', parent, attributes: { 'task.id': task.id, 'run.id': run.id, 'landing.mechanism': 'coordinator' } })
+      : undefined;
+    try {
+      const outcome = operation
+        ? await operation.run(() => this.landUnchecked(task, run, landProjection, effects, patch, landFactType))
+        : await this.landUnchecked(task, run, landProjection, effects, patch, landFactType);
+      if (outcome.ok) {
+        operation?.end();
+        await this.opts.onTerminalRun?.(run.id);
+      } else {
+        operation?.fail(outcome.detail ?? 'landing failed');
+      }
+      return outcome;
+    } catch (error) {
+      operation?.fail(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  private async landUnchecked(
+    task: TaskRow,
+    run: RunRow,
+    landProjection: SettleProjection,
+    effects: readonly LandingEffectExec[],
+    patch: Partial<RunRow>,
+    landFactType: RunFactType,
   ): Promise<LandingOutcome> {
     const now = this.opts.now ?? Date.now;
 

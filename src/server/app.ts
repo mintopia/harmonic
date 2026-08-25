@@ -342,16 +342,23 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // rerun that sweeps anything that settled mid-pass.
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
   const landingJournal = new LandingJournalStore(asyncDb);
+  let runnerRef: Runner | undefined;
   const reviewSettle = new RunSettleCoordinator(
     runs,
     tasks,
     leases,
     new RunFactStore(asyncDb),
-    (run) => bus.emit('run_changed', run),
+    (run) => {
+      void runnerRef?.finishRunOperation(run.id);
+      bus.emit('run_changed', run);
+    },
     landingJournal,
     sessionRetirement,
   );
-  const landing = new LandingCoordinator(runs, asyncDb, landingJournal, reviewSettle);
+  const landing = new LandingCoordinator(runs, asyncDb, landingJournal, reviewSettle, {
+    parentForRun: (runId) => runnerRef?.operationParent(runId),
+    onTerminalRun: (runId) => runnerRef?.finishRunOperation(runId) ?? Promise.resolve(),
+  });
   // Crash recovery before anything can execute (issue #117): one sweep
   // reconciles `run_facts`, `landing_journal`, and `turn_queue` together, so a
   // restart reconstructs one consistent picture instead of several independent
@@ -513,13 +520,15 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // LandingCoordinator the human Accept uses, skipping the review gate: the
     // verifier's pass IS the accept, so no `review: 'accepted'` decoration —
     // no human reviewed it. `patch` still carries the run's usage/stopReason.
-    autoAcceptLand: async (task, run, patch) =>
+    autoAcceptLand: async (task, run, patch, parent) =>
       landing.land(
         task,
         run,
         { runState: 'completed', taskAction: 'completed', reason: null },
         landingEffectsFor(task, run),
         patch,
+        undefined,
+        parent,
       ),
   });
   // Close the forward reference the merge train's heal/escalate callbacks hold

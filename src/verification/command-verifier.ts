@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { VerificationCommand } from '../config.js';
 import { withDetachedWorktree } from '../execution/candidate.js';
+import { startOperation } from '../telemetry/operations.js';
 import type { Verdict } from './critic-schema.js';
 import type { VerificationAttemptInput } from '../domain/verification-attempts.js';
 
@@ -219,6 +221,8 @@ export interface RunCommandVerifierArgs {
   spawn?: CommandSpawn;
   /** Override the hard timeout (tests); defaults to `command.timeoutSeconds`. */
   timeoutMs?: number;
+  parent?: SpanContext;
+  attributes?: Attributes;
 }
 
 /**
@@ -239,6 +243,24 @@ export interface RunCommandVerifierArgs {
  * write to its disposable checkout.
  */
 export async function runCommandVerifier(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
+  const operation = args.parent
+    ? startOperation({ type: 'verify.command', parent: args.parent, attributes: { 'verification.mechanism': 'command', ...args.attributes } })
+    : undefined;
+  try {
+    const attempt = operation
+      ? await operation.run(() => runCommandVerifierUnchecked(args))
+      : await runCommandVerifierUnchecked(args);
+    operation?.update({ 'verification.verdict': attempt.verdict });
+    if (attempt.verdict === 'pass') operation?.end();
+    else operation?.fail(attempt.summary);
+    return attempt;
+  } catch (error) {
+    operation?.fail(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+async function runCommandVerifierUnchecked(args: RunCommandVerifierArgs): Promise<CommandAttempt> {
   const spawner = args.spawn ?? createChildProcessSpawn();
   const timeoutMs = args.timeoutMs ?? args.command.timeoutSeconds * 1000;
 

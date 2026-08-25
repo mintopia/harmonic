@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Attributes, SpanContext } from '@opentelemetry/api';
 import { Git } from './git.js';
+import { startOperation } from '../telemetry/operations.js';
 
 /**
  * Journaled, crash-idempotent branch landing (issue #153, reliability-design
@@ -66,6 +68,8 @@ export interface LandBranchArgs {
    * Defaults to the OS temp dir.
    */
   adminWorktreeParent?: string;
+  parent?: SpanContext;
+  attributes?: Attributes;
 }
 
 export type LandBranchOutcome =
@@ -79,6 +83,21 @@ export type LandBranchOutcome =
  * pre-#153 merge conflict was; only a genuine git/plumbing fault propagates.
  */
 export async function landBranch(args: LandBranchArgs): Promise<LandBranchOutcome> {
+  const operation = args.parent
+    ? startOperation({ type: 'land', parent: args.parent, attributes: { 'landing.mechanism': 'branch', ...args.attributes } })
+    : undefined;
+  try {
+    const outcome = operation ? await operation.run(() => landBranchUnchecked(args)) : await landBranchUnchecked(args);
+    if (outcome.ok) operation?.end();
+    else operation?.fail(outcome.detail);
+    return outcome;
+  } catch (error) {
+    operation?.fail(error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+async function landBranchUnchecked(args: LandBranchArgs): Promise<LandBranchOutcome> {
   const { repoDir, baseBranch, branch } = args;
   const expectedOld = await Git.revParse(repoDir, baseBranch);
 
