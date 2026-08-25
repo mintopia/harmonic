@@ -31,6 +31,7 @@ import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
+import { AttemptStore } from '../domain/attempts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
@@ -528,6 +529,7 @@ export class Runner {
    * dispatch records a Session capturing the harness's `initialize`
    * capabilities alongside the Run, without changing Run behaviour. */
   private readonly sessionStore: SessionStore;
+  private readonly attempts: AttemptStore;
   /** The shared terminal-disposition coordinator (issue #113/#114): every Run
    * settle — drive-loop, operator cancel/complete, review-parked — funnels here
    * so the winning disposition is decided by precedence, once. */
@@ -584,6 +586,7 @@ export class Runner {
     this.spendGraceMs = options.spendGuardrail?.graceMs ?? 60_000;
     this.leaseHeartbeatMs = options.leaseHeartbeat?.intervalMs ?? 30_000;
     this.runFacts = new RunFactStore(this.asyncDb);
+    this.attempts = new AttemptStore(this.asyncDb);
     this.verificationAttempts = new VerificationAttemptStore(this.asyncDb);
     this.guardrailEvents = new GuardrailEventStore(this.asyncDb);
     this.turnQueue = new TurnQueueStore(this.asyncDb);
@@ -700,6 +703,9 @@ export class Runner {
     // when it starts a new line.
     const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
+    const attempt = await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
+    const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation' });
+    await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: `run:${created.id}` });
     const key = this.workContextKeyFor(task, created);
     // Resolved ahead of the claim: look up whoever holds the Work Context key and
     // whether they share this Run's line of work, exactly what `sharesLineOfWork`
@@ -1551,7 +1557,17 @@ export class Runner {
           parent,
           attributes: { 'task.id': task.id, 'run.id': run.id },
         });
-        await this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
+        const persisted = await this.verificationAttempts.append(run.id, commandAttemptToInput(attempt));
+        const timelineAttempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+        if (timelineAttempt) {
+          const timelineTask = await this.attempts.createTask(timelineAttempt.id, { type: 'verification', command: command.command, logLocator: `verification_attempt:${persisted.id}` });
+          await this.attempts.updateTask(timelineTask.id, {
+            state: attempt.verdict === 'pass' ? 'passed' : 'failed',
+            verdict: attempt.verdict,
+            startedAt: persisted.ts,
+            endedAt: Date.now(),
+          });
+        }
         record('lifecycle', {
           event: 'verification',
           mechanism: 'command',
@@ -1599,7 +1615,17 @@ export class Runner {
           // real `createAcpCriticDrive`.
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
         });
-        await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+        const persisted = await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+        const timelineAttempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+        if (timelineAttempt) {
+          const timelineTask = await this.attempts.createTask(timelineAttempt.id, { type: 'review', logLocator: persisted.transcriptPath ?? `verification_attempt:${persisted.id}` });
+          await this.attempts.updateTask(timelineTask.id, {
+            state: attempt.verdict === 'pass' ? 'passed' : 'failed',
+            verdict: attempt.verdict,
+            startedAt: persisted.ts,
+            endedAt: Date.now(),
+          });
+        }
         record('lifecycle', {
           event: 'verification',
           mechanism: 'critic',
@@ -3747,6 +3773,19 @@ export class Runner {
     patch: Partial<RunRow> = {},
   ): Promise<void> {
     await this.settleCoordinator.settle(task, run, type, projection, patch);
+    const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
+    if (attempt) {
+      const timelineTasks = await this.attempts.listTasks(attempt.id);
+      const now = Date.now();
+      await Promise.all(timelineTasks.filter((timelineTask) => timelineTask.state === 'running').map((timelineTask) =>
+        this.attempts.updateTask(timelineTask.id, {
+          state: projection.runState === 'completed' ? 'passed' : 'failed',
+          endedAt: now,
+          verdict: projection.runState === 'completed' ? 'pass' : 'fail',
+        }),
+      ));
+      await this.attempts.finish(attempt.id, projection.taskAction === 'escalate' ? 'escalated' : projection.runState === 'completed' ? 'passed' : 'failed', now);
+    }
     await this.finishRunOperation(run.id);
   }
 

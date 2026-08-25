@@ -852,6 +852,22 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
+    '/tasks/:id/attempts',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description: "A ticket's attempt timeline. Tasks are ordered exactly as they ran.",
+        params: idParamsSchema,
+      },
+    },
+    async (req) => {
+      await ctx.tasks.assertExists(req.params.id);
+      const attempts = await ctx.attempts.listForTask(req.params.id);
+      return { attempts: await Promise.all(attempts.map(async (attempt) => ({ ...attempt, tasks: await ctx.attempts.listTasks(attempt.id) }))) };
+    },
+  );
+
+  app.get(
     '/tasks/:id/runs',
     {
       schema: {

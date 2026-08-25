@@ -1,6 +1,6 @@
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { AsyncDb, AsyncDbHandle, AsyncTx } from '../db/async.js';
-import { runFacts, type RunFactRow, type RunFactType } from '../db/schema.js';
+import { attempts, runFacts, runs, type RunFactRow, type RunFactType } from '../db/schema.js';
 
 /**
  * Append a fact assigning the next monotonic `seq` (`max(seq)+1`, 1-based) on a
@@ -30,9 +30,13 @@ export async function appendRunFactTx(
         .where(eq(runFacts.runId, runId))
         .get()
     )?.n ?? 0) + 1;
+  const run = await db.select({ taskId: runs.taskId, number: runs.attempt }).from(runs).where(eq(runs.id, runId)).get();
+  const attempt = run
+    ? await db.select({ id: attempts.id }).from(attempts).where(and(eq(attempts.taskId, run.taskId), eq(attempts.number, run.number))).get()
+    : undefined;
   return db
     .insert(runFacts)
-    .values({ runId, seq, ts: now, type, payload: JSON.stringify(payload) })
+    .values({ runId, attemptId: attempt?.id ?? null, seq, ts: now, type, payload: JSON.stringify(payload) })
     .returning()
     .get();
 }

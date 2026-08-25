@@ -21,6 +21,7 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
+import { AttemptStore } from '../domain/attempts.js';
 import { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
@@ -210,6 +211,7 @@ export interface AppContext {
   workspaces: WorkspaceService;
   tasks: TaskService;
   runs: RunStore;
+  attempts: AttemptStore;
   sessions: SessionStore;
   leases: WorkContextLeaseStore;
   runner: Runner;
@@ -270,6 +272,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (id) => bus.emit('task_removed', { id }),
   );
   const runs = new RunStore(asyncDb);
+  const attempts = new AttemptStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
   const leases = new WorkContextLeaseStore(asyncDb);
@@ -664,7 +667,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

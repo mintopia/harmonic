@@ -409,6 +409,39 @@ export const runToolCalls = sqliteTable(
 );
 export type RunToolCallRow = typeof runToolCalls.$inferSelect;
 
+/** One pass through a Ticket's implement → verify loop (ADR-0041). */
+export const ATTEMPT_STATES = ['running', 'passed', 'failed', 'escalated', 'cancelled'] as const;
+export type AttemptState = (typeof ATTEMPT_STATES)[number];
+export const ATTEMPT_TASK_TYPES = ['rebase', 'implementation', 'verification', 'review'] as const;
+export type AttemptTaskType = (typeof ATTEMPT_TASK_TYPES)[number];
+export const ATTEMPT_TASK_STATES = ['pending', 'running', 'passed', 'failed', 'skipped', 'cancelled'] as const;
+export type AttemptTaskState = (typeof ATTEMPT_TASK_STATES)[number];
+
+export const attempts = sqliteTable('attempts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  taskId: integer('task_id').notNull().references(() => tasks.id),
+  number: integer('number').notNull(),
+  state: text('state').$type<AttemptState>().notNull().default('running'),
+  startedAt: integer('started_at').notNull(),
+  endedAt: integer('ended_at'),
+}, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
+export type AttemptRow = typeof attempts.$inferSelect;
+
+/** Individually visible work within an Attempt. `logLocator` points to its transcript/output. */
+export const attemptTasks = sqliteTable('attempt_tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  attemptId: integer('attempt_id').notNull().references(() => attempts.id),
+  type: text('type').$type<AttemptTaskType>().notNull(),
+  position: integer('position').notNull(),
+  state: text('state').$type<AttemptTaskState>().notNull().default('pending'),
+  command: text('command'),
+  verdict: text('verdict'),
+  logLocator: text('log_locator'),
+  startedAt: integer('started_at'),
+  endedAt: integer('ended_at'),
+}, (t) => [uniqueIndex('attempt_tasks_attempt_position_unique').on(t.attemptId, t.position)]);
+export type AttemptTaskRow = typeof attemptTasks.$inferSelect;
+
 /**
  * The Execution Chain (issue #129, reliability-design Unit A): a persisted
  * identity threaded across every Run that continues one line of work —
@@ -737,6 +770,8 @@ export const runFacts = sqliteTable('run_facts', {
   runId: integer('run_id')
     .notNull()
     .references(() => runs.id),
+  /** Attempt-owned coordination key. `runId` remains during the Run compatibility window. */
+  attemptId: integer('attempt_id').references(() => attempts.id),
   /** Monotonic per-Run sequence (1-based); the fact log's total order. */
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
@@ -748,7 +783,8 @@ export const runFacts = sqliteTable('run_facts', {
   uniqueIndex('run_facts_run_seq_unique').on(t.runId, t.seq),
 ]);
 
-export type RunFactRow = typeof runFacts.$inferSelect;
+/** `attemptId` is optional in compatibility fixtures created before ADR-0041. */
+export type RunFactRow = Omit<typeof runFacts.$inferSelect, 'attemptId'> & { attemptId?: number | null };
 
 /**
  * The journaled non-interruptible landing log (issue #115, reliability-design
