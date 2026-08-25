@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { buildCandidate } from '../src/execution/candidate.js';
 import {
   runCritic,
   createAcpCriticDrive,
@@ -29,6 +28,12 @@ const providers: NodeTracerProvider[] = [];
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
+
+async function buildCandidate({ workspaceDir }: { workspaceDir: string }): Promise<string> {
+  git(workspaceDir, 'add', '-A');
+  git(workspaceDir, 'commit', '-m', 'verification fixture');
+  return git(workspaceDir, 'rev-parse', 'HEAD');
+}
 
 /** A throwaway git repo on branch main with one committed README (same
  * template as tests/candidate.test.ts). */
@@ -83,7 +88,7 @@ describe('runCritic (issue #136)', () => {
   async function makeCandidate(ref: string): Promise<{ repo: string; oid: string }> {
     const repo = makeRepo();
     writeFileSync(join(repo, 'README.md'), `# repo (changed for ${ref})\n`);
-    const oid = await buildCandidate({ repoDir: repo, workspaceDir: repo, baseRev: 'main', ref, message: 'c' });
+    const oid = await buildCandidate({ workspaceDir: repo });
     return { repo, oid };
   }
 

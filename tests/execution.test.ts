@@ -62,12 +62,12 @@ describe('run execution over ACP (direct mode)', () => {
     // holds `state:'running'` until the human accepts/rejects it (issue #114).
     expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'running', phase: 'review', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeNull();
-    // Agent-finish took it executing → validating → verifying → review, never
-    // jumping straight to a terminal phase.
+    // Agent-finish took it executing → verifying → review, never jumping
+    // straight to a terminal phase (`validating` retired by the reshape).
     const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phaseEvents).toEqual(['validating', 'verifying', 'review']);
+    expect(phaseEvents).toEqual(['verifying', 'review']);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -106,13 +106,14 @@ describe('run execution over ACP (direct mode)', () => {
     expect(landed.finishedAt).toBeGreaterThan(0);
 
     // The full phase path is reconstructable from the persisted event log:
-    // executing → validating → verifying → review (drive loop) then landing on
-    // Accept (§0.2: landing happens after Accept). `terminal` is the coordinator's
-    // row write, not a drive-loop phase event.
+    // executing → verifying → review (drive loop) then landing on Accept
+    // (§0.2: landing happens after Accept; `validating` retired by the
+    // reshape). `terminal` is the coordinator's row write, not a drive-loop
+    // phase event.
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['validating', 'verifying', 'review', 'landing']);
+    expect(phases).toEqual(['verifying', 'review', 'landing']);
     // A second accept refuses — the Task is terminal.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
   });
@@ -211,7 +212,7 @@ describe('run execution over ACP (direct mode)', () => {
       return body.state === 'running' ? true : undefined;
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(existsSync(secondStartFile)).toBe(false);
 
     const cancelledFirst = await server.api('POST', `/api/tasks/${firstCreated.body.id}/cancel`);
@@ -570,7 +571,9 @@ describe('wall-clock guardrail (issue #127)', () => {
   it('does not kill an over-budget run after its attempt tasks enter landing', async () => {
     const server = await startServer({
       ...stubHarness(),
-      guardrails: { budget: { wallClockMinutes: 0.02 } },
+      // 600ms budget: enough headroom for the stub spawn + attempt waitFors
+      // below, small enough that the 800ms sleep proves the timer fired.
+      guardrails: { budget: { wallClockMinutes: 0.01 } },
     });
     try {
       const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
@@ -581,7 +584,9 @@ describe('wall-clock guardrail (issue #127)', () => {
 
       await attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
       await attempts.finish(attempt.id, 'passed');
-      await new Promise((resolve) => setTimeout(resolve, 1_400));
+      // Past the 600ms wall-clock budget (the guardrail arms an exact timer for
+      // the remaining budget, so a ~200ms margin suffices).
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       expect((await server.api('GET', `/api/runs/${started.body.id}`)).body.state).toBe('running');
       expect(

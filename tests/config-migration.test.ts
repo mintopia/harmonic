@@ -10,19 +10,19 @@ import { migrateLegacyConfig } from '../src/config.js';
 describe('migrateLegacyConfig (#140, ADR-0021)', () => {
   it('maps agentReview: true with no verification to verification.autoAccept: true, and drops agentReview', () => {
     const result = migrateLegacyConfig({ agentReview: true });
-    expect(result.verification?.autoAccept).toBe(true);
+    expect(result.verify?.autoAccept).toBe(true);
     expect(result).not.toHaveProperty('agentReview');
   });
 
   it('leaves an explicit verification.autoAccept: false untouched (explicit wins), and drops agentReview', () => {
     const result = migrateLegacyConfig({ agentReview: true, verification: { autoAccept: false } });
-    expect(result.verification?.autoAccept).toBe(false);
+    expect(result.verify?.autoAccept).toBe(false);
     expect(result).not.toHaveProperty('agentReview');
   });
 
   it('injects no verification when agentReview is false, and drops agentReview', () => {
     const result = migrateLegacyConfig({ agentReview: false });
-    expect(result.verification).toBeUndefined();
+    expect(result.verify).toBeUndefined();
     expect(result).not.toHaveProperty('agentReview');
   });
 

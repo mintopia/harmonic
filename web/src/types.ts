@@ -172,7 +172,7 @@ export interface Workspace {
   maxAttempts: number | null;
   contextReuseThreshold: number | null;
   /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
-   * the command and critic: `null` inherits `config.verification.{command,critic}`,
+   * the command and critic: `null` inherits the global `config.verify` default,
    * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
    * configured object overrides it. Both read back as the shape they were PATCHed
    * as. `verificationAutoAccept` stays a plain nullable boolean. */
@@ -204,6 +204,14 @@ export interface VerificationCritic {
   prompt: string;
   model: string;
   /** Reviewer harness; omitted = reuse the builder task's harness. */
+  harness?: string;
+}
+
+/** The optional review task that runs after every verification command passes. */
+export interface VerificationReview {
+  enabled: boolean;
+  prompt?: string;
+  model?: string;
   harness?: string;
 }
 
@@ -664,10 +672,12 @@ export interface AppConfig {
     model: string;
   };
   autoRunner: { enabled: boolean; maxConcurrentRuns: number };
-  /** Verification defaults (ADR-0021, issues #132/#138): the global-default
-   * command verifier, agent critic, and auto-accept a Workspace inherits until it
-   * overrides them (issue #165). Command and critic are null when unconfigured. */
-  verification: { command: VerificationCommand | null; critic: VerificationCritic | null; autoAccept: boolean };
+  /** Ordered verification commands and the optional review task. */
+  verify: {
+    commands: VerificationCommand[];
+    review: VerificationReview;
+    autoAccept: boolean;
+  };
   /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
    * toggle a Workspace inherits until it overrides them (issue #166).
    * `toolTimeoutMinutes` is global-only (no per-Workspace override). */

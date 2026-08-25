@@ -61,9 +61,14 @@ describe('command verifier end-to-end (issue #135)', () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
 
-  async function createAndRun(): Promise<{ taskId: number; runId: number }> {
+  // Verification is pinned to a committed branch head, so the stub agent must
+  // leave a real commit behind (a unique file per run keeps heads distinct).
+  let implSeq = 0;
+  async function createAndRun(
+    scenario: Record<string, unknown> = { writeFiles: { [`impl-${++implSeq}.txt`]: 'implementation\n' } },
+  ): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ stopReason: 'end_turn' }),
+      prompt: JSON.stringify(scenario),
     });
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -89,13 +94,13 @@ describe('command verifier end-to-end (issue #135)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.phase).toBe('review');
-    expect(run.candidateOid).toBeTruthy();
+    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
-    // AC3/AC5: the attempt is persisted at exactly the frozen candidate OID.
+    // AC3/AC5: the attempt is persisted at the branch head the command saw.
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
-    expect(rows[0]!.inputOid).toBe(run.candidateOid);
+    expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
 
     expect(await verdictEvents(runId)).toEqual([
       { event: 'verification', mechanism: 'command', verdict: 'pass', summary: 'command exited 0' },
@@ -167,13 +172,40 @@ describe('command verifier end-to-end (issue #135)', () => {
     ]);
   });
 
+  it('a configured command with no committed implementation fails closed', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'direct',
+      verificationCommand: exitCommand(0),
+    });
+    writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
+
+    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
+    const run = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      return body.state === 'failed' ? body : undefined;
+    });
+    expect(run.state).toBe('failed');
+    expect(run.phase).not.toBe('review');
+    expect(run.candidateOid).toBeNull();
+
+    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+    expect(task.state).not.toBe('awaiting-review');
+
+    const rows = await attempts(runId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
+    // Leave the shared repo clean: a leftover dirty file would mark the next
+    // direct Run startDirty and suppress its commit nudge.
+    rmSync(join(repoDir, 'uncommitted.txt'), { force: true });
+  });
+
   it('a dirty worktree receives one commit nudge without consuming an Attempt', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCommand: null,
     });
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ writeFiles: { 'uncommitted.txt': 'dirty\n' } }),
+      prompt: JSON.stringify({ writeFiles: { 'nudge-me.txt': 'dirty\n' }, commit: false }),
       workingDir: repoDir,
       isolationMode: 'direct',
     });
@@ -189,6 +221,67 @@ describe('command verifier end-to-end (issue #135)', () => {
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts).toHaveLength(1);
     expect(timeline.body.attempts[0]).toMatchObject({ number: 1, state: 'running' });
+  });
+
+  it('a pass records a verified-head fact at the exact SHA, and the gate refuses a moved tip', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'worktree',
+      verificationCommand: exitCommand(0),
+    });
+    const { taskId, runId } = await createAndRun();
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const fact = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).find(
+      (f) => f.type === 'verified-head',
+    );
+    expect(fact).toBeDefined();
+    const payload = JSON.parse(fact!.payload) as { sha: string; branch: string | null };
+    expect(payload.sha).toBe(run.candidateOid);
+    expect(payload.branch).toBe(run.branch);
+
+    // The landing gate accepts the tip verification recorded…
+    const runner = server.app.ctx.runner as unknown as {
+      verifiedHeadStillCurrent(task: unknown, run: unknown): Promise<boolean>;
+    };
+    const taskRow = await server.app.ctx.tasks.get(taskId);
+    const runRow = await server.app.ctx.runs.get(runId);
+    await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(true);
+    // …and refuses once the branch tip moved after verification.
+    git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main'));
+    await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(false);
+  });
+
+  it('ordered commands run in sequence and fail fast: a red command blocks the rest', async () => {
+    const echoExit = (marker: string, code: number) =>
+      verificationCommandSchema.parse({
+        command: process.execPath,
+        args: ['-e', `console.log('${marker}'); process.exit(${code})`],
+        timeoutSeconds: 30,
+      });
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'worktree',
+      verificationCommand: [echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)],
+    });
+    const { runId } = await createAndRun();
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      return body.state === 'failed' ? body : undefined;
+    });
+
+    // Two attempts (maxAttempts: 2), each running CMD1 then failing fast on
+    // CMD2 — one attempt row per executed command, and CMD3 never runs.
+    const rows = await attempts(runId);
+    expect(rows.map((row) => `${row.mechanism}:${row.verdict}`)).toEqual([
+      'command:pass',
+      'command:fail',
+      'command:pass',
+      'command:fail',
+    ]);
+    expect(rows.map((row) => row.output.trim())).toEqual(['CMD1', 'CMD2', 'CMD1', 'CMD2']);
   });
 });
 
@@ -219,9 +312,10 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
 
+  let implSeq = 0;
   async function createAndRun(): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ stopReason: 'end_turn' }),
+      prompt: JSON.stringify({ writeFiles: { [`auto-accept-impl-${++implSeq}.txt`]: 'implementation\n' } }),
     });
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);

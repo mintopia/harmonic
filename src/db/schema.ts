@@ -358,16 +358,16 @@ export const runs = sqliteTable('runs', {
    * this so they can never disagree (issue #36). */
   stat: text('stat'),
   /**
-   * The frozen candidate commit OID a Run is verified against (issue #134,
-   * reliability-design Unit B): built with `commit-tree` in `validating` and
-   * pinned to `candidateRef`, capturing the agent's work *without moving the
-   * target branch*. Null when no candidate was produced — a pre-feature Run, an
-   * escalated Run that never reached `validating`, or a dirty direct-mode
-   * context whose work is deliberately not snapshotted. */
+   * The committed implementation head a Run is verified against (issue #134,
+   * reshaped by the unified lifecycle): the branch-head OID captured at
+   * implementation end, before finalize restores the checkout. Null when there
+   * is nothing verifiable — a pre-feature Run, an escalated Run, or a Run that
+   * left no new commit (the fail-closed no-candidate path). */
   candidateOid: text('candidate_oid'),
-  /** The private Harmonic ref (`refs/harmonic/candidate/run-<id>`) the
-   * candidate is pinned to, from which it is rematerialized for verification or
-   * a later corrective turn. Null whenever `candidateOid` is. */
+  /** The private Harmonic ref (`refs/harmonic/direct/run-<id>`) a **direct**
+   * Run's head is pinned to, from which it is rematerialized for verification
+   * or a later corrective turn. Null for worktree Runs — their own branch owns
+   * the head — so it can be null while `candidateOid` is set. */
   candidateRef: text('candidate_ref'),
   /** JSON: aggregate usage from the ACP prompt result. */
   usage: text('usage'),
@@ -754,6 +754,8 @@ export const RUN_FACT_TYPES = [
   'session-resumed',
   'resume-entry',
   'session-continuation',
+  /** Immutable proof that verification ran against this branch tip. */
+  'verified-head',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 

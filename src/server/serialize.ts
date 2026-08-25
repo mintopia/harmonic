@@ -10,6 +10,7 @@ import type {
 } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
+import { isDirectRef } from '../execution/execution-isolation.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
@@ -270,13 +271,17 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
   // awaiting-review card surfaces the same live elapsed + `ctx %` as an active
   // one — matched to the Paper mockup's Needs-you cards.
   const running = runs.find((r) => r.state === 'running');
+  const presentedBranch = (branch: string | null | undefined): string | null =>
+    branch && !isDirectRef(branch) ? branch : null;
   return {
     ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
-    branch: runs.at(-1)?.branch ?? null,
+    // A direct run's recorded branch is its private harmonic ref — internal
+    // plumbing, not an operator-facing branch.
+    branch: presentedBranch(runs.at(-1)?.branch),
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
     toolCount,

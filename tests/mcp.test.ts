@@ -186,7 +186,7 @@ describe('mcp server & scoped keys', () => {
     await client.close();
 
     // A legacy PATCH still carrying the retired flag is migrated (folded into
-    // verification.autoAccept) rather than re-exposing the MCP tools.
+    // verify.autoAccept) rather than re-exposing the MCP tools.
     await server.api('PATCH', '/api/config', { agentReview: true });
     const stillHidden = await mcpClient(server, token);
     const stillHiddenTools = (await stillHidden.listTools()).tools.map((t) => t.name);
@@ -195,7 +195,7 @@ describe('mcp server & scoped keys', () => {
     await stillHidden.close();
 
     const config = (await server.api('GET', '/api/config')).body;
-    expect(config.verification.autoAccept).toBe(true);
+    expect(config.verify.autoAccept).toBe(true);
     expect(config.agentReview).toBeUndefined();
   });
 

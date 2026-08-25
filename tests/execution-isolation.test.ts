@@ -11,7 +11,6 @@ import {
   reattachBareDetachedHead,
   rematerializeCandidate,
 } from '../src/execution/execution-isolation.js';
-import { buildCandidate } from '../src/execution/candidate.js';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { workspaces } from '../src/db/schema.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
@@ -42,6 +41,12 @@ function agentCommit(dir: string, file: string, contents: string, message: strin
   // Committing under an explicit identity mirrors an agent's own git config.
   git(dir, '-c', 'user.name=Agent', '-c', 'user.email=agent@example.com', 'commit', '-m', message);
   return git(dir, 'rev-parse', 'HEAD');
+}
+
+async function buildCandidate({ workspaceDir }: { workspaceDir: string; [key: string]: unknown }): Promise<string> {
+  git(workspaceDir, 'add', '-A');
+  git(workspaceDir, 'commit', '-m', 'verification fixture');
+  return git(workspaceDir, 'rev-parse', 'HEAD');
 }
 
 function isDetached(dir: string): boolean {
@@ -215,6 +220,9 @@ describe('execution isolation (issue #152)', () => {
     const agentHead = agentCommit(repo, 'feature.txt', 'shipped\n', 'agent: feature');
     writeFileSync(join(repo, 'extra.txt'), 'uncommitted\n');
 
+    // Capture pins the agent's committed head — it must run before the
+    // stand-in candidate build below, whose fixture commit moves HEAD.
+    const pinned = await captureDirectHead(repo, 9);
     const candidateOid = await buildCandidate({
       repoDir: repo,
       workspaceDir: repo,
@@ -222,7 +230,6 @@ describe('execution isolation (issue #152)', () => {
       ref: 'refs/harmonic/candidate/run-9',
       message: 'candidate',
     });
-    const pinned = await captureDirectHead(repo, 9);
     await restoreLiveCheckout(repo, 'main');
 
     // Live branch and checkout: coherent, untouched, clean.
