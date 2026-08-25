@@ -300,8 +300,15 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
 
     now = 100;
     autoRunner.poke();
-    await vi.waitFor(async () => expect(await tasks.get(task.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true }));
-    expect(autoRunner.skipReasonFor(task.id)).toBe('hitl, escalated to human');
+    // The escalate DB write lands mid-pass; the terminal 'hitl, escalated to
+    // human' reason is only recorded by the fill loop's SECOND refresh pass.
+    // Poll DB state and skip reason together so the assertion can't observe
+    // the window between them (the transient 'integration branch missing,
+    // escalated to human' reason, or a mid-rebuild empty map).
+    await vi.waitFor(async () => {
+      expect(await tasks.get(task.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true });
+      expect(autoRunner.skipReasonFor(task.id)).toBe('hitl, escalated to human');
+    }, { timeout: 5000 });
     expect(started).toEqual([]);
   });
 

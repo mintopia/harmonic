@@ -148,7 +148,14 @@ describe('dependencies', () => {
   it('loads list dependency and run data in batches (issue #258)', async () => {
     const dep = await createTask({});
     await createTask({ dependsOn: [dep.id] });
-    await createTask({});
+    const last = await createTask({});
+
+    // `skipReason` mirrors the AutoRunner's per-pass in-memory diagnostics,
+    // and no scheduler pass may have covered these just-created tasks yet.
+    // Wait until one has (a pass that records `last` necessarily listed every
+    // older task too), so the list snapshot and the per-task GETs below read
+    // the same steady state instead of racing the pass's map swap.
+    await waitFor(async () => (await getTask(last.id)).skipReason !== null);
 
     const listForTask = vi.spyOn(server.app.ctx.runs, 'listForTask');
     const dependsOn = vi.spyOn(server.app.ctx.tasks, 'dependsOn');
