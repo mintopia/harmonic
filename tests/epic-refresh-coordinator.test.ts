@@ -77,4 +77,19 @@ describe('EpicRefreshCoordinator', () => {
     await Promise.all([one, two]);
     expect(starts).toEqual([1, 2]);
   });
+
+  it('defers a checked-out integration branch instead of falsely escalating it', async () => {
+    const escalations: string[] = [];
+    const coordinator = new EpicRefreshCoordinator({
+      train: train(),
+      land: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
+      dispatchResolve: async () => {},
+      escalate: (_ref, reason) => { escalations.push(reason); },
+    });
+
+    await expect(coordinator.refresh({ ref: 12, repoDir: '/repo', defaultBranch: 'develop' })).resolves.toEqual({
+      status: 'deferred', reason: 'branch is checked out',
+    });
+    expect(escalations).toEqual([]);
+  });
 });

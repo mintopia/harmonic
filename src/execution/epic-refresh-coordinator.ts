@@ -12,6 +12,7 @@ export interface EpicRefreshTarget {
 export type EpicRefreshOutcome =
   | { status: 'refreshed'; oid: string }
   | { status: 'resolving'; detail: string }
+  | { status: 'deferred'; reason: string }
   | { status: 'escalated'; reason: string };
 
 /**
@@ -38,10 +39,14 @@ export class EpicRefreshCoordinator {
         repoDir: target.repoDir,
         baseBranch: branch,
         branch: target.defaultBranch,
+        leaseHeld: true,
       });
       if (outcome.ok) {
         this.resolving.delete(target.ref);
         return { status: 'refreshed', oid: outcome.oid };
+      }
+      if (outcome.reason === 'fallback-pr-manual' || outcome.reason === 'target-advanced') {
+        return { status: 'deferred', reason: outcome.detail };
       }
       if (outcome.reason !== 'conflict') {
         const reason = `integration refresh failed: ${outcome.detail}`;

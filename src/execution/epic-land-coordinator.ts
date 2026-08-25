@@ -377,6 +377,14 @@ export class EpicLandCoordinator {
     return this.lastVerification.get(epicRef) ?? null;
   }
 
+  /** Put a refresh failure on the same Epic attention/hold surface as a failed
+   * whole-Epic verification. */
+  escalateRefresh(epicRef: number, reason: string): void {
+    this.settledEscalated.set(epicRef, 'refresh');
+    this.escalateFn(epicRef, reason);
+    this.operations.fail({ repoDir: this.repoDir, epicRef, reason });
+  }
+
   /**
    * The hold reason if `epicRef` is currently held by the sticky-escalation
    * guard ({@link settledEscalated}), else `null` (issue #167 read model).

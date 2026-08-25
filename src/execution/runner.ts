@@ -2213,6 +2213,24 @@ export class Runner {
   }
 
   /**
+   * Dispatch the bounded corrective turn for an integration refresh through an
+   * active member's real Session. The refresh changes that member's base, so
+   * its existing worktree is the correct place for the agent to resolve it.
+   */
+  async enqueueEpicRefreshResolution(epicRef: number): Promise<void> {
+    const branch = `epic/${epicRef}`;
+    const members = (await this.taskService.list({ state: 'running' })).filter((task) => task.baseBranch === branch);
+    for (const task of members) {
+      const run = (await this.runStore.listForTask(task.id)).find((candidate) => candidate.state === 'running');
+      if (!run) continue;
+      const rowId = await this.enqueueReMerge(run, `run-${run.id}`);
+      if (rowId !== null) this.pendingMemberReMerge.set(run.id, rowId);
+      return;
+    }
+    throw new Error(`no active Epic member is available to resolve refresh conflict for ${branch}`);
+  }
+
+  /**
    * The merge train's `escalate` (issue #163), wired in app.ts: a member could
    * not land (branch missing, second rebase conflict, unexpected checkout, or a
    * concurrent advance beat its CAS). Hand the Task back to a human exactly as

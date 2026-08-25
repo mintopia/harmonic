@@ -120,6 +120,7 @@ export class EpicIntegrationCoordinator {
    * stay pickable). Recomputed each reconcile, like the poller's scan cache.
    */
   private readyMemberRefs = new Set<number>();
+  private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
 
   constructor(
@@ -156,9 +157,9 @@ export class EpicIntegrationCoordinator {
    * the landing path, never by the poll loop. Derived Epics without a current
    * integration branch are retired or closed and are intentionally skipped.
    */
-  async refreshAfterDefaultBranchAdvance(tickets: Ticket[], defaultBranch: string): Promise<void> {
+  async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
     if (!this.epicRefresh) return;
-    const epics = deriveEpics(tickets);
+    const epics = deriveEpics(this.latestTickets);
     for (const epic of epics) {
       const branch = integrationBranchName(epic.ref);
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
@@ -175,6 +176,7 @@ export class EpicIntegrationCoordinator {
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
+    this.latestTickets = tickets;
     const epics = deriveEpics(tickets);
     const readyRefs = new Set<number>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);

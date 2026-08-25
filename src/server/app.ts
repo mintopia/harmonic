@@ -445,6 +445,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         apply: async () => {
           const outcome = await landBranch({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true });
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
+          if (baseBranch === 'develop') void trackerManagerRef?.refreshAfterDefaultBranchAdvance(task.workingDir, baseBranch);
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
       },
@@ -628,6 +629,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => configStore.get(),
     epicOperations,
     scheduler,
+    undefined,
+    mergeTrain,
+    (epicRef) => runnerRef!.enqueueEpicRefreshResolution(epicRef),
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   scheduler.register({

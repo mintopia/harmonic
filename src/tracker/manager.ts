@@ -12,6 +12,8 @@ import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/
 import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
+import { EpicRefreshCoordinator } from '../execution/epic-refresh-coordinator.js';
+import type { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
@@ -77,6 +79,8 @@ export class TrackerPollerManager {
     /** Cooperative-yield injection for the sync sweep over a large Workspace
      * set (issue #200); default yields on the standard wall-clock budget. */
     private readonly opts: { yieldOptions?: YieldOptions } = {},
+    private readonly mergeTrain?: MergeTrainCoordinator,
+    private readonly dispatchEpicRefreshResolution: (epicRef: number) => Promise<void> = async () => {},
   ) {}
 
   /**
@@ -147,6 +151,16 @@ export class TrackerPollerManager {
       });
       epics.attachLandTrigger(epicLand);
     }
+    if (this.mergeTrain) {
+      epics.attachRefreshTrigger(new EpicRefreshCoordinator({
+        train: this.mergeTrain,
+        dispatchResolve: ({ ref }) => this.dispatchEpicRefreshResolution(ref),
+        escalate: (ref, reason) => {
+          if (epicLand) epicLand.escalateRefresh(ref, reason);
+          else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
+        },
+      }));
+    }
     // Bind this Workspace's persistent feature-id index so local-markdown feature
     // bases stay small and stable across scans (see TaskService.mdFeatureIndex).
     const resolveForWs = (dir: string) => this.resolveAdapter(dir, (slug) => this.tasks.mdFeatureIndex(ws.id, slug));
@@ -210,6 +224,12 @@ export class TrackerPollerManager {
    */
   async epicBaseNotReady(task: TaskRow): Promise<boolean> {
     return (await this.entryFor(task.workspaceId)?.epics.memberBaseNotReady(task)) ?? false;
+  }
+
+  /** Notify the one Workspace whose default branch just advanced. */
+  async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> {
+    const entry = [...this.entries.values()].find((candidate) => candidate.sig.startsWith(`${workingDir}|`));
+    if (entry) await entry.epics.refreshAfterDefaultBranchAdvance(defaultBranch);
   }
 
   /** Every Epic derived from this Workspace's persisted tracker facts. */
