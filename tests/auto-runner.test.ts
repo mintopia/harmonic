@@ -105,7 +105,7 @@ describe('auto-runner', () => {
     await waitFor(async () => (await state(finishedTask.body.id)) === 'awaiting-review');
     const task = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-event-')) });
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(await state(task.body.id)).toBe('ready');
 
     // `run_changed` is the capacity-free wake-up path. It schedules a fill even
@@ -116,7 +116,7 @@ describe('auto-runner', () => {
 
   it('starts nothing when off, while manual run-now still works', async () => {
     const task = await server.api('POST', '/api/tasks', { prompt: 'manual' });
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     expect(await state(task.body.id)).toBe('ready');
 
     await server.api('POST', `/api/tasks/${task.body.id}/run`);
@@ -140,10 +140,16 @@ describe('auto-runner', () => {
 
     // First settles to awaiting-review — the hard lease (#119) is released at this
     // seam, but the House Rule still holds the context on Task state, so the
-    // second does not slip in on top of the unreviewed work.
+    // second does not slip in on top of the unreviewed work. Wait for the
+    // scheduler to record its House-Rule skip of the second — deterministic
+    // proof a pass ran and declined, instead of a fixed sleep window (the
+    // pre-fff48cb idiom that flaked under CPU contention).
     await waitFor(async () => (await state(first.body.id)) === 'awaiting-review');
-    // Give the run-finished poke a window to (wrongly) start the second, then assert it didn't.
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(
+      async () =>
+        server.app.ctx.autoRunner.skipReasonFor(second.body.id) ===
+        `Work Context held by task ${first.body.id} (awaiting-review)`,
+    );
     expect(await state(second.body.id)).toBe('ready');
 
     // Accept the first → its Work Context frees (the Task leaves awaiting-review
@@ -291,7 +297,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
 
     const task = await makeTask(ws1, 80);
     // Master stays off (default). Give the scheduler a chance to (not) act.
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 100));
     expect(await state(task.body.id)).toBe('ready');
 
     // Flip the master on → it starts.

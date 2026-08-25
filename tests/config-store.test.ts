@@ -42,14 +42,14 @@ describe('ConfigStore', () => {
   });
 
   it('boots an existing config saved before verification existed, defaulting to no verifiers (issue #132)', async () => {
-    // An install that predates #132: the stored config has no `verification` key.
+    // An install that predates #312: the stored config has no `verify` key.
     const legacy: any = { ...defaultConfig() };
-    delete legacy.verification;
+    delete legacy.verify;
     await asyncDb.write((d) => d.insert(settings).values({ key: 'config', value: JSON.stringify(legacy) }).run());
 
     const store = await ConfigStore.create(asyncDb);
     // Default resolution yields "no verifiers" — an existing Run's outcome is unchanged.
-    expect(store.get().verification).toEqual({ command: null, critic: null, autoAccept: false });
+    expect(store.get().verify).toEqual({ commands: [], review: { enabled: false }, autoAccept: false });
   });
 
   it('clears a configured verifier back to null via PATCH without crashing on the null override (issue #132)', async () => {
@@ -57,13 +57,13 @@ describe('ConfigStore', () => {
     // `Object.keys(null)` in mergeConfig; the fix short-circuits a null b.
     const store = await ConfigStore.create(asyncDb);
     const set = await store.update({
-      verification: { command: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }) },
+      verify: { commands: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })] },
     });
-    expect(set.verification.command).toMatchObject({ command: 'npm', args: ['test'] });
+    expect(set.verify.commands[0]).toMatchObject({ command: 'npm', args: ['test'] });
 
-    const cleared = await store.update({ verification: { command: null } });
-    expect(cleared.verification.command).toBeNull();
-    expect(cleared.verification.critic).toBeNull(); // untouched, still its default
+    const cleared = await store.update({ verify: { commands: [] } });
+    expect(cleared.verify.commands).toEqual([]);
+    expect(cleared.verify.review).toEqual({ enabled: false });
   });
 
   it('boots an existing config saved before guardrails existed, filling it from defaults (issue #126)', async () => {

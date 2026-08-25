@@ -45,10 +45,10 @@ describe('appConfigSchema guardrail rejection (issue #126, ADR-0019)', () => {
 
   it('rejects a cost cap with no token fallback when the agent critic pins an unpriced model', () => {
     const config = JSON.parse(JSON.stringify(defaultConfig()));
-    // Price every harness model so only the critic's model is unpriced.
+    // Price every harness model so only the review critic's model is unpriced.
     config.harnesses.copilot.models = config.harnesses.copilot.models.filter((m: string) => m !== 'auto');
     config.harnesses.copilot.defaultModel = 'claude-sonnet-5';
-    config.verification.critic = { prompt: 'review', model: 'unpriced-critic-model' };
+    config.verify.review = { enabled: true, prompt: 'review', model: 'unpriced-critic-model' };
     config.guardrails.budget.costUsd = 10;
     config.guardrails.budget.tokens = null;
 

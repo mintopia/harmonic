@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -372,8 +372,19 @@ describe('Process Tree roll-up (T1)', () => {
 describe('usage collection and statistics', () => {
   let server: TestServer;
 
+  // The tests below that boot a plain `stubHarness()` share one server (their
+  // assertions are all per-run/per-task, so accumulated DB state is inert) —
+  // each boot is a full Fastify + libsql + migration cycle. Tests with
+  // per-harness overrides, and the stats test (which asserts on whole-DB
+  // totals), keep their own boots.
+  let shared: TestServer | undefined;
+  const sharedServer = async () => (shared ??= await startServer(stubHarness()));
+
   afterEach(async () => {
-    await server?.close();
+    if (server && server !== shared) await server.close();
+  });
+  afterAll(async () => {
+    await shared?.close();
   });
 
   const runTask = async (input: object): Promise<{ taskId: number; runId: number }> => {
@@ -387,7 +398,7 @@ describe('usage collection and statistics', () => {
   };
 
   it('collects aggregate usage from the ACP prompt result and tallies tool calls from events', async () => {
-    server = await startServer(stubHarness());
+    server = await sharedServer();
     const { runId } = await runTask({
       prompt: JSON.stringify({
         updates: [
@@ -538,14 +549,14 @@ describe('usage collection and statistics', () => {
   });
 
   it('reports usage as unavailable — not zero — when neither source exists', async () => {
-    server = await startServer(stubHarness());
+    server = await sharedServer();
     const { runId } = await runTask({ prompt: JSON.stringify({}) });
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.usage).toBeNull();
   });
 
   it('aggregates usage per task across runs, including retries', async () => {
-    server = await startServer(stubHarness());
+    server = await sharedServer();
     const usageScenario = JSON.stringify({
       usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
       exit: 'clean',

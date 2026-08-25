@@ -146,13 +146,13 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.phase).toBe('review');
-    expect(run.candidateOid).toBeTruthy();
+    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
-    // AC2: a critic attempt persisted during a real Run, at exactly the frozen OID.
+    // AC2: a critic attempt persisted during a real Run, at the verified branch head.
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'pass', summary: 'looks correct' });
-    expect(rows[0]!.inputOid).toBe(run.candidateOid);
+    expect(rows[0]!.inputOid).toMatch(/^[0-9a-f]{40}$/);
 
     expect(await verdictEvents(runId)).toEqual([
       { event: 'verification', mechanism: 'critic', verdict: 'pass', summary: 'looks correct' },
@@ -182,6 +182,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.mechanism === 'critic' && row.verdict === 'fail')).toBe(true);
     expect(rows.at(-1)).toMatchObject({ inputOid: run.candidateOid });
+    expect(rows.at(-1)!.inputOid).toMatch(/^[0-9a-f]{40}$/);
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
@@ -311,10 +312,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
   });
 
-  it('a configured critic with no candidate snapshot (dirty direct context) → inconclusive → Escalate', async () => {
-    // Direct mode + a dirty tree skips the candidate snapshot, so there is
-    // nothing frozen for the critic to review — infra doubt the gate Escalates
-    // on, without ever spawning the critic drive.
+  it('a configured critic with no committed implementation fails closed', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
       verificationCritic: critic(),

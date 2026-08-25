@@ -132,6 +132,21 @@ export const verificationCriticSchema = z.object({
 });
 export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
 
+/** The one optional review step that follows the ordered command list. */
+export const verificationReviewSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    prompt: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    harness: z.enum(HARNESS_IDS).optional(),
+  })
+  .superRefine((review, ctx) => {
+    if (!review.enabled) return;
+    if (!review.prompt) ctx.addIssue({ code: 'custom', path: ['prompt'], message: 'prompt is required when review is enabled' });
+    if (!review.model) ctx.addIssue({ code: 'custom', path: ['model'], message: 'model is required when review is enabled' });
+  });
+export type VerificationReview = z.infer<typeof verificationReviewSchema>;
+
 /**
  * The sentinel a Workspace stores to force a verifier OFF for itself (issue #174),
  * distinct from inheriting the global default. At this layer `null`/absent means
@@ -140,8 +155,8 @@ export type VerificationCritic = z.infer<typeof verificationCriticSchema>;
  */
 export const verifierOffSchema = z.object({ off: z.literal(true) });
 export type VerifierOff = z.infer<typeof verifierOffSchema>;
-export const verificationCommandOverrideSchema = z.union([verificationCommandSchema, verifierOffSchema]);
-export const verificationCriticOverrideSchema = z.union([verificationCriticSchema, verifierOffSchema]);
+export const verificationCommandOverrideSchema = z.union([z.array(verificationCommandSchema), verificationCommandSchema, verifierOffSchema]);
+export const verificationCriticOverrideSchema = z.union([verificationReviewSchema, verificationCriticSchema, verifierOffSchema]);
 
 /**
  * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound
@@ -171,7 +186,7 @@ export type BudgetGuardrail = z.infer<typeof budgetGuardrailSchema>;
  */
 export function unpricedModelsForCostCap(
   budget: Pick<BudgetGuardrail, 'costUsd' | 'tokens'>,
-  config: Pick<AppConfig, 'harnesses' | 'prices' | 'verification'>,
+  config: Pick<AppConfig, 'harnesses' | 'prices' | 'verify'>,
 ): string[] {
   if (budget.costUsd == null || budget.tokens != null) return [];
   const prices = resolvePrices(config.prices);
@@ -183,7 +198,7 @@ export function unpricedModelsForCostCap(
   // The agent critic (#132) is another model a Run bills against — the budget is
   // phase-scoped over verifying too (ADR-0019) — so its model must be priced on
   // the same footing as a harness model.
-  if (config.verification.critic) configured.add(config.verification.critic.model);
+  if (config.verify.review.enabled && config.verify.review.model) configured.add(config.verify.review.model);
   return [...configured].filter((m) => !isModelPriced(m, prices));
 }
 
@@ -312,10 +327,11 @@ export const appConfigSchema = z.object({
    * `validating`/`verifying` phases (`execution/runner.ts`) and gate landing
    * (#135/#164) — their verdicts feed `combineVerdicts` and drive settle.
    */
-  verification: z
+  /** Ordered verification contract. Commands fail fast; review runs last. */
+  verify: z
     .object({
-      command: verificationCommandSchema.nullable().default(null),
-      critic: verificationCriticSchema.nullable().default(null),
+      commands: z.array(verificationCommandSchema).default([]),
+      review: verificationReviewSchema.prefault({}),
       /** Auto-accept (issue #138, ADR-0021): when true, a native Run whose
        * verifier(s) PASS lands without the human review gate — the verifier's pass
        * IS the accept (ADR-0021 folds in the old `agentReview` flag). Off → a
@@ -480,9 +496,9 @@ export function defaultConfig(): AppConfig {
     },
     taskPrompt: DEFAULT_TASK_PROMPT,
     conversationIdleTimeoutMinutes: 30,
-    verification: {
-      command: null,
-      critic: null,
+    verify: {
+      commands: [],
+      review: { enabled: false },
       autoAccept: false,
     },
     guardrails: {
@@ -507,21 +523,32 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
 }
 
 /** A stored/patched config that may still carry the retired `agentReview` flag (#140). */
-export type LegacyConfig = DeepPartial<AppConfig> & { agentReview?: boolean };
+export type LegacyConfig = DeepPartial<AppConfig> & {
+  agentReview?: boolean;
+  verification?: { command?: VerificationCommand | null; critic?: VerificationCritic | null; autoAccept?: boolean; maxSelfHeals?: number };
+};
 
 /**
- * Fold the retired `agentReview` flag (ADR-0021) into the verification config.
- * A `agentReview: true` maps to `verification.autoAccept: true` — the verifier's
- * pass now IS the accept. The legacy key is ALWAYS dropped so it never lingers in
- * stored config nor re-exposes the removed accept/reject surface. An explicit
- * `verification.autoAccept` already present in the same object wins (not overridden).
+ * Fold retired verification input into `verify`. Legacy keys are accepted only at
+ * this boundary and are never returned or persisted. An explicit `verify` value
+ * always wins, including an empty command list or a disabled review.
  */
 export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
-  const { agentReview, ...rest } = raw;
-  if (agentReview !== true) return rest;
-  const verification = { ...rest.verification };
-  if (verification.autoAccept === undefined) verification.autoAccept = true;
-  return { ...rest, verification };
+  const { agentReview, verification: legacyVerification, ...rest } = raw;
+  const verify: DeepPartial<AppConfig['verify']> = { ...rest.verify };
+  if (legacyVerification) {
+    if (verify.commands === undefined && 'command' in legacyVerification) {
+      verify.commands = legacyVerification.command === null ? [] : [legacyVerification.command!];
+    }
+    if (verify.review === undefined && 'critic' in legacyVerification) {
+      verify.review = legacyVerification.critic === null ? { enabled: false } : { enabled: true, ...legacyVerification.critic! };
+    }
+    if (verify.autoAccept === undefined && legacyVerification.autoAccept !== undefined) verify.autoAccept = legacyVerification.autoAccept;
+    // Legacy `maxSelfHeals` is dropped, not migrated: the self-heal budget was
+    // replaced by the top-level `maxAttempts` cap (#310), a different unit.
+  }
+  if (agentReview === true && verify.autoAccept === undefined) verify.autoAccept = true;
+  return Object.keys(verify).length === 0 ? rest : { ...rest, verify };
 }
 
 export function defaultDataDir(): string {

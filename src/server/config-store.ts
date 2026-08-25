@@ -42,8 +42,8 @@ export class ConfigStore {
     return this.current;
   }
 
-  async update(patch: DeepPartial<AppConfig>): Promise<AppConfig> {
-    this.current = mergeConfig(this.current, migrateLegacyConfig(patch as LegacyConfig));
+  async update(patch: LegacyConfig): Promise<AppConfig> {
+    this.current = mergeConfig(this.current, migrateLegacyConfig(patch));
     await this.persist();
     return this.current;
   }

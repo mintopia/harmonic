@@ -151,9 +151,10 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     expect(turns[0]!).toMatchObject({ purpose: 're-merge', status: 'done' });
     expect(turns[0]!.sessionId).toBe(`run-${runId}`);
 
-    // The corrective turn re-entered the pipeline at validating (a second
-    // executing → validating), never skipping branch validation.
-    expect(await phaseEvents(runId)).toEqual(['validating', 'executing', 'validating', 'verifying', 'landing']);
+    // The corrective turn re-entered the pipeline with a second `executing`
+    // before verification (`validating` retired by the reshape — the branch
+    // contract is checked as a fact at implementation end, not as a phase).
+    expect(await phaseEvents(runId)).toEqual(['executing', 'verifying', 'landing']);
   });
 
   it('escalates with no second mutating turn when the corrective result is outside the allowed set', async () => {

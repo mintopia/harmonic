@@ -469,14 +469,14 @@ export function WorkspaceSettingsPage({
 
         <SettingsSection
           title="Verification"
-          description="How a Run here is checked before it lands (ADR-0021): a command verifier (your test/lint), an agent critic that reviews the diff, and whether a passing Run auto-accepts past the human review gate. Each inherits the global default until overridden."
+          description="Commands run in order and stop at the first failure. Review runs only after they pass. This Workspace can override the global default."
         >
           <div className="flex flex-col gap-4 sm:max-w-md">
             <div>
               <InheritField
                 label="Command verifier"
                 value={local.verificationCommand}
-                inherited={config.verification.command ?? EMPTY_COMMAND}
+                inherited={config.verify.commands[0] ?? EMPTY_COMMAND}
                 format={summarizeCommand}
                 onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
               >
@@ -486,7 +486,7 @@ export function WorkspaceSettingsPage({
                   if (isVerifierOff(value)) {
                     return (
                       <div className="flex flex-col gap-3">
-                        <Switch checked={false} onChange={() => onChange(config.verification.command ?? EMPTY_COMMAND)}>
+                        <Switch checked={false} onChange={() => onChange(config.verify.commands[0] ?? EMPTY_COMMAND)}>
                           Enabled
                         </Switch>
                         <p className="text-small text-muted">
@@ -543,7 +543,9 @@ export function WorkspaceSettingsPage({
               <InheritField
                 label="Agent critic"
                 value={local.verificationCritic}
-                inherited={config.verification.critic ?? EMPTY_CRITIC}
+                inherited={config.verify.review.enabled && config.verify.review.prompt && config.verify.review.model
+                  ? { prompt: config.verify.review.prompt, model: config.verify.review.model, ...(config.verify.review.harness ? { harness: config.verify.review.harness } : {}) }
+                  : EMPTY_CRITIC}
                 format={summarizeCritic}
                 onChange={(verificationCritic) => set('verificationCritic', verificationCritic)}
               >
@@ -552,7 +554,14 @@ export function WorkspaceSettingsPage({
                   if (isVerifierOff(value)) {
                     return (
                       <div className="flex flex-col gap-3">
-                        <Switch checked={false} onChange={() => onChange(config.verification.critic ?? EMPTY_CRITIC)}>
+                        <Switch
+                          checked={false}
+                          onChange={() => onChange(
+                            config.verify.review.enabled && config.verify.review.prompt && config.verify.review.model
+                              ? { prompt: config.verify.review.prompt, model: config.verify.review.model, ...(config.verify.review.harness ? { harness: config.verify.review.harness } : {}) }
+                              : EMPTY_CRITIC,
+                          )}
+                        >
                           Enabled
                         </Switch>
                         <p className="text-small text-muted">
@@ -616,7 +625,7 @@ export function WorkspaceSettingsPage({
               <InheritField
                 label="Auto-accept"
                 value={local.verificationAutoAccept}
-                inherited={config.verification.autoAccept}
+                inherited={config.verify.autoAccept}
                 format={(v) => (v ? 'On' : 'Off')}
                 onChange={(verificationAutoAccept) => set('verificationAutoAccept', verificationAutoAccept)}
               >
