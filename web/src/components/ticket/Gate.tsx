@@ -4,6 +4,7 @@ import type { GateModel } from '../../ticket-gate-model';
 import { formatCost } from '../../cost';
 import type { Run, Task, VerificationAttempt } from '../../types';
 import { btnGhost, dot, runDotFill } from '../../ui';
+import { taskActions } from '../../task-actions-model';
 import { TaskActions } from '../TaskActions';
 
 const DOT_LABEL: Record<RunDot, string> = {
@@ -35,7 +36,19 @@ export function Gate({
   onChanged: () => void;
   onGoToCurrent: (runId: number) => void;
 }) {
-  if (model.kind === 'none') return null;
+  // No run to gate (a fresh re-attempt, or an uncancelled/ready Task that hasn't
+  // run yet): the review gate below only mounts while a current run exists, so a
+  // run-less Task would otherwise have NO state actions on its detail page —
+  // no way to cancel, delete, run, or edit it. Surface those here. TaskActions
+  // (footer) self-hides when the state has none, so guard the wrap on that.
+  if (model.kind === 'none') {
+    if (taskActions(task.state).length === 0) return null;
+    return (
+      <div className={WRAP}>
+        <TaskActions task={task} variant="footer" onEdit={onEdit} onChanged={onChanged} />
+      </div>
+    );
+  }
 
   if (model.kind === 'result') {
     const lead = `Run ${model.attempt} `;
