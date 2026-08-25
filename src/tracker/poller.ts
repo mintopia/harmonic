@@ -6,6 +6,7 @@ import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { persistedTickets } from './persisted.js';
 import { logger } from '../logger.js';
+import { startOperation, type Operation } from '../telemetry/operations.js';
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
 export interface MirrorSync {
@@ -90,6 +91,17 @@ export class TrackerPoller {
   }
 
   private async pollOnce(): Promise<void> {
+    const poll = startOperation({ type: 'poll', attributes: { 'workspace.id': this.workspaceId } });
+    try {
+      await poll.run(() => this.runPollCycle(poll));
+      poll.end();
+    } catch (error) {
+      poll.fail(error);
+      throw error;
+    }
+  }
+
+  private async runPollCycle(poll: Operation): Promise<void> {
     let adapter: TrackerAdapter;
     try {
       adapter = await this.resolveAdapter(this.workingDir);
@@ -98,21 +110,34 @@ export class TrackerPoller {
       throw err;
     }
     this.onResolved(resolutionSuccess(adapter));
+    poll.update({ 'tracker.name': adapter.name });
     const tickets = await adapter.scan();
+    poll.update({ 'tracker.ticket.count': tickets.length });
     this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
     this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
     await this.mirror?.observe(adapter);
     // `!!adapter.close` is the writable-tracker signal (issue #237): an
     // inbound-only adapter with no close capability must not have its completed
     // Tasks flipped back to ready (their tickets stay open by design).
-    const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId, !!adapter.close);
+    const mirrored = await mirrorScan(this.tasks, tickets, this.workspaceId, {
+      trackerCanClose: !!adapter.close,
+      pollSpanContext: poll.spanContext,
+    });
+    poll.update({ 'tracker.mirrored.count': mirrored.length });
     // Set each ready Epic member's base branch before the scheduler's next pick
     // (issue #159), so it forks its worktree Run from the Epic's integration branch.
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
     if (this.epics && this.reconcileOnPoll) {
+      const reconcile = startOperation({
+        type: 'epic.reconcile',
+        attributes: { 'workspace.id': this.workspaceId },
+        parent: poll.spanContext,
+      });
       try {
-        await this.reconcileEpics();
+        await reconcile.run(() => this.reconcileEpics());
+        reconcile.end();
       } catch (err) {
+        reconcile.fail(err);
         this.onError(`epic integration reconcile failed: ${String(err)}`);
       }
     }

@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { trace } from '@opentelemetry/api';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -9,6 +12,16 @@ import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { allWorkspaces } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
+
+const providers: NodeTracerProvider[] = [];
+
+function installOperations() {
+  const exporter = new InMemorySpanExporter();
+  const provider = new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+  provider.register();
+  providers.push(provider);
+  return exporter;
+}
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -59,6 +72,8 @@ describe('TrackerPoller.poll', () => {
     wsId = (await allWorkspaces(asyncDb)())[0]!.id;
   });
   afterEach(async () => {
+    trace.disable();
+    await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -75,6 +90,43 @@ describe('TrackerPoller.poll', () => {
     expect(scans()).toBe(1);
     expect(await tasks.list()).toHaveLength(1); // map skipped
     expect((await tasks.list())[0]).toMatchObject({ origin: 'mirrored', trackerRef: 42, state: 'ready', workspaceId: wsId });
+  });
+
+  it('records each poll and its mirror work as linked Operations (issue #288)', async () => {
+    const exporter = installOperations();
+    const { adapter } = stubAdapter([
+      ticket({ number: 42, labels: ['ready-for-agent'] }),
+      ticket({ number: 43, labels: ['ready-for-agent'] }),
+    ]);
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => adapter);
+
+    await poller.poll();
+
+    const spans = exporter.getFinishedSpans();
+    const poll = spans.find((span) => span.name === 'harmonic.poll');
+    if (!poll) throw new Error('Expected a tracker poll Operation');
+    expect(poll.attributes).toMatchObject({
+      'workspace.id': wsId,
+      'tracker.name': 'stub',
+      'tracker.ticket.count': 2,
+      'tracker.mirrored.count': 2,
+    });
+    const mirrors = spans.filter((span) => span.name === 'harmonic.tracker.mirror.issue');
+    expect(mirrors).toHaveLength(2);
+    expect(mirrors.map((span) => span.attributes['tracker.ref']).sort()).toEqual([42, 43]);
+    expect(mirrors.every((span) => span.parentSpanContext?.spanId === poll.spanContext().spanId)).toBe(true);
+  });
+
+  it('marks a failed poll Operation as ERROR (issue #288)', async () => {
+    const exporter = installOperations();
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => {
+      throw new Error('tracker declaration is invalid');
+    });
+
+    await expect(poller.poll()).rejects.toThrow('tracker declaration is invalid');
+
+    const poll = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.poll');
+    expect(poll?.status).toMatchObject({ code: 2, message: 'tracker declaration is invalid' });
   });
 
   it('single-flights overlapping polls so the timer and a manual pollNow never scan concurrently (issue #219)', async () => {
@@ -260,6 +312,7 @@ describe('TrackerPoller.poll', () => {
   });
 
   it('runs epic integration after mirroring without scheduling work (issue #159)', async () => {
+    const exporter = installOperations();
     const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'], assignees: ['someone'] })]);
     const calls: Array<{ tickets: number[]; mirrored: Array<number | null> }> = [];
     let persistedAssignees: string[] | undefined;
@@ -291,9 +344,14 @@ describe('TrackerPoller.poll', () => {
     expect(calls[0]!.tickets).toContain(42);
     expect(calls[0]!.mirrored).toContain(42);
     expect(persistedAssignees).toEqual([]); // reconstructed DB facts, not the assigned live-scan object (#234)
+    const spans = exporter.getFinishedSpans();
+    const poll = spans.find((span) => span.name === 'harmonic.poll');
+    const reconcile = spans.find((span) => span.name === 'harmonic.epic.reconcile');
+    expect(reconcile?.parentSpanContext?.spanId).toBe(poll?.spanContext().spanId);
   });
 
   it('swallows an epic integration failure, logs it, and never wedges the poll (issue #159)', async () => {
+    const exporter = installOperations();
     const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
     const errors: string[] = [];
     const epics = {
@@ -318,6 +376,11 @@ describe('TrackerPoller.poll', () => {
 
     expect(await tasks.list()).toHaveLength(1);
     expect(errors.some((e) => e.includes('epic integration'))).toBe(true);
+    const spans = exporter.getFinishedSpans();
+    const poll = spans.find((span) => span.name === 'harmonic.poll');
+    const reconcile = spans.find((span) => span.name === 'harmonic.epic.reconcile');
+    expect(poll?.status).toMatchObject({ code: 0 });
+    expect(reconcile?.status).toMatchObject({ code: 2, message: 'git boom' });
   });
 
   it('yields while walking a large closed-running backlog', async () => {

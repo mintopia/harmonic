@@ -1,7 +1,9 @@
+import type { SpanContext } from '@opentelemetry/api';
 import { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL, type Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
 import { WAYFINDER_TYPES, type Drive, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
+import { startOperation } from '../telemetry/operations.js';
 
 export interface MirroredRole {
   workflow: Workflow;
@@ -89,10 +91,15 @@ export async function mirrorScan(
   tasks: TaskService,
   tickets: Ticket[],
   workspaceId: number,
-  /** Whether the polling adapter can close a ticket (issue #237) — plumbed to
-   * each {@link toMirrorInput} so the completed→ready reopen flip is gated on a
-   * writable tracker. Defaults to capable (every shipped adapter closes). */
-  trackerCanClose = true,
+  {
+    trackerCanClose = true,
+    pollSpanContext,
+  }: {
+    /** Whether the polling adapter can close a ticket (issue #237). */
+    trackerCanClose?: boolean;
+    /** The poll Operation that owns per-issue mirror children, when called from a poll. */
+    pollSpanContext?: SpanContext;
+  } = {},
 ): Promise<TaskRow[]> {
   const issues: Ticket[] = [];
   const containers: Array<{ trackerRef: number; facts: TrackerFacts }> = [];
@@ -115,7 +122,22 @@ export async function mirrorScan(
   // anyway, and the reconcile pass below reads `idByRef` built from every row.
   const rows: TaskRow[] = [];
   await forEachYielding(issues, async (t) => {
-    rows.push(await tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number), trackerCanClose), workspaceId));
+    const operation = pollSpanContext
+      ? startOperation({
+          type: 'tracker.mirror.issue',
+          attributes: { 'workspace.id': workspaceId, 'tracker.ref': t.number },
+          parent: pollSpanContext,
+        })
+      : undefined;
+    try {
+      const upsert = () => tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number), trackerCanClose), workspaceId);
+      const row = operation ? await operation.run(upsert) : await upsert();
+      rows.push(row);
+      operation?.end();
+    } catch (error) {
+      operation?.fail(error);
+      throw error;
+    }
   });
   const idByRef = new Map<number, number>();
   await forEachYielding(rows, (row) => {

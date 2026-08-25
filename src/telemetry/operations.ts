@@ -43,7 +43,7 @@ export interface Operation {
   run<T>(work: () => T): T;
   update(attributes: Attributes): void;
   end(): void;
-  fail(reason: string): void;
+  fail(reason: unknown): void;
 }
 
 const registryForSpan = new Map<string, OperationRegistry>();
@@ -214,9 +214,10 @@ export function startOperation({
       registryForSpan.get(span.spanContext().spanId)?.updateById(span.spanContext().spanId);
     },
     end,
-    fail: (reason: string): void => {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
-      span.setAttribute('harmonic.error.reason', reason);
+    fail: (reason: unknown): void => {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      span.setStatus({ code: SpanStatusCode.ERROR, message });
+      span.setAttribute('harmonic.error.reason', message);
       end();
     },
   };
