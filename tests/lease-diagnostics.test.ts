@@ -59,7 +59,6 @@ function task(overrides: Partial<TaskRow> & Pick<TaskRow, 'id'>): TaskRow {
     baseBranch: null,
     state: 'running',
     workspaceId: 1,
-    reattemptOf: null,
     feedback: null,
     continuationChoice: null,
     origin: 'native',

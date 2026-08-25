@@ -87,9 +87,9 @@ function ticketRef(task: TaskRow, number: number): TicketRef {
 
 /**
  * Harmonic has dropped drive back to the human frontier: a cancelled Run or a
- * runtime Escalation (issue #33). Auto-Retry now re-queues a failed afk Run
- * (failed→ready, claim held across retries), so bare `failed` is no longer a
- * hand-back — only exhausted-retries (escalated) is.
+ * runtime Escalation (issue #33). The unified Attempt loop retries a failed
+ * afk Run within its cap (claim held across retries), so bare `failed` is no
+ * longer a hand-back — only an exhausted Attempt cap (escalated) is.
  */
 function handedBack(task: TaskRow): boolean {
   return task.state === 'cancelled' || task.escalated;

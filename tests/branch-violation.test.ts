@@ -46,11 +46,12 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
   let ref = 1510; // distinct trackerRef per mirrored Task
 
   beforeAll(async () => {
-    // autoRetry/continueAttempts 0 → the first terminal settle stands, so no
+    // One permitted attempt means the first terminal settle stands, so no
     // second attempt re-runs the funnel mid-assertion.
     server = await startServer({
       ...stubHarness(),
-      drive: { autoRetry: 0, continueAttempts: 0 },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0 },
     });
   });
   afterAll(async () => {
@@ -153,7 +154,7 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
         timeoutSeconds: 30,
       }),
     });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 1 });
 
     // The agent edits a file (no branch/HEAD mischief) and finishes — the normal
     // direct-mode footprint (detached HEAD on its own line), a clean contract.

@@ -452,18 +452,6 @@ function DriveFields({
           </select>
           <FieldError message={fieldErrors['drive.mergeFate']} />
         </div>
-        <div>
-          <label className={fieldLabel} htmlFor="settings-auto-retry">Auto-retry</label>
-          <input
-            id="settings-auto-retry"
-            type="number"
-            min={0}
-            className={`${field} w-28 tabular-nums`}
-            value={d.autoRetry}
-            onChange={(e) => onChange({ ...d, autoRetry: Number(e.target.value) })}
-          />
-          <FieldError message={fieldErrors['drive.autoRetry']} />
-        </div>
       </div>
     </div>
   );
@@ -582,6 +570,24 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </SettingsSection>
 
         <SettingsSection
+          title="Attempt limit"
+          description="The maximum implementation attempts before a ticket is escalated. Workspaces can override this cap."
+        >
+          <div>
+            <label className={fieldLabel} htmlFor="settings-max-attempts">Maximum attempts</label>
+            <input
+              id="settings-max-attempts"
+              type="number"
+              min={1}
+              className={`${field} w-28 tabular-nums`}
+              value={local.maxAttempts}
+              onChange={(e) => setLocal({ ...local, maxAttempts: Number(e.target.value) })}
+            />
+            <FieldError message={fieldErrors.maxAttempts} />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
           title="Verification"
           description="Commands run in order and stop at the first failure. An optional review runs after every command passes. Each Workspace can override these defaults."
         >
@@ -605,7 +611,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
 
         <SettingsSection
           title="Drive prompt"
-          description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate and auto-retry govern what happens after a run."
+          description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs how completed work lands."
         >
           <DriveFields
             config={local}

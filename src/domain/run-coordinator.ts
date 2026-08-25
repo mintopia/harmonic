@@ -8,8 +8,9 @@ import { computeDisposition, type Disposition, type DispositionFact } from './ru
  * The terminal state is **not** a fixed function of the winning disposition
  * kind. A single `agent-finish/unresolved` can land the Task in
  * `awaiting-review` (native clean completion), `completed` (mirrored / operator
- * force-complete), `ready` (Auto-Retry within cap) or Escalated (retry cap
- * spent), depending on the Merge Fate and retry budget resolved at signal time.
+ * force-complete), `ready` (a retry within the Attempt cap) or Escalated
+ * (the cap spent), depending on the Merge Fate and attempt budget resolved at
+ * signal time.
  * So each ending signal records the concrete projection it intends in its
  * `run_fact` payload, and the coordinator replays the **winning** fact's
  * projection. Run/Task terminal state is thereby a projection of `run_facts`,

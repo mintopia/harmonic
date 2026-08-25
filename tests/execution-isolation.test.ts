@@ -257,11 +257,12 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
   let ref = 1520; // distinct trackerRef per mirrored Task (keyed on workspaceId,trackerRef)
 
   beforeAll(async () => {
-    // autoRetry/continueAttempts 0 → the first unresolved turn Escalates
+    // One permitted attempt means the first unresolved turn Escalates
     // terminally, so no second attempt re-detaches the checkout mid-assertion.
     server = await startServer({
       ...stubHarness(),
-      drive: { autoRetry: 0, continueAttempts: 0 },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0 },
     });
   });
   afterAll(async () => {
@@ -342,7 +343,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
         timeoutSeconds: 30,
       }),
     });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
 
     // Turn 1 writes a.txt; the heal turn writes only b.txt. If the continuation
     // rematerialises turn 1's candidate, the rebuilt candidate carries BOTH; if

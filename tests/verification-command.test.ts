@@ -51,20 +51,24 @@ describe('command verifier end-to-end (issue #135)', () => {
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    // This file exercises the #135 verify GATE in isolation: a fail Escalates
-    // directly. Self-heal (#137) is on by default (maxSelfHeals: 1) and would
-    // turn a fail into heal→re-verify→escalate (two attempts); disable it here so
-    // these assertions stay a clean gate test. Self-heal has its own file.
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    // A failed verifier is now a failed Attempt, followed by one corrective
+    // Attempt on the same ticket. Keep this suite's bound explicit so the
+    // escalation cases exercise the complete two-attempt loop.
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();
     rmSync(repoDir, { recursive: true, force: true });
   });
 
-  async function createAndRun(): Promise<{ taskId: number; runId: number }> {
+  // Verification is pinned to a committed branch head, so the stub agent must
+  // leave a real commit behind (a unique file per run keeps heads distinct).
+  let implSeq = 0;
+  async function createAndRun(
+    scenario: Record<string, unknown> = { writeFiles: { [`impl-${++implSeq}.txt`]: 'implementation\n' } },
+  ): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ stopReason: 'end_turn' }),
+      prompt: JSON.stringify(scenario),
     });
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -103,7 +107,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     ]);
   });
 
-  it('AC2/AC4: a failing command Escalates the Run and never lands (broken work never lands)', async () => {
+  it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
     const { taskId, runId } = await createAndRun();
 
@@ -123,11 +127,22 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.escalated).toBe(true);
 
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ mechanism: 'command', verdict: 'fail', inputOid: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mechanism: 'command', verdict: 'fail' }),
+        expect.objectContaining({ mechanism: 'command', verdict: 'fail', inputOid: run.candidateOid }),
+      ]),
+    );
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
+    expect(timeline.body.attempts[0].feedback).toContain('verifier command failed');
   });
 
-  it('AC2/AC4: a missing command is inconclusive → Escalates (infra doubt fails safe)', async () => {
+  it('AC2/AC4: an inconclusive command consumes the same bounded Attempt loop', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: verificationCommandSchema.parse({
         command: 'definitely-not-a-real-command-xyzzy',
@@ -148,8 +163,13 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.verdict).toBe('inconclusive');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.verdict === 'inconclusive')).toBe(true);
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
   });
 
   it('a configured command with no committed implementation fails closed', async () => {
@@ -159,7 +179,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
     writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
 
-    const { taskId, runId } = await createAndRun();
+    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
       return body.state === 'failed' ? body : undefined;
@@ -174,6 +194,33 @@ describe('command verifier end-to-end (issue #135)', () => {
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
+    // Leave the shared repo clean: a leftover dirty file would mark the next
+    // direct Run startDirty and suppress its commit nudge.
+    rmSync(join(repoDir, 'uncommitted.txt'), { force: true });
+  });
+
+  it('a dirty worktree receives one commit nudge without consuming an Attempt', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'direct',
+      verificationCommand: null,
+    });
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'nudge-me.txt': 'dirty\n' }, commit: false }),
+      workingDir: repoDir,
+      isolationMode: 'direct',
+    });
+    expect(created.status).toBe(201);
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    expect(started.status).toBe(201);
+    const { id: taskId } = created.body as { id: number };
+    const { id: runId } = started.body as { id: number };
+    await waitFor(async () => {
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      return events.some((event: { payload: { event?: string } }) => event.payload.event === 'commit-nudge') ? true : undefined;
+    });
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts).toHaveLength(1);
+    expect(timeline.body.attempts[0]).toMatchObject({ number: 1, state: 'running' });
   });
 });
 
@@ -204,9 +251,10 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
 
+  let implSeq = 0;
   async function createAndRun(): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ stopReason: 'end_turn' }),
+      prompt: JSON.stringify({ writeFiles: { [`auto-accept-impl-${++implSeq}.txt`]: 'implementation\n' } }),
     });
     expect(created.status).toBe(201);
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);

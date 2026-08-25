@@ -50,6 +50,7 @@ export const workspaceOverridesSchema = z.object({
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
+  maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   /**
    * Command-verifier override (issue #132), tri-state (issue #174): null/absent
    * inherits `config.verification.command`, a verifier object overrides it, and
@@ -170,6 +171,7 @@ export class WorkspaceService {
           priority: patch(input.priority, current.priority),
           maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
           autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
+          maxAttempts: patch(input.maxAttempts, current.maxAttempts),
           verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
           verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
           verificationAutoAccept: patch(input.verificationAutoAccept, current.verificationAutoAccept),

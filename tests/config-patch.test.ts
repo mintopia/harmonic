@@ -82,13 +82,13 @@ describe('PATCH /api/config verification', () => {
     expect(cleared.body.verify.commands).toEqual([]);
   });
 
-  it('accepts a maxSelfHeals patch and leaves autoAccept untouched', async () => {
+  it('accepts a maxAttempts patch and leaves verification settings untouched', async () => {
     const current = (await server.api('GET', '/api/config')).body;
-    expect(current.verify.maxSelfHeals).toBe(1);
+    expect(current.maxAttempts).toBe(2);
 
-    const patched = await server.api('PATCH', '/api/config', { verify: { maxSelfHeals: 3 } });
+    const patched = await server.api('PATCH', '/api/config', { maxAttempts: 3 });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.maxSelfHeals).toBe(3);
+    expect(patched.body.maxAttempts).toBe(3);
     expect(patched.body.verify.autoAccept).toBe(false);
   });
 });

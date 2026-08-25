@@ -40,6 +40,8 @@ export interface Attempt {
   state: AttemptState;
   startedAt: number;
   endedAt: number | null;
+  /** Feedback recorded before this corrective attempt began. */
+  feedback: string | null;
   tasks: AttemptTask[];
 }
 
@@ -157,6 +159,8 @@ export interface Workspace {
   priority: 'high' | 'normal' | 'low' | null;
   maxConcurrentRuns: number | null;
   autoRunnerEnabled: boolean | null;
+  /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
+  maxAttempts: number | null;
   /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
    * the command and critic: `null` inherits the global `config.verify` default,
    * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
@@ -242,17 +246,13 @@ export interface Task {
     priority: 'high' | 'normal' | 'low' | null;
   };
   state: TaskState;
-  /** The original this task re-attempts, or null. */
-  reattemptOf: number | null;
-  /** Reviewer feedback that seeded this re-attempt, in full; null otherwise. */
+  /** Feedback held for the next same-ticket retry, if any. */
   feedback: string | null;
   createdAt: number;
   updatedAt: number;
   dependsOn: number[];
   dependents: number[];
   blockedOnFailed: boolean;
-  /** Task ids that re-attempt this one (reverse of reattemptOf). */
-  reattempts: number[];
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
   /** native = authored here; mirrored = a projection of a tracker issue (issue #30). */
@@ -667,13 +667,12 @@ export interface AppConfig {
     commands: VerificationCommand[];
     review: VerificationReview;
     autoAccept: boolean;
-    maxSelfHeals: number;
   };
   /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
    * toggle a Workspace inherits until it overrides them (issue #166).
    * `toolTimeoutMinutes` is global-only (no per-Workspace override). */
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
-  /** How afk mirrored Tasks are driven (issue #33): the prompt template, branch fate, and retry cap. */
+  /** How afk mirrored Tasks are driven (issue #33): prompt and branch fate. */
   drive: {
     /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. The default omits {title}/{body} — the agent fetches the issue itself. */
     prompt: string;
@@ -682,8 +681,9 @@ export interface AppConfig {
     /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
     continuePrompt: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
-    autoRetry: number;
   };
+  /** Maximum implementation attempts before the ticket is escalated. */
+  maxAttempts: number;
   /** The Task Prompt template for native Runs, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
 }

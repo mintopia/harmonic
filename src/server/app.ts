@@ -567,6 +567,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       return outcome.ok ? { ok: true } : { ok: false, detail: outcome.detail };
     },
     landingEffectsFor,
+    {},
+    async (task, run, feedback) => await runner.retryAfterReviewReject(task, run, feedback),
   );
   // Review-SLA sweep at boot (issue #114): a Run left parked in `review` past its
   // deadline by a previous instance is settled to a terminal disposition now, so
@@ -732,7 +734,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   // Treat an empty `application/json` body as no body. The optional-body POSTs
-  // (cancel/requeue/uncancel/reattempt — `.nullish()` schemas) are routinely
+  // (cancel/requeue/uncancel — `.nullish()` schemas) are routinely
   // called with a JSON content-type but no bytes; Fastify's default parser
   // throws FST_ERR_CTP_EMPTY_JSON_BODY on that, which the error handler doesn't
   // recognise and turns into a 500. Parse empty (or whitespace-only) as

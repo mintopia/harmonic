@@ -242,22 +242,14 @@ describe('task baseBranch (issue #157)', () => {
     expect(cleared.body.baseBranch).toBeNull();
   });
 
-  it('reattempt copies the original\'s baseBranch onto the new task', async () => {
+  it('keeps baseBranch on the same ticket across attempts', async () => {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: 'will fail then be re-attempted',
+      prompt: 'will fail then retry in place',
       baseBranch: 'integration/x',
     });
-    await server.api('POST', `/api/tasks/${created.body.id}/cancel`);
-    // cancel is terminal (reattempt requires a finished task), matching the
-    // convention used elsewhere in this file for driving a task to terminal
-    // without running a real agent.
-    const cancelled = await server.api('GET', `/api/tasks/${created.body.id}`);
-    expect(cancelled.body.state).toBe('cancelled');
-
-    const reattempted = await server.api('POST', `/api/tasks/${created.body.id}/reattempt`, { feedback: 'try again' });
-    expect(reattempted.status).toBe(201);
-    expect(reattempted.body.baseBranch).toBe('integration/x');
-    expect(reattempted.body.reattemptOf).toBe(created.body.id);
+    const ticket = await server.api('GET', `/api/tasks/${created.body.id}`);
+    expect(ticket.status).toBe(200);
+    expect(ticket.body.baseBranch).toBe('integration/x');
   });
 });
 

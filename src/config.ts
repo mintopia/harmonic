@@ -279,6 +279,8 @@ export const appConfigSchema = z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
   }),
+  /** Maximum failed implementation attempts before the ticket is escalated. */
+  maxAttempts: z.number().int().min(1).default(2).meta({ example: 2 }),
   /**
    * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
    * global Drive Prompt template; `unattendedReminder` is appended to every
@@ -286,8 +288,7 @@ export const appConfigSchema = z.object({
    * operator-editable so the whole mirrored-drive prompt is visible, not
    * hardcoded. `mergeFate` is the default fate of a
    * completed worktree Run's branch (research Tasks are always artifacts);
-   * `autoRetry` is how many times a failed afk Run is silently re-queued
-   * before it Escalates to a human. `continueAttempts` is how many times a
+   * `continueAttempts` is how many times a
    * Run that ended its turn without an explicit finish/escalate signal is
    * re-prompted to continue before the Run is treated as unresolved — 0 keeps
    * the old single-turn behaviour. `finish_task` (not the agent closing the
@@ -300,7 +301,6 @@ export const appConfigSchema = z.object({
       unattendedReminder: z.string().default(UNATTENDED_REMINDER).meta({ example: UNATTENDED_REMINDER }),
       continuePrompt: z.string().default(DEFAULT_CONTINUE_PROMPT).meta({ example: DEFAULT_CONTINUE_PROMPT }),
       mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
-      autoRetry: z.number().int().min(0).default(1).meta({ example: 1 }),
       continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
     })
     .prefault({}),
@@ -309,8 +309,6 @@ export const appConfigSchema = z.object({
    * operator-editable wrapper around a Task's own prompt, with `{prompt}` /
    * `{id}` / `{workingDir}` / `{harness}` / `{model}` placeholders. Defaults to
    * bare `{prompt}`, so out of the box the Task's prompt is sent verbatim.
-   * A re-attempt's reviewer feedback is appended after the filled template, as
-   * before (run-prompt.ts).
    */
   taskPrompt: z.string().default(DEFAULT_TASK_PROMPT).meta({ example: DEFAULT_TASK_PROMPT }),
   /**
@@ -340,14 +338,6 @@ export const appConfigSchema = z.object({
        * passing native Run still parks for human review. No verifier configured →
        * always review, regardless of this flag (nothing verified to auto-accept). */
       autoAccept: z.boolean().default(false),
-      /** Bounded self-heal (issue #137, ADR-0021, reliability-design Unit B):
-       * how many corrective builder turns an **actionable** verification fail
-       * may trigger before the Run Escalates. Each heal routes back into the
-       * builder Session as a mutating turn through the per-Session turn queue,
-       * re-enters `validating`, and reruns the FULL verifier suite. An
-       * inconclusive verdict never heals (it Escalates with its cause); `0`
-       * disables self-heal, so an actionable fail Escalates immediately. */
-      maxSelfHeals: z.number().int().min(0).default(1),
     })
     .prefault({}),
   /**
@@ -496,12 +486,12 @@ export function defaultConfig(): AppConfig {
       enabled: false,
       maxConcurrentRuns: 1,
     },
+    maxAttempts: 2,
     drive: {
       prompt: DEFAULT_DRIVE_PROMPT,
       unattendedReminder: UNATTENDED_REMINDER,
       continuePrompt: DEFAULT_CONTINUE_PROMPT,
       mergeFate: 'auto-merge',
-      autoRetry: 1,
       continueAttempts: 1,
     },
     taskPrompt: DEFAULT_TASK_PROMPT,
@@ -510,7 +500,6 @@ export function defaultConfig(): AppConfig {
       commands: [],
       review: { enabled: false },
       autoAccept: false,
-      maxSelfHeals: 1,
     },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
@@ -555,7 +544,8 @@ export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
       verify.review = legacyVerification.critic === null ? { enabled: false } : { enabled: true, ...legacyVerification.critic! };
     }
     if (verify.autoAccept === undefined && legacyVerification.autoAccept !== undefined) verify.autoAccept = legacyVerification.autoAccept;
-    if (verify.maxSelfHeals === undefined && legacyVerification.maxSelfHeals !== undefined) verify.maxSelfHeals = legacyVerification.maxSelfHeals;
+    // Legacy `maxSelfHeals` is dropped, not migrated: the self-heal budget was
+    // replaced by the top-level `maxAttempts` cap (#310), a different unit.
   }
   if (agentReview === true && verify.autoAccept === undefined) verify.autoAccept = true;
   return Object.keys(verify).length === 0 ? rest : { ...rest, verify };

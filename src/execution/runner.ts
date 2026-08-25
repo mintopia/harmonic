@@ -33,7 +33,7 @@ import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domai
 import { RunFactStore } from '../domain/run-facts.js';
 import { AttemptStore } from '../domain/attempts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
-import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
+import type { SettleProjection } from '../domain/run-coordinator.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import type { RunPhase } from '../domain/run-phases.js';
@@ -227,6 +227,7 @@ export interface RunnerOptions {
         | 'verificationCommand'
         | 'verificationCritic'
         | 'verificationAutoAccept'
+        | 'maxAttempts'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -517,14 +518,13 @@ export class Runner {
    * every wall-clock (later token/cost) trip is appended here, and the amber
    * Escalation card reason derives from it. */
   private readonly guardrailEvents: GuardrailEventStore;
-  /** The per-Session turn queue (issue #116): a bounded self-heal (issue #137)
-   * records its corrective turn here, single-flight per Session, before the
-   * builder re-drives it. */
+  /** The per-Session turn queue (issue #116): a corrective Attempt turn is
+   * recorded here, single-flight per Session, before the builder re-drives it. */
   private readonly turnQueue: TurnQueueStore;
   /** The Execution Chain store (issue #129, reliability-design Unit A): mints /
    * resolves the persisted `execution_chains` identity a Run belongs to, so a
    * cumulative token/cost budget is charged across every Run that continues one
-   * line of work (reattempt / mirrored retry / crash-resume / self-heal) and a
+   * line of work (retry / crash-resume / corrective turn) and a
    * retry cannot reset the counter to bypass the ceiling. */
   private readonly chainStore: ExecutionChainStore;
   /** The durable Session store (issue #141, reliability-design Unit C): every
@@ -664,6 +664,25 @@ export class Runner {
   }
 
   /**
+   * A human review rejection is the same failed Attempt as a verifier failure.
+   * Record its guidance on the completed attempt, then either start attempt N+1
+   * on this ticket or expose the ticket to a human once its cap is exhausted.
+   */
+  async retryAfterReviewReject(task: TaskRow, run: RunRow, feedback?: string): Promise<TaskRow> {
+    const attempt = await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+    const reason = feedback?.trim() || 'rejected in review';
+    await this.attempts.finish(attempt.id, 'failed', Date.now(), reason);
+
+    const workspace = await this.getWorkspace?.(task.workspaceId);
+    const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
+    if (run.attempt >= maxAttempts) return await this.taskService.escalate(task.id);
+
+    await this.taskService.requeue(task.id, feedback);
+    await this.start(task.id);
+    return await this.taskService.get(task.id);
+  }
+
+  /**
    * Spawn a run for a task the caller already flipped to running — the afk
    * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
    * spawn, so the flip lands before the tracker write, not with it (issue #32).
@@ -702,8 +721,7 @@ export class Runner {
     };
     // The Execution Chain this Run charges its cumulative budget against
     // (issue #129): inherited from the line of work this Run continues (a
-    // same-Task new attempt, or a reattempt's linked Task), or a fresh chain
-    // when it starts a new line.
+    // same-Task new attempt), or a fresh chain when it starts a new line.
     const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
     const attempt = await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
@@ -814,20 +832,17 @@ export class Runner {
 
   /**
    * Resolve the Session a retry/reject continuation should reload (issue #147).
-   * The follow-up Run continues the line of work of a prior Run a human
-   * rejected: for a requeue it is the same Task; for a reattempt (a new Task
-   * linked via `reattemptOf`) it is the ORIGINAL Task. Returns the most-recent
-   * such prior Run, its durable Session, and the continuation trigger — or null
-   * when there is nothing to continue (a fresh Task, no Session-bound rejected
-   * prior, or a retired-and-swept Session). Only `human-reject` has a live
-   * producer today: the verify/self-heal path re-drives the *same* Run and
-   * automatic-retry has no trigger, so both stay latent in the seam.
+   * The follow-up Run continues the line of work of a prior Run of the same
+   * Task that a human rejected. Returns the most-recent such prior Run, its
+   * durable Session, and the continuation trigger — or null when there is
+   * nothing to continue (a fresh Task, no Session-bound rejected prior, or a
+   * retired-and-swept Session). Only `human-reject` has a live producer today:
+   * a corrective Attempt re-drives the *same* Run, so it never reaches here.
    */
   private async resolveContinuationSource(
     task: TaskRow,
   ): Promise<{ prior: RunRow; session: SessionRow; trigger: ContinuationTrigger } | null> {
-    const sourceTaskId = task.reattemptOf ?? task.id;
-    const priors = await this.runStore.listForTask(sourceTaskId); // ordered by attempt asc
+    const priors = await this.runStore.listForTask(task.id); // ordered by attempt asc
     for (let i = priors.length - 1; i >= 0; i--) {
       const prior = priors[i]!;
       if (prior.sessionRowId === null) continue;
@@ -1598,7 +1613,10 @@ export class Runner {
     }
 
     if (oid && verdicts.length > 0 && verdicts.every((entry) => entry.verdict === 'pass')) {
-      await this.runFacts.append(run.id, 'verified-head', { sha: oid, branch: run.branch ?? null });
+      // The in-memory row predates the head-capture write (a direct Run gains
+      // its owned ref there), so the recorded branch must come from the store.
+      const { branch } = await this.runStore.get(run.id);
+      await this.runFacts.append(run.id, 'verified-head', { sha: oid, branch: branch ?? null });
     }
 
     return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0, autoAccept };
@@ -1610,13 +1628,19 @@ export class Runner {
     const fact = [...facts].reverse().find((entry) => entry.type === 'verified-head');
     if (!fact) return true; // zero configured verifiers has no SHA gate.
     let expected: unknown;
+    let recordedBranch: unknown;
     try {
-      expected = (JSON.parse(fact.payload) as { sha?: unknown }).sha;
+      const payload = JSON.parse(fact.payload) as { sha?: unknown; branch?: unknown };
+      expected = payload.sha;
+      recordedBranch = payload.branch;
     } catch {
       return false;
     }
     if (typeof expected !== 'string') return false;
-    const current = await Git.revParse(task.workingDir, run.branch ?? 'HEAD').catch(() => null);
+    // A direct Run's live HEAD is restored by finalize; its verified tip lives
+    // on the owned ref the fact recorded, never the restored checkout.
+    const rev = typeof recordedBranch === 'string' && recordedBranch ? recordedBranch : (run.branch ?? 'HEAD');
+    const current = await Git.revParse(task.workingDir, rev).catch(() => null);
     return current === expected;
   }
 
@@ -1969,36 +1993,35 @@ export class Runner {
   }
 
   /**
-   * Drive a Run to a terminal disposition, healing bounded actionable
-   * verification failures along the way (issue #137, reliability-design Unit B).
+   * Drive a Run to a terminal disposition through the unified Attempt loop
+   * (issue #310, ADR-0041).
    *
-   * The first turn runs through {@link driveOnce}. A `block` verdict — an
-   * **actionable** fail, and only that — does not settle; it routes a corrective
-   * builder turn back through the per-Session turn queue (single-flight), which
-   * re-enters `validating`, rebuilds the candidate, and reruns the FULL verifier
-   * suite, so a fix for one check can't silently break another. Heals are
-   * bounded by `verification.maxSelfHeals`; exhausting the budget Escalates the
-   * Run. An **inconclusive** verdict never heals — {@link driveOnce} Escalates it
-   * in place with its cause — so a flaky environment is never mistaken for a code
-   * defect. Every other ending settles inside the single turn.
+   * The first turn runs through {@link driveOnce}. Any failed Attempt — a
+   * verification fail, an unresolved afk turn, an inconclusive verdict with a
+   * candidate — does not settle; it records the failure on the closed Attempt
+   * and routes a corrective builder turn back through the per-Session turn
+   * queue (single-flight), which re-enters `validating`, rebuilds the
+   * candidate, and reruns the FULL verifier suite, so a fix for one check
+   * can't silently break another. Attempts are bounded by `maxAttempts`
+   * (workspace override, then config); exhausting the cap Escalates the Run.
+   * An inconclusive verdict with NO candidate Escalates in place — there is
+   * nothing a corrective turn could fix. Every other ending settles inside
+   * the single turn.
    */
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
-    const maxHeals = this.getConfig().verify.maxSelfHeals;
+    const workspace = await this.getWorkspace?.(task.workspaceId);
+    const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
     // The Session key for this Run's turn queue. There is no first-class Session
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
     // it — stable across heal turns even as each turn's ACP session id changes.
     const sessionKey = `run-${run.id}`;
-    // Charge the heal-COUNT budget against the durable turn-queue substrate: seed
-    // from the self-heal turns already recorded for this Run, so the bound
+    // The attempt counter is seeded from the run row, so the maxAttempts bound
     // survives a crash-resume of the drive loop rather than being a purely
-    // in-memory count. This heal count stays per-Run: a fresh Run re-earns its
-    // full `maxSelfHeals`. The token/cost SPEND those heal turns consume, by
-    // contrast, IS charged cumulatively across the whole Execution Chain (issue
-    // #129) — self-heal turns run inside this Run, so their usage is already in
-    // this Run's live snapshot, which the chain-cumulative spend poll folds onto
-    // the chain's prior floor. So spend can't be reset by a retry; the heal count
-    // deliberately can.
-    let heals = (await this.turnQueue.listForSession(sessionKey)).filter((t) => t.purpose === 'self-heal').length;
+    // in-memory count. The token/cost SPEND corrective turns consume IS charged
+    // cumulatively across the whole Execution Chain (issue #129) — they run
+    // inside this Run, so their usage is already in this Run's live snapshot,
+    // which the chain-cumulative spend poll folds onto the chain's prior floor.
+    let attemptNumber = run.attempt;
     // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
     // the count from the durable queue too, so the "at most one corrective
     // re-merge, and no mutating turn after it" bound survives a crash-resume of
@@ -2011,7 +2034,7 @@ export class Runner {
     let inFlightTurn: number | null = null;
     try {
       for (;;) {
-      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, remergeCtx);
+      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, remergeCtx, attemptNumber);
       if (inFlightTurn !== null) {
         // The corrective turn we dispatched has run its course — settle its queue
         // row regardless of the verdict; a further fail enqueues the next one.
@@ -2091,21 +2114,22 @@ export class Runner {
         );
         return;
       }
-      // Heal if budget remains; otherwise the Run Escalates (exhaustion).
-      // `maxSelfHeals: 0` disables self-heal — a fail Escalates on the first turn,
-      // exactly as it did before this ticket.
-      if (heals >= maxHeals) {
-        const reason =
-          heals === 0
-            ? `verification failed: ${outcome.reason}`
-            : `verification failed after ${heals} self-heal attempt(s): ${outcome.reason}`;
-        await this.settleEscalated(task, await this.runStore.get(run.id), reason, {});
+      const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
+      const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
+      await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
+      if (attemptNumber >= maxAttempts) {
+        await this.settleEscalated(task, await this.runStore.get(run.id), `verification failed after ${attemptNumber} attempt(s): ${outcome.reason}`, {});
         return;
       }
-      heals += 1;
-      healCtx = { reason: outcome.reason, output: outcome.output, attempt: heals };
+      attemptNumber += 1;
+      // The Run is the durable owner of the current unified Attempt. Persist
+      // this before driving the corrective turn: timeline rows, settling, and
+      // a post-crash resume all resolve the current Attempt through runs.attempt.
+      run = await this.runStore.update(run.id, { attempt: attemptNumber });
+      await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      healCtx = { reason: outcome.reason, output: outcome.output, attempt: attemptNumber - 1 };
       remergeCtx = undefined;
-      inFlightTurn = await this.enqueueSelfHeal(run, sessionKey, heals);
+      inFlightTurn = await this.enqueueCorrectiveAttempt(run, sessionKey);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
       // reconstructable from the event log.
@@ -2137,17 +2161,12 @@ export class Runner {
   }
 
   /**
-   * Record a self-heal turn on the per-Session turn queue (issue #137): enqueue
-   * → claim → mark in-flight, so the corrective turn about to run is the single
-   * in-flight turn for this Session — the `turn_queue_single_flight` index is the
-   * integrity backstop. The frozen candidate the heal resumes from binds the
-   * mutating turn (it uniquely identifies the work state this turn is bound to),
-   * satisfying the store's mutating-turn precondition. Returns the row id to
-   * settle once the turn finishes, or `null` if the queue write failed — the
-   * heal still runs (this in-process loop is the dispatch; the row is an audit
-   * record), so an audit-write hiccup never blocks the fix.
+   * Put an Attempt N+1 corrective turn through the durable session queue before
+   * dispatching it. The row fences the mutation to the failed candidate and
+   * lets crash recovery escalate an interrupted corrective turn instead of
+   * replaying past the persisted attempt cap.
    */
-  private async enqueueSelfHeal(run: RunRow, sessionKey: string, attempt: number): Promise<number | null> {
+  private async enqueueCorrectiveAttempt(run: RunRow, sessionKey: string): Promise<number | null> {
     try {
       const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
       const now = Date.now();
@@ -2164,7 +2183,7 @@ export class Runner {
         now,
       );
       await this.turnQueue.claim(row.id, now);
-      await this.turnQueue.markInFlight(row.id, `self-heal-run-${run.id}-${attempt}`, now);
+      await this.turnQueue.markInFlight(row.id, `attempt-${run.attempt}-run-${run.id}`, now);
       return row.id;
     } catch {
       return null;
@@ -2412,6 +2431,7 @@ export class Runner {
     parent: SpanContext,
     healCtx?: HealContext,
     remergeCtx?: ReMergeContext,
+    attemptNumber = run.attempt,
   ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       void this.runStore.appendEvent(run.id, { type, payload }).then((event) => {
@@ -2431,7 +2451,7 @@ export class Runner {
     // remain readable compatibility records, but a transition never writes or
     // consults `runs.phase`.
     const advanceTask = async (to: 'verifying' | 'landing') => {
-      const attempt = await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+      const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const rows = await this.attempts.listTasks(attempt.id);
       const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
       if (to === 'verifying' && implementation) {
@@ -2450,8 +2470,8 @@ export class Runner {
 
     // A corrective turn opens a fresh Implementation Task on the same Attempt.
     if (healCtx || remergeCtx) {
-      const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-      if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
+      const attempt = await this.attempts.getForTaskNumber(task.id, attemptNumber);
+      if (!attempt) throw new DomainError('not_found', `attempt ${attemptNumber} for task ${task.id} not found`);
       const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation', logLocator: `session:${run.sessionRowId ?? run.id}` });
       await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now() });
       record('lifecycle', { event: 'phase', phase: 'executing' });
@@ -2816,7 +2836,7 @@ export class Runner {
       const configSource: 'default' | 'workspace' = ws?.guardrailBudget ? 'workspace' : 'default';
       // Prior cumulative spend of this Run's Execution Chain (issue #129): the
       // token/cost already charged by the sibling Runs that continued the same
-      // line of work before this one (reattempt / mirrored retry / crash-resume).
+      // line of work before this one (retry / crash-resume).
       // Summed once at arm time — those Runs are settled, so their frozen usage
       // is immutable for the life of this poll — and each member is priced with
       // ITS OWN frozen price table (issue #126), so a later price edit can't
@@ -3379,9 +3399,9 @@ export class Runner {
       // An afk Run that ended without the `finish_task` signal — its continue
       // budget spent, or a single turn that never finished — has no
       // execution-complete signal (#139), so there is nothing to verify or land:
-      // route it to the failure path (Auto-Retry, then Escalate) without
-      // freezing a candidate, verifying, or closing the ticket. A native Run
-      // always verifies its single ended turn.
+      // route it to the unified Attempt loop (corrective turn, then Escalate at
+      // the cap) without freezing a candidate, verifying, or closing the
+      // ticket. A native Run always verifies its single ended turn.
       const afkUnresolved = autoDriven && !escalating && !active.agentFinished;
       // The `validating` branch-contract classification (issue #151), hoisted so
       // the afk landing block below can reach it for deterministic recovery
@@ -3397,6 +3417,16 @@ export class Runner {
       // The branch contract is checked at implementation end. It is a fact and
       // escalation trigger, never a user-facing validation stage.
       if (!escalating && !afkUnresolved) {
+        // A dirty implementation result gets one same-session reminder to
+        // commit. This is corrective guidance within the current Attempt, not
+        // a new Attempt or a retry budget charge.
+        if (!workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+          const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
+          record('lifecycle', { event: 'commit-nudge' });
+          active.idle = false;
+          result = await driver.prompt([{ type: 'text', text: nudge }]);
+          active.idle = true;
+        }
         // Branch-contract enforcement (issue #151, reliability-design Unit D):
         // still in `validating`, before any checkout restore / worktree teardown,
         // classify the Run's git outcome against the recorded start-state (#149)
@@ -3473,17 +3503,10 @@ export class Runner {
         await this.settleEscalated(task, run, escalating, patch);
       } else if (afkUnresolved) {
         // Clean turn(s) ended but the agent never signalled `finish_task` — not
-        // success. Treat as a failure: Auto-Retry within cap, else Escalate. The
-        // branch is never merged and the ticket is never closed, so half-done
-        // work never lands (#139).
+        // success. It is a failed Attempt, so the shared loop records feedback,
+        // drives the next implementation turn, and applies maxAttempts.
         record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal' });
-        await this.settleFailedOrRetry(
-          task,
-          run,
-          'run ended without an execution-complete (finish_task) signal',
-          patch,
-          'agent-finish/unresolved',
-        );
+        return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
       } else if (remergeNeeded) {
         // First-turn ambiguous outcome eligible for a bounded agent re-merge
         // (issue #155): do NOT settle. finalize() has already restored the direct
@@ -3501,11 +3524,10 @@ export class Runner {
         // agent-finish begins validation — it does not settle the Run (#114).
         // Enter `verifying` and run the configured verifiers against the frozen
         // candidate. A pass lets the Run proceed toward landing (afk) / review
-        // (native). The two non-`proceed` verdicts diverge here (issue #137): an
-        // **actionable** fail (`block`) returns up to the `drive` heal loop for a
-        // bounded self-heal; an **inconclusive** (`escalate`) never heals and
-        // Escalates in place with its cause — so broken work never lands, but a
-        // flaky environment is never mistaken for a code defect.
+        // (native). Any non-`proceed` verdict with a candidate hands the failed
+        // Attempt up to the `drive` loop for a bounded corrective turn
+        // (ADR-0041); an inconclusive with NO candidate Escalates in place with
+        // its cause — so broken work never lands.
         await advanceTask('verifying');
         record('lifecycle', { event: 'phase', phase: 'verifying' });
         const { decision, ran, autoAccept } = await this.runVerification(
@@ -3532,22 +3554,32 @@ export class Runner {
           return { kind: 'terminal' };
         }
         if (decision.outcome === 'block') {
-          // Actionable fail (issue #137): the sole heal-eligible verdict. Do NOT
-          // settle — hand the failure up to the `drive` heal loop with the failing
-          // verifier's output as corrective feedback. `finalize()` already
-          // committed this turn's work onto the Run's branch and the candidate ref
-          // holds it, so the self-heal turn resumes and fixes it.
+          // Actionable fail (issue #137): do NOT settle — hand the failure up to
+          // the unified Attempt loop with the failing verifier's output as
+          // corrective feedback. `finalize()` already committed this turn's work
+          // onto the Run's branch and the candidate ref holds it, so the
+          // corrective turn resumes and fixes it.
           const attempts = await this.verificationAttempts.list(run.id);
           const output = attempts[attempts.length - 1]?.output ?? '';
           record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
           return { kind: 'actionable-fail', reason: decision.reason, output };
         } else if (decision.outcome !== 'proceed') {
           // `escalate` = inconclusive (infra doubt: missing command, crashed or
-          // malformed verifier, absent candidate). Never a code defect, so it
-          // never heals — Escalate immediately with its cause (issue #137).
-          const reason = `verification ${decision.outcome}: ${decision.reason}`;
-          record('lifecycle', { event: 'escalated', reason });
-          await this.settleEscalated(task, run, reason, patch);
+          // malformed verifier, absent candidate). With no candidate snapshot
+          // there is nothing a corrective turn could fix — Escalate in place so
+          // the Task surfaces with a null candidate (the #191 escape hatches
+          // 409 on it). With a candidate, infra doubt consumes the same bounded
+          // Attempt loop as an actionable fail.
+          if ((await this.runStore.get(run.id)).candidateOid == null) {
+            const reason = `verification ${decision.outcome}: ${decision.reason}`;
+            record('lifecycle', { event: 'escalated', reason });
+            await this.settleEscalated(task, run, reason, patch);
+            return { kind: 'terminal' };
+          }
+          const attempts = await this.verificationAttempts.list(run.id);
+          const output = attempts[attempts.length - 1]?.output ?? '';
+          record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
+          return { kind: 'actionable-fail', reason: `verification ${decision.outcome}: ${decision.reason}`, output };
         } else if (autoDriven) {
           if (!(await this.verifiedHeadStillCurrent(task, run))) {
             const reason = 'branch head moved after verification';
@@ -3721,13 +3753,12 @@ export class Runner {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
       } else if (autoDriven) {
-        // Error failure: Auto-Retry within cap, else Escalate (issue #33).
-        await this.settleFailedOrRetry(task, run, reason, patch, 'failed');
+        // An implementation or harness failure is a failed Attempt too. Keep
+        // it inside `drive` so mirrored and native tickets share the cap.
+        return { kind: 'actionable-fail', reason, output: '' };
       } else {
         await this.settle(task, run, 'failed', reason, patch);
       }
-      // An error failure is terminal — the heal loop does not retry an execution
-      // error (only an actionable verification fail heals).
       return { kind: 'terminal' };
     } finally {
       // Disarm the wall-clock watchdog: `driveOnce` is returning, so the Run is
@@ -3934,7 +3965,13 @@ export class Runner {
           verdict: projection.runState === 'completed' ? 'pass' : 'fail',
         }),
       ));
-      await this.attempts.finish(attempt.id, projection.taskAction === 'escalate' ? 'escalated' : projection.runState === 'completed' ? 'passed' : 'failed', now);
+      // A failed verification has already closed its Attempt with verifier
+      // feedback before requesting escalation. Preserve that terminal record;
+      // only terminal paths that did not already close an Attempt decide its
+      // final state here.
+      if (attempt.state === 'running') {
+        await this.attempts.finish(attempt.id, projection.taskAction === 'escalate' ? 'escalated' : projection.runState === 'completed' ? 'passed' : 'failed', now);
+      }
     }
     await this.finishRunOperation(run.id);
   }
@@ -4173,25 +4210,6 @@ export class Runner {
       { runState: 'completed', taskAction: 'completed', reason: null },
       patch,
     );
-  }
-
-  /**
-   * A failed afk mirrored Run (issue #33): Auto-Retry re-queues the Task to
-   * ready (the Auto-Runner spawns a fresh Run) while within the cap; exhausting
-   * it Escalates to a human — never a silent retry beyond the cap. `type`
-   * distinguishes a clean-but-unresolved exit (`agent-finish/unresolved`) from
-   * an error failure (`failed`) in the fact log; the Task outcome is identical.
-   */
-  private async settleFailedOrRetry(
-    task: TaskRow,
-    run: RunRow,
-    reason: string,
-    patch: Partial<RunRow>,
-    type: RunFactType,
-  ): Promise<void> {
-    const decision = this.autoDrive!.onFailed(task, await this.runStore.get(run.id));
-    const taskAction: SettleTaskAction = decision === 'retry' ? 'ready' : 'escalate';
-    await this.coordinateSettle(task, run, type, { runState: 'failed', taskAction, reason }, patch);
   }
 
   /** Stop an afk Run and hand the Task back to a human (issue #33): Run failed, Task ready + escalated + drive hitl. */

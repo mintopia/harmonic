@@ -6,11 +6,12 @@ import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js'
 
 /**
  * The auto-drive half of afk mirrored-Task execution (issue #33): the Drive
- * Prompt the Runner injects, and the two runtime decisions it delegates —
- * what becomes of a clean completion (Merge Fate + fallback-close) and whether
- * a failure retries or Escalates. The Runner owns Task/Run state transitions;
- * this class only decides and performs the tracker/git side effects. Absent on
- * a native-only server, where every Run settles the plain way.
+ * Prompt the Runner injects, and the runtime decision it delegates — what
+ * becomes of a clean completion (Merge Fate + fallback-close). The Runner owns
+ * Task/Run state transitions and failure routing (the unified Attempt loop,
+ * ADR-0041); this class only decides and performs the tracker/git side
+ * effects. Absent on a native-only server, where every Run settles the plain
+ * way.
  */
 export class AutoDrive {
   constructor(
@@ -199,14 +200,5 @@ export class AutoDrive {
     } catch {
       return false;
     }
-  }
-
-  /**
-   * A failed afk Run: 'retry' while attempts are within the configured
-   * Auto-Retry cap, else 'escalate'. `attempt > autoRetry` exhausts it —
-   * default cap 1 means attempt 1 retries, attempt 2 Escalates.
-   */
-  onFailed(_task: TaskRow, run: RunRow): 'retry' | 'escalate' {
-    return run.attempt > this.getConfig().drive.autoRetry ? 'escalate' : 'retry';
   }
 }

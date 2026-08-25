@@ -8,6 +8,7 @@ import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
+import { AttemptStore } from '../src/domain/attempts.js';
 import { workContextKey } from '../src/domain/work-context-key.js';
 import { DomainError } from '../src/domain/errors.js';
 import { Runner } from '../src/execution/runner.js';
@@ -211,24 +212,6 @@ describe('Drive Prompt fill (issue #33)', () => {
   });
 });
 
-describe('AutoDrive.onFailed — Auto-Retry cap (issue #33)', () => {
-  const cfg = (autoRetry: number): AppConfig => ({
-    ...defaultConfig(),
-    drive: { ...defaultConfig().drive, prompt: '', autoRetry },
-  });
-
-  it('retries within the cap, then escalates — never a silent retry beyond it', () => {
-    const drive = new AutoDrive(() => cfg(1), () => null);
-    expect(drive.onFailed(worktreeTask(), run({ attempt: 1 }))).toBe('retry');
-    expect(drive.onFailed(worktreeTask(), run({ attempt: 2 }))).toBe('escalate');
-  });
-
-  it('cap 0 escalates on the first failure', () => {
-    const drive = new AutoDrive(() => cfg(0), () => null);
-    expect(drive.onFailed(worktreeTask(), run({ attempt: 1 }))).toBe('escalate');
-  });
-});
-
 describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)', () => {
   const cfg = (mergeFate: AppConfig['drive']['mergeFate']): AppConfig => ({
     ...defaultConfig(),
@@ -337,8 +320,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
   let runs: RunStore;
   let runner: Runner;
 
-  const config = (over: Partial<AppConfig['drive']> = {}): AppConfig => ({
+  const config = (over: Partial<AppConfig['drive']> = {}, maxAttempts = defaultConfig().maxAttempts): AppConfig => ({
     ...defaultConfig(),
+    maxAttempts,
     harnesses: {
       ...defaultConfig().harnesses,
       claude: { command: process.execPath, args: [STUB], env: {}, models: ['stub'], defaultModel: 'stub' },
@@ -402,7 +386,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     expect(last.reason).toContain('escalated to human');
   });
 
-  it('an afk Run enters auto permission mode before prompting, then runs unattended', async () => {
+  it('an afk Run enters auto permission mode before prompting; an unfinished turn then uses the Attempt cap', async () => {
     build(config({ prompt: JSON.stringify({ echoSetMode: true }) }));
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
@@ -413,9 +397,10 @@ describe('Runner auto-drive settle (issue #33)', () => {
       return t;
     }, { timeout: 10_000 });
 
-    expect(settled.escalated).toBe(false); // ran to completion, not escalated on a prompt
-    expect(settled.drive).toBe('afk');
+    expect(settled.escalated).toBe(true);
+    expect(settled.drive).toBe('hitl');
     const last = (await runs.listForTask(task.id)).at(-1)!;
+    expect(last.attempt).toBe(2);
     const modeSet = (await runs.listEvents(last.id)).find(
       (e) => e.type === 'lifecycle' && (e.payload as any).event === 'mode_set',
     );
@@ -423,7 +408,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   it('an afk Run fails closed when the harness offers no unattended permission mode', async () => {
-    const cfg = config({ autoRetry: 0 });
+    const cfg = config({}, 1);
     cfg.harnesses.claude.env = { STUB_MODES: '' }; // advertise no session modes
     build(cfg);
     const task = await tasks.upsertMirrored(mirroredAfk(8));
@@ -438,42 +423,39 @@ describe('Runner auto-drive settle (issue #33)', () => {
     const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.state).toBe('failed');
     expect(last.reason).toMatch(/unattended permission mode/);
-    expect(settled.escalated).toBe(true); // autoRetry 0 → escalates on the first failure
+    expect(settled.escalated).toBe(true); // one permitted Attempt → escalates on the first failure
   });
 
   it('retries a failed afk Run within the cap, then Escalates when it is exhausted', async () => {
     // The Drive Prompt template reaches the harness; make it crash before responding.
-    build(config({ autoRetry: 1, prompt: JSON.stringify({ exit: 'crash-before-response' }) }));
+    build(config({ prompt: JSON.stringify({ exit: 'crash-before-response' }) }, 2));
     const task = await tasks.upsertMirrored(mirroredAfk(7));
 
-    // Attempt 1 fails → retry: ready, still afk, not yet escalated.
+    // Attempt 1 fails. The unified loop immediately drives attempt 2 in the
+    // same Run, then the cap escalates without creating a second Run.
     await startMirrored(task.id);
-    const afterFirst = await vi.waitFor(async () => {
-      const t = await tasks.get(task.id);
-      if (t.state !== 'ready') throw new Error(`still ${t.state}`);
-      return t;
-    }, { timeout: 10_000 });
-    expect(afterFirst.drive).toBe('afk');
-    expect(afterFirst.escalated).toBe(false);
-    expect(await runs.listForTask(task.id)).toHaveLength(1);
-
-    // Attempt 2 fails → cap exhausted → Escalate: ready + hitl + flagged.
-    await startMirrored(task.id);
-    const afterSecond = await vi.waitFor(async () => {
+    const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
       if (!t.escalated) throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
-    expect(afterSecond.state).toBe('ready');
-    expect(afterSecond.drive).toBe('hitl');
-    expect(await runs.listForTask(task.id)).toHaveLength(2);
+    expect(settled.state).toBe('ready');
+    expect(settled.drive).toBe('hitl');
+    const taskAttempts = await new AttemptStore(asyncDb).listForTask(task.id);
+    expect(taskAttempts.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
+    const taskRuns = await runs.listForTask(task.id);
+    expect(taskRuns).toHaveLength(1);
+    expect(taskRuns[0]!.attempt).toBe(2);
   });
 
   it('re-prompts an unfinished (ticket-open) Run continueAttempts times, then treats it as unresolved', async () => {
     // The stub echoes the (non-JSON) drive prompt and ends its turn without
-    // closing the ticket — exactly the "parked / not done" case. autoRetry 0 so
+    // closing the ticket — exactly the "parked / not done" case. One permitted
     // the exhausted-continue unresolved path Escalates to a deterministic end.
-    build(config({ continueAttempts: 2, autoRetry: 0 }), 'open');
+    build(config({ continueAttempts: 2 }, 1), 'open');
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
@@ -490,7 +472,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   it('continueAttempts 0 keeps the old single-turn behaviour — no continue re-prompt', async () => {
-    build(config({ continueAttempts: 0, autoRetry: 0 }), 'open');
+    build(config({ continueAttempts: 0 }, 1), 'open');
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
@@ -508,7 +490,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // finish is NOT completed — it runs the continue budget and then Escalates as
     // unresolved. (The finish→verify→land→close happy path needs the MCP endpoint
     // and is covered at the execution seam.)
-    build(config({ continueAttempts: 0, autoRetry: 0 }), 'closed');
+    build(config({ continueAttempts: 0 }, 1), 'closed');
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 

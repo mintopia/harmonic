@@ -3,11 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import { verificationCommandSchema, type VerificationCommand } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
-import { turnQueue } from '../src/db/schema.js';
+import { AttemptStore } from '../src/domain/attempts.js';
+import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -47,13 +47,13 @@ const inconclusiveCommand = (): VerificationCommand =>
   verificationCommandSchema.parse({ command: join(tmpdir(), 'harmonic-no-such-verify-binary-xyz'), args: [], timeoutSeconds: 30 });
 
 /**
- * Bounded self-heal end to end (issue #137, reliability-design Unit B), driven
+ * Bounded Attempt loop end to end (issue #310), driven
  * through the stub harness at the Runner seam: an actionable verification fail
  * routes a corrective builder turn back through the per-Session turn queue,
  * re-enters `validating`, and reruns the FULL verifier suite; an inconclusive
  * never heals; exhausting the heal budget Escalates.
  */
-describe('verification self-heal end-to-end (issue #137)', () => {
+describe('verification Attempt loop end-to-end (issue #310)', () => {
   let server: TestServer;
   let repoDir: string;
   let workspaceId: number;
@@ -70,17 +70,17 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
   beforeEach(async () => {
-    // Reset per-test verifier config + heal budget; each test sets its own.
+    // Reset per-test verifier config and cap; each test sets its own.
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
       verificationAutoAccept: null,
+      maxAttempts: null,
     });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
   });
 
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
-  const selfHealTurns = (runId: number) =>
-    server.app.ctx.asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
+  const ticketAttempts = (taskId: number) => new AttemptStore(server.app.ctx.asyncDb).listForTask(taskId);
 
   async function runWorktreeTask(prompt: unknown): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
@@ -94,14 +94,14 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  it('AC1/AC2/AC5: an actionable fail heals once, re-verifies the full suite, and lands (fail→heal→pass)', async () => {
+  it('AC1/AC2: an actionable fail creates Attempt N+1 with feedback and re-verifies', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: markerCommand('ok'),
       verificationAutoAccept: true,
     });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
-    // Turn 0 writes a marker the verifier rejects; the self-heal turn (turn 1)
+    // Turn 0 writes a marker the verifier rejects; attempt 2
     // overwrites it with the passing value.
     const { taskId, runId } = await runWorktreeTask({
       turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
@@ -128,12 +128,20 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'pass']);
     expect(rows[0]!.inputOid).not.toBe(rows[1]!.inputOid); // a fresh candidate per turn
 
-    // AC1: exactly one self-heal turn was enqueued via the turn queue, and it
-    // settled done.
-    const turns = await selfHealTurns(runId);
-    expect(turns).toHaveLength(1);
-    expect(turns[0]!).toMatchObject({ purpose: 'self-heal', status: 'done' });
-    expect(turns[0]!.sessionId).toBe(`run-${runId}`); // stable Session anchor across heals
+    const attemptsByTicket = await ticketAttempts(taskId);
+    expect(attemptsByTicket).toMatchObject([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'passed' },
+    ]);
+    expect(attemptsByTicket[0]!.feedback).toContain('verifier command failed');
+
+    // The corrective mutation is fenced by a durable queue row. It reaches
+    // done only after Attempt 2 has finished, so a crash mid-turn is visible to
+    // recovery instead of silently resetting the attempt cap.
+    const correctiveTurns = await new TurnQueueStore(server.app.ctx.asyncDb).listForSession(`run-${runId}`);
+    expect(correctiveTurns).toMatchObject([
+      { purpose: 'self-heal', status: 'done', expectedGeneration: 2, idempotencyKey: `attempt-2-run-${runId}` },
+    ]);
 
     // The phase re-entry is recorded, not inferred: the heal turn logs a fresh
     // `executing` before re-running validating→verifying (so the whole phase
@@ -144,7 +152,7 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(phases).toEqual(['validating', 'verifying', 'executing', 'validating', 'verifying', 'landing']);
   });
 
-  it('AC4: an inconclusive verdict never heals — it Escalates immediately with cause, no self-heal turn', async () => {
+  it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: inconclusiveCommand() });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
@@ -160,17 +168,18 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
 
-    // Exactly one verifier attempt (inconclusive) — no heal was attempted.
+    // The verifier runs once per Attempt and the failed Attempt retains feedback.
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.verdict).toBe('inconclusive');
-    // And no self-heal turn was ever enqueued.
-    expect(await selfHealTurns(runId)).toHaveLength(0);
+    expect(rows.map((row) => row.verdict)).toEqual(['inconclusive', 'inconclusive']);
+    expect(await ticketAttempts(taskId)).toMatchObject([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
   });
 
-  it('AC3: self-heal is bounded — an actionable fail that never heals exhausts the budget and Escalates', async () => {
+  it('AC3: an actionable fail exhausts maxAttempts and escalates', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 1 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
@@ -185,16 +194,19 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.escalated).toBe(true);
 
-    // Budget of 1: the first turn fails, one heal turn runs and also fails, then
-    // the Run Escalates — exactly two attempts and exactly one self-heal turn.
+    // Both implementation attempts fail; no third attempt is created.
     const rows = await attempts(runId);
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'fail']);
-    expect(await selfHealTurns(runId)).toHaveLength(1);
+    expect(await ticketAttempts(taskId)).toMatchObject([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
   });
 
-  it('maxSelfHeals: 0 disables self-heal — an actionable fail Escalates on the first turn, no heal turn', async () => {
+  it('a workspace maxAttempts override escalates after its first failed attempt', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 3 });
+    await server.app.ctx.workspaces.update(workspaceId, { maxAttempts: 1 });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
 
@@ -208,6 +220,6 @@ describe('verification self-heal end-to-end (issue #137)', () => {
     expect(task.escalated).toBe(true);
 
     expect((await attempts(runId)).map((r) => r.verdict)).toEqual(['fail']);
-    expect(await selfHealTurns(runId)).toHaveLength(0);
+    expect(await ticketAttempts(taskId)).toMatchObject([{ number: 1, state: 'failed' }]);
   });
 });

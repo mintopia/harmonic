@@ -49,7 +49,7 @@ describe('ConfigStore', () => {
 
     const store = await ConfigStore.create(asyncDb);
     // Default resolution yields "no verifiers" — an existing Run's outcome is unchanged.
-    expect(store.get().verify).toEqual({ commands: [], review: { enabled: false }, autoAccept: false, maxSelfHeals: 1 });
+    expect(store.get().verify).toEqual({ commands: [], review: { enabled: false }, autoAccept: false });
   });
 
   it('clears a configured verifier back to null via PATCH without crashing on the null override (issue #132)', async () => {

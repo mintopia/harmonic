@@ -88,13 +88,14 @@ const configPatchBodySchema = z
       })
       .partial()
       .optional(),
+    /** Maximum implementation attempts before a ticket is escalated. */
+    maxAttempts: z.number().int().min(1).meta({ example: 2 }),
     drive: z
       .object({
         prompt: z.string().meta({ example: '{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself.' }),
         unattendedReminder: z.string().meta({ example: '## Running unattended\n\nYou are Harmonic Task {taskId}…' }),
         continuePrompt: z.string().meta({ example: "Your last turn ended but Task {taskId} isn't finished…" }),
         mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
-        autoRetry: z.number().int().min(0).meta({ example: 1 }),
       })
       .partial()
       .optional(),
@@ -115,8 +116,6 @@ const configPatchBodySchema = z
         critic: verificationCriticSchema.nullable().meta({ example: { prompt: 'Review the diff for correctness.', model: 'claude-opus-5' } }),
         /** When true, a passing native Run lands without the human review gate (ADR-0021). */
         autoAccept: z.boolean().meta({ example: true }),
-        /** Bounded self-heal turns an actionable verification fail may trigger before Escalation. */
-        maxSelfHeals: z.number().int().min(0).meta({ example: 1 }),
       })
       .partial()
       .meta({ example: { autoAccept: true } })
@@ -126,7 +125,6 @@ const configPatchBodySchema = z
         commands: z.array(verificationCommandSchema),
         review: verificationReviewSchema,
         autoAccept: z.boolean(),
-        maxSelfHeals: z.number().int().min(0),
       })
       .partial()
       .optional(),

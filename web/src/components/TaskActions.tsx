@@ -6,7 +6,6 @@ import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '.
 import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
 import { RejectDialog } from './RejectDialog';
-import { ReattemptDialog } from './ReattemptDialog';
 import { NoteToCriticDialog } from './NoteToCriticDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
@@ -77,7 +76,6 @@ export function TaskActions({
   onChanged: () => void;
 }) {
   const [rejecting, setRejecting] = useState(false);
-  const [reattempting, setReattempting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notingToCritic, setNotingToCritic] = useState(false);
 
@@ -111,12 +109,6 @@ export function TaskActions({
         return (
           <button key={action} className={btnReject} onClick={() => setRejecting(true)}>
             {variant === 'footer' ? 'Reject…' : 'Reject'}
-          </button>
-        );
-      case 'reattempt':
-        return (
-          <button key={action} className={secondary} onClick={() => setReattempting(true)}>
-            Re-attempt
           </button>
         );
       case 'run':
@@ -201,16 +193,8 @@ export function TaskActions({
       {rejecting && (
         <RejectDialog
           taskId={task.id}
-          origin={task.origin}
           onClose={() => setRejecting(false)}
           onDone={done(() => setRejecting(false))}
-        />
-      )}
-      {reattempting && (
-        <ReattemptDialog
-          task={task}
-          onClose={() => setReattempting(false)}
-          onDone={done(() => setReattempting(false))}
         />
       )}
       {deleting && (

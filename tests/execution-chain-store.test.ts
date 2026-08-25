@@ -56,14 +56,14 @@ describe('ExecutionChainStore (issue #129)', () => {
     expect(await chains.resolveForTask(task)).toBe(chainId);
   });
 
-  it('reattempt: a new linked Task inherits the original Task chain', async () => {
-    const original = await tasks.create({ prompt: 'original attempt', state: 'ready' });
-    const chainId = await chains.resolveForTask(original);
-    await runStore.create(original.id, undefined, chainId);
-    await tasks.setState(original.id, 'failed'); // reattempt requires a finished task
+  it('a corrective Attempt stays on the original ticket and retains its chain', async () => {
+    const ticket = await tasks.create({ prompt: 'original attempt', state: 'ready' });
+    const chainId = await chains.resolveForTask(ticket);
+    const first = await runStore.create(ticket.id, undefined, chainId);
+    const second = await runStore.create(ticket.id, undefined, chainId);
 
-    const reattempt = await tasks.reattempt(original.id, 'try again');
-    expect(await chains.resolveForTask(reattempt)).toBe(chainId);
+    expect(second.attempt).toBe(first.attempt + 1);
+    expect(await chains.resolveForTask(ticket)).toBe(chainId);
   });
 
   it("listForChain returns member Runs across two different tasks, id-ordered", async () => {
