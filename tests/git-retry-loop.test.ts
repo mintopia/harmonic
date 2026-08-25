@@ -17,9 +17,9 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
   const tmpDirs: string[] = [];
 
   beforeAll(async () => {
-    // autoRetry:0 keeps the assertion about the *classification* path, not the
+    // One permitted attempt keeps the assertion about the classification path, not the
     // separate attempt-bounded retry — a permanent failure escalates regardless.
-    server = await startServer({ ...stubHarness(), drive: { autoRetry: 0, continueAttempts: 0 } });
+    server = await startServer({ ...stubHarness(), maxAttempts: 1, drive: { continueAttempts: 0 } });
   });
   afterAll(async () => {
     await server.close();

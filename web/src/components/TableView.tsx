@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
@@ -132,14 +131,6 @@ export function TableView({
     setPage(1);
   }, [workspaceId, state, harness, priority, sortBy, order, search]);
 
-  // The badge links to the original, which the current filter may hide, so
-  // fall back to fetching it by id.
-  const openOriginal = (id: number) => {
-    const found = tasks.find((t) => t.id === id);
-    if (found) return onOpen(found);
-    api.task(id).then(onOpen, toastError);
-  };
-
   const epicLookup = useMemo(() => epicByTaskId(epics), [epics]);
   const bands = epics
     .map((epic) => ({ epic, members: pageTasks.filter((t) => epicLookup.get(t.id) === epic) }))
@@ -189,21 +180,6 @@ export function TableView({
         {taskKey(task.id)}
       </div>
       <div role="cell" className="min-w-0 pr-2">
-        {task.reattemptOf !== null && (
-          <button
-            type="button"
-            title={`Open the original, task ${task.reattemptOf}`}
-            className="mb-1 inline-flex min-h-11 items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted transition-colors duration-150 hover:text-ink"
-            onClick={(e) => {
-              e.stopPropagation();
-              openOriginal(task.reattemptOf!);
-            }}
-          >
-            {/* This opens a distinct original Task, so its own hit area carries
-                the 44px touch floor instead of inheriting the row's target. */}
-            ↻ re-attempt of <span className="tabular-nums normal-case">{taskKey(task.reattemptOf)}</span>
-          </button>
-        )}
         <button
           type="button"
           title={task.prompt}

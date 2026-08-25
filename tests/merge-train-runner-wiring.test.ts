@@ -185,7 +185,8 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     server = await startServer({
       ...stubHarness(),
       defaults: { isolationMode: 'worktree' },
-      drive: { autoRetry: 0, continueAttempts: 0, mergeFate: 'auto-merge' },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
     });
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
   });

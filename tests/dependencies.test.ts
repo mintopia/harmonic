@@ -160,7 +160,6 @@ describe('dependencies', () => {
     const listForTask = vi.spyOn(server.app.ctx.runs, 'listForTask');
     const dependsOn = vi.spyOn(server.app.ctx.tasks, 'dependsOn');
     const dependents = vi.spyOn(server.app.ctx.tasks, 'dependents');
-    const reattempts = vi.spyOn(server.app.ctx.tasks, 'reattempts');
     const listToolCalls = vi.spyOn(server.app.ctx.runs, 'listToolCalls');
     const listForTasks = vi.spyOn(server.app.ctx.runs, 'listForTasks');
     const toolCallCounts = vi.spyOn(server.app.ctx.runs, 'toolCallCounts');
@@ -171,7 +170,6 @@ describe('dependencies', () => {
     expect(listForTask).not.toHaveBeenCalled();
     expect(dependsOn).not.toHaveBeenCalled();
     expect(dependents).not.toHaveBeenCalled();
-    expect(reattempts).not.toHaveBeenCalled();
     expect(listToolCalls).not.toHaveBeenCalled();
     expect(listForTasks).toHaveBeenCalledOnce();
     expect(toolCallCounts).toHaveBeenCalledOnce();

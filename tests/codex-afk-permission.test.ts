@@ -48,7 +48,8 @@ describe('Codex afk permission model', () => {
       // to set and the per-request handler governs (no throw, then Escalate).
       harnesses: { codex: { command: process.execPath, args: [STUB_HARNESS], env: { STUB_MODES: 'default,read-only,agent' }, models: ['stub-model'], defaultModel: 'stub-model' } },
       defaults: { harness: 'codex' },
-      drive: { autoRetry: 0, continueAttempts: 0 },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0 },
     });
   });
   afterAll(async () => {
@@ -115,7 +116,8 @@ describe('Codex afk full-access mode', () => {
         },
       },
       defaults: { harness: 'codex' },
-      drive: { autoRetry: 0, continueAttempts: 0 },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0 },
     });
   });
   afterAll(async () => {

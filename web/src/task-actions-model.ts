@@ -10,7 +10,6 @@ import type { Task, TaskState } from './types.js';
 export type TaskAction =
   | 'accept'
   | 'reject'
-  | 'reattempt'
   | 'run'
   | 'ready'
   | 'edit'
@@ -32,7 +31,7 @@ export function taskActions(state: TaskState): TaskAction[] {
     case 'awaiting-review':
       return ['delete', 'reject', 'accept'];
     case 'failed':
-      return ['delete', 'reattempt', 'cancel'];
+      return ['delete', 'cancel'];
     case 'ready':
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':

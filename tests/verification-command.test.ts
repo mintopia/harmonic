@@ -51,11 +51,10 @@ describe('command verifier end-to-end (issue #135)', () => {
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    // This file exercises the #135 verify GATE in isolation: a fail Escalates
-    // directly. Self-heal (#137) is on by default (maxSelfHeals: 1) and would
-    // turn a fail into heal→re-verify→escalate (two attempts); disable it here so
-    // these assertions stay a clean gate test. Self-heal has its own file.
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    // A failed verifier is now a failed Attempt, followed by one corrective
+    // Attempt on the same ticket. Keep this suite's bound explicit so the
+    // escalation cases exercise the complete two-attempt loop.
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();
@@ -103,7 +102,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     ]);
   });
 
-  it('AC2/AC4: a failing command Escalates the Run and never lands (broken work never lands)', async () => {
+  it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
     const { taskId, runId } = await createAndRun();
 
@@ -123,11 +122,22 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.escalated).toBe(true);
 
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ mechanism: 'command', verdict: 'fail', inputOid: run.candidateOid });
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ mechanism: 'command', verdict: 'fail' }),
+        expect.objectContaining({ mechanism: 'command', verdict: 'fail', inputOid: run.candidateOid }),
+      ]),
+    );
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
+    expect(timeline.body.attempts[0].feedback).toContain('verifier command failed');
   });
 
-  it('AC2/AC4: a missing command is inconclusive → Escalates (infra doubt fails safe)', async () => {
+  it('AC2/AC4: an inconclusive command consumes the same bounded Attempt loop', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: verificationCommandSchema.parse({
         command: 'definitely-not-a-real-command-xyzzy',
@@ -148,37 +158,37 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.verdict).toBe('inconclusive');
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.verdict === 'inconclusive')).toBe(true);
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
   });
 
-  // Kept last: it dirties the shared repo working tree, which would suppress the
-  // candidate snapshot for any run created after it.
-  it('AC2/AC4: verifier configured but no candidate snapshot (dirty direct context) → inconclusive → Escalate', async () => {
-    // Direct mode + a dirty working tree means `validating` skips the snapshot
-    // (`snapshotCandidate` → 'dirty-direct-context'), so there is no candidate
-    // to verify — infra doubt the gate must Escalate on, not silently pass.
+  it('a dirty worktree receives one commit nudge without consuming an Attempt', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
-      verificationCommand: exitCommand(0),
+      verificationCommand: null,
     });
-    writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
-
-    const { taskId, runId } = await createAndRun();
-    const run = await waitFor(async () => {
-      const { body } = await server.api('GET', `/api/runs/${runId}`);
-      return body.state === 'failed' ? body : undefined;
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'uncommitted.txt': 'dirty\n' } }),
+      workingDir: repoDir,
+      isolationMode: 'direct',
     });
-    expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
-    expect(run.candidateOid).toBeNull();
-
-    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
-
-    const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'inconclusive', inputOid: '' });
+    expect(created.status).toBe(201);
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    expect(started.status).toBe(201);
+    const { id: taskId } = created.body as { id: number };
+    const { id: runId } = started.body as { id: number };
+    await waitFor(async () => {
+      const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+      return events.some((event: { payload: { event?: string } }) => event.payload.event === 'commit-nudge') ? true : undefined;
+    });
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts).toHaveLength(1);
+    expect(timeline.body.attempts[0]).toMatchObject({ number: 1, state: 'running' });
   });
 });
 

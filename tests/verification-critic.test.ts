@@ -96,9 +96,9 @@ describe('agent critic end-to-end (issue #164)', () => {
       adapterVersion: 'stub@1',
       now: Date.now(),
     });
-    // Exercise the verify GATE in isolation: a fail Escalates directly rather
-    // than heal→re-verify→escalate (two attempts). Self-heal has its own file.
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    // A failed verifier now creates a corrective Attempt on the same ticket.
+    // Keep the cap fixed so escalation scenarios cover both attempts.
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();
@@ -159,7 +159,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
   });
 
-  it('AC3: a failing critic blocks and Escalates the Run — broken work never lands', async () => {
+  it('AC3: a failing critic records feedback on attempt 1 and escalates after attempt 2', async () => {
     criticResult = { verdict: 'fail', summary: 'the change breaks the contract' };
     await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
@@ -179,14 +179,21 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(task.escalated).toBe(true);
 
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'fail', inputOid: run.candidateOid });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.mechanism === 'critic' && row.verdict === 'fail')).toBe(true);
+    expect(rows.at(-1)).toMatchObject({ inputOid: run.candidateOid });
+    const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
+    expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'failed' },
+      { number: 2, state: 'failed' },
+    ]);
+    expect(timeline.body.attempts[0].feedback).toContain('the change breaks the contract');
 
     // The base branch never moved — nothing landed.
     expect(git(repoDir, 'rev-parse', 'main')).toBe(baseOidBefore);
   });
 
-  it('AC3: an inconclusive critic Escalates the Run (infra doubt fails safe)', async () => {
+  it('AC3: an inconclusive critic consumes the same bounded Attempt loop', async () => {
     criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
     await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const { taskId, runId } = await createAndRun();
@@ -203,8 +210,8 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive' });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.mechanism === 'critic' && row.verdict === 'inconclusive')).toBe(true);
   });
 
   it('AC1: the critic verdict combines with the command verdict — command pass + critic fail still Escalates', async () => {
@@ -227,11 +234,16 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(task.state).not.toBe('awaiting-review');
     expect(task.escalated).toBe(true);
 
-    // Both verifiers ran and persisted: the command passed, the critic failed —
-    // the fail is what combineVerdicts blocked on.
+    // Both verifiers run on each attempt. The critic failure is carried into
+    // attempt 2, then the cap escalates without creating another ticket.
     const rows = await attempts(runId);
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual(['command:pass', 'critic:fail']);
+    expect(rows).toHaveLength(4);
+    expect(rows.map((r) => `${r.mechanism}:${r.verdict}`).sort()).toEqual([
+      'command:pass',
+      'command:pass',
+      'critic:fail',
+      'critic:fail',
+    ]);
   });
 
   it('AC1: command pass + critic pass together lets the Run park for review (all verifiers passed)', async () => {

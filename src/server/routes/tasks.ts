@@ -28,20 +28,9 @@ const feedbackExample = 'The limiter is per-process; it needs to be shared acros
 const requeueInputSchema = z
   .object({
     feedback: z.string().optional().meta({ example: feedbackExample }),
-    /** How the re-run continues the rejected Run's Session (issue #170), for the
-     * re-run-in-place path a mirrored Task takes instead of reattempt: `'full'`
+    /** How the re-run continues the rejected Run's Session (issue #170): `'full'`
      * (default) re-binds the warm Session, `'condensed'` starts fresh carrying
      * only the feedback. Omit to keep the historical full-continuation. */
-    continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
-  })
-  .nullish();
-const reattemptInputSchema = z
-  .object({
-    feedback: z.string().optional().meta({ example: feedbackExample }),
-    /** How the re-attempt continues the rejected Run's Session (issue #170):
-     * `'full'` (default) re-binds the warm Session and replays the whole
-     * conversation; `'condensed'` starts a fresh Session carrying only the
-     * feedback. Omit to keep the historical full-continuation behaviour. */
     continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
   })
   .nullish();
@@ -112,8 +101,6 @@ const taskWithDepsSchema = z
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string().meta({ example: 'normal' }),
     state: z.enum(TASK_STATES).meta({ example: 'awaiting-review' }),
-    /** The original this task re-attempts, or null; feedback carries the reviewer's notes in full. */
-    reattemptOf: z.number().nullable().meta({ example: null }),
     feedback: z.string().nullable().meta({ example: null }),
     /** How a re-attempt continues the rejected Run's Session (issue #170): 'full'
      * resumes the same Session, 'condensed' starts fresh; null on originals and
@@ -143,8 +130,6 @@ const taskWithDepsSchema = z
     openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
     /** Whether the Auto-Runner may work this ticket now. */
     agentWorkable: z.boolean().meta({ example: false }),
-    /** Task ids that re-attempt this one (reverse of reattemptOf). */
-    reattempts: z.array(z.number()).meta({ example: [] }),
     /** The four Task-default overrides as stored (ADR-0012): `null` ⇒ this field
      * *inherits* (Workspace override → global default), so the sibling
      * harness/model/isolationMode/priority above are the resolved effective
@@ -663,28 +648,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => await withDeps(await ctx.tasks.uncancel(req.params.id)),
-  );
-
-  app.post(
-    '/tasks/:id/reattempt',
-    {
-      schema: {
-        tags: ['Tasks'],
-        description:
-          'Create a new task that re-attempts an existing one: a copy of its config and dependencies, linked back via reattemptOf, carrying optional reviewer feedback (composed into the run prompt at run time, so the original prompt stays pristine). The original is left unchanged. Reachable with a run-scoped Run Key.',
-        params: idParamsSchema,
-        body: reattemptInputSchema,
-        response: {
-          201: taskSchema.describe('The new task, carrying the feedback and pointing at the original via reattemptOf.'),
-          404: errorResponse('No task has that id.'),
-          409: errorResponse('Only a failed or rejected task can be re-attempted.'),
-        },
-      },
-    },
-    async (req, reply) =>
-      reply
-        .status(201)
-        .send(await withDeps(await ctx.tasks.reattempt(req.params.id, req.body?.feedback, req.body?.continuation))),
   );
 
   app.post(

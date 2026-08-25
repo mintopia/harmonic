@@ -123,11 +123,13 @@ describe('run execution over ACP (direct mode)', () => {
 
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'nope' });
     expect(rejected.status).toBe(200);
-    expect(rejected.body.state).toBe('failed');
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('failed');
     expect(run.phase).toBe('terminal');
     expect(run.review).toBe('rejected');
+    // The reject seeds the unified loop: the ticket itself is not terminal.
+    expect(rejected.body.state).not.toBe('failed');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
   });
 
   it('cancelling an awaiting-review Task settles its review-parked Run cancelled (issue #114)', async () => {

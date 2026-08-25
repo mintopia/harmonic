@@ -551,10 +551,14 @@ describe('usage collection and statistics', () => {
       exit: 'clean',
     });
     const { taskId } = await runTask({ prompt: usageScenario });
-    await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'again' });
-    await server.api('POST', `/api/tasks/${taskId}/requeue`);
-    await server.api('POST', `/api/tasks/${taskId}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    // A feedback-less reject keeps the corrective attempt's prompt identical,
+    // so the stub replays the same usage scenario on attempt 2.
+    await server.api('POST', `/api/tasks/${taskId}/reject`, {});
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      if (body.state !== 'awaiting-review') return undefined;
+      return (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.length === 2 ? true : undefined;
+    });
 
     const agg = await server.api('GET', `/api/tasks/${taskId}/usage`);
     expect(agg.status).toBe(200);

@@ -11,7 +11,7 @@ import { allWorkspaces } from './helpers.js';
 
 /**
  * `TaskService.delete` (issue #162, ADR-0025): hard-delete cascades the whole
- * Run tree in one transaction, edits Dependency/reattempt back-references so
+ * Run tree in one transaction, edits dependency edges so
  * nothing dangles, tombstones a mirrored ref so `mirrorScan` can't resurrect
  * it, and is guarded to a Task that isn't `running`.
  */
@@ -86,17 +86,10 @@ describe('TaskService.delete (issue #162)', () => {
     expect((await tasksSvc.withDeps(await tasksSvc.get(dependent.id))).agentWorkable).toBe(true);
   });
 
-  it('nulls a re-attempt reattemptOf instead of deleting it when the original is deleted', async () => {
-    const original = await tasksSvc.create({ prompt: 'original' });
-    // reattempt requires a terminal state.
-    await tasksSvc.setState(original.id, 'running');
-    await tasksSvc.setState(original.id, 'failed');
-    const reattempt = await tasksSvc.reattempt(original.id, 'try again');
-    expect(reattempt.reattemptOf).toBe(original.id);
-
-    await tasksSvc.delete(original.id);
-
-    expect((await tasksSvc.get(reattempt.id)).reattemptOf).toBeNull();
+  it('deletes the single ticket used for every Attempt without leaving successor records', async () => {
+    const ticket = await tasksSvc.create({ prompt: 'retry in place' });
+    await tasksSvc.delete(ticket.id);
+    await expect(tasksSvc.get(ticket.id)).rejects.toThrow(/not found/);
   });
 
   it('throws invalid_state for a running task and leaves it intact', async () => {

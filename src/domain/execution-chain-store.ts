@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
-import { executionChains, runs, tasks, type RunRow } from '../db/schema.js';
+import { executionChains, runs, type RunRow } from '../db/schema.js';
 
 /** Mint a fresh chain identity on a caller-supplied executor (a `.write()` unit
  * or transaction), so {@link ExecutionChainStore.create} and the "mint" branch
@@ -51,16 +51,9 @@ export class ExecutionChainStore {
    * tried in order:
    *
    * 1. Same-task continuation — the task's own latest chained Run's
-   *    `chainId`, if it has one. Covers a mirrored retry, a crash-resume, or
-   *    any other new attempt of the same Task: the new Run stays on the
-   *    Task's existing chain.
-   * 2. Reattempt ancestry — a re-attempt is a *new, linked* Task
-   *    (`tasks.reattemptOf`), not a new attempt of the same Task, so branch 1
-   *    finds nothing on a fresh reattempt Task. Walk `reattemptOf` upward:
-   *    for each ancestor task id, look for its latest chained Run; the first
-   *    one found wins. A depth bound (`MAX_ANCESTRY_DEPTH`) guards against a
-   *    corrupt/cyclic `reattemptOf` chain looping forever.
-   * 3. Neither found anything to inherit — this Run starts a brand-new line
+   *    `chainId`, if it has one. Every retry and crash-resume stays on this
+   *    ticket's chain.
+   * 2. No previous Run exists — this Run starts a brand-new line
    *    of work; mint a fresh chain.
    *
    * The whole read-decide-mint runs as one `this.db.write()` unit (ADR-0029
@@ -71,29 +64,10 @@ export class ExecutionChainStore {
    * "no chain yet" and both mint (branch 3), and — unlike a Run's `seq` — a
    * `chainId` has no UNIQUE-index backstop to reject the duplicate.
    */
-  resolveForTask(task: { id: number; reattemptOf: number | null }): Promise<number> {
+  resolveForTask(task: { id: number }): Promise<number> {
     return this.db.write(async (db) => {
       const own = await latestChainedRunOn(db, task.id);
       if (own?.chainId != null) return own.chainId;
-
-      const MAX_ANCESTRY_DEPTH = 100;
-      let ancestorId: number | null = task.reattemptOf;
-      const visited = new Set<number>();
-      for (let depth = 0; ancestorId != null && depth < MAX_ANCESTRY_DEPTH; depth++) {
-        if (visited.has(ancestorId)) break;
-        visited.add(ancestorId);
-
-        const currentAncestorId = ancestorId;
-        const ancestorRun = await latestChainedRunOn(db, currentAncestorId);
-        if (ancestorRun?.chainId != null) return ancestorRun.chainId;
-
-        const ancestorTask = await db
-          .select({ reattemptOf: tasks.reattemptOf })
-          .from(tasks)
-          .where(eq(tasks.id, currentAncestorId))
-          .get();
-        ancestorId = ancestorTask?.reattemptOf ?? null;
-      }
 
       return insertChainOn(db, Date.now());
     });
