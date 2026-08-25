@@ -581,8 +581,7 @@ describe('wall-clock guardrail (issue #127)', () => {
       await attempts.finish(attempt.id, 'passed');
       await new Promise((resolve) => setTimeout(resolve, 1_400));
 
-      const observedRun = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
-      if (observedRun.state !== 'running') throw new Error(JSON.stringify(observedRun));
+      expect((await server.api('GET', `/api/runs/${started.body.id}`)).body.state).toBe('running');
       expect(
         await server.app.ctx.asyncDb.read((db) =>
           db.select().from(guardrailEvents).where(eq(guardrailEvents.runId, started.body.id)).all(),
