@@ -21,6 +21,7 @@ import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
+import { AttemptStore } from '../domain/attempts.js';
 import { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
@@ -210,6 +211,7 @@ export interface AppContext {
   workspaces: WorkspaceService;
   tasks: TaskService;
   runs: RunStore;
+  attempts: AttemptStore;
   sessions: SessionStore;
   leases: WorkContextLeaseStore;
   runner: Runner;
@@ -270,6 +272,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     (id) => bus.emit('task_removed', { id }),
   );
   const runs = new RunStore(asyncDb);
+  const attempts = new AttemptStore(asyncDb);
   const guardrailEvents = new GuardrailEventStore(asyncDb);
   const verificationAttempts = new VerificationAttemptStore(asyncDb);
   const leases = new WorkContextLeaseStore(asyncDb);
@@ -419,7 +422,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // the Task's current working directory). Whether the reload succeeds or the
   // compatibility matrix forces a fresh summarized Session, the decision is
   // idempotent across repeat boots.
-  await new BootResumeCoordinator(runs, tasks, sessionStore, new TurnQueueStore(asyncDb), new RunFactStore(asyncDb), (session) => ({
+  await new BootResumeCoordinator(runs, attempts, tasks, sessionStore, new TurnQueueStore(asyncDb), new RunFactStore(asyncDb), (session) => ({
     harness: session.harness,
     adapterVersion: adapterVersion(session.harness),
     model: session.model,
@@ -496,7 +499,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       onRunEvent: (event) => bus.emit('run_event', event),
       onRunLogEvent: (event) => bus.emitRunLog(event),
       onRunFinished: (run) => bus.emit('run_changed', run),
-      onRunPhaseChanged: (run) => bus.emit('run_changed', run),
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
     mergeTrain,
@@ -693,7 +695,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

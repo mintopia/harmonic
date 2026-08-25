@@ -1,6 +1,13 @@
 import type { AppContext } from './app.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
-import type { ConversationRow, ConversationState, RunRow, RunState } from '../db/schema.js';
+import type {
+  AttemptRow,
+  AttemptTaskRow,
+  ConversationRow,
+  ConversationState,
+  RunRow,
+  RunState,
+} from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
@@ -24,6 +31,62 @@ export const atRestWorkspaceId = (workspaceId: number | null): number => workspa
 
 /** Kept as an explicit serializer so REST and the firehose share one DTO seam. */
 export const scheduledJobsToApi = (jobs: ScheduledJobSnapshot[]): ScheduledJobSnapshot[] => jobs;
+
+export interface ApiAttemptTask {
+  id: number;
+  attemptId: number;
+  type: AttemptTaskRow['type'];
+  position: number;
+  state: AttemptTaskRow['state'];
+  command: string | null;
+  verdict: string | null;
+  logLocator: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+}
+
+export interface ApiAttempt {
+  id: number;
+  taskId: number;
+  number: number;
+  state: AttemptRow['state'];
+  startedAt: number;
+  endedAt: number | null;
+  tasks: ApiAttemptTask[];
+}
+
+export interface ApiAttemptTimeline {
+  attempts: ApiAttempt[];
+}
+
+const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
+  id: task.id,
+  attemptId: task.attemptId,
+  type: task.type,
+  position: task.position,
+  state: task.state,
+  command: task.command,
+  verdict: task.verdict,
+  logLocator: task.logLocator,
+  startedAt: task.startedAt,
+  endedAt: task.endedAt,
+});
+
+/** One DTO builder for REST hydration and live timeline updates. */
+export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
+  const rows = await ctx.attempts.listForTask(taskId);
+  return {
+    attempts: await Promise.all(rows.map(async (attempt) => ({
+      id: attempt.id,
+      taskId: attempt.taskId,
+      number: attempt.number,
+      state: attempt.state,
+      startedAt: attempt.startedAt,
+      endedAt: attempt.endedAt,
+      tasks: (await ctx.attempts.listTasks(attempt.id)).map(attemptTaskToApi),
+    }))),
+  };
+}
 
 export interface ApiOperation {
   type: string;

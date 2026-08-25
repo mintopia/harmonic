@@ -1,4 +1,5 @@
 import type { RunStore } from './runs.js';
+import type { AttemptStore } from './attempts.js';
 import type { TaskService } from './tasks.js';
 import type { SessionStore } from './sessions.js';
 import type { TurnQueueStore } from './turn-queue-store.js';
@@ -58,6 +59,7 @@ export type ResumeCapabilities = Omit<ResumeEnvironment, 'cwd'>;
 export class BootResumeCoordinator {
   constructor(
     private readonly runStore: RunStore,
+    private readonly attemptStore: AttemptStore,
     private readonly taskService: TaskService,
     private readonly sessionStore: SessionStore,
     private readonly turnQueue: TurnQueueStore,
@@ -103,6 +105,7 @@ export class BootResumeCoordinator {
       // The new Run is a fresh attempt of the same Task, on the same Execution
       // Chain (#129) so a resume can't reset the cumulative spend budget.
       const resumeRun = await this.runStore.create(orphan.taskId, undefined, orphan.chainId ?? undefined);
+      await this.attemptStore.ensureForRun(resumeRun.taskId, resumeRun.attempt, resumeRun.startedAt);
 
       if (eligibility.eligible) {
         // Resume the same Session: bind the new Run to it and enqueue the
