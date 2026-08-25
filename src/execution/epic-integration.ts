@@ -62,6 +62,13 @@ export interface EpicLandTrigger {
   submit(target: { ref: number; members: MemberLandState[] }, opts?: { force?: boolean }): Promise<unknown>;
 }
 
+/** Edge-triggered default-branch refresh hook. It is deliberately separate
+ * from reconcile: polls discover Epics, but only a successful develop landing
+ * is allowed to request a refresh. */
+export interface EpicRefreshTrigger {
+  refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown>;
+}
+
 /**
  * Reduce a member's mirrored Task to its land state for the whole-Epic land
  * decision (issue #161): `completed` once it has landed onto the integration
@@ -130,6 +137,7 @@ export class EpicIntegrationCoordinator {
      * without a construction cycle.
      */
     private epicLand?: EpicLandTrigger,
+    private epicRefresh?: EpicRefreshTrigger,
   ) {}
 
   /** Attach (or replace) the whole-Epic land trigger after construction (issue
@@ -137,6 +145,29 @@ export class EpicIntegrationCoordinator {
    * instance's {@link retireIntegrationBranch}, then wires it back in here. */
   attachLandTrigger(trigger: EpicLandTrigger): void {
     this.epicLand = trigger;
+  }
+
+  attachRefreshTrigger(trigger: EpicRefreshTrigger): void {
+    this.epicRefresh = trigger;
+  }
+
+  /**
+   * Handle one observed default-branch advance. This is an edge hook called by
+   * the landing path, never by the poll loop. Derived Epics without a current
+   * integration branch are retired or closed and are intentionally skipped.
+   */
+  async refreshAfterDefaultBranchAdvance(tickets: Ticket[], defaultBranch: string): Promise<void> {
+    if (!this.epicRefresh) return;
+    const epics = deriveEpics(tickets);
+    for (const epic of epics) {
+      const branch = integrationBranchName(epic.ref);
+      if (!(await this.git.branchExists(this.workingDir, branch))) continue;
+      try {
+        await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+      } catch (err) {
+        this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);
+      }
+    }
   }
 
   attachOperations(operations: EpicOperations): void {
