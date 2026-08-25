@@ -80,7 +80,8 @@ export const attemptSchema = z
 /** The ticket timeline shape shared by REST and the WebSocket firehose. */
 export const attemptTimelineResponseSchema = z
   .object({ attempts: z.array(attemptSchema) })
-  .meta({ id: 'AttemptTimelineResponse' });
+  .meta({ id: 'AttemptTimelineResponse' })
+  .describe('Ordered attempt timeline, with each attempt task and its outcome.');
 
 /** Per-model token counters (execution/usage.ts `ModelUsage`) — the four counters Cost prices. */
 export const modelUsageSchema = z

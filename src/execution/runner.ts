@@ -176,11 +176,6 @@ export interface RunnerEvents {
   onRunLogEvent?: (event: LiveRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onRunFinished?: (run: RunRow) => void;
-  /** Fired on each mid-run phase transition (executing → validating → verifying
-   * …), so the live board/ticket phase stepper advances without waiting for the
-   * settle-time `onRunFinished`. Carries the freshly-updated run row; wired to
-   * the same `run_changed` broadcast. */
-  onRunPhaseChanged?: (run: RunRow) => void;
   /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
   onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
 }
@@ -347,13 +342,11 @@ interface ActiveRun {
    */
   externallySettled: boolean;
   /**
-   * True while the Run can still accept operator steers. Set false
-   * synchronously the instant {@link Runner.drive} commits to leaving the
-   * steering loop to settle — before any settle `await`. Because both this
-   * assignment and {@link Runner.steer} run synchronously (no await between
-   * the loop exit and the gate close), a steer is either already in the queue
-   * when the loop's last `shift()` runs (delivered) or arrives after the gate
-   * closes (cleanly rejected 409) — never silently accepted then dropped.
+   * True while the Run can accept operator steers. It opens immediately before
+   * the first prompt starts, so setup work cannot accept a steer into an idle
+   * ACP session, and closes synchronously once the steering loop starts to
+   * settle. A steer is therefore injected, queued for a real turn boundary, or
+   * cleanly rejected with 409, never accepted and dropped.
    */
   steerable: boolean;
   /**
@@ -2336,6 +2329,7 @@ export class Runner {
       if (!attempt) throw new DomainError('not_found', `attempt ${run.attempt} for task ${task.id} not found`);
       const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation', logLocator: `session:${run.sessionRowId ?? run.id}` });
       await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now() });
+      record('lifecycle', { event: 'phase', phase: 'executing' });
     }
 
     let child: ChildProcess;
@@ -2566,7 +2560,7 @@ export class Runner {
       steerQueue: [],
       idle: false,
       externallySettled: false,
-      steerable: true,
+      steerable: false,
       verifyAbort: new AbortController(),
     };
     this.active.set(run.id, active);
@@ -3043,11 +3037,13 @@ export class Runner {
           });
           sessionRowId = session.id;
           void this.runStore.update(run.id, { sessionRowId: session.id }).catch(() => {});
-          const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
-          if (attempt) {
+          // The timeline decoration must not delay the ACP handshake. A steer
+          // can arrive as soon as the session becomes live.
+          void this.attempts.getForTaskNumber(task.id, run.attempt).then(async (attempt) => {
+            if (!attempt) return;
             const implementation = (await this.attempts.listTasks(attempt.id)).find((row) => row.type === 'implementation' && row.state === 'running');
             if (implementation) await this.attempts.updateTask(implementation.id, { logLocator: `session:${session.id}` });
-          }
+          }).catch(() => {});
           if (transcriptPath === null && transcriptResolver) {
             void this.captureTranscriptPath({ sessionId: harnessSessionId, sessionRowId: session.id, sessionLogDir: harness.sessionLogDir, transcriptResolver });
           }
@@ -3190,6 +3186,10 @@ export class Runner {
       // changed (the "Prompt" tab reads this column). Steer/continue turns are
       // recorded as lifecycle events, not folded into this initial prompt.
       await this.runStore.update(run.id, { prompt: promptText });
+      // Session setup can contain awaited persistence work. Keep steering
+      // closed until the prompt request is ready to start, otherwise an
+      // operator can receive 200 while ACP is idle and miss the running turn.
+      active.steerable = true;
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
       active.idle = true; // turn ended → parked; the backstop may Escalate a prematurely-closed ticket here
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
@@ -3519,7 +3519,6 @@ export class Runner {
           // there's nothing verified to auto-accept, so that case falls through
           // to the human-gated branch below instead.
           await advanceTask('landing');
-          record('lifecycle', { event: 'phase', phase: 'landing' });
           // Re-fetch: `run` (the drive-loop's original parameter) predates
           // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
           // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
