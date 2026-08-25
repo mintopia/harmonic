@@ -2,6 +2,7 @@ import { Git } from './git.js';
 import { decideMergeTrainLand, type MergeTrainDecision, type MergeTrainGitFacts } from '../domain/merge-train.js';
 import { EpicOperations } from './epic-operations.js';
 import { parseIntegrationBranch } from './epic-integration.js';
+import type { Operation } from '../telemetry/operations.js';
 
 /**
  * The single-writer merge train per Epic integration branch (issue #160).
@@ -107,13 +108,17 @@ export class MergeTrainCoordinator {
 
   /** A member's first land attempt for its current position on the train. */
   submit(member: MergeTrainMember): Promise<MergeTrainOutcome> {
-    return this.withEpicOperation(member, () => this.withBranchTrain(member.integrationBranch, () => this.land(member)));
+    return this.withEpicOperation(member, (memberLand) =>
+      this.withBranchTrain(member.integrationBranch, () => this.land(member, memberLand)),
+    );
   }
 
   /** Re-entry after a dispatched corrective turn finishes — a second attempt
    * at the same land, subject to the same one-heal bound. */
   onHealComplete(member: MergeTrainMember): Promise<MergeTrainOutcome> {
-    return this.withEpicOperation(member, () => this.withBranchTrain(member.integrationBranch, () => this.land(member)));
+    return this.withEpicOperation(member, (memberLand) =>
+      this.withBranchTrain(member.integrationBranch, () => this.land(member, memberLand)),
+    );
   }
 
   /** Per-integration-branch serialisation, mechanically like `withRepoLock`:
@@ -140,12 +145,12 @@ export class MergeTrainCoordinator {
 
   /** The critical section: observe git facts, decide, execute. Runs inside
    * this member's integration branch's lock slot. */
-  private async land(member: MergeTrainMember): Promise<MergeTrainOutcome> {
+  private async land(member: MergeTrainMember, memberLand: Operation): Promise<MergeTrainOutcome> {
     const { repoDir, integrationBranch, memberBranch } = member;
 
     const integrationExists = await this.git.branchExists(repoDir, integrationBranch);
     if (!integrationExists) {
-      return this.execute(member, this.decide(member, { integrationExists: false, alreadyMerged: false, rebase: null }));
+      return this.execute(member, memberLand, this.decide(member, { integrationExists: false, alreadyMerged: false, rebase: null }));
     }
 
     const integrationTip = await this.git.revParse(repoDir, integrationBranch);
@@ -160,18 +165,27 @@ export class MergeTrainCoordinator {
     if (alreadyMerged) {
       return this.execute(
         member,
+        memberLand,
         this.decide(member, { integrationExists: true, alreadyMerged: true, rebase: null }),
         integrationTip,
       );
     }
 
-    const rebaseResult = await this.git.rebaseOnto(member.memberWorktreeDir, integrationTip);
+    const rebaseResult = await this.operations.run({
+      repoDir: member.repoDir,
+      epicRef: this.epicRef(member),
+      type: 'git.rebase',
+      parent: memberLand,
+      attributes: { 'task.id': member.taskId, 'run.id': member.runId, 'git.operation': 'rebase' },
+      work: () => this.git.rebaseOnto(member.memberWorktreeDir, integrationTip),
+    });
     const rebase: MergeTrainGitFacts['rebase'] = rebaseResult.ok
       ? { status: 'clean', rebasedTip: rebaseResult.rebasedTip }
       : { status: 'conflict', detail: rebaseResult.detail };
 
     return this.execute(
       member,
+      memberLand,
       this.decide(member, { integrationExists: true, alreadyMerged: false, rebase }),
       integrationTip,
     );
@@ -187,6 +201,7 @@ export class MergeTrainCoordinator {
    * only ever arises after the integration branch has been observed to exist. */
   private async execute(
     member: MergeTrainMember,
+    memberLand: Operation,
     decision: MergeTrainDecision,
     integrationTip?: string,
   ): Promise<MergeTrainOutcome> {
@@ -194,24 +209,33 @@ export class MergeTrainCoordinator {
 
     switch (decision.action) {
       case 'ff': {
-        const checkedOutAt = await this.git.branchCheckedOutAt(repoDir, integrationBranch);
-        if (checkedOutAt !== null) {
-          const reason = 'integration branch unexpectedly checked out';
-          this.healAttempted.delete(runId);
-          await this.escalateFn(member, reason);
-          this.failEpic(member, reason);
-          return { status: 'escalated', reason };
-        }
-        const cas = await this.git.casUpdateRef(repoDir, integrationBranch, decision.toOid, integrationTip!);
-        if (!cas.ok) {
-          const reason = cas.detail ?? 'integration branch advanced concurrently';
-          this.healAttempted.delete(runId);
-          await this.escalateFn(member, reason);
-          this.failEpic(member, reason);
-          return { status: 'escalated', reason };
-        }
-        this.healAttempted.delete(runId);
-        return { status: 'landed', oid: decision.toOid };
+        return this.operations.run({
+          repoDir: member.repoDir,
+          epicRef: this.epicRef(member),
+          type: 'git.fast-forward',
+          parent: memberLand,
+          attributes: { 'task.id': member.taskId, 'run.id': member.runId, 'git.operation': 'fast-forward' },
+          work: async () => {
+            const checkedOutAt = await this.git.branchCheckedOutAt(repoDir, integrationBranch);
+            if (checkedOutAt !== null) {
+              const reason = 'integration branch unexpectedly checked out';
+              this.healAttempted.delete(runId);
+              await this.escalateFn(member, reason);
+              this.failEpic(member, reason);
+              return { status: 'escalated', reason };
+            }
+            const cas = await this.git.casUpdateRef(repoDir, integrationBranch, decision.toOid, integrationTip!);
+            if (!cas.ok) {
+              const reason = cas.detail ?? 'integration branch advanced concurrently';
+              this.healAttempted.delete(runId);
+              await this.escalateFn(member, reason);
+              this.failEpic(member, reason);
+              return { status: 'escalated', reason };
+            }
+            this.healAttempted.delete(runId);
+            return { status: 'landed', oid: decision.toOid };
+          },
+        });
       }
       case 'already-landed':
         this.healAttempted.delete(runId);
@@ -238,15 +262,18 @@ export class MergeTrainCoordinator {
     }
   }
 
-  private withEpicOperation(member: MergeTrainMember, work: () => Promise<MergeTrainOutcome>): Promise<MergeTrainOutcome> {
+  private withEpicOperation(
+    member: MergeTrainMember,
+    work: (memberLand: Operation) => Promise<MergeTrainOutcome>,
+  ): Promise<MergeTrainOutcome> {
     return this.operations.run({
       repoDir: member.repoDir,
       epicRef: this.epicRef(member),
       type: 'member-land',
       attributes: { 'task.id': member.taskId, 'run.id': member.runId, 'epic.integration_branch': member.integrationBranch },
-      work: async () => {
+      work: async (memberLand) => {
         try {
-          return await work();
+          return await work(memberLand);
         } catch (error) {
           this.failEpic(member, error instanceof Error ? error.message : String(error));
           throw error;

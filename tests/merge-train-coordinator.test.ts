@@ -1,9 +1,29 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { trace } from '@opentelemetry/api';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { EpicOperations } from '../src/execution/epic-operations.js';
+import { OperationRegistry } from '../src/telemetry/operations.js';
 import {
   MergeTrainCoordinator,
   type MergeTrainGit,
   type MergeTrainMember,
 } from '../src/execution/merge-train-coordinator.js';
+
+const providers: NodeTracerProvider[] = [];
+
+afterEach(async () => {
+  trace.disable();
+  await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
+});
+
+function installOperations() {
+  const exporter = new InMemorySpanExporter();
+  const provider = new NodeTracerProvider({ spanProcessors: [new OperationRegistry(), new SimpleSpanProcessor(exporter)] });
+  provider.register();
+  providers.push(provider);
+  return exporter;
+}
 
 type RebaseOutcome =
   | { ok: true; rebasedTip: string }
@@ -103,6 +123,27 @@ function collaborators() {
 }
 
 describe('MergeTrainCoordinator (issue #160)', () => {
+  it('records rebase and fast-forward as children of the member land operation', async () => {
+    const exporter = installOperations();
+    const git = new FakeGit();
+    git.refs.set('epic/1', 'int-a');
+    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
+    git.rebaseOutcomes.set('/wt/1', [{ ok: true, rebasedTip: 'mem-a-rebased' }]);
+    const { dispatchHeal, escalate } = collaborators();
+    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate, operations: new EpicOperations() });
+
+    await coordinator.submit(member());
+
+    const spans = exporter.getFinishedSpans();
+    const memberLand = spans.find((span) => span.name === 'harmonic.epic.member-land');
+    if (!memberLand) throw new Error('Expected member land operation');
+    for (const name of ['harmonic.epic.git.rebase', 'harmonic.epic.git.fast-forward']) {
+      const span = spans.find((candidate) => candidate.name === name);
+      if (!span) throw new Error(`Expected ${name} operation`);
+      expect(span.parentSpanContext?.spanId).toBe(memberLand.spanContext().spanId);
+    }
+  });
+
   it('1. a single clean member rebases onto the observed integration tip and lands via CAS', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');

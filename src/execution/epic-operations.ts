@@ -1,28 +1,29 @@
 import type { Attributes } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 
-export type EpicOperationType = 'cut' | 'member-land' | 'heal' | 'verify' | 'land' | 'merge' | 'retire';
+export type EpicOperationType = 'cut' | 'member-land' | 'git.rebase' | 'git.fast-forward' | 'heal' | 'verify' | 'land' | 'merge' | 'retire';
 
 /** Keeps one live trace root for an Epic while its work moves between poll ticks. */
 export class EpicOperations {
   private readonly roots = new Map<string, Operation>();
 
-  run<T>({ repoDir, epicRef, type, attributes = {}, work }: {
+  run<T>({ repoDir, epicRef, type, attributes = {}, parent, work }: {
     repoDir: string;
     epicRef: number;
     type: EpicOperationType;
     attributes?: Attributes;
-    work: () => Promise<T>;
+    parent?: Operation;
+    work: (operation: Operation) => Promise<T>;
   }): Promise<T> {
     const root = this.root(repoDir, epicRef);
     const operation = startOperation({
       type: `epic.${type}`,
       attributes: { 'epic.ref': epicRef, ...attributes },
-      parent: root.spanContext,
+      parent: parent?.spanContext ?? root.spanContext,
     });
     return operation.run(async () => {
       try {
-        const result = await work();
+        const result = await work(operation);
         operation.end();
         return result;
       } catch (error) {
