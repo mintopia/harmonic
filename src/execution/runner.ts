@@ -15,8 +15,9 @@ import {
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
-import { driveFields, promptForTask } from './prompt-template.js';
+import { promptForTask } from './run-prompt.js';
 import type { AutoDrive } from './auto-drive.js';
+import { driveFields } from './drive-prompt.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
 import { AcpDriver, type AcpInitializeResult } from '../acp/driver.js';
@@ -33,7 +34,7 @@ import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domai
 import { RunFactStore } from '../domain/run-facts.js';
 import { LandingJournalStore } from '../domain/landing-journal.js';
 import type { SettleProjection, SettleTaskAction } from '../domain/run-coordinator.js';
-import { RunSettleCoordinator, type RunBranchRetirementHook } from '../domain/run-settle.js';
+import { RunSettleCoordinator } from '../domain/run-settle.js';
 import type { SessionRetirementHook } from '../domain/session-retirement-coordinator.js';
 import { phasePath, type RunPhase, type ReviewGate } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
@@ -71,7 +72,7 @@ import {
 } from '../verification/combine.js';
 import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
-import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
+import type { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import {
   evaluateAdmission,
   AdmissionRejected,
@@ -90,30 +91,12 @@ import { landBranch } from './branch-landing.js';
 import { parseIntegrationBranch } from './epic-integration.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
-import { startActiveChildOperation } from '../telemetry/operations.js';
+import type { SpanContext } from '@opentelemetry/api';
+import { startOperation } from '../telemetry/operations.js';
 
 /** How much harness stderr to keep for a failure reason — the tail, since
  * the fatal message is last. Bounds an otherwise unbounded buffer. */
 const STDERR_TAIL_CAP = 8000;
-
-async function prepareWorktree<T>(
-  attributes: { 'git.branch': string; 'git.ref': string },
-  work: () => Promise<T>,
-): Promise<T> {
-  const operation = startActiveChildOperation('git.prepare-workspace', attributes);
-  if (!operation) return work();
-  try {
-    const result = await work();
-    operation.update({ 'git.result': 'ok' });
-    operation.end();
-    return result;
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    operation.update({ 'git.result': 'error' });
-    operation.fail(reason);
-    throw error;
-  }
-}
 
 /** The single nudge the progress Guardrail delivers through the steer channel
  * on a first detected stall (issue #131, ADR-0019) before it trips. A plain
@@ -183,32 +166,14 @@ async function acquireHarnessMutex(key: string): Promise<() => void> {
  * queue never trips it, short enough that an abandoned review can't wedge a Work
  * Context lease forever. */
 const REVIEW_SLA_MS = 7 * 24 * 60 * 60 * 1000;
-const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
 export interface RunnerEvents {
   /** Fired after every run event is persisted (live streaming hook). */
   onRunEvent?: (event: PersistedRunEvent) => void;
-  /** ACP session updates are transient: streamed to clients, never persisted. */
-  onRunLogEvent?: (event: LiveRunEvent) => void;
   /** Fired whenever a run reaches a terminal state. */
   onRunFinished?: (run: RunRow) => void;
-  /** Fired on each mid-run phase transition (executing → validating → verifying
-   * …), so the live board/ticket phase stepper advances without waiting for the
-   * settle-time `onRunFinished`. Carries the freshly-updated run row; wired to
-   * the same `run_changed` broadcast. */
-  onRunPhaseChanged?: (run: RunRow) => void;
   /** Fired ~1s while a run tails its native log (ADR 0010: `run_usage`). */
   onRunUsage?: (payload: { runId: number; snapshot: RunUsageSnapshot }) => void;
-}
-
-/** A live ACP update, with a Run-local monotonic id for reconnect de-duplication. */
-export interface LiveRunEvent {
-  id: number;
-  runId: number;
-  seq: number;
-  ts: number;
-  type: 'session_update';
-  payload: { sessionUpdate: string; [key: string]: unknown };
 }
 
 export interface RunnerOptions {
@@ -269,8 +234,6 @@ export interface RunnerOptions {
    * (pre-#148 behaviour); the worktree teardown then falls back to
    * `finalizeWorkspace` for a Run with no Session. */
   sessionRetirement?: SessionRetirementHook;
-  /** Best-effort retirement of a terminal Run's now-redundant candidate ref. */
-  branchRetirement?: RunBranchRetirementHook;
   /** The single-writer merge train (issue #163): the ONE process-global
    * {@link MergeTrainCoordinator} an Epic member's Run lands through, in place of
    * the direct auto-merge path. Absent → members fall back to the plain
@@ -495,7 +458,7 @@ type TurnOutcome =
   | { kind: 'merge-train-heal'; detail: string };
 
 export class Runner {
-  private active = new Map<number, ActiveRun>();
+  private active = new Map<number, ActiveRun>(); // by run id
   /** Set once {@link shutdown} kills the harnesses on process/server close, so a
    * drive loop reacting to its SIGKILLed harness leaves the Run `running` for
    * boot reconciliation to record as interrupted, rather than settling it a
@@ -623,7 +586,6 @@ export class Runner {
       (run) => this.events.onRunFinished?.(run),
       new LandingJournalStore(this.asyncDb),
       options.sessionRetirement,
-      options.branchRetirement,
     );
     this.tailer = new LiveUsageTailer(
       {
@@ -662,17 +624,13 @@ export class Runner {
 
   /** Start a run for a ready task. Returns the created run immediately. */
   async start(taskId: number): Promise<RunRow> {
-    const claimed = await this.taskService.claimReady(taskId);
-    if (!claimed) {
-      const task = await this.taskService.get(taskId);
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'ready') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; only ready tasks can run`);
     }
-    try {
-      return await this.beginRun(claimed);
-    } catch (err) {
-      await this.taskService.setState(taskId, 'ready');
-      throw err;
-    }
+    const run = await this.beginRun(task);
+    await this.taskService.setState(taskId, 'running');
+    return run;
   }
 
   /**
@@ -680,16 +638,16 @@ export class Runner {
    * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
    * spawn, so the flip lands before the tracker write, not with it (issue #32).
    */
-  async launchClaimed(taskId: number): Promise<RunRow> {
+  async launchClaimed(taskId: number, parent?: SpanContext): Promise<RunRow> {
     const task = await this.taskService.get(taskId);
     if (task.state !== 'running') {
       throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to running`);
     }
-    return this.beginRun(task);
+    return this.beginRun(task, parent);
   }
 
   /** Validate the harness, snapshot Guardrails, create the run row, and drive it. Shared by start / launchClaimed. */
-  private async beginRun(task: TaskRow): Promise<RunRow> {
+  private async beginRun(task: TaskRow, parent?: SpanContext): Promise<RunRow> {
     // Parallel-Epic start-funnel gate (issue #159): an Epic member whose
     // integration base isn't ready to fork from must not spawn — its `epic/<ref>`
     // branch is unresolved or not confirmed live this poll, so `git worktree add`
@@ -763,7 +721,20 @@ export class Runner {
     // Done outside the claim transaction (like `drive`), so a continuation that
     // can't bind still dispatches fresh — never blocked.
     const bound = await this.bindContinuationIfEligible(task, run);
-    void this.drive(task, bound, harness).catch(() => {});
+    const operation = startOperation({
+      type: 'run',
+      parent,
+      attributes: {
+        'task.id': task.id,
+        'run.id': bound.id,
+        'task.origin': task.origin,
+        ...(task.workspaceId == null ? {} : { 'workspace.id': task.workspaceId }),
+      },
+    });
+    void operation.run(() => this.drive(task, bound, harness)).then(
+      () => operation.end(),
+      (error: unknown) => operation.fail(error instanceof Error ? error.message : String(error)),
+    );
     return bound;
   }
 
@@ -912,16 +883,7 @@ export class Runner {
    * Run `cancelled`. The Task was already cancelled by the caller, so the
    * projection leaves it untouched (taskAction none). */
   async cancelForTask(taskId: number): Promise<void> {
-    // Every caller invokes this fire-and-forget (REST/MCP cancel + delete), so a
-    // rejection here has no awaiter and would surface as an unhandled rejection
-    // that takes the daemon down. A cancel is a best-effort operational action:
-    // contain its own errors (the run-gone race is already a no-op in
-    // settleTaskRun; anything else is logged, not fatal).
-    try {
-      await this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
-    } catch (err) {
-      console.error(`cancelForTask(${taskId}) failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    await this.settleTaskRun(taskId, 'operator-cancel', { runState: 'cancelled', taskAction: 'none', reason: null });
   }
 
   /**
@@ -952,35 +914,12 @@ export class Runner {
     for (const active of this.active.values()) {
       if (active.taskId !== taskId) continue;
       handled = true;
-      await this.settleRunIfPresent(taskId, active.runId, type, projection);
+      await this.coordinateSettle(await this.taskService.get(taskId), await this.runStore.get(active.runId), type, projection);
       this.kill(active);
     }
     if (handled) return;
     const parked = (await this.runStore.listForTask(taskId)).find((r) => r.state === 'running');
-    if (parked) await this.settleRunIfPresent(taskId, parked.id, type, projection);
-  }
-
-  /**
-   * Settle a run, tolerating its row having been deleted concurrently. The
-   * get→append settle spans awaits and does not hold the run's existence stable,
-   * so a racing delete — `beginRun`'s lease-conflict compensating delete
-   * (which explicitly leaves a transient `running` row) or a task-delete cascade
-   * — can land after the row was read (an FK violation on the fact insert) or
-   * before it (a `not_found` read). A run that no longer exists cannot be
-   * cancelled, so both mean the settle is a no-op, not an error.
-   */
-  private async settleRunIfPresent(
-    taskId: number,
-    runId: number,
-    type: RunFactType,
-    projection: SettleProjection,
-  ): Promise<void> {
-    try {
-      await this.coordinateSettle(await this.taskService.get(taskId), await this.runStore.get(runId), type, projection);
-    } catch (err) {
-      if (isForeignKeyViolation(err) || (err instanceof DomainError && err.code === 'not_found')) return;
-      throw err;
-    }
+    if (parked) await this.coordinateSettle(await this.taskService.get(taskId), parked, type, projection);
   }
 
   /**
@@ -1312,9 +1251,7 @@ export class Runner {
       // resumed Run resolves the same base a fresh one would (issue #157).
       const baseBranch = persisted.baseBranch ?? (await this.resolveBaseBranch(task));
       if (!existsSync(path)) {
-        await prepareWorktree({ 'git.branch': branch, 'git.ref': baseBranch }, () =>
-          Git.addWorktreeCheckout(task.workingDir, path, branch),
-        );
+        await Git.addWorktreeCheckout(task.workingDir, path, branch);
       }
       return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
@@ -1331,9 +1268,7 @@ export class Runner {
       );
     }
     const branch = `harmonic/task-${task.id}-run-${run.attempt}`;
-    await prepareWorktree({ 'git.branch': branch, 'git.ref': baseBranch }, () =>
-      Git.addWorktree(task.workingDir, path, branch, baseBranch),
-    );
+    await Git.addWorktree(task.workingDir, path, branch, baseBranch);
     await this.runStore.update(run.id, { branch, baseBranch });
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.
@@ -1560,30 +1495,12 @@ export class Runner {
         if (!criticHarness) {
           throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
         }
-        // Compute merge-cleanliness ourselves, read-only, in the base repo (never
-        // the critic's disposable worktree) and hand it to the critic as a trusted
-        // fact — so the critic can judge "does it merge cleanly?" without running
-        // any git command, which would mutate its worktree and force-downgrade its
-        // verdict to inconclusive (ADR-0021 mutation fail-safe). Unknown base
-        // branch / errored merge-tree ⇒ null ⇒ the fact is simply omitted.
-        const mergeResult = run.baseBranch
-          ? await Git.mergeCleanliness(task.workingDir, run.baseBranch, oid)
-          : null;
         const attempt = await runCritic({
           repoDir: task.workingDir,
           candidateOid: oid,
           worktreePath: join(this.worktreesDir, `critic-${run.id}`),
           critic,
           fields: driveFields(task, this.urlFor),
-          ...(mergeResult && run.baseBranch
-            ? {
-                mergeCleanliness: {
-                  baseBranch: run.baseBranch,
-                  clean: mergeResult.clean,
-                  ...(mergeResult.conflicts ? { conflicts: mergeResult.conflicts } : {}),
-                },
-              }
-            : {}),
           // `runCritic` strips the tracker credentials and registers no MCP
           // servers, and only approves read/fetch tool calls, so the turn is
           // contained (issue #136) regardless of which harness runs it.
@@ -2282,7 +2199,6 @@ export class Runner {
       for (const phase of phasePath(from, to, gate)) {
         await this.runStore.update(run.id, { phase });
         record('lifecycle', { event: 'phase', phase });
-        this.events.onRunPhaseChanged?.(await this.runStore.get(run.id));
       }
     };
 
@@ -2303,7 +2219,6 @@ export class Runner {
     if (healCtx || remergeCtx) {
       await this.runStore.update(run.id, { phase: 'executing' });
       record('lifecycle', { event: 'phase', phase: 'executing' });
-      this.events.onRunPhaseChanged?.(await this.runStore.get(run.id));
     }
 
     let child: ChildProcess;
@@ -2450,18 +2365,6 @@ export class Runner {
         if (replay) return;
         const seq = (this.progressSequences.get(run.id) ?? 0) + 1;
         this.progressSequences.set(run.id, seq);
-        // Session updates are intentionally transient (ADR-0031), but the
-        // operator transcript needs them live. Reserve a separate id range so
-        // the browser can merge them with its one-time native-log hydration
-        // without colliding with parser-assigned transcript ids.
-        this.events.onRunLogEvent?.({
-          id: LIVE_RUN_LOG_EVENT_ID_OFFSET + seq,
-          runId: run.id,
-          seq,
-          ts: Date.now(),
-          type: 'session_update',
-          payload: update,
-        });
         const progress = toProgressEvents([{ seq, type: 'session_update', payload: update }]);
         if (progress.length > 0) {
           const event = progress[0]!;
@@ -2738,6 +2641,7 @@ export class Runner {
               );
               return;
             }
+            // outcome.kind === 'trip'
             unmeasurableSince = null;
             const trip = outcome.trip;
             const event =
@@ -2887,7 +2791,7 @@ export class Runner {
         for (const [id, t] of outstandingTools) {
           if (!oldest || t.startedAt < oldest.startedAt) oldest = { id, startedAt: t.startedAt, title: t.title };
         }
-        if (!oldest) return;
+        if (!oldest) return; // nothing outstanding right now
         const trip = toolTimeoutTrip({
           outstandingMs: Date.now() - oldest.startedAt,
           limitMs: toolTimeoutMs,
@@ -3288,11 +3192,7 @@ export class Runner {
       await finalize();
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
       this.noteModelMismatch(task, usage, record);
-      const patch = {
-        stopReason: result.stopReason ?? null,
-        usage: usage ? JSON.stringify(usage) : null,
-        cost: usage ? JSON.stringify(costOfUsages([usage], resolvePrices(this.getConfig().prices))) : null,
-      };
+      const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
@@ -3530,10 +3430,7 @@ export class Runner {
       if (this.shuttingDown) return { kind: 'terminal' };
       const usage = await this.collectUsageSafe(task, run, harness, workspace, undefined);
       this.noteModelMismatch(task, usage, record);
-      const patch = {
-        usage: usage ? JSON.stringify(usage) : null,
-        cost: usage ? JSON.stringify(costOfUsages([usage], resolvePrices(this.getConfig().prices))) : null,
-      };
+      const patch = { usage: usage ? JSON.stringify(usage) : null };
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
@@ -3649,14 +3546,12 @@ export class Runner {
     promptResult: { stopReason?: string; usage?: Record<string, unknown>; _meta?: unknown } | undefined,
   ): Promise<RunUsage | null> {
     try {
-      const current = await this.runStore.get(run.id);
       const usage = await collectUsageWithRetry({
         harnessId: task.harness,
         harness,
         cwd: workspace.cwd,
-        sessionId: current.sessionId,
+        sessionId: (await this.runStore.get(run.id)).sessionId,
         promptResult,
-        prices: current.priceTable ? (JSON.parse(current.priceTable) as PriceTable) : resolvePrices(this.getConfig().prices),
       });
       return usage
         ? { ...usage, toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))) }
@@ -3700,7 +3595,6 @@ export class Runner {
           harness,
           cwd,
           sessionId: run.sessionId,
-          prices: run.priceTable ? (JSON.parse(run.priceTable) as PriceTable) : resolvePrices(config.prices),
         });
         if (!fresh || Object.keys(fresh.models).length === 0) continue;
         fresh.toolCalls = Object.fromEntries(await this.runStore.listToolCalls(run.id));
@@ -3713,7 +3607,6 @@ export class Runner {
         // Healing is best-effort; the run keeps its stored usage.
       }
     }
-    await this.runStore.backfillCosts(resolvePrices(config.prices));
   }
 
   /** The run's `git diff --stat` at settle time, or null (direct mode, or a
@@ -3805,7 +3698,7 @@ export class Runner {
     // Single write: the caller's decoration (`parkForReview`'s usage/stat
     // `patch`) layered under the review-phase reset, so `phase`/`reviewDeadline`
     // always win and the board sees one update, not two.
-    await this.runStore.updateWithFrozenCost(run.id, {
+    await this.runStore.update(run.id, {
       ...patch,
       state: 'running',
       phase: 'review',
@@ -4010,6 +3903,8 @@ export class Runner {
   private kill(active: ActiveRun): void {
     try {
       if (active.child.exitCode === null && !active.child.killed) active.child.kill('SIGKILL');
-    } catch {}
+    } catch {
+      // already gone
+    }
   }
 }

@@ -243,7 +243,7 @@ export class AutoRunner {
    */
   private async startPicked(task: TaskRow, skip: Set<number>, tickParent: SpanContext): Promise<boolean> {
     const pick = startOperation({
-      type: 'auto-runner.pick',
+      type: 'auto-runner.pick-start',
       parent: tickParent,
       attributes: taskOperationAttributes(task),
     });
@@ -267,7 +267,7 @@ export class AutoRunner {
           }
         }
         try {
-          await this.runner.launchClaimed(task.id, tickParent);
+          await this.runner.launchClaimed(task.id, pick.spanContext);
           return true;
         } catch (error) {
           pick.fail(failureReason(error));

@@ -12,7 +12,7 @@ import { AutoRunner } from '../src/execution/auto-runner.js';
 import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, startServer, stubHarness } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -119,47 +119,41 @@ describe('operations (issue #284)', () => {
 
 describe('Auto-Runner operations (issue #289)', () => {
   it('nests a task pick and its Run under the scheduler tick', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-'));
-    const db = await openAsyncDb(directory);
     const { exporter, registry } = installOperations();
-    const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
-    const tasks = new TaskService(db, () => config, allWorkspaces(db));
-    const task = await tasks.create({ prompt: 'trace a scheduled pick', isolationMode: 'worktree' });
-    const started: number[] = [];
-    const autoRunner = new AutoRunner(
-      tasks,
-      {
-        countRunning: async () => 0,
-        countRunningByWorkspace: async () => new Map<number, number>(),
-      },
-      {
-        launchClaimed: async (taskId) => {
-          started.push(taskId);
-          const run = startOperation({ type: 'run', attributes: { 'task.id': taskId } });
-          run.end();
-        },
-      },
-      () => config,
-      allWorkspaces(db),
-    );
+    const server = await startServer({
+      ...stubHarness(),
+      defaults: { ...defaultConfig().defaults, isolationMode: 'worktree' },
+      autoRunner: { enabled: true, maxConcurrentRuns: 1 },
+    });
 
     try {
-      autoRunner.poke();
-      await vi.waitFor(() => expect(started).toEqual([task.id]));
+      const task = await server.app.ctx.tasks.create({ prompt: 'trace a scheduled pick', isolationMode: 'worktree' });
+      server.app.ctx.autoRunner.poke();
+      await vi.waitFor(() => {
+        const spans = exporter.getFinishedSpans();
+        const pick = spans.find(
+          (span) => span.name === 'harmonic.auto-runner.pick-start' && span.attributes['task.id'] === task.id,
+        );
+        const run = spans.find((span) => span.name === 'harmonic.run' && span.attributes['task.id'] === task.id);
+        expect(pick).toBeDefined();
+        expect(run).toBeDefined();
+      });
 
       const spans = exporter.getFinishedSpans();
-      const tick = spans.find((span) => span.name === 'harmonic.auto-runner.tick');
-      const pick = spans.find((span) => span.name === 'harmonic.auto-runner.pick-start');
-      const run = spans.find((span) => span.name === 'harmonic.run');
-      if (!tick || !pick || !run) throw new Error('Expected scheduler tick, pick/start, and Run Operations');
+      const pick = spans.find(
+        (span) => span.name === 'harmonic.auto-runner.pick-start' && span.attributes['task.id'] === task.id,
+      );
+      const run = spans.find((span) => span.name === 'harmonic.run' && span.attributes['task.id'] === task.id);
+      if (!pick || !run) throw new Error('Expected pick/start and Run Operations for the scheduled task');
+      const tick = spans.find((span) => span.spanContext().spanId === pick.parentSpanContext?.spanId);
+      if (!tick) throw new Error('Expected scheduler tick Operation');
+      expect(tick.name).toBe('harmonic.auto-runner.tick');
       expect(pick.parentSpanContext?.spanId).toBe(tick.spanContext().spanId);
       expect(run.parentSpanContext?.spanId).toBe(pick.spanContext().spanId);
       expect(pick.attributes).toMatchObject({ 'task.id': task.id });
-      expect(registry.list()).toEqual([]);
+      expect(registry.list().filter((operation) => operation.attributes['task.id'] === task.id)).toEqual([]);
     } finally {
-      autoRunner.stop();
-      await db.close();
-      rmSync(directory, { recursive: true, force: true });
+      await server.close();
     }
   });
 
@@ -195,7 +189,7 @@ describe('Auto-Runner operations (issue #289)', () => {
       const pick = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.auto-runner.pick-start');
       if (!pick) throw new Error('Expected failed pick/start Operation');
       expect(pick.status).toEqual({ code: 2, message: 'launch failed' });
-      expect(registry.list()).toEqual([]);
+      await vi.waitFor(() => expect(registry.list()).toEqual([]));
     } finally {
       autoRunner.stop();
       await db.close();
