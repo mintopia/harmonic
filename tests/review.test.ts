@@ -50,42 +50,37 @@ describe('review: accept / reject (direct mode)', () => {
     expect(facts.some((f) => f.type === 'agent-finish/unresolved')).toBe(false);
   });
 
-  it('rejecting stores the feedback and fails the task', async () => {
+  it('rejecting stores the feedback, fails the run, and starts the corrective attempt', async () => {
     const taskId = await runToAwaitingReview();
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
       feedback: 'The tests are red',
     });
     expect(rejected.status).toBe(200);
-    expect(rejected.body.state).toBe('failed');
 
     const runs = await server.api('GET', `/api/tasks/${taskId}/runs`);
     const run = runs.body.runs[0];
+    expect(run.state).toBe('failed');
     expect(run.review).toBe('rejected');
     expect(run.reviewFeedback).toBe('The tests are red');
+    // The reject seeded the unified loop: attempt 2 runs on the same ticket.
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    expect((await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs).toHaveLength(2);
   });
 
-  it('a rejected task re-queued with feedback executes the appended prompt', async () => {
+  it("the reject-seeded corrective attempt executes the appended feedback prompt", async () => {
     const taskId = await runToAwaitingReview('original prompt');
     await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'not good enough' });
-
-    const requeued = await server.api('POST', `/api/tasks/${taskId}/requeue`, {
-      feedback: 'not good enough',
-    });
-    expect(requeued.status).toBe(200);
-    expect(requeued.body.prompt).toContain('original prompt');
-    expect(requeued.body.prompt).toContain('not good enough');
-
-    const second = await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
 
     // The retry ran the appended prompt: the Run records the exact text sent to
     // the harness (ACP session updates are no longer persisted, ADR-0031).
-    const run = await server.api('GET', `/api/runs/${second.body.id}`);
-    expect(run.body.prompt).toContain('original prompt');
-    expect(run.body.prompt).toContain('not good enough');
+    const second = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.at(-1);
+    expect(second.attempt).toBe(2);
+    expect(second.prompt).toContain('original prompt');
+    expect(second.prompt).toContain('not good enough');
   });
 
-  it('a rejected task requeued and re-run continues in the SAME Session (issue #147)', async () => {
+  it('a rejected task continues its corrective attempt in the SAME Session (issue #147)', async () => {
     const taskId = await runToAwaitingReview('continue me');
     const run1 = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
     // The first attempt bound a durable Session on dispatch.
@@ -93,12 +88,10 @@ describe('review: accept / reject (direct mode)', () => {
     expect(run1.sessionId).not.toBeNull();
 
     await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'not yet' });
-    await server.api('POST', `/api/tasks/${taskId}/requeue`, { feedback: 'not yet' });
-    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
 
     const run2 = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.find(
-      (r: { id: number }) => r.id === started.body.id,
+      (r: { id: number }) => r.id !== run1.id,
     );
     // The retry reloaded run1's Session via session/load rather than opening a
     // cold session/new: the same durable Session row AND the same harness

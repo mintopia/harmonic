@@ -11,8 +11,8 @@ describe('taskActions', () => {
     expect(taskActions('awaiting-review')).toEqual(['delete', 'reject', 'accept']);
   });
 
-  it('offers delete plus re-attempt for a failed task', () => {
-    expect(taskActions('failed')).toEqual(['delete', 'reattempt', 'cancel']);
+  it('offers delete plus cancel for a failed task (retries live on the ticket, not a linked copy)', () => {
+    expect(taskActions('failed')).toEqual(['delete', 'cancel']);
   });
 
   it('offers delete plus run/ready and edit for the editable states', () => {
