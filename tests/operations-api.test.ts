@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SpanStatusCode, trace } from '@opentelemetry/api';
 import { initializeTelemetry, resolveTelemetryOptions, type TelemetryController } from '../src/telemetry.js';
 import type { OperationEvent } from '../src/telemetry/operations.js';
-import { startOperation } from '../src/telemetry/operations.js';
+import { operationRegistry, startOperation } from '../src/telemetry/operations.js';
 import { startServer, waitFor, type TestServer } from './helpers.js';
 
 describe('Operations API (issue #293)', () => {
@@ -20,6 +20,7 @@ describe('Operations API (issue #293)', () => {
   it('returns the live operation tree and bounded completed-root history', async () => {
     telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }));
     server = await startServer();
+    await operationRegistry.shutdown();
 
     const live = startOperation({ type: 'poll', attributes: { 'tracker.name': 'github' } });
     const child = live.run(() => startOperation({ type: 'fetch', attributes: {} }));

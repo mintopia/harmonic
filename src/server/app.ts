@@ -465,7 +465,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // it is bound to the Runner via the same late-holder idiom `trackerManagerRef`
   // uses below — the Runner and the coordinator are mutually referential, so one
   // must be constructed with a forward reference to the other.
-  let runnerRef: Runner | undefined;
   const epicOperations = new EpicOperations();
   const mergeTrain = new MergeTrainCoordinator({
     dispatchHeal: (member) => runnerRef!.enqueueReMergeForMember(member),
