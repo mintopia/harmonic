@@ -1,5 +1,7 @@
 import { Git } from './git.js';
 import { decideMergeTrainLand, type MergeTrainDecision, type MergeTrainGitFacts } from '../domain/merge-train.js';
+import { EpicOperations } from './epic-operations.js';
+import { parseIntegrationBranch } from './epic-integration.js';
 
 /**
  * The single-writer merge train per Epic integration branch (issue #160).
@@ -73,6 +75,7 @@ export class MergeTrainCoordinator {
   private readonly git: MergeTrainGit;
   private readonly dispatchHeal: (member: MergeTrainMember) => Promise<void>;
   private readonly escalateFn: (member: MergeTrainMember, reason: string) => Promise<void>;
+  private readonly operations: EpicOperations;
 
   /** Runs (by runId) that have already had their one bounded corrective turn
    * dispatched for their current conflict — the #155 "no second mutating
@@ -94,21 +97,23 @@ export class MergeTrainCoordinator {
     /** #161 wires this to `Runner.settleEscalated` (async: settling writes the
      * escalate fact + Run row through the async Db — ADR-0029 #203). */
     escalate: (member: MergeTrainMember, reason: string) => Promise<void>;
+    operations?: EpicOperations;
   }) {
     this.git = deps.git ?? Git;
     this.dispatchHeal = deps.dispatchHeal;
     this.escalateFn = deps.escalate;
+    this.operations = deps.operations ?? new EpicOperations();
   }
 
   /** A member's first land attempt for its current position on the train. */
   submit(member: MergeTrainMember): Promise<MergeTrainOutcome> {
-    return this.withBranchTrain(member.integrationBranch, () => this.land(member));
+    return this.withEpicOperation(member, () => this.withBranchTrain(member.integrationBranch, () => this.land(member)));
   }
 
   /** Re-entry after a dispatched corrective turn finishes — a second attempt
    * at the same land, subject to the same one-heal bound. */
   onHealComplete(member: MergeTrainMember): Promise<MergeTrainOutcome> {
-    return this.withBranchTrain(member.integrationBranch, () => this.land(member));
+    return this.withEpicOperation(member, () => this.withBranchTrain(member.integrationBranch, () => this.land(member)));
   }
 
   /** Per-integration-branch serialisation, mechanically like `withRepoLock`:
@@ -194,6 +199,7 @@ export class MergeTrainCoordinator {
           const reason = 'integration branch unexpectedly checked out';
           this.healAttempted.delete(runId);
           await this.escalateFn(member, reason);
+          this.failEpic(member, reason);
           return { status: 'escalated', reason };
         }
         const cas = await this.git.casUpdateRef(repoDir, integrationBranch, decision.toOid, integrationTip!);
@@ -201,6 +207,7 @@ export class MergeTrainCoordinator {
           const reason = cas.detail ?? 'integration branch advanced concurrently';
           this.healAttempted.delete(runId);
           await this.escalateFn(member, reason);
+          this.failEpic(member, reason);
           return { status: 'escalated', reason };
         }
         this.healAttempted.delete(runId);
@@ -211,16 +218,50 @@ export class MergeTrainCoordinator {
         return { status: 'already-landed' };
       case 'heal':
         this.healAttempted.add(runId);
-        await this.dispatchHeal(member);
+        await this.operations.run({
+          repoDir: member.repoDir,
+          epicRef: this.epicRef(member),
+          type: 'heal',
+          attributes: { 'task.id': member.taskId, 'run.id': member.runId },
+          work: () => this.dispatchHeal(member),
+        });
         return { status: 'healing' };
       case 'escalate':
         this.healAttempted.delete(runId);
         await this.escalateFn(member, decision.reason);
+        this.failEpic(member, decision.reason);
         return { status: 'escalated', reason: decision.reason };
       default: {
         const exhaustive: never = decision;
         throw new Error(`unreachable merge-train decision: ${JSON.stringify(exhaustive)}`);
       }
     }
+  }
+
+  private withEpicOperation(member: MergeTrainMember, work: () => Promise<MergeTrainOutcome>): Promise<MergeTrainOutcome> {
+    return this.operations.run({
+      repoDir: member.repoDir,
+      epicRef: this.epicRef(member),
+      type: 'member-land',
+      attributes: { 'task.id': member.taskId, 'run.id': member.runId, 'epic.integration_branch': member.integrationBranch },
+      work: async () => {
+        try {
+          return await work();
+        } catch (error) {
+          this.failEpic(member, error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+      },
+    });
+  }
+
+  private failEpic(member: MergeTrainMember, reason: string): void {
+    this.operations.fail({ repoDir: member.repoDir, epicRef: this.epicRef(member), reason });
+  }
+
+  private epicRef(member: MergeTrainMember): number {
+    const ref = parseIntegrationBranch(member.integrationBranch);
+    if (ref === null) throw new Error(`merge train member has no Epic integration branch: ${member.integrationBranch}`);
+    return ref;
   }
 }

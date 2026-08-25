@@ -5,6 +5,7 @@ import type { MemberLandState } from '../domain/epic-land.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
+import { EpicOperations } from './epic-operations.js';
 
 /**
  * The integration branch Harmonic cuts for an Epic (ADR-0024): `epic/<ref>`,
@@ -112,6 +113,7 @@ export class EpicIntegrationCoordinator {
    * stay pickable). Recomputed each reconcile, like the poller's scan cache.
    */
   private readyMemberRefs = new Set<number>();
+  private operations = new EpicOperations();
 
   constructor(
     private readonly tasks: TaskService,
@@ -135,6 +137,10 @@ export class EpicIntegrationCoordinator {
    * instance's {@link retireIntegrationBranch}, then wires it back in here. */
   attachLandTrigger(trigger: EpicLandTrigger): void {
     this.epicLand = trigger;
+  }
+
+  attachOperations(operations: EpicOperations): void {
+    this.operations = operations;
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
@@ -175,7 +181,13 @@ export class EpicIntegrationCoordinator {
       if (epic.ready.length > 0) {
         const branch = integrationBranchName(epic.ref);
         try {
-          await this.ensureIntegrationBranch(branch, defaultBranch);
+          await this.operations.run({
+            repoDir: this.workingDir,
+            epicRef: epic.ref,
+            type: 'cut',
+            attributes: { 'epic.integration_branch': branch },
+            work: () => this.ensureIntegrationBranch(branch, defaultBranch),
+          });
           for (const memberRef of epic.ready) {
             const task = byRef.get(memberRef);
             if (!task) continue;
@@ -189,7 +201,9 @@ export class EpicIntegrationCoordinator {
           }
         } catch (err) {
           // One Epic's git hiccup must not starve its siblings' base assignment.
-          this.onError(`epic ${epic.ref} integration branch reconcile failed: ${String(err)}`);
+          const reason = `integration branch reconcile failed: ${String(err)}`;
+          this.operations.fail({ repoDir: this.workingDir, epicRef: epic.ref, reason });
+          this.onError(`epic ${epic.ref} ${reason}`);
         }
       }
 

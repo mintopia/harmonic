@@ -4,6 +4,7 @@ import { landBranch, type LandBranchArgs, type LandBranchOutcome } from './branc
 import { decideEpicLand, type MemberLandState } from '../domain/epic-land.js';
 import type { VerificationDecision } from '../verification/combine.js';
 import { logger } from '../logger.js';
+import { EpicOperations } from './epic-operations.js';
 
 /**
  * The whole-Epic land coordinator (issue #161, parallel-epic tranche). The
@@ -106,6 +107,7 @@ export class EpicLandCoordinator {
   private readonly escalateFn: (epicRef: number, reason: string) => void;
   private readonly landLeaseHeld: boolean;
   private readonly onError: (msg: string) => void;
+  private readonly operations: EpicOperations;
 
   /** Epic refs with a land attempt currently in flight — the redundancy guard.
    * In-memory only (ADR-0024): no durable grouping entity, no migration. */
@@ -169,6 +171,7 @@ export class EpicLandCoordinator {
      * default 60s. */
     verifyBackoffMs?: number;
     onError?: (msg: string) => void;
+    operations?: EpicOperations;
   }) {
     this.repoDir = deps.repoDir;
     this.git = deps.git ?? Git;
@@ -180,6 +183,7 @@ export class EpicLandCoordinator {
     this.now = deps.now ?? (() => Date.now());
     this.verifyBackoffMs = deps.verifyBackoffMs ?? 60_000;
     this.onError = deps.onError ?? logger.error;
+    this.operations = deps.operations ?? new EpicOperations();
   }
 
   /**
@@ -193,7 +197,17 @@ export class EpicLandCoordinator {
     if (this.inFlight.has(target.ref)) return { status: 'busy' };
     this.inFlight.add(target.ref);
     try {
-      return await this.attempt(target, force);
+      const existing = this.operations.has({ repoDir: this.repoDir, epicRef: target.ref });
+      if (!existing && !(await this.git.branchExists(this.repoDir, integrationBranchName(target.ref)))) {
+        return await this.attempt(target, force);
+      }
+      return await this.operations.run({
+        repoDir: this.repoDir,
+        epicRef: target.ref,
+        type: 'land',
+        attributes: { 'epic.integration_branch': integrationBranchName(target.ref) },
+        work: () => this.attempt(target, force),
+      });
     } finally {
       this.inFlight.delete(target.ref);
     }
@@ -212,10 +226,12 @@ export class EpicLandCoordinator {
     const gate = decideEpicLand({ integrationExists, members: target.members, verification: null, force });
     switch (gate.action) {
       case 'noop':
+        this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
         return { status: 'noop', reason: gate.reason };
       case 'wait':
         return { status: 'waiting', reason: gate.reason };
       case 'blocked':
+        this.operations.fail({ repoDir: this.repoDir, epicRef: target.ref, reason: gate.reason });
         return { status: 'blocked', reason: gate.reason };
       case 'verify':
         break; // gate open — run the whole-Epic Verification below.
@@ -282,7 +298,13 @@ export class EpicLandCoordinator {
     this.lastVerification.set(target.ref, 'pending');
     let verification: VerificationDecision;
     try {
-      verification = await this.verify({ repoDir: this.repoDir, candidateOid });
+      verification = await this.operations.run({
+        repoDir: this.repoDir,
+        epicRef: target.ref,
+        type: 'verify',
+        attributes: { 'git.candidate_oid': candidateOid },
+        work: () => this.verify({ repoDir: this.repoDir, candidateOid }),
+      });
     } catch (err) {
       // A verification-harness failure is genuine infra doubt: fail-safe to
       // escalate, never land (the same direction `inconclusive` folds to).
@@ -314,7 +336,13 @@ export class EpicLandCoordinator {
     // (a detached HEAD deferred above), so a checked-out target is merged into
     // coherently (`landBranch` still re-checks clean + lands `--ff-only`) rather
     // than refused — a checked-out target is the common case, not a failure.
-    const landed = await this.land({ repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld });
+    const landed = await this.operations.run({
+      repoDir: this.repoDir,
+      epicRef: target.ref,
+      type: 'merge',
+      attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
+      work: () => this.land({ repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld }),
+    });
     if (!landed.ok) {
       return this.escalate(target, force, `whole-Epic land into '${defaultBranch}' failed (${landed.reason}): ${landed.detail}`);
     }
@@ -326,6 +354,7 @@ export class EpicLandCoordinator {
     // retires it, never corrupting.
     this.clearLandGuards(target.ref);
     await this.retireQuietly(target.ref, 'after land');
+    this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'landed', oid: landed.oid };
   }
 
@@ -384,6 +413,7 @@ export class EpicLandCoordinator {
   private escalate(target: EpicLandTarget, force: boolean, reason: string): EpicLandOutcome {
     if (!force) this.settledEscalated.set(target.ref, this.signatureOf(target.members));
     this.escalateFn(target.ref, reason);
+    this.operations.fail({ repoDir: this.repoDir, epicRef: target.ref, reason });
     return { status: 'escalated', reason };
   }
 
@@ -428,6 +458,7 @@ export class EpicLandCoordinator {
     const tip = await this.git.revParse(this.repoDir, branch);
     this.settledEscalated.delete(target.ref);
     await this.retireQuietly(target.ref, 'already-contained');
+    this.operations.complete({ repoDir: this.repoDir, epicRef: target.ref });
     return { status: 'landed', oid: tip };
   }
 
@@ -437,7 +468,12 @@ export class EpicLandCoordinator {
    * corruption. `context` names the call site for the log (issue #218). */
   private async retireQuietly(ref: number, context: string): Promise<void> {
     try {
-      await this.retire(ref);
+      await this.operations.run({
+        repoDir: this.repoDir,
+        epicRef: ref,
+        type: 'retire',
+        work: () => this.retire(ref),
+      });
     } catch (err) {
       this.onError(`epic ${ref} integration branch retire (${context}) failed: ${String(err)}`);
     }

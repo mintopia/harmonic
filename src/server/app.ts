@@ -41,6 +41,7 @@ import { BootResumeCoordinator } from '../domain/boot-resume-coordinator.js';
 import { adapterVersion } from '../execution/harness/adapter.js';
 import { Runner } from '../execution/runner.js';
 import { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
+import { EpicOperations } from '../execution/epic-operations.js';
 import type { CriticHarnessDrive } from '../verification/critic.js';
 import { ConversationDriver } from '../execution/conversation-driver.js';
 import { AutoRunner } from '../execution/auto-runner.js';
@@ -449,9 +450,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // uses below — the Runner and the coordinator are mutually referential, so one
   // must be constructed with a forward reference to the other.
   let runnerRef: Runner | undefined;
+  const epicOperations = new EpicOperations();
   const mergeTrain = new MergeTrainCoordinator({
     dispatchHeal: (member) => runnerRef!.enqueueReMergeForMember(member),
     escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
+    operations: epicOperations,
   });
   // Per-context git circuit breaker (issue #199): shared by the Runner (which
   // records a workspace-prep git fast-fail into it) and the Auto-Runner (which
@@ -603,6 +606,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // Resolve each Workspace's Verification verifiers for the whole-Epic land
     // (issue #161): read per poll so a config change follows without a rebuild.
     () => configStore.get(),
+    epicOperations,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
   // A settled Run frees a Machine Ceiling slot, so it must immediately refill

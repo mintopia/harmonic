@@ -11,6 +11,7 @@ import { deriveMaps, type DerivedMap } from './mirror.js';
 import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
 import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
+import { EpicOperations } from '../execution/epic-operations.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
@@ -68,6 +69,7 @@ export class TrackerPollerManager {
      * #159, still runs) — used by tests that don't exercise the land path.
      */
     private readonly getConfig?: () => Pick<AppConfig, 'verification'>,
+    private readonly epicOperations: EpicOperations = new EpicOperations(),
     private readonly opts: { yieldOptions?: YieldOptions } = {},
   ) {}
 
@@ -112,6 +114,7 @@ export class TrackerPollerManager {
     // #159): cut in its Working Directory, one per derived Epic with a ready
     // member, and each ready member's base branch pointed at it before the next pick.
     const epics = new EpicIntegrationCoordinator(this.tasks, ws.workingDir);
+    epics.attachOperations(this.epicOperations);
     // The whole-Epic land (issue #161): once every member has landed onto the
     // integration branch, Verify the integrated whole and, on a pass, land it
     // atomically into the default branch and retire it. Wired only when a config
@@ -132,6 +135,7 @@ export class TrackerPollerManager {
         },
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic land escalated: ${reason}`),
+        operations: this.epicOperations,
       });
       epics.attachLandTrigger(epicLand);
     }
