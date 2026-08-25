@@ -25,7 +25,7 @@ describe('TaskService.orderedEligibleWork', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it('orders native and derived mirrored priority, then ranks an unblocked task ahead of its dependent', async () => {
+  it('orders agent-workable native priority, including an unpolled mirror via drive fallback, excluding a blocked dependent', async () => {
     const low = await taskService.create({ prompt: 'native low', workspaceId, priority: 'low' });
     const high = await taskService.create({ prompt: 'native high', workspaceId, priority: 'high' });
     const mirrored = await taskService.upsertMirrored({
@@ -38,13 +38,12 @@ describe('TaskService.orderedEligibleWork', () => {
       closed: false,
     }, workspaceId);
     const blocker = await taskService.create({ prompt: 'blocker', workspaceId });
-    const dependent = await taskService.create({ prompt: 'dependent', workspaceId, dependsOn: [blocker.id] });
+    await taskService.create({ prompt: 'dependent', workspaceId, dependsOn: [blocker.id] });
 
     expect((await taskService.orderedEligibleWork(workspaceId)).map((task) => task.id)).toEqual([
       high.id,
-      blocker.id,
       mirrored.id,
-      dependent.id,
+      blocker.id,
       low.id,
     ]);
   });

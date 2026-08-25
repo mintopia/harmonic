@@ -1,6 +1,6 @@
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { AppConfig } from '../config.js';
-import type { TaskService } from '../domain/tasks.js';
+import type { TaskService, TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
@@ -215,20 +215,29 @@ export class TrackerPollerManager {
   /** Every Epic derived from this Workspace's persisted tracker facts. */
   async listEpics(workspaceId: number): Promise<Epic[]> {
     const entry = this.entries.get(workspaceId);
-    const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
-    const derivedEpics = deriveEpics(tickets);
+    const derivedEpics = deriveEpics(tickets, this.readinessByRef(mirrored));
     return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored)));
   }
 
   /** One Epic derived by ref from this Workspace's persisted tracker facts. */
   async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
     const entry = this.entries.get(workspaceId);
-    const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
-    const derived = deriveEpics(tickets).find((e) => e.ref === epicRef);
+    const derived = deriveEpics(tickets, this.readinessByRef(mirrored)).find((e) => e.ref === epicRef);
     if (!derived) return null;
     return this.composeOne(entry, derived, tickets, mirrored);
+  }
+
+  /** Frontier eligibility belongs to the mirrored Task, where Blocker edges are persisted. */
+  private readinessByRef(mirrored: TaskWithDeps[]): Map<number, { agentWorkable: boolean }> {
+    const readinessByRef = new Map<number, { agentWorkable: boolean }>();
+    for (const task of mirrored) {
+      if (task.trackerRef !== null) readinessByRef.set(task.trackerRef, { agentWorkable: task.agentWorkable });
+    }
+    return readinessByRef;
   }
 
   /** Shared plumbing for {@link listEpics}/{@link epicDetail}: match member

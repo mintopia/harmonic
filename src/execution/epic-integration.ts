@@ -48,7 +48,7 @@ export interface EpicGit {
  * (issue #157), so re-pointing the column would be a no-op at best and confuse a
  * re-attempt's carried-forward base at worst.
  */
-const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'blocked', 'ready']);
+const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'ready']);
 
 /**
  * The whole-Epic land trigger (issue #161) the reconcile fires per derived Epic
@@ -144,7 +144,14 @@ export class EpicIntegrationCoordinator {
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
-    const epics = deriveEpics(tickets);
+    const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
+    const readinessByRef = new Map<number, { agentWorkable: boolean }>();
+    for (const task of mirroredWithDeps) {
+      if (task.origin === 'mirrored' && task.trackerRef !== null) {
+        readinessByRef.set(task.trackerRef, { agentWorkable: task.agentWorkable });
+      }
+    }
+    const epics = deriveEpics(tickets, readinessByRef);
     const readyRefs = new Set<number>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
     // Publish the gate set before any await so a racing pick already sees these

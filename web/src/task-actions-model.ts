@@ -37,10 +37,6 @@ export function taskActions(state: TaskState): TaskAction[] {
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':
       return ['delete', 'ready', 'edit', 'cancel'];
-    // Blocked can still be edited — re-point its model/harness while it waits
-    // on a dependency (ADR-0012) — but not run; running can only be cancelled.
-    case 'blocked':
-      return ['delete', 'edit', 'cancel'];
     // Complete is an operator override (stop the agent, mark it done, skip the
     // review gate); Cancel keeps its familiar rightmost destructive slot. No
     // delete while running (issue #162) — the same guard the server enforces

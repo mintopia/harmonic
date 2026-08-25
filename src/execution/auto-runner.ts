@@ -319,28 +319,38 @@ export class AutoRunner {
     ceiling: number;
     workspacesById: Map<number, WorkspaceRow>;
   }): Promise<void> {
-    const [all, ordered, running, runningByWorkspace] = await Promise.all([
+    const [all, readyWithDeps, running, runningByWorkspace] = await Promise.all([
       this.taskService.list(),
-      this.taskService.orderedEligibleWork(),
+      // Dependency details are only needed for ready tasks that may need a
+      // blocker diagnostic. Keep the all-state scan below cheap: it also feeds
+      // Work Context occupancy, which includes running and review tasks.
+      this.taskService.listWithDeps({ state: 'ready' }),
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
     ]);
-    const orderedById = new Map<number, OrderedEligibleTask>();
-    await forEachYielding(ordered, (task) => {
-      orderedById.set(task.id, task);
+    const allById = new Map<number, TaskRow>();
+    await forEachYielding(all, (task) => {
+      allById.set(task.id, task);
     });
     const occupied = await occupiedDirectContexts(all);
     const missingThisPass = new Map<number, number>();
     const next = new Map<number, string>();
     const record = (taskId: number, reason: string) => next.set(taskId, reason);
 
+    const dependencyBlocked = new Set<number>();
+    await forEachYielding(readyWithDeps, (task) => {
+      if (task.openBlockerCount === 0) return;
+      dependencyBlocked.add(task.id);
+      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'completed');
+      record(
+        task.id,
+        blockers.length === 0 ? 'blocked by a dependency' : `blocked-by #${blockers.join(', #')}`,
+      );
+    });
+
     await forEachYielding(all, async (task) => {
-      if (task.state === 'blocked') {
-        const blocker = orderedById.get(task.id)?.blockedBy[0];
-        record(task.id, blocker === undefined ? 'blocked by a dependency' : `blocked-by #${blocker}`);
-        return;
-      }
       if (task.state !== 'ready') return;
+      if (dependencyBlocked.has(task.id)) return;
       if (task.drive === 'hitl') {
         record(task.id, task.escalated ? 'hitl, escalated to human' : 'hitl');
         return;

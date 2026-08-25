@@ -165,10 +165,10 @@ describe('auto-runner', () => {
     });
 
     await waitFor(async () => (await state(dep.body.id)) === 'awaiting-review');
-    expect(await state(dependent.body.id)).toBe('blocked');
+    expect(await state(dependent.body.id)).toBe('ready');
 
     await server.api('POST', `/api/tasks/${dep.body.id}/accept`);
-    // blocked → ready → auto-started → awaiting-review, hands-free.
+    // The last blocker resolves → auto-started → awaiting-review, hands-free.
     await waitFor(async () => (await state(dependent.body.id)) === 'awaiting-review');
   });
 });

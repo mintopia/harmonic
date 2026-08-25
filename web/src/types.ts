@@ -2,7 +2,6 @@ import type { Verdict } from './verification-model.js';
 
 export const TASK_STATES = [
   'draft',
-  'blocked',
   'ready',
   'running',
   'awaiting-review',
