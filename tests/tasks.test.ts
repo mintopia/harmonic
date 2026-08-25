@@ -110,18 +110,22 @@ describe('task authoring', () => {
     expect((await server.api('POST', `/api/tasks/${created.body.id}/uncancel`)).status).toBe(409);
   });
 
-  it('uncancels to blocked when the task has an unmet dependency', async () => {
+  it('uncancels to ready while retaining derived blockers when a dependency is unmet', async () => {
     const dep = await server.api('POST', '/api/tasks', { prompt: 'Dependency' });
     const blocked = await server.api('POST', '/api/tasks', {
       prompt: 'Depends on an incomplete task',
       dependsOn: [dep.body.id],
     });
-    expect(blocked.body.state).toBe('blocked');
+    expect(blocked.body.state).toBe('ready');
+    expect(blocked.body.openBlockerCount).toBe(1);
+    expect(blocked.body.agentWorkable).toBe(false);
 
     await server.api('POST', `/api/tasks/${blocked.body.id}/cancel`);
     const uncancelled = await server.api('POST', `/api/tasks/${blocked.body.id}/uncancel`);
     expect(uncancelled.status).toBe(200);
-    expect(uncancelled.body.state).toBe('blocked');
+    expect(uncancelled.body.state).toBe('ready');
+    expect(uncancelled.body.openBlockerCount).toBe(1);
+    expect(uncancelled.body.agentWorkable).toBe(false);
   });
 
   it('deletes a ready task outright: 200 { id }, then a 404 on GET (issue #162)', async () => {
@@ -297,17 +301,19 @@ describe('task-default inheritance', () => {
     expect(stillPinned.model).toBe('pinned-model'); // the pinned task did not
   });
 
-  it('edits a blocked task to re-point its model, and clears it back to inherit', async () => {
+  it('edits a task with open blockers to re-point its model, and clears it back to inherit', async () => {
     const dep = await server.api('POST', '/api/tasks', { prompt: 'Dependency', state: 'draft' });
     const blocked = await server.api('POST', '/api/tasks', {
       prompt: 'Blocked, needs a new model',
       dependsOn: [dep.body.id],
     });
-    expect(blocked.body.state).toBe('blocked');
+    expect(blocked.body.state).toBe('ready');
+    expect(blocked.body.openBlockerCount).toBe(1);
 
     const pinned = await server.api('PATCH', `/api/tasks/${blocked.body.id}`, { model: 'chosen-model' });
     expect(pinned.status).toBe(200);
-    expect(pinned.body.state).toBe('blocked'); // still blocked, just re-pointed
+    expect(pinned.body.state).toBe('ready'); // blockers are derived, just re-pointed
+    expect(pinned.body.openBlockerCount).toBe(1);
     expect(pinned.body.model).toBe('chosen-model');
     expect(pinned.body.overrides.model).toBe('chosen-model');
 

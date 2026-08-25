@@ -72,9 +72,57 @@ export interface LandBranchArgs {
   attributes?: Attributes;
 }
 
+/** Best-effort notification after a branch land has succeeded. `repoDir` is
+ * the workspace's persistent base repo checkout, never a task checkout. */
+export type PostLandHook = (args: Pick<LandBranchArgs, 'repoDir' | 'baseBranch'>) => void | Promise<void>;
+
+/**
+ * The repository default the post-land refresh decision compares against: the
+ * base repo's live symbolic HEAD — the same convention the whole-Epic land
+ * uses (`epic-land-coordinator.ts`). Falls back to the configured
+ * `origin/HEAD` only when that checkout is detached (a concurrent direct Run,
+ * issue #152); a detached non-clone therefore resolves `null` and no refresh
+ * fires, rather than guessing.
+ */
+export async function resolveRepositoryDefaultBranch(repoDir: string): Promise<string | null> {
+  return (await Git.symbolicBranch(repoDir)) ?? Git.defaultBranch(repoDir);
+}
+
+/**
+ * Build the post-land observer for default-branch advances. The resolver runs
+ * against the hook's `repoDir` — the workspace's persistent base repo — never
+ * the checkout a direct-mode land happens to run from, so a feature-branch
+ * land can't masquerade as a default-branch advance.
+ */
+export function defaultBranchPostLand(
+  refreshAfterDefaultBranchAdvance: (repoDir: string, defaultBranch: string) => Promise<void>,
+  resolveDefaultBranch: (repoDir: string) => Promise<string | null> = resolveRepositoryDefaultBranch,
+): PostLandHook {
+  return async ({ repoDir, baseBranch }) => {
+    const defaultBranch = await resolveDefaultBranch(repoDir);
+    if (defaultBranch !== baseBranch || defaultBranch === null) return;
+    await refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
+  };
+}
+
 export type LandBranchOutcome =
   | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
   | { ok: false; reason: 'conflict' | 'target-advanced' | 'fallback-pr-manual'; detail: string };
+
+/** Run the one shared success-only post-land hook around a branch land.
+ * `baseRepoDir` is the workspace's persistent base repo checkout, for the
+ * direct-mode case where the land's own `repoDir` is a task checkout parked on
+ * the task's branch — the hook's default-branch decision must resolve against
+ * the former. Omitted, `repoDir` already is the base repo. */
+export async function landBranchAndRunPostLand(
+  args: LandBranchArgs & { baseRepoDir?: string },
+  postLand: PostLandHook | undefined,
+  land: (args: LandBranchArgs) => Promise<LandBranchOutcome> = landBranch,
+): Promise<LandBranchOutcome> {
+  const outcome = await land(args);
+  if (outcome.ok) await postLand?.({ repoDir: args.baseRepoDir ?? args.repoDir, baseBranch: args.baseBranch });
+  return outcome;
+}
 
 /**
  * Land `branch` into `baseBranch` per the module contract. Never throws for an

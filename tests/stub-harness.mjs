@@ -67,6 +67,10 @@ let cancelRequested = false;
 // True while a session/prompt turn is in flight, so `_session/steering` can
 // tell "inject into the running turn" from "idle, reply promptRequired".
 let promptInFlight = false;
+// Set when `_session/steering` injects into the current turn; a scenario with
+// `waitForSteer: true` holds the turn open until this flips, so a steer test
+// never races the turn boundary.
+let steerInjectedThisTurn = false;
 
 async function handlePrompt(msg) {
   // Harmonic appends an "unattended" reminder (carrying taskId=<n>) to every
@@ -118,6 +122,7 @@ async function handlePrompt(msg) {
     scenario = { ...base, ...(turns[idx] ?? {}) };
   }
   promptInFlight = true;
+  steerInjectedThisTurn = false;
   const delayMs = scenario.delayMs ?? 5;
   cancelRequested = false;
 
@@ -144,6 +149,16 @@ async function handlePrompt(msg) {
     await sleep(delayMs);
     if (cancelRequested) break;
     notify('session/update', { sessionId: msg.params.sessionId, update });
+  }
+
+  // `waitForSteer: true` keeps the turn in flight until a `_session/steering`
+  // injection lands (bounded so a broken test still exits), making the
+  // mid-turn-steer test independent of scheduler timing.
+  if (scenario.waitForSteer) {
+    const deadline = Date.now() + 15_000;
+    while (!steerInjectedThisTurn && !cancelRequested && Date.now() < deadline) {
+      await sleep(10);
+    }
   }
 
   // Interrupted mid-turn (issue 14): complete the prompt with a cancelled
@@ -396,6 +411,7 @@ rl.on('line', (line) => {
           sessionId: msg.params.sessionId,
           update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `steer-injected:${stext}` } },
         });
+        steerInjectedThisTurn = true;
         send({ jsonrpc: '2.0', id: msg.id, result: { outcome: 'injected' } });
       } else {
         send({ jsonrpc: '2.0', id: msg.id, result: { outcome: 'promptRequired', reason: 'noRunningTurn' } });

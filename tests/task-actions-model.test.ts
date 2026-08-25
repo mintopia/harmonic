@@ -26,10 +26,6 @@ describe('taskActions', () => {
     expect(taskActions('running')).toEqual(['complete', 'cancel']);
   });
 
-  it('lets a blocked task be deleted, edited (re-point its model), or cancelled', () => {
-    expect(taskActions('blocked')).toEqual(['delete', 'edit', 'cancel']);
-  });
-
   it('offers delete for completed (no other action), and delete plus uncancel for cancelled', () => {
     expect(taskActions('completed')).toEqual(['delete']);
     expect(taskActions('cancelled')).toEqual(['delete', 'uncancel']);

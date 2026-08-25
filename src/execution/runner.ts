@@ -63,7 +63,7 @@ import {
 } from '../domain/guardrail-tool-timeout.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
-import { runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
+import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import {
   combineVerdicts,
   dispositionAfterNote,
@@ -88,8 +88,12 @@ import {
   type BranchClassification,
 } from '../domain/branch-recovery.js';
 import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
-import { landBranch } from './branch-landing.js';
-import { parseIntegrationBranch } from './epic-integration.js';
+import { landBranchAndRunPostLand, type PostLandHook } from './branch-landing.js';
+import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
+import type {
+  EpicRefreshResolveDispatchOutcome,
+  EpicRefreshTarget,
+} from './epic-refresh-coordinator.js';
 import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
@@ -216,14 +220,15 @@ export interface RunnerOptions {
   getWorkspace?: (
     workspaceId: number | null,
   ) => Promise<
-    | Pick<
+    | (Pick<
         WorkspaceRow,
         | 'guardrailBudget'
         | 'guardrailProgress'
         | 'verificationCommand'
         | 'verificationCritic'
         | 'verificationAutoAccept'
-      >
+      > &
+        Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
   >;
   /** Lands a native auto-accept Run (issue #138): the verifier passed and the
@@ -272,6 +277,7 @@ export interface RunnerOptions {
    * integration branch — the hand-started counterpart to the Auto-Runner's pick
    * gate. Async (the branch-existence check hits git). Absent → not gated. */
   epicBaseNotReady?: (task: TaskRow) => boolean | Promise<boolean>;
+  postLand?: PostLandHook;
 }
 
 interface Workspace {
@@ -470,6 +476,10 @@ type TurnOutcome =
   // `detail` is the rebase conflict surfaced to that turn as feedback.
   | { kind: 'merge-train-heal'; detail: string };
 
+/** Wall-clock bound on one integration-refresh corrective turn (issue #315) —
+ * a merge-conflict resolution, so double the critic's read-only bound. */
+const EPIC_REFRESH_RESOLVE_TIMEOUT_MS = 10 * 60 * 1000;
+
 export class Runner {
   private readonly runOperations = new Map<number, Operation>();
   private active = new Map<number, ActiveRun>(); // by run id
@@ -487,6 +497,7 @@ export class Runner {
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
   private readonly autoAcceptLand: RunnerOptions['autoAcceptLand'];
+  private readonly postLand: RunnerOptions['postLand'];
   /** The single-writer merge train an Epic member's Run lands through (issue
    * #163); undefined on a server with no parallel-Epic execution. */
   private readonly mergeTrain: MergeTrainCoordinator | undefined;
@@ -570,6 +581,7 @@ export class Runner {
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
     this.autoAcceptLand = options.autoAcceptLand;
+    this.postLand = options.postLand;
     this.mergeTrain = options.mergeTrain;
     this.gitBreaker = options.gitBreaker;
     this.epicBaseNotReady = options.epicBaseNotReady;
@@ -1845,14 +1857,14 @@ export class Runner {
         });
         return 'escalate';
       }
-      const outcome = await landBranch({
+      const outcome = await landBranchAndRunPostLand({
         repoDir: dir,
         baseBranch: plan.baseBranch,
         branch: plan.landCommit,
         leaseHeld: true,
         parent,
         attributes: { 'task.id': task.id, 'run.id': run.id },
-      });
+      }, this.postLand);
       if (!outcome.ok) {
         record('lifecycle', { event: 'recovery-landing-failed', reason: outcome.detail });
         return 'escalate';
@@ -1948,14 +1960,20 @@ export class Runner {
       if (currentBase !== start.startCommit) {
         return await reject('branch-diverged', `intended branch '${start.startBranch}' advanced from the recorded start commit`);
       }
-      const outcome = await landBranch({
+      // The post-land default-branch decision must resolve against the
+      // workspace's persistent base repo, not this land's own checkout — a
+      // direct-mode land runs from the task checkout parked on its start
+      // branch, which would make every land look like a default-branch advance.
+      const baseRepoDir = (await this.getWorkspace?.(task.workspaceId))?.workingDir;
+      const outcome = await landBranchAndRunPostLand({
         repoDir: dir,
+        ...(baseRepoDir !== undefined ? { baseRepoDir } : {}),
         baseBranch: start.startBranch,
         branch: candidateOid,
         leaseHeld: true,
         parent,
         attributes: { 'task.id': task.id, 'run.id': run.id },
-      });
+      }, this.postLand);
       if (!outcome.ok) {
         return await reject('land-failed', outcome.detail);
       }
@@ -2229,6 +2247,137 @@ export class Runner {
     const run = await this.runStore.get(member.runId);
     const rowId = await this.enqueueReMerge(run, `run-${member.runId}`);
     if (rowId !== null) this.pendingMemberReMerge.set(member.runId, rowId);
+  }
+
+  /**
+   * Dispatch the bounded corrective turn for an integration refresh (issue
+   * #315). The conflict is between the default branch and `epic/<ref>` itself
+   * — no member's worktree can resolve it — so the turn operates on the
+   * integration branch: check `epic/<ref>` out into a dedicated worktree,
+   * reproduce the conflicted merge of the default branch there (markers +
+   * `MERGE_HEAD` left in place), and drive one agent turn against that
+   * worktree to resolve and commit it. A running member is still required —
+   * it supplies the harness/model the turn runs on; with none, escalate.
+   *
+   * Called inside the coordinator's merge-train slot for `epic/<ref>`, so the
+   * worktree + reproduction here are race-free against member landings, and
+   * every pre-turn failure returns `escalated` synchronously — the
+   * coordinator's `resolving` flag is only set once this returns
+   * `dispatched`. The turn itself must NOT run under that slot (it would
+   * stall other members' landings for the whole agent turn — the same reason
+   * {@link enqueueReMergeForMember} returns on enqueue), so it is chained as
+   * the branch's NEXT train slot before dispatch returns: member landings
+   * queue behind it rather than observing the checked-out integration branch
+   * mid-resolution and falsely escalating. Once the turn's worktree is
+   * removed, {@link runEpicRefreshResolveTurn} re-runs the refresh (`retry`):
+   * a resolved merge completes it, an unresolved one re-conflicts into the
+   * coordinator's still-conflicts-after-corrective-turn escalation — either
+   * way the `resolving` flag settles.
+   */
+  async enqueueEpicRefreshResolution(
+    target: EpicRefreshTarget,
+    detail: string,
+    escalate: (epicRef: number, reason: string) => void | Promise<void>,
+    retry: () => Promise<unknown>,
+  ): Promise<EpicRefreshResolveDispatchOutcome> {
+    const branch = integrationBranchName(target.ref);
+    const escalated = async (reason: string): Promise<EpicRefreshResolveDispatchOutcome> => {
+      await escalate(target.ref, reason);
+      return { status: 'escalated', reason };
+    };
+    const host = (await this.taskService.list({ state: 'running' })).find((task) => task.baseBranch === branch);
+    if (!host) {
+      return escalated(`no active Epic member is available to resolve refresh conflict for ${branch}: ${detail}`);
+    }
+    const harness = this.getConfig().harnesses[host.harness as keyof AppConfig['harnesses']];
+    if (!harness) {
+      return escalated(`harness '${host.harness}' is not configured to run the refresh corrective turn for ${branch}: ${detail}`);
+    }
+
+    mkdirSync(this.worktreesDir, { recursive: true });
+    const worktreePath = join(this.worktreesDir, `epic-refresh-${target.ref}`);
+    try {
+      await Git.addWorktreeCheckout(target.repoDir, worktreePath, branch);
+    } catch (err) {
+      return escalated(`could not check out ${branch} for the refresh corrective turn (${String(err)}); refresh conflict: ${detail}`);
+    }
+    let reproduced: { ok: boolean; detail?: string };
+    try {
+      reproduced = await Git.mergeLeavingConflict(worktreePath, target.defaultBranch);
+    } catch (err) {
+      await Git.removeWorktree(target.repoDir, worktreePath).catch(() => {});
+      return escalated(`could not reproduce the refresh conflict on ${branch} (${String(err)}); refresh conflict: ${detail}`);
+    }
+
+    const turn = () =>
+      this.runEpicRefreshResolveTurn({
+        target,
+        branch,
+        worktreePath,
+        // A clean reproduction means the conflict evaporated (the branch or
+        // default moved since the land observed it) and the merge is already
+        // committed — skip the turn, the retry below completes the refresh.
+        conflicted: !reproduced.ok,
+        conflictDetail: reproduced.detail ?? detail,
+        harness,
+        harnessId: host.harness,
+        model: host.model,
+      });
+    void (this.mergeTrain ? this.mergeTrain.runOnIntegrationBranch(branch, turn) : turn())
+      .then(() => retry())
+      .catch(async (err) => {
+        await escalate(target.ref, `refresh re-attempt after the corrective turn failed for ${branch}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    return { status: 'dispatched' };
+  }
+
+  /**
+   * One bounded agent turn resolving a reproduced default-branch merge
+   * conflict in the `epic/<ref>` worktree (issue #315). Spoken over the same
+   * one-shot ACP drive the critic uses ({@link createAcpCriticDrive} /
+   * the injectable `criticDrive` seam) — a fresh contained process, no
+   * tracker credentials, no Harmonic MCP — since there is no builder Session
+   * to host it: the conflict belongs to the Epic, not to any member's Run.
+   * Never throws for a failed turn: the worktree is force-removed either way
+   * (discarding an unresolved half-merge), and the caller's `retry` re-lands —
+   * a committed resolution completes the refresh, anything else re-conflicts
+   * and escalates through the coordinator's one-turn bound.
+   */
+  private async runEpicRefreshResolveTurn(args: {
+    target: EpicRefreshTarget;
+    branch: string;
+    worktreePath: string;
+    conflicted: boolean;
+    conflictDetail: string;
+    harness: HarnessConfig;
+    harnessId: string;
+    model: string;
+  }): Promise<void> {
+    try {
+      if (args.conflicted) {
+        const drive = this.criticDrive ?? createAcpCriticDrive();
+        const prompt =
+          `## Epic integration refresh — merge conflict resolution\n` +
+          `Merging \`${args.target.defaultBranch}\` into the Epic integration branch \`${args.branch}\` conflicted:\n${args.conflictDetail}\n\n` +
+          `This worktree has \`${args.branch}\` checked out with that merge in progress — conflict markers are present. ` +
+          `Resolve the conflicts so the result keeps both \`${args.branch}\`'s work and \`${args.target.defaultBranch}\`'s changes, ` +
+          `then complete the merge (\`git add -A\` and \`git commit --no-edit\`). ` +
+          `Do not create or switch branches, do not push, and do not change anything beyond what resolving this merge requires.`;
+        await drive.run({
+          harness: args.harness,
+          harnessId: args.harnessId,
+          model: args.model,
+          cwd: args.worktreePath,
+          prompt,
+          timeoutMs: EPIC_REFRESH_RESOLVE_TIMEOUT_MS,
+        });
+      }
+    } catch {
+      // The turn failed or timed out; the caller's retry re-observes the
+      // still-unmerged default branch and escalates through the coordinator.
+    } finally {
+      await Git.removeWorktree(args.target.repoDir, args.worktreePath).catch(() => {});
+    }
   }
 
   /**

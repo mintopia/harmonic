@@ -84,7 +84,7 @@ describe('terminal-state visibility', () => {
     // is satisfied → stays hidden. Matches the domain: unblock only on `completed`.
     const tasks = [
       task(1, 'cancelled'),
-      task(2, 'blocked', { dependsOn: [1] }),
+      task(2, 'ready', { dependsOn: [1] }),
       task(3, 'completed'),
       task(4, 'ready', { dependsOn: [3] }),
     ];
@@ -124,10 +124,10 @@ describe('dependency edges', () => {
     expect(graphEdges(visible)).toEqual([]);
   });
 
-  it('keeps the blocking edge from a cancelled/failed blocker to an active blocked Task', () => {
-    // Regression: a cancelled blocker keeps its dependent `blocked` (domain), so the
+  it('keeps the blocking edge from a cancelled/failed blocker to an active dependent', () => {
+    // Regression: a cancelled blocker keeps its dependent blocked by the edge, so the
     // graph must still draw the edge rather than hiding the blocker and reading unblocked.
-    const all = [task(1, 'cancelled'), task(2, 'blocked', { dependsOn: [1] })];
+    const all = [task(1, 'cancelled'), task(2, 'ready', { dependsOn: [1] })];
     const visible = visibleTasks(all, false);
     expect(graphEdges(visible)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
   });

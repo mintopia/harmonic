@@ -12,7 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
-import { landBranch } from '../execution/branch-landing.js';
+import { defaultBranchPostLand, landBranchAndRunPostLand, type PostLandHook } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
@@ -338,6 +338,21 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
   const landingJournal = new LandingJournalStore(asyncDb);
   let runnerRef: Runner | undefined;
+  let trackerManagerRef: TrackerPollerManager | undefined;
+  const pendingPostLand: Parameters<PostLandHook>[0][] = [];
+  const postLand: PostLandHook = defaultBranchPostLand(
+    async (repoDir, defaultBranch) => {
+      try {
+      if (!trackerManagerRef) {
+        pendingPostLand.push({ repoDir, baseBranch: defaultBranch });
+        return;
+      }
+      await trackerManagerRef.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
+      } catch (err) {
+        logger.error(`post-land Epic refresh failed: ${String(err)}`);
+      }
+    },
+  );
   const reviewSettle = new RunSettleCoordinator(
     runs,
     tasks,
@@ -365,7 +380,16 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // never silently re-run. Finally, every Work Context lease a crash left
   // behind is reconciled (issue #123): released if its context is provably
   // clean, else flipped to `suspect` — never left silently held by a dead owner.
-  const crashRecovery = new CrashRecoveryCoordinator(runs, tasks, leases, reviewSettle, landing, landingJournal, new TurnQueueStore(asyncDb));
+  const crashRecovery = new CrashRecoveryCoordinator(
+    runs,
+    tasks,
+    leases,
+    reviewSettle,
+    landing,
+    landingJournal,
+    new TurnQueueStore(asyncDb),
+    { postLand },
+  );
   await crashRecovery.reconcile();
   // A fresh process is executing nothing, so any Task still `running` was
   // orphaned by the restart — fail it loudly (re-queueable, with feedback).
@@ -415,7 +439,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Auto-drive afk mirrored Tasks (issue #33): the Drive Prompt + completion /
   // failure decisions. Its {url} comes from the Task's Workspace poll loop's
   // last scan; the manager is built below, so bind it late through this holder.
-  let trackerManagerRef: TrackerPollerManager | undefined;
   const autoDrive = new AutoDrive(
     () => configStore.get(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
@@ -446,7 +469,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         // for the checked-out (worktree-mode base) path — `landBranch` still
         // falls back to PR/manual if that checkout has uncommitted operator work.
         apply: async () => {
-          const outcome = await landBranch({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true });
+          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true }, postLand);
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
@@ -487,6 +510,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // ref (like the Auto-Runner gate), so a hand-started member is blocked
     // identically to an auto-picked one.
     epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
+    postLand,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
@@ -539,7 +563,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     landing,
     async (task, run) => {
       if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
-      const outcome = await landBranch({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, leaseHeld: true });
+      const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, leaseHeld: true }, postLand);
       return outcome.ok ? { ok: true } : { ok: false, detail: outcome.detail };
     },
     landingEffectsFor,
@@ -630,8 +654,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => configStore.get(),
     epicOperations,
     scheduler,
+    undefined,
+    mergeTrain,
+    (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
+    postLand,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
+  for (const landed of pendingPostLand.splice(0)) await postLand(landed);
   scheduler.register({
     name: 'Epic reconcile',
     intervalMs: 60_000,

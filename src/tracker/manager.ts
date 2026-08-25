@@ -1,6 +1,6 @@
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
 import type { AppConfig } from '../config.js';
-import type { TaskService } from '../domain/tasks.js';
+import type { TaskService, TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import type { ResolvedTracker, Ticket, TrackerAdapter } from './adapter.js';
 import { resolveTracker, resolveTrackerAdapter } from './adapter.js';
@@ -12,6 +12,13 @@ import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/
 import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
+import {
+  EpicRefreshCoordinator,
+  type EpicRefreshResolveDispatchOutcome,
+  type EpicRefreshTarget,
+} from '../execution/epic-refresh-coordinator.js';
+import type { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
+import type { PostLandHook } from '../execution/branch-landing.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
@@ -77,6 +84,16 @@ export class TrackerPollerManager {
     /** Cooperative-yield injection for the sync sweep over a large Workspace
      * set (issue #200); default yields on the standard wall-clock budget. */
     private readonly opts: { yieldOptions?: YieldOptions } = {},
+    private readonly mergeTrain?: MergeTrainCoordinator,
+    private readonly dispatchEpicRefreshResolution: (
+      target: EpicRefreshTarget,
+      detail: string,
+      escalate: (epicRef: number, reason: string) => void,
+      /** Re-runs the refresh once the corrective turn's worktree is gone — a
+       * resolved merge completes it, an unresolved one escalates (issue #315). */
+      retry: () => Promise<unknown>,
+    ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
+    private readonly postLand?: PostLandHook,
   ) {}
 
   /**
@@ -144,8 +161,22 @@ export class TrackerPollerManager {
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
         escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic land escalated: ${reason}`),
         operations: this.epicOperations,
+        ...(this.postLand ? { postLand: this.postLand } : {}),
       });
       epics.attachLandTrigger(epicLand);
+    }
+    if (this.mergeTrain) {
+      const escalateRefresh = (ref: number, reason: string): void => {
+        if (epicLand) epicLand.escalateRefresh(ref, reason);
+        else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
+      };
+      const refresh: EpicRefreshCoordinator = new EpicRefreshCoordinator({
+        train: this.mergeTrain,
+        dispatchResolve: (target, detail) =>
+          this.dispatchEpicRefreshResolution(target, detail, escalateRefresh, () => refresh.refresh(target)),
+        escalate: escalateRefresh,
+      });
+      epics.attachRefreshTrigger(refresh);
     }
     // Bind this Workspace's persistent feature-id index so local-markdown feature
     // bases stay small and stable across scans (see TaskService.mdFeatureIndex).
@@ -212,23 +243,38 @@ export class TrackerPollerManager {
     return (await this.entryFor(task.workspaceId)?.epics.memberBaseNotReady(task)) ?? false;
   }
 
+  /** Notify the one Workspace whose default branch just advanced. */
+  async refreshAfterDefaultBranchAdvance(workingDir: string, defaultBranch: string): Promise<void> {
+    const entry = [...this.entries.values()].find((candidate) => candidate.sig.startsWith(`${workingDir}|`));
+    if (entry) await entry.epics.refreshAfterDefaultBranchAdvance(defaultBranch);
+  }
+
   /** Every Epic derived from this Workspace's persisted tracker facts. */
   async listEpics(workspaceId: number): Promise<Epic[]> {
     const entry = this.entries.get(workspaceId);
-    const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
-    const derivedEpics = deriveEpics(tickets);
+    const derivedEpics = deriveEpics(tickets, this.readinessByRef(mirrored));
     return Promise.all(derivedEpics.map((derived) => this.composeOne(entry, derived, tickets, mirrored)));
   }
 
   /** One Epic derived by ref from this Workspace's persisted tracker facts. */
   async epicDetail(workspaceId: number, epicRef: number): Promise<Epic | null> {
     const entry = this.entries.get(workspaceId);
-    const mirrored = (await this.tasks.list({ workspaceId })).filter((task) => task.origin === 'mirrored');
+    const mirrored = (await this.tasks.listWithDeps({ workspaceId })).filter((task) => task.origin === 'mirrored');
     const tickets = await persistedTickets(mirrored, await this.tasks.listTrackerContainers(workspaceId));
-    const derived = deriveEpics(tickets).find((e) => e.ref === epicRef);
+    const derived = deriveEpics(tickets, this.readinessByRef(mirrored)).find((e) => e.ref === epicRef);
     if (!derived) return null;
     return this.composeOne(entry, derived, tickets, mirrored);
+  }
+
+  /** Frontier eligibility belongs to the mirrored Task, where Blocker edges are persisted. */
+  private readinessByRef(mirrored: TaskWithDeps[]): Map<number, { agentWorkable: boolean }> {
+    const readinessByRef = new Map<number, { agentWorkable: boolean }>();
+    for (const task of mirrored) {
+      if (task.trackerRef !== null) readinessByRef.set(task.trackerRef, { agentWorkable: task.agentWorkable });
+    }
+    return readinessByRef;
   }
 
   /** Shared plumbing for {@link listEpics}/{@link epicDetail}: match member

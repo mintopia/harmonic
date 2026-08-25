@@ -51,16 +51,20 @@ describe('linked re-attempts', () => {
     expect(orig.body.reattempts).toContain(res.body.id);
   });
 
-  it('copies dependencies and is blocked when a dependency is unmet', async () => {
+  it('copies dependencies and derives it as not agent-workable when a dependency is unmet', async () => {
     const dep = (await server.api('POST', '/api/tasks', { prompt: 'the dependency', state: 'draft' })).body;
     const original = (await server.api('POST', '/api/tasks', { prompt: 'needs the dep', dependsOn: [dep.id] })).body;
-    expect(original.state).toBe('blocked');
+    expect(original.state).toBe('ready');
+    expect(original.openBlockerCount).toBe(1);
+    expect(original.agentWorkable).toBe(false);
     await server.api('POST', `/api/tasks/${original.id}/cancel`);
 
     const res = await server.api('POST', `/api/tasks/${original.id}/reattempt`, {});
     expect(res.status).toBe(201);
     expect(res.body.dependsOn).toContain(dep.id);
-    expect(res.body.state).toBe('blocked');
+    expect(res.body.state).toBe('ready');
+    expect(res.body.openBlockerCount).toBe(1);
+    expect(res.body.agentWorkable).toBe(false);
     expect(res.body.reattemptOf).toBe(original.id);
     // Feedback is optional — omitted means none.
     expect(res.body.feedback).toBeNull();
@@ -69,7 +73,9 @@ describe('linked re-attempts', () => {
   it("rewires the original's dependents onto the re-attempt so the pipeline continues", async () => {
     const a = (await server.api('POST', '/api/tasks', { prompt: 'produces the artifact', state: 'draft' })).body;
     const b = (await server.api('POST', '/api/tasks', { prompt: 'consumes the artifact', dependsOn: [a.id] })).body;
-    expect(b.state).toBe('blocked');
+    expect(b.state).toBe('ready');
+    expect(b.openBlockerCount).toBe(1);
+    expect(b.agentWorkable).toBe(false);
     await server.api('POST', `/api/tasks/${a.id}/cancel`);
 
     const aPrime = (await server.api('POST', `/api/tasks/${a.id}/reattempt`, {})).body;

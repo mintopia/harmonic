@@ -300,8 +300,15 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
 
     now = 100;
     autoRunner.poke();
-    await vi.waitFor(async () => expect(await tasks.get(task.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true }));
-    expect(autoRunner.skipReasonFor(task.id)).toBe('hitl, escalated to human');
+    // The escalate DB write lands mid-pass; the terminal 'hitl, escalated to
+    // human' reason is only recorded by the fill loop's SECOND refresh pass.
+    // Poll DB state and skip reason together so the assertion can't observe
+    // the window between them (the transient 'integration branch missing,
+    // escalated to human' reason, or a mid-rebuild empty map).
+    await vi.waitFor(async () => {
+      expect(await tasks.get(task.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true });
+      expect(autoRunner.skipReasonFor(task.id)).toBe('hitl, escalated to human');
+    }, { timeout: 5000 });
     expect(started).toEqual([]);
   });
 
@@ -398,6 +405,20 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     expect((await tasks.get(blocked.id)).state).toBe('ready'); // stays on the frontier
     expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (running)`);
     expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
+  });
+
+  it('reports only open blocker edges in a ready task dependency diagnostic', async () => {
+    const completedBlocker = await directTask(freshDir(), 'completed blocker');
+    await tasks.setState(completedBlocker.id, 'completed');
+    const openBlocker = await tasks.create({ prompt: 'open blocker', workingDir: freshDir() });
+    const dependent = await directTask(freshDir(), 'dependent');
+    await tasks.addDependency(dependent.id, completedBlocker.id);
+    await tasks.addDependency(dependent.id, openBlocker.id);
+
+    const { ar } = build();
+    ar.poke();
+
+    await vi.waitFor(() => expect(ar.skipReasonFor(dependent.id)).toBe(`blocked-by #${openBlocker.id}`));
   });
 
   it('still skips when the occupying Run sits in awaiting-review — the lease is gone but the work is not', async () => {

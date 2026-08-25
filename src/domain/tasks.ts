@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
-import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
+import type { AsyncDbHandle } from '../db/async.js';
 import {
   tasks,
   taskDependencies,
@@ -97,8 +97,12 @@ export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 export interface TaskWithDeps extends TaskRow {
   dependsOn: number[];
   dependents: number[];
-  /** blocked, and at least one dependency is failed or cancelled. */
+  /** Legacy diagnostic retained for clients that distinguish failed blockers. */
   blockedOnFailed: boolean;
+  /** Number of blocker edges whose blocker has not completed. */
+  openBlockerCount: number;
+  /** A ticket the Auto-Runner may work: opt-in label (when mirrored) and no open Blockers. */
+  agentWorkable: boolean;
   /** Task ids that re-attempt this one (reverse of `reattemptOf`). */
   reattempts: number[];
   /** The four defaults as stored (`null` ⇒ inherited): lets the editor tell an
@@ -114,14 +118,13 @@ export interface OrderedEligibleTask extends TaskRow {
 /** States an operator may edit a task in. blocked is editable so its defaults
  * (model, harness, …) can be changed while it waits on a dependency (issue: a
  * blocked ticket often needs its model re-pointed before it ever runs). */
-const EDITABLE_STATES: TaskState[] = ['draft', 'ready', 'blocked'];
+const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
 /** Finished states — the only ones a task can be re-attempted from (a
  * non-terminal original could still run, so cloning it would duplicate work). */
 const TERMINAL_STATES: TaskState[] = ['completed', 'failed', 'cancelled'];
 /** States a task can be cancelled from — everything not terminal. */
 const CANCELLABLE_STATES: TaskState[] = [
   'draft',
-  'blocked',
   'ready',
   'running',
   'awaiting-review',
@@ -242,6 +245,12 @@ export class TaskService {
     };
   }
 
+  private agentWorkable(task: TaskRow, openBlockerCount: number): boolean {
+    if (openBlockerCount > 0) return false;
+    if (task.origin !== 'mirrored') return true;
+    return task.trackerLabels === null ? task.drive !== 'hitl' : task.trackerLabels.includes('ready-for-agent');
+  }
+
   /** The raw stored row (four defaults nullable); TaskService-internal. */
   private async getRaw(id: number): Promise<RawTaskRow> {
     const row = await this.db.read((db) => db.select().from(tasks).where(eq(tasks.id, id)).get());
@@ -276,8 +285,7 @@ export class TaskService {
     // the insert — which would strand the new Task `blocked` with no re-derive
     // trigger, since its edges don't exist yet — can't happen here either.
     const row = await this.db.write(async (db) => {
-      const state: TaskState =
-        input.state === 'draft' ? 'draft' : (await this.depsUnmetVia(db, dependsOn)) ? 'blocked' : 'ready';
+      const state: TaskState = input.state === 'draft' ? 'draft' : 'ready';
       // Store the operator's picks raw: an omitted default is `null` ⇒ inherit,
       // resolved on every read. Working Directory is not inheritable — it is Task
       // identity — so it is snapshotted from the Workspace at creation.
@@ -540,16 +548,12 @@ export class TaskService {
     return rows;
   }
 
-  /**
-   * Read the active backlog from the local database and order it by explicit
-   * priority, topological rank, then age. It deliberately includes `blocked`
-   * Tasks: a consumer choosing runnable work must skip non-`ready` rows.
-   */
+  /** Read the active backlog and derive open blockers at pick time. */
   async orderedEligibleWork(workspaceId?: number): Promise<OrderedEligibleTask[]> {
     const rows = await this.list(workspaceId === undefined ? {} : { workspaceId });
     const candidates: TaskRow[] = [];
     await forEachYielding(rows, (task) => {
-      if (task.state === 'ready' || task.state === 'blocked') candidates.push(task);
+      if (task.state === 'ready') candidates.push(task);
     });
     if (candidates.length === 0) return [];
 
@@ -562,8 +566,8 @@ export class TaskService {
     );
     const blockersByTaskId = new Map<number, number[]>();
     await forEachYielding(dependencyRows, (dependency) => {
-      const blockers = blockersByTaskId.get(dependency.taskId);
-      if (blockers) blockers.push(dependency.dependsOnId);
+      const blockerIds = blockersByTaskId.get(dependency.taskId);
+      if (blockerIds) blockerIds.push(dependency.dependsOnId);
       else blockersByTaskId.set(dependency.taskId, [dependency.dependsOnId]);
     });
     const blockerIds: number[] = [];
@@ -590,9 +594,11 @@ export class TaskService {
     });
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
+      const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
+      if (!this.agentWorkable(task, blockedBy.length)) return;
       nodes.push({
         ...task,
-        blockedBy: (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id)),
+        blockedBy,
       });
     });
 
@@ -646,13 +652,13 @@ export class TaskService {
     return await this.changed(row!);
   }
 
-  /** Promote a draft to ready (or blocked, when dependencies are unmet). */
+  /** Promote a draft to ready. Blockers are derived at read and pick time. */
   async promote(id: number): Promise<TaskRow> {
     const task = await this.get(id);
     if (task.state !== 'draft') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only drafts can be promoted to ready`);
     }
-    return this.setState(id, (await this.hasUnmet(await this.dependsOn(id))) ? 'blocked' : 'ready');
+    return this.setState(id, 'ready');
   }
 
   /**
@@ -667,7 +673,7 @@ export class TaskService {
     }
     const trimmed = feedback?.trim();
     const patch: Partial<TaskRow> = {
-      state: (await this.hasUnmet(await this.dependsOn(id))) ? 'blocked' : 'ready',
+      state: 'ready',
       updatedAt: Date.now(),
       // Default: clear any stale re-attempt feedback (set below when supplied).
       feedback: null,
@@ -698,7 +704,7 @@ export class TaskService {
 
   /**
    * Return a cancelled task to the queue in place (issue #57): ready, or
-   * blocked when it has unmet dependencies — the inverse of {@link cancel},
+   * with blockers derived at read time — the inverse of {@link cancel},
    * and the transition behind dragging a card out of the Cancelled column.
    */
   async uncancel(id: number): Promise<TaskRow> {
@@ -706,7 +712,7 @@ export class TaskService {
     if (task.state !== 'cancelled') {
       throw new DomainError('invalid_state', `task ${id} is ${task.state}; only cancelled tasks can be uncancelled`);
     }
-    return this.setState(id, (await this.hasUnmet(await this.dependsOn(id))) ? 'blocked' : 'ready');
+    return this.setState(id, 'ready');
   }
 
   /**
@@ -780,7 +786,7 @@ export class TaskService {
           priority: original.priority,
           // A re-attempt targets the same base branch as the original (issue #157).
           baseBranch: original.baseBranch,
-          state: (await this.depsUnmetVia(db, dependsOn)) ? 'blocked' : 'ready',
+          state: 'ready',
           reattemptOf: originalId,
           feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
           continuationChoice: continuation ?? null,
@@ -934,16 +940,11 @@ export class TaskService {
     this.onChanged(task);
     const notification = STATE_NOTIFICATIONS[state];
     if (notification) this.onNotify(notification, task);
-    // Completion is what satisfies dependents (accepted, not merely
-    // finished) — unblock any whose last unmet dependency this was. The cascade
-    // re-derives each dependent in its own queued op (idempotent under a
-    // concurrent sibling completion), so it runs after this write, not inside it.
+    // Completion changes each dependent's derived blocker count. There is no
+    // stored blocked state to flip, but live clients still need a fresh DTO.
     if (state === 'completed') {
       for (const dependentId of await this.dependents(id)) {
-        const dependent = await this.get(dependentId);
-        if (dependent.state === 'blocked' && !(await this.hasUnmet(await this.dependsOn(dependentId)))) {
-          await this.setState(dependentId, 'ready');
-        }
+        this.onChanged(await this.get(dependentId));
       }
     }
     return task;
@@ -1045,25 +1046,12 @@ export class TaskService {
     await this.rederiveBlocked(taskId);
   }
 
-  /** Unmet-dependency check on a given executor — shared so `create`/`reattempt`
-   * can run it inside their write unit (on the write's `db`) while the standalone
-   * {@link hasUnmet} runs it as a concurrent read. */
-  private async depsUnmetVia(db: AsyncDb, depIds: number[]): Promise<boolean> {
-    if (depIds.length === 0) return false;
-    const states = await db.select({ state: tasks.state }).from(tasks).where(inArray(tasks.id, depIds)).all();
-    return states.length < depIds.length || states.some((r) => r.state !== 'completed');
-  }
-
-  private hasUnmet(depIds: number[]): Promise<boolean> {
-    return this.db.read((db) => this.depsUnmetVia(db, depIds));
-  }
-
   async addDependency(taskId: number, dependsOnId: number): Promise<TaskWithDeps> {
     const task = await this.get(taskId);
     this.assertOperatorEditable(task);
     await this.get(dependsOnId);
-    if (!EDITABLE_STATES.includes(task.state) && task.state !== 'blocked') {
-      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft, ready, or blocked tasks`);
+    if (!EDITABLE_STATES.includes(task.state)) {
+      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; dependencies can only change on draft or ready tasks`);
     }
     if (taskId === dependsOnId || (await this.reaches(dependsOnId, taskId))) {
       throw new DomainError('conflict', `dependency ${taskId} → ${dependsOnId} would create a cycle`);
@@ -1202,12 +1190,14 @@ export class TaskService {
   async withDeps(task: TaskRow): Promise<TaskWithDeps> {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
+    const openBlockerCount = depStates.filter((state) => state !== 'completed').length;
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
-      blockedOnFailed:
-        task.state === 'blocked' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
+      blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
+      openBlockerCount,
+      agentWorkable: this.agentWorkable(task, openBlockerCount),
       reattempts: await this.reattempts(task.id),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
@@ -1279,8 +1269,10 @@ export class TaskService {
     const dependsOn = new Map(ids.map((id) => [id, [] as number[]]));
     const dependents = new Map(ids.map((id) => [id, [] as number[]]));
     const failedDependencies = new Set<number>();
+    const openBlockerCounts = new Map(ids.map((id) => [id, 0]));
     for (const edge of dependencyRows) {
       dependsOn.get(edge.taskId)?.push(edge.dependsOnId);
+      if (edge.state !== 'completed') openBlockerCounts.set(edge.taskId, (openBlockerCounts.get(edge.taskId) ?? 0) + 1);
       if (edge.state === 'failed' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
@@ -1292,7 +1284,9 @@ export class TaskService {
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
-      blockedOnFailed: task.state === 'blocked' && failedDependencies.has(task.id),
+      blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
+      openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
+      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0),
       reattempts: reattempts.get(task.id) ?? [],
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
@@ -1315,12 +1309,9 @@ export class TaskService {
     return false;
   }
 
-  /** blocked ⇄ ready, re-derived after a dependency edit. */
+  /** Blocker changes only emit a fresh derived view; state never records blocked-ness. */
   private async rederiveBlocked(taskId: number): Promise<void> {
-    const task = await this.get(taskId);
-    const unmet = await this.hasUnmet(await this.dependsOn(taskId));
-    if (task.state === 'ready' && unmet) await this.setState(taskId, 'blocked');
-    else if (task.state === 'blocked' && !unmet) await this.setState(taskId, 'ready');
+    this.onChanged(await this.get(taskId));
   }
 
 }

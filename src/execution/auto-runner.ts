@@ -130,9 +130,12 @@ export class AutoRunner {
   /**
    * Why a Task was not picked on the most recent scheduler pass, keyed by
    * Task id. Rebuilt from the local queue each pass, so the API reports the
-   * condition holding now instead of a stale scheduling decision.
+   * condition holding now instead of a stale scheduling decision. The rebuild
+   * populates a fresh map and swaps it in whole: the pass yields the event
+   * loop while it works, so an in-place clear-then-repopulate would let a
+   * concurrent API read observe a half-built map (skipReason flickering null).
    */
-  private readonly schedulerSkipReasons = new Map<number, string>();
+  private schedulerSkipReasons = new Map<number, string>();
 
   /** Assigned Epic bases that were missing on the preceding scheduler pass.
    * A null base is still awaiting its first reconcile and remains transient;
@@ -316,52 +319,63 @@ export class AutoRunner {
     ceiling: number;
     workspacesById: Map<number, WorkspaceRow>;
   }): Promise<void> {
-    const [all, ordered, running, runningByWorkspace] = await Promise.all([
+    const [all, readyWithDeps, running, runningByWorkspace] = await Promise.all([
       this.taskService.list(),
-      this.taskService.orderedEligibleWork(),
+      // Dependency details are only needed for ready tasks that may need a
+      // blocker diagnostic. Keep the all-state scan below cheap: it also feeds
+      // Work Context occupancy, which includes running and review tasks.
+      this.taskService.listWithDeps({ state: 'ready' }),
       this.runStore.countRunning(),
       this.runStore.countRunningByWorkspace(),
     ]);
-    const orderedById = new Map<number, OrderedEligibleTask>();
-    await forEachYielding(ordered, (task) => {
-      orderedById.set(task.id, task);
+    const allById = new Map<number, TaskRow>();
+    await forEachYielding(all, (task) => {
+      allById.set(task.id, task);
     });
     const occupied = await occupiedDirectContexts(all);
     const missingThisPass = new Map<number, number>();
-    this.schedulerSkipReasons.clear();
+    const next = new Map<number, string>();
+    const record = (taskId: number, reason: string) => next.set(taskId, reason);
+
+    const dependencyBlocked = new Set<number>();
+    await forEachYielding(readyWithDeps, (task) => {
+      if (task.openBlockerCount === 0) return;
+      dependencyBlocked.add(task.id);
+      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'completed');
+      record(
+        task.id,
+        blockers.length === 0 ? 'blocked by a dependency' : `blocked-by #${blockers.join(', #')}`,
+      );
+    });
 
     await forEachYielding(all, async (task) => {
-      if (task.state === 'blocked') {
-        const blocker = orderedById.get(task.id)?.blockedBy[0];
-        this.recordSkipReason(task.id, blocker === undefined ? 'blocked by a dependency' : `blocked-by #${blocker}`);
-        return;
-      }
       if (task.state !== 'ready') return;
+      if (dependencyBlocked.has(task.id)) return;
       if (task.drive === 'hitl') {
-        this.recordSkipReason(task.id, task.escalated ? 'hitl, escalated to human' : 'hitl');
+        record(task.id, task.escalated ? 'hitl, escalated to human' : 'hitl');
         return;
       }
       if (!master) {
-        this.recordSkipReason(task.id, 'Auto-Runner disabled');
+        record(task.id, 'Auto-Runner disabled');
         return;
       }
       const workspace = task.workspaceId == null ? undefined : workspacesById.get(task.workspaceId);
       if (!resolve(workspace?.autoRunnerEnabled, true)) {
-        this.recordSkipReason(task.id, 'workspace disabled');
+        record(task.id, 'workspace disabled');
         return;
       }
       if (running >= ceiling) {
-        this.recordSkipReason(task.id, 'at capacity');
+        record(task.id, 'at capacity');
         return;
       }
       const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
       const workspaceRunning = task.workspaceId == null ? 0 : (runningByWorkspace.get(task.workspaceId) ?? 0);
       if (workspaceRunning >= cap) {
-        this.recordSkipReason(task.id, 'at capacity');
+        record(task.id, 'at capacity');
         return;
       }
       if (this.gitBreaker && !this.gitBreaker.allows(repoKey(task.workingDir))) {
-        this.recordSkipReason(task.id, 'git workspace-prep backoff (repeated failures on this repo)');
+        record(task.id, 'git workspace-prep backoff (repeated failures on this repo)');
         this.recordWaiting(task.id);
         return;
       }
@@ -370,21 +384,22 @@ export class AutoRunner {
           const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
           if (this.clock() - since >= this.missingEpicBaseGraceMs) {
             await this.taskService.escalate(task.id);
-            this.recordSkipReason(task.id, 'integration branch missing, escalated to human');
+            record(task.id, 'integration branch missing, escalated to human');
             return;
           }
           missingThisPass.set(task.id, since);
         }
-        this.recordSkipReason(task.id, 'integration branch missing');
+        record(task.id, 'integration branch missing');
         return;
       }
       const key = directContextKey(task);
       const holder = key ? occupied.get(key) : undefined;
       if (holder) {
-        this.recordSkipReason(task.id, `Work Context held by task ${holder.id} (${holder.state})`);
+        record(task.id, `Work Context held by task ${holder.id} (${holder.state})`);
         this.recordWaiting(task.id);
       }
     });
+    this.schedulerSkipReasons = next;
     this.missingEpicBaseSince.clear();
     await forEachYielding(missingThisPass, ([taskId, since]) => {
       this.missingEpicBaseSince.set(taskId, since);

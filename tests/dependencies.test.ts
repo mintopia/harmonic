@@ -24,19 +24,22 @@ describe('dependencies', () => {
     await waitFor(async () => (await getTask(id)).state === 'awaiting-review');
   };
 
-  it('blocks on unmet dependencies and unblocks only when the last one is accepted, not merely finished', async () => {
+  it('derives blocker count and agent-workable from the last open blocker', async () => {
     const dep = await createTask({});
     const dependent = await createTask({ dependsOn: [dep.id] });
-    expect(dependent.state).toBe('blocked');
+    expect(dependent.state).toBe('ready');
+    expect(dependent.openBlockerCount).toBe(1);
+    expect(dependent.agentWorkable).toBe(false);
     expect(dependent.dependsOn).toEqual([dep.id]);
 
-    // Dependency finishes its run → dependent must STILL be blocked.
+    // Dependency finishes its run → it remains an open blocker until accepted.
     await runToAwaitingReview(dep.id);
-    expect((await getTask(dependent.id)).state).toBe('blocked');
+    expect((await getTask(dependent.id)).openBlockerCount).toBe(1);
 
-    // Accept → dependent becomes ready automatically.
+    // Accept immediately changes the derived fields, without a stored flip.
     await server.api('POST', `/api/tasks/${dep.id}/accept`);
-    expect((await getTask(dependent.id)).state).toBe('ready');
+    expect((await getTask(dependent.id)).openBlockerCount).toBe(0);
+    expect((await getTask(dependent.id)).agentWorkable).toBe(true);
   });
 
   it('waits for ALL dependencies before unblocking', async () => {
@@ -46,25 +49,28 @@ describe('dependencies', () => {
 
     await runToAwaitingReview(dep1.id);
     await server.api('POST', `/api/tasks/${dep1.id}/accept`);
-    expect((await getTask(dependent.id)).state).toBe('blocked');
+    expect((await getTask(dependent.id)).openBlockerCount).toBe(1);
 
     await runToAwaitingReview(dep2.id);
     await server.api('POST', `/api/tasks/${dep2.id}/accept`);
     expect((await getTask(dependent.id)).state).toBe('ready');
   });
 
-  it('adds and removes dependencies over REST, re-deriving blocked/ready', async () => {
+  it('adds and removes blocker edges over REST without changing task state', async () => {
     const dep = await createTask({});
     const task = await createTask({});
     expect(task.state).toBe('ready');
 
     const added = await server.api('POST', `/api/tasks/${task.id}/dependencies`, { dependsOnId: dep.id });
     expect(added.status).toBe(200);
-    expect(added.body.state).toBe('blocked');
+    expect(added.body.state).toBe('ready');
+    expect(added.body.openBlockerCount).toBe(1);
+    expect(added.body.agentWorkable).toBe(false);
 
     const removed = await server.api('DELETE', `/api/tasks/${task.id}/dependencies/${dep.id}`);
     expect(removed.status).toBe(200);
-    expect(removed.body.state).toBe('ready');
+    expect(removed.body.openBlockerCount).toBe(0);
+    expect(removed.body.agentWorkable).toBe(true);
   });
 
   it('flags dependents of a failed dependency instead of cascading failure', async () => {
@@ -75,7 +81,8 @@ describe('dependencies', () => {
     await waitFor(async () => (await getTask(dep.id)).state === 'failed');
 
     const blocked = await getTask(dependent.id);
-    expect(blocked.state).toBe('blocked');
+    expect(blocked.state).toBe('ready');
+    expect(blocked.openBlockerCount).toBe(1);
     expect(blocked.blockedOnFailed).toBe(true);
 
     // The hiccup is retryable: requeue the dep, run, accept — pipeline resumes.
@@ -84,7 +91,7 @@ describe('dependencies', () => {
     await runToAwaitingReview(dep.id);
     await server.api('POST', `/api/tasks/${dep.id}/accept`);
     const after = await getTask(dependent.id);
-    expect(after.state).toBe('ready');
+    expect(after.openBlockerCount).toBe(0);
     expect(after.blockedOnFailed).toBe(false);
   });
 
@@ -141,7 +148,14 @@ describe('dependencies', () => {
   it('loads list dependency and run data in batches (issue #258)', async () => {
     const dep = await createTask({});
     await createTask({ dependsOn: [dep.id] });
-    await createTask({});
+    const last = await createTask({});
+
+    // `skipReason` mirrors the AutoRunner's per-pass in-memory diagnostics,
+    // and no scheduler pass may have covered these just-created tasks yet.
+    // Wait until one has (a pass that records `last` necessarily listed every
+    // older task too), so the list snapshot and the per-task GETs below read
+    // the same steady state instead of racing the pass's map swap.
+    await waitFor(async () => (await getTask(last.id)).skipReason !== null);
 
     const listForTask = vi.spyOn(server.app.ctx.runs, 'listForTask');
     const dependsOn = vi.spyOn(server.app.ctx.tasks, 'dependsOn');

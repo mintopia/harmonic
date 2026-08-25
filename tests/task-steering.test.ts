@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
 import type { DeepPartial } from '../src/config.js';
 import type { AppConfig } from '../src/config.js';
@@ -74,20 +77,30 @@ describe('steering a running task', () => {
   });
 
   it('injects a steer into the running turn when the harness supports it', async () => {
-    // A first turn that streams for a while, so the steer lands mid-turn.
-    const created = await server.api('POST', '/api/tasks', { prompt: slowFirstTurn() });
+    // The steer must land while the turn is in flight, and no fixed sleep can
+    // guarantee that under parallel-suite CPU contention. Instead the stub (a)
+    // writes a marker file at turn start — the test's proof that session/prompt
+    // has been received — and (b) holds the turn open via `waitForSteer` until
+    // the injection lands, so the turn boundary can never race the steer.
+    const turnStartedFile = join(mkdtempSync(join(tmpdir(), 'harmonic-steer-')), 'turn-started');
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: scenario({
+        updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'working' } }],
+        writeFiles: { [turnStartedFile]: 'started\n' },
+        waitForSteer: true,
+        stopReason: 'end_turn',
+      }),
+    });
     expect(created.status).toBe(201);
     const taskId = created.body.id;
     const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     expect(started.status).toBe(201);
     const runId = started.body.id;
 
-    // Let the stub enter its first delayed update. ACP output is intentionally
-    // no longer persisted, so the lifecycle event cannot act as this probe.
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    // ACP output is intentionally no longer persisted, so the marker file (not
+    // a lifecycle event) is the "turn is running" probe.
+    await waitFor(async () => existsSync(turnStartedFile));
 
-    // Steer once the run is active (the task flips running before the
-    // ActiveRun registers, so a steer can 409 briefly — retry until it lands).
     const steered = await waitFor(async () => {
       const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'switch to the other approach' });
       return res.status === 200 ? res : undefined;
