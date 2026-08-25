@@ -1,7 +1,7 @@
 # Harmonic
 
 A web application running inside a Coder workspace that executes autonomous
-agent Tasks by driving agent Harnesses over ACP.
+agent Tickets by driving agent Harnesses over ACP.
 
 ## Language
 
@@ -31,52 +31,59 @@ have no Workspace form; Workspace-only settings (name, Working Directory,
 Tracker enable/interval, Auto-Runner enable) have no global form.
 _Avoid_: setting, config value
 
-### Tasks
+### Tickets
+
+**Ticket**:
+The board unit of autonomous work — a prompt plus execution settings (Harness,
+model, Working Directory, Isolation Mode) that moves through the lifecycle,
+native or mirrored. Worked in one branch by a loop of Attempts. Governed by
+ADR-0041.
+_Avoid_: task (a Task is a step within an Attempt), job, item
+
+**Attempt**:
+One iteration of a Ticket's implement→verify loop: its Tasks run in a fixed
+order (Rebase → Implementation → Verification per command → Review) and end at
+a verdict. A failed verdict feeds the next Attempt on the same Ticket and same
+branch (counter +1); `maxAttempts` reached → *escalated*. The Attempt is the
+history unit on the Ticket page and carries the counter — which counts
+implementation failures only (a base-moved re-verify, or a commit-your-work
+nudge, increments nothing). The system never creates a new Ticket in response
+to failure.
+_Avoid_: run (deleted concept), retry, heal, reattempt (all three old loop
+mechanisms collapsed into this one)
 
 **Task**:
-A unit of autonomous work — a prompt plus execution settings (Harness,
-model, Working Directory, Isolation Mode) that moves through a lifecycle.
-_Avoid_: job, ticket, item
+One individually undertaken step within an Attempt, each a timeline row with
+its own logs and outcome: the **Rebase Task** (rebase the ticket branch onto
+the current base; conflicts are work the agent resolves here), the
+**Implementation Task** (the agent implements and commits — only the agent
+ever commits), one **Verification Task** per configured command (ordered,
+fail-fast), and the optional **Review Task** (the critic).
+_Avoid_: run, phase, stage, step
 
-**Run**:
-One execution attempt of a Task by a Harness that settles to one reviewable
-result, owning its event stream, Usage, and result. A retry is a new Run —
-reusing the prior Session while its cache is warm, else a fresh Session that
-references the prior work.
-_Avoid_: execution, attempt, session (a Run runs *against* a Session; they are
-not the same — see Session)
-
-**Phase**:
-Where a Run sits in its lifecycle: `executing → validating → verifying →
-[review] → landing → terminal`, persisted on the Run and branching once — a
-human-gated native Run passes through **review**, a mirrored / auto-accept Run
-skips it. Distinct from the Run's *state* (the terminal RunState): a native Run
-is `state:'running'` while **parked** in `phase:'review'` awaiting the human
-gate. Agent-finish begins **validating**, it does not settle the Run.
-_Avoid_: stage, step, status (a Phase is not the Run's terminal state)
-
-**Run Event**:
+**Task Event**:
 One ACP `session/update` (message chunk, thought, tool call, plan update)
-persisted against a Run; the source of truth for observability.
+persisted against a Task's execution; the source of truth for observability.
 _Avoid_: log line, message
 
-**run_fact**:
+**Fact**:
 An immutable row in the append-only fact log that is the coordination spine:
-every *ending signal* a Run emits — `agent-finish` (clean completion) and
-`failed` among them — is one row stamped with a timestamp and a per-Run monotonic
-`seq`. Distinct from a Run Event (an observability chunk): a run_fact is a
-decision-grade fact the runtime acts on, and the `agent-finish` fact's timestamp
-is what Active-execution duration measures to.
-_Avoid_: event (that is the Run Event stream), log line, marker
+every decision-grade signal an Attempt's Tasks emit (agent-finish, verdicts,
+failures) is one timestamped row with a monotonic `seq`. Every lifecycle
+transition is a deterministic function of recorded Facts — agent judgment
+lives inside the Implementation and Review Tasks, never in routing.
+_Avoid_: event (that is the Task Event stream), log line, marker
 
-**Dependency**:
-A directed edge between Tasks: the dependent stays *blocked* until every
-Task it depends on is *completed*. Failed dependencies leave dependents
-blocked and flagged — nothing cascades automatically.
-_Avoid_: prerequisite, parent
+**Blocker**:
+A directed edge between Tickets, stored one-to-many: the dependent is
+ineligible for pickup while it has any open Blocker. Native dependencies and
+mirrored tracker blocked-by relations are both written as the same edges.
+Blocked-ness is always **derived** from the open-Blocker count — never a
+stored state — so it cannot go stale.
+_Avoid_: dependency, prerequisite, parent
 
 **Priority**:
-A per-Task rank (high / normal / low) used only by the Auto-Runner's pick
+A per-Ticket rank (high / normal / low) used only by the Auto-Runner's pick
 order; ties break FIFO by creation time.
 
 **Delete**:
@@ -111,9 +118,10 @@ _Avoid_: source, kind
 **Mirrored Task**:
 A Task bound 1:1 to a tracker issue by a tracker ref. The tracker owns its
 shape (prompt, blocking, workflow role) and is the source of truth; Harmonic
-owns its execution state (Runs, Usage) and writes only claim/close back. A
+owns its execution state (Attempts, Usage) and writes only claim/close back. A
 re-poll upserts it. Never enters *draft* — a tracker issue is already
-authored — and never enters *awaiting-review* (see Drive).
+authored. Runs the same lifecycle as a native Ticket; tracker writes are
+output side-effects, never a control path (see Agent-workable).
 _Avoid_: imported task, synced issue
 
 **Dismiss**:
@@ -131,8 +139,8 @@ job. Not a Task and not a stored entity — a query-time roll-up over the polled
 tracker. The **leaf-most** Epic — the immediate parent of implementation Tasks —
 is the unit its children are scheduled and landed as a group by. An Epic is a
 **container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
-is never projected — an Epic contains, it does not gate) nor **runs** (its drive
-is forced *hitl*, so the Auto-Runner never executes the container itself).
+is never projected — an Epic contains, it does not gate) nor **runs** (it is
+never agent-workable, so the Auto-Runner never executes the container itself).
 _Avoid_: effort, project, batch, tranche, convoy
 
 **Map**:
@@ -167,31 +175,31 @@ The kind of a `workflow = wayfinder` decision ticket: *research*, *prototype*,
 *grilling*, or *task*. Null for *implement* Tasks — "implementation" is a
 Workflow, never a Wayfinder Type.
 
-**Drive**:
-Who drives a mirrored Task — **afk** (Harmonic auto-runs it) or **hitl** (a
-human drives it via the mattpocock skills; Harmonic surfaces it but never
-runs it). Stored, and **re-synced from the ticket's labels on every re-poll**.
-Drive is opt-*in* (issue #230): **`ready-for-agent` is the positive gate to afk**
-— present → afk; its absence → hitl, regardless of any other label (unlabelled /
-needs-triage / needs-info / wontfix, and ready-for-human / grilling / prototype /
-bare-task, all → hitl). Assignment is never consulted (an assigned
-`ready-for-agent` ticket is still afk). Relabeling a mirrored issue flips its
-drive — **except while the Task is escalated**, where Harmonic's runtime afk→hitl
-flip is preserved (a stale ready-for-agent label must not undo it). The Auto-Runner's
-whole predicate: pick-eligible iff `drive ≠ hitl`. Mirrored Tasks bypass the
-review gate entirely — closure is a tracker act (the agent via its skill, or a
-human), never an Accept/Reject. A clean Run is not success: the agent-via-skill
-**closing the ticket** is the success signal (ADR 0011). A Run that ends without
-closing it is *unresolved* — Auto-Retried then Escalated, its branch never
-merged — never silently completed.
-_Avoid_: mode, assignee
+**Agent-workable**:
+The derived flag that makes a Ticket eligible for pickup: `ready-for-agent`
+present (the positive opt-in gate, re-synced from labels on every re-poll,
+issue #230) AND no open Blockers. Never stored. **HITL is not in Harmonic**:
+a mirrored issue without the label is a human-only Ticket — it stays visible
+on the board (it may block others; rendered muted with a distinct HITL icon)
+but takes no actions and is updated only by mirroring until the tracker
+closes it. Assignment is never consulted. Ticket closure is a tracker act,
+mirrored in as an **output side-effect, never a control path** (ADR-0041,
+superseding ADR-0011's closure-as-success): success is the verification
+verdict plus landing.
+_Avoid_: drive, afk, hitl (as stored modes — all deleted), mode, assignee
 
 **Escalation**:
-The runtime `afk → hitl` flip: when an afk Run blocks on a human prompt (a
-permission request or a clarifying question), Harmonic stops the Run, sets
-*drive* to hitl, and lands the Task back in *ready* flagged "escalated to
-human" so the Auto-Runner skips it and a person takes over.
-_Avoid_: downgrade, fallback, handoff
+The *escalated* state and the single human surface. A Ticket reaches it only
+via: (1) attempt counter exhausted, (2) branch-contract violation (the agent
+worked outside its branch/worktree — should never happen; escalate when it
+does), (3) permanent infrastructure failure (git circuit-breaker class).
+Exactly three actions there: **Reject with guidance** (guidance becomes
+feedback, counter resets, the loop resumes), **Accept** (counts as success;
+the normal land/close/cleanup path continues), **Close** (closes the Ticket
+and cleans up: branch, worktree, tracker issue). Escalated Epics surface in
+the same attention section.
+_Avoid_: downgrade, fallback, handoff, adopt / note-to-critic / un-escalate
+(deleted escape hatches, ADR-0027 superseded)
 
 **Drive Prompt**:
 The prompt Harmonic injects to auto-run an afk mirrored Task: a **global**
@@ -215,14 +223,12 @@ the branch for a human/CI). Global default, per-Task override; worktree-only
 artifacts regardless.
 _Avoid_: merge policy
 
-**Auto-Retry**:
-On an afk Run failure (an error, the skill's own `/code-review` rejecting the
-work, or a clean Run that left the ticket *unresolved*) Harmonic re-queues the
-Task to *ready* as a fresh Run up to a
-configurable max (default 1), still afk; exhausting the retries Escalates to
-hitl (Run *failed*, drive→hitl, ticket open + un-assigned + flagged), never a
-silent retry beyond the cap.
-_Avoid_: auto-requeue
+**Max Attempts**:
+The configured bound on a Ticket's Attempt loop (global default, per-Workspace
+override). Exhausting it is escalation trigger (1) — never a silent retry
+beyond the cap, never a new Ticket. Replaces Auto-Retry, self-heal, and
+reattempt (ADR-0041).
+_Avoid_: auto-retry, retry cap
 
 ### Parallel Epic execution
 
@@ -234,15 +240,25 @@ Epic is green — then Harmonic **retires** (deletes) it. Its mere existence is
 the Epic's only persisted execution state.
 _Avoid_: feature branch, epic branch
 
+**Refresh**:
+Keeping an Integration branch fresh: whenever the default branch advances,
+merge it **into** each live Integration branch (merge, never rebase — Member
+worktrees fork off it and a rebase would rewrite history under them),
+serialized through the merge train. A refresh conflict gets one bounded agent
+merge-resolution turn; failure escalates the **Epic**. Refresh is why the
+Whole-Epic land is clean by construction. "Rebase" is reserved for ticket
+branches (single-writer, safe).
+_Avoid_: sync, catch-up merge
+
 **Member**:
 A direct child ticket of an Epic — one Member, one Task/Run — run concurrently
 with its siblings, each in its own worktree cut from the Integration branch.
 _Avoid_: child task, subtask
 
 **Ready frontier**:
-The subset of an Epic's Members currently runnable — carrying `ready-for-agent`
-(the same afk opt-in the **Drive** rule applies, issue #230), *open*, and free of
-any open non-Epic blocker — recomputed every poll; the true width of
+The subset of an Epic's Members currently runnable — **agent-workable** (the
+same derived flag, issue #230), *open*, and free of
+any open non-Epic Blocker — recomputed every poll; the true width of
 parallelism, not the whole Epic at once. Informally a **wave**: the next wave is
 the frontier re-derived after blockers clear. Never a stored or numbered entity.
 _Avoid_: wave (as a stored/numbered thing), batch
@@ -325,36 +341,36 @@ _Avoid_: allowlist, policy
 
 ### Lifecycle
 
+The stored Ticket states (ADR-0041). Blocked-ness and agent-workability are
+**derived**, never stored (see Blocker, Agent-workable). There is no *failed*
+state (failure is an Attempt-level Fact; a Ticket loops or escalates, and only
+a human closes it) and no *awaiting-review* (the human gate is deleted).
+
 **draft**: Being authored; never picked up for execution.
 
-**blocked**: Has at least one Dependency not yet completed. Becomes *ready*
-automatically when the last one completes.
+**ready**: Eligible for pickup once agent-workable, manually or by the
+Auto-Runner.
 
-**ready**: Eligible for execution, manually or by the Auto-Runner.
+**working**: The Attempt loop is executing — some Task of the current Attempt
+is in flight, or the Ticket is landing.
 
-**running**: A Harness is currently executing a Run for it.
+**escalated**: Waiting on a human; see Escalation for the triggers and the
+three actions.
 
-**awaiting-review**: The Run finished; a reviewer must Accept or Reject.
-
-**completed**: Terminal. The result was accepted; only this state satisfies
-dependents.
-
-**failed**: The Run errored, was interrupted by a restart, or the result was
-rejected. Re-queueable to *ready*, optionally with feedback.
+**done**: Terminal. Verified, landed, and cleaned up; only this state
+satisfies dependent Tickets.
 
 **cancelled**: Terminal. Abandoned deliberately.
 
-**Accept / Reject**:
-The review decision on an *awaiting-review* Task. Accept completes it (and
-in worktree mode merges the Run's branch into its base branch; a conflict
-returns it to *awaiting-review*). Reject fails it and, within the cache window,
-its fix continues in the same Session. The re-run target depends on origin: a
-native Task spawns a **new linked Task** (re-attempt, `reattemptOf`), whereas a
-mirrored Task is **re-run in place** (Re-queue on the SAME Task) — a mirrored
-Task IS its ticket (unique on tracker ref), so cloning it would detach a native
-copy from its ticket and Epic; `reattempt()` refuses a mirrored original.
-Human-only unless a Verification agent is configured to auto-accept on a *pass*.
-_Avoid_: approve, merge (as the verb for the decision)
+**Landing**:
+The Ticket-level step after a passing verdict: assert the ticket branch still
+points at the verified SHA, then merge — onto the Integration branch for an
+Epic Member (via the merge train), onto develop otherwise. If the base moved
+since the verdict, the Ticket re-enters Rebase → Verification without
+re-implementing and without touching the counter; with the freshness gate a
+landing conflict cannot otherwise occur. There is no synthetic candidate
+commit: the verified-tree-is-landed-tree guarantee is the SHA assertion.
+_Avoid_: accept, merge gate, candidate (deleted machinery)
 
 ### Execution
 
@@ -432,16 +448,26 @@ Auto-Runner as a pick predicate.
 _Avoid_: workspace (that is the board container), sandbox
 
 **Verification**:
-An automated check that gates a Run's result before it merges or reaches the
-human review gate — a **command** (the Workspace's test/lint), an **agent** (a
-critic Harness with its own configurable prompt and model), or both; resolved
-global default with a per-Workspace override. Its verdict is **pass / fail /
-inconclusive**; *inconclusive* fails safe (Escalate, never a silent pass). A
-fail drives a bounded self-heal — the agent fixes it in the **same Session** —
-before Escalating. The agent verifier **replaces** the older agent-review flag:
-its *pass* is what auto-accepts where configured.
-_Avoid_: review (that is the human Accept/Reject gate), lint, test (it is more
-than either)
+The automated gate between implementation and Landing, run inside each
+Attempt: `verify.commands[]` (ordered, fail-fast, one Verification Task each)
+then the optional **Review Task** — a single critic Harness with configurable
+harness, model, and prompt, run only after the commands pass. Resolved global
+default with per-Workspace override; zero verifiers configured = the gate
+passes. Any command fail, review reject, or review *inconclusive* is a
+**failed Attempt** — feedback into the next Attempt, counter +1 (ADR-0041,
+revising ADR-0021's inconclusive-escalates). Runs against the branch head SHA,
+which Landing then asserts.
+_Avoid_: review gate (deleted), validation (deleted phase), lint, test (it is
+more than either)
+
+**Continuation rule**:
+The deterministic choice at Attempt N+1: continue the prior Session (feedback
+appended) iff its context usage is below `contextReuseThreshold` (config,
+default 0.2) AND it is warm within a fixed per-Harness constant seeded from
+known provider cache TTLs; otherwise a fresh Session seeded by the condensed
+summary (issue #170 machinery) plus the feedback. The repo is the diff —
+nothing else is passed.
+_Avoid_: session reuse policy, cache gate
 
 **Usage**:
 Token counts and tool-call tallies for a Run or Conversation, parsed
