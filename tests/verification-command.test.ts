@@ -222,6 +222,67 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(timeline.body.attempts).toHaveLength(1);
     expect(timeline.body.attempts[0]).toMatchObject({ number: 1, state: 'running' });
   });
+
+  it('a pass records a verified-head fact at the exact SHA, and the gate refuses a moved tip', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'worktree',
+      verificationCommand: exitCommand(0),
+    });
+    const { taskId, runId } = await createAndRun();
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'awaiting-review' ? body : undefined;
+    });
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const fact = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).find(
+      (f) => f.type === 'verified-head',
+    );
+    expect(fact).toBeDefined();
+    const payload = JSON.parse(fact!.payload) as { sha: string; branch: string | null };
+    expect(payload.sha).toBe(run.candidateOid);
+    expect(payload.branch).toBe(run.branch);
+
+    // The landing gate accepts the tip verification recorded…
+    const runner = server.app.ctx.runner as unknown as {
+      verifiedHeadStillCurrent(task: unknown, run: unknown): Promise<boolean>;
+    };
+    const taskRow = await server.app.ctx.tasks.get(taskId);
+    const runRow = await server.app.ctx.runs.get(runId);
+    await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(true);
+    // …and refuses once the branch tip moved after verification.
+    git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main'));
+    await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(false);
+  });
+
+  it('ordered commands run in sequence and fail fast: a red command blocks the rest', async () => {
+    const echoExit = (marker: string, code: number) =>
+      verificationCommandSchema.parse({
+        command: process.execPath,
+        args: ['-e', `console.log('${marker}'); process.exit(${code})`],
+        timeoutSeconds: 30,
+      });
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'worktree',
+      verificationCommand: [echoExit('CMD1', 0), echoExit('CMD2', 1), echoExit('CMD3', 0)],
+    });
+    const { runId } = await createAndRun();
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/runs/${runId}`);
+      return body.state === 'failed' ? body : undefined;
+    });
+
+    // Two attempts (maxAttempts: 2), each running CMD1 then failing fast on
+    // CMD2 — one attempt row per executed command, and CMD3 never runs.
+    const rows = await attempts(runId);
+    expect(rows.map((row) => `${row.mechanism}:${row.verdict}`)).toEqual([
+      'command:pass',
+      'command:fail',
+      'command:pass',
+      'command:fail',
+    ]);
+    expect(rows.map((row) => row.output.trim())).toEqual(['CMD1', 'CMD2', 'CMD1', 'CMD2']);
+  });
 });
 
 /**

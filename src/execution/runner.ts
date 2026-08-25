@@ -8,6 +8,7 @@ import {
   detachForDirectRun,
   captureDirectHead,
   directRefFor,
+  isDirectRef,
   restoreLiveCheckout,
   reattachBareDetachedHead,
   rematerializeCandidate,
@@ -3906,7 +3907,9 @@ export class Runner {
         if (!harness) continue;
         // Worktree runs executed (and logged) under the worktree path;
         // the directory is gone but the log slug derives from the string.
-        const cwd = run.branch ? join(this.worktreesDir, `run-${run.id}`) : task.workingDir;
+        // A direct run also records a branch now (its private ref), but it
+        // executed in the live working dir.
+        const cwd = run.branch && !isDirectRef(run.branch) ? join(this.worktreesDir, `run-${run.id}`) : task.workingDir;
         const fresh = collectUsage({
           harnessId: task.harness,
           harness,
@@ -3931,7 +3934,7 @@ export class Runner {
    * git failure — the stat is decoration and must never fail the run). */
   private async diffstatFor(task: TaskRow, runId: number): Promise<string | null> {
     const run = await this.runStore.get(runId);
-    if (!run.branch || !run.baseBranch) return null;
+    if (!run.branch || isDirectRef(run.branch) || !run.baseBranch) return null;
     try {
       return await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
     } catch {

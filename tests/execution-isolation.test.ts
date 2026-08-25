@@ -220,6 +220,9 @@ describe('execution isolation (issue #152)', () => {
     const agentHead = agentCommit(repo, 'feature.txt', 'shipped\n', 'agent: feature');
     writeFileSync(join(repo, 'extra.txt'), 'uncommitted\n');
 
+    // Capture pins the agent's committed head — it must run before the
+    // stand-in candidate build below, whose fixture commit moves HEAD.
+    const pinned = await captureDirectHead(repo, 9);
     const candidateOid = await buildCandidate({
       repoDir: repo,
       workspaceDir: repo,
@@ -227,7 +230,6 @@ describe('execution isolation (issue #152)', () => {
       ref: 'refs/harmonic/candidate/run-9',
       message: 'candidate',
     });
-    const pinned = await captureDirectHead(repo, 9);
     await restoreLiveCheckout(repo, 'main');
 
     // Live branch and checkout: coherent, untouched, clean.

@@ -40,6 +40,14 @@ import { Git } from './git.js';
 export const directRefFor = (runId: number): string => `refs/harmonic/direct/run-${runId}`;
 
 /**
+ * Whether a run's recorded `branch` is a private direct-mode ref rather than a
+ * real worktree branch. Since the verification reshape a direct Run records its
+ * owned ref in `runs.branch`, so branch-presence alone no longer distinguishes
+ * the isolation modes.
+ */
+export const isDirectRef = (branch: string): boolean => branch.startsWith('refs/harmonic/direct/');
+
+/**
  * Detach the live checkout's HEAD at `startCommit`, parking the branch it was
  * on. Force-discards nothing of value: admission (#149) proved the context
  * clean, and `startCommit` is the current HEAD, so this only converts an
