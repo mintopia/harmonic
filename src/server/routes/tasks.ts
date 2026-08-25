@@ -35,16 +35,6 @@ const requeueInputSchema = z
     continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
   })
   .nullish();
-const reattemptInputSchema = z
-  .object({
-    feedback: z.string().optional().meta({ example: feedbackExample }),
-    /** How the re-attempt continues the rejected Run's Session (issue #170):
-     * `'full'` (default) re-binds the warm Session and replays the whole
-     * conversation; `'condensed'` starts a fresh Session carrying only the
-     * feedback. Omit to keep the historical full-continuation behaviour. */
-    continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
-  })
-  .nullish();
 const rejectInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
 /** The operator's note-to-critic input (issue #191): a required human note
  * folded into the critic's trusted preamble for a targeted re-review. */
@@ -663,28 +653,6 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => await withDeps(await ctx.tasks.uncancel(req.params.id)),
-  );
-
-  app.post(
-    '/tasks/:id/reattempt',
-    {
-      schema: {
-        tags: ['Tasks'],
-        description:
-          'Create a new task that re-attempts an existing one: a copy of its config and dependencies, linked back via reattemptOf, carrying optional reviewer feedback (composed into the run prompt at run time, so the original prompt stays pristine). The original is left unchanged. Reachable with a run-scoped Run Key.',
-        params: idParamsSchema,
-        body: reattemptInputSchema,
-        response: {
-          201: taskSchema.describe('The new task, carrying the feedback and pointing at the original via reattemptOf.'),
-          404: errorResponse('No task has that id.'),
-          409: errorResponse('Only a failed or rejected task can be re-attempted.'),
-        },
-      },
-    },
-    async (req, reply) =>
-      reply
-        .status(201)
-        .send(await withDeps(await ctx.tasks.reattempt(req.params.id, req.body?.feedback, req.body?.continuation))),
   );
 
   app.post(

@@ -201,12 +201,8 @@ export class AutoDrive {
     }
   }
 
-  /**
-   * A failed afk Run: 'retry' while attempts are within the configured
-   * Auto-Retry cap, else 'escalate'. `attempt > autoRetry` exhausts it —
-   * default cap 1 means attempt 1 retries, attempt 2 Escalates.
-   */
-  onFailed(_task: TaskRow, run: RunRow): 'retry' | 'escalate' {
-    return run.attempt > this.getConfig().drive.autoRetry ? 'escalate' : 'retry';
+  /** @deprecated Failure routing belongs to Runner's unified Attempt loop. */
+  onFailed(_task: TaskRow, _run: RunRow): 'retry' | 'escalate' {
+    return 'escalate';
   }
 }

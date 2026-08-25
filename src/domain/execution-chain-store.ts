@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import type { AsyncDb, AsyncDbHandle } from '../db/async.js';
-import { executionChains, runs, tasks, type RunRow } from '../db/schema.js';
+import { executionChains, runs, type RunRow } from '../db/schema.js';
 
 /** Mint a fresh chain identity on a caller-supplied executor (a `.write()` unit
  * or transaction), so {@link ExecutionChainStore.create} and the "mint" branch
@@ -71,29 +71,10 @@ export class ExecutionChainStore {
    * "no chain yet" and both mint (branch 3), and — unlike a Run's `seq` — a
    * `chainId` has no UNIQUE-index backstop to reject the duplicate.
    */
-  resolveForTask(task: { id: number; reattemptOf: number | null }): Promise<number> {
+  resolveForTask(task: { id: number }): Promise<number> {
     return this.db.write(async (db) => {
       const own = await latestChainedRunOn(db, task.id);
       if (own?.chainId != null) return own.chainId;
-
-      const MAX_ANCESTRY_DEPTH = 100;
-      let ancestorId: number | null = task.reattemptOf;
-      const visited = new Set<number>();
-      for (let depth = 0; ancestorId != null && depth < MAX_ANCESTRY_DEPTH; depth++) {
-        if (visited.has(ancestorId)) break;
-        visited.add(ancestorId);
-
-        const currentAncestorId = ancestorId;
-        const ancestorRun = await latestChainedRunOn(db, currentAncestorId);
-        if (ancestorRun?.chainId != null) return ancestorRun.chainId;
-
-        const ancestorTask = await db
-          .select({ reattemptOf: tasks.reattemptOf })
-          .from(tasks)
-          .where(eq(tasks.id, currentAncestorId))
-          .get();
-        ancestorId = ancestorTask?.reattemptOf ?? null;
-      }
 
       return insertChainOn(db, Date.now());
     });

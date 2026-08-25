@@ -42,7 +42,7 @@ export class AttemptStore {
     return this.db.write((db) => db.update(attemptTasks).set(patch).where(eq(attemptTasks.id, id)).returning().get()) as Promise<AttemptTaskRow>;
   }
 
-  finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now()): Promise<AttemptRow> {
-    return this.db.write((db) => db.update(attempts).set({ state, endedAt: now }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
+  finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now(), feedback?: string): Promise<AttemptRow> {
+    return this.db.write((db) => db.update(attempts).set({ state, endedAt: now, ...(feedback === undefined ? {} : { feedback }) }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
   }
 }

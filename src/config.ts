@@ -264,6 +264,8 @@ export const appConfigSchema = z.object({
     enabled: z.boolean().meta({ example: true }),
     maxConcurrentRuns: z.number().int().min(1).meta({ example: 3 }),
   }),
+  /** Maximum failed implementation attempts before the ticket is escalated. */
+  maxAttempts: z.number().int().min(1).default(2).meta({ example: 2 }),
   /**
    * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
    * global Drive Prompt template; `unattendedReminder` is appended to every
@@ -285,7 +287,8 @@ export const appConfigSchema = z.object({
       unattendedReminder: z.string().default(UNATTENDED_REMINDER).meta({ example: UNATTENDED_REMINDER }),
       continuePrompt: z.string().default(DEFAULT_CONTINUE_PROMPT).meta({ example: DEFAULT_CONTINUE_PROMPT }),
       mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
-      autoRetry: z.number().int().min(0).default(1).meta({ example: 1 }),
+      /** @deprecated Kept only to parse stored settings; the Attempt loop ignores it. */
+      autoRetry: z.number().int().min(0).default(1),
       continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
     })
     .prefault({}),
@@ -324,6 +327,8 @@ export const appConfigSchema = z.object({
        * passing native Run still parks for human review. No verifier configured →
        * always review, regardless of this flag (nothing verified to auto-accept). */
       autoAccept: z.boolean().default(false),
+      /** @deprecated Kept only to parse stored settings; the Attempt loop ignores it. */
+      maxSelfHeals: z.number().int().min(0).default(0),
       /** Bounded self-heal (issue #137, ADR-0021, reliability-design Unit B):
        * how many corrective builder turns an **actionable** verification fail
        * may trigger before the Run Escalates. Each heal routes back into the
@@ -331,7 +336,6 @@ export const appConfigSchema = z.object({
        * re-enters `validating`, and reruns the FULL verifier suite. An
        * inconclusive verdict never heals (it Escalates with its cause); `0`
        * disables self-heal, so an actionable fail Escalates immediately. */
-      maxSelfHeals: z.number().int().min(0).default(1),
     })
     .prefault({}),
   /**
@@ -480,6 +484,7 @@ export function defaultConfig(): AppConfig {
       enabled: false,
       maxConcurrentRuns: 1,
     },
+    maxAttempts: 2,
     drive: {
       prompt: DEFAULT_DRIVE_PROMPT,
       unattendedReminder: UNATTENDED_REMINDER,
@@ -494,7 +499,7 @@ export function defaultConfig(): AppConfig {
       command: null,
       critic: null,
       autoAccept: false,
-      maxSelfHeals: 1,
+      maxSelfHeals: 0,
     },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },

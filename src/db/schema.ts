@@ -129,6 +129,8 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace auto-accept override (issue #138); null = inherit
    * `config.verification.autoAccept`. */
   verificationAutoAccept: integer('verification_auto_accept', { mode: 'boolean' }),
+  /** Per-Workspace attempt cap; null inherits `config.maxAttempts`. */
+  maxAttempts: integer('max_attempts'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
@@ -173,7 +175,7 @@ export const tasks = sqliteTable('tasks', {
    * every insert path sets it and the boot-time backfill (db/index.ts) fills
    * pre-Workspace rows, so it is never actually null at rest. */
   workspaceId: integer('workspace_id').references(() => workspaces.id),
-  /** The original this task re-attempts (a new attempt is a new, linked task). */
+  /** @deprecated Legacy read compatibility. New failures never create linked tickets. */
   reattemptOf: integer('reattempt_of').references((): AnySQLiteColumn => tasks.id),
   /** Reviewer feedback that seeded this re-attempt, stored in full, separate from the prompt. */
   feedback: text('feedback'),
@@ -236,9 +238,6 @@ export const tasks = sqliteTable('tasks', {
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
-  // withDeps looks up reattempts (reverse link) per task on the board/table
-  // hot path; index the FK so that stays cheap as the table grows.
-  index('tasks_reattempt_of_idx').on(t.reattemptOf),
   // The mirror upsert looks up by (workspaceId, trackerRef) every poll; unique
   // enforces 1:1 *per Workspace* (issue #45) — two repos sharing an issue
   // number mirror into distinct Tasks. SQLite treats NULLs as distinct, so
@@ -426,6 +425,8 @@ export const attempts = sqliteTable('attempts', {
   state: text('state').$type<AttemptState>().notNull().default('running'),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),
+  /** Feedback from the failure that led to the following attempt. */
+  feedback: text('feedback'),
 }, (t) => [uniqueIndex('attempts_task_number_unique').on(t.taskId, t.number)]);
 export type AttemptRow = typeof attempts.$inferSelect;
 

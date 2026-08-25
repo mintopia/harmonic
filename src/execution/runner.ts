@@ -227,6 +227,7 @@ export interface RunnerOptions {
         | 'verificationCommand'
         | 'verificationCritic'
         | 'verificationAutoAccept'
+        | 'maxAttempts'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -828,8 +829,7 @@ export class Runner {
   private async resolveContinuationSource(
     task: TaskRow,
   ): Promise<{ prior: RunRow; session: SessionRow; trigger: ContinuationTrigger } | null> {
-    const sourceTaskId = task.reattemptOf ?? task.id;
-    const priors = await this.runStore.listForTask(sourceTaskId); // ordered by attempt asc
+    const priors = await this.runStore.listForTask(task.id); // ordered by attempt asc
     for (let i = priors.length - 1; i >= 0; i--) {
       const prior = priors[i]!;
       if (prior.sessionRowId === null) continue;
@@ -2007,7 +2007,8 @@ export class Runner {
    * defect. Every other ending settles inside the single turn.
    */
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
-    const maxHeals = this.getConfig().verification.maxSelfHeals;
+    const workspace = await this.getWorkspace?.(task.workspaceId);
+    const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
     // The Session key for this Run's turn queue. There is no first-class Session
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
     // it — stable across heal turns even as each turn's ACP session id changes.
@@ -2022,7 +2023,7 @@ export class Runner {
     // this Run's live snapshot, which the chain-cumulative spend poll folds onto
     // the chain's prior floor. So spend can't be reset by a retry; the heal count
     // deliberately can.
-    let heals = (await this.turnQueue.listForSession(sessionKey)).filter((t) => t.purpose === 'self-heal').length;
+    let attemptNumber = run.attempt;
     // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
     // the count from the durable queue too, so the "at most one corrective
     // re-merge, and no mutating turn after it" bound survives a crash-resume of
@@ -2035,7 +2036,7 @@ export class Runner {
     let inFlightTurn: number | null = null;
     try {
       for (;;) {
-      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, remergeCtx);
+      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, remergeCtx, attemptNumber);
       if (inFlightTurn !== null) {
         // The corrective turn we dispatched has run its course — settle its queue
         // row regardless of the verdict; a further fail enqueues the next one.
@@ -2115,21 +2116,19 @@ export class Runner {
         );
         return;
       }
-      // Heal if budget remains; otherwise the Run Escalates (exhaustion).
-      // `maxSelfHeals: 0` disables self-heal — a fail Escalates on the first turn,
-      // exactly as it did before this ticket.
-      if (heals >= maxHeals) {
-        const reason =
-          heals === 0
-            ? `verification failed: ${outcome.reason}`
-            : `verification failed after ${heals} self-heal attempt(s): ${outcome.reason}`;
-        await this.settleEscalated(task, await this.runStore.get(run.id), reason, {});
+      const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
+      const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
+      await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
+      if (attemptNumber >= maxAttempts) {
+        await this.settleEscalated(task, await this.runStore.get(run.id), `verification failed after ${attemptNumber} attempt(s): ${outcome.reason}`, {});
+        await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
         return;
       }
-      heals += 1;
-      healCtx = { reason: outcome.reason, output: outcome.output, attempt: heals };
+      attemptNumber += 1;
+      await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      healCtx = { reason: outcome.reason, output: outcome.output, attempt: attemptNumber - 1 };
       remergeCtx = undefined;
-      inFlightTurn = await this.enqueueSelfHeal(run, sessionKey, heals);
+      inFlightTurn = null;
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
       // reconstructable from the event log.
@@ -2171,30 +2170,6 @@ export class Runner {
    * heal still runs (this in-process loop is the dispatch; the row is an audit
    * record), so an audit-write hiccup never blocks the fix.
    */
-  private async enqueueSelfHeal(run: RunRow, sessionKey: string, attempt: number): Promise<number | null> {
-    try {
-      const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
-      const now = Date.now();
-      const row = await this.turnQueue.enqueue(
-        sessionKey,
-        run.id,
-        'self-heal',
-        {
-          expectedPhase: 'validating',
-          expectedGeneration: run.attempt,
-          expectedWorkspaceOID: oid,
-          expectedFingerprint: oid,
-        },
-        now,
-      );
-      await this.turnQueue.claim(row.id, now);
-      await this.turnQueue.markInFlight(row.id, `self-heal-run-${run.id}-${attempt}`, now);
-      return row.id;
-    } catch {
-      return null;
-    }
-  }
-
   /**
    * Record the single bounded agent re-merge turn on the per-Session turn queue
    * (issue #155): enqueue → claim → mark in-flight, exactly like
@@ -2436,6 +2411,7 @@ export class Runner {
     parent: SpanContext,
     healCtx?: HealContext,
     remergeCtx?: ReMergeContext,
+    attemptNumber = run.attempt,
   ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
       void this.runStore.appendEvent(run.id, { type, payload }).then((event) => {
@@ -2455,7 +2431,7 @@ export class Runner {
     // remain readable compatibility records, but a transition never writes or
     // consults `runs.phase`.
     const advanceTask = async (to: 'verifying' | 'landing') => {
-      const attempt = await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+      const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const rows = await this.attempts.listTasks(attempt.id);
       const implementation = rows.find((row) => row.type === 'implementation' && row.state === 'running');
       if (to === 'verifying' && implementation) {
@@ -3564,9 +3540,10 @@ export class Runner {
           // `escalate` = inconclusive (infra doubt: missing command, crashed or
           // malformed verifier, absent candidate). Never a code defect, so it
           // never heals — Escalate immediately with its cause (issue #137).
-          const reason = `verification ${decision.outcome}: ${decision.reason}`;
-          record('lifecycle', { event: 'escalated', reason });
-          await this.settleEscalated(task, run, reason, patch);
+          const attempts = await this.verificationAttempts.list(run.id);
+          const output = attempts[attempts.length - 1]?.output ?? '';
+          record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
+          return { kind: 'actionable-fail', reason: `verification ${decision.outcome}: ${decision.reason}`, output };
         } else if (autoDriven) {
           // A mirrored Run has no human gate, so it runs the auto branch:
           // executing → validating → verifying → landing → terminal. The Merge

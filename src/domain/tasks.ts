@@ -1000,15 +1000,6 @@ export class TaskService {
     ).map((r) => r.id);
   }
 
-  /** Task ids that re-attempt this one (reverse of the `reattemptOf` link). */
-  async reattempts(taskId: number): Promise<number[]> {
-    return (
-      await this.db.read((db) =>
-        db.select({ id: tasks.id }).from(tasks).where(eq(tasks.reattemptOf, taskId)).all(),
-      )
-    ).map((r) => r.id);
-  }
-
   /** A mirrored Task's blocking is the tracker's `blockedBy` projection — read-only
    * to operators; edges only change where the dependent is a native Task (issue #31). */
   private assertOperatorEditable(task: TaskRow): void {
@@ -1163,8 +1154,6 @@ export class TaskService {
         .delete(taskDependencies)
         .where(or(eq(taskDependencies.taskId, id), eq(taskDependencies.dependsOnId, id)))
         .run();
-      // A re-attempt becomes standalone rather than dangling.
-      await tx.update(tasks).set({ reattemptOf: null }).where(eq(tasks.reattemptOf, id)).run();
       await tx.delete(tasks).where(eq(tasks.id, id)).run();
       if (decision.tombstone) {
         await tx
@@ -1198,11 +1187,16 @@ export class TaskService {
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
       openBlockerCount,
       agentWorkable: this.agentWorkable(task, openBlockerCount),
-      reattempts: await this.reattempts(task.id),
+      reattempts: [],
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
     };
+  }
+
+  /** @deprecated New failures remain on the same ticket, so this is always empty. */
+  async reattempts(_taskId: number): Promise<number[]> {
+    return [];
   }
 
   async listWithDeps(query: TaskListQuery = {}): Promise<TaskWithDeps[]> {
@@ -1245,7 +1239,7 @@ export class TaskService {
     }
     if (listed.length === 0) return [];
     const ids = listed.map((task) => task.id);
-    const [dependencyRows, dependentRows, reattemptRows] = await Promise.all([
+    const [dependencyRows, dependentRows] = await Promise.all([
       this.db.read((db) =>
         db
           .select({ taskId: taskDependencies.taskId, dependsOnId: taskDependencies.dependsOnId, state: tasks.state })
@@ -1261,9 +1255,6 @@ export class TaskService {
           .where(inArray(taskDependencies.dependsOnId, ids))
           .all(),
       ),
-      this.db.read((db) =>
-        db.select({ id: tasks.id, reattemptOf: tasks.reattemptOf }).from(tasks).where(inArray(tasks.reattemptOf, ids)).all(),
-      ),
     ]);
     const rawById = new Map(rawRows.map((task) => [task.id, task]));
     const dependsOn = new Map(ids.map((id) => [id, [] as number[]]));
@@ -1276,10 +1267,6 @@ export class TaskService {
       if (edge.state === 'failed' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
-    const reattempts = new Map(ids.map((id) => [id, [] as number[]]));
-    for (const row of reattemptRows) {
-      if (row.reattemptOf !== null) reattempts.get(row.reattemptOf)?.push(row.id);
-    }
     return listed.map((task) => ({
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
@@ -1287,7 +1274,7 @@ export class TaskService {
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
       agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0),
-      reattempts: reattempts.get(task.id) ?? [],
+      reattempts: [],
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

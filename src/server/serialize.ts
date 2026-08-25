@@ -52,6 +52,7 @@ export interface ApiAttempt {
   state: AttemptRow['state'];
   startedAt: number;
   endedAt: number | null;
+  feedback: string | null;
   tasks: ApiAttemptTask[];
 }
 
@@ -83,6 +84,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
       state: attempt.state,
       startedAt: attempt.startedAt,
       endedAt: attempt.endedAt,
+      feedback: attempt.feedback,
       tasks: (await ctx.attempts.listTasks(attempt.id)).map(attemptTaskToApi),
     }))),
   };
