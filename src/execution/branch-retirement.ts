@@ -1,6 +1,7 @@
 import type { RunRow, TaskRow } from '../db/schema.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { Git } from './git.js';
+import { logger } from '../logger.js';
 
 /** The minimum git operations needed to retire a Harmonic-owned branch. */
 export interface BranchRetirementGit {
@@ -29,7 +30,7 @@ export class BranchRetirementCoordinator {
     private readonly runs: BranchRunStore,
     private readonly tasks: BranchTaskStore,
     private readonly git: BranchRetirementGit = Git,
-    private readonly onError: (message: string) => void = (message) => console.error(message),
+    private readonly onError: (message: string) => void = logger.error,
   ) {}
 
   async onRunSettled(task: BranchTask, run: BranchRun): Promise<void> {

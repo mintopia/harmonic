@@ -6,6 +6,7 @@ import { mirrorScan } from './mirror.js';
 import { singleFlight } from '../reliability/single-flight.js';
 import { persistedTickets } from './persisted.js';
 import { logger } from '../logger.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 
 /** The mirror coordinator's poll-side surface: retain the write adapter, then reconcile advisory assignments. */
@@ -67,8 +68,12 @@ export class TrackerPoller {
      * current-branch fallback rather than wedging the poll.
      */
     private readonly epics?: EpicIntegrationSync,
-    /** Scheduler-backed deployments reconcile Epics through their global Job. */
-    private readonly reconcileOnPoll = true,
+    /**
+     * `reconcileOnPoll` (default true): Scheduler-backed deployments set this
+     * false and reconcile Epics through their global Job instead. `yieldOptions`
+     * lets a large ticket/backlog walk hand the event loop back (issue #200).
+     */
+    private readonly opts: { reconcileOnPoll?: boolean; yieldOptions?: YieldOptions } = {},
   ) {}
 
   /**
@@ -113,8 +118,14 @@ export class TrackerPoller {
     poll.update({ 'tracker.name': adapter.name });
     const tickets = await adapter.scan();
     poll.update({ 'tracker.ticket.count': tickets.length });
-    this.urlByRef = new Map(tickets.map((t) => [t.number, t.url]));
-    this.titleByRef = new Map(tickets.map((t) => [t.number, t.title]));
+    this.urlByRef = new Map();
+    this.titleByRef = new Map();
+    const closedRefs = new Set<number>();
+    await forEachYielding(tickets, (ticket) => {
+      this.urlByRef.set(ticket.number, ticket.url);
+      this.titleByRef.set(ticket.number, ticket.title);
+      if (ticket.state === 'closed') closedRefs.add(ticket.number);
+    }, this.opts.yieldOptions);
     await this.mirror?.observe(adapter);
     // `!!adapter.close` is the writable-tracker signal (issue #237): an
     // inbound-only adapter with no close capability must not have its completed
@@ -127,7 +138,7 @@ export class TrackerPoller {
     // Set each ready Epic member's base branch before the scheduler's next pick
     // (issue #159), so it forks its worktree Run from the Epic's integration branch.
     // Best-effort: a git hiccup here must not wedge a poll that already mirrored.
-    if (this.epics && this.reconcileOnPoll) {
+    if (this.epics && (this.opts.reconcileOnPoll ?? true)) {
       const reconcile = startOperation({
         type: 'epic.reconcile',
         attributes: { 'workspace.id': this.workspaceId },
@@ -146,12 +157,11 @@ export class TrackerPoller {
     // operator) leaves the Task stuck running with a parked agent. Under the
     // close-after-verify model (#139) that close is premature — hand those to the
     // Runner to stop the agent, reopen the ticket, and Escalate.
-    const closedRefs = new Set(tickets.filter((t) => t.state === 'closed').map((t) => t.number));
-    for (const task of mirrored) {
+    await forEachYielding(mirrored, (task) => {
       if (task.state === 'running' && task.trackerRef != null && closedRefs.has(task.trackerRef)) {
         this.onClosedWhileRunning(task.id);
       }
-    }
+    }, this.opts.yieldOptions);
     await this.mirror?.reconcile();
   }
 

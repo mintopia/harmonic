@@ -15,7 +15,8 @@ import { join, dirname, sep } from 'node:path';
 import { landBranch } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
-import { openAsyncDb, openAsyncReadHandle, type AsyncDbHandle, type AsyncReadDb } from '../db/async.js';
+import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
+import { openStatsReader, type StatsReader } from '../db/stats-reader.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
 import { TaskService } from '../domain/tasks.js';
@@ -185,8 +186,9 @@ function readScopeAllowed(path: string, method: string): boolean {
 
 /**
  * Whether a request carries an **operator** credential — a full-scope API key or
- * an authenticated session — resolved in the same bearer → cookie → query-token
- * order the auth hook authenticates in. Ungated mode (no operator password set)
+ * an authenticated session — resolved in the same bearer → cookie order the
+ * auth hook authenticates in. A query token is never an operator credential
+ * (it is websocket-only). Ungated mode (no operator password set)
  * treats every caller as an operator, exactly as the auth hook skips entirely in
  * that mode. The `/mcp` handler uses this to gate operator-only tools (issue
  * #125): a Run Key is a valid MCP caller but is never an operator. Kept as one
@@ -196,21 +198,14 @@ function readScopeAllowed(path: string, method: string): boolean {
 async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promise<boolean> {
   if (!(await auth.hasPassword())) return true;
   const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-  if (bearer) return (await auth.verifyKey(bearer))?.scope === 'full';
+  if (bearer && (await auth.verifyKey(bearer))?.scope === 'full') return true;
   if (auth.validateSession(req.cookies[SESSION_COOKIE])) return true;
-  const queryToken = (req.query as Record<string, string | undefined>)?.token;
-  if (queryToken) return auth.validateSession(queryToken) || (await auth.verifyKey(queryToken))?.scope === 'full';
   return false;
 }
 
 export interface AppContext {
   asyncDb: AsyncDbHandle;
-  /**
-   * Concurrent-read libsql sibling of {@link asyncDb}, for routing heavy
-   * aggregates (Stats) off the write connection (#213, ADR-0029 §5).
-   * Read-only by type; `asyncDb` is the single writer.
-   */
-  asyncReadDb: AsyncReadDb;
+  statsReader: StatsReader;
   configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
@@ -246,12 +241,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // it owns boot — migrations, the FK dance, the Default-Workspace backfill — and
   // is the single writer through its queue.
   const asyncDb = await openAsyncDb(opts.dataDir);
-  // #213 / ADR-0029 §5: heavy aggregates (the Stats range scan) read through a
-  // *separate* concurrent libsql read connection, so an expensive scan never
-  // contends with the write facade's single connection. `openAsyncDb` above has
-  // already booted the file, so this connection only attaches — no migrate, no
-  // backfill, no write.
-  const asyncReadDb = openAsyncReadHandle(opts.dataDir);
+  // #257 / ADR-0029 §5: local libsql runs file-backed queries inline. Give the
+  // growing Stats range scans a dedicated worker and typed request shape.
+  const statsReader = openStatsReader(opts.dataDir);
   const worktreesDir = join(opts.dataDir, 'worktrees');
   const bus = new EventBus();
   const scheduler = new Scheduler(asyncDb, (jobs) => bus.emit('scheduled_jobs', jobs));
@@ -479,7 +471,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   const runner = new Runner(runs, tasks, leases, asyncDb, () => configStore.get(), {
     events: {
       onRunEvent: (event) => bus.emit('run_event', event),
+      onRunLogEvent: (event) => bus.emitRunLog(event),
       onRunFinished: (run) => bus.emit('run_changed', run),
+      onRunPhaseChanged: (run) => bus.emit('run_changed', run),
       onRunUsage: (payload) => bus.emit('run_usage', payload),
     },
     mergeTrain,
@@ -670,7 +664,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, asyncReadDb, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);
@@ -691,11 +685,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runner.shutdown();
     conversationDriver.shutdown();
     loopMonitor?.stop();
-    // The async libsql clients (`asyncDb`, and the `asyncReadDb` read sibling)
-    // are deliberately NOT closed here: shutdown races best-effort background
-    // reads (autoRunner poke, the queue-idle probe below, in-flight Stats scans)
-    // that a closed client would reject as unhandled `CLIENT_CLOSED`. The clients
-    // are released on process exit.
+    // `asyncDb` is deliberately NOT closed here: shutdown races best-effort
+    // background reads (autoRunner poke, the queue-idle probe below) that a
+    // closed client would reject as unhandled `CLIENT_CLOSED`. It is released
+    // on process exit.
+    await statsReader.close();
   });
   await app.register(fastifyCookie);
   await app.register(fastifyWebsocket);
@@ -706,6 +700,26 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // at /api/openapi.{json,yaml}.
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+  // Treat an empty `application/json` body as no body. The optional-body POSTs
+  // (cancel/requeue/uncancel/reattempt — `.nullish()` schemas) are routinely
+  // called with a JSON content-type but no bytes; Fastify's default parser
+  // throws FST_ERR_CTP_EMPTY_JSON_BODY on that, which the error handler doesn't
+  // recognise and turns into a 500. Parse empty (or whitespace-only) as
+  // `undefined` so the optional schema accepts it; a non-empty body parses as
+  // before (and still surfaces malformed JSON as an error), so `/mcp`'s reliance
+  // on the parsed `req.body` is unaffected.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = (body as string).trim();
+    if (text === '') {
+      done(null, undefined);
+      return;
+    }
+    try {
+      done(null, JSON.parse(text));
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
   const pkg = readPackageManifest();
   // MCP and the WebSocket are not modeled as OpenAPI paths (neither is a
   // request/response REST endpoint) — they're described here in prose
@@ -818,24 +832,28 @@ not resolved yet.`;
         : scopedKeyAllowed(path));
 
     const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+    let scopedKeyRejected = false;
     if (bearer) {
       const key = await auth.verifyKey(bearer);
       if (key) {
-        if (!scopeAllows(key.scope)) return forbidden();
-        return;
+        if (scopeAllows(key.scope)) return;
+        scopedKeyRejected = true;
       }
     }
     if (auth.validateSession(req.cookies[SESSION_COOKIE])) return;
-    const queryToken = (req.query as Record<string, string | undefined>)?.token;
-    if (queryToken) {
-      if (auth.validateSession(queryToken)) return;
-      const key = await auth.verifyKey(queryToken);
-      if (key) {
-        if (!scopeAllows(key.scope)) return forbidden();
-        return;
+    if (path === '/api/ws') {
+      const queryToken = (req.query as Record<string, string | undefined>)?.token;
+      if (queryToken) {
+        if (auth.validateSession(queryToken)) return;
+        const key = await auth.verifyKey(queryToken);
+        if (key) {
+          if (scopeAllows(key.scope)) return;
+          scopedKeyRejected = true;
+        }
       }
     }
 
+    if (scopedKeyRejected) return forbidden();
     return reply.status(401).send({ error: { code: 'unauthenticated', message: 'authentication required' } });
   });
 
@@ -862,8 +880,7 @@ not resolved yet.`;
       });
     }
     app.log.error(err);
-    const message = err instanceof Error ? err.message : String(err);
-    return reply.status(500).send({ error: { code: 'internal', message } });
+    return reply.status(500).send({ error: { code: 'internal', message: 'internal server error' } });
   });
 
   await app.register(taskRoutes, { prefix: '/api' });

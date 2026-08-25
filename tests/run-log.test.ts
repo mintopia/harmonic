@@ -93,6 +93,6 @@ describe('GET /api/runs/:id/log (issue #242)', () => {
     const { status, body } = await server.api('GET', `/api/runs/${runId}/log`);
 
     expect(status).toBe(200);
-    expect(body).toEqual({ status: 'unavailable' });
+    expect(body).toEqual({ status: 'unavailable', liveCursor: 0 });
   });
 });

@@ -7,7 +7,7 @@ import type { SessionRow } from '../db/schema.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from './session-resume.js';
 import { buildResumeFallbackSummary, classifyReloadFailure } from './session-fallback.js';
 import { repoKey } from '../execution/repo-lock.js';
-import { forEachYielding } from '../reliability/yield.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 /** The capability half of the resume environment — every axis of the
@@ -66,7 +66,7 @@ export class BootResumeCoordinator {
      * (current adapter version, model, live permission modes). The coordinator
      * supplies the cwd axis itself — see {@link ResumeCapabilities}. */
     private readonly resolveCapabilities: (session: SessionRow) => ResumeCapabilities,
-    private readonly opts: { now?: () => number } = {},
+    private readonly opts: { now?: () => number; yielding?: YieldOptions } = {},
   ) {}
 
   /** Resume every interrupted, Session-bound Run not already resumed. Safe to
@@ -155,7 +155,7 @@ export class BootResumeCoordinator {
       // `running` Task, from being re-orphaned on a later boot — see
       // `RunStore.markInterrupted` and the boot Task sweep in `app.ts`).
       await this.taskService.setState(orphan.taskId, 'running');
-    });
+    }, this.opts.yielding);
   }
 
   /** Whether `runId` is already part of a resume — it was resumed

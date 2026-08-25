@@ -2,18 +2,18 @@ import type { AppContext } from './app.js';
 import type { ScheduledJobSnapshot } from '../scheduler/scheduler.js';
 import type { ConversationRow, ConversationState, RunRow, RunState } from '../db/schema.js';
 import type { TaskWithDeps } from '../domain/tasks.js';
-import { costOfUsages, resolvePrices, type Cost } from '../execution/pricing.js';
+import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
- * WebSocket broadcasts so the SPA sees one format (issue 15). Cost is
- * derived from stored Usage on every read — never persisted — so a price
- * change reprices all history.
+ * WebSocket broadcasts so the SPA sees one format (issue 15). Settled Run
+ * Costs are stored and frozen; only live Usage is priced on read.
  */
 
 const parseUsage = (raw: string | null): RunUsage | null => (raw ? (JSON.parse(raw) as RunUsage) : null);
+const parseCost = (raw: string | null): Cost | null => (raw ? (JSON.parse(raw) as Cost) : null);
 
 const pricesOf = (ctx: AppContext) => resolvePrices(ctx.configStore.get().prices);
 
@@ -81,14 +81,14 @@ export const operationEventToApi = (event: OperationEvent): ApiOperationEvent =>
   operation: operationToApi(event.operation),
 });
 
-export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage'> & { usage: RunUsage | null; cost: Cost | null };
+export type ApiRun = Omit<RunRow, 'usage' | 'liveUsage' | 'cost'> & { usage: RunUsage | null; cost: Cost | null };
 
-export function runToApi(ctx: AppContext, run: RunRow): ApiRun {
+export function runToApi(_ctx: AppContext, run: RunRow): ApiRun {
   const usage = parseUsage(run.usage);
   // liveUsage is the Activity view's live/persisted snapshot, streamed as a
   // `run_usage` firehose event — not part of the run's REST shape.
-  const { liveUsage: _liveUsage, ...rest } = run;
-  return { ...rest, usage, cost: costOfUsages([usage], pricesOf(ctx)) };
+  const { liveUsage, ...rest } = run;
+  return { ...rest, usage, cost: parseCost(run.cost) };
 }
 
 /** The firehose shape of a live-usage snapshot (ADR 0010): the persisted
@@ -130,6 +130,12 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   toolCount: number | null;
   /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
   runId: number | null;
+  /** The running run's phase, for the Board's Active-card badge; null unless the Task is running (or a pre-phase-machine run). */
+  phase: RunRow['phase'];
+  /** The running run's current context-window occupancy in tokens; null unless running (or unreported). Live via the `run_usage` firehose (issue #52). */
+  contextTokens: number | null;
+  /** The model's effective context window (config override, else shipped default); null when unknown. The board card shows `ctx %` = contextTokens/contextWindow — never a fabricated percentage (issue #52). */
+  contextWindow: number | null;
   /** The current scheduler reason this Task was not picked for, such as a
    * dependency, capacity, disabled Workspace, or missing integration branch;
    * null when it is not waiting (issue #238). */
@@ -145,26 +151,59 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.runs.listForTask(task.id);
-  const usages = runs.map((run) => parseUsage(run.usage));
   const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
-  // Drop the durable tracker-fact columns (issue #233): server-side persistence
-  // only, never part of the API shape (see ApiTask).
+  return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null);
+}
+
+/** Serialize a task list from its already-batched Runs (issue #258). */
+export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTask[]> {
+  if (tasks.length === 0) return [];
+  const runsByTask = new Map(tasks.map((task) => [task.id, [] as RunRow[]]));
+  for (const run of await ctx.runs.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
+  const running = tasks.flatMap((task) => {
+    const run = task.state === 'running' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
+    return run ? [run] : [];
+  });
+  const toolCounts = await ctx.runs.toolCallCounts(running.map((run) => run.id));
+  return tasks.map((task) => {
+    const runs = runsByTask.get(task.id) ?? [];
+    const activeRun = task.state === 'running' ? runs.find((run) => run.state === 'running') : undefined;
+    return taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null);
+  });
+}
+
+/** Peel the durable tracker-fact columns (issue #233) off a task: they are
+ * server-side persistence only, so they never enter the API shape — dropping
+ * them keeps the WS broadcast and the zod-validated REST response identical
+ * (streaming.test.ts parity). */
+function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFactColumns> {
   const {
-    trackerState: _s, trackerParent: _p, trackerBlockedBy: _bb, trackerLabels: _l,
-    trackerTitle: _tt, trackerBody: _tb, trackerUrl: _tu, trackerCreatedAt: _tc,
-    ...apiFields
+    trackerState, trackerParent, trackerBlockedBy, trackerLabels,
+    trackerTitle, trackerBody, trackerUrl, trackerCreatedAt,
+    ...rest
   } = task;
+  return rest;
+}
+
+function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
+  // A review-parked run is still `state:'running'` (phase 'review'), so an
+  // awaiting-review card surfaces the same live elapsed + `ctx %` as an active
+  // one — matched to the Paper mockup's Needs-you cards.
+  const running = runs.find((r) => r.state === 'running');
   return {
-    ...apiFields,
+    ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
-    cost: costOfUsages(usages, pricesOf(ctx)),
+    cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
     branch: runs.at(-1)?.branch ?? null,
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,
-    toolCount: running ? await runningToolCount(ctx, running) : null,
+    toolCount,
     runId: running?.id ?? null,
+    phase: running?.phase ?? null,
+    contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
+    contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
     candidateRef: runs.at(-1)?.candidateRef ?? null,
   };
@@ -178,9 +217,9 @@ async function runningToolCount(ctx: AppContext, run: RunRow): Promise<number> {
   return count;
 }
 
-/** Cost of an arbitrary set of runs against the live price table. */
-export function costOfRuns(ctx: AppContext, runs: RunRow[]): Cost | null {
-  return costOfUsages(runs.map((run) => parseUsage(run.usage)), pricesOf(ctx));
+/** Cost of an arbitrary set of Runs, summed from their frozen values. */
+export function costOfRuns(runs: RunRow[]): Cost | null {
+  return sumCosts(runs.map((run) => parseCost(run.cost)));
 }
 
 /** One live process in the Activity snapshot (issue #51); see `activitySnapshot`. */
@@ -224,27 +263,28 @@ export interface ApiActivityProcess {
 
 /**
  * The instance-wide Activity snapshot (issue #51, ADR 0010): every live
- * process across Workspaces, read from the in-memory registries
- * (`Runner.active` + `ConversationDriver.active`) and joined with each
- * session's latest Usage. A Run carries its live-usage snapshot — rolled-up
- * Usage, context fill, current-activity line, Process Tree — with Cost derived
- * on read like every other Cost. A Conversation has no live tailer, so its
- * `tree`/`activity` are null and its Usage/context come from the Conversation
- * row. `includeChats` is false for a Read Key (a read-scoped viz client): Runs
- * only, mirroring the firehose filter that hides Conversation traffic from
- * Read Keys.
+ * process across Workspaces. Runs come from the persisted capacity set, then
+ * join a Runner snapshot when one is live, so a wedged Run remains visible even
+ * after it has left the in-memory registry. A Run carries its live-usage
+ * snapshot — rolled-up Usage, context fill, current-activity line, Process
+ * Tree — with Cost derived on read like every other Cost. A Conversation has no
+ * live tailer, so its `tree`/`activity` are null and its Usage/context come from
+ * the Conversation row. `includeChats` is false for a Read Key (a read-scoped
+ * viz client): Runs only, mirroring the firehose filter that hides Conversation
+ * traffic from Read Keys.
  */
 export async function activitySnapshot(ctx: AppContext, includeChats: boolean): Promise<ApiActivityProcess[]> {
   const prices = pricesOf(ctx);
-  const runs: ApiActivityProcess[] = await Promise.all((await ctx.runner.activeSnapshots()).map(async ({ runId, taskId, snapshot }) => {
-    const run = await ctx.runs.get(runId);
-    const task = await ctx.tasks.get(taskId);
+  const snapshots = new Map((await ctx.runner.activeSnapshots()).map((snapshot) => [snapshot.runId, snapshot.snapshot]));
+  const runs: ApiActivityProcess[] = await Promise.all((await ctx.runs.listRunning()).map(async (run) => {
+    const task = await ctx.tasks.get(run.taskId);
+    const snapshot = snapshots.get(run.id) ?? null;
     return {
       type: 'run',
-      runId,
+      runId: run.id,
       conversationId: null,
-      taskId,
-      title: firstLineTitle(task.prompt) ?? `Task ${taskId}`,
+      taskId: run.taskId,
+      title: firstLineTitle(task.prompt) ?? `Task ${run.taskId}`,
       workspaceId: atRestWorkspaceId(task.workspaceId),
       workspaceName: await workspaceNameOf(ctx, task.workspaceId),
       harness: task.harness,
@@ -278,12 +318,10 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       harness: convo.harness,
       model: convo.model,
       state: convo.state,
-      // Conversations are direct-mode only (ADR-0006) — no Isolation Mode.
       isolation: 'direct',
       startedAt: convo.createdAt,
       trackerRef: null,
       trackerUrl: null,
-      // Conversations are hitl by nature; they don't carry the afk-escalation flag.
       escalated: false,
       usage,
       contextTokens: convo.contextTokens,
@@ -301,10 +339,11 @@ async function workspaceNameOf(ctx: AppContext, workspaceId: number | null): Pro
   return (await ctx.workspaces.get(atRestWorkspaceId(workspaceId))).name;
 }
 
-/** A model's configured context window (exact id, then the undated base id), or null when unconfigured — mirrors `conversationToApi` (issue #52). */
+/** A model's effective context window: config override, then the shipped
+ * default (`DEFAULT_CONTEXT_WINDOWS`); null when neither knows the model — the
+ * gauge then shows raw tokens, never a fabricated percentage (issue #52). */
 function contextWindowOf(ctx: AppContext, model: string): number | null {
-  const info = ctx.configStore.get().modelInfo;
-  return (info[model] ?? info[model.replace(/-\d{8}$/, '')])?.contextWindow ?? null;
+  return resolveContextWindow(model, ctx.configStore.get().modelInfo);
 }
 
 export type ApiConversation = Omit<ConversationRow, 'usage' | 'workspaceId'> & {

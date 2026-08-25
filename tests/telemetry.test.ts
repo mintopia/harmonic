@@ -89,7 +89,11 @@ it('flushes a trace-correlated log, span, and metric before daemon stop returns'
     `import { context, metrics, trace } from '${apiUrl}';`,
     `import { logger } from '${loggerUrl}';`,
     `import { startOperation } from '${operationsUrl}';`,
-    `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token', metricExportIntervalMillis: '25' }));`,
+    // A large interval keeps the periodic metric reader from firing (and its
+    // tight export timeout from flaking under load) during the child's short
+    // life: the flush under test is the deterministic shutdown `forceFlush`, so
+    // the metrics still arrive without a racing periodic export polluting stderr.
+    `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token', metricExportIntervalMillis: '60000' }));`,
     "const span = trace.getTracer('smoke').startSpan('smoke-span'); context.with(trace.setSpan(context.active(), span), () => logger.info('smoke-log')); span.end();",
     "const success = startOperation({ type: 'smoke-success', attributes: {} }); success.end();",
     "const failure = startOperation({ type: 'smoke-failure', attributes: {} }); failure.fail('smoke failure');",

@@ -50,7 +50,7 @@ describe('Git operation instrumentation (issue #287)', () => {
     const worktreeRoot = mkdtempSync(join(tmpdir(), 'harmonic-git-operations-wt-'));
     tmpDirs.push(worktreeRoot);
     const featurePath = join(worktreeRoot, 'feature');
-    const parent = startOperation('run', {});
+    const parent = startOperation({ type: 'run', attributes: {} });
 
     await parent.run(async () => {
       await Git.createBranch(repo, 'preview', 'main');
@@ -92,7 +92,7 @@ describe('Git operation instrumentation (issue #287)', () => {
     git(featurePath, 'commit', '-m', 'feature conflict');
     writeFileSync(join(repo, 'base.txt'), 'main version\n');
     git(repo, 'commit', '-am', 'main conflict');
-    const parent = startOperation('land', {});
+    const parent = startOperation({ type: 'land', attributes: {} });
 
     const result = await parent.run(() => Git.rebaseOnto(featurePath, git(repo, 'rev-parse', 'main')));
     parent.end();

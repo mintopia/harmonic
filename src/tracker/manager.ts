@@ -15,7 +15,7 @@ import { EpicOperations } from '../execution/epic-operations.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
-import { forEachYielding } from '../reliability/yield.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { logger } from '../logger.js';
 import type { Scheduler } from '../scheduler/scheduler.js';
 
@@ -74,6 +74,9 @@ export class TrackerPollerManager {
     private readonly epicOperations: EpicOperations = new EpicOperations(),
     /** The central recurring-work owner (issue #305). Omitted only by focused legacy unit tests. */
     private readonly scheduler?: Scheduler,
+    /** Cooperative-yield injection for the sync sweep over a large Workspace
+     * set (issue #200); default yields on the standard wall-clock budget. */
+    private readonly opts: { yieldOptions?: YieldOptions } = {},
   ) {}
 
   /**
@@ -93,12 +96,12 @@ export class TrackerPollerManager {
         entry.unregister();
         this.entries.delete(id);
       }
-    });
+    }, this.opts.yieldOptions);
     // Drop cached resolutions for Workspaces gone or with tracking off — no poll, no Resolved Tracker.
     await forEachYielding(this.resolved.keys(), async (id) => {
       const ws = wsById.get(id);
       if (!ws || !ws.trackerEnabled) this.resolved.delete(id);
-    });
+    }, this.opts.yieldOptions);
     // For every tracker-enabled Workspace lacking a Job: resolve its tracker,
     // cache the result, then register the Job even if disabled.
     await forEachYielding(wsById.values(), async (ws) => {
@@ -109,7 +112,7 @@ export class TrackerPollerManager {
       // The no-Scheduler branch is retained for focused manager tests and the
       // pre-registry embedding, where a loop-less failure had no Job to expose.
       if (resolved.ok || this.scheduler) this.startLoop(ws);
-    });
+    }, this.opts.yieldOptions);
   }
 
   /** Register one Scheduler-owned tracker poll Job for a Workspace. */
@@ -158,7 +161,7 @@ export class TrackerPollerManager {
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
       this.onClosedWhileRunning,
       epics,
-      this.scheduler === undefined,
+      { reconcileOnPoll: this.scheduler === undefined },
     );
     const unregister = this.scheduler
       ? this.scheduler.register({

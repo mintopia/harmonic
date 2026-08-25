@@ -310,7 +310,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         close: async () => {},
         reopen: async () => {},
       };
-    }, undefined, undefined, undefined, {
+    }, undefined, undefined, undefined, undefined, undefined, {
       yieldOptions: {
         budgetMs: 0,
         now: () => tick++,

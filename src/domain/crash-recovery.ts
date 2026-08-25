@@ -9,7 +9,7 @@ import { foldJournal, type LandingEffect, type ObservedState } from './landing.j
 import { isMutating, survivesRestart } from './turn-queue.js';
 import { Git } from '../execution/git.js';
 import { landBranch } from '../execution/branch-landing.js';
-import { forEachYielding } from '../reliability/yield.js';
+import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 /**
@@ -60,6 +60,7 @@ export class CrashRecoveryCoordinator {
       now?: () => number;
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
       isDirectContextClean?: (workingDir: string) => Promise<boolean>;
+      yieldOptions?: YieldOptions;
     } = {},
   ) {}
 
@@ -115,7 +116,7 @@ export class CrashRecoveryCoordinator {
       const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
       if (releasable) await this.leaseStore.release(lease.key);
       else await this.leaseStore.markSuspect(lease.key);
-    });
+    }, this.opts.yieldOptions);
   }
 
   /** Pass A: resolve every Run mid-landing when the process died. */
@@ -138,7 +139,21 @@ export class CrashRecoveryCoordinator {
       // effect with an `ok:true` result is `'already-applied'`
       // (landing.ts's `reconcile`) and never reaches `observed` at all, so a
       // fully-applied landing reconciles hermetically, no process spawned.
-      const priorEntries = foldJournal(await this.landingJournal.views(run.id));
+      const journalViews = await this.landingJournal.views(run.id);
+      const priorEntries = foldJournal(journalViews);
+      const latestResults = new Map<string, typeof journalViews[number]>();
+      for (const row of journalViews) {
+        if (row.kind === 'result' && row.idempotencyKey !== null) latestResults.set(row.idempotencyKey, row);
+      }
+      const failedResult = [...latestResults.values()].find((row) => row.payload['ok'] === false);
+      if (failedResult) {
+        const detail = failedResult.payload['detail'];
+        await this.landing.reparkForReview(run);
+        await this.runStore.update(run.id, {
+          reviewFeedback: typeof detail === 'string' ? detail : 'landing failed; retry accept or land via PR/manual',
+        });
+        return;
+      }
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
       let merged = false;
       if (needsWorldCheck && run.branch && run.baseBranch) {
@@ -179,7 +194,7 @@ export class CrashRecoveryCoordinator {
       // conflict) — leave the Run parked in `landing` / the Task in
       // `awaiting-review` for a human to retry accept. A later boot
       // re-reconciles idempotently.
-    });
+    }, this.opts.yieldOptions);
   }
 
   /** Pass B: the turn queue — cancel every pending turn, resolve whatever is
@@ -220,7 +235,7 @@ export class CrashRecoveryCoordinator {
         }
       }
       await this.turnQueue.settle(row.id, 'failed', now);
-    });
+    }, this.opts.yieldOptions);
   }
 }
 
