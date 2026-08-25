@@ -9,6 +9,7 @@ import { foldJournal, type LandingEffect, type ObservedState } from './landing.j
 import { isMutating, survivesRestart } from './turn-queue.js';
 import { Git } from '../execution/git.js';
 import { landBranch } from '../execution/branch-landing.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 /**
@@ -107,19 +108,19 @@ export class CrashRecoveryCoordinator {
    */
   private async reconcileLeases(): Promise<void> {
     const isClean = this.opts.isDirectContextClean ?? directContextProvablyClean;
-    for (const lease of await this.leaseStore.listAll()) {
-      if (lease.state === 'suspect') continue; // already reconciled — idempotent
+    await forEachYielding(await this.leaseStore.listAll(), async (lease) => {
+      if (lease.state === 'suspect') return; // already reconciled — idempotent
       const run = await this.runStore.get(lease.ownerRunId);
       const task = await this.taskService.get(run.taskId);
       const releasable = task.isolationMode === 'direct' && (await isClean(task.workingDir));
       if (releasable) await this.leaseStore.release(lease.key);
       else await this.leaseStore.markSuspect(lease.key);
-    }
+    });
   }
 
   /** Pass A: resolve every Run mid-landing when the process died. */
   private async reconcileLandingOrphans(now: number): Promise<void> {
-    for (const run of await this.runStore.listLandingOrphans()) {
+    await forEachYielding(await this.runStore.listLandingOrphans(), async (run) => {
       const task = await this.taskService.get(run.taskId);
       const poncSeq = await this.landingJournal.ponc(run.id);
       if (poncSeq === null) {
@@ -127,7 +128,7 @@ export class CrashRecoveryCoordinator {
         // started (see landing.ts's module doc comment). Settle it as an
         // interrupted orphan, the same disposition the generic sweep would use.
         await this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
-        continue;
+        return;
       }
 
       // A landing died between intent and result: ask the world (a worktree
@@ -178,13 +179,13 @@ export class CrashRecoveryCoordinator {
       // conflict) — leave the Run parked in `landing` / the Task in
       // `awaiting-review` for a human to retry accept. A later boot
       // re-reconciles idempotently.
-    }
+    });
   }
 
   /** Pass B: the turn queue — cancel every pending turn, resolve whatever is
    * still `in_flight` (no live harness survives a restart). */
   private async reconcileTurnQueue(now: number): Promise<void> {
-    for (const row of await this.turnQueue.listUnsettled()) {
+    await forEachYielding(await this.turnQueue.listUnsettled(), async (row) => {
       if (row.status === 'queued' || row.status === 'claimed') {
         // A pending resume re-entry (`crash-recovery`, issue #146) is *meant* to
         // survive a restart and be picked up by the next running process — the
@@ -193,9 +194,9 @@ export class CrashRecoveryCoordinator {
         // enqueued it. (An in_flight one still falls through below: it is
         // non-mutating, so it just settles `failed`, never blocking single-flight
         // on the next boot.)
-        if (survivesRestart(row.purpose)) continue;
+        if (survivesRestart(row.purpose)) return;
         await this.turnQueue.cancel(row.id, 'execution-closed', now);
-        continue;
+        return;
       }
       // in_flight: no live harness for it now. A mutating corrective turn
       // (self-heal/re-merge) touched the workspace out from under the crash —
@@ -219,7 +220,7 @@ export class CrashRecoveryCoordinator {
         }
       }
       await this.turnQueue.settle(row.id, 'failed', now);
-    }
+    });
   }
 }
 

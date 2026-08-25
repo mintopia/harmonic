@@ -7,6 +7,7 @@ import type { SessionRow } from '../db/schema.js';
 import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from './session-resume.js';
 import { buildResumeFallbackSummary, classifyReloadFailure } from './session-fallback.js';
 import { repoKey } from '../execution/repo-lock.js';
+import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 /** The capability half of the resume environment — every axis of the
@@ -83,9 +84,9 @@ export class BootResumeCoordinator {
 
   private async resumeInterrupted(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
-    for (const orphan of await this.runStore.listResumableInterrupted()) {
-      if (await this.alreadyHandled(orphan.id)) continue; // once-only (AC3)
-      if (orphan.sessionRowId === null) continue; // narrowing; the query already excludes null
+    await forEachYielding(await this.runStore.listResumableInterrupted(), async (orphan) => {
+      if (await this.alreadyHandled(orphan.id)) return; // once-only (AC3)
+      if (orphan.sessionRowId === null) return; // narrowing; the query already excludes null
 
       const session = await this.sessionStore.get(orphan.sessionRowId);
       const task = await this.taskService.get(orphan.taskId);
@@ -154,7 +155,7 @@ export class BootResumeCoordinator {
       // `running` Task, from being re-orphaned on a later boot — see
       // `RunStore.markInterrupted` and the boot Task sweep in `app.ts`).
       await this.taskService.setState(orphan.taskId, 'running');
-    }
+    });
   }
 
   /** Whether `runId` is already part of a resume — it was resumed
