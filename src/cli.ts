@@ -33,6 +33,9 @@ Options:
   --otel-endpoint <url>       OTLP/HTTP base endpoint (or $OTEL_EXPORTER_OTLP_ENDPOINT)
   --otel-headers <headers>    Comma-separated key=value headers (or $OTEL_EXPORTER_OTLP_HEADERS)
   --otel-export <true|false>  Enable OTLP export (or $OTEL_EXPORTER_OTLP_ENABLED)
+  --otel-metric-export-interval <milliseconds>
+                              Metric export and stdout summary interval
+                              (or $OTEL_METRIC_EXPORT_INTERVAL)
   --otel-stdout-log-level <level>
                               debug, info, warn, error, or none
                               (or $OTEL_STDOUT_LOG_LEVEL)
@@ -79,6 +82,7 @@ async function main(): Promise<void> {
       'otel-endpoint': { type: 'string' },
       'otel-headers': { type: 'string' },
       'otel-export': { type: 'string' },
+      'otel-metric-export-interval': { type: 'string' },
       'otel-stdout-log-level': { type: 'string' },
     },
   });
@@ -136,6 +140,7 @@ async function main(): Promise<void> {
       endpoint: values['otel-endpoint'],
       headers: values['otel-headers'],
       exportEnabled: values['otel-export'],
+      metricExportIntervalMillis: values['otel-metric-export-interval'],
       stdoutLogLevel: values['otel-stdout-log-level'],
     }),
   );

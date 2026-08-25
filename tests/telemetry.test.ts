@@ -10,6 +10,7 @@ import { stopDaemon, writeDaemon } from '../src/daemon.js';
 
 const telemetryUrl = pathToFileURL(new URL('../src/telemetry.ts', import.meta.url).pathname).href;
 const loggerUrl = pathToFileURL(new URL('../src/logger.ts', import.meta.url).pathname).href;
+const operationsUrl = pathToFileURL(new URL('../src/telemetry/operations.ts', import.meta.url).pathname).href;
 const apiUrl = pathToFileURL(new URL('../node_modules/@opentelemetry/api/build/src/index.js', import.meta.url).pathname).href;
 
 const savedEnv = {
@@ -17,6 +18,7 @@ const savedEnv = {
   headers: process.env.OTEL_EXPORTER_OTLP_HEADERS,
   enabled: process.env.OTEL_EXPORTER_OTLP_ENABLED,
   logLevel: process.env.OTEL_STDOUT_LOG_LEVEL,
+  metricExportInterval: process.env.OTEL_METRIC_EXPORT_INTERVAL,
 };
 
 afterEach(() => {
@@ -25,6 +27,7 @@ afterEach(() => {
     OTEL_EXPORTER_OTLP_HEADERS: savedEnv.headers,
     OTEL_EXPORTER_OTLP_ENABLED: savedEnv.enabled,
     OTEL_STDOUT_LOG_LEVEL: savedEnv.logLevel,
+    OTEL_METRIC_EXPORT_INTERVAL: savedEnv.metricExportInterval,
   })) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -37,12 +40,14 @@ describe('telemetry configuration', () => {
     process.env.OTEL_EXPORTER_OTLP_HEADERS = 'authorization=env-token';
     process.env.OTEL_EXPORTER_OTLP_ENABLED = 'false';
     process.env.OTEL_STDOUT_LOG_LEVEL = 'warn';
+    process.env.OTEL_METRIC_EXPORT_INTERVAL = '2500';
 
     expect(resolveTelemetryOptions()).toEqual({
       endpoint: 'http://env.test:4318',
       headers: { authorization: 'env-token' },
       exportEnabled: false,
       stdoutLogLevel: 'warn',
+      metricExportIntervalMillis: 2500,
     });
     expect(resolveTelemetryOptions({ endpoint: 'http://cli.test:4318', exportEnabled: 'true' })).toMatchObject({
       endpoint: 'http://cli.test:4318',
@@ -54,6 +59,9 @@ describe('telemetry configuration', () => {
     expect(() => resolveTelemetryOptions({ exportEnabled: 'yes' })).toThrow('OTLP export must be true or false');
     expect(() => resolveTelemetryOptions({ headers: 'not-a-header' })).toThrow('Invalid OTLP header');
     expect(() => resolveTelemetryOptions({ stdoutLogLevel: 'verbose' })).toThrow('Invalid OTLP stdout log level');
+    expect(() => resolveTelemetryOptions({ metricExportIntervalMillis: '0' })).toThrow(
+      'OTLP metric export interval must be a positive integer',
+    );
   });
 });
 
@@ -80,9 +88,13 @@ it('flushes a trace-correlated log, span, and metric before daemon stop returns'
     `import { initializeTelemetry, resolveTelemetryOptions } from '${telemetryUrl}';`,
     `import { context, metrics, trace } from '${apiUrl}';`,
     `import { logger } from '${loggerUrl}';`,
-    `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token' }));`,
+    `import { startOperation } from '${operationsUrl}';`,
+    `const telemetry = initializeTelemetry(resolveTelemetryOptions({ endpoint: 'http://127.0.0.1:${address.port}', headers: 'authorization=smoke-token', metricExportIntervalMillis: '25' }));`,
     "const span = trace.getTracer('smoke').startSpan('smoke-span'); context.with(trace.setSpan(context.active(), span), () => logger.info('smoke-log')); span.end();",
+    "const success = startOperation({ type: 'smoke-success', attributes: {} }); success.end();",
+    "const failure = startOperation({ type: 'smoke-failure', attributes: {} }); failure.fail('smoke failure');",
     "metrics.getMeter('smoke').createCounter('smoke_counter').add(1);",
+    "await new Promise((resolve) => setTimeout(resolve, 40));",
     "process.once('SIGTERM', async () => { await telemetry.shutdown(); process.exit(0); });",
     "console.log('ready');",
     'setInterval(() => {}, 1000);',
@@ -117,10 +129,19 @@ it('flushes a trace-correlated log, span, and metric before daemon stop returns'
     ]),
   );
   const logsPayload = received.find((request) => request.path === '/v1/logs')?.body;
+  const metricsPayload = received.find((request) => request.path === '/v1/metrics')?.body;
   expect(logsPayload).toContain('smoke-log');
   expect(logsPayload).toMatch(/"traceId":"[^"]+"/);
   expect(logsPayload).toMatch(/"spanId":"[^"]+"/);
   expect(stdout).toContain('"message":"smoke-log"');
   expect(stdout).toMatch(/"traceId":"[^"]+"/);
   expect(stdout).toMatch(/"spanId":"[^"]+"/);
+  expect(metricsPayload).toContain('harmonic.operations.completed');
+  expect(metricsPayload).toContain('harmonic.operations.errors');
+  expect(metricsPayload).toContain('harmonic.operations.duration');
+  expect(metricsPayload).toContain('smoke-success');
+  expect(metricsPayload).toContain('smoke-failure');
+  expect(stdout).toContain('Operation metrics summary');
+  expect(stdout).toContain('operation.count');
+  expect(stdout).toContain('operation.error_count');
 });

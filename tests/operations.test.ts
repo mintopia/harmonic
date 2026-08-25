@@ -95,6 +95,32 @@ describe('operations (issue #284)', () => {
     expect(registry.recentRoots().every((operation) => operation.endedAt !== undefined)).toBe(true);
   });
 
+  it('aggregates operation counts and errors by type for periodic summaries', async () => {
+    const { registry } = installOperations();
+    const first = startOperation({ type: 'poll', attributes: {} });
+    first.end();
+    const second = startOperation({ type: 'poll', attributes: {} });
+    second.fail('poll failed');
+    const third = startOperation({ type: 'run', attributes: {} });
+    third.end();
+
+    const summaries: { type: string; count: number; errorCount: number }[] = [];
+    await registry.flushMetricSummaries((summary) => {
+      summaries.push(summary);
+    });
+
+    expect(summaries).toEqual([
+      { type: 'poll', count: 2, errorCount: 1 },
+      { type: 'run', count: 1, errorCount: 0 },
+    ]);
+
+    const nextPass: { type: string; count: number; errorCount: number }[] = [];
+    await registry.flushMetricSummaries((summary) => {
+      nextPass.push(summary);
+    });
+    expect(nextPass).toEqual([]);
+  });
+
   it('registers the real telemetry provider so awaited child operations inherit the parent', async () => {
     const exporter = new InMemorySpanExporter();
     const telemetry = initializeTelemetry(resolveTelemetryOptions({ exportEnabled: 'false' }), {

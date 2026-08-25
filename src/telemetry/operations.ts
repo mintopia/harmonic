@@ -1,5 +1,16 @@
-import { context, trace, type Attributes, type SpanContext, SpanStatusCode, type Context } from '@opentelemetry/api';
+import {
+  context,
+  trace,
+  type Attributes,
+  type Counter,
+  type Histogram,
+  type Meter,
+  type SpanContext,
+  SpanStatusCode,
+  type Context,
+} from '@opentelemetry/api';
 import type { ReadableSpan, Span, SpanProcessor } from '@opentelemetry/sdk-trace-node';
+import { forEachYielding } from '../reliability/yield.js';
 import type { EventBus } from '../server/bus.js';
 
 export type OperationEventType = 'op-started' | 'op-updated' | 'op-ended';
@@ -18,6 +29,12 @@ export interface OperationSnapshot {
 export interface OperationEvent {
   type: OperationEventType;
   operation: OperationSnapshot;
+}
+
+export interface OperationMetricSummary {
+  type: string;
+  count: number;
+  errorCount: number;
 }
 
 export interface Operation {
@@ -53,7 +70,12 @@ export class OperationRegistry implements SpanProcessor {
   private readonly live = new Map<string, Span>();
   private readonly rootSpanIds = new Set<string>();
   private readonly recent: OperationSnapshot[] = [];
+  private readonly summaries = new Map<string, Omit<OperationMetricSummary, 'type'>>();
+  private pendingSummaryTypes = new Set<string>();
   private bus: EventBus | undefined;
+  private completedCounter: Counter | undefined;
+  private errorCounter: Counter | undefined;
+  private durationHistogram: Histogram | undefined;
 
   constructor(private readonly recentLimit = 100) {}
 
@@ -75,6 +97,21 @@ export class OperationRegistry implements SpanProcessor {
     }));
   }
 
+  configureMetrics(meter: Meter): void {
+    this.completedCounter = meter.createCounter('harmonic.operations.completed');
+    this.errorCounter = meter.createCounter('harmonic.operations.errors');
+    this.durationHistogram = meter.createHistogram('harmonic.operations.duration', { unit: 'ms' });
+  }
+
+  async flushMetricSummaries(report: (summary: OperationMetricSummary) => void): Promise<void> {
+    const pendingTypes = this.pendingSummaryTypes;
+    this.pendingSummaryTypes = new Set();
+    await forEachYielding(pendingTypes, (type) => {
+      const summary = this.summaries.get(type);
+      if (summary) report({ type, ...summary });
+    });
+  }
+
   onStart(span: Span, _parentContext: Context): void {
     const spanId = span.spanContext().spanId;
     const parentSpanId = span.parentSpanContext?.spanId;
@@ -90,6 +127,7 @@ export class OperationRegistry implements SpanProcessor {
     this.live.delete(spanId);
     registryForSpan.delete(spanId);
     if (this.rootSpanIds.delete(spanId)) this.remember(completed);
+    this.recordMetrics(completed);
     this.emit('op-ended', completed);
   }
 
@@ -110,6 +148,11 @@ export class OperationRegistry implements SpanProcessor {
     this.live.clear();
     this.rootSpanIds.clear();
     this.recent.length = 0;
+    this.summaries.clear();
+    this.pendingSummaryTypes.clear();
+    this.completedCounter = undefined;
+    this.errorCounter = undefined;
+    this.durationHistogram = undefined;
     return Promise.resolve();
   }
 
@@ -117,6 +160,20 @@ export class OperationRegistry implements SpanProcessor {
     if (this.recentLimit <= 0) return;
     this.recent.push(operation);
     if (this.recent.length > this.recentLimit) this.recent.shift();
+  }
+
+  private recordMetrics(operation: OperationSnapshot): void {
+    const attributes = { 'harmonic.operation.type': operation.type };
+    this.completedCounter?.add(1, attributes);
+    this.durationHistogram?.record((operation.endedAt ?? operation.startedAt) - operation.startedAt, attributes);
+    const summary = this.summaries.get(operation.type) ?? { count: 0, errorCount: 0 };
+    summary.count += 1;
+    if (operation.status.code === SpanStatusCode.ERROR) {
+      this.errorCounter?.add(1, attributes);
+      summary.errorCount += 1;
+    }
+    this.summaries.set(operation.type, summary);
+    this.pendingSummaryTypes.add(operation.type);
   }
 
   private emit(type: OperationEventType, operation: OperationSnapshot): void {

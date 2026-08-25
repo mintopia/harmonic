@@ -10,11 +10,11 @@ import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { AlwaysOnSampler, BatchSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { operationRegistry } from './telemetry/operations.js';
-import { configureLogger, type StdoutLogLevel } from './logger.js';
+import { configureLogger, logger, type StdoutLogLevel } from './logger.js';
 import { operationRegistry } from './telemetry/operations.js';
 
 const DEFAULT_ENDPOINT = 'http://localhost:4318';
+const DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 60_000;
 
 const diagLevels: Record<StdoutLogLevel, DiagLogLevel> = {
   debug: DiagLogLevel.DEBUG,
@@ -29,6 +29,7 @@ export interface TelemetryOptions {
   headers: Record<string, string>;
   exportEnabled: boolean;
   stdoutLogLevel: StdoutLogLevel;
+  metricExportIntervalMillis: number;
 }
 
 export interface TelemetryOverrides {
@@ -36,6 +37,7 @@ export interface TelemetryOverrides {
   headers?: string | undefined;
   exportEnabled?: string | undefined;
   stdoutLogLevel?: string | undefined;
+  metricExportIntervalMillis?: string | undefined;
 }
 
 export interface TelemetryController {
@@ -72,6 +74,16 @@ function parseStdoutLogLevel(value: string | undefined): StdoutLogLevel {
   throw new Error(`Invalid OTLP stdout log level: ${value}`);
 }
 
+function parseMetricExportIntervalMillis(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS;
+  if (!/^\d+$/.test(value)) throw new Error('OTLP metric export interval must be a positive integer');
+  const interval = Number(value);
+  if (!Number.isSafeInteger(interval) || interval < 1) {
+    throw new Error('OTLP metric export interval must be a positive integer');
+  }
+  return interval;
+}
+
 function endpointFor(base: string, signal: 'traces' | 'logs' | 'metrics'): string {
   const normalized = base.replace(/\/+$/, '');
   return `${new URL(normalized).toString().replace(/\/$/, '')}/v1/${signal}`;
@@ -98,6 +110,9 @@ export function resolveTelemetryOptions(overrides: TelemetryOverrides = {}): Tel
     headers: parseHeaders(overrides.headers ?? process.env.OTEL_EXPORTER_OTLP_HEADERS),
     exportEnabled: parseExportEnabled(overrides.exportEnabled ?? process.env.OTEL_EXPORTER_OTLP_ENABLED),
     stdoutLogLevel: parseStdoutLogLevel(overrides.stdoutLogLevel ?? process.env.OTEL_STDOUT_LOG_LEVEL),
+    metricExportIntervalMillis: parseMetricExportIntervalMillis(
+      overrides.metricExportIntervalMillis ?? process.env.OTEL_METRIC_EXPORT_INTERVAL,
+    ),
   };
 }
 
@@ -135,9 +150,39 @@ export function initializeTelemetry(
   const meterProvider = new MeterProvider({
     resource,
     readers: options.exportEnabled
-      ? [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter({ url: endpointFor(options.endpoint, 'metrics'), headers: options.headers }) })]
+      ? [
+          new PeriodicExportingMetricReader({
+            exporter: new OTLPMetricExporter({ url: endpointFor(options.endpoint, 'metrics'), headers: options.headers }),
+            exportIntervalMillis: options.metricExportIntervalMillis,
+            exportTimeoutMillis: Math.max(options.metricExportIntervalMillis, 5_000),
+          }),
+        ]
       : [],
   });
+  operationRegistry.configureMetrics(meterProvider.getMeter('harmonic'));
+  let summaryFlush: Promise<void> | undefined;
+  const flushMetricSummary = (): Promise<void> => {
+    if (summaryFlush) return summaryFlush;
+    summaryFlush = operationRegistry
+      .flushMetricSummaries((summary) => {
+        logger.info('Operation metrics summary', {
+          'operation.type': summary.type,
+          'operation.count': summary.count,
+          'operation.error_count': summary.errorCount,
+        });
+      })
+      .catch((error: unknown) => {
+        logger.error(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        summaryFlush = undefined;
+      });
+    return summaryFlush;
+  };
+  const summaryTimer = setInterval(() => {
+    void flushMetricSummary();
+  }, options.metricExportIntervalMillis);
+  summaryTimer.unref();
 
   tracerProvider.register();
   logs.setGlobalLoggerProvider(loggerProvider);
@@ -146,6 +191,8 @@ export function initializeTelemetry(
 
   controller = {
     async shutdown(): Promise<void> {
+      clearInterval(summaryTimer);
+      await flushMetricSummary();
       await Promise.allSettled([tracerProvider.forceFlush(), loggerProvider.forceFlush(), meterProvider.forceFlush()]);
       await Promise.allSettled([tracerProvider.shutdown(), loggerProvider.shutdown(), meterProvider.shutdown()]);
       controller = undefined;
