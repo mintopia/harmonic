@@ -98,16 +98,20 @@ describe('Runner.reopenClosedMirrored — no agent working the Task', () => {
     expect(reopened).toEqual([7]); // the premature close was reverted
   });
 
-  it('does NOT complete — a premature close never unblocks dependents', async () => {
+  it('does not complete, so a premature close leaves dependents not agent-workable', async () => {
     const blocker = await tasks.upsertMirrored(mirrored(1));
     const dependent = await tasks.create({ prompt: 'dependent', state: 'ready' });
     await tasks.addDependency(dependent.id, blocker.id);
-    expect((await tasks.get(dependent.id)).state).toBe('blocked');
+    expect((await tasks.get(dependent.id)).state).toBe('ready');
+    expect((await tasks.withDeps(await tasks.get(dependent.id))).openBlockerCount).toBe(1);
+    expect((await tasks.withDeps(await tasks.get(dependent.id))).agentWorkable).toBe(false);
     await tasks.setState(blocker.id, 'running');
 
     await runner.reopenClosedMirrored(blocker.id);
-    // The blocker was Escalated, not completed, so the dependent stays blocked.
-    expect((await tasks.get(dependent.id)).state).toBe('blocked');
+    // The blocker was Escalated, not completed, so the dependent remains blocked by it.
+    expect((await tasks.get(dependent.id)).state).toBe('ready');
+    expect((await tasks.withDeps(await tasks.get(dependent.id))).openBlockerCount).toBe(1);
+    expect((await tasks.withDeps(await tasks.get(dependent.id))).agentWorkable).toBe(false);
   });
 
   it('leaves a Task with a live Run row alone (a Run is mid-spawn)', async () => {

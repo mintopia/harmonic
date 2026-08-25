@@ -71,7 +71,7 @@ const epic = (members: EpicMember[]): Epic => ({
 
 describe('deriveEpicFrontier (issue #264)', () => {
   it('puts ready members in Frontier and layers blocked members by depth (running members are promoted out)', () => {
-    const tasks = [task(1, 'ready'), task(2, 'running'), task(3, 'blocked', [1]), task(4, 'blocked', [3])];
+    const tasks = [task(1, 'ready'), task(2, 'running'), task(3, 'ready', [1]), task(4, 'ready', [3])];
     const model = deriveEpicFrontier(epic(tasks.map((t) => member(t.id, t.id))), tasks);
 
     // The running member (2) is surfaced in the Board's Active section, not here.
@@ -84,7 +84,7 @@ describe('deriveEpicFrontier (issue #264)', () => {
 
   it('hides merged members while retaining their satisfied dependency chip', () => {
     const merged = task(1, 'completed');
-    const blocked = task(2, 'blocked', [1, 99]);
+    const blocked = task(2, 'ready', [1, 99]);
     const model = deriveEpicFrontier(
       epic([member(1, 1, { landStatus: 'completed' }), member(2, 2)]),
       [merged, blocked],
@@ -115,7 +115,7 @@ describe('deriveEpicFrontier (issue #264)', () => {
 
   it('uses the tracker-ready state for unmirrored members but never puts a member with open blockers in Frontier', () => {
     const readyWithBlocker = task(1, 'ready', [2]);
-    const blocker = task(2, 'blocked');
+    const blocker = task(2, 'ready', [99]);
     const model = deriveEpicFrontier(
       epic([
         member(1, 1, { ready: true }),

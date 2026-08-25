@@ -82,7 +82,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: 'List Tasks, optionally filtered by state, harness, or priority.',
       inputSchema: {
         state: z
-          .enum(['draft', 'blocked', 'ready', 'running', 'awaiting-review', 'completed', 'failed', 'cancelled'])
+          .enum(['draft', 'ready', 'running', 'awaiting-review', 'completed', 'failed', 'cancelled'])
           .optional(),
         harness: z.enum(HARNESS_IDS).optional(),
         priority: z.enum(PRIORITIES).optional(),

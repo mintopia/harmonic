@@ -465,3 +465,24 @@ describe('durable tracker facts migration (issue #233, ADR-0030 expand)', () => 
     rmSync(migrationsFolder, { recursive: true, force: true });
   });
 });
+
+describe('blocker edge migration (issue #308)', () => {
+  it('moves legacy blocked rows to ready while retaining their dependency edges', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-blocker-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0048');
+    const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+    await migrate(drizzle(client, { schema }), { migrationsFolder });
+    const now = Date.now();
+    await client.execute({ sql: "insert into tasks (prompt, working_dir, state, created_at, updated_at) values ('blocker', '/tmp', 'ready', ?, ?)", args: [now, now] });
+    await client.execute({ sql: "insert into tasks (prompt, working_dir, state, created_at, updated_at) values ('dependent', '/tmp', 'blocked', ?, ?)", args: [now, now] });
+    await client.execute('insert into task_dependencies (task_id, depends_on_id) values (2, 1)');
+    client.close();
+
+    const db = await openAsyncDb(dataDir);
+    expect((await db.read((d) => d.select().from(schema.tasks).where(eq(schema.tasks.id, 2)).get()))?.state).toBe('ready');
+    expect(await db.read((d) => d.select().from(schema.taskDependencies).all())).toEqual([{ taskId: 2, dependsOnId: 1 }]);
+    await db.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});

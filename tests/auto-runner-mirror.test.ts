@@ -400,6 +400,20 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
   });
 
+  it('reports only open blocker edges in a ready task dependency diagnostic', async () => {
+    const completedBlocker = await directTask(freshDir(), 'completed blocker');
+    await tasks.setState(completedBlocker.id, 'completed');
+    const openBlocker = await tasks.create({ prompt: 'open blocker', workingDir: freshDir() });
+    const dependent = await directTask(freshDir(), 'dependent');
+    await tasks.addDependency(dependent.id, completedBlocker.id);
+    await tasks.addDependency(dependent.id, openBlocker.id);
+
+    const { ar } = build();
+    ar.poke();
+
+    await vi.waitFor(() => expect(ar.skipReasonFor(dependent.id)).toBe(`blocked-by #${openBlocker.id}`));
+  });
+
   it('still skips when the occupying Run sits in awaiting-review — the lease is gone but the work is not', async () => {
     const busy = freshDir();
     const reviewing = await directTask(busy, 'awaiting review');

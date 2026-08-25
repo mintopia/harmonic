@@ -93,9 +93,9 @@ describe('boardSections', () => {
     expect(sections.epics.map((entry) => entry.ref)).toEqual([40]);
   });
 
-  it('orders standalone work ready, blocked, then draft and excludes terminal tasks', () => {
-    const sections = boardSections([task(1, 'draft'), task(2, 'blocked'), task(3, 'ready'), task(4, 'completed')], []);
-    expect(sections.standalone.map((entry) => entry.id)).toEqual([3, 2, 1]);
+  it('orders standalone ready work before draft and excludes terminal tasks', () => {
+    const sections = boardSections([task(1, 'draft'), task(3, 'ready'), task(4, 'completed')], []);
+    expect(sections.standalone.map((entry) => entry.id)).toEqual([3, 1]);
   });
 
   it("excludes an Epic's own driver ticket (trackerRef === epic.ref) from the flat sections", () => {

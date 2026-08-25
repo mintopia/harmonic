@@ -54,7 +54,6 @@ const darkTokens = tokenNames(/:root\[data-theme='dark'\]\s*\{/);
 
 const STATES = [
   'draft',
-  'blocked',
   'ready',
   'running',
   'awaiting-review',
