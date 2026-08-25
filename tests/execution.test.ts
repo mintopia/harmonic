@@ -211,7 +211,7 @@ describe('run execution over ACP (direct mode)', () => {
       return body.state === 'running' ? true : undefined;
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(existsSync(secondStartFile)).toBe(false);
 
     const cancelledFirst = await server.api('POST', `/api/tasks/${firstCreated.body.id}/cancel`);
@@ -570,7 +570,9 @@ describe('wall-clock guardrail (issue #127)', () => {
   it('does not kill an over-budget run after its attempt tasks enter landing', async () => {
     const server = await startServer({
       ...stubHarness(),
-      guardrails: { budget: { wallClockMinutes: 0.02 } },
+      // 600ms budget: enough headroom for the stub spawn + attempt waitFors
+      // below, small enough that the 800ms sleep proves the timer fired.
+      guardrails: { budget: { wallClockMinutes: 0.01 } },
     });
     try {
       const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
@@ -581,7 +583,9 @@ describe('wall-clock guardrail (issue #127)', () => {
 
       await attempts.updateTask(implementation.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
       await attempts.finish(attempt.id, 'passed');
-      await new Promise((resolve) => setTimeout(resolve, 1_400));
+      // Past the 600ms wall-clock budget (the guardrail arms an exact timer for
+      // the remaining budget, so a ~200ms margin suffices).
+      await new Promise((resolve) => setTimeout(resolve, 800));
 
       expect((await server.api('GET', `/api/runs/${started.body.id}`)).body.state).toBe('running');
       expect(

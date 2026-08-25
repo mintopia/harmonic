@@ -141,7 +141,7 @@ describe('notification channels', () => {
     // for it (the accept below proves deliveries still flow afterwards).
     await server.api('POST', '/api/tasks', { prompt: 'silent', state: 'draft' });
     await server.api('POST', `/api/tasks/${taskId}/accept`);
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 100));
     const events = sink.requests.map((r) => JSON.parse(r.body).event);
     expect(events).not.toContain('task.created');
     expect(events).not.toContain('task.completed');
@@ -205,7 +205,7 @@ describe('notification channels', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${task.body.id}`)).body.state === 'awaiting-review');
     await waitFor(async () => (await server.api('GET', `/api/tasks/${other.body.id}`)).body.state === 'awaiting-review');
     await waitFor(async () => sink.requests.length > 0);
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 100));
 
     const taskIds = sink.requests.map((r) => JSON.parse(r.body).task.id);
     expect(taskIds).toContain(task.body.id);

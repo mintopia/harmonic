@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { randomBytes, scryptSync } from 'node:crypto';
+import { copyFileSync, mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -7,8 +8,8 @@ import { buildApp, type App } from '../src/server/app.js';
 import type { DeepPartial } from '../src/config.js';
 import type { AppConfig } from '../src/config.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
-import type { AsyncDbHandle } from '../src/db/async.js';
-import { workspaces } from '../src/db/schema.js';
+import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
+import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
 
 /** A `TaskService`/`AutoRunner`-shaped `getWorkspaces` callback over
@@ -175,6 +176,42 @@ export async function captureRunEnv(
   return { taskId: created.body.id as number, runId: started.body.id as number, env };
 }
 
+/**
+ * Boot-cost fast paths (test-suite optimization, 2026-08). `startServer` is
+ * called ~174 times across the suite; per boot the naive path pays ~50ms of
+ * drizzle migrations on an empty file DB plus two ~35ms `scryptSync` calls
+ * (setPassword at boot, verifyLogin over HTTP). Two caches shave all three:
+ *
+ * - A once-per-process migrated template DB, copied into each fresh dataDir so
+ *   `openAsyncDb` sees an already-migrated file (~4ms instead of ~50ms).
+ * - A once-per-process scrypt hash of TEST_PASSWORD, written straight to the
+ *   `settings` row, with the session minted via `AuthService.createSession()`
+ *   instead of a real HTTP login.
+ *
+ * Both apply only when the caller did not pass `opts.password` — a test that
+ * sets a password explicitly is testing auth/boot semantics and keeps the real
+ * setPassword + HTTP-login path (`tests/auth.test.ts`).
+ */
+let dbTemplatePath: string | undefined;
+async function migratedDbTemplate(): Promise<string> {
+  if (!dbTemplatePath) {
+    const dir = mkdtempSync(join(tmpdir(), 'harmonic-db-template-'));
+    const handle = await openAsyncDb(dir);
+    await handle.close();
+    dbTemplatePath = join(dir, 'harmonic.db');
+  }
+  return dbTemplatePath;
+}
+
+let cachedAuthValue: string | undefined;
+function testPasswordSettingsValue(): string {
+  if (!cachedAuthValue) {
+    const salt = randomBytes(16).toString('hex');
+    cachedAuthValue = JSON.stringify({ salt, hash: scryptSync(TEST_PASSWORD, salt, 64).toString('hex') });
+  }
+  return cachedAuthValue;
+}
+
 export async function startServer(
   configOverrides?: DeepPartial<AppConfig>,
   opts: {
@@ -190,10 +227,17 @@ export async function startServer(
   } = {},
 ): Promise<TestServer> {
   const dataDir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'harmonic-test-'));
+  const fastAuth = opts.password === undefined;
+  if (!existsSync(join(dataDir, 'harmonic.db'))) {
+    mkdirSync(dataDir, { recursive: true });
+    copyFileSync(await migratedDbTemplate(), join(dataDir, 'harmonic.db'));
+  }
   const app = await buildApp({
     dataDir,
     configOverrides,
-    password: opts.password ?? TEST_PASSWORD,
+    // Fast path: leave the password untouched at boot and seed the settings
+    // row below — skips one scryptSync per boot.
+    password: fastAuth ? undefined : opts.password,
     runnerTuning: opts.runnerTuning,
     leaseTuning: opts.leaseTuning,
     criticDrive: opts.criticDrive,
@@ -230,13 +274,26 @@ export async function startServer(
   // The house test style drives the API as the SPA does: log in, keep the
   // session cookie.
   const anonApi = request({});
-  const login = await fetch(`${baseUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: opts.password ?? TEST_PASSWORD }),
-  });
-  const cookie = login.headers.get('set-cookie') ?? '';
-  const sessionToken = cookie.match(/harmonic_session=([^;]+)/)?.[1] ?? '';
+  let sessionToken: string;
+  if (fastAuth) {
+    // Gate the server with the cached TEST_PASSWORD hash and mint the session
+    // directly (sessions are in-memory on AuthService) — skips the HTTP login
+    // round trip and its scryptSync verify. Equivalent to the login below:
+    // `sessionToken` works as both the cookie and the `?token=` credential.
+    const value = testPasswordSettingsValue();
+    await app.ctx.asyncDb.write((d) =>
+      d.insert(settings).values({ key: 'auth', value }).onConflictDoUpdate({ target: settings.key, set: { value } }).run(),
+    );
+    sessionToken = app.ctx.auth.createSession();
+  } else {
+    const login = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: opts.password }),
+    });
+    const cookie = login.headers.get('set-cookie') ?? '';
+    sessionToken = cookie.match(/harmonic_session=([^;]+)/)?.[1] ?? '';
+  }
   const api = request({ cookie: `harmonic_session=${sessionToken}` });
 
   return {
