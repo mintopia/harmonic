@@ -36,3 +36,13 @@ export function feedbackForAttempt(attempts: readonly Attempt[], attempt: Attemp
 export function continuationLabel(attempt: Attempt): string {
   return attempt.number > 1 ? 'new session, condensed' : 'new session';
 }
+
+/** Latest verification proof wins; older Attempt facts are historical only. */
+export function verifiedSha(attempts: readonly Attempt[]): string | null {
+  for (const attempt of [...attempts].reverse()) {
+    for (const task of [...attempt.tasks].reverse()) {
+      if ((task.type === 'verification' || task.type === 'review') && task.verifiedSha !== null) return task.verifiedSha;
+    }
+  }
+  return null;
+}

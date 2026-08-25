@@ -58,6 +58,7 @@ export const attemptTaskSchema = z
     state: z.enum(ATTEMPT_TASK_STATES).meta({ example: 'passed' }),
     command: z.string().nullable().meta({ example: 'npm test' }),
     verdict: z.string().nullable().meta({ example: 'pass' }),
+    verifiedSha: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     logLocator: z.string().nullable().meta({ example: 'verification_attempt:31' }),
     startedAt: z.number().nullable().meta({ example: 1784032140000 }),
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),

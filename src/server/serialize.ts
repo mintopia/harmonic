@@ -41,6 +41,7 @@ export interface ApiAttemptTask {
   state: AttemptTaskRow['state'];
   command: string | null;
   verdict: string | null;
+  verifiedSha: string | null;
   logLocator: string | null;
   startedAt: number | null;
   endedAt: number | null;
@@ -61,7 +62,7 @@ export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
 }
 
-const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
+const attemptTaskToApi = (task: AttemptTaskRow, verifiedSha: string | null): ApiAttemptTask => ({
   id: task.id,
   attemptId: task.attemptId,
   type: task.type,
@@ -69,6 +70,7 @@ const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
   state: task.state,
   command: task.command,
   verdict: task.verdict,
+  verifiedSha: task.type === 'verification' || task.type === 'review' ? verifiedSha : null,
   logLocator: task.logLocator,
   startedAt: task.startedAt,
   endedAt: task.endedAt,
@@ -78,16 +80,19 @@ const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
   const rows = await ctx.attempts.listForTask(taskId);
   return {
-    attempts: await Promise.all(rows.map(async (attempt) => ({
-      id: attempt.id,
-      taskId: attempt.taskId,
-      number: attempt.number,
-      state: attempt.state,
-      startedAt: attempt.startedAt,
-      endedAt: attempt.endedAt,
-      feedback: attempt.feedback,
-      tasks: (await ctx.attempts.listTasks(attempt.id)).map(attemptTaskToApi),
-    }))),
+    attempts: await Promise.all(rows.map(async (attempt) => {
+      const [tasks, verifiedSha] = await Promise.all([ctx.attempts.listTasks(attempt.id), ctx.attempts.verifiedSha(attempt.id)]);
+      return {
+        id: attempt.id,
+        taskId: attempt.taskId,
+        number: attempt.number,
+        state: attempt.state,
+        startedAt: attempt.startedAt,
+        endedAt: attempt.endedAt,
+        feedback: attempt.feedback,
+        tasks: tasks.map((task) => attemptTaskToApi(task, verifiedSha)),
+      };
+    })),
   };
 }
 

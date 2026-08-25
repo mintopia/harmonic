@@ -28,6 +28,8 @@ export interface AttemptTask {
   state: AttemptTaskState;
   command: string | null;
   verdict: string | null;
+  /** Branch tip proved by the Attempt's verification, when this is a verification/review task. */
+  verifiedSha: string | null;
   logLocator: string | null;
   startedAt: number | null;
   endedAt: number | null;

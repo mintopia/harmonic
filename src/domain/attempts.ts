@@ -1,6 +1,6 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
-import { attempts, attemptTasks, type AttemptRow, type AttemptState, type AttemptTaskRow, type AttemptTaskType } from '../db/schema.js';
+import { attempts, attemptTasks, runFacts, type AttemptRow, type AttemptState, type AttemptTaskRow, type AttemptTaskType } from '../db/schema.js';
 
 export interface AttemptTaskInput {
   type: AttemptTaskType;
@@ -29,6 +29,26 @@ export class AttemptStore {
 
   listTasks(attemptId: number): Promise<AttemptTaskRow[]> {
     return this.db.read((db) => db.select().from(attemptTasks).where(eq(attemptTasks.attemptId, attemptId)).orderBy(asc(attemptTasks.position)).all());
+  }
+
+  /** The immutable branch tip that the Attempt's verification proved. */
+  async verifiedSha(attemptId: number): Promise<string | null> {
+    const fact = await this.db.read((db) =>
+      db.select().from(runFacts)
+        .where(and(eq(runFacts.attemptId, attemptId), eq(runFacts.type, 'verified-head')))
+        .orderBy(desc(runFacts.id))
+        .get(),
+    );
+    if (!fact) return null;
+    try {
+      const payload: unknown = JSON.parse(fact.payload);
+      if (typeof payload === 'object' && payload !== null && typeof Reflect.get(payload, 'sha') === 'string') {
+        return Reflect.get(payload, 'sha');
+      }
+    } catch {
+      // A malformed historical fact is absent proof, never a fabricated SHA.
+    }
+    return null;
   }
 
   createTask(attemptId: number, input: AttemptTaskInput): Promise<AttemptTaskRow> {

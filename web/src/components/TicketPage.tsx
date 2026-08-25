@@ -21,6 +21,7 @@ import { RunRail, RunAttempts } from './ticket/RunRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { AttemptTimeline } from './ticket/AttemptTimeline';
+import { verifiedSha } from '../attempt-timeline-model';
 import { labelType } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -806,6 +807,7 @@ export function TicketPage({
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
@@ -828,6 +830,17 @@ export function TicketPage({
       live = false;
     };
   }, [task.id]);
+
+  useEffect(() => {
+    let live = true;
+    Promise.all([api.config(), api.workspaces()]).then(([config, { workspaces }]) => {
+      if (!live) return;
+      setMaxAttempts(workspaces.find((workspace) => workspace.id === task.workspaceId)?.maxAttempts ?? config.maxAttempts);
+    }, toastError);
+    return () => {
+      live = false;
+    };
+  }, [task.workspaceId]);
 
   useEffect(() => {
     let live = true;
@@ -1070,8 +1083,8 @@ export function TicketPage({
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline py-3 text-small text-muted">
               <span><span className="font-semibold text-ink">Ticket flow</span> · {humanState(task.state)}</span>
               <MetaSep />
-              <span>Attempt {attempts.at(-1)?.number ?? 0} / {task.maxAttempts ?? '—'}</span>
-              {task.verifiedSha && <><MetaSep /><span>verified <span className="font-data text-ink">{task.verifiedSha}</span></span></>}
+              <span>Attempt {attempts.at(-1)?.number ?? 0} / {maxAttempts ?? '—'}</span>
+              {verifiedSha(attempts) && <><MetaSep /><span>verified <span className="font-data text-ink">{verifiedSha(attempts)}</span></span></>}
             </div>
 
             {task.skipReason && (
