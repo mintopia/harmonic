@@ -3,7 +3,7 @@ import type { Attributes, SpanContext } from '@opentelemetry/api';
 import type { HarnessConfig, VerificationCritic } from '../config.js';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from '../execution/harness/adapter.js';
-import { withDetachedWorktree } from '../execution/candidate.js';
+import { withDetachedWorktree } from '../execution/detached-worktree.js';
 import type { DriveFields } from '../execution/prompt-template.js';
 import { buildCriticPrompt } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
@@ -53,11 +53,11 @@ function grantOptionId(request: unknown): string | null {
  * (`runVerification` in `execution/runner.ts`) — where its verdict folds into
  * `combineVerdicts` alongside the command verifier, so a fail/inconclusive
  * critic blocks or escalates the Run. The sibling substrate tickets #132
- * (config), #133 (`combineVerdicts`), and #134 (candidate snapshot) shipped as
+ * (config) and #133 (`combineVerdicts`) shipped as
  * real-but-unwired units the same way before their own integration landed.
  *
  * Everything the critic sees is bracketed by `withDetachedWorktree`
- * (`execution/candidate.ts`, #134): the candidate OID is checked out into a
+ * (`execution/detached-worktree.ts`): the fixed OID is checked out into a
  * disposable detached worktree, and the before/after fingerprint proves
  * whether the "read-only" critic actually mutated anything. Belt-and-braces
  * with the ACP-level containment below (empty `mcpServers`, deny-all
@@ -228,8 +228,7 @@ export function createAcpCriticDrive(): CriticHarnessDrive {
 export interface RunCriticArgs {
   /** The base repo owning the candidate ref and object store. */
   repoDir: string;
-  /** The frozen candidate commit (`execution/candidate.ts` `buildCandidate`, #134)
-   * — checked out into the disposable worktree the critic reads from. */
+  /** The fixed commit checked out into the disposable worktree the critic reads from. */
   candidateOid: string;
   /** Where to check out the disposable detached worktree for this attempt. */
   worktreePath: string;

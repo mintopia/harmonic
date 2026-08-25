@@ -16,14 +16,12 @@ import { Git } from './git.js';
  *    safety property, independent of what the agent does.
  *  - **At settle** the agent's final commit chain is pinned to a **private
  *    Harmonic ref** (`refs/harmonic/direct/run-<id>`, owned + attributed, and
- *    auto-excluded from the candidate fingerprint), then the live target
+ *    auto-excluded from the detached-worktree fingerprint), then the live target
  *    checkout is **restored coherently** — HEAD re-attached to the start branch
- *    (which never moved) and the agent's tracked + untracked changes swept, all
- *    already captured hermetically in the candidate (issue #134).
- *  - A frozen candidate is **rematerialisable** into a checkout for a corrective
- *    / review-reject continuation turn.
+ *    (which never moved) and the agent's tracked + untracked changes swept. The
+ *    agent's final commit stays pinned on that private ref.
  *
- * Pure of the database and the Runner, like `candidate.ts` / `run-phases.ts`:
+ * Pure of the database and the Runner, like `run-phases.ts`:
  * it takes explicit paths/revisions and calls only `Git.*`, so it is
  * exhaustively testable against a throwaway git repo in isolation. The Runner
  * wires `detach` into `prepareWorkspace` (after admission records the
@@ -40,6 +38,14 @@ import { Git } from './git.js';
  * candidate ref (issue #134).
  */
 export const directRefFor = (runId: number): string => `refs/harmonic/direct/run-${runId}`;
+
+/**
+ * Whether a run's recorded `branch` is a private direct-mode ref rather than a
+ * real worktree branch. Since the verification reshape a direct Run records its
+ * owned ref in `runs.branch`, so branch-presence alone no longer distinguishes
+ * the isolation modes.
+ */
+export const isDirectRef = (branch: string): boolean => branch.startsWith('refs/harmonic/direct/');
 
 /**
  * Detach the live checkout's HEAD at `startCommit`, parking the branch it was

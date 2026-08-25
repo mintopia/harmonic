@@ -144,12 +144,13 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     ]);
 
     // The phase re-entry is recorded, not inferred: the heal turn logs a fresh
-    // `executing` before re-running validating→verifying (so the whole phase
-    // sequence is reconstructable from the event log).
+    // `executing` before re-running verification (so the whole phase sequence
+    // is reconstructable from the event log). The verification reshape retired
+    // `validating` — the branch head is captured as a fact, not a phase.
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['validating', 'verifying', 'executing', 'validating', 'verifying', 'landing']);
+    expect(phases).toEqual(['verifying', 'executing', 'verifying', 'landing']);
   });
 
   it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {

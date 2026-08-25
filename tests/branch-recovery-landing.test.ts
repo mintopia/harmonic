@@ -158,9 +158,10 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     expect((await lifecycleEvents(runId)).some((e) => e.event === 'recovery-landed')).toBe(true);
     expect(await factOfType(runId, 'branch-violation')).toBeUndefined();
 
-    // Deterministic: a single forward pass validating → verifying → landing,
-    // with no second executing turn — recovery was git, not an agent re-merge.
-    expect(await phaseEvents(runId)).toEqual(['validating', 'verifying', 'landing']);
+    // Deterministic: a single forward pass verifying → landing (`validating`
+    // retired by the reshape), with no second executing turn — recovery was
+    // git, not an agent re-merge.
+    expect(await phaseEvents(runId)).toEqual(['verifying', 'landing']);
     expect(run.attempt).toBe(1);
   });
 

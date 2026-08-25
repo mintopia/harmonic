@@ -138,19 +138,19 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(created.body.verificationAutoAccept).toBeNull();
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
-      verificationCommand: { command: 'npm', args: ['test'] },
-      verificationCritic: { prompt: 'review the diff', model: 'claude-opus-5' },
+      verificationCommand: [{ command: 'npm', args: ['test'] }],
+      verificationCritic: { enabled: true, prompt: 'review the diff', model: 'claude-opus-5' },
       verificationAutoAccept: true,
     });
     expect(set.status).toBe(200);
-    // The override reads back as the same object shape it was PATCHed as (zod fills
+    // The override reads back as the same shape it was PATCHed as (zod fills
     // the command's defaults), not the raw JSON string and not dropped.
-    expect(set.body.verificationCommand).toMatchObject({ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 });
-    expect(set.body.verificationCritic).toEqual({ prompt: 'review the diff', model: 'claude-opus-5' });
+    expect(set.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
+    expect(set.body.verificationCritic).toEqual({ enabled: true, prompt: 'review the diff', model: 'claude-opus-5' });
     expect(set.body.verificationAutoAccept).toBe(true); // scalar override serialised, not stripped
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
-    expect(fetched.body.verificationCommand).toMatchObject({ command: 'npm', args: ['test'] });
+    expect(fetched.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'] }]);
     expect(fetched.body.verificationAutoAccept).toBe(true);
 
     // null clears back to inherit.
@@ -161,7 +161,7 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     expect(cleared.status).toBe(200);
     expect(cleared.body.verificationCommand).toBeNull();
     expect(cleared.body.verificationAutoAccept).toBeNull();
-    expect(cleared.body.verificationCritic).toMatchObject({ prompt: 'review the diff' }); // untouched
+    expect(cleared.body.verificationCritic).toMatchObject({ enabled: true, prompt: 'review the diff' }); // untouched
     rmSync(dir, { recursive: true, force: true });
   });
 
