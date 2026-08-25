@@ -273,8 +273,7 @@ export const appConfigSchema = z.object({
    * operator-editable so the whole mirrored-drive prompt is visible, not
    * hardcoded. `mergeFate` is the default fate of a
    * completed worktree Run's branch (research Tasks are always artifacts);
-   * `autoRetry` is how many times a failed afk Run is silently re-queued
-   * before it Escalates to a human. `continueAttempts` is how many times a
+   * `continueAttempts` is how many times a
    * Run that ended its turn without an explicit finish/escalate signal is
    * re-prompted to continue before the Run is treated as unresolved — 0 keeps
    * the old single-turn behaviour. `finish_task` (not the agent closing the
@@ -287,8 +286,6 @@ export const appConfigSchema = z.object({
       unattendedReminder: z.string().default(UNATTENDED_REMINDER).meta({ example: UNATTENDED_REMINDER }),
       continuePrompt: z.string().default(DEFAULT_CONTINUE_PROMPT).meta({ example: DEFAULT_CONTINUE_PROMPT }),
       mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
-      /** @deprecated Kept only to parse stored settings; the Attempt loop ignores it. */
-      autoRetry: z.number().int().min(0).default(1),
       continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
     })
     .prefault({}),
@@ -297,8 +294,6 @@ export const appConfigSchema = z.object({
    * operator-editable wrapper around a Task's own prompt, with `{prompt}` /
    * `{id}` / `{workingDir}` / `{harness}` / `{model}` placeholders. Defaults to
    * bare `{prompt}`, so out of the box the Task's prompt is sent verbatim.
-   * A re-attempt's reviewer feedback is appended after the filled template, as
-   * before (run-prompt.ts).
    */
   taskPrompt: z.string().default(DEFAULT_TASK_PROMPT).meta({ example: DEFAULT_TASK_PROMPT }),
   /**
@@ -327,15 +322,6 @@ export const appConfigSchema = z.object({
        * passing native Run still parks for human review. No verifier configured →
        * always review, regardless of this flag (nothing verified to auto-accept). */
       autoAccept: z.boolean().default(false),
-      /** @deprecated Kept only to parse stored settings; the Attempt loop ignores it. */
-      maxSelfHeals: z.number().int().min(0).default(0),
-      /** Bounded self-heal (issue #137, ADR-0021, reliability-design Unit B):
-       * how many corrective builder turns an **actionable** verification fail
-       * may trigger before the Run Escalates. Each heal routes back into the
-       * builder Session as a mutating turn through the per-Session turn queue,
-       * re-enters `validating`, and reruns the FULL verifier suite. An
-       * inconclusive verdict never heals (it Escalates with its cause); `0`
-       * disables self-heal, so an actionable fail Escalates immediately. */
     })
     .prefault({}),
   /**
@@ -490,7 +476,6 @@ export function defaultConfig(): AppConfig {
       unattendedReminder: UNATTENDED_REMINDER,
       continuePrompt: DEFAULT_CONTINUE_PROMPT,
       mergeFate: 'auto-merge',
-      autoRetry: 1,
       continueAttempts: 1,
     },
     taskPrompt: DEFAULT_TASK_PROMPT,
@@ -499,7 +484,6 @@ export function defaultConfig(): AppConfig {
       command: null,
       critic: null,
       autoAccept: false,
-      maxSelfHeals: 0,
     },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },

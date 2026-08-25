@@ -13,6 +13,7 @@ export interface AcceptOutcome {
 }
 
 export type AcceptHook = (task: TaskRow, run: RunRow) => Promise<AcceptOutcome>;
+export type RejectHook = (task: TaskRow, run: RunRow, feedback?: string) => Promise<TaskRow>;
 
 /**
  * The landing side effects Accept must apply for this Task/Run, built
@@ -56,6 +57,7 @@ export class ReviewService {
     private readonly acceptHook: AcceptHook = async () => ({ ok: true }),
     private readonly landingEffects: LandingEffectsHook = () => [],
     private readonly opts: { yieldOptions?: YieldOptions } = {},
+    private readonly rejectHook?: RejectHook,
   ) {}
 
   private async reviewable(taskId: number): Promise<{ task: TaskRow; run: RunRow }> {
@@ -127,11 +129,13 @@ export class ReviewService {
         { runState: 'failed', taskAction: 'failed', reason },
         { review: 'rejected', reviewFeedback: feedback ?? null, reviewedAt: Date.now(), reviewDeadline: null },
       );
-      return await this.taskService.get(taskId);
+      const settled = await this.taskService.get(taskId);
+      return this.rejectHook ? await this.rejectHook(settled, run, feedback) : settled;
     }
     // Legacy Run already settled at agent-finish (pre-#114).
     await this.runStore.update(run.id, { review: 'rejected', reviewFeedback: feedback ?? null, reviewedAt: Date.now() });
-    return await this.taskService.setState(taskId, 'failed');
+    const settled = await this.taskService.setState(taskId, 'failed');
+    return this.rejectHook ? await this.rejectHook(settled, run, feedback) : settled;
   }
 
   /**

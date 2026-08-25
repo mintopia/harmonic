@@ -23,8 +23,7 @@ import {
  *   back to autonomous drive (`unescalateTask`), the purpose-built resolve for
  *   an escalated mirrored Task and the "Needs you" tier's retry. (Labelled
  *   "Un-escalate" in the UI, the same verb TaskActions uses for this call —
- *   `reattempt` is not an option here: it requires a terminal state and would
- *   409 on the escalated Task, which lands back in `ready`.)
+ *   the ticket stays in `ready` when escalation hands control back.)
  *
  * The row's ticket deep-link (`ticketUrl`) is orthogonal to the resolve — a
  * passive link to the mirrored issue, shown whenever the process carries one.

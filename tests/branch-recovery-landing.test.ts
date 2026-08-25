@@ -62,12 +62,13 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
   let ref = REF_BASE; // distinct trackerRef per mirrored Task
 
   beforeAll(async () => {
-    // autoRetry/continueAttempts 0 → the first terminal settle stands, so no
+    // One permitted attempt means the first terminal settle stands, so no
     // second attempt re-runs the funnel mid-assertion. Default mergeFate is
     // auto-merge; state it explicitly since recovery landing is gated on it.
     server = await startServer({
       ...stubHarness(),
-      drive: { autoRetry: 0, continueAttempts: 0, mergeFate: 'auto-merge' },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
     });
   });
   afterAll(async () => {
@@ -120,7 +121,7 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
         timeoutSeconds: 30,
       }),
     });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 1 });
 
     // The agent (detached at start by #152) edits a file and finishes — the
     // normal direct-mode footprint: HEAD detached on its own owned ref, a

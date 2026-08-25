@@ -51,16 +51,9 @@ export class ExecutionChainStore {
    * tried in order:
    *
    * 1. Same-task continuation — the task's own latest chained Run's
-   *    `chainId`, if it has one. Covers a mirrored retry, a crash-resume, or
-   *    any other new attempt of the same Task: the new Run stays on the
-   *    Task's existing chain.
-   * 2. Reattempt ancestry — a re-attempt is a *new, linked* Task
-   *    (`tasks.reattemptOf`), not a new attempt of the same Task, so branch 1
-   *    finds nothing on a fresh reattempt Task. Walk `reattemptOf` upward:
-   *    for each ancestor task id, look for its latest chained Run; the first
-   *    one found wins. A depth bound (`MAX_ANCESTRY_DEPTH`) guards against a
-   *    corrupt/cyclic `reattemptOf` chain looping forever.
-   * 3. Neither found anything to inherit — this Run starts a brand-new line
+   *    `chainId`, if it has one. Every retry and crash-resume stays on this
+   *    ticket's chain.
+   * 2. No previous Run exists — this Run starts a brand-new line
    *    of work; mint a fresh chain.
    *
    * The whole read-decide-mint runs as one `this.db.write()` unit (ADR-0029

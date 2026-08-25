@@ -175,8 +175,6 @@ export const tasks = sqliteTable('tasks', {
    * every insert path sets it and the boot-time backfill (db/index.ts) fills
    * pre-Workspace rows, so it is never actually null at rest. */
   workspaceId: integer('workspace_id').references(() => workspaces.id),
-  /** @deprecated Legacy read compatibility. New failures never create linked tickets. */
-  reattemptOf: integer('reattempt_of').references((): AnySQLiteColumn => tasks.id),
   /** Reviewer feedback that seeded this re-attempt, stored in full, separate from the prompt. */
   feedback: text('feedback'),
   /**
@@ -448,8 +446,8 @@ export type AttemptTaskRow = typeof attemptTasks.$inferSelect;
 /**
  * The Execution Chain (issue #129, reliability-design Unit A): a persisted
  * identity threaded across every Run that continues one line of work —
- * reattempt / mirrored retry / human-reject continue / crash-resume / every
- * self-heal turn — so a cumulative token/cost budget is charged against the
+ * retry / human-review rejection / crash-resume / every corrective turn — so
+ * a cumulative token/cost budget is charged against the
  * whole chain, not reset by each fresh Run. A retry therefore cannot reset the
  * spend counter to bypass the ceiling. Per-Run budgets still apply alongside it.
  */

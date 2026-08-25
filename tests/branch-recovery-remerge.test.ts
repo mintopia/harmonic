@@ -60,11 +60,12 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
   let ref = REF_BASE; // distinct trackerRef per mirrored Task
 
   beforeAll(async () => {
-    // autoRetry/continueAttempts 0 → the first terminal settle stands. The
+    // One permitted attempt means the first terminal settle stands. The
     // re-merge lands onto the target branch, so it is auto-merge-only.
     server = await startServer({
       ...stubHarness(),
-      drive: { autoRetry: 0, continueAttempts: 0, mergeFate: 'auto-merge' },
+      maxAttempts: 1,
+      drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
     });
   });
   afterAll(async () => {

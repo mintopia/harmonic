@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, notInArray, or } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -103,8 +103,6 @@ export interface TaskWithDeps extends TaskRow {
   openBlockerCount: number;
   /** A ticket the Auto-Runner may work: opt-in label (when mirrored) and no open Blockers. */
   agentWorkable: boolean;
-  /** Task ids that re-attempt this one (reverse of `reattemptOf`). */
-  reattempts: number[];
   /** The four defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
@@ -119,9 +117,6 @@ export interface OrderedEligibleTask extends TaskRow {
  * (model, harness, …) can be changed while it waits on a dependency (issue: a
  * blocked ticket often needs its model re-pointed before it ever runs). */
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
-/** Finished states — the only ones a task can be re-attempted from (a
- * non-terminal original could still run, so cloning it would duplicate work). */
-const TERMINAL_STATES: TaskState[] = ['completed', 'failed', 'cancelled'];
 /** States a task can be cancelled from — everything not terminal. */
 const CANCELLABLE_STATES: TaskState[] = [
   'draft',
@@ -675,12 +670,11 @@ export class TaskService {
     const patch: Partial<TaskRow> = {
       state: 'ready',
       updatedAt: Date.now(),
-      // Default: clear any stale re-attempt feedback (set below when supplied).
+      // Clear stale retry feedback unless this requeue supplies fresh feedback.
       feedback: null,
       // How the next Run continues the rejected Run's Session (issue #170), read
       // by the Runner's bindContinuationIfEligible. Cleared unless the operator
-      // picked one in the reject dialog — this is the re-run-in-place equivalent
-      // of reattempt's continuationChoice for a mirrored Task.
+      // picked one in the reject dialog.
       continuationChoice: continuation ?? null,
     };
     if (trimmed) {
@@ -716,127 +710,11 @@ export class TaskService {
   }
 
   /**
-   * Create a NEW task that re-attempts an existing one: a copy of its
-   * config and dependencies, linked back via `reattemptOf`, carrying the
-   * reviewer's feedback in full. The feedback is composed into the run
-   * prompt at run time (see the runner), so the original prompt stays
-   * pristine. The original task is left untouched.
-   *
-   * `continuation` (issue #170) records how the re-attempt should continue the
-   * rejected Run's Session: `'full'` (or omitted) re-binds the warm Session and
-   * replays the whole conversation — the historical default — while
-   * `'condensed'` opts out of that bind so the re-attempt starts in a fresh
-   * Session carrying only the feedback. Read later by the Runner.
-   */
-  async reattempt(originalId: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
-    // Copy from the raw row so an inherited default (`null`) is re-attempted as
-    // inherited, not frozen to the value it happened to resolve to today.
-    const original = await this.getRaw(originalId);
-    if (original.origin === 'mirrored') {
-      // A mirrored Task IS its ticket (unique on trackerRef): cloning it would
-      // drop origin/trackerRef/mapRef and detach the copy from its ticket and
-      // Epic. Reject must re-run it in place via `requeue`, never here.
-      throw new DomainError(
-        'conflict',
-        `task ${originalId} is mirrored; it cannot be re-attempted as a new task (that would detach it from its ticket and Epic) — re-run it in place via requeue`,
-      );
-    }
-    if (!TERMINAL_STATES.includes(original.state)) {
-      // A Task requeued to `ready`/`blocked` after its latest Run was rejected or
-      // failed is still genuinely re-attemptable — it HAS a finished attempt to
-      // clone. This is the reject-dialog path (reject → re-attempt as two calls)
-      // when something requeues the Task in the window between them: observed
-      // live as a `ready` Task whose last Run is failed+rejected, where the
-      // strict terminal-state guard wrongly 409'd the follow-up re-attempt. A
-      // fresh `ready` Task that never produced a finished Run is still refused
-      // below — cloning not-yet-done work would duplicate it (the guard's point).
-      const latest = await this.db.read((db) =>
-        db.select().from(runs).where(eq(runs.taskId, originalId)).orderBy(desc(runs.attempt)).limit(1).get(),
-      );
-      if (!latest || (latest.state !== 'failed' && latest.review !== 'rejected')) {
-        throw new DomainError(
-          'invalid_state',
-          `task ${originalId} is ${original.state}; only a finished task (completed, failed, or cancelled) or one whose last run was rejected or failed can be re-attempted`,
-        );
-      }
-      // Settle the anomalous non-terminal row to its correct finished state
-      // (`failed`, matching its rejected/failed Run) so the requeued original is
-      // not ALSO scheduled alongside the re-attempt — the duplicate work the
-      // terminal-state guard exists to prevent.
-      await this.setState(originalId, 'failed');
-    }
-    const dependsOn = await this.dependsOn(originalId);
-    // Snapshot the original's dependents before the write rewires (and thereby
-    // clears) the edges pointing at it.
-    const dependents = await this.dependents(originalId);
-    const now = Date.now();
-    // Insert the re-attempt, copy its dependency edges, and rewire the original's
-    // dependents onto it — all as one write-queue unit so the edge graph is never
-    // seen half-rewired (the sync driver ran the whole block with nothing between).
-    const row = await this.db.write(async (db) => {
-      const inserted = await db
-        .insert(tasks)
-        .values({
-          prompt: original.prompt,
-          workspaceId: original.workspaceId,
-          harness: original.harness,
-          model: original.model,
-          workingDir: original.workingDir,
-          isolationMode: original.isolationMode,
-          priority: original.priority,
-          // A re-attempt targets the same base branch as the original (issue #157).
-          baseBranch: original.baseBranch,
-          state: 'ready',
-          reattemptOf: originalId,
-          feedback: feedback && feedback.trim().length > 0 ? feedback.trim() : null,
-          continuationChoice: continuation ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning()
-        .get();
-      if (dependsOn.length > 0) {
-        await db
-          .insert(taskDependencies)
-          .values(dependsOn.map((dependsOnId) => ({ taskId: inserted.id, dependsOnId })))
-          .run();
-      }
-      // Rewire the original's dependents onto this re-attempt so a pipeline
-      // waiting on the original advances once the re-attempt completes (the
-      // original stays failed as history, but nothing depends on it anymore).
-      for (const dependentId of dependents) {
-        await db
-          .delete(taskDependencies)
-          .where(and(eq(taskDependencies.taskId, dependentId), eq(taskDependencies.dependsOnId, originalId)))
-          .run();
-        await db
-          .insert(taskDependencies)
-          .values({ taskId: dependentId, dependsOnId: inserted.id })
-          .onConflictDoNothing()
-          .run();
-      }
-      return inserted;
-    });
-    // Re-derive and emit for each rewired dependent after the edges are committed
-    // (rederiveBlocked / get issue their own queued ops, so they can't run inside
-    // the write unit above without deadlocking).
-    for (const dependentId of dependents) {
-      await this.rederiveBlocked(dependentId);
-      // Emit even when the state didn't flip: blockedOnFailed changed.
-      this.onChanged(await this.get(dependentId));
-    }
-    const task = await this.resolve(row);
-    this.onChanged(task);
-    this.onNotify('task.created', task);
-    return task;
-  }
-
-  /**
    * Escalate an afk Run to a human (issue #33): the runtime afk→hitl flip.
    * Lands the Task back in ready flagged "escalated", drive → hitl, so the
    * Auto-Runner skips it and the poll's reconcile releases the advisory claim.
-   * Used both when a Run blocks on a human prompt and when Auto-Retry is
-   * exhausted.
+   * Used both when a Run blocks on a human prompt and when the Attempt cap
+   * is exhausted.
    */
   async escalate(id: number): Promise<TaskRow> {
     const row = await this.db.write((db) =>
@@ -1187,21 +1065,15 @@ export class TaskService {
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
       openBlockerCount,
       agentWorkable: this.agentWorkable(task, openBlockerCount),
-      reattempts: [],
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
     };
   }
 
-  /** @deprecated New failures remain on the same ticket, so this is always empty. */
-  async reattempts(_taskId: number): Promise<number[]> {
-    return [];
-  }
-
   async listWithDeps(query: TaskListQuery = {}): Promise<TaskWithDeps[]> {
     // Inline `list()` here so the list path resolves rows once, then batches the
-    // dependency/reattempt lookups over the final listed set.
+    // dependency lookups over the final listed set.
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state === 'open'
@@ -1274,7 +1146,6 @@ export class TaskService {
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
       agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0),
-      reattempts: [],
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

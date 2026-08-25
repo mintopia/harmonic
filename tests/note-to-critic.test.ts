@@ -66,7 +66,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
     const ws = (await server.app.ctx.workspaces.list())[0]!;
     workspaceId = ws.id;
     await server.app.ctx.workspaces.update(workspaceId, { workingDir: repoDir });
-    await server.app.ctx.configStore.update({ verification: { maxSelfHeals: 0 } });
+    await server.app.ctx.configStore.update({ maxAttempts: 2 });
   });
   afterAll(async () => {
     await server.close();
@@ -250,7 +250,7 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
   describe('reverifyWithNote / POST /tasks/:id/note-to-critic', () => {
     it('a passing re-reviewed critic parks the task at awaiting-review (never auto-landed)', async () => {
       const { taskId, runId } = await escalateViaCriticFail();
-      expect(await attempts(runId)).toHaveLength(1);
+      expect(await attempts(runId)).toHaveLength(2);
 
       criticResult = { verdict: 'pass', summary: 'the operator note resolved my concern' };
       const res = await server.api('POST', `/api/tasks/${taskId}/note-to-critic`, {
@@ -264,8 +264,8 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       expect(lastCriticPrompt).toContain('The timeout is intentional; see the linked ticket.');
 
       const rows = await attempts(runId);
-      expect(rows).toHaveLength(2);
-      expect(rows[1]).toMatchObject({ mechanism: 'critic', verdict: 'pass' });
+      expect(rows).toHaveLength(3);
+      expect(rows[2]).toMatchObject({ mechanism: 'critic', verdict: 'pass' });
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('running');
@@ -305,15 +305,20 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       expect(res.body.escalated).toBe(true);
 
       const rows = await attempts(runId);
-      expect(rows).toHaveLength(2);
-      expect(rows[1]).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive' });
+      expect(rows).toHaveLength(3);
+      expect(rows[2]).toMatchObject({ mechanism: 'critic', verdict: 'inconclusive' });
     });
 
     it('a prior command failure still blocks even when the re-reviewed critic passes', async () => {
       await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
       criticResult = { verdict: 'fail', summary: 'original critic verdict' };
       const { taskId, runId } = await escalateViaCriticFail();
-      expect((await attempts(runId)).map((a) => `${a.mechanism}:${a.verdict}`).sort()).toEqual(['command:fail', 'critic:fail']);
+      expect((await attempts(runId)).map((a) => `${a.mechanism}:${a.verdict}`).sort()).toEqual([
+        'command:fail',
+        'command:fail',
+        'critic:fail',
+        'critic:fail',
+      ]);
 
       criticResult = { verdict: 'pass', summary: 'the note resolved the critic concern' };
       const res = await server.api('POST', `/api/tasks/${taskId}/note-to-critic`, {
@@ -326,8 +331,8 @@ describe('operator escape hatches for an escalated run (issue #191)', () => {
       expect(res.body.escalated).toBe(true);
 
       const rows = await attempts(runId);
-      expect(rows).toHaveLength(3);
-      expect(rows[2]).toMatchObject({ mechanism: 'critic', verdict: 'pass' });
+      expect(rows).toHaveLength(5);
+      expect(rows[4]).toMatchObject({ mechanism: 'critic', verdict: 'pass' });
     });
 
     it('400s when the note is empty', async () => {

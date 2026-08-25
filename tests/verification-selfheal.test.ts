@@ -7,6 +7,7 @@ import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js
 import { verificationCommandSchema, type VerificationCommand } from '../src/config.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { AttemptStore } from '../src/domain/attempts.js';
+import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -133,6 +134,14 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
       { number: 2, state: 'passed' },
     ]);
     expect(attemptsByTicket[0]!.feedback).toContain('verifier command failed');
+
+    // The corrective mutation is fenced by a durable queue row. It reaches
+    // done only after Attempt 2 has finished, so a crash mid-turn is visible to
+    // recovery instead of silently resetting the attempt cap.
+    const correctiveTurns = await new TurnQueueStore(server.app.ctx.asyncDb).listForSession(`run-${runId}`);
+    expect(correctiveTurns).toMatchObject([
+      { purpose: 'self-heal', status: 'done', expectedGeneration: 2, idempotencyKey: `attempt-2-run-${runId}` },
+    ]);
 
     // The phase re-entry is recorded, not inferred: the heal turn logs a fresh
     // `executing` before re-running validating→verifying (so the whole phase

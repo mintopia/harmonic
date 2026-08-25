@@ -73,6 +73,8 @@ export const attemptSchema = z
     state: z.enum(ATTEMPT_STATES).meta({ example: 'passed' }),
     startedAt: z.number().meta({ example: 1784032020000 }),
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
+    /** Feedback that caused this attempt to begin, when it is a corrective attempt. */
+    feedback: z.string().nullable().meta({ example: 'The rate limiter must be shared across workers.' }),
     tasks: z.array(attemptTaskSchema),
   })
   .meta({ id: 'Attempt' });
