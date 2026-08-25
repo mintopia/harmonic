@@ -142,6 +142,11 @@ export function EpicPeek({
               <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
             </div>
           </div>
+          {epic.land.held != null && (
+            <div className="mt-3 rounded-md bg-running-tint px-3 py-2 text-small text-running">
+              <span className="font-semibold">Merge escalated — awaiting you.</span> {epic.land.held}
+            </div>
+          )}
           <button type="button" className={`${btnQuiet} mt-3`} onClick={() => onFocus(epic.ref)}>
             Focus on board <span aria-hidden="true">→</span>
           </button>

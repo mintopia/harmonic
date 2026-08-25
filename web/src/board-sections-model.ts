@@ -63,10 +63,12 @@ export interface BoardSections {
  * whole-Epic land is mid-flight). A fully-folded, settled Epic drops off the
  * Deck; its members then revert to standalone Tasks so they surface in Recent.
  * `land.inFlight` keeps a fully-folded Epic visible while its subset is still
- * merging to the default branch.
+ * merging to the default branch; `land.held` keeps a fully-folded Epic whose
+ * whole-Epic merge escalated on the board — it needs the operator, not
+ * silence.
  */
 export function isActiveEpic(epic: Epic): boolean {
-  return epic.foldedCount < epic.memberCount || epic.land.inFlight;
+  return epic.foldedCount < epic.memberCount || epic.land.inFlight || epic.land.held != null;
 }
 
 /** Task ids that are members of an *active* Epic — excluded from the flat

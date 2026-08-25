@@ -117,6 +117,18 @@ describe('boardSections', () => {
     expect(sections.standalone.map((entry) => entry.id)).toEqual([501]);
     expect(isActiveEpic(merged)).toBe(false);
   });
+
+  it('keeps a fully-folded Epic whose merge escalated (land.held) on the board', () => {
+    const held = epic(60, [member(1, 601, { landStatus: 'completed', state: 'completed' })], {
+      land: { inFlight: false, held: 'already escalated for this member state; awaiting operator or a state change' },
+    });
+    const sections = boardSections([task(601, 'completed')], [held]);
+    expect(isActiveEpic(held)).toBe(true);
+    // The Epic stays in the active/Landing section, not dropped off the board.
+    expect(sections.epics.map((entry) => entry.ref)).toEqual([60]);
+    // Its folded member stays the Epic band's, excluded from the flat sections.
+    expect(sections.standalone.map((entry) => entry.id)).toEqual([]);
+  });
 });
 
 describe('live Board readouts', () => {
