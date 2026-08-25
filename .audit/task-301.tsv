@@ -1,4 +1,0 @@
-ts	phase	decision	why	evidence	result
-2026-08-25T03:34:48Z	discovery	loaded issue 303 and required skills	unattended run needs the repo workflow and exact issue contract before editing	docs/agents/issue-tracker.md; issue #303; AGENTS.md	open
-2026-08-25T03:38:24Z	analysis	found partial implementation already in worktree	app.ts and scheduled-jobs.test.ts already carry the obvious issue-303 changes, so verify completeness before editing	git diff -- src/server/app.ts tests/scheduled-jobs.test.ts	open
-2026-08-25T03:38:53Z	verify	scheduled-jobs regression is green	issue-specific seam passed before broader verification	npm test -- tests/scheduled-jobs.test.ts	4 tests passed
