@@ -12,7 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
-import { landBranchAndRunPostLand, type PostLandHook } from '../execution/branch-landing.js';
+import { defaultBranchPostLand, landBranchAndRunPostLand, type PostLandHook } from '../execution/branch-landing.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
@@ -337,19 +337,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
   const pendingPostLand: Parameters<PostLandHook>[0][] = [];
-  const postLand: PostLandHook = async ({ repoDir, baseBranch }) => {
-    try {
-      const defaultBranch = await Git.symbolicBranch(repoDir);
-      if (defaultBranch !== baseBranch) return;
+  const postLand: PostLandHook = defaultBranchPostLand(
+    (repoDir) => Git.defaultBranch(repoDir),
+    async (repoDir, defaultBranch) => {
+      try {
       if (!trackerManagerRef) {
-        pendingPostLand.push({ repoDir, baseBranch });
+        pendingPostLand.push({ repoDir, baseBranch: defaultBranch });
         return;
       }
       await trackerManagerRef.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
-    } catch (err) {
-      logger.error(`post-land Epic refresh failed: ${String(err)}`);
-    }
-  };
+      } catch (err) {
+        logger.error(`post-land Epic refresh failed: ${String(err)}`);
+      }
+    },
+  );
   const reviewSettle = new RunSettleCoordinator(
     runs,
     tasks,

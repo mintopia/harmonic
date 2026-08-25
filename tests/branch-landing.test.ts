@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { landBranch, landBranchAndRunPostLand } from '../src/execution/branch-landing.js';
+import { defaultBranchPostLand, landBranch, landBranchAndRunPostLand } from '../src/execution/branch-landing.js';
 import { Git } from '../src/execution/git.js';
 
 /**
@@ -63,6 +63,21 @@ describe('branch landing (issue #153)', () => {
     )).resolves.toMatchObject({ ok: true });
 
     expect(refreshAfterDefaultBranchAdvance).toHaveBeenCalledWith(repo, 'main');
+  });
+
+  it('does not refresh Epics when a direct-mode land targets a non-default branch', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feature-base', 'base.txt', 'base\n');
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n', 'feature-base');
+    const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
+    const postLand = defaultBranchPostLand(async () => 'main', refreshAfterDefaultBranchAdvance);
+
+    await expect(landBranchAndRunPostLand(
+      { repoDir: repo, baseBranch: 'feature-base', branch: 'feat' },
+      postLand,
+    )).resolves.toMatchObject({ ok: true });
+
+    expect(refreshAfterDefaultBranchAdvance).not.toHaveBeenCalled();
   });
 
   it('AC1 (not checked out): lands via CAS ref-update, leaving the base repo pristine and no admin worktree behind', async () => {

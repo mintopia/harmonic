@@ -150,6 +150,20 @@ export const Git = {
   },
 
   /**
+   * The repository's configured default branch, independent of which branch a
+   * worktree currently has checked out. `refs/remotes/origin/HEAD` remains
+   * readable while the checkout is detached or parked on a task branch.
+   */
+  async defaultBranch(dir: string): Promise<string | null> {
+    try {
+      const remoteHead = await git(dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD');
+      return remoteHead.startsWith('origin/') ? remoteHead.slice('origin/'.length) : remoteHead;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * A stable fingerprint of the working tree's dirty state — the sha256 of the
    * porcelain status. A clean tree yields a fixed constant; any tracked, staged,
    * or untracked change moves it. Recorded at admission (issue #149) as the

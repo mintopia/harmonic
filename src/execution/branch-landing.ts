@@ -75,6 +75,22 @@ export interface LandBranchArgs {
 /** Best-effort notification after a branch land has succeeded. */
 export type PostLandHook = (args: Pick<LandBranchArgs, 'repoDir' | 'baseBranch'>) => void | Promise<void>;
 
+/**
+ * Build the post-land observer for default-branch advances. The resolver must
+ * describe the repository default, never the branch currently checked out by a
+ * direct-mode task.
+ */
+export function defaultBranchPostLand(
+  resolveDefaultBranch: (repoDir: string) => Promise<string | null>,
+  refreshAfterDefaultBranchAdvance: (repoDir: string, defaultBranch: string) => Promise<void>,
+): PostLandHook {
+  return async ({ repoDir, baseBranch }) => {
+    const defaultBranch = await resolveDefaultBranch(repoDir);
+    if (defaultBranch !== baseBranch || defaultBranch === null) return;
+    await refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
+  };
+}
+
 export type LandBranchOutcome =
   | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
   | { ok: false; reason: 'conflict' | 'target-advanced' | 'fallback-pr-manual'; detail: string };
