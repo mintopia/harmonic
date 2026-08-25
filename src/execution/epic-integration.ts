@@ -3,6 +3,7 @@ import type { TaskService } from '../domain/tasks.js';
 import { deriveEpics } from '../domain/epic-derivation.js';
 import type { MemberLandState } from '../domain/epic-land.js';
 import type { Ticket } from '../tracker/adapter.js';
+import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';
 import { logger } from '../logger.js';
 import { EpicOperations } from './epic-operations.js';
@@ -62,6 +63,13 @@ export interface EpicLandTrigger {
   submit(target: { ref: number; members: MemberLandState[] }, opts?: { force?: boolean }): Promise<unknown>;
 }
 
+/** Edge-triggered default-branch refresh hook. It is deliberately separate
+ * from reconcile: polls discover Epics, but only a successful develop landing
+ * is allowed to request a refresh. */
+export interface EpicRefreshTrigger {
+  refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown>;
+}
+
 /**
  * Reduce a member's mirrored Task to its land state for the whole-Epic land
  * decision (issue #161): `completed` once it has landed onto the integration
@@ -113,6 +121,7 @@ export class EpicIntegrationCoordinator {
    * stay pickable). Recomputed each reconcile, like the poller's scan cache.
    */
   private readyMemberRefs = new Set<number>();
+  private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
 
   constructor(
@@ -130,6 +139,7 @@ export class EpicIntegrationCoordinator {
      * without a construction cycle.
      */
     private epicLand?: EpicLandTrigger,
+    private epicRefresh?: EpicRefreshTrigger,
   ) {}
 
   /** Attach (or replace) the whole-Epic land trigger after construction (issue
@@ -139,11 +149,38 @@ export class EpicIntegrationCoordinator {
     this.epicLand = trigger;
   }
 
+  attachRefreshTrigger(trigger: EpicRefreshTrigger): void {
+    this.epicRefresh = trigger;
+  }
+
+  /**
+   * Handle one observed default-branch advance. This is an edge hook called by
+   * the landing path, never by the poll loop. Derived Epics without a current
+   * integration branch are retired or closed and are intentionally skipped.
+   */
+  async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
+    if (!this.epicRefresh) return;
+    const tickets = this.latestTickets.length > 0
+      ? this.latestTickets
+      : await persistedTickets(await this.tasks.list(), await this.tasks.listTrackerContainers());
+    const epics = deriveEpics(tickets);
+    for (const epic of epics) {
+      const branch = integrationBranchName(epic.ref);
+      if (!(await this.git.branchExists(this.workingDir, branch))) continue;
+      try {
+        await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
+      } catch (err) {
+        this.onError(`epic ${epic.ref} integration refresh failed: ${String(err)}`);
+      }
+    }
+  }
+
   attachOperations(operations: EpicOperations): void {
     this.operations = operations;
   }
 
   async reconcile(tickets: Ticket[], mirrored: TaskRow[]): Promise<void> {
+    this.latestTickets = tickets;
     const mirroredWithDeps = mirrored.length > 0 ? await this.tasks.listWithDeps({ workspaceId: mirrored[0]!.workspaceId ?? undefined }) : [];
     const readinessByRef = new Map<number, { agentWorkable: boolean }>();
     for (const task of mirroredWithDeps) {

@@ -121,6 +121,16 @@ export class MergeTrainCoordinator {
     );
   }
 
+  /**
+   * Run another integration-branch mutation through the same FIFO as member
+   * landings. Integration refreshes use this rather than a second lock: a
+   * member can therefore never rebase against a branch while its refresh is
+   * half applied.
+   */
+  runOnIntegrationBranch<T>(branch: string, work: () => Promise<T>): Promise<T> {
+    return this.withBranchTrain(branch, work);
+  }
+
   /** Per-integration-branch serialisation, mechanically like `withRepoLock`:
    * chain prev -> gate -> tail, release in `finally`, delete the map entry
    * only when we're still the tail (a newer waiter leaves its own tail). */

@@ -150,6 +150,20 @@ export const Git = {
   },
 
   /**
+   * The repository's configured default branch, independent of which branch a
+   * worktree currently has checked out. `refs/remotes/origin/HEAD` remains
+   * readable while the checkout is detached or parked on a task branch.
+   */
+  async defaultBranch(dir: string): Promise<string | null> {
+    try {
+      const remoteHead = await git(dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD');
+      return remoteHead.startsWith('origin/') ? remoteHead.slice('origin/'.length) : remoteHead;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * A stable fingerprint of the working tree's dirty state — the sha256 of the
    * porcelain status. A clean tree yields a fixed constant; any tracked, staged,
    * or untracked change moves it. Recorded at admission (issue #149) as the
@@ -638,6 +652,30 @@ export const Git = {
             // No merge in progress (e.g. it failed before starting).
           }
           return { ok: false, detail };
+        }
+      },
+    );
+  },
+
+  /**
+   * Merge `branch` into the worktree at `worktreeDir`'s checked-out HEAD,
+   * LEAVING a conflicted merge in progress (conflict markers + `MERGE_HEAD`)
+   * instead of aborting — unlike {@link mergeNoEdit}, whose abort-on-conflict
+   * contract suits a land that must leave its admin worktree pristine. This is
+   * the reproduction step for an integration-refresh corrective turn (issue
+   * #315): the agent resolves the markers in place and completes the merge. A
+   * clean merge commits immediately (`--no-edit`) and returns `{ ok: true }`.
+   */
+  async mergeLeavingConflict(worktreeDir: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
+    return withGitOperation(
+      'git.merge',
+      { 'git.branch': branch, 'git.ref': 'HEAD' },
+      async () => {
+        try {
+          await git(worktreeDir, ...IDENTITY, 'merge', '--no-edit', branch);
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, detail: err instanceof GitError ? err.message : String(err) };
         }
       },
     );
