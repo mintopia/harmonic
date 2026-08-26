@@ -20,4 +20,5 @@ ALTER TABLE `runs` DROP COLUMN `review_feedback`;--> statement-breakpoint
 ALTER TABLE `runs` DROP COLUMN `reviewed_at`;--> statement-breakpoint
 ALTER TABLE `workspaces` DROP COLUMN `verification_auto_accept`;--> statement-breakpoint
 UPDATE `run_facts` SET `payload` = json_set(`payload`, '$.taskAction', 'done') WHERE json_extract(`payload`, '$.taskAction') IN ('completed', 'awaiting-review');--> statement-breakpoint
-UPDATE `run_facts` SET `payload` = json_set(`payload`, '$.taskAction', 'ready') WHERE json_extract(`payload`, '$.taskAction') = 'failed';
+UPDATE `run_facts` SET `payload` = json_set(`payload`, '$.taskAction', 'ready') WHERE json_extract(`payload`, '$.taskAction') = 'failed';--> statement-breakpoint
+UPDATE `sessions` SET `retire_reason` = 'retention-ttl' WHERE `retire_reason` IN ('reject-continuation-timeout', 'review-abandonment-sla');

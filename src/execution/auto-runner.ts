@@ -157,7 +157,7 @@ export class AutoRunner {
   constructor(
     private readonly taskService: TaskService,
     private readonly runStore: Pick<RunStore, 'countRunning' | 'countRunningByWorkspace'>,
-    private readonly runner: { launchClaimed: RunLauncher },
+    private readonly runner: { launchClaimed: RunLauncher; escalateUnspawned: Runner['escalateUnspawned'] },
     private readonly getConfig: () => AppConfig,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
     options: AutoRunnerOptions = {},
@@ -379,7 +379,7 @@ export class AutoRunner {
           const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
           if (this.clock() - since >= this.missingEpicBaseGraceMs) {
             const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
-            await this.taskService.escalate(task.id, reason);
+            await this.runner.escalateUnspawned(task.id, reason);
             record(task.id, `${reason}, escalated to human`);
             return;
           }

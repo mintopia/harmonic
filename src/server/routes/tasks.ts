@@ -648,7 +648,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an escalated ticket with guidance (ADR-0041): the guidance becomes feedback for the next Attempt, the attempt budget resets, and the loop resumes on the same ticket and branch. Human-only.',
+          'Reject an escalated ticket with guidance (ADR-0041): the guidance becomes feedback for the next Attempt, the attempt budget resets, and the loop resumes on the same ticket with a fresh Run cut from the base branch (the escalated Run\'s branch is retained as evidence until its Session retires). Human-only.',
         params: idParamsSchema,
         body: rejectInputSchema,
         response: {

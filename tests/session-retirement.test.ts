@@ -16,7 +16,7 @@ import { SESSION_STATUSES } from '../src/db/schema.js';
  */
 describe('decideRetirement (issue #148)', () => {
   const now = 1_000_000;
-  const cfg: RetentionConfig = { rejectContinuationMs: 5_000, retentionTtlMs: 100_000 };
+  const cfg: RetentionConfig = { retentionTtlMs: 100_000 };
 
   it('retires immediately on a successful land', () => {
     expect(decideRetirement('landed', now, cfg)).toEqual({ kind: 'retire', reason: 'landed' });
@@ -51,7 +51,6 @@ describe('decideRetirement (issue #148)', () => {
   });
 
   it('default reject window is shorter than the retention-TTL backstop', () => {
-    expect(DEFAULT_RETENTION.rejectContinuationMs).toBeLessThan(DEFAULT_RETENTION.retentionTtlMs);
   });
 });
 

@@ -135,8 +135,8 @@ export const toolChip = `${chip} bg-tool-tint text-tool`;
  * condensed", whose band is computed *relative to* the full path (issue #177,
  * `estimateCondensedContinuationCost`). Both paths render through this one chip:
  * `cold` reuses Running amber's tint/ink as harness-attention chrome ("this path
- * will cost you"), the one sanctioned non-state use here (DESIGN.md § Signal
- * Rule's continuation-cost carve-out); `warm`/`unknown` stay neutral — differing
+ * will cost you") — the one deliberate exception to DESIGN.md's "state colour on
+ * the state layer only" rule; `warm`/`unknown` stay neutral — differing
  * by muted vs faint ink so cold is never the only distinguishable band. Because
  * the two paths trade places on which is cheaper, amber lands on **whichever
  * path is the pricier one right now** — never both, never dressing the cheaper
@@ -177,8 +177,8 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
   return PERMISSION_OPTION_STYLES[kind] ?? btnQuiet;
 }
 
-/** State chips: tinted fill behind the state's text color (the Signal
- * Rule — only true states get a color). Escalated takes the indigo "needs
+/** State chips: tinted fill behind the state's text color (DESIGN.md: state
+ * colour on the state layer only). Escalated takes the indigo "needs
  * you" hue DESIGN.md § 2 reserves for the one state that needs the operator —
  * ADR-0041 made escalated that state; working is Running amber, done is
  * Merged emerald. Failed rose is an Attempt/Run register, never a ticket state. */

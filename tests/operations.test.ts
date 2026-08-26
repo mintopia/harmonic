@@ -199,6 +199,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         countRunningByWorkspace: async () => new Map<number, number>(),
       },
       {
+        escalateUnspawned: async () => {},
         launchClaimed: async () => {
           launchAttempts += 1;
           throw new Error('launch failed');
@@ -238,6 +239,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         countRunningByWorkspace: async () => new Map<number, number>(),
       },
       {
+        escalateUnspawned: async () => {},
         launchClaimed: async () => {
           launchAttempts += 1;
         },

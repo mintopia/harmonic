@@ -657,7 +657,9 @@ export class Runner {
    * ADR-0041 "Reject with guidance": the operator's guidance becomes the
    * feedback of the escalated Attempt and of the next one, the attempt budget
    * restarts (`AttemptStore.budgetBase` — history numbering is untouched), and
-   * the loop resumes on the same ticket and branch with a fresh Run.
+   * the loop resumes on the same ticket with a fresh Run cut from the base
+   * branch (the escalated Run's branch stays as evidence until its Session
+   * retires).
    */
   async resumeWithGuidance(task: TaskRow, guidance: string): Promise<void> {
     const run = (await this.runStore.listForTask(task.id)).at(-1);
@@ -675,6 +677,21 @@ export class Runner {
     // baked into the Task prompt, which must stay the operator's text plus feedback.
     await this.taskService.requeue(task.id, guidance, choice);
     await this.start(task.id);
+  }
+
+  /**
+   * Escalate a ready ticket the scheduler could not spawn (trigger 3, a
+   * permanent infrastructure failure such as its integration branch staying
+   * missing): claim it, record a Run + Attempt for the fact, and settle
+   * `escalate` through the coordinator — the same recorded-fact path every
+   * other escalation takes. A ticket that left `ready` meanwhile is left alone.
+   */
+  async escalateUnspawned(taskId: number, reason: string): Promise<void> {
+    const task = await this.taskService.claimReady(taskId);
+    if (!task) return;
+    const run = await this.runStore.create(task.id);
+    await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
+    await this.settleEscalated(task, run, reason, {});
   }
 
   /**

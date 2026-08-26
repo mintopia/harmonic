@@ -171,7 +171,7 @@ export const api = {
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
   /** Ordered durable Attempt/Task history for the ticket page. */
-  taskAttempts: (id: number) => request<{ attempts: Attempt[] }>('GET', `/api/tasks/${id}/attempts`),
+  taskAttempts: (id: number) => request<{ attempts: Attempt[]; budgetBase: number }>('GET', `/api/tasks/${id}/attempts`),
   taskUsage: (id: number) =>
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),

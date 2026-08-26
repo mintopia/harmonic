@@ -27,7 +27,7 @@ describe('Session retirement (issue #148)', () => {
   let tasks: TaskService;
   let workspaceId: number;
   const now = 1_000_000;
-  const cfg: RetentionConfig = { rejectContinuationMs: 5_000, retentionTtlMs: 100_000 };
+  const cfg: RetentionConfig = { retentionTtlMs: 100_000 };
 
   const dispatch = (overrides: Partial<DispatchSessionInput> = {}) =>
     sessions.recordDispatch({
@@ -73,9 +73,9 @@ describe('Session retirement (issue #148)', () => {
 
     it('markIdle sets the deadline + pending reason; beginRetiring then clears the deadline', async () => {
       const s = await dispatch();
-      const idle = await sessions.markIdle(s.id, now + 5_000, 'reject-continuation-timeout', now);
-      expect(idle).toMatchObject({ status: 'idle', retireDeadline: now + 5_000, retireReason: 'reject-continuation-timeout' });
-      const retiring = await sessions.beginRetiring(s.id, 'reject-continuation-timeout', now);
+      const idle = await sessions.markIdle(s.id, now + 5_000, 'retention-ttl', now);
+      expect(idle).toMatchObject({ status: 'idle', retireDeadline: now + 5_000, retireReason: 'retention-ttl' });
+      const retiring = await sessions.beginRetiring(s.id, 'retention-ttl', now);
       expect(retiring).toMatchObject({ status: 'retiring', retireDeadline: null });
     });
 
@@ -95,7 +95,7 @@ describe('Session retirement (issue #148)', () => {
 
     it('reactivate returns an idle Session to active for a continuation', async () => {
       const s = await dispatch();
-      await sessions.markIdle(s.id, now + 5_000, 'reject-continuation-timeout', now);
+      await sessions.markIdle(s.id, now + 5_000, 'retention-ttl', now);
       const active = await sessions.reactivate(s.id, now + 1);
       expect(active).toMatchObject({ status: 'active', retireDeadline: null, retireReason: null });
     });

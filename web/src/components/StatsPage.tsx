@@ -43,7 +43,6 @@ const REASON_LABEL: Record<string, string> = {
   'guardrail-trip': 'Guardrail',
   'verify-fail': 'Verification',
   'branch-violation': 'Branch',
-  'review-sla-expiry': 'Review timeout',
   'agent-finish/unresolved': 'Unresolved',
   unknown: 'Unknown',
 };

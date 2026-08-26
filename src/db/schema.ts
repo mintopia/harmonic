@@ -1042,20 +1042,11 @@ export const SESSION_STATUSES = ['active', 'idle', 'retiring', 'retired'] as con
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**
- * Why a Session retired (issue #148), for the operator-legible record. Each is a
- * distinct retirement deadline from reliability-design Unit C: `landed` (a
- * successful land + terminal success), `reject-continuation-timeout` (the human
- * rejected and no continuation arrived in time), `review-abandonment-sla` (the
- * review SLA lapsed unreviewed), `operator-disposition` (cancel/operator action),
+ * Why a Session retired (issue #148), for the operator-legible record: `landed`
+ * (a successful land + terminal success), `operator-disposition` (cancel / Close),
  * `retention-ttl` (the backstop so no idle Session retains its worktree forever).
  */
-export const SESSION_RETIRE_REASONS = [
-  'landed',
-  'reject-continuation-timeout',
-  'review-abandonment-sla',
-  'operator-disposition',
-  'retention-ttl',
-] as const;
+export const SESSION_RETIRE_REASONS = ['landed', 'operator-disposition', 'retention-ttl'] as const;
 export type SessionRetireReason = (typeof SESSION_RETIRE_REASONS)[number];
 
 /**

@@ -94,9 +94,15 @@ export const attemptSchema = z
 
 /** The ticket timeline shape shared by REST and the WebSocket firehose. */
 export const attemptTimelineResponseSchema = z
-  .object({ attempts: z.array(attemptSchema) })
+  .object({
+    attempts: z.array(attemptSchema),
+    /** The attempt number the `maxAttempts` budget counts from (ADR-0041): the last
+     * escalated Attempt, or 0. `latest.number - budgetBase` is the position within
+     * the current budget — history numbering never resets, the budget does. */
+    budgetBase: z.number().int().nonnegative().meta({ example: 0 }),
+  })
   .meta({ id: 'AttemptTimelineResponse' })
-  .describe('Ordered attempt timeline, with each attempt task and its outcome.');
+  .describe('Ordered attempt timeline, with each attempt task and its outcome, plus the attempt number the budget counts from.');
 
 /** Per-model token counters (execution/usage.ts `ModelUsage`) — the four counters Cost prices. */
 export const modelUsageSchema = z

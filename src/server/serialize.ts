@@ -75,6 +75,8 @@ const continuationToApi = (raw: string | null) => raw ? attemptContinuationSchem
 
 export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
+  /** The attempt number the `maxAttempts` budget counts from (`AttemptStore.budgetBase`). */
+  budgetBase: number;
 }
 
 const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
@@ -92,8 +94,9 @@ const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
 
 /** One DTO builder for REST hydration and live timeline updates. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
-  const rows = await ctx.attempts.listForTask(taskId);
+  const [rows, budgetBase] = await Promise.all([ctx.attempts.listForTask(taskId), ctx.attempts.budgetBase(taskId)]);
   return {
+    budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
       const [tasks, verifiedSha, escalationReason] = await Promise.all([
         ctx.attempts.listTasks(attempt.id),

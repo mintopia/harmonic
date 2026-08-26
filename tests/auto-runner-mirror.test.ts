@@ -81,6 +81,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     const started: Array<{ id: number; via: 'start' | 'launchClaimed' }> = [];
     const runner = {
+      escalateUnspawned: async () => {},
       start: async (id: number) => {
         started.push({ id, via: 'start' });
         await tasks.setState(id, 'working'); // native path flips inside the runner
@@ -137,6 +138,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
     const high = await tasks.create({ prompt: 'high priority interval task', priority: 'high', isolationMode: 'worktree' });
     const started: number[] = [];
     const runner = {
+      escalateUnspawned: async () => {},
       launchClaimed: async (id: number) => started.push(id),
     };
     const runStore = {
@@ -198,6 +200,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
   const build = (awaitsEpicBase: (t: { id: number }) => boolean) => {
     const started: number[] = [];
     const runner = {
+      escalateUnspawned: async () => {},
       start: async (id: number) => {
         started.push(id);
         await tasks.setState(id, 'working');
@@ -261,6 +264,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     const breaker = new GitCircuitBreaker({ threshold: 3, baseMs: 10_000, maxMs: 10_000 }, () => now);
     breaker.recordFailure(repoKey(task.workingDir));
     const runner = {
+      escalateUnspawned: async () => {},
       launchClaimed: async (id: number) => {
         started.push(id);
         running += 1;
@@ -292,7 +296,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     const task = await tasks.upsertMirrored(mirroredAfk(208));
     await tasks.setBaseBranch(task.id, 'epic/208');
     const started: number[] = [];
-    const runner = { launchClaimed: async (id: number) => started.push(id) };
+    const runner = { launchClaimed: async (id: number) => started.push(id), escalateUnspawned: (id: number, reason: string) => tasks.escalate(id, reason).then(() => {}) };
     const runStore = {
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
@@ -335,7 +339,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     const started: number[] = [];
     let now = 0;
     let missing = true;
-    const runner = { launchClaimed: async (id: number) => started.push(id) };
+    const runner = { launchClaimed: async (id: number) => started.push(id), escalateUnspawned: (id: number, reason: string) => tasks.escalate(id, reason).then(() => {}) };
     const runStore = {
       countRunning: async () => started.length,
       countRunningByWorkspace: async () => new Map<number, number>(),
@@ -387,6 +391,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
   const build = () => {
     const started: number[] = [];
     const runner = {
+      escalateUnspawned: async () => {},
       start: async (id: number) => {
         started.push(id);
         await tasks.setState(id, 'working'); // native path flips inside the runner

@@ -739,6 +739,7 @@ export function TicketPage({
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [budgetBase, setBudgetBase] = useState(0);
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
@@ -778,10 +779,18 @@ export function TicketPage({
 
   useEffect(() => {
     let live = true;
-    const load = () => api.taskAttempts(task.id).then(({ attempts: next }) => live && setAttempts(next), toastError);
+    const load = () =>
+      api.taskAttempts(task.id).then(({ attempts: next, budgetBase: base }) => {
+        if (!live) return;
+        setAttempts(next);
+        setBudgetBase(base);
+      }, toastError);
     load();
     const unsubscribe = subscribe((msg) => {
-      if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) setAttempts(msg.attempts);
+      if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) {
+        setAttempts(msg.attempts);
+        setBudgetBase(msg.budgetBase);
+      }
     });
     return () => {
       live = false;
@@ -1044,7 +1053,8 @@ export function TicketPage({
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline py-3 text-small text-muted">
               <span><span className="font-semibold text-ink">Ticket flow</span> · {humanState(task.state)}</span>
               <MetaSep />
-              <span>Attempt {attempts.at(-1)?.number ?? 0} / {maxAttempts ?? '—'}</span>
+              {/* Position within the current budget: history numbering keeps counting across a Reject, the cap restarts. */}
+              <span>Attempt {Math.max(0, (attempts.at(-1)?.number ?? 0) - budgetBase)} / {maxAttempts ?? '—'}</span>
               {verifiedSha(attempts) && <><MetaSep /><span>verified <span className="font-data text-ink">{verifiedSha(attempts)}</span></span></>}
             </div>
 
