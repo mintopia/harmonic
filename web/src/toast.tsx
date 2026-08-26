@@ -43,11 +43,15 @@ function push(message: string, kind: ToastKind) {
   const id = ++seq;
   toasts = [...toasts, { id, message, kind }];
   emit();
-  setTimeout(() => dismissToast(id), 6000);
+  // Success is a transient acknowledgement, so it auto-dismisses. Errors stay
+  // until the operator closes them: a rejected operation can carry a long,
+  // multi-line message (e.g. a git rebase conflict) that 6s cannot be read in.
+  if (kind === 'success') setTimeout(() => dismissToast(id), 6000);
 }
 
-/** Surface a rejected operation. Auto-dismisses after 6s; the operator can
- * also close it. Accepts unknown so promise catch handlers pass errors raw. */
+/** Surface a rejected operation. Stays until the operator dismisses it, so a
+ * long message is readable. Accepts unknown so promise catch handlers pass
+ * errors raw. */
 export function toastError(e: unknown) {
   push(e instanceof Error ? e.message : String(e), 'error');
 }
@@ -103,7 +107,13 @@ export function Toaster() {
               }`}
             >
               {success && <Icon name="check" className="mt-0.5 shrink-0 text-muted" />}
-              <span className="min-w-0 flex-1 break-words">{t.message}</span>
+              <span
+                className={`min-w-0 flex-1 break-words ${
+                  success ? '' : 'max-h-[60vh] overflow-y-auto whitespace-pre-wrap'
+                }`}
+              >
+                {t.message}
+              </span>
               <button
                 aria-label="Dismiss"
                 className={`-mr-2 -mt-2 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md transition-opacity duration-150 hover:opacity-70 ${
