@@ -241,7 +241,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     ]);
   });
 
-  it('operator Accept on an escalated ticket whose base moved refuses (409), abandons the landing, and leaves the ticket escalated', async () => {
+  it('operator Accept on an escalated ticket whose base moved non-conflictingly auto-rebases and lands, without re-verifying (ADR-0043)', async () => {
     const repo = makeRepo();
     // A verifier that fails: both attempts fail, so the ticket escalates with a
     // real commit as its verified head — Accept has work to land.
@@ -267,19 +267,51 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const verified = (await server.app.ctx.runs.get(runId)).candidateOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
-    // The base moves while the ticket sits escalated.
+    // The base moves non-conflictingly while the ticket sits escalated — the
+    // common case during the operator's review delay.
     const mainTip = advanceMain(repo, 'other.txt', 'someone else landed\n');
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(409);
-    expect(JSON.stringify(accepted.body)).toMatch(/advanced after verification/);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
-    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
-    const run = await server.app.ctx.runs.get(runId);
-    expect(run).toMatchObject({ state: 'failed', phase: 'terminal' });
-    const journal = (await server.app.ctx.asyncDb.read((d) => d.select().from(landingJournal).where(eq(landingJournal.runId, runId)).all()));
-    expect(journal.map((row) => row.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
-    expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing landed
+    // main now carries BOTH the independent advance and the replayed
+    // implementation, landed as a fast-forward (no merge commit).
+    expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
+    expect(git(repo, 'show', 'main:other.txt')).toBe('someone else landed');
+    expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
+    const journal = (await server.app.ctx.asyncDb.read((d) => d.select().from(landingJournal).where(eq(landingJournal.runId, runId)).all()));
+    expect(journal.map((row) => row.kind)).toContain('result');
+    expect(journal.map((row) => row.kind)).not.toContain('abandoned'); // it landed, not abandoned
+  });
+
+  it('operator Accept still refuses (409) when the base advance conflicts with the candidate, leaving the ticket escalated', async () => {
+    const repo = makeRepo();
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
+    });
+
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
+    });
+    expect(created.status).toBe(201);
+    const taskId: number = created.body.id;
+    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect(started.status).toBe(201);
+    await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+      return t.state === 'escalated' ? t : undefined;
+    });
+
+    // The base advance touches the SAME file the candidate wrote, so the replay
+    // conflicts and there is nothing safe to land without the operator's help.
+    const mainTip = advanceMain(repo, 'impl-native.txt', 'someone else changed this\n');
+
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    expect(accepted.status).toBe(409);
+    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
+    expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing landed
   });
 });

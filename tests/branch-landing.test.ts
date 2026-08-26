@@ -189,6 +189,40 @@ describe('branch landing (issue #153)', () => {
     expect(worktreeCount(repo)).toBe(1); // no admin worktree was ever needed
   });
 
+  it('rebaseOnAdvance (operator Accept): a base that advanced non-conflictingly is replayed onto and landed, no re-verify', async () => {
+    const repo = makeRepo(); // main is checked out here
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'verified work\n');
+    const featTip = oid(repo, 'feat');
+    // main moves after verification, touching a different file (the common case:
+    // an unrelated advance during the operator's delay before clicking Accept).
+    writeFileSync(join(repo, 'README.md'), '# main advanced\n');
+    git(repo, 'commit', '-am', 'main advances');
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, leaseHeld: true, rebaseOnAdvance: true });
+
+    expect(out).toMatchObject({ ok: true, rebased: true });
+    // main now carries BOTH the advance and the replayed verified work.
+    expect(git(repo, 'show', 'main:README.md')).toBe('# main advanced');
+    expect(git(repo, 'show', 'main:feat.txt')).toBe('verified work');
+    expect(git(repo, 'status', '--porcelain')).toBe(''); // live checkout coherent
+    expect(worktreeCount(repo)).toBe(1); // rebase admin worktree cleaned up
+  });
+
+  it('rebaseOnAdvance conflict: a base advance that collides with the candidate falls back to conflict, base untouched', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'README.md', '# from feat\n'); // feat edits README one way
+    writeFileSync(join(repo, 'README.md'), '# from main\n'); // main edits it another
+    git(repo, 'commit', '-am', 'main diverges');
+    const mainTip = oid(repo, 'main');
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true, rebaseOnAdvance: true });
+
+    expect(out).toMatchObject({ ok: false, reason: 'conflict' });
+    expect(oid(repo, 'main')).toBe(mainTip); // untouched
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(worktreeCount(repo)).toBe(1); // conflicted rebase worktree cleaned up
+  });
+
   it('merge mode: a diverged, non-conflicting base is folded in with a merge commit (integration refresh)', async () => {
     const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');

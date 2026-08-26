@@ -477,9 +477,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         // for the checked-out (worktree-mode base) path — `landBranch` still
         // falls back to PR/manual if that checkout has uncommitted operator work.
         apply: async () => {
-          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true }, postLand);
+          // Operator Accept auto-rebases onto an advanced base rather than
+          // dead-ending as `stale-base` (ADR-0043): the human delay before a
+          // manual Accept means the base has very likely moved on, and an
+          // unrelated advance should just land, not force a re-verify.
+          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true, rebaseOnAdvance: true }, postLand);
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
-          return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
+          return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode, rebased: outcome.rebased } };
         },
       },
       ...effects,

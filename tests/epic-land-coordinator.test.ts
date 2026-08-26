@@ -55,6 +55,7 @@ const okLand = (over?: Partial<Extract<LandBranchOutcome, { ok: true }>>): LandB
   oid: 'landed-oid',
   baseBranch: 'develop',
   branch: 'epic/42',
+  rebased: false,
   ...over,
 });
 
