@@ -972,6 +972,27 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.get(
+    '/verification-attempts/:id',
+    {
+      schema: {
+        tags: ['Attempts'],
+        description: 'Read a verification task outcome and its captured command output.',
+        params: idParamsSchema,
+        response: {
+          200: z
+            .object({ output: z.string(), summary: z.string(), hasTranscript: z.boolean() })
+            .describe("The verification task's captured command output and summary, and whether a critic transcript exists."),
+        },
+      },
+    },
+    async (req) => {
+      const attempt = await ctx.verificationAttempts.get(req.params.id);
+      if (!attempt) throw new DomainError('not_found', `verification attempt ${req.params.id} not found`);
+      return { output: attempt.output, summary: attempt.summary, hasTranscript: attempt.transcriptPath !== null };
+    },
+  );
+
+  app.get(
     '/verification-attempts/:id/log',
     {
       schema: {

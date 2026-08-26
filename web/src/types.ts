@@ -40,8 +40,12 @@ export interface Attempt {
   state: AttemptState;
   startedAt: number;
   endedAt: number | null;
-  /** Feedback recorded before this corrective attempt began. */
+  /** The failure feedback this attempt closed with — what the next attempt was told to fix. */
   feedback: string | null;
+  /** Branch tip this attempt's verification proved; null until verification ran. */
+  verifiedSha: string | null;
+  /** Why this attempt handed the ticket to a human; null unless it escalated. */
+  escalationReason: string | null;
   continuation: {
     path: 'continued-session' | 'new-session-condensed';
     reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';

@@ -1,35 +1,6 @@
-import {
-  changedFilesFromStat,
-  continuationNote,
-  runRailChips,
-  type RunChip,
-  type RunDot,
-} from '../../run-rail-model';
-import { formatScheduledJobDuration } from '../../scheduled-jobs-model';
-import type { Attempt, Run } from '../../types';
-import { runDotFill } from '../../ui';
+import { changedFilesFromStat } from '../../run-rail-model';
+import { railSectionCount, railSectionHead } from '../../ui';
 import { Icon } from '../Icon';
-
-const WORD_TONE: Record<RunDot, string> = {
-  running: 'text-running',
-  fail: 'text-fail',
-  merged: 'text-merged',
-  review: 'text-await',
-  neutral: 'text-muted',
-};
-
-const ssechd = 'mb-2.5 flex items-center gap-2 text-label font-bold uppercase tracking-[0.1em] text-faint';
-const ssecCount = 'rounded-full bg-raised px-[7px] text-[11px] font-bold normal-case tracking-normal text-muted';
-
-function ChipDot({ chip }: { chip: RunChip }) {
-  return (
-    <span
-      role="img"
-      aria-label={chip.stateWord}
-      className={`size-2 shrink-0 rounded-full ${runDotFill[chip.dot]} ${chip.pulse ? 'motion-safe:animate-dot-pulse' : ''}`}
-    />
-  );
-}
 
 const FADED: Record<'M' | 'A' | 'D', string> = {
   M: 'bg-running-tint text-running',
@@ -37,125 +8,29 @@ const FADED: Record<'M' | 'A' | 'D', string> = {
   D: 'bg-fail-tint text-fail',
 };
 
-// Run switching drives the whole pane, so it must stay reachable. Vertical in
-// the wide rail; a sticky horizontal strip at narrow widths where the rail
-// stacks below the fold (layout="strip").
-export function RunAttempts({
-  runs,
-  selectedRunId,
-  selectedFile,
-  onSelectRun,
-  layout = 'rail',
-  attempts = [],
-}: {
-  runs: Run[];
-  selectedRunId: number | null;
-  selectedFile?: string | null;
-  onSelectRun: (runId: number) => void;
-  layout?: 'rail' | 'strip';
-  attempts?: Attempt[];
-}) {
-  const chips = runRailChips(runs);
-  const note = continuationNote(runs);
-  const isRunSelected = (runId: number) => selectedFile === null && runId === selectedRunId;
-  const strip = layout === 'strip';
-  return (
-    <section className={strip ? '' : 'border-b border-hairline px-3.5 py-3.5'}>
-      <div className={ssechd}>
-        Run attempts <span className={ssecCount}>{chips.length}</span>
-      </div>
-      {chips.length === 0 ? (
-        <p className="text-small text-muted">This task hasn't run yet.</p>
-      ) : (
-        <div className={strip ? 'flex gap-1.5 overflow-x-auto pb-0.5' : 'flex flex-col gap-1'}>
-          {chips.map((c) => (
-            <button
-              key={c.runId}
-              type="button"
-              aria-pressed={isRunSelected(c.runId)}
-              onClick={() => onSelectRun(c.runId)}
-              className={`flex min-h-11 items-center gap-2.5 rounded-sm border px-2.5 py-2 text-left transition-colors ${
-                strip ? 'shrink-0' : 'w-full'
-              } ${
-                isRunSelected(c.runId)
-                  ? 'border-await bg-await-tint'
-                  : 'border-transparent hover:bg-raised'
-              }`}
-            >
-              <ChipDot chip={c} />
-              <span className="text-data font-semibold text-ink">{c.label}</span>
-              <span className="ml-auto text-right text-[11.5px] leading-[1.35] tabular-nums text-faint">
-                <span className={`text-label font-bold uppercase tracking-[0.03em] ${WORD_TONE[c.dot]}`}>
-                  {c.stateWord}
-                </span>
-                {strip ? ' ' : <br />}
-                {[c.cost, c.duration].filter(Boolean).join(' · ')}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-      {note && !strip && (
-        <div className="mt-2.5 flex items-center gap-1.5 text-small text-faint">
-          <Icon name="refresh" className="size-3.5" />
-          {note}
-        </div>
-      )}
-      {!strip && attempts.some((attempt) => attempt.continuation) && (
-        <div className="mt-2.5 space-y-1 text-small text-faint">
-          {attempts.flatMap((attempt) => attempt.continuation ? [{ attempt, continuation: attempt.continuation }] : []).map(({ attempt, continuation }) => (
-            <div key={attempt.id}>
-              Attempt {attempt.number}: {continuation.path === 'continued-session' ? 'continued session' : 'new session (condensed)'} · context {continuation.contextUsage ?? 'unknown'}/{continuation.contextReuseThreshold} · active {formatScheduledJobDuration(continuation.lastActiveAgeMs)}/{formatScheduledJobDuration(continuation.warmWindowMs) ?? 'unknown'}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
 export function RunRail({
-  runs,
   worktree,
-  selectedRunId,
   selectedFile,
-  onSelectRun,
   onSelectFile,
   onSelectChanges,
-  attempts = [],
 }: {
-  runs: Run[];
   worktree: {
     branch: string | null;
     baseBranch: string | null;
     isolationMode: 'direct' | 'worktree';
     stat: string | null;
   };
-  selectedRunId: number | null;
   selectedFile?: string | null;
-  onSelectRun: (runId: number) => void;
   onSelectFile: (path: string) => void;
   onSelectChanges: () => void;
-  attempts?: Attempt[];
 }) {
   const files = changedFilesFromStat(worktree.stat);
   const hasWorktree = worktree.isolationMode === 'worktree' && Boolean(worktree.branch);
 
   return (
-    <div aria-label="Run navigation">
-      {/* At narrow widths a sticky strip in the main pane owns run-switching. */}
-      <div className="max-rail:hidden">
-        <RunAttempts
-          runs={runs}
-          selectedRunId={selectedRunId}
-          selectedFile={selectedFile}
-          onSelectRun={onSelectRun}
-          attempts={attempts}
-        />
-      </div>
-
+    <div aria-label="Worktree navigation">
       <section className="px-3.5 py-3.5">
-        <div className={ssechd}>Worktree</div>
+        <div className={railSectionHead}>Worktree</div>
         {hasWorktree ? (
           <>
             <div className="flex min-w-0 items-center gap-2 font-data text-data text-ink">
@@ -181,9 +56,9 @@ export function RunRail({
             <button
               type="button"
               onClick={onSelectChanges}
-              className={`${ssechd} mt-4 hover:text-ink`}
+              className={`${railSectionHead} mt-4 hover:text-ink`}
             >
-              Changed files{files.length > 0 && <span className={ssecCount}>{files.length}</span>}
+              Changed files{files.length > 0 && <span className={railSectionCount}>{files.length}</span>}
             </button>
             {files.length === 0 ? (
               <p className="text-small text-muted">No changed files yet.</p>

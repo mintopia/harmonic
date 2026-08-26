@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Attempt, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
+import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
 import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -17,9 +17,12 @@ import { Icon } from './Icon';
 import { subscribe, subscribeRunLog } from '../ws';
 import { gateForRun } from '../ticket-gate-model';
 import { cardTitle } from '../board-sections-model';
-import { RunRail, RunAttempts } from './ticket/RunRail';
+import { RunRail } from './ticket/RunRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
+import { AttemptTimeline } from './ticket/AttemptTimeline';
+import { TaskLog } from './ticket/TaskLog';
+import { runForAttempt, verifiedSha } from '../attempt-timeline-model';
 import { labelType } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -805,7 +808,10 @@ export function TicketPage({
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
+  const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
@@ -830,10 +836,26 @@ export function TicketPage({
 
   useEffect(() => {
     let live = true;
-    api.taskAttempts(task.id).then(({ attempts }) => live && setAttempts(attempts), toastError);
-    return subscribe((msg) => {
+    Promise.all([api.config(), api.workspaces()]).then(([config, { workspaces }]) => {
+      if (!live) return;
+      setMaxAttempts(workspaces.find((workspace) => workspace.id === task.workspaceId)?.maxAttempts ?? config.maxAttempts);
+    }, toastError);
+    return () => {
+      live = false;
+    };
+  }, [task.workspaceId]);
+
+  useEffect(() => {
+    let live = true;
+    const load = () => api.taskAttempts(task.id).then(({ attempts: next }) => live && setAttempts(next), toastError);
+    load();
+    const unsubscribe = subscribe((msg) => {
       if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) setAttempts(msg.attempts);
     });
+    return () => {
+      live = false;
+      unsubscribe();
+    };
   }, [task.id]);
 
   useEffect(() => {
@@ -1004,12 +1026,39 @@ export function TicketPage({
   }, [onClose]);
 
   const latestRun = runs[runs.length - 1];
-  const alert =
-    (task.escalated || latestRun?.state === 'failed') && latestRun?.reason
-      ? { escalated: task.escalated, text: latestRun.reason.replace(/^escalated to human:\s*/i, '') }
-      : null;
+  // Escalation is the timeline's own entry (its attempt carries the trigger and
+  // the actions); only a plain failure still needs this banner.
+  const failure = !task.escalated && latestRun?.state === 'failed' && latestRun.reason ? latestRun.reason : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForRun({ task, runs, selectedRunId });
+  const selectedTask = attempts.flatMap((attempt) => attempt.tasks).find((row) => row.id === selectedTaskId) ?? null;
+  const selectRun = (runId: number | null) => {
+    setSelectedFile(null);
+    setSelectedAttemptId(null);
+    setSelectedTaskId(null);
+    setSelectedRunId(runId);
+  };
+  const selectAttempt = (attempt: Attempt) => {
+    selectRun(runForAttempt(runs, attempt)?.id ?? selectedRunId);
+    setSelectedAttemptId(attempt.id);
+  };
+  const timelineProps = {
+    attempts,
+    runs,
+    task,
+    maxAttempts,
+    now,
+    selectedRunId,
+    selectedAttemptId,
+    selectedTaskId,
+    selectedFile,
+    onChanged,
+    onSelectAttempt: selectAttempt,
+    onSelectTask: (attempt: Attempt, row: AttemptTask) => {
+      selectAttempt(attempt);
+      setSelectedTaskId(row.id);
+    },
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -1061,6 +1110,13 @@ export function TicketPage({
             <Metrics task={task} runs={runs} live={liveUsage} now={now} />
             <MetaLine task={task} allTasks={allTasks} />
 
+            <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline py-3 text-small text-muted">
+              <span><span className="font-semibold text-ink">Ticket flow</span> · {task.escalated ? 'escalated' : humanState(task.state)}</span>
+              <MetaSep />
+              <span>Attempt {attempts.at(-1)?.number ?? 0} / {maxAttempts ?? '—'}</span>
+              {verifiedSha(attempts) && <><MetaSep /><span>verified <span className="font-data text-ink">{verifiedSha(attempts)}</span></span></>}
+            </div>
+
             {task.skipReason && (
               <div className="mb-4 text-small text-muted">
                 <span className={labelType}>Waiting to run</span> —{' '}
@@ -1083,39 +1139,27 @@ export function TicketPage({
                 )}
               </div>
             )}
-            {alert && (
-              <div className={`mb-4 rounded-md px-3 py-2 text-small ${alert.escalated ? 'bg-running-tint' : 'bg-fail-tint'}`}>
-                <span className={`font-semibold ${alert.escalated ? 'text-running' : 'text-fail'}`}>
-                  {alert.escalated ? 'Escalated to you' : 'Run failed'}
-                </span>
-                {alert.escalated && <span className="text-muted"> — auto-drive stopped and handed this back</span>}
-                <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{alert.text}</div>
+            {failure && (
+              <div className="mb-4 rounded-md bg-fail-tint px-3 py-2 text-small">
+                <span className="font-semibold text-fail">Run failed</span>
+                <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{failure}</div>
               </div>
             )}
 
             {/* Narrow: the rail stacks below the fold, so a sticky strip keeps
-                run-switching reachable at the tool's core side-monitor width. */}
+                attempt-switching reachable at the tool's core side-monitor width. */}
             <div className="sticky top-0 z-20 -mx-[30px] mb-1 border-y border-hairline bg-canvas px-[30px] py-2.5 rail:hidden">
-              <RunAttempts
-                runs={runs}
-                attempts={attempts}
-                selectedRunId={selectedRunId}
-                selectedFile={selectedFile}
-                onSelectRun={(runId) => {
-                  setSelectedFile(null);
-                  setSelectedRunId(runId);
-                }}
-                layout="strip"
-              />
+              <AttemptTimeline {...timelineProps} layout="strip" />
             </div>
 
-            {/* main run pane */}
+            {/* main pane: Run OR Changes, driven by the rail */}
             <div className="min-w-0 border-t border-hairline">
               {selectedFile !== null ? (
                 <ChangesPane task={task} runId={selectedRunId} selectedFile={selectedFile} running={anyRunning} />
               ) : selectedRun ? (
                 <>
                   <RunHeader run={selectedRun} />
+                  {selectedTask && <TaskLog key={selectedTask.id} task={selectedTask} />}
                   <Stepper run={selectedRun} />
                   <Verification attempts={verificationAttempts} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />
@@ -1133,40 +1177,38 @@ export function TicketPage({
         {/* right rail */}
         <aside className="flex w-[326px] shrink-0 flex-col border-l border-hairline bg-surface max-rail:w-auto max-rail:border-l-0 max-rail:border-t">
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
+            {/* At narrow widths the sticky strip in the main pane owns attempt-switching. */}
+            <div className="max-rail:hidden">
+              <AttemptTimeline {...timelineProps} />
+            </div>
             <RunRail
-              runs={runs}
-              attempts={attempts}
               worktree={{
                 branch: task.branch,
                 baseBranch: task.baseBranch,
                 isolationMode: task.isolationMode,
                 stat: liveStat ?? task.stat,
               }}
-              selectedRunId={selectedRunId}
               selectedFile={selectedFile}
-              onSelectRun={(runId) => {
-                setSelectedFile(null);
-                setSelectedRunId(runId);
-              }}
               onSelectFile={setSelectedFile}
               onSelectChanges={() => setSelectedFile('')}
             />
           </div>
-          <Gate
-            model={gateModel}
-            task={task}
-            runs={runs}
-            verificationAttempts={verificationAttempts}
-            onEdit={(t) => {
-              onClose();
-              onEdit(t);
-            }}
-            onChanged={onChanged}
-            onGoToCurrent={(runId) => {
-              setSelectedFile(null);
-              setSelectedRunId(runId);
-            }}
-          />
+          {/* An escalated ticket has exactly the three actions on its timeline
+              entry (ADR-0041); the gate would only duplicate and cover them. */}
+          {!task.escalated && (
+            <Gate
+              model={gateModel}
+              task={task}
+              runs={runs}
+              verificationAttempts={verificationAttempts}
+              onEdit={(t) => {
+                onClose();
+                onEdit(t);
+              }}
+              onChanged={onChanged}
+              onGoToCurrent={selectRun}
+            />
+          )}
         </aside>
       </div>
     </div>

@@ -1608,7 +1608,7 @@ export class Runner {
         const persisted = await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
         const timelineAttempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
         if (timelineAttempt) {
-          const timelineTask = await this.attempts.createTask(timelineAttempt.id, { type: 'review', logLocator: persisted.transcriptPath ?? `verification_attempt:${persisted.id}` });
+          const timelineTask = await this.attempts.createTask(timelineAttempt.id, { type: 'review', logLocator: `verification_attempt:${persisted.id}` });
           await this.attempts.updateTask(timelineTask.id, {
             state: attempt.verdict === 'pass' ? 'passed' : 'failed',
             verdict: attempt.verdict,

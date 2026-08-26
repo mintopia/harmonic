@@ -326,6 +326,10 @@ export function stateDot(state: TaskState): string {
   return `${dot} ${laneDot(state)}`;
 }
 
+/** The Ticket rail's section header (Attempts, Worktree, Changed files) and its count pill. */
+export const railSectionHead = 'mb-2.5 flex items-center gap-2 text-label font-bold uppercase tracking-[0.1em] text-faint';
+export const railSectionCount = 'rounded-full bg-raised px-[7px] text-[11px] font-bold normal-case tracking-normal text-muted';
+
 /** RunDot → the dot's fill utility, shared by the Ticket run rail's chips and
  * its read-only result bar so the run-signal mapping lives in one place (the
  * pulse is applied separately in the markup, never baked in here). */

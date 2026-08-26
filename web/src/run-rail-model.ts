@@ -1,7 +1,6 @@
 // Explicit .js extension: this module is shared with the node-side test
 // project, whose nodenext resolution requires it (Vite maps .js → .ts).
 import type { Run } from './types.js';
-import { formatCost } from './cost.js';
 
 /**
  * Pure view-model helpers behind the Ticket page's run rail (issue #183, part
@@ -57,20 +56,6 @@ export function runDisplay(run: Run): RunDisplay {
   }
 }
 
-/** One run's chip on the rail. `isCurrent` is the latest attempt — the only
- * run the review gate can act on (`ticket-gate-model.ts`). */
-export interface RunChip {
-  runId: number;
-  attempt: number;
-  label: string;
-  dot: RunDot;
-  pulse: boolean;
-  stateWord: string;
-  cost: string | null;
-  duration: string | null;
-  isCurrent: boolean;
-}
-
 /** A changed file the rail can link into the worktree-wide Changes view.
  *
  * `git diff --stat` does not include Git's add/modify status, so the current
@@ -118,64 +103,4 @@ export function currentRunId(runs: Run[]): number | null {
     if (!current || run.attempt > current.attempt) current = run;
   }
   return current?.id ?? null;
-}
-
-/** A run's wall-clock as a compact `Ns` / `Nm Ss`, or null while it is still
- * in flight (no `finishedAt`). Seconds only under a minute; minutes+seconds
- * above. Pure — clamps a negative delta (clock skew) to 0. */
-export function formatRunDuration(run: Run): string | null {
-  if (run.finishedAt === null) return null;
-  const secs = Math.max(0, Math.round((run.finishedAt - run.startedAt) / 1000));
-  if (secs < 60) return `${secs}s`;
-  return `${Math.floor(secs / 60)}m ${secs % 60}s`;
-}
-
-/**
- * The rail's chips, one per run, sorted by attempt ascending (Run 1 → Run N,
- * left to right). Each chip carries its own derived disposition ({@link
- * runDisplay}), formatted cost, and duration. Pure: does not mutate `runs`.
- */
-export function runRailChips(runs: Run[]): RunChip[] {
-  const current = currentRunId(runs);
-  return [...runs]
-    .sort((a, b) => a.attempt - b.attempt)
-    .map((run) => {
-      const d = runDisplay(run);
-      return {
-        runId: run.id,
-        attempt: run.attempt,
-        label: `Run ${run.attempt}`,
-        dot: d.dot,
-        pulse: d.pulse,
-        stateWord: d.word,
-        cost: formatCost(run.cost),
-        duration: formatRunDuration(run),
-        isCurrent: run.id === current,
-      };
-    });
-}
-
-/**
- * The rail's session-continuation note: when the current run resumed an
- * earlier run's Session (same non-null `sessionId`), the human-legible "Run X
- * continued Run Y's session" line under the rail (the prototype's warm-session
- * hint). `null` when the current run started its own Session, there are fewer
- * than two runs, or the current run has no session id yet. It names the most
- * recent earlier run that shares the id — the run whose conversation was
- * carried forward. Pure.
- */
-export function continuationNote(runs: Run[]): string | null {
-  const currentId = currentRunId(runs);
-  if (currentId === null) return null;
-  const current = runs.find((r) => r.id === currentId)!;
-  if (current.sessionId === null) return null;
-  let source: Run | null = null;
-  for (const run of runs) {
-    if (run.id === current.id) continue;
-    if (run.attempt >= current.attempt) continue;
-    if (run.sessionId !== current.sessionId) continue;
-    if (!source || run.attempt > source.attempt) source = run;
-  }
-  if (!source) return null;
-  return `Run ${current.attempt} continued Run ${source.attempt}’s session`;
 }

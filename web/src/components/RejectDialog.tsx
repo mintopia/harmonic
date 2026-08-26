@@ -11,10 +11,13 @@ export function RejectDialog({
   taskId,
   onClose,
   onDone,
+  reject = (feedback) => api.rejectTask(taskId, feedback),
 }: {
   taskId: number;
   onClose: () => void;
   onDone: () => void;
+  /** The rejection call; escalated tickets route through their own recovery path. */
+  reject?: (feedback: string | undefined) => Promise<unknown>;
 }) {
   const [feedback, setFeedback] = useState('');
   const [busy, setBusy] = useState(false);
@@ -24,7 +27,7 @@ export function RejectDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.rejectTask(taskId, feedback.trim() || undefined);
+      await reject(feedback.trim() || undefined);
       toastSuccess(`${taskLabel(taskId)} rejected — feedback sent to the next attempt`);
       onDone();
     } catch (e) {
