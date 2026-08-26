@@ -725,16 +725,7 @@ export class Runner {
     // same-Task new attempt), or a fresh chain when it starts a new line.
     const chainId = await this.chainStore.resolveForTask(task);
     const created = await this.runStore.create(task.id, snapshot, chainId);
-    const attempt = await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
-    const rebase = await this.attempts.createTask(attempt.id, { type: 'rebase', logLocator: 'git:rebase:pending' });
-    await this.attempts.updateTask(rebase.id, {
-      state: 'passed',
-      verdict: 'pass',
-      startedAt: Date.now(),
-      endedAt: Date.now(),
-    });
-    const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation' });
-    await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now(), logLocator: 'session:pending' });
+    await this.attempts.ensureForRun(task.id, created.attempt, created.startedAt);
     const key = this.workContextKeyFor(task, created);
     // Resolved ahead of the claim: look up whoever holds the Work Context key and
     // whether they share this Run's line of work, exactly what `sharesLineOfWork`
@@ -2457,22 +2448,19 @@ export class Runner {
     };
     let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
 
-    // A rebase is an Attempt task in its own right.  A newly-created worktree
-    // is already based on the resolved branch, but recording that no-op is
-    // important: the timeline must show the exact tree implementation started
-    // from, rather than making a clean rebase invisible.
+    // Rebase is the first, real operation in every Attempt. The row stays
+    // running while git operates and records its actual result below.
     const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
     const tasksAtStart = await this.attempts.listTasks(attemptAtStart.id);
+    let rebaseTask = tasksAtStart.find((row) => row.type === 'rebase');
     if (tasksAtStart.length === 0) {
-      const rebase = await this.attempts.createTask(attemptAtStart.id, {
+      rebaseTask = await this.attempts.createTask(attemptAtStart.id, {
         type: 'rebase',
         logLocator: `git:rebase:${run.baseBranch ?? 'pending'}`,
       });
-      await this.attempts.updateTask(rebase.id, {
-        state: 'passed',
-        verdict: 'pass',
+      rebaseTask = await this.attempts.updateTask(rebaseTask.id, {
+        state: 'running',
         startedAt: Date.now(),
-        endedAt: Date.now(),
       });
     }
 
@@ -2528,6 +2516,35 @@ export class Runner {
     let releaseHarnessMutex: (() => void) | null = null;
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined || remergeCtx !== undefined);
+      if (rebaseTask && workspace.worktree) {
+        const current = await this.runStore.get(run.id);
+        const baseBranch = current.baseBranch ?? await this.resolveBaseBranch(task);
+        const baseOid = await Git.revParse(task.workingDir, baseBranch);
+        const rebased = await Git.rebaseOnto(workspace.worktree.path, baseOid);
+        if (!rebased.ok) {
+          await this.attempts.updateTask(rebaseTask.id, {
+            state: 'failed',
+            verdict: 'fail',
+            endedAt: Date.now(),
+            logLocator: `git:rebase:${baseBranch}\n${rebased.detail}`,
+          });
+          await this.finalizeWorkspace(task, run, workspace).catch(() => {});
+          return { kind: 'actionable-fail', reason: 'rebase conflict', output: rebased.detail };
+        }
+        await this.attempts.updateTask(rebaseTask.id, {
+          state: 'passed',
+          verdict: 'pass',
+          endedAt: Date.now(),
+          logLocator: `git:rebase:${baseBranch}@${baseOid}`,
+        });
+      } else if (rebaseTask) {
+        await this.attempts.updateTask(rebaseTask.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
+      }
+      const attemptTasks = await this.attempts.listTasks(attemptAtStart.id);
+      if (!attemptTasks.some((row) => row.type === 'implementation' && row.state === 'running')) {
+        const implementation = await this.attempts.createTask(attemptAtStart.id, { type: 'implementation', logLocator: 'session:pending' });
+        await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now() });
+      }
       // Workspace prep (its git ops) succeeded — clear any accumulated git
       // backoff for this context, so a later unrelated blip starts fresh (#199).
       this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
@@ -3612,9 +3629,8 @@ export class Runner {
         } else if (autoDriven) {
           if (!(await this.verifiedHeadStillCurrent(task, run))) {
             const reason = 'branch head moved after verification';
-            record('lifecycle', { event: 'escalated', reason });
-            await this.settleEscalated(task, run, reason, patch);
-            return { kind: 'terminal' };
+            record('lifecycle', { event: 'freshness-rebase-required', reason });
+            return { kind: 'actionable-fail', reason, output: '' };
           }
           // A mirrored Run has no human gate, so it runs the auto branch:
           // executing → validating → verifying → landing → terminal. The Merge
