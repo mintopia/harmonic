@@ -39,6 +39,8 @@ export interface Attempt {
   verifiedSha: string | null;
   /** Why this attempt handed the ticket to a human; null unless it escalated. */
   escalationReason: string | null;
+  /** Read-time command and critic outcomes for this attempt's owning Run. */
+  verifierStatuses: VerifierStatus[];
   continuation: {
     path: 'continued-session' | 'new-session-condensed';
     reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';

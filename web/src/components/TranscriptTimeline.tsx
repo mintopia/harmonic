@@ -1,5 +1,6 @@
 import { useMemo, type JSX } from 'react';
 import { coalesceEvents, type StreamItem } from '../event-stream-model';
+import { transcriptLanes } from '../transcript-timeline-model';
 import type { RunLogEvent } from '../types';
 
 type Glyph = 'think' | 'chat' | 'eye' | 'pencil' | 'file' | 'terminal' | 'check' | 'dot';
@@ -73,6 +74,7 @@ interface Row {
   operator?: boolean;
   text?: { body: string; muted: boolean };
   path?: string;
+  toolCallId?: string;
 }
 
 function toRow(item: StreamItem<RunLogEvent>, ts: number): Row {
@@ -113,6 +115,7 @@ function toRow(item: StreamItem<RunLogEvent>, ts: number): Row {
       ok: item.tool.status === 'completed',
       failed: item.tool.status === 'failed',
       path: target || undefined,
+      toolCallId: item.tool.toolCallId,
     };
   }
   const payload = item.event.payload as { event?: unknown; text?: unknown } | null;
@@ -134,62 +137,82 @@ function timestamp(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour12: false });
 }
 
+function TranscriptRows({ rows }: { rows: Row[] }) {
+  return rows.map((row, i) => {
+    const chip = row.operator
+      ? 'bg-ink text-surface'
+      : row.ok
+        ? 'bg-merged-tint text-merged'
+        : row.failed
+          ? 'bg-raised text-fail'
+          : 'bg-raised text-muted';
+    return (
+      <li key={row.key} className="relative flex gap-[14px] px-[18px] py-[11px]">
+        <span
+          aria-hidden="true"
+          className={`absolute left-[29px] w-0.5 bg-hairline ${i === 0 ? 'top-[23px]' : 'top-0'} ${
+            i === rows.length - 1 ? 'bottom-[calc(100%-23px)]' : 'bottom-0'
+          }`}
+        />
+        <span className={`relative z-10 grid h-6 w-6 flex-none place-items-center rounded-[7px] ${chip}`}>
+          <IconChip glyph={row.glyph} />
+        </span>
+        <div className="min-w-0 flex-1 pt-px">
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-faint">
+            <span>{row.label}</span>
+            <span className="ml-auto font-data text-[11px] font-normal tracking-normal text-faint">{timestamp(row.ts)}</span>
+          </div>
+          {row.path && <div className="mt-1 whitespace-pre-wrap break-words font-data text-[12.5px] text-accent">{row.path}</div>}
+          {row.text && (
+            <p className={`mt-1 whitespace-pre-wrap text-[13.5px] leading-relaxed ${row.text.muted ? 'italic text-muted' : 'text-ink'}`}>
+              {row.text.body}
+            </p>
+          )}
+        </div>
+      </li>
+    );
+  });
+}
+
+function SubagentLane({ label, rows }: { label: string; rows: Row[] }) {
+  return (
+    <li className="ml-12 border-l-2 border-edge bg-sunken py-2" aria-label={label}>
+      <div className="px-[18px] text-[10px] font-bold uppercase tracking-[0.08em] text-accent">{label}</div>
+      <ol className="mt-1">
+        <TranscriptRows rows={rows} />
+      </ol>
+    </li>
+  );
+}
+
 export function TranscriptTimeline({ events }: { events: RunLogEvent[] }) {
-  const rows = useMemo(() => {
+  const lanes = useMemo(() => {
     const tsById = new Map(events.map((e) => [e.id, e.ts]));
-    return coalesceEvents<RunLogEvent>(events).map((item) => toRow(item, tsById.get(item.key) ?? 0));
+    return transcriptLanes(events).map((lane) => ({
+      ...lane,
+      rows: coalesceEvents<RunLogEvent>(lane.events).map((item) => toRow(item, tsById.get(item.key) ?? 0)),
+    }));
   }, [events]);
 
-  if (rows.length === 0) {
+  if (lanes.every((lane) => lane.rows.length === 0)) {
     return <p className="text-muted">No session transcript recorded.</p>;
   }
 
+  const [main, ...subagents] = lanes;
+  if (!main) return <p className="text-muted">No session transcript recorded.</p>;
+  const byParent = new Map(subagents.map((lane) => [lane.id, lane]));
+  const orphaned = subagents.filter((lane) => !main.rows.some((row) => row.toolCallId === lane.id));
+
   return (
     <ol className="overflow-hidden rounded-xl border border-hairline bg-surface py-1.5">
-      {rows.map((row, i) => {
-        const chip = row.operator
-          ? 'bg-ink text-surface'
-          : row.ok
-            ? 'bg-merged-tint text-merged'
-            : row.failed
-              ? 'bg-raised text-fail'
-              : 'bg-raised text-muted';
-        return (
-          <li key={row.key} className="relative flex gap-[14px] px-[18px] py-[11px]">
-            <span
-              aria-hidden="true"
-              className={`absolute left-[29px] w-0.5 bg-hairline ${i === 0 ? 'top-[23px]' : 'top-0'} ${
-                i === rows.length - 1 ? 'bottom-[calc(100%-23px)]' : 'bottom-0'
-              }`}
-            />
-            <span className={`relative z-10 grid h-6 w-6 flex-none place-items-center rounded-[7px] ${chip}`}>
-              <IconChip glyph={row.glyph} />
-            </span>
-            <div className="min-w-0 flex-1 pt-px">
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-faint">
-                <span>{row.label}</span>
-                <span className="ml-auto font-data text-[11px] font-normal tracking-normal text-faint">
-                  {timestamp(row.ts)}
-                </span>
-              </div>
-              {row.path && (
-                <div className="mt-1 whitespace-pre-wrap break-words font-data text-[12.5px] text-accent">
-                  {row.path}
-                </div>
-              )}
-              {row.text && (
-                <p
-                  className={`mt-1 whitespace-pre-wrap text-[13.5px] leading-relaxed ${
-                    row.text.muted ? 'italic text-muted' : 'text-ink'
-                  }`}
-                >
-                  {row.text.body}
-                </p>
-              )}
-            </div>
-          </li>
-        );
+      {main.rows.flatMap((row) => {
+        const lane = row.toolCallId ? byParent.get(row.toolCallId) : undefined;
+        return [
+          <TranscriptRows key={row.key} rows={[row]} />,
+          lane && <SubagentLane key={lane.id} label={lane.label} rows={lane.rows} />,
+        ];
       })}
+      {orphaned.map((lane) => <SubagentLane key={lane.id} label={lane.label} rows={lane.rows} />)}
     </ol>
   );
 }

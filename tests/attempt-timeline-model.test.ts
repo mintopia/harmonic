@@ -9,6 +9,7 @@ import {
   stateTone,
   taskLabel,
   taskLogSource,
+  verifierStatusTone,
   verifiedSha,
   verificationAttemptId,
 } from '../web/src/attempt-timeline-model.js';
@@ -18,7 +19,7 @@ const task = (over: Partial<AttemptTask> = {}): AttemptTask => ({
   id: 1, attemptId: 1, type: 'verification', position: 3, state: 'passed', command: 'npm test', verdict: 'pass', logLocator: null, startedAt: 1_000, endedAt: 3_000, ...over,
 });
 const attempt = (over: Partial<Attempt> = {}): Attempt => ({
-  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, continuation: null, tasks: [], ...over,
+  id: 1, taskId: 7, number: 1, state: 'failed', startedAt: 1_000, endedAt: 3_000, feedback: null, verifiedSha: null, escalationReason: null, verifierStatuses: [], continuation: null, tasks: [], ...over,
 });
 const run = (over: Partial<Run> = {}): Run => ({
   id: 1, taskId: 7, attempt: 1, state: 'running', phase: 'executing', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
@@ -33,6 +34,14 @@ describe('attempt timeline model', () => {
     expect(stateTone('failed')).toBe('failed');
     expect(attemptTone('escalated')).toBe('failed');
     expect(attemptTone('cancelled')).toBe('neutral');
+  });
+
+  it('uses neutral chips for verification that did not run', () => {
+    expect(verifierStatusTone('passed')).toBe('passed');
+    expect(verifierStatusTone('failed')).toBe('failed');
+    expect(verifierStatusTone('inconclusive')).toBe('failed');
+    expect(verifierStatusTone('skipped')).toBe('neutral');
+    expect(verifierStatusTone('disabled')).toBe('neutral');
   });
 
   it('uses the latest attempt-level verification proof', () => {

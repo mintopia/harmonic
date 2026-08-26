@@ -1,5 +1,5 @@
 import { formatScheduledJobDuration } from './scheduled-jobs-model.js';
-import type { Attempt, AttemptState, AttemptTask, AttemptTaskState, Run } from './types.js';
+import type { Attempt, AttemptState, AttemptTask, AttemptTaskState, Run, VerifierStatus } from './types.js';
 
 export type TimelineTone = 'running' | 'passed' | 'failed' | 'neutral';
 
@@ -23,6 +23,13 @@ export function attemptTone(state: AttemptState): TimelineTone {
   if (state === 'running') return 'running';
   if (state === 'passed') return 'passed';
   if (state === 'failed' || state === 'escalated') return 'failed';
+  return 'neutral';
+}
+
+/** Failed and inconclusive verification need attention; absent verification stays neutral. */
+export function verifierStatusTone(state: VerifierStatus['state']): TimelineTone {
+  if (state === 'passed') return 'passed';
+  if (state === 'failed' || state === 'inconclusive') return 'failed';
   return 'neutral';
 }
 

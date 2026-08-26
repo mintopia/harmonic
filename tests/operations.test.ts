@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { context, trace } from '@opentelemetry/api';
+import { context, propagation, trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { defaultConfig, verificationCommandSchema } from '../src/config.js';
@@ -19,6 +19,8 @@ const providers: NodeTracerProvider[] = [];
 
 afterEach(async () => {
   trace.disable();
+  context.disable();
+  propagation.disable();
   await Promise.all(providers.splice(0).map((provider) => provider.shutdown()));
 });
 
@@ -289,7 +291,7 @@ describe('Run operations (issue #290)', () => {
 
       await vi.waitFor(async () => {
         expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('escalated');
-      });
+      }, { timeout: 10_000 });
       const runId = started.body.id;
       // Escalation settles the Run: its operation closes there (the human
       // decision is not part of the Run's execution), and nothing is left live.

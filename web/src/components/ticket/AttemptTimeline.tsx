@@ -8,9 +8,10 @@ import {
   runForAttempt,
   stateTone,
   taskLabel,
+  verifierStatusTone,
   type TimelineTone,
 } from '../../attempt-timeline-model.js';
-import type { Attempt, AttemptTask, Run, Task } from '../../types.js';
+import type { Attempt, AttemptTask, Run, Task, VerifierStatus } from '../../types.js';
 import { escalationActions } from '../../task-actions-model.js';
 import { btnAccept, btnGhost, btnQuietDestructive, railSectionCount, railSectionHead } from '../../ui.js';
 import { toastError, toastSuccess } from '../../toast.js';
@@ -34,6 +35,28 @@ const WORD: Record<TimelineTone, string> = {
 
 const SELECTED = 'border-await bg-await-tint';
 const IDLE = 'border-transparent hover:bg-raised';
+const CHIP: Record<TimelineTone, string> = {
+  running: 'bg-raised',
+  passed: 'bg-merged-tint',
+  failed: 'bg-fail-tint',
+  neutral: 'bg-raised',
+};
+
+function VerifierChips({ statuses }: { statuses: VerifierStatus[] }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1" aria-label="Verification status">
+      {statuses.map(({ mechanism, state }) => {
+        const tone = verifierStatusTone(state);
+        const label = `${mechanism === 'critic' ? 'Critic' : 'Command'} ${state}`;
+        return (
+          <span key={mechanism} aria-label={label} className={`rounded-sm ${CHIP[tone]} px-1.5 py-0.5 text-label font-bold uppercase tracking-[0.03em] ${WORD[tone]}`}>
+            {mechanism === 'critic' ? 'Critic' : 'Command'} {state}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 function CloseButton({ onConfirm }: { onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
@@ -180,6 +203,7 @@ export function AttemptTimeline({
               >
                 <span role="img" aria-label={attempt.state} className={`size-2 shrink-0 rounded-full ${DOT[tone]}`} />
                 <span className="text-data font-semibold text-ink">Attempt {attempt.number}</span>
+                <VerifierChips statuses={attempt.verifierStatuses} />
                 <span className={`ml-auto text-label font-bold uppercase tracking-[0.03em] ${WORD[tone]}`}>{attempt.state}</span>
                 {!strip && <span className="text-[11.5px] tabular-nums text-faint">{elapsed(attempt.startedAt, attempt.endedAt, now)}</span>}
               </button>
