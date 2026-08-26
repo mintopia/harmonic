@@ -1,0 +1,65 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { RunFactStore } from '../src/domain/run-facts.js';
+import { LandingJournalStore } from '../src/domain/landing-journal.js';
+import { startServer, stubHarness, type TestServer } from './helpers.js';
+
+describe('GET /api/tasks/:id/timeline (issue #328)', () => {
+  let server: TestServer;
+
+  beforeEach(async () => {
+    server = await startServer(stubHarness());
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it('folds all persisted ticket events into chronological order', async () => {
+    const task = await server.api('POST', '/api/tasks', { prompt: 'timeline target' });
+    const run = await server.app.ctx.runs.create(task.body.id);
+    const attempt = await server.app.ctx.attempts.ensureForRun(task.body.id, 1, 50);
+    const skipped = await server.app.ctx.attempts.createTask(attempt.id, { type: 'verification', command: 'npm test' });
+    await server.app.ctx.attempts.updateTask(skipped.id, { state: 'skipped', endedAt: 400 });
+    await server.app.ctx.attempts.finish(attempt.id, 'passed', 850);
+    await server.app.ctx.runs.update(run.id, { startedAt: 100, finishedAt: 900, state: 'completed', phase: 'terminal' });
+    await server.app.ctx.runs.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } });
+    const facts = new RunFactStore(server.app.ctx.asyncDb);
+    await facts.append(run.id, 'escalate', { reason: 'needs an operator' }, 300);
+    await facts.append(run.id, 'operator-accept', {}, 700);
+    await server.app.ctx.verificationAttempts.append(run.id, {
+      mechanism: 'command', inputOid: 'abc123', verdict: 'pass', summary: 'checks passed', output: '', mutated: false,
+    }, 200);
+    await server.app.ctx.guardrailEvents.append(run.id, {
+      dimension: 'wall-clock', phase: 'executing', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
+    }, 250);
+    await new LandingJournalStore(server.app.ctx.asyncDb).recordResult(run.id, {
+      effect: 'target-ref', idempotencyKey: 'merge', ok: true, observed: { oid: 'def456' },
+    }, 800);
+    const otherTask = await server.api('POST', '/api/tasks', { prompt: 'another timeline' });
+    const otherRun = await server.app.ctx.runs.create(otherTask.body.id);
+    await new RunFactStore(server.app.ctx.asyncDb).append(otherRun.id, 'escalate', { reason: 'unrelated' }, 150);
+
+    const response = await server.api('GET', `/api/tasks/${task.body.id}/timeline`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
+      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'landing', 'attempt-finished', 'run-finished', 'lifecycle',
+    ]);
+    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([50, 100, 200, 250, 300, 400, 700, 800, 850, 900, expect.any(Number)]);
+    expect(response.body.events.every((event: { runId: number | null }) => event.runId === null || event.runId === run.id)).toBe(true);
+    expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
+      verdict: 'pass', summary: 'checks passed', mechanism: 'command',
+    } });
+    expect(response.body.events.find((event: { kind: string }) => event.kind === 'landing')).toMatchObject({ data: {
+      effect: 'target-ref', payload: { ok: true },
+    } });
+    expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });
+  });
+
+  it('returns an empty timeline for an existing task with no runs and 404 for an unknown task', async () => {
+    const task = await server.api('POST', '/api/tasks', { prompt: 'empty timeline' });
+
+    await expect(server.api('GET', `/api/tasks/${task.body.id}/timeline`)).resolves.toMatchObject({ status: 200, body: { events: [] } });
+    await expect(server.api('GET', '/api/tasks/999999/timeline')).resolves.toMatchObject({ status: 404 });
+  });
+});

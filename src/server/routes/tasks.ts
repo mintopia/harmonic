@@ -19,7 +19,7 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
-import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi } from '../serialize.js';
+import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi, ticketTimelineToApi } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
 /** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
@@ -227,6 +227,14 @@ const runEventSchema = z.object({
 });
 
 const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
+const ticketTimelineResponseSchema = z.object({
+  events: z.array(z.object({
+    runId: z.number().nullable(),
+    ts: z.number(),
+    kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'escalation', 'operator-accept', 'operator-reject', 'landing', 'fact']),
+    data: z.unknown(),
+  })),
+});
 const runLogResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('available'), events: z.array(runEventSchema), liveCursor: z.number() }),
   z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
@@ -748,6 +756,22 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
       return attemptTimelineToApi(ctx, req.params.id);
+    },
+  );
+
+  app.get(
+    '/tasks/:id/timeline',
+    {
+      schema: {
+        tags: ['Tasks'],
+        description: 'A chronological projection of the ticket lifecycle, verification, guardrail, operator, and landing event logs.',
+        params: idParamsSchema,
+        response: { 200: ticketTimelineResponseSchema, 404: errorResponse('No task has that id.') },
+      },
+    },
+    async (req) => {
+      await ctx.tasks.assertExists(req.params.id);
+      return ticketTimelineToApi(ctx, req.params.id);
     },
   );
 

@@ -8,12 +8,15 @@ import type {
   RunRow,
   RunState,
 } from '../db/schema.js';
+import { attempts, attemptTasks, guardrailEvents, landingJournal, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
+import { desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import { isDirectRef } from '../execution/execution-isolation.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
+import { forEachYielding } from '../reliability/yield.js';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
@@ -117,6 +120,78 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         tasks: tasks.map(attemptTaskToApi),
       };
     })),
+  };
+}
+
+type TicketTimelineKind =
+  | 'attempt-started'
+  | 'attempt-finished'
+  | 'run-started'
+  | 'run-finished'
+  | 'lifecycle'
+  | 'verification'
+  | 'guardrail'
+  | 'escalation'
+  | 'operator-accept'
+  | 'operator-reject'
+  | 'landing'
+  | 'fact';
+
+export interface ApiTicketTimelineEvent {
+  runId: number | null;
+  ts: number;
+  kind: TicketTimelineKind;
+  data: unknown;
+}
+
+type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
+
+/**
+ * Ticket-wide event projection for issue #328. Each persisted source is read
+ * once for the ticket, then folded in memory. The fixed query count avoids the
+ * per-Run and per-event read pattern that would starve the shared event loop.
+ */
+const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
+
+export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
+  const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails, facts, landing] = await Promise.all([
+    ctx.asyncDb.read((db) => db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(desc(runs.startedAt), desc(runs.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ event: runEvents }).from(runEvents).innerJoin(runs, eq(runEvents.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(runEvents.ts), desc(runEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ attempt: verificationAttempts }).from(verificationAttempts).innerJoin(runs, eq(verificationAttempts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(verificationAttempts.ts), desc(verificationAttempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ task: attemptTasks }).from(attemptTasks).innerJoin(attempts, eq(attemptTasks.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(attemptTasks.endedAt), desc(attemptTasks.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(runs, eq(guardrailEvents.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ fact: runFacts }).from(runFacts).innerJoin(runs, eq(runFacts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(runFacts.ts), desc(runFacts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ entry: landingJournal }).from(landingJournal).innerJoin(runs, eq(landingJournal.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(landingJournal.ts), desc(landingJournal.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+  ]);
+  const pending: PendingTicketTimelineEvent[] = [];
+  const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
+
+  await forEachYielding(taskRuns, async (run) => {
+    add({ runId: run.id, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state, phase: run.phase } }, 0);
+    if (run.finishedAt !== null) add({ runId: run.id, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, phase: run.phase, reason: run.reason } }, 7);
+  });
+  await forEachYielding(taskAttempts, async (attempt) => {
+    add({ runId: null, ts: attempt.startedAt, kind: 'attempt-started', data: { attempt: attempt.number, state: attempt.state } }, 0);
+    if (attempt.endedAt !== null) add({ runId: null, ts: attempt.endedAt, kind: 'attempt-finished', data: { attempt: attempt.number, state: attempt.state, feedback: attempt.feedback } }, 7);
+  });
+  await forEachYielding(lifecycle, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'lifecycle', data: { type: event.type, payload: JSON.parse(event.payload) } }, 3); });
+  await forEachYielding(verification, async ({ attempt }) => { add({ runId: attempt.runId, ts: attempt.ts, kind: 'verification', data: { mechanism: attempt.mechanism, verdict: attempt.verdict, summary: attempt.summary, inputOid: attempt.inputOid, phase: attempt.phase, mutated: attempt.mutated } }, 2); });
+  await forEachYielding(skippedVerification, async ({ task }) => {
+    if (task.type !== 'verification' || task.state !== 'skipped' || task.endedAt === null) return;
+    add({ runId: null, ts: task.endedAt, kind: 'verification', data: { outcome: 'skipped', command: task.command, verdict: task.verdict } }, 2);
+  });
+  await forEachYielding(guardrails, async ({ event }) => { add({ runId: event.runId, ts: event.ts, kind: 'guardrail', data: { dimension: event.dimension, phase: event.phase, limitValue: event.limitValue, observedValue: event.observedValue, configSource: event.configSource, payload: JSON.parse(event.payload) } }, 2); });
+  await forEachYielding(facts, async ({ fact }) => {
+    const kind: TicketTimelineKind = fact.type === 'operator-cancel' ? 'operator-reject' : fact.type === 'escalate' ? 'escalation' : fact.type === 'operator-accept' ? 'operator-accept' : 'fact';
+    add({ runId: fact.runId, ts: fact.ts, kind, data: { type: fact.type, payload: JSON.parse(fact.payload) } }, 4);
+  });
+  await forEachYielding(landing, async ({ entry }) => { add({ runId: entry.runId, ts: entry.ts, kind: 'landing', data: { kind: entry.kind, effect: entry.effect, idempotencyKey: entry.idempotencyKey, payload: JSON.parse(entry.payload) } }, 6); });
+
+  return {
+    events: pending
+      .sort((a, b) => a.ts - b.ts || a.order - b.order || (a.runId ?? 0) - (b.runId ?? 0))
+      .map(({ order: _order, ...event }) => event),
   };
 }
 
