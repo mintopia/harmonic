@@ -7,12 +7,13 @@ import { logger } from '../logger.js';
 export interface BranchRetirementGit {
   branchExists(dir: string, branch: string): Promise<boolean>;
   branchCheckedOutAt(dir: string, branch: string): Promise<string | null>;
-  isAncestor(dir: string, baseBranch: string, branch: string): Promise<boolean>;
+  symbolicBranch(dir: string): Promise<string | null>;
+  isContentContained(dir: string, baseBranch: string, branch: string): Promise<boolean>;
   deleteBranch(dir: string, branch: string): Promise<unknown>;
 }
 
 type BranchRun = Pick<RunRow, 'id' | 'taskId' | 'state' | 'branch' | 'baseBranch'>;
-type BranchTask = Pick<TaskRow, 'workingDir'>;
+type BranchTask = Pick<TaskRow, 'workingDir' | 'state' | 'origin' | 'trackerState'>;
 interface BranchRunStore {
   listAll(): Promise<BranchRun[]>;
 }
@@ -34,8 +35,10 @@ export class BranchRetirementCoordinator {
   ) {}
 
   async onRunSettled(task: BranchTask, run: BranchRun): Promise<void> {
-    if (run.state === 'running' || run.branch == null || run.baseBranch == null) return;
-    await this.retireContained(task.workingDir, run.branch, run.baseBranch);
+    if (run.state === 'running' || run.branch == null || !isRetirableTask(task)) return;
+    const retainedBranch = await this.git.symbolicBranch(task.workingDir);
+    if (retainedBranch === null) return;
+    await this.retireContained(task.workingDir, run.branch, retainedBranch);
   }
 
   /** Backfill terminal Run candidates from prior Harmonic versions. */
@@ -59,10 +62,15 @@ export class BranchRetirementCoordinator {
     try {
       if (!(await this.git.branchExists(repoDir, branch))) return;
       if ((await this.git.branchCheckedOutAt(repoDir, branch)) !== null) return;
-      if (!(await this.git.isAncestor(repoDir, retainedBranch, branch))) return;
+      if (!(await this.git.isContentContained(repoDir, retainedBranch, branch))) return;
       await this.git.deleteBranch(repoDir, branch);
     } catch (err) {
       this.onError(`branch '${branch}' retirement failed: ${String(err)}`);
     }
   }
+}
+
+function isRetirableTask(task: BranchTask): boolean {
+  if (task.state !== 'done' && task.state !== 'cancelled') return false;
+  return task.origin === 'native' || task.trackerState === 'closed';
 }
