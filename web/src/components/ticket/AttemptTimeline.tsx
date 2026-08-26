@@ -5,7 +5,6 @@ import {
   continuationLabel,
   elapsed,
   escalationActions,
-  feedbackForAttempt,
   runForAttempt,
   stateTone,
   taskLabel,
@@ -127,6 +126,7 @@ export function AttemptTimeline({
   maxAttempts,
   now,
   selectedRunId,
+  selectedAttemptId,
   selectedTaskId,
   selectedFile,
   onSelectAttempt,
@@ -140,6 +140,8 @@ export function AttemptTimeline({
   maxAttempts: number | null;
   now: number;
   selectedRunId: number | null;
+  /** Explicit attempt pick; null falls back to the selected Run's latest attempt. */
+  selectedAttemptId: number | null;
   selectedTaskId: number | null;
   selectedFile: string | null;
   onSelectAttempt: (attempt: Attempt) => void;
@@ -148,8 +150,10 @@ export function AttemptTimeline({
   layout?: 'rail' | 'strip';
 }) {
   const strip = layout === 'strip';
+  const currentAttemptId =
+    selectedAttemptId ?? [...attempts].reverse().find((attempt) => runForAttempt(runs, attempt)?.id === selectedRunId)?.id ?? null;
   const isAttemptSelected = (attempt: Attempt) =>
-    selectedFile === null && runForAttempt(runs, attempt)?.id === selectedRunId && !attempt.tasks.some((row) => row.id === selectedTaskId);
+    selectedFile === null && attempt.id === currentAttemptId && !attempt.tasks.some((row) => row.id === selectedTaskId);
   const escalated = task.escalated ? [...attempts].reverse().find((attempt) => attempt.state === 'escalated') ?? null : null;
 
   return (
@@ -179,7 +183,6 @@ export function AttemptTimeline({
             );
             if (strip) return <li key={attempt.id} className="shrink-0">{header}</li>;
             const continuation = continuationLabel(attempt.continuation);
-            const feedback = feedbackForAttempt(attempts, attempt);
             return (
               <li key={attempt.id}>
                 {header}
@@ -194,10 +197,10 @@ export function AttemptTimeline({
                     <TaskRow key={row.id} task={row} now={now} selected={selectedFile === null && row.id === selectedTaskId} onSelect={() => onSelectTask(attempt, row)} />
                   ))}
                 </ol>
-                {feedback && (
+                {attempt.feedback && (
                   <div className="ml-[13px] mt-1.5 border-l border-hairline pl-4 text-small text-muted">
                     <span className="text-label font-bold uppercase tracking-[0.06em] text-faint">Feedback → next attempt</span>
-                    <p className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words" title={feedback}>{feedback}</p>
+                    <p className="mt-0.5 line-clamp-4 whitespace-pre-wrap break-words" title={attempt.feedback}>{attempt.feedback}</p>
                   </div>
                 )}
                 {attempt.id === escalated?.id && <Escalation attempt={attempt} task={task} onChanged={onChanged} />}

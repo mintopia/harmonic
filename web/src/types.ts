@@ -40,7 +40,7 @@ export interface Attempt {
   state: AttemptState;
   startedAt: number;
   endedAt: number | null;
-  /** Feedback recorded before this corrective attempt began. */
+  /** The failure feedback this attempt closed with — what the next attempt was told to fix. */
   feedback: string | null;
   /** Branch tip this attempt's verification proved; null until verification ran. */
   verifiedSha: string | null;

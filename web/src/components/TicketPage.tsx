@@ -810,6 +810,7 @@ export function TicketPage({
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [maxAttempts, setMaxAttempts] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedAttemptId, setSelectedAttemptId] = useState<number | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
@@ -1033,8 +1034,13 @@ export function TicketPage({
   const selectedTask = attempts.flatMap((attempt) => attempt.tasks).find((row) => row.id === selectedTaskId) ?? null;
   const selectRun = (runId: number | null) => {
     setSelectedFile(null);
+    setSelectedAttemptId(null);
     setSelectedTaskId(null);
     setSelectedRunId(runId);
+  };
+  const selectAttempt = (attempt: Attempt) => {
+    selectRun(runForAttempt(runs, attempt)?.id ?? selectedRunId);
+    setSelectedAttemptId(attempt.id);
   };
   const timelineProps = {
     attempts,
@@ -1043,12 +1049,13 @@ export function TicketPage({
     maxAttempts,
     now,
     selectedRunId,
+    selectedAttemptId,
     selectedTaskId,
     selectedFile,
     onChanged,
-    onSelectAttempt: (attempt: Attempt) => selectRun(runForAttempt(runs, attempt)?.id ?? selectedRunId),
+    onSelectAttempt: selectAttempt,
     onSelectTask: (attempt: Attempt, row: AttemptTask) => {
-      selectRun(runForAttempt(runs, attempt)?.id ?? selectedRunId);
+      selectAttempt(attempt);
       setSelectedTaskId(row.id);
     },
   };
@@ -1186,18 +1193,22 @@ export function TicketPage({
               onSelectChanges={() => setSelectedFile('')}
             />
           </div>
-          <Gate
-            model={gateModel}
-            task={task}
-            runs={runs}
-            verificationAttempts={verificationAttempts}
-            onEdit={(t) => {
-              onClose();
-              onEdit(t);
-            }}
-            onChanged={onChanged}
-            onGoToCurrent={selectRun}
-          />
+          {/* An escalated ticket has exactly the three actions on its timeline
+              entry (ADR-0041); the gate would only duplicate and cover them. */}
+          {!task.escalated && (
+            <Gate
+              model={gateModel}
+              task={task}
+              runs={runs}
+              verificationAttempts={verificationAttempts}
+              onEdit={(t) => {
+                onClose();
+                onEdit(t);
+              }}
+              onChanged={onChanged}
+              onGoToCurrent={selectRun}
+            />
+          )}
         </aside>
       </div>
     </div>

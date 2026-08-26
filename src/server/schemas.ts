@@ -73,7 +73,7 @@ export const attemptSchema = z
     state: z.enum(ATTEMPT_STATES).meta({ example: 'passed' }),
     startedAt: z.number().meta({ example: 1784032020000 }),
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
-    /** Feedback that caused this attempt to begin, when it is a corrective attempt. */
+    /** The failure feedback this attempt closed with — what the next attempt was told to fix. */
     feedback: z.string().nullable().meta({ example: 'The rate limiter must be shared across workers.' }),
     /** The branch tip this attempt's verification proved (its `verified-head` fact); null until verification ran. */
     verifiedSha: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),

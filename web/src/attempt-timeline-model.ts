@@ -33,13 +33,6 @@ export function elapsed(startedAt: number | null, endedAt: number | null, now: n
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-/** Feedback is recorded when the next corrective Attempt is created, so show
- * it against the failure that caused it rather than hiding it on the retry. */
-export function feedbackForAttempt(attempts: readonly Attempt[], attempt: Attempt): string | null {
-  if (attempt.state !== 'failed') return null;
-  return attempts.find((candidate) => candidate.number === attempt.number + 1)?.feedback ?? null;
-}
-
 export function continuationLabel(continuation: Attempt['continuation']): string | null {
   if (!continuation) return null;
   return continuation.path === 'continued-session' ? 'continued session' : 'new session, condensed';

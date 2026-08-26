@@ -4,7 +4,6 @@ import {
   continuationLabel,
   elapsed,
   escalationActions,
-  feedbackForAttempt,
   runForAttempt,
   stateTone,
   taskLabel,
@@ -57,12 +56,9 @@ describe('attempt timeline model', () => {
     expect(taskLogSource(task({ logLocator: null }))).toBeNull();
   });
 
-  it('attaches retry feedback to the failed attempt that caused it', () => {
-    const failed = attempt();
-    const retry = attempt({ id: 2, number: 2, state: 'running', feedback: 'Fix the failing check.' });
-    expect(feedbackForAttempt([failed, retry], failed)).toBe('Fix the failing check.');
-    expect(feedbackForAttempt([failed, retry], retry)).toBeNull();
+  it('formats elapsed time from the attempt clock', () => {
     expect(elapsed(1_000, null, 63_000)).toBe('1m 2s');
+    expect(elapsed(null, null, 63_000)).toBe('—');
   });
 
   it('reads the continuation decision only from recorded data', () => {
