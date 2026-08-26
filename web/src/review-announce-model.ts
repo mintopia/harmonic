@@ -19,22 +19,22 @@ export const EMPTY_REVIEW_ANNOUNCEMENT_CURSOR: ReviewAnnouncementCursor = {
 };
 
 function politeStateAnnouncement(previous: TaskState, task: ReviewAnnouncementTask): string {
-  if (task.state === 'awaiting-review') return `${task.prompt} is ready for review.`;
-  if (previous === 'awaiting-review') return `${task.prompt} left review.`;
+  if (task.state === 'escalated') return `${task.prompt} needs you: escalated.`;
+  if (previous === 'escalated') return `${task.prompt} left escalation.`;
   return '';
 }
 
 function assertiveMergeAnnouncement(previous: TaskState, task: ReviewAnnouncementTask): string {
-  if (previous !== 'awaiting-review') return '';
-  if (task.state === 'completed') return `${task.prompt} merged.`;
-  return '';
+  if (previous === 'done' || task.state !== 'done') return '';
+  return `${task.prompt} merged.`;
 }
 
 /**
- * Advance the screen-reader cursor for the board's review gate. Only review
- * transitions are spoken: ordinary execution churn is already visible and
- * would make the live region noisy. Merge outcomes are returned separately so
- * the caller can give them assertive semantics.
+ * Advance the screen-reader cursor for the board's attention surface
+ * (ADR-0041). Only the transitions that matter to the operator are spoken —
+ * a ticket entering or leaving escalation, and a merge — so ordinary execution
+ * churn, already visible, never makes the live region noisy. Merge outcomes are
+ * returned separately so the caller can give them assertive semantics.
  */
 export function advanceReviewAnnouncements(
   tasks: readonly ReviewAnnouncementTask[],

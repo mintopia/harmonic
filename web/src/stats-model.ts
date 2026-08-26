@@ -23,32 +23,13 @@ export function orderedRunStates(runsByState: Record<string, number>): RunStateC
 }
 
 /**
- * The run-states breakdown regrouped for the reliability donut (ADR-0028):
- * `runsByState.failed` folds review-rejected Runs in with genuine execution
- * failures, so split it back apart — `failed` becomes the failed-only count and
- * a distinct `rejected` slice carries the rejections. Cancelled stays its own
- * slice (already a distinct state). Everything is shown so the failure rate can
- * be reconciled against the whole picture, never a hidden number. Zero-count
- * slices are dropped, canonical order preserved with `rejected` following
- * `failed`.
+ * The run-states breakdown for the reliability donut (ADR-0028): `failed` is
+ * the backend's failed-only count and cancelled stays its own slice. Everything
+ * is shown so the failure rate can be reconciled against the whole picture,
+ * never a hidden number. Zero-count slices are dropped, canonical order kept.
  */
-export function reliabilityStates(
-  runsByState: Record<string, number>,
-  failedRuns: number,
-  rejectedRuns: number,
-): RunStateCount[] {
-  const regrouped: Record<string, number> = { ...runsByState, failed: failedRuns };
-  const ordered = orderedRunStates(regrouped);
-  if (rejectedRuns <= 0) return ordered;
-  const out: RunStateCount[] = [];
-  for (const s of ordered) {
-    out.push(s);
-    if (s.state === 'failed') out.push({ state: 'rejected', count: rejectedRuns });
-  }
-  // A run set with rejections but no failed-only Runs has no `failed` slice to
-  // trail — append the rejected slice so it is never dropped.
-  if (!ordered.some((s) => s.state === 'failed')) out.push({ state: 'rejected', count: rejectedRuns });
-  return out;
+export function reliabilityStates(runsByState: Record<string, number>, failedRuns: number): RunStateCount[] {
+  return orderedRunStates({ ...runsByState, failed: failedRuns });
 }
 
 /** One reason bucket of the failures-by-reason breakdown. */
@@ -111,8 +92,8 @@ export function cacheHitRate(totals: TokenCounts | null | undefined): number | n
 }
 
 /**
- * Failure rate (0..1, ADR-0028): `failedRuns / total`, failed-only. `failedRuns`
- * is the backend's already-honest numerator (review-rejected Runs excluded).
+ * Failure rate (0..1, ADR-0028): `failedRuns / total`, failed-only — the
+ * backend's honest numerator (cancelled Runs excluded).
  * null when there are no Runs — the caller shows "—", never a fabricated 0%.
  */
 export function failureRate(failedRuns: number, total: number): number | null {

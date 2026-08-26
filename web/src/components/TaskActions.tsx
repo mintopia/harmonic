@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { api } from '../api';
 import type { Task, VerificationAttempt } from '../types';
-import { taskActions, showsEscalationRecovery, type TaskAction } from '../task-actions-model';
+import { escalationActions, taskActions, type TaskAction } from '../task-actions-model';
 import { btnAccept, btnGhost, btnQuiet, btnQuietDestructive, btnReject } from '../ui';
 import { toastError, toastSuccess } from '../toast';
 import { overallDecision } from '../verification-attempts-model';
 import { RejectDialog } from './RejectDialog';
-import { NoteToCriticDialog } from './NoteToCriticDialog';
 import { DeleteTaskDialog } from './DeleteTaskDialog';
 import { useArmedConfirm } from './useArmedConfirm';
 import { taskLabel } from '../id-format.js';
@@ -26,8 +25,8 @@ function CancelButton({ className, onConfirm }: { className: string; onConfirm: 
   );
 }
 
-/** Force-complete a running task, armed with a two-step confirm — it SIGKILLs a
- * working agent and skips the review gate, so no single misclick commits it. */
+/** Force-complete a working task, armed with a two-step confirm — it SIGKILLs a
+ * working agent and skips verification, so no single misclick commits it. */
 function CompleteButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
@@ -43,9 +42,9 @@ function CompleteButton({ className, onConfirm }: { className: string; onConfirm
 
 /** Accept, armed with a two-step confirm when the run's Verification verdict
  * is block/escalate (issue #174 FIX 1). The critic's verdict lives in an
- * un-flagged Details tab, so a red verdict was invisible at this gate and
- * Accept could merge it blind; arming forces a second, verdict-naming click
- * before it does, mirroring CancelButton/CompleteButton's own gate above. */
+ * un-flagged Details tab, so a red verdict was invisible here and Accept could
+ * merge it blind; arming forces a second, verdict-naming click before it does,
+ * mirroring CancelButton/CompleteButton's own gate above. */
 function AcceptButton({ className, label, onConfirm }: { className: string; label: string; onConfirm: () => void }) {
   const { armed, trigger, ref } = useArmedConfirm(onConfirm);
   return (
@@ -55,6 +54,20 @@ function AcceptButton({ className, label, onConfirm }: { className: string; labe
       onClick={trigger}
     >
       {armed ? 'Critic flagged — accept anyway?' : label}
+    </button>
+  );
+}
+
+/** Close an escalated ticket (cancel + branch/worktree/tracker cleanup), armed like Cancel. */
+function CloseButton({ className, onConfirm }: { className: string; onConfirm: () => void }) {
+  const { armed, trigger, ref } = useArmedConfirm(onConfirm);
+  return (
+    <button
+      ref={ref}
+      className={armed ? 'font-semibold text-fail transition-colors duration-150' : className}
+      onClick={trigger}
+    >
+      {armed ? 'Sure?' : 'Close'}
     </button>
   );
 }
@@ -77,9 +90,9 @@ export function TaskActions({
 }) {
   const [rejecting, setRejecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [notingToCritic, setNotingToCritic] = useState(false);
 
   const actions = taskActions(task.state);
+  const escalation = escalationActions(task);
   if (variant === 'footer' && actions.length === 0) return null;
 
   const decision =
@@ -97,19 +110,35 @@ export function TaskActions({
     switch (action) {
       case 'accept': {
         const onConfirm = actDone(() => api.acceptTask(task.id), `${taskLabel(task.id)} accepted — merging`);
+        const label = variant === 'footer' ? 'Accept & merge' : 'Accept';
+        if (escalation && !escalation.accept) {
+          return (
+            <button key={action} className={btnAccept} disabled title="No verified branch head to land">
+              {label}
+            </button>
+          );
+        }
         return decision && decision.outcome !== 'proceed' ? (
-          <AcceptButton key={action} className={btnAccept} label={variant === 'footer' ? 'Accept & merge' : 'Accept'} onConfirm={onConfirm} />
+          <AcceptButton key={action} className={btnAccept} label={label} onConfirm={onConfirm} />
         ) : (
           <button key={action} className={btnAccept} onClick={onConfirm}>
-            {variant === 'footer' ? 'Accept & merge' : 'Accept'}
+            {label}
           </button>
         );
       }
       case 'reject':
         return (
           <button key={action} className={btnReject} onClick={() => setRejecting(true)}>
-            {variant === 'footer' ? 'Reject…' : 'Reject'}
+            {variant === 'footer' ? 'Reject with guidance…' : 'Reject'}
           </button>
+        );
+      case 'close':
+        return (
+          <CloseButton
+            key={action}
+            className={btnQuietDestructive}
+            onConfirm={actDone(() => api.closeTask(task.id), `${taskLabel(task.id)} closed`)}
+          />
         );
       case 'run':
         return (
@@ -154,9 +183,9 @@ export function TaskActions({
     }
   };
 
-  // Footer (ticket rail gate) stacks the review verbs vertically and full-width
-  // to match the Paper mockup — Accept on top, the quiet Delete escape hatch
-  // last. `card` keeps the original inline row.
+  // Footer (ticket rail) stacks the verbs vertically and full-width to match
+  // the Paper mockup — Accept on top, the quiet Delete escape hatch last.
+  // `card` keeps the original inline row.
   const container =
     variant === 'footer'
       ? 'flex flex-col gap-2 [&>button]:w-full [&>button]:justify-center'
@@ -169,27 +198,7 @@ export function TaskActions({
 
   return (
     <>
-      <div className={container}>
-        {task.escalated && (
-          <button className={secondary} onClick={act(() => api.unescalateTask(task.id))}>
-            Un-escalate
-          </button>
-        )}
-        {showsEscalationRecovery(task) && (
-          <>
-            <button className={secondary} onClick={() => setNotingToCritic(true)}>
-              Note to critic
-            </button>
-            <button
-              className={btnAccept}
-              onClick={actDone(() => api.adoptReview(task.id), `${taskLabel(task.id)} adopted — awaiting review`)}
-            >
-              Adopt &amp; review
-            </button>
-          </>
-        )}
-        {ordered.map(button)}
-      </div>
+      <div className={container}>{ordered.map(button)}</div>
       {rejecting && (
         <RejectDialog
           taskId={task.id}
@@ -199,13 +208,6 @@ export function TaskActions({
       )}
       {deleting && (
         <DeleteTaskDialog task={task} onClose={() => setDeleting(false)} onDone={done(() => setDeleting(false))} />
-      )}
-      {notingToCritic && (
-        <NoteToCriticDialog
-          task={task}
-          onClose={() => setNotingToCritic(false)}
-          onDone={done(() => setNotingToCritic(false))}
-        />
       )}
     </>
   );

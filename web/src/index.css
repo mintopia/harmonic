@@ -277,13 +277,13 @@
 }
 
 .bold .bold-wash.ready { background-color: var(--hm-ready-tint); }
-.bold .bold-wash.running { background-color: var(--hm-running-tint); }
-.bold :is(.bold-wash.await, .bold-wash.awaiting-review) { background-color: var(--hm-await-tint); }
-.bold :is(.bold-wash.merged, .bold-wash.completed) { background-color: var(--hm-merged-tint); }
+.bold :is(.bold-wash.running, .bold-wash.working) { background-color: var(--hm-running-tint); }
+.bold :is(.bold-wash.await, .bold-wash.escalated) { background-color: var(--hm-await-tint); }
+.bold :is(.bold-wash.merged, .bold-wash.done) { background-color: var(--hm-merged-tint); }
 .bold .node.ready .node-fill { fill: var(--hm-ready-tint); }
-.bold .node.running .node-fill { fill: var(--hm-running-tint); }
-.bold :is(.node.await, .node.awaiting-review) .node-fill { fill: var(--hm-await-tint); }
-.bold :is(.node.merged, .node.completed) .node-fill { fill: var(--hm-merged-tint); }
+.bold :is(.node.running, .node.working) .node-fill { fill: var(--hm-running-tint); }
+.bold :is(.node.await, .node.escalated) .node-fill { fill: var(--hm-await-tint); }
+.bold :is(.node.merged, .node.done) .node-fill { fill: var(--hm-merged-tint); }
 
 /* The Display weight — the top of the Three Weights ramp (DESIGN.md §3: "750
    for the Display title"). A named utility so the Display title, the Stats hero

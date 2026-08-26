@@ -4,12 +4,12 @@ import type { Task, TaskState } from './types.js';
 
 /**
  * The operator actions the TaskDetail footer and TaskCard offer in a given
- * state. Order is display order (left to right). completed offers nothing,
- * which hides the action bar entirely.
+ * state (ADR-0041). Order is display order (left to right).
  */
 export type TaskAction =
   | 'accept'
   | 'reject'
+  | 'close'
   | 'run'
   | 'ready'
   | 'edit'
@@ -20,36 +20,25 @@ export type TaskAction =
 
 export function taskActions(state: TaskState): TaskAction[] {
   switch (state) {
-    // The gate is the two review verbs, Accept last so the affirmative sits in
-    // the strongest (terminal) position. Cancelling an awaiting-review task is
-    // a disposition inside the Reject dialog, not a peer of the gate: the work
-    // exists and wants a verdict, and a Cancel button here would sit beside
-    // Reject looking identical while meaning something else. Delete (issue
-    // #162) is not part of the gate either — it's a permanent, rare escape
-    // hatch, so it sits first (quiet, out of the gate's flow) rather than
-    // disturbing Accept's terminal position.
-    case 'awaiting-review':
-      return ['delete', 'reject', 'accept'];
-    case 'failed':
-      return ['delete', 'cancel'];
+    // The one human surface: exactly the three escalation actions, Accept last
+    // so the affirmative sits in the strongest (terminal) position, Close first
+    // among them as the destructive disposition. Delete (issue #162, ADR-0025)
+    // is a permanent, rare escape hatch that sits before them, out of the flow.
+    case 'escalated':
+      return ['delete', 'close', 'reject', 'accept'];
     case 'ready':
       return ['delete', 'run', 'edit', 'cancel'];
     case 'draft':
       return ['delete', 'ready', 'edit', 'cancel'];
-    // Complete is an operator override (stop the agent, mark it done, skip the
-    // review gate); Cancel keeps its familiar rightmost destructive slot. No
-    // delete while running (issue #162) — the same guard the server enforces
-    // (409); a running Task must be stopped first.
-    case 'running':
+    // Complete is an operator override (stop the agent, mark it done); Cancel
+    // keeps its familiar rightmost destructive slot. No delete while working
+    // (issue #162) — the same guard the server enforces (409).
+    case 'working':
       return ['complete', 'cancel'];
-    // Uncancel returns the card to the queue in place (issue #57). Delete
-    // still applies — a cancelled Task is non-running — so the operator can
-    // clear it from the board for good instead of uncancelling it.
+    // Uncancel returns the card to the queue in place (issue #57).
     case 'cancelled':
       return ['delete', 'uncancel'];
-    // completed offered nothing before issue #162; now it's just Delete, so
-    // the footer stops hiding entirely once a Task is completed.
-    case 'completed':
+    case 'done':
       return ['delete'];
   }
   // A state from a server ahead of this bundle (version skew): offer
@@ -57,16 +46,15 @@ export function taskActions(state: TaskState): TaskAction[] {
   return [];
 }
 
-/**
- * Whether an escalated Task's stranded-candidate recovery actions
- * (Adopt & review, Note to critic — issue #191) should show. These are flag
- * actions layered beside `taskActions(state)`'s state-driven list, not part
- * of it (mirroring Un-escalate, issue #33 follow-up): an afk→hitl escalation
- * drops the Task back to `ready` with its last run's candidate stranded on a
- * private ref, and both actions need that candidate to act on. No
- * `candidateRef` (e.g. escalated before a builder run ever reached
- * `validating`) leaves only the plain `ready` actions plus Un-escalate.
- */
-export function showsEscalationRecovery(task: Pick<Task, 'escalated' | 'candidateRef'>): boolean {
-  return task.escalated && task.candidateRef !== null;
+export interface EscalationActions {
+  /** Accept lands the verified branch head, so it needs one. */
+  accept: boolean;
+  reject: boolean;
+  close: boolean;
+}
+
+/** Which of the three escalation actions an escalated ticket can take right now; null off the surface. */
+export function escalationActions(task: Pick<Task, 'candidateRef' | 'state'>): EscalationActions | null {
+  if (task.state !== 'escalated') return null;
+  return { accept: task.candidateRef !== null, reject: true, close: true };
 }

@@ -1,19 +1,12 @@
 import type { Verdict } from './verification-model.js';
 
-export const TASK_STATES = [
-  'draft',
-  'ready',
-  'running',
-  'awaiting-review',
-  'completed',
-  'failed',
-  'cancelled',
-] as const;
+/** The stored Ticket states (ADR-0041); blocked-ness and agent-workability are derived, never stored. */
+export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 /** The Run phase machine (ADR reliability-design §0.2, issue #114/#171), in
  * traversal order; mirrors the server's `RUN_PHASES` (`domain/run-phases.ts`). */
-export const RUN_PHASES = ['executing', 'validating', 'verifying', 'review', 'landing', 'terminal'] as const;
+export const RUN_PHASES = ['executing', 'validating', 'verifying', 'landing', 'terminal'] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
 
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
@@ -114,8 +107,6 @@ export interface VerificationAttempt {
 export type TaskOrigin = 'native' | 'mirrored';
 export type Workflow = 'wayfinder' | 'implement';
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task';
-/** afk = Harmonic auto-runs it; hitl = a human drives it. */
-export type Drive = 'afk' | 'hitl';
 
 /** Dollar value of Usage, computed server-side on read — never stored. */
 export interface Cost {
@@ -260,13 +251,20 @@ export interface Task {
     priority: 'high' | 'normal' | 'low' | null;
   };
   state: TaskState;
-  /** Feedback held for the next same-ticket retry, if any. */
+  /** Why the ticket is `escalated` — the trigger's recorded reason (ADR-0041); null in every other state. */
+  escalationReason: string | null;
+  /** Feedback held for the next same-ticket Attempt, if any. */
   feedback: string | null;
   createdAt: number;
   updatedAt: number;
   dependsOn: number[];
   dependents: number[];
+  /** Ready, and at least one blocker is escalated or cancelled — it will not unblock on its own. */
   blockedOnFailed: boolean;
+  /** Blocker edges whose blocker is not done; blocked-ness is this count, never a state (ADR-0041). */
+  openBlockerCount: number;
+  /** ADR-0041's derived flag: opted in (mirrored: `ready-for-agent`, not an Epic container) and no open blockers. */
+  agentWorkable: boolean;
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
   /** native = authored here; mirrored = a projection of a tracker issue (issue #30). */
@@ -277,10 +275,6 @@ export interface Task {
   workflow: Workflow | null;
   /** Mirrored role: the wayfinder decision kind; null on native/implement Tasks. */
   wayfinderType: WayfinderType | null;
-  /** Mirrored role: afk (Harmonic drives) | hitl (you drive); null on native Tasks. */
-  drive: Drive | null;
-  /** True when an afk Run escalated to a human at runtime (issue #33). */
-  escalated: boolean;
   /** The parent Map's tracker ref; null when unmapped or native. */
   mapRef: number | null;
   /** The mirrored issue's tracker URL, from the last poll; null on native Tasks or before a poll (issue #35). */
@@ -289,28 +283,27 @@ export interface Task {
   mapTitle: string | null;
   /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
   branch: string | null;
-  /** The latest run's `git diff --stat`, snapshotted at settle; null until then or in direct mode. */
+  /** The latest run's `git diff --stat`, snapshotted at landing; null until then or in direct mode. */
   stat: string | null;
-  /** The running run's `startedAt`; null unless the Task is running (issue #100). */
+  /** The running run's `startedAt`; null unless the Task is working (issue #100). */
   runStartedAt: number | null;
-  /** Total tool-call count of the running run; null unless the Task is running (issue #100). */
+  /** Total tool-call count of the running run; null unless the Task is working (issue #100). */
   toolCount: number | null;
-  /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is running (issue #100). */
+  /** The running run's id, so the board can match the `run_usage` firehose to this card; null unless the Task is working (issue #100). */
   runId: number | null;
-  /** The running run's phase, for the Board's Active-card status badge; null unless the Task is running (or a pre-phase-machine run). */
+  /** The running run's phase, for the Board's Active-card status badge; null unless the Task is working (or a pre-phase-machine run). */
   phase: RunPhase | null;
   /** The running run's context-window occupancy in tokens; null unless running (or unreported). Live via the run_usage firehose (issue #52). */
   contextTokens: number | null;
   /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
   contextWindow: number | null;
-  /** The latest run's frozen verification candidate ref (issue #134's Run
-   * `candidateRef`), surfaced here so an escalated Task's stranded candidate
-   * can be adopted for review without a fresh builder run (issue #191); null
+  /** The latest run's verified branch head ref (issue #134's Run `candidateRef`),
+   * surfaced so an escalated Task shows whether Accept has work to land; null
    * when no run has produced a candidate yet. */
   candidateRef: string | null;
   /** Transient House-Rule reason a `ready` Task is being skipped for a held
    * Work Context lease (issue #171, e.g. "Work Context held by task 12
-   * (running)"); null normally, including once the Task starts running. */
+   * (working)"); null normally, including once the Task starts working. */
   skipReason: string | null;
 }
 
@@ -329,9 +322,7 @@ export interface Run {
   taskId: number;
   attempt: number;
   state: 'running' | 'completed' | 'failed' | 'cancelled';
-  /** Phase within the Run lifecycle; a native Run is `state:'running'`,
-   * `phase:'review'` while parked at the human gate. `null` for pre-feature
-   * Runs (issue #114). */
+  /** Phase within the Run lifecycle; `null` for pre-feature Runs (issue #114). */
   phase: RunPhase | null;
   reason: string | null;
   stopReason: string | null;
@@ -348,10 +339,6 @@ export interface Run {
     source: string | null;
   } | null;
   cost: Cost | null;
-  review: 'accepted' | 'rejected' | null;
-  reviewFeedback: string | null;
-  reviewedAt: number | null;
-  reviewDeadline: number | null;
   startedAt: number;
   finishedAt: number | null;
 }
@@ -630,7 +617,7 @@ export interface ActivityProcess {
   trackerRef: number | null;
   /** The mirrored issue's tracker URL — the row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
-  /** True when an afk Run escalated to a human (issue #33) — the "Needs you" signal; always false for a Conversation. */
+  /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
   usage: RunUsage | null;
   contextTokens: number | null;
@@ -680,13 +667,12 @@ export interface AppConfig {
   verify: {
     commands: VerificationCommand[];
     review: VerificationReview;
-    autoAccept: boolean;
   };
   /** Run Guardrails (ADR-0019): the global-default budget bounds and progress
    * toggle a Workspace inherits until it overrides them (issue #166).
    * `toolTimeoutMinutes` is global-only (no per-Workspace override). */
   guardrails: { budget: BudgetGuardrail; progress: boolean; toolTimeoutMinutes: number };
-  /** How afk mirrored Tasks are driven (issue #33): prompt and branch fate. */
+  /** How mirrored Tasks are driven (issue #33): prompt and branch fate. */
   drive: {
     /** The Drive Prompt template, with {skill}/{ref}/{url}/{title}/{body} placeholders. The default omits {title}/{body} — the agent fetches the issue itself. */
     prompt: string;

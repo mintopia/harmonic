@@ -10,7 +10,7 @@ import { landOutcomeBanner, type EpicLandOutcome } from './epic-model';
  * (accept/reject/cancel — issue #98) that would otherwise leave nothing on
  * screen to say it worked. Success stays neutral, not accept-green: green means
  * a *completed* state in this palette, and an acknowledgement is not a state
- * (the same reasoning that keeps the review gate's Accept off state colour).
+ * (the same reasoning that keeps the escalation surface's Accept off state colour).
  * A module-level store (like ws.ts) so any handler can call it without
  * threading context.
  *

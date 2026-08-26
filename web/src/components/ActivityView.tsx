@@ -10,11 +10,11 @@ import {
   card,
   chip,
   displayTitle,
-  escalatedChip,
   field,
   labelType,
   sectionTitle,
   selectField,
+  stateChip,
   touchOverlay,
   touchTarget,
   touchTargetInline,
@@ -208,14 +208,14 @@ function RowActions({
           )}
         </>
       )}
-      {resolve?.kind === 'unescalate' && (
-        <button
-          onClick={() => fail(api.unescalateTask(resolve.taskId))}
-          title="Hand this escalated Task back to autonomous drive"
+      {resolve?.kind === 'escalated' && (
+        <a
+          href={`/task/${resolve.taskId}`}
+          title="Open the escalated ticket: Accept, Reject with guidance, or Close"
           className={`${touchTargetInline} text-small ${btnQuiet}`}
         >
-          Un-escalate
-        </button>
+          Resolve →
+        </a>
       )}
       {stop && <StopButton onConfirm={stopConfirm} demoted={stopDemoted} />}
     </div>
@@ -266,7 +266,7 @@ const ProcessRow = memo(function ProcessRow({
           <ExpandToggle expandable={expandable} expanded={expanded} onToggle={() => onToggleExpand(rowKey)} />
           <StateDot process={process} />
           <span className={`${chip} bg-raised text-muted`}>{process.type === 'run' ? 'Run' : 'Chat'}</span>
-          {process.escalated && <span className={escalatedChip}>escalated</span>}
+          {process.escalated && <span className={stateChip('escalated')}>escalated</span>}
           <span className="truncate font-medium text-ink" title={process.title}>
             {process.title}
           </span>

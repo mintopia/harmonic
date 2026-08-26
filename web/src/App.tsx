@@ -37,11 +37,11 @@ import {
 import { applyTheme, loadTheme, nextTheme, storeTheme, type ThemePref } from './theme';
 import {
   loadDismissed,
-  shouldShowReviewHint,
+  shouldShowEscalationHint,
   shouldShowRunHint,
   storeDismissed,
   RUN_HINT_DISMISSED_KEY,
-  REVIEW_HINT_DISMISSED_KEY,
+  ESCALATION_HINT_DISMISSED_KEY,
 } from './onboarding-model';
 import { btnPrimary, btnQuiet, railBadge, sectionLabel, touchTarget } from './ui';
 import { Toaster, toastError } from './toast';
@@ -135,7 +135,7 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: numbe
   const [cost, setCost] = useState<Cost | null>(null);
   // Runs finishing move cost, and every finish changes the running count;
   // together with the task count this catches the transitions that matter.
-  const shape = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'running').length}` : '';
+  const shape = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'working').length}` : '';
   useEffect(() => {
     if (!authed || workspaceId === null) return;
     let live = true;
@@ -207,8 +207,8 @@ export function App() {
   const [runHintDismissed, setRunHintDismissed] = useState(() =>
     loadDismissed(localStorage, RUN_HINT_DISMISSED_KEY),
   );
-  const [reviewHintDismissed, setReviewHintDismissed] = useState(() =>
-    loadDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY),
+  const [escalationHintDismissed, setEscalationHintDismissed] = useState(() =>
+    loadDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY),
   );
   // A manual tracker refresh is in flight — disables the board's Refresh control
   // and spins its icon until the rescan + mirror settle.
@@ -399,13 +399,11 @@ export function App() {
     };
   }, [route.task, tasks]);
 
-  // The rail's cobalt "Needs you" badge (DESIGN.md §5): Tasks awaiting review
-  // (the review gate) plus afk Runs that escalated to a human — the two states
-  // that want an operator's eyes now. Derived from `boardSections` (not a local
-  // predicate) so the badge is the exact count of the Board's Needs-you section:
-  // a hand-rolled `state === 'awaiting-review' || escalated` filter drifts —
-  // it keeps counting a terminal Task still flagged `escalated` (and Epic
-  // members that render in their band), so the badge stuck above the real item
+  // The rail's indigo "Needs you" badge (DESIGN.md §5): escalated Tasks — the
+  // one state that wants an operator's eyes now (ADR-0041). Derived from
+  // `boardSections` (not a local predicate) so the badge is the exact count of
+  // the Board's Needs-you section: a hand-rolled filter drifts — it keeps
+  // counting an Epic's own driver ticket, so the badge stuck above the real item
   // count. One source of truth means the number always matches what's shown.
   const needsYouCount = useMemo(
     () => boardSections(tasks ?? [], epics).needsYou.length,
@@ -460,12 +458,12 @@ export function App() {
   const noWorkspaces = hasNoWorkspaces(workspaces, workspacesLoaded);
   const showWorkspaceEmptyState = noWorkspaces && isWorkspaceScopedView(view);
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
-  const runningCount = taskList.filter((t) => t.state === 'running').length;
+  const runningCount = taskList.filter((t) => t.state === 'working').length;
   const cost24h = formatCost(periodCost);
 
   // The one cold-start bridge: a ready task won't start on its own while the
   // auto-runner is off, so point at the fix until the first run is seen. Once a
-  // task reaches review the run hint retires and the review hint takes over —
+  // ticket escalates the run hint retires and the escalation hint takes over —
   // the two never show at once (see onboarding-model).
   const showRunHint =
     view === 'board' && !!config && shouldShowRunHint(taskList, config.autoRunner, runHintDismissed);
@@ -473,10 +471,10 @@ export function App() {
     storeDismissed(localStorage, RUN_HINT_DISMISSED_KEY);
     setRunHintDismissed(true);
   };
-  const showReviewHint = view === 'board' && shouldShowReviewHint(taskList, reviewHintDismissed);
-  const dismissReviewHint = () => {
-    storeDismissed(localStorage, REVIEW_HINT_DISMISSED_KEY);
-    setReviewHintDismissed(true);
+  const showEscalationHint = view === 'board' && shouldShowEscalationHint(taskList, escalationHintDismissed);
+  const dismissEscalationHint = () => {
+    storeDismissed(localStorage, ESCALATION_HINT_DISMISSED_KEY);
+    setEscalationHintDismissed(true);
   };
 
   // Picking a view is real navigation — push, so Back returns to the
@@ -805,16 +803,16 @@ export function App() {
           </div>
         )}
 
-        {showReviewHint && (
+        {showEscalationHint && (
           <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
             <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-await-dot" />
             <p className="flex-1 text-muted">
-              A task is ready for review. Open it to read the changes, then{' '}
-              <span className="font-semibold text-ink">Accept</span> to merge or{' '}
-              <span className="font-semibold text-ink">Reject</span> with a reason — the review gate is
-              the one step agents don't do for you.
+              A ticket is escalated. Open it to read why and the changes so far, then{' '}
+              <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
+              <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
+              <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
             </p>
-            <button className={`${btnQuiet} shrink-0`} onClick={dismissReviewHint}>
+            <button className={`${btnQuiet} shrink-0`} onClick={dismissEscalationHint}>
               Dismiss
             </button>
           </div>

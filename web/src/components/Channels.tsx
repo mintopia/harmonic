@@ -4,14 +4,7 @@ import type { Channel } from '../types';
 import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
 import { EmptyState } from './EmptyState';
 
-const EVENTS = [
-  'task.created',
-  'run.started',
-  'task.awaiting-review',
-  'task.completed',
-  'task.failed',
-  'queue.idle',
-] as const;
+const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'queue.idle'] as const;
 
 /**
  * Channels are their own REST resources saved immediately — they never touch
@@ -99,7 +92,7 @@ export function ChannelsSection() {
 
       {channelList.length === 0 && !adding && (
         <EmptyState title="No channels yet" className="my-8">
-          Add Discord, Slack, a webhook, or SMTP email to get notified when a run needs review.
+          Add Discord, Slack, a webhook, or SMTP email to get notified when a ticket needs you.
         </EmptyState>
       )}
 

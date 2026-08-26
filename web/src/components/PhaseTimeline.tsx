@@ -5,22 +5,19 @@ const PHASE_LABELS: Record<PhaseStep['phase'], string> = {
   executing: 'Executing',
   validating: 'Validating',
   verifying: 'Verifying',
-  review: 'Review',
   landing: 'Merging',
   terminal: 'Done',
 };
 
 function dotClass(step: PhaseStep): string {
-  if (step.status === 'current') {
-    return step.phase === 'review' ? 'bg-await-dot' : 'bg-accent motion-safe:animate-pulse';
-  }
+  if (step.status === 'current') return 'bg-accent motion-safe:animate-pulse';
   if (step.status === 'done') return 'bg-accent';
   if (step.status === 'gap') return 'bg-transparent ring-1 ring-inset ring-faint';
   return 'bg-faint';
 }
 
 function textClass(step: PhaseStep): string {
-  if (step.status === 'current') return step.phase === 'review' ? 'text-await' : 'text-accent';
+  if (step.status === 'current') return 'text-accent';
   if (step.status === 'done') return 'text-muted';
   if (step.status === 'gap') return 'text-muted';
   return 'text-faint';

@@ -84,7 +84,6 @@ export function WorkspaceSettingsPage({
         autoRunnerEnabled: local.autoRunnerEnabled,
         verificationCommand: local.verificationCommand,
         verificationCritic: local.verificationCritic,
-        verificationAutoAccept: local.verificationAutoAccept,
         guardrailBudget: local.guardrailBudget,
         guardrailProgress: local.guardrailProgress,
       });
@@ -620,22 +619,6 @@ export function WorkspaceSettingsPage({
                   );
                 }}
               </InheritField>
-            </div>
-            <div>
-              <InheritField
-                label="Auto-accept"
-                value={local.verificationAutoAccept}
-                inherited={config.verify.autoAccept}
-                format={(v) => (v ? 'On' : 'Off')}
-                onChange={(verificationAutoAccept) => set('verificationAutoAccept', verificationAutoAccept)}
-              >
-                {({ value, onChange }) => (
-                  <Switch checked={value} onChange={onChange}>
-                    Land a passing Run without the human review gate
-                  </Switch>
-                )}
-              </InheritField>
-              <FieldError message={fieldErrors['verificationAutoAccept']} />
             </div>
           </div>
         </SettingsSection>

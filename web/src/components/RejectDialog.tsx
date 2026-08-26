@@ -5,30 +5,32 @@ import { Modal } from './Modal';
 import { btnQuietDestructive, field, panelTitle, labelType } from '../ui';
 import { taskLabel } from '../id-format.js';
 
-/** Record human feedback on the current attempt. The runner starts the next
- * attempt on this same ticket when the cap permits it. */
+/** ADR-0041 "Reject with guidance": the guidance becomes the next attempt's
+ * feedback, the attempt budget resets, and the loop resumes on the same ticket
+ * and branch. Guidance is required — a reject without it teaches nothing. */
 export function RejectDialog({
   taskId,
   onClose,
   onDone,
-  reject = (feedback) => api.rejectTask(taskId, feedback),
+  reject = (guidance) => api.rejectTask(taskId, guidance),
 }: {
   taskId: number;
   onClose: () => void;
   onDone: () => void;
-  /** The rejection call; escalated tickets route through their own recovery path. */
-  reject?: (feedback: string | undefined) => Promise<unknown>;
+  reject?: (guidance: string) => Promise<unknown>;
 }) {
-  const [feedback, setFeedback] = useState('');
+  const [guidance, setGuidance] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const trimmed = guidance.trim();
 
   const submit = async () => {
+    if (!trimmed) return;
     setBusy(true);
     setError(null);
     try {
-      await reject(feedback.trim() || undefined);
-      toastSuccess(`${taskLabel(taskId)} rejected — feedback sent to the next attempt`);
+      await reject(trimmed);
+      toastSuccess(`${taskLabel(taskId)} rejected — guidance sent to the next attempt`);
       onDone();
     } catch (e) {
       setBusy(false);
@@ -39,26 +41,27 @@ export function RejectDialog({
   return (
     <Modal label={`Reject ${taskLabel(taskId)}`} onClose={onClose} className="max-w-md">
       <div className="p-5">
-        <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)}</h2>
+        <h2 className={`${panelTitle} mb-1`}>Reject {taskLabel(taskId)} with guidance</h2>
         <p className="mb-4 text-muted">
-          Feedback is recorded on this attempt. Harmonic uses it when it starts the next attempt on this ticket.
+          Your guidance is recorded on the escalated attempt and given to the next one; the attempt budget starts over
+          and the loop resumes on the same branch.
         </p>
-        <label className={`${labelType} mb-1 block text-muted`} htmlFor="reject-feedback">
-          Feedback (optional)
+        <label className={`${labelType} mb-1 block text-muted`} htmlFor="reject-guidance">
+          Guidance
         </label>
         <textarea
-          id="reject-feedback"
+          id="reject-guidance"
           autoFocus
           rows={4}
           className={`${field} mb-4 resize-y`}
           placeholder="What was wrong, and what the next attempt should do differently…"
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
+          value={guidance}
+          onChange={(e) => setGuidance(e.target.value)}
         />
         {error && <p className="mb-3 text-fail">{error}</p>}
         <div className="flex justify-end">
-          <button type="button" onClick={submit} disabled={busy} className={`${btnQuietDestructive} px-3 py-1.5`}>
-            Reject
+          <button type="button" onClick={submit} disabled={busy || !trimmed} className={`${btnQuietDestructive} px-3 py-1.5`}>
+            Reject with guidance
           </button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
 import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
@@ -40,13 +40,13 @@ function humanState(state: string): string {
 }
 
 const STATE_PILL: Record<string, string> = {
-  'awaiting-review': 'bg-await-tint text-await',
-  rejected: 'bg-fail-tint text-fail',
+  escalated: 'bg-await-tint text-await',
+  working: 'bg-running-tint text-running',
   running: 'bg-running-tint text-running',
   ready: 'bg-ready-tint text-ready',
-  blocked: 'bg-blocked-tint text-muted',
   failed: 'bg-fail-tint text-fail',
-  completed: 'bg-merged-tint text-merged',
+  done: 'bg-merged-tint text-merged',
+  merged: 'bg-merged-tint text-merged',
   cancelled: 'bg-raised text-muted',
   draft: 'bg-raised text-muted',
 };
@@ -204,7 +204,7 @@ function DependsOnFact({ task, allTasks }: { task: Task; allTasks: Task[] }) {
         <span className="text-faint">deps</span>
         <span className="inline-flex flex-wrap items-center gap-1.5 font-data text-faint">
           {task.dependsOn.map((id) => {
-            const done = allTasks.find((t) => t.id === id)?.state === 'completed';
+            const done = allTasks.find((t) => t.id === id)?.state === 'done';
             return (
               <span key={id} className={`inline-flex items-center gap-0.5 ${done ? 'text-merged' : ''}`}>
                 {done && <Icon name="check" className="size-3" />}#{id}
@@ -260,70 +260,6 @@ function MetaLine({ task, allTasks }: { task: Task; allTasks: Task[] }) {
       </span>
       <DependsOnFact task={task} allTasks={allTasks} />
       <NotifyFact taskId={task.id} />
-    </div>
-  );
-}
-
-// ─── phase stepper ───────────────────────────────────────────────────────────
-
-const STEP_LABELS = ['executing', 'validating', 'verifying', 'review', 'merging'] as const;
-const PHASE_INDEX: Record<string, number> = {
-  executing: 0,
-  validating: 1,
-  verifying: 2,
-  review: 3,
-  landing: 4,
-  terminal: 5,
-};
-
-function stepStates(run: Run): Array<'done' | 'cur' | 'fail' | ''> {
-  const failed = run.state === 'failed';
-  const terminal = run.state === 'completed' || run.phase === 'terminal';
-  const cur = terminal ? 5 : PHASE_INDEX[run.phase ?? 'executing'] ?? 0;
-  return STEP_LABELS.map((_, i) => {
-    if (i < cur) return 'done';
-    if (i === cur) return failed ? 'fail' : 'cur';
-    return '';
-  });
-}
-
-function Stepper({ run }: { run: Run }) {
-  const states = stepStates(run);
-  return (
-    <div className="flex items-center py-3.5 pb-[22px]">
-      {STEP_LABELS.map((label, i) => {
-        const st = states[i];
-        const node =
-          st === 'done'
-            ? 'border-done bg-done text-on-done'
-            : st === 'fail'
-              ? 'border-fail bg-fail text-white'
-              : st === 'cur'
-                ? 'border-await bg-await text-white'
-                : 'border-edge text-transparent';
-        const text =
-          st === 'cur'
-            ? 'font-semibold text-await'
-            : st === 'fail'
-              ? 'font-semibold text-fail'
-              : st === 'done'
-                ? 'text-muted'
-                : 'text-faint';
-        return (
-          <Fragment key={label}>
-            <div className={`flex shrink-0 items-center gap-2 whitespace-nowrap text-[13px] ${text}`}>
-              <span className={`grid size-[19px] shrink-0 place-items-center rounded-full border-[1.5px] ${node}`}>
-                {st === 'done' && <Icon name="check" className="size-[11px]" />}
-                {st === 'fail' && <span className="text-[11px] leading-none">✕</span>}
-              </span>
-              {label}
-            </div>
-            {i < STEP_LABELS.length - 1 && (
-              <span className={`mx-2.5 h-0.5 min-w-6 flex-1 ${st === 'done' ? 'bg-done' : 'bg-edge'}`} />
-            )}
-          </Fragment>
-        );
-      })}
     </div>
   );
 }
@@ -410,7 +346,7 @@ function Verification({ attempts, run }: { attempts: VerificationAttempt[]; run:
   const decision = overallDecision(attempts);
   const rows = latestAttempts(attempts);
   // Every critic attempt with a transcript, oldest first (the store lists in
-  // seq order): a self-heal / note-to-critic back-and-forth records one critic
+  // seq order): a corrective-attempt back-and-forth records one critic
   // session per pass, and the operator needs to see all of them, not just the
   // latest (ADR-0040).
   const criticSessions = attempts.filter((a) => a.mechanism === 'critic' && a.hasTranscript);
@@ -665,15 +601,10 @@ function SteerBox({ taskId }: { taskId: number }) {
 
 // ─── run header + pane ───────────────────────────────────────────────────────
 
-// A merged/accepted run must never wear the indigo awaiting-review pill — that
-// lies about the operator's turn on the review surface (and misreads for AT).
 function runPillState(run: Run): string {
-  if (run.review === 'rejected') return 'rejected';
-  if (run.state === 'failed') return 'failed';
-  if (run.state === 'cancelled') return 'cancelled';
-  if (run.state === 'completed' || run.review === 'accepted') return 'completed';
-  // Still running: awaiting-review only once parked at the human gate.
-  return run.phase === 'review' ? 'awaiting-review' : 'running';
+  if (run.state === 'completed') return 'merged';
+  if (run.state === 'running') return run.phase === 'landing' ? 'merging' : (run.phase ?? 'running');
+  return run.state;
 }
 
 function RunHeader({ run }: { run: Run }) {
@@ -1028,7 +959,7 @@ export function TicketPage({
   const latestRun = runs[runs.length - 1];
   // Escalation is the timeline's own entry (its attempt carries the trigger and
   // the actions); only a plain failure still needs this banner.
-  const failure = !task.escalated && latestRun?.state === 'failed' && latestRun.reason ? latestRun.reason : null;
+  const failure = task.state !== 'escalated' && latestRun?.state === 'failed' && latestRun.reason ? latestRun.reason : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForRun({ task, runs, selectedRunId });
   const selectedTask = attempts.flatMap((attempt) => attempt.tasks).find((row) => row.id === selectedTaskId) ?? null;
@@ -1111,7 +1042,7 @@ export function TicketPage({
             <MetaLine task={task} allTasks={allTasks} />
 
             <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-hairline py-3 text-small text-muted">
-              <span><span className="font-semibold text-ink">Ticket flow</span> · {task.escalated ? 'escalated' : humanState(task.state)}</span>
+              <span><span className="font-semibold text-ink">Ticket flow</span> · {humanState(task.state)}</span>
               <MetaSep />
               <span>Attempt {attempts.at(-1)?.number ?? 0} / {maxAttempts ?? '—'}</span>
               {verifiedSha(attempts) && <><MetaSep /><span>verified <span className="font-data text-ink">{verifiedSha(attempts)}</span></span></>}
@@ -1160,7 +1091,6 @@ export function TicketPage({
                 <>
                   <RunHeader run={selectedRun} />
                   {selectedTask && <TaskLog key={selectedTask.id} task={selectedTask} />}
-                  <Stepper run={selectedRun} />
                   <Verification attempts={verificationAttempts} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />
                   <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />
@@ -1195,11 +1125,10 @@ export function TicketPage({
           </div>
           {/* An escalated ticket has exactly the three actions on its timeline
               entry (ADR-0041); the gate would only duplicate and cover them. */}
-          {!task.escalated && (
+          {task.state !== 'escalated' && (
             <Gate
               model={gateModel}
               task={task}
-              runs={runs}
               verificationAttempts={verificationAttempts}
               onEdit={(t) => {
                 onClose();

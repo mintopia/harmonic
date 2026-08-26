@@ -30,6 +30,11 @@ import {
   touchTargetInline,
 } from '../ui';
 
+/** The recorded trigger, without the settle fact's `escalated to human:` preamble. */
+export function escalationReasonText(reason: string): string {
+  return reason.replace(/^escalated to human:\s*/i, '');
+}
+
 function rowId(task: Task): string {
   return task.origin === 'mirrored' && task.trackerRef != null
     ? issueRef(task.trackerRef)
@@ -37,7 +42,7 @@ function rowId(task: Task): string {
 }
 
 function Dot({ task }: { task: Task }) {
-  const pulse = task.state === 'running' ? 'motion-safe:animate-pulse' : '';
+  const pulse = task.state === 'working' ? 'motion-safe:animate-pulse' : '';
   return <span role="img" aria-label={task.state.replaceAll('-', ' ')} className={`${stateDot(task.state)} ${pulse}`} />;
 }
 
@@ -124,14 +129,15 @@ function RunNowButton({ taskId, onChanged, icon }: { taskId: number; onChanged: 
   );
 }
 
-function ReviewButton({ onOpen }: { onOpen: () => void }) {
+/** The escalated card's one action: open the ticket, where Accept / Reject with guidance / Close live. */
+function ResolveButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
       className={`relative inline-flex items-center rounded-md border border-await bg-await px-[13px] py-[7px] text-[13px] font-semibold text-on-await transition-colors hover:opacity-90 ${HIT44}`}
       onClick={onOpen}
     >
-      Review →
+      Resolve →
     </button>
   );
 }
@@ -147,12 +153,14 @@ function WhoLine({ harness, model }: { harness: string; model: string }) {
 function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: () => void; onChanged: () => void; blockers?: FrontierDependency[] }) {
   const hasReadout = task.runStartedAt != null;
   const openBlockers = (blockers ?? []).filter((blocker) => !blocker.satisfied);
+  // A mirrored ticket the agent may not work (no `ready-for-agent`, an Epic
+  // container, a human-only wayfinder kind) is human-only: visible because it can
+  // block others, never runnable from here.
+  const humanOnly = task.origin === 'mirrored' && !task.agentWorkable && task.openBlockerCount === 0;
   const action =
-    task.drive === 'hitl' ? (
-      <OpenButton onOpen={onOpen} />
-    ) : task.state === 'awaiting-review' ? (
-      <ReviewButton onOpen={onOpen} />
-    ) : task.escalated ? (
+    task.state === 'escalated' ? (
+      <ResolveButton onOpen={onOpen} />
+    ) : humanOnly ? (
       <OpenButton onOpen={onOpen} />
     ) : task.state === 'ready' ? (
       <RunNowButton taskId={task.id} onChanged={onChanged} />
@@ -167,13 +175,14 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
           {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}
           <Dot task={task} />
           <span className="font-data text-small text-faint">{rowId(task)}</span>
-          {task.drive === 'hitl' ? (
-            <span className="ml-auto rounded-full bg-running-tint px-2 py-0.5 text-label font-semibold uppercase text-running">
-              HITL
+          {task.state === 'escalated' ? (
+            <span className={`ml-auto ${stateChip(task.state)}`}>escalated</span>
+          ) : humanOnly ? (
+            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted">
+              <Icon name="user" className="size-3" />
+              human
             </span>
-          ) : task.state === 'awaiting-review' ? (
-            <span className={`ml-auto ${stateChip(task.state)}`}>awaiting review</span>
-          ) : task.state === 'running' && task.phase && task.phase !== 'terminal' ? (
+          ) : task.state === 'working' && task.phase && task.phase !== 'terminal' ? (
             <span className="ml-auto rounded-full bg-running-tint px-2 py-0.5 text-label font-semibold uppercase text-running">
               {task.phase === 'landing' ? 'merging' : task.phase}
             </span>
@@ -187,13 +196,15 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
         >
           {cardTitle(task.prompt)}
         </button>
-        {(task.state === 'awaiting-review' || task.origin === 'mirrored') && (
+        {(task.escalationReason || task.origin === 'mirrored') && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
             {task.origin === 'mirrored' && (
               <span className="rounded-[3px] bg-raised px-1.5 py-0.5 text-label font-medium text-muted">mirrored</span>
             )}
-            {task.state === 'awaiting-review' && task.drive !== 'hitl' && (
-              <span className="text-merged">✓ verification proceed</span>
+            {task.escalationReason && (
+              <span className="line-clamp-2 text-await" title={task.escalationReason}>
+                {escalationReasonText(task.escalationReason)}
+              </span>
             )}
           </div>
         )}
@@ -331,16 +342,14 @@ function frontierDot(state: FrontierNode['state']): string {
   switch (state) {
     case null:
     case 'draft':
-    case 'completed':
+    case 'done':
       return 'bg-edge';
-    case 'running':
+    case 'working':
       return 'bg-running-dot motion-safe:animate-pulse';
     case 'ready':
       return 'bg-ready-dot';
-    case 'awaiting-review':
+    case 'escalated':
       return 'bg-await-dot';
-    case 'failed':
-      return 'bg-fail-dot';
     case 'cancelled':
       return 'bg-faint';
     default: {
@@ -361,7 +370,7 @@ function FrontierNodeCard({
 }) {
   const runnable = node.runnable && node.taskId != null;
   return (
-    <div className={`bold-wash ${node.state ?? ''} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${runnable || node.state === 'running' ? 'border-ready-dot' : 'border-hairline'}`}>
+    <div className={`bold-wash ${node.state ?? ''} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${runnable || node.state === 'working' ? 'border-ready-dot' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} />
         <span className="font-data text-small text-faint">#{node.ref}</span>
@@ -452,7 +461,7 @@ function EpicBand({
    * the merge/verification detail and Force-merge live. */
   onOpenEpic?: (epic: Epic) => void;
 }) {
-  const attention = epic.members.filter((m) => m.escalated || m.state === 'awaiting-review');
+  const attention = epic.members.filter((m) => m.escalated);
   const segments = railSegments(epic);
   const frontier = useMemo(() => deriveEpicFrontier(epic, tasks), [epic, tasks]);
   const hasDag = frontier.columns.length > 0;
@@ -524,8 +533,8 @@ function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
     <div className="mx-auto mt-16 max-w-md text-center">
       <h1 className={displayTitle}>Run your first agent</h1>
       <p className="mx-auto mt-2 text-muted">
-        Harmonic queues a task, runs an agent on it unattended, and holds the result at a review gate until you
-        accept the merge.
+        Harmonic queues a task, runs an agent on it unattended, verifies the result, and merges it — you are only
+        asked when a ticket escalates.
       </p>
       <ol className="mx-auto mt-7 flex max-w-sm flex-col gap-3.5 text-left">
         {steps.map((s, i) => (

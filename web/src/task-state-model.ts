@@ -1,3 +1,3 @@
 import type { TaskState } from './types.js';
 
-export const TERMINAL_STATES = ['completed', 'failed', 'cancelled'] as const satisfies readonly TaskState[];
+export const TERMINAL_STATES = ['done', 'cancelled'] as const satisfies readonly TaskState[];

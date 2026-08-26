@@ -8,18 +8,12 @@ import type { Task } from './types.js';
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 
 export const RUN_HINT_DISMISSED_KEY = 'harmonic.onboarding.run-hint';
-export const REVIEW_HINT_DISMISSED_KEY = 'harmonic.onboarding.review-hint';
+export const ESCALATION_HINT_DISMISSED_KEY = 'harmonic.onboarding.escalation-hint';
 
 /** States a task can only be in once a run has actually started. Seeing any of
  * them means the operator has already reached the aha — "first agent run
  * visible" — so the cold-start run hint has done its job and retires. */
-const PAST_FIRST_RUN: ReadonlySet<Task['state']> = new Set([
-  'running',
-  'awaiting-review',
-  'completed',
-  'failed',
-  'cancelled',
-]);
+const PAST_FIRST_RUN: ReadonlySet<Task['state']> = new Set(['working', 'escalated', 'done', 'cancelled']);
 
 /**
  * The one real cold-start cliff. Harnesses ship pre-configured and the working
@@ -42,16 +36,15 @@ export function shouldShowRunHint(
 }
 
 /**
- * The next thing to teach after the first run: the review gate. When a task
- * first reaches awaiting-review the operator has to do the one step an agent
- * can't do for itself (PRODUCT.md: the review gate is sacred) — read the diff
- * and Accept or Reject. Point at it while anything awaits review; retire on
- * dismiss. This hands off cleanly from the run hint, which hides the moment a
- * task reaches review (awaiting-review counts as past-first-run above).
+ * The next thing to teach after the first run: the one human surface
+ * (ADR-0041). When a ticket first escalates the operator has to take the one
+ * decision an agent can't take for itself — Accept, Reject with guidance, or
+ * Close. Point at it while anything is escalated; retire on dismiss. This hands
+ * off cleanly from the run hint, which hides the moment a task starts working.
  */
-export function shouldShowReviewHint(tasks: Pick<Task, 'state'>[], dismissed: boolean): boolean {
+export function shouldShowEscalationHint(tasks: Pick<Task, 'state'>[], dismissed: boolean): boolean {
   if (dismissed) return false;
-  return tasks.some((t) => t.state === 'awaiting-review');
+  return tasks.some((t) => t.state === 'escalated');
 }
 
 export function loadDismissed(storage: StorageLike, key: string): boolean {

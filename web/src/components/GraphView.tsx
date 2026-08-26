@@ -369,7 +369,7 @@ function CardNode({
         cy={n.y + 18}
         r={4}
         fill={sig.color}
-        className={task.state === 'running' ? 'motion-safe:animate-pulse' : undefined}
+        className={task.state === 'working' ? 'motion-safe:animate-pulse' : undefined}
       />
       <text x={n.x + 30} y={n.y + 22} className="fill-ink" fontSize={12.5} fontWeight={600}>
         {truncate(nodeTitle(task.prompt), 24)}
