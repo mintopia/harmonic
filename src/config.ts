@@ -156,7 +156,11 @@ export type VerificationReview = z.infer<typeof verificationReviewSchema>;
 export const verifierOffSchema = z.object({ off: z.literal(true) });
 export type VerifierOff = z.infer<typeof verifierOffSchema>;
 export const verificationCommandOverrideSchema = z.union([z.array(verificationCommandSchema), verificationCommandSchema, verifierOffSchema]);
-export const verificationCriticOverrideSchema = z.union([verificationReviewSchema, verificationCriticSchema, verifierOffSchema]);
+// Order matters: verificationReviewSchema is permissive enough (enabled defaults
+// false, prompt/model optional) to swallow a bare critic object or the off
+// sentinel and coerce it to a disabled review, so the stricter members must be
+// tried first — otherwise enabling the critic for a workspace persists as off.
+export const verificationCriticOverrideSchema = z.union([verifierOffSchema, verificationCriticSchema, verificationReviewSchema]);
 
 /**
  * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound

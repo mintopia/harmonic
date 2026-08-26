@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolve, resolveCap, resolveVerifiers, resolveGuardrails } from '../src/domain/setting-override.js';
+import { verificationCriticOverrideSchema } from '../src/config.js';
 
 describe('Setting Override resolution (ADR-0012, issue #59)', () => {
   describe('resolve', () => {
@@ -177,6 +178,37 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         );
         expect(resolved.commands).toEqual([first, second]);
         expect(resolved.command).toEqual(first);
+      });
+    });
+
+    // Round-trip through the write-path union, not a hand-built JSON string: the
+    // API validates a workspace override with verificationCriticOverrideSchema
+    // before it is stored, and the permissive review schema used to swallow a
+    // bare critic and stamp it enabled:false, so enabling the critic for a
+    // workspace persisted as off even against a disabled global.
+    describe('write-path round-trip through verificationCriticOverrideSchema', () => {
+      const storeOverride = (input: unknown): string =>
+        JSON.stringify(verificationCriticOverrideSchema.parse(input));
+
+      it('enables the critic when a workspace overrides with a bare critic, over a disabled global', () => {
+        const config = { verify: { commands: [], review: { enabled: false } } };
+        const criticOverride = { prompt: 'review the diff', model: 'claude-opus-5' };
+        const resolved = resolveVerifiers(
+          { verificationCommand: null, verificationCritic: storeOverride(criticOverride) },
+          config as any,
+        );
+        expect(resolved.review).toMatchObject({ enabled: true, ...criticOverride });
+        expect(resolved.critic).toEqual(criticOverride);
+      });
+
+      it('keeps the off sentinel distinct so an explicitly-disabled workspace critic stays off', () => {
+        const config = { verify: { commands: [], review: { enabled: true, prompt: 'g', model: 'claude-opus-5' } } };
+        const resolved = resolveVerifiers(
+          { verificationCommand: null, verificationCritic: storeOverride({ off: true }) },
+          config as any,
+        );
+        expect(resolved.review).toEqual({ enabled: false });
+        expect(resolved.critic).toBeNull();
       });
     });
   });
