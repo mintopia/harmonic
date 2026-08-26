@@ -37,6 +37,11 @@ export function continuationLabel(attempt: Attempt): string {
   return attempt.number > 1 ? 'new session, condensed' : 'new session';
 }
 
+export function verificationAttemptId(locator: string | null): number | null {
+  const match = /^verification_attempt:(\d+)$/.exec(locator ?? '');
+  return match ? Number(match[1]) : null;
+}
+
 /** Latest verification proof wins; older Attempt facts are historical only. */
 export function verifiedSha(attempts: readonly Attempt[]): string | null {
   for (const attempt of [...attempts].reverse()) {

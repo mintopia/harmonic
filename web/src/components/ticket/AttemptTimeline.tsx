@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../api.js';
-import { elapsed, feedbackForAttempt, stateTone, taskLabel } from '../../attempt-timeline-model.js';
+import { elapsed, feedbackForAttempt, stateTone, taskLabel, verificationAttemptId } from '../../attempt-timeline-model.js';
 import type { Attempt, AttemptTask } from '../../types.js';
 import { Icon } from '../Icon.js';
 
@@ -31,8 +31,8 @@ function TaskRow({ task, now }: { task: AttemptTask; now: number }) {
           <button type="button" onClick={() => {
             const next = !open;
             setOpen(next);
-            const match = /^verification_attempt:(\\d+)$/.exec(task.logLocator ?? '');
-            if (next && match && output === null) api.verificationAttempt(Number(match[1])).then(({ output: nextOutput }) => setOutput(nextOutput), () => setOutput('Log unavailable.'));
+            const attemptId = verificationAttemptId(task.logLocator);
+            if (next && attemptId !== null && output === null) api.verificationAttempt(attemptId).then(({ output: nextOutput }) => setOutput(nextOutput), () => setOutput('Log unavailable.'));
           }} aria-expanded={open} className="min-h-11 px-1 text-muted hover:text-ink">
             <span className="sr-only">{open ? 'Hide' : 'Show'} log for {taskLabel(task)}</span>
             <Icon name="chevron-down" className={`size-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { continuationLabel, elapsed, feedbackForAttempt, stateTone, taskLabel, verifiedSha } from '../web/src/attempt-timeline-model.js';
+import { continuationLabel, elapsed, feedbackForAttempt, stateTone, taskLabel, verifiedSha, verificationAttemptId } from '../web/src/attempt-timeline-model.js';
 import type { Attempt, AttemptTask } from '../web/src/types.js';
 
 const task = (over: Partial<AttemptTask> = {}): AttemptTask => ({
@@ -22,6 +22,13 @@ describe('attempt timeline model', () => {
     const current = attempt({ id: 2, number: 2, tasks: [task({ id: 2, attemptId: 2, type: 'review', verifiedSha: 'current' })] });
     expect(verifiedSha([old, current])).toBe('current');
     expect(verifiedSha([attempt({ tasks: [task()] })])).toBeNull();
+  });
+
+  it('parses the verification locators written for command, review, and inconclusive tasks', () => {
+    expect(verificationAttemptId('verification_attempt:31')).toBe(31);
+    expect(verificationAttemptId('verification_attempt:902')).toBe(902);
+    expect(verificationAttemptId('session:42')).toBeNull();
+    expect(verificationAttemptId(null)).toBeNull();
   });
 
   it('attaches retry feedback to the failed attempt that caused it', () => {
