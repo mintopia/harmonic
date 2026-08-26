@@ -25,21 +25,15 @@ function installOperations() {
   return exporter;
 }
 
-type RebaseOutcome =
-  | { ok: true; rebasedTip: string }
-  | { ok: false; conflict: true; detail: string };
-
 /** An in-memory {@link MergeTrainGit} recording every call, driven entirely by
  * maps the test sets up — mirrors the FakeGit idiom in `tests/epic-integration.test.ts`. */
 class FakeGit implements MergeTrainGit {
   /** branch -> current tip oid. Absence means the branch doesn't exist. */
   readonly refs = new Map<string, string>();
-  /** member branch -> fixed tip oid. */
+  /** member branch -> tip oid. */
   readonly memberTips = new Map<string, string>();
   /** branch -> worktree path it's checked out at, or explicit null. Absent = null. */
   readonly checkouts = new Map<string, string | null>();
-  /** worktreeDir -> queue of rebase outcomes, shifted one per call. */
-  readonly rebaseOutcomes = new Map<string, RebaseOutcome[]>();
   /** Real DAG edges as `${ancestor}|${descendant}` — `ancestor` is contained
    * in `descendant`'s history. `isAncestor` reads these with git's true
    * asymmetric semantics, so a reversed-argument call is caught, not masked. */
@@ -48,42 +42,25 @@ class FakeGit implements MergeTrainGit {
    * that one branch's slow op never blocks another branch. */
   readonly casGate = new Map<string, Promise<void>>();
 
-  readonly branchExistsCalls: string[] = [];
-  readonly revParseCalls: string[] = [];
-  readonly isAncestorCalls: Array<[string, string]> = [];
-  readonly checkedOutCalls: string[] = [];
-  readonly rebaseCalls: Array<{ worktreeDir: string; ontoOid: string }> = [];
   readonly casCalls: Array<{ branch: string; newOid: string; expectedOld: string }> = [];
 
   async branchExists(_dir: string, name: string): Promise<boolean> {
-    this.branchExistsCalls.push(name);
     return this.refs.has(name);
   }
 
   async revParse(_dir: string, rev: string): Promise<string> {
-    this.revParseCalls.push(rev);
     if (this.refs.has(rev)) return this.refs.get(rev)!;
     if (this.memberTips.has(rev)) return this.memberTips.get(rev)!;
     throw new Error(`FakeGit.revParse: unknown rev ${rev}`);
   }
 
   async isAncestor(_dir: string, baseRev: string, rev: string): Promise<boolean> {
-    this.isAncestorCalls.push([baseRev, rev]);
     // Git semantics: true iff `rev` is an ancestor-or-equal of `baseRev`.
     return rev === baseRev || this.ancestors.has(`${rev}|${baseRev}`);
   }
 
   async branchCheckedOutAt(_dir: string, branch: string): Promise<string | null> {
-    this.checkedOutCalls.push(branch);
     return this.checkouts.get(branch) ?? null;
-  }
-
-  async rebaseOnto(worktreeDir: string, ontoOid: string): Promise<RebaseOutcome> {
-    this.rebaseCalls.push({ worktreeDir, ontoOid });
-    const queue = this.rebaseOutcomes.get(worktreeDir);
-    const next = queue?.shift();
-    if (!next) throw new Error(`FakeGit.rebaseOnto: no queued outcome for ${worktreeDir}`);
-    return next;
   }
 
   async casUpdateRef(
@@ -111,93 +88,78 @@ function member(overrides: Partial<MergeTrainMember> = {}): MergeTrainMember {
     repoDir: '/repo',
     integrationBranch: 'epic/1',
     memberBranch: 'harmonic/task-1-run-1',
-    memberWorktreeDir: '/wt/1',
+    verifiedTip: 'mem-a',
     ...overrides,
   };
 }
 
-function collaborators() {
-  const dispatchHeal = vi.fn(async () => {});
-  const escalate = vi.fn();
-  return { dispatchHeal, escalate };
+/** A member branch at `tip`, verified there and based on `integrationTip`. */
+function freshMember(git: FakeGit, branch: string, tip: string, integrationTip: string, overrides: Partial<MergeTrainMember> = {}) {
+  git.memberTips.set(branch, tip);
+  git.ancestors.add(`${integrationTip}|${tip}`);
+  return member({ memberBranch: branch, verifiedTip: tip, ...overrides });
 }
 
-describe('MergeTrainCoordinator (issue #160)', () => {
-  it('records rebase and fast-forward as children of the member land operation', async () => {
+describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
+  it('records the fast-forward as a child of the member land operation', async () => {
     const exporter = installOperations();
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
-    git.rebaseOutcomes.set('/wt/1', [{ ok: true, rebasedTip: 'mem-a-rebased' }]);
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate, operations: new EpicOperations() });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate, operations: new EpicOperations() });
 
-    await coordinator.submit(member());
+    await coordinator.submit(freshMember(git, 'harmonic/task-1-run-1', 'mem-a', 'int-a'));
 
     const spans = exporter.getFinishedSpans();
     const memberLand = spans.find((span) => span.name === 'harmonic.epic.member-land');
     if (!memberLand) throw new Error('Expected member land operation');
-    for (const name of ['harmonic.epic.git.rebase', 'harmonic.epic.git.fast-forward']) {
-      const span = spans.find((candidate) => candidate.name === name);
-      if (!span) throw new Error(`Expected ${name} operation`);
-      expect(span.parentSpanContext?.spanId).toBe(memberLand.spanContext().spanId);
-    }
+    const ff = spans.find((candidate) => candidate.name === 'harmonic.epic.git.fast-forward');
+    if (!ff) throw new Error('Expected fast-forward operation');
+    expect(ff.parentSpanContext?.spanId).toBe(memberLand.spanContext().spanId);
   });
 
-  it('1. a single clean member rebases onto the observed integration tip and lands via CAS', async () => {
+  it('1. a fresh member lands via CAS to exactly its verified tip', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
-    git.rebaseOutcomes.set('/wt/1', [{ ok: true, rebasedTip: 'mem-a-rebased' }]);
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    const outcome = await coordinator.submit(member());
+    const outcome = await coordinator.submit(freshMember(git, 'harmonic/task-1-run-1', 'mem-a', 'int-a'));
 
-    expect(outcome).toEqual({ status: 'landed', oid: 'mem-a-rebased' });
-    expect(git.rebaseCalls).toEqual([{ worktreeDir: '/wt/1', ontoOid: 'int-a' }]);
-    expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-a-rebased', expectedOld: 'int-a' }]);
+    expect(outcome).toEqual({ status: 'landed', oid: 'mem-a' });
+    expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-a', expectedOld: 'int-a' }]);
     expect(escalate).not.toHaveBeenCalled();
   });
 
-  it('2. two members finishing near-simultaneously on the SAME integration branch land strictly serialised', async () => {
+  it('2. two members verified against the SAME tip land strictly serialised: the first lands, the second is stale', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-0');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-1');
-    git.memberTips.set('harmonic/task-2-run-1', 'mem-2');
-    git.rebaseOutcomes.set('/wt/1', [{ ok: true, rebasedTip: 'landed-1' }]);
-    git.rebaseOutcomes.set('/wt/2', [{ ok: true, rebasedTip: 'landed-2' }]);
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    const m1 = member({ runId: 1, memberBranch: 'harmonic/task-1-run-1', memberWorktreeDir: '/wt/1' });
-    const m2 = member({ runId: 2, memberBranch: 'harmonic/task-2-run-1', memberWorktreeDir: '/wt/2' });
+    const m1 = freshMember(git, 'harmonic/task-1-run-1', 'mem-1', 'int-0', { runId: 1 });
+    const m2 = freshMember(git, 'harmonic/task-2-run-1', 'mem-2', 'int-0', { runId: 2 });
 
     // Submitted without awaiting the first — the coordinator, not the caller,
     // must impose the order.
     const [o1, o2] = await Promise.all([coordinator.submit(m1), coordinator.submit(m2)]);
 
-    expect(o1).toEqual({ status: 'landed', oid: 'landed-1' });
-    expect(o2).toEqual({ status: 'landed', oid: 'landed-2' });
-    // No interleave: the 2nd member's rebase/CAS observe the 1st's landed oid.
-    expect(git.rebaseCalls).toEqual([
-      { worktreeDir: '/wt/1', ontoOid: 'int-0' },
-      { worktreeDir: '/wt/2', ontoOid: 'landed-1' },
-    ]);
-    expect(git.casCalls).toEqual([
-      { branch: 'epic/1', newOid: 'landed-1', expectedOld: 'int-0' },
-      { branch: 'epic/1', newOid: 'landed-2', expectedOld: 'landed-1' },
-    ]);
+    expect(o1).toEqual({ status: 'landed', oid: 'mem-1' });
+    // mem-2 was verified against int-0, which mem-1's land has moved past: it
+    // must re-enter rebase+verify rather than land a tree nobody verified.
+    expect(o2).toEqual({ status: 'stale', reason: 'integration branch advanced after verification' });
+    expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-1', expectedOld: 'int-0' }]);
+
+    // Rebased onto mem-1 and re-verified there, the resubmission lands.
+    const m2b = freshMember(git, 'harmonic/task-2-run-1', 'mem-2-rebased', 'mem-1', { runId: 2 });
+    expect(await coordinator.submit(m2b)).toEqual({ status: 'landed', oid: 'mem-2-rebased' });
+    expect(git.refs.get('epic/1')).toBe('mem-2-rebased');
   });
 
   it('3. members on DIFFERENT integration branches never block each other', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int1-a');
     git.refs.set('epic/2', 'int2-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem1');
-    git.memberTips.set('harmonic/task-2-run-1', 'mem2');
-    git.rebaseOutcomes.set('/wt/1', [{ ok: true, rebasedTip: 'mem1-rebased' }]);
-    git.rebaseOutcomes.set('/wt/2', [{ ok: true, rebasedTip: 'mem2-rebased' }]);
 
     // Branch epic/1's CAS is gated on a promise the test controls; branch
     // epic/2 has no gate at all.
@@ -207,137 +169,83 @@ describe('MergeTrainCoordinator (issue #160)', () => {
     });
     git.casGate.set('epic/1', gate);
 
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    const m1 = member({ runId: 1, integrationBranch: 'epic/1', memberBranch: 'harmonic/task-1-run-1', memberWorktreeDir: '/wt/1' });
-    const m2 = member({ runId: 2, integrationBranch: 'epic/2', memberBranch: 'harmonic/task-2-run-1', memberWorktreeDir: '/wt/2' });
+    const m1 = freshMember(git, 'harmonic/task-1-run-1', 'mem1', 'int1-a', { runId: 1, integrationBranch: 'epic/1' });
+    const m2 = freshMember(git, 'harmonic/task-2-run-1', 'mem2', 'int2-a', { runId: 2, integrationBranch: 'epic/2' });
 
     const p1 = coordinator.submit(m1); // blocked mid-flight on epic/1's gate
     const p2 = coordinator.submit(m2); // must complete independently
 
-    const o2 = await p2;
-    expect(o2).toEqual({ status: 'landed', oid: 'mem2-rebased' });
+    expect(await p2).toEqual({ status: 'landed', oid: 'mem2' });
 
     releaseGate();
-    const o1 = await p1;
-    expect(o1).toEqual({ status: 'landed', oid: 'mem1-rebased' });
+    expect(await p1).toEqual({ status: 'landed', oid: 'mem1' });
   });
 
-  it('4. a conflicting member heals once and then lands', async () => {
+  it('4. a member whose branch moved off its verified tip is stale, with no CAS and no escalate', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
-    git.rebaseOutcomes.set('/wt/1', [
-      { ok: false, conflict: true, detail: 'conflict!' },
-      { ok: true, rebasedTip: 'mem-a-healed' },
-    ]);
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
-    const m = member();
+    const m = freshMember(git, 'harmonic/task-1-run-1', 'mem-a', 'int-a');
+    git.memberTips.set('harmonic/task-1-run-1', 'mem-later');
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    const o1 = await coordinator.submit(m);
-    expect(o1).toEqual({ status: 'healing' });
-    expect(dispatchHeal).toHaveBeenCalledTimes(1);
-    expect(dispatchHeal).toHaveBeenCalledWith(m);
-
-    const o2 = await coordinator.onHealComplete(m);
-    expect(o2).toEqual({ status: 'landed', oid: 'mem-a-healed' });
-    expect(dispatchHeal).toHaveBeenCalledTimes(1); // not called again
+    expect(await coordinator.submit(m)).toEqual({ status: 'stale', reason: 'member branch moved after verification' });
+    expect(git.casCalls).toEqual([]);
     expect(escalate).not.toHaveBeenCalled();
   });
 
-  it('5. a member that still conflicts after the corrective turn escalates without a second heal', async () => {
+  it('5. a stale member releases the chain slot: a fresh member behind it on the same branch still lands', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
-    git.rebaseOutcomes.set('/wt/1', [
-      { ok: false, conflict: true, detail: 'conflict 1' },
-      { ok: false, conflict: true, detail: 'conflict 2' },
-    ]);
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
-    const m = member();
+    const stale = member({ runId: 1, memberBranch: 'harmonic/task-1-run-1', verifiedTip: 'mem-a' });
+    git.memberTips.set('harmonic/task-1-run-1', 'mem-a'); // verified against an older tip: not based on int-a
+    const fresh = freshMember(git, 'harmonic/task-2-run-1', 'mem-b', 'int-a', { runId: 2 });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    const o1 = await coordinator.submit(m);
-    expect(o1).toEqual({ status: 'healing' });
-
-    const o2 = await coordinator.onHealComplete(m);
-    expect(o2).toEqual({ status: 'escalated', reason: 'rebase still conflicts after corrective turn' });
-    expect(escalate).toHaveBeenCalledTimes(1);
-    expect(escalate).toHaveBeenCalledWith(m, 'rebase still conflicts after corrective turn');
-    expect(dispatchHeal).toHaveBeenCalledTimes(1); // no 2nd mutating turn
-    expect(git.casCalls).toEqual([]);
+    const [oA, oB] = await Promise.all([coordinator.submit(stale), coordinator.submit(fresh)]);
+    expect(oA).toEqual({ status: 'stale', reason: 'integration branch advanced after verification' });
+    expect(oB).toEqual({ status: 'landed', oid: 'mem-b' });
+    expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-b', expectedOld: 'int-a' }]);
   });
 
-  it('6. already-landed re-submit (idempotency/crash): no rebase, no CAS', async () => {
+  it('6. already-landed re-submit (idempotency/crash): no CAS', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
     git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
     git.ancestors.add('mem-a|int-a'); // memberTip already an ancestor of integrationTip
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    const outcome = await coordinator.submit(member());
-
-    expect(outcome).toEqual({ status: 'already-landed' });
-    expect(git.rebaseCalls).toEqual([]);
+    expect(await coordinator.submit(member())).toEqual({ status: 'already-landed' });
     expect(git.casCalls).toEqual([]);
     expect(escalate).not.toHaveBeenCalled();
-    expect(dispatchHeal).not.toHaveBeenCalled();
   });
 
-  it('7. escalates when the integration branch is missing, without attempting a rebase or CAS', async () => {
+  it('7. escalates when the integration branch is missing, without attempting a CAS', async () => {
     const git = new FakeGit(); // no refs set at all
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
     const m = member();
 
-    const outcome = await coordinator.submit(m);
-
-    expect(outcome).toEqual({ status: 'escalated', reason: 'integration branch missing' });
+    expect(await coordinator.submit(m)).toEqual({ status: 'escalated', reason: 'integration branch missing' });
     expect(escalate).toHaveBeenCalledWith(m, 'integration branch missing');
-    expect(git.rebaseCalls).toEqual([]);
     expect(git.casCalls).toEqual([]);
   });
 
   it('8. ff guard: escalates instead of updating the ref when the integration branch is unexpectedly checked out', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
-    git.rebaseOutcomes.set('/wt/1', [{ ok: true, rebasedTip: 'mem-a-rebased' }]);
     git.checkouts.set('epic/1', '/some/other/worktree');
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
-    const m = member();
+    const escalate = vi.fn();
+    const coordinator = new MergeTrainCoordinator({ git, escalate });
+    const m = freshMember(git, 'harmonic/task-1-run-1', 'mem-a', 'int-a');
 
-    const outcome = await coordinator.submit(m);
-
-    expect(outcome).toEqual({ status: 'escalated', reason: 'integration branch unexpectedly checked out' });
+    expect(await coordinator.submit(m)).toEqual({ status: 'escalated', reason: 'integration branch unexpectedly checked out' });
     expect(escalate).toHaveBeenCalledWith(m, 'integration branch unexpectedly checked out');
     expect(git.casCalls).toEqual([]);
-  });
-
-  it('9. heal releases the chain slot: a second ready member on the same branch still lands', async () => {
-    const git = new FakeGit();
-    git.refs.set('epic/1', 'int-a');
-    git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
-    git.memberTips.set('harmonic/task-2-run-1', 'mem-b');
-    git.rebaseOutcomes.set('/wt/1', [{ ok: false, conflict: true, detail: 'conflict!' }]);
-    git.rebaseOutcomes.set('/wt/2', [{ ok: true, rebasedTip: 'mem-b-rebased' }]);
-    const { dispatchHeal, escalate } = collaborators();
-    const coordinator = new MergeTrainCoordinator({ git, dispatchHeal, escalate });
-
-    const memberA = member({ runId: 1, memberBranch: 'harmonic/task-1-run-1', memberWorktreeDir: '/wt/1' });
-    const memberB = member({ runId: 2, memberBranch: 'harmonic/task-2-run-1', memberWorktreeDir: '/wt/2' });
-
-    const oA = await coordinator.submit(memberA);
-    expect(oA).toEqual({ status: 'healing' });
-
-    // memberA's corrective turn has NOT completed (onHealComplete never
-    // called for it) — the train must not be held waiting for it.
-    const oB = await coordinator.submit(memberB);
-    expect(oB).toEqual({ status: 'landed', oid: 'mem-b-rebased' });
-    expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-b-rebased', expectedOld: 'int-a' }]);
   });
 });

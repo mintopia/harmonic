@@ -245,14 +245,18 @@ describe('command verifier end-to-end (issue #135)', () => {
 
     // The landing gate accepts the tip verification recorded…
     const runner = server.app.ctx.runner as unknown as {
-      verifiedHeadStillCurrent(task: unknown, run: unknown): Promise<boolean>;
+      landingFreshness(task: unknown, run: unknown): Promise<{ fresh: boolean; oid: string; reason?: string }>;
     };
     const taskRow = await server.app.ctx.tasks.get(taskId);
     const runRow = await server.app.ctx.runs.get(runId);
-    await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(true);
+    await expect(runner.landingFreshness(taskRow, runRow)).resolves.toEqual({ fresh: true, oid: payload.sha });
     // …and refuses once the branch tip moved after verification.
     git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main'));
-    await expect(runner.verifiedHeadStillCurrent(taskRow, runRow)).resolves.toBe(false);
+    await expect(runner.landingFreshness(taskRow, runRow)).resolves.toEqual({
+      fresh: false,
+      oid: payload.sha,
+      reason: 'branch head moved after verification',
+    });
   });
 
   it('opens every Attempt with a recorded Rebase Task, including a clean no-op rebase', async () => {

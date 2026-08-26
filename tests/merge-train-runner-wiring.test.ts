@@ -16,20 +16,20 @@ import { turnQueue } from '../src/db/schema.js';
 import { startServer, stubHarness, waitFor, allWorkspaces, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 
 /**
- * Issue #163 — the single-writer merge train wired into the Epic member-finish
- * landing path. Three seams:
+ * Issue #163 / #313 — the single-writer merge train wired into the Epic
+ * member-finish landing path, behind the ADR-0041 freshness gate:
  *
- *  - `Runner.enqueueReMergeForMember` / `settleEscalatedForMember`: the plain
- *    adapters the coordinator's `dispatchHeal`/`escalate` are bound to (unit,
- *    no server, mirrors the "Runner auto-drive settle" harness style).
- *  - AC2: two Epic members finishing near-simultaneously land serially onto
- *    ONE integration branch via rebase→ff, through the REAL wired Runner (a
- *    real server via `startServer`, so the process-global `MergeTrainCoordinator`
- *    built in `app.ts` is the one under test, not a hand-rolled stand-in).
- *  - AC3: a rebase conflict on a member's land dispatches exactly ONE
- *    corrective turn in that member's Session, and a second conflict Escalates
- *    — again through the wired Runner, not the coordinator in isolation (#160
- *    already covers the coordinator's own serial-landing/heal-once unit tests).
+ *  - `Runner.settleEscalatedForMember`: the adapter the coordinator's
+ *    `escalate` is bound to (unit, no server).
+ *  - AC2: two Epic members finishing near-simultaneously land serially onto ONE
+ *    integration branch, each asserting its own verified SHA, through the REAL
+ *    wired Runner (a real server via `startServer`, so the process-global
+ *    `MergeTrainCoordinator` built in `app.ts` is the one under test). The
+ *    second member's verdict is stale once the first lands, so it re-enters
+ *    Rebase → Verification on the SAME Attempt before landing.
+ *  - AC3: a rebase conflict on that re-entry is a failed Rebase Task, fed to
+ *    the unified Attempt loop's corrective turn as feedback (one attempt
+ *    consumed), and escalates at maxAttempts — never a landed conflict.
  */
 
 const git = (dir: string, ...args: string[]) =>
@@ -59,6 +59,16 @@ function makeRepo(): string {
   git(dir, 'add', '-A');
   git(dir, 'commit', '-m', 'init');
   return dir;
+}
+
+/** Advance `branch` in `repo` by one commit writing `file`, off to the side. */
+function advanceBranch(repo: string, branch: string, file: string, content: string): void {
+  const scratch = tmpPath('harmonic-mergetrain-advance-');
+  git(repo, 'worktree', 'add', scratch, branch);
+  writeFileSync(join(scratch, file), content);
+  git(scratch, 'add', '-A');
+  git(scratch, 'commit', '-m', `${branch} advances independently`);
+  git(repo, 'worktree', 'remove', '--force', scratch);
 }
 
 afterAll(() => {
@@ -98,34 +108,20 @@ describe('Runner merge-train adapters (issue #163)', () => {
         repoDir: '/repo',
         integrationBranch: 'epic/1',
         memberBranch: `harmonic/task-${task.id}-run-1`,
-        memberWorktreeDir: '/wt/1',
+        verifiedTip: 'a'.repeat(40),
       },
     };
   }
 
-  it('enqueueReMergeForMember records exactly one re-merge turn on the member\'s Session queue and stashes its row id', async () => {
-    const { runId, member } = await seed();
-
-    await runner.enqueueReMergeForMember(member);
-
-    // The observable contract: exactly one in-flight `re-merge` turn on the
-    // member's Session queue. The stashed row id (a private field) is not peeked
-    // at here — the AC3 e2e test exercises the full stash→settle round-trip
-    // through the real `drive()` loop (it asserts the row ends up settled `done`).
-    const rows = await asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ purpose: 're-merge', status: 'in_flight', sessionId: `run-${runId}` });
-  });
-
   it('settleEscalatedForMember settles the member\'s Run failed and hands the Task back to a human, escalated', async () => {
     const { taskId, runId, member } = await seed();
 
-    await runner.settleEscalatedForMember(member, 'rebase still conflicts after corrective turn');
+    await runner.settleEscalatedForMember(member, 'integration branch unexpectedly checked out');
 
     const settledRun = await runs.get(runId);
     expect(settledRun.state).toBe('failed');
     expect(settledRun.reason).toContain('escalated to human');
-    expect(settledRun.reason).toContain('rebase still conflicts after corrective turn');
+    expect(settledRun.reason).toContain('integration branch unexpectedly checked out');
 
     const settledTask = await tasks.get(taskId);
     expect(settledTask.state).toBe('ready');
@@ -176,7 +172,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
   });
 });
 
-describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
+describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 freshness gate)', () => {
   let server: TestServer;
   let wsId: number;
   let ref = 16_300;
@@ -185,7 +181,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     server = await startServer({
       ...stubHarness(),
       defaults: { isolationMode: 'worktree' },
-      maxAttempts: 1,
+      maxAttempts: 2,
       drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
     });
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
@@ -218,8 +214,15 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
 
   const turnsFor = (runId: number) =>
     server.app.ctx.asyncDb.read((d) => d.select().from(turnQueue).where(eq(turnQueue.runId, runId)).all());
+  const timelineFor = async (taskId: number) =>
+    (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts as Array<{
+      number: number;
+      state: string;
+      feedback: string | null;
+      tasks: Array<{ type: string; state: string; verdict: string | null }>;
+    }>;
 
-  it('AC2: two Epic members finishing near-simultaneously land serially via rebase→ff, no PR/manual fallback', async () => {
+  it('AC2: two Epic members finishing near-simultaneously land serially, each asserting its own verified SHA; the second re-enters rebase+verify on the same Attempt', async () => {
     const repo = makeRepo();
     const epic = 'epic/1630';
     git(repo, 'branch', epic, 'main');
@@ -233,8 +236,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     const countBefore = Number(git(repo, 'rev-list', '--count', epic));
 
     // Submitted without awaiting the first — the merge train, not the test,
-    // must impose the serial order (mirrors merge-train-coordinator.test.ts's
-    // own near-simultaneous case, but through the real Runner this time).
+    // must impose the serial order.
     const m1Promise = launchEpicMember(epic);
     const m2Promise = launchEpicMember(epic);
     const m1 = await m1Promise;
@@ -248,43 +250,52 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
       });
     const t1 = await completed(m1.taskId);
     const t2 = await completed(m2.taskId);
-
-    expect(t1.state).toBe('completed');
-    expect(t2.state).toBe('completed');
     expect(t1.escalated).toBe(false);
     expect(t2.escalated).toBe(false);
 
     // The integration tip advanced exactly once per member (two new commits) —
-    // never merge commits, so this was a pure rebase→ff land per member, not a
-    // PR/manual fallback.
+    // never merge commits, so each land was a fast-forward of a verified tip.
     const countAfter = Number(git(repo, 'rev-list', '--count', epic));
     expect(countAfter - countBefore).toBe(2);
     expect(git(repo, 'log', '--merges', epic)).toBe('');
     expect(git(repo, 'show', `${epic}:member-${m1.trackerRef}.txt`)).toBe(`member ${m1.trackerRef}`);
     expect(git(repo, 'show', `${epic}:member-${m2.trackerRef}.txt`)).toBe(`member ${m2.trackerRef}`);
 
-    // Clean lands: neither member's Session ever needed a corrective turn.
+    // The integration tip IS a member's verified SHA: the runs' pinned
+    // candidates are the two commits now on the branch.
+    const [r1, r2] = await Promise.all([server.app.ctx.runs.get(m1.runId), server.app.ctx.runs.get(m2.runId)]);
+    const tip = git(repo, 'rev-parse', epic);
+    expect([r1.candidateOid, r2.candidateOid]).toContain(tip);
+    expect([r1.candidateOid, r2.candidateOid]).toContain(git(repo, 'rev-parse', `${epic}~1`));
+
+    // Clean lands: no corrective turn, and both Runs stayed on Attempt 1. One of
+    // the two was stale when its turn on the train came and re-entered
+    // Rebase → Verification on that same Attempt: a second passed Rebase Task
+    // row, no second implementation.
     expect(await turnsFor(m1.runId)).toHaveLength(0);
     expect(await turnsFor(m2.runId)).toHaveLength(0);
+    expect(r1.attempt).toBe(1);
+    expect(r2.attempt).toBe(1);
+    const timelines = [await timelineFor(m1.taskId), await timelineFor(m2.taskId)];
+    for (const timeline of timelines) {
+      expect(timeline).toHaveLength(1);
+      expect(timeline[0]!.tasks.filter((t) => t.type === 'implementation')).toHaveLength(1);
+      expect(timeline[0]!.tasks.every((t) => t.state === 'passed')).toBe(true);
+    }
+    const rebaseCounts = timelines.map((timeline) => timeline[0]!.tasks.filter((t) => t.type === 'rebase').length).sort();
+    expect(rebaseCounts).toEqual([1, 2]);
   });
 
-  it('AC3: a rebase conflict on a member\'s land dispatches exactly one corrective turn, and a second conflict Escalates', async () => {
+  it('AC3: a rebase conflict at landing is a failed Rebase Task fed to a corrective turn as feedback, then escalates at maxAttempts — the conflict never lands', async () => {
     const repo = makeRepo();
     const epic = 'epic/1631';
     git(repo, 'branch', epic, 'main');
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
-    // Both the first turn and the one corrective turn touch the SAME file the
-    // test independently advances on the integration branch below, so BOTH the
-    // first land attempt and the corrective turn's re-attempt conflict.
+    // Both turns touch the SAME file the test independently advances on the
+    // integration branch below, so the landing rebase conflicts and the
+    // corrective turn (which does not resolve the conflict) conflicts again.
     await server.app.ctx.configStore.update({
-      drive: {
-        prompt: JSON.stringify({
-          turns: [
-            { writeFiles: { 'README.md': 'member turn 0\n' }, mcpFinish: true },
-            { writeFiles: { 'README.md': 'member turn 1\n' }, mcpFinish: true },
-          ],
-        }),
-      },
+      drive: { prompt: JSON.stringify({ writeFiles: { 'README.md': 'member turn\n' }, mcpFinish: true }) },
     });
 
     const { taskId, runId } = await launchEpicMember(epic);
@@ -295,44 +306,44 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163)', () => {
     // then does advancing the integration branch independently guarantee a
     // genuine divergence (a real rebase conflict), rather than racing the fork.
     await waitFor(async () => ((await server.app.ctx.runs.get(runId)).branch ? true : undefined));
-    const scratch = tmpPath('harmonic-mergetrain-conflict-');
-    git(repo, 'worktree', 'add', scratch, epic);
-    writeFileSync(join(scratch, 'README.md'), 'integration advanced independently\n');
-    git(scratch, 'commit', '-am', 'integration advances independently');
-    git(repo, 'worktree', 'remove', '--force', scratch);
+    advanceBranch(repo, epic, 'README.md', 'integration advanced independently\n');
 
-    // First conflict → the coordinator's dispatchHeal → enqueueReMergeForMember
-    // records exactly ONE `re-merge` turn on this member's own Session queue.
-    await waitFor(async () => ((await turnsFor(runId)).length > 0 ? true : undefined));
-    const afterFirstConflict = await turnsFor(runId);
-    expect(afterFirstConflict).toHaveLength(1);
-    expect(afterFirstConflict[0]).toMatchObject({ purpose: 're-merge', sessionId: `run-${runId}` });
-
-    // The corrective turn runs automatically (the `drive()` loop dispatches it
-    // without further test action) and its own land ALSO conflicts → the
-    // coordinator's `escalate` (→ settleEscalatedForMember) is the sole settle
-    // authority — no second heal, no second mutating turn.
     const settledTask = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
       return t.escalated ? t : undefined;
     });
-    expect(settledTask.escalated).toBe(true);
     expect(settledTask.state).toBe('ready');
     expect(settledTask.drive).toBe('hitl');
 
     const settledRun = await server.app.ctx.runs.get(runId);
     expect(settledRun.state).toBe('failed');
-    expect(settledRun.reason).toMatch(/rebase still conflicts after corrective turn/);
+    expect(settledRun.reason).toMatch(/attempt 2 of 2 failed: rebase conflict/);
 
-    // Still exactly ONE corrective turn ever recorded — settled `done` by the
-    // `drive()` loop once the corrective turn ran its course, regardless of
-    // its (escalating) verdict.
-    const finalTurns = await turnsFor(runId);
-    expect(finalTurns.filter((t) => t.purpose === 're-merge')).toHaveLength(1);
-    expect(finalTurns[0]!.status).toBe('done');
+    // Attempt 1: rebase (fresh fork, no-op) → implementation → the landing
+    // rebase conflicts → that Rebase Task fails, and the Attempt fails with the
+    // conflict as its feedback. Attempt 2 opens with its own Rebase Task, which
+    // conflicts again (left in progress for the agent, who did not resolve it).
+    const timeline = await timelineFor(taskId);
+    expect(timeline.map((a) => a.number)).toEqual([1, 2]);
+    const first = timeline[0]!;
+    expect(first.state).toBe('failed');
+    expect(first.feedback).toMatch(/rebase conflict/);
+    expect(first.feedback).toMatch(/CONFLICT/);
+    expect(first.tasks.map((t) => `${t.type}:${t.state}`)).toEqual([
+      'rebase:passed',
+      'implementation:passed',
+      'rebase:failed',
+    ]);
+    expect(timeline[1]!.tasks[0]).toMatchObject({ type: 'rebase', state: 'failed', verdict: 'fail' });
 
-    // The integration branch never advanced — the conflicting member's work
-    // never landed.
+    // Exactly one corrective turn was dispatched through the Session queue,
+    // settled `done` once it ran.
+    const turns = await turnsFor(runId);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ purpose: 'self-heal', status: 'done' });
+
+    // The integration branch never took the conflicting member's work.
     expect(git(repo, 'log', '--merges', epic)).toBe('');
+    expect(git(repo, 'show', `${epic}:README.md`)).toBe('integration advanced independently');
   });
 });

@@ -166,11 +166,14 @@ export class CrashRecoveryCoordinator {
         'target-ref': async (_key, expected) => {
           const baseBranch = expected['baseBranch'] as string;
           const branch = expected['branch'] as string;
-          // Re-drive the land through the same admin-worktree + CAS operation as
-          // the live path (issue #153); idempotent, so a target already advanced
-          // by the pre-crash attempt is an "Already up to date" no-op here.
+          // Re-drive the land through the same SHA-asserted operation as the
+          // live path (issue #153, ADR-0041); idempotent, so a target already
+          // advanced by the pre-crash attempt is a no-op here. Recovery cannot
+          // run an agent turn, so a stale head/base refuses rather than landing
+          // what verification never saw.
+          if (!run.candidateOid) return { ok: false, detail: 'no verified branch head recorded for this Run' };
           const outcome = await landBranchAndRunPostLand(
-            { repoDir: task.workingDir, baseBranch, branch, expectedOid: run.candidateOid ?? branch, leaseHeld: true },
+            { repoDir: task.workingDir, baseBranch, branch, expectedOid: run.candidateOid, leaseHeld: true },
             this.opts.postLand,
           );
           return outcome.ok ? { ok: true, observed: { baseBranch, branch } } : { ok: false, detail: outcome.detail };

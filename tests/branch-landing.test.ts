@@ -172,7 +172,39 @@ describe('branch landing (issue #153)', () => {
     expect(git(repo, 'status', '--porcelain')).toContain('operator-wip.txt');
   });
 
-  it('conflict: aborts in the admin worktree, returns ok:false, and never enters the live checkout', async () => {
+  it('stale-base (default fast-forward mode): a base that advanced after verification is refused, nothing merged, nothing touched', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'verified work\n');
+    // main moves after verification — even a non-conflicting advance is a tree
+    // nobody verified, so the land refuses instead of merging.
+    writeFileSync(join(repo, 'README.md'), '# main advanced\n');
+    git(repo, 'commit', '-am', 'main advances');
+    const mainTip = oid(repo, 'main');
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
+
+    expect(out).toMatchObject({ ok: false, reason: 'stale-base' });
+    expect(oid(repo, 'main')).toBe(mainTip); // untouched
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(worktreeCount(repo)).toBe(1); // no admin worktree was ever needed
+  });
+
+  it('merge mode: a diverged, non-conflicting base is folded in with a merge commit (integration refresh)', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
+    writeFileSync(join(repo, 'README.md'), '# main advanced\n');
+    git(repo, 'commit', '-am', 'main advances');
+    const featTip = oid(repo, 'feat');
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, mode: 'merge', leaseHeld: true });
+
+    expect(out).toMatchObject({ ok: true, mode: 'in-place' });
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(featTip); // a real merge commit whose second parent is the verified tip
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(worktreeCount(repo)).toBe(1); // admin worktree cleaned up
+  });
+
+  it('merge mode conflict: aborts in the admin worktree, returns ok:false, and never enters the live checkout', async () => {
     const repo = makeRepo();
     // feat forks from the original README and changes it one way...
     makeBranchAhead(repo, 'feat', 'README.md', '# from feat\n');
@@ -181,7 +213,7 @@ describe('branch landing (issue #153)', () => {
     git(repo, 'commit', '-am', 'main diverges');
     const mainTip = oid(repo, 'main');
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mode: 'merge', leaseHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'conflict' });
     expect(oid(repo, 'main')).toBe(mainTip); // untouched

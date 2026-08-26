@@ -122,7 +122,7 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
-  it('a merge conflict on accept returns the task to awaiting-review with the conflict surfaced', async () => {
+  it('accepting a Run whose base moved since verification refuses (stale base) and returns the task to awaiting-review with the reason surfaced', async () => {
     const repo = makeRepo();
     // Two tasks branch off the same main and touch the same file.
     const a = await runWorktreeTask(repo, { 'conflict.txt': 'version A\n' });
@@ -130,17 +130,21 @@ describe('worktree isolation mode', () => {
 
     expect((await server.api('POST', `/api/tasks/${a.taskId}/accept`)).status).toBe(200);
 
-    const conflicted = await server.api('POST', `/api/tasks/${b.taskId}/accept`);
-    expect(conflicted.status).toBe(409);
-    expect(conflicted.body.error.message.toLowerCase()).toContain('conflict');
+    // b was verified against the pre-a main: landing it now would merge a tree
+    // nobody verified (here a conflicting one), so the accept refuses instead
+    // of merging (ADR-0041).
+    const stale = await server.api('POST', `/api/tasks/${b.taskId}/accept`);
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.message).toContain("base 'main' advanced after verification");
 
     const task = (await server.api('GET', `/api/tasks/${b.taskId}`)).body;
     expect(task.state).toBe('awaiting-review');
-    // The conflict detail is stored on the run for the inbox.
+    // The refusal detail is stored on the run for the inbox.
     const run = (await server.api('GET', `/api/runs/${b.runId}`)).body;
-    expect(run.reviewFeedback.toLowerCase()).toContain('conflict');
+    expect(run.reviewFeedback).toContain('advanced after verification');
     // Nothing half-merged left behind.
     expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(git(repo, 'show', 'main:conflict.txt')).toBe('version A');
   });
 
   it('reject leaves the branch untouched and the base branch unchanged', async () => {

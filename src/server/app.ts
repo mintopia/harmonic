@@ -479,14 +479,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   };
   // The single-writer merge train (issue #163): the ONE process-global
   // coordinator every Epic member's Run lands through, so its in-memory per-Epic
-  // integration-branch FIFO chains and one-heal bound are shared across all
-  // members and all Workspaces. Its heal/escalate effects are Runner methods, so
-  // it is bound to the Runner via the same late-holder idiom `trackerManagerRef`
-  // uses below — the Runner and the coordinator are mutually referential, so one
-  // must be constructed with a forward reference to the other.
+  // integration-branch FIFO chains are shared across all members and all
+  // Workspaces. Its escalate effect is a Runner method, so it is bound to the
+  // Runner via the same late-holder idiom `trackerManagerRef` uses below — the
+  // Runner and the coordinator are mutually referential, so one must be
+  // constructed with a forward reference to the other.
   const epicOperations = new EpicOperations();
   const mergeTrain = new MergeTrainCoordinator({
-    dispatchHeal: (member) => runnerRef!.enqueueReMergeForMember(member),
     escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
     operations: epicOperations,
   });

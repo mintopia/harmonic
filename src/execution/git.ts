@@ -683,10 +683,11 @@ export const Git = {
 
   /**
    * Rebase the branch checked out at `worktreeDir` onto `ontoOid` (linear replay).
-   * On conflict, aborts (`git rebase --abort`) so the worktree is left clean for
-   * the member Session's bounded corrective turn, and returns the conflict signal
-   * rather than throwing — same contract as {@link mergeNoEdit}. On success the
-   * worktree HEAD is the rebased tip (a descendant of `ontoOid`).
+   * A conflict is left IN PROGRESS (markers, `REBASE_HEAD`) — resolving it is
+   * the agent's work in the Attempt's implementation turn (ADR-0041) — and
+   * returned rather than thrown. A rebase an earlier conflict left in progress
+   * is aborted first: it is superseded, never resumed. On success the worktree
+   * HEAD is the rebased tip (a descendant of `ontoOid`).
    */
   async rebaseOnto(
     worktreeDir: string,
@@ -696,18 +697,13 @@ export const Git = {
       'git.rebase',
       { 'git.branch': 'HEAD', 'git.ref': ontoOid },
       async () => {
+        await git(worktreeDir, 'rebase', '--abort').catch(() => {});
         try {
           await git(worktreeDir, ...IDENTITY, 'rebase', ontoOid);
           const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
           return { ok: true, rebasedTip };
         } catch (err) {
-          const detail = err instanceof GitError ? err.message : String(err);
-          try {
-            await git(worktreeDir, 'rebase', '--abort');
-          } catch {
-            // No rebase in progress (e.g. it failed before starting).
-          }
-          return { ok: false, conflict: true, detail };
+          return { ok: false, conflict: true, detail: err instanceof GitError ? err.message : String(err) };
         }
       },
     );

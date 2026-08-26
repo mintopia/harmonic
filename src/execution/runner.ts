@@ -95,7 +95,7 @@ import type {
   EpicRefreshResolveDispatchOutcome,
   EpicRefreshTarget,
 } from './epic-refresh-coordinator.js';
-import type { MergeTrainCoordinator, MergeTrainMember } from './merge-train-coordinator.js';
+import type { MergeTrainCoordinator, MergeTrainMember, MergeTrainOutcome } from './merge-train-coordinator.js';
 import type { AsyncDbHandle } from '../db/async.js';
 import type { SpanContext } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';
@@ -259,10 +259,9 @@ export interface RunnerOptions {
   /** The single-writer merge train (issue #163): the ONE process-global
    * {@link MergeTrainCoordinator} an Epic member's Run lands through, in place of
    * the direct auto-merge path. Absent → members fall back to the plain
-   * `AutoDrive.onCompleted` merge (pre-#163 behaviour). Its `dispatchHeal`/
-   * `escalate` are wired (in app.ts) to {@link Runner.enqueueReMergeForMember} /
-   * {@link Runner.settleEscalatedForMember}, so the coordinator must be shared
-   * with the Runner that owns those callbacks. */
+   * `AutoDrive.onCompleted` merge (pre-#163 behaviour). Its `escalate` is wired
+   * (in app.ts) to {@link Runner.settleEscalatedForMember}, so the coordinator
+   * must be shared with the Runner that owns that callback. */
   mergeTrain?: MergeTrainCoordinator;
   /** Per-context git circuit breaker (issue #199): shared with the Auto-Runner
    * so a context whose git workspace-prep keeps fast-failing is backed off (and
@@ -406,11 +405,8 @@ interface ReMergeContext {
   reason: string;
   detail: string;
   /** The recorded-artifact tree the #155 allowed-set gate ({@link landReMerge})
-   * checks the corrective result against. Absent for a merge-train member's
-   * corrective turn (issue #163): that turn re-lands through
-   * {@link MergeTrainCoordinator.onHealComplete}, whose own rebase→ff is the
-   * gate, so no allowed-set tree is captured. */
-  allowedTree?: string;
+   * checks the corrective result against. */
+  allowedTree: string;
 }
 
 /**
@@ -467,14 +463,24 @@ type TurnOutcome =
   // re-merge (issue #155): the turn deliberately did not settle, handing the
   // decision up to the {@link Runner.drive} loop to dispatch exactly ONE
   // corrective re-merge turn. `reason`/`detail` are the branch-contract violation.
-  | { kind: 'remerge-needed'; reason: string; detail: string }
-  // An Epic member's merge-train land hit a rebase conflict and the coordinator
-  // dispatched its one bounded corrective turn (issue #163): the turn deliberately
-  // did not settle, handing the decision up to {@link Runner.drive} to run exactly
-  // ONE corrective turn whose land re-enters the train via `onHealComplete`. The
-  // coordinator owns the one-heal-then-escalate bound (its `healAttempted` set);
-  // `detail` is the rebase conflict surfaced to that turn as feedback.
-  | { kind: 'merge-train-heal'; detail: string };
+  | { kind: 'remerge-needed'; reason: string; detail: string };
+
+/**
+ * How many times one landing may re-enter Rebase → Verification on the same
+ * Attempt because the base advanced meanwhile (ADR-0041). Each re-entry costs
+ * a full verification pass, so a base that keeps moving escalates rather than
+ * spinning.
+ */
+const MAX_FRESHNESS_REENTRIES = 3;
+
+/** The landing freshness gate's verdict (ADR-0041): land at `oid`, hand a
+ * failed re-entry (rebase conflict / verification fail) up to the unified
+ * Attempt loop, or Escalate. `train` is set for an Epic member — its merge-train
+ * outcome, obtained inside the same fresh window. */
+type LandingGate =
+  | { kind: 'fresh'; oid: string; train: MergeTrainOutcome | null }
+  | { kind: 'turn'; outcome: TurnOutcome }
+  | { kind: 'escalate'; reason: string };
 
 /** Wall-clock bound on one integration-refresh corrective turn (issue #315) —
  * a merge-conflict resolution, so double the critic's read-only bound. */
@@ -501,12 +507,6 @@ export class Runner {
   /** The single-writer merge train an Epic member's Run lands through (issue
    * #163); undefined on a server with no parallel-Epic execution. */
   private readonly mergeTrain: MergeTrainCoordinator | undefined;
-  /** Bridges the merge train's out-of-band heal dispatch to the in-process
-   * `drive` loop (issue #163): {@link enqueueReMergeForMember} (bound to the
-   * coordinator's `dispatchHeal`) records the corrective turn's queue row here,
-   * keyed by runId, so `drive` can settle that exact row once it has run the
-   * turn. In-memory only — the queue row itself is the durable record. */
-  private readonly pendingMemberReMerge = new Map<number, number>();
   /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
@@ -1621,26 +1621,148 @@ export class Runner {
     return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0, autoAccept };
   }
 
-  /** Landing may only consume the exact branch tip that verification recorded. */
-  private async verifiedHeadStillCurrent(task: TaskRow, run: RunRow): Promise<boolean> {
+  /**
+   * Landing may only consume the exact branch tip verification recorded, and
+   * that tip must already contain the base's current tip so the land is a
+   * fast-forward of the verified tree (ADR-0041). `oid` is the tip to land —
+   * the verified SHA, or the current head when nothing was verified (zero
+   * configured verifiers, no candidate).
+   */
+  private async landingFreshness(
+    task: TaskRow,
+    run: RunRow,
+  ): Promise<{ fresh: true; oid: string } | { fresh: false; reason: string; oid: string }> {
     const facts = await this.runFacts.list(run.id);
     const fact = [...facts].reverse().find((entry) => entry.type === 'verified-head');
-    if (!fact) return true; // zero configured verifiers has no SHA gate.
-    let expected: unknown;
-    let recordedBranch: unknown;
-    try {
-      const payload = JSON.parse(fact.payload) as { sha?: unknown; branch?: unknown };
-      expected = payload.sha;
-      recordedBranch = payload.branch;
-    } catch {
-      return false;
+    let verified: { sha?: unknown; branch?: unknown } = {};
+    if (fact) {
+      try {
+        verified = JSON.parse(fact.payload) as typeof verified;
+      } catch {
+        // Unparseable fact: fall back to the candidate below rather than land blind.
+      }
     }
-    if (typeof expected !== 'string') return false;
     // A direct Run's live HEAD is restored by finalize; its verified tip lives
     // on the owned ref the fact recorded, never the restored checkout.
-    const rev = typeof recordedBranch === 'string' && recordedBranch ? recordedBranch : (run.branch ?? 'HEAD');
-    const current = await Git.revParse(task.workingDir, rev).catch(() => null);
-    return current === expected;
+    const rev = typeof verified.branch === 'string' && verified.branch ? verified.branch : (run.branch ?? 'HEAD');
+    const head = await Git.revParse(task.workingDir, rev).catch(() => null);
+    const expected = (typeof verified.sha === 'string' ? verified.sha : run.candidateOid) ?? head;
+    if (expected === null) return { fresh: true, oid: '' };
+    if (head !== expected) return { fresh: false, reason: 'branch head moved after verification', oid: expected };
+    if (run.baseBranch) {
+      const baseTip = await Git.revParse(task.workingDir, run.baseBranch).catch(() => null);
+      if (baseTip !== null && !(await Git.isAncestor(task.workingDir, expected, baseTip))) {
+        return { fresh: false, reason: `base '${run.baseBranch}' advanced after verification`, oid: expected };
+      }
+    }
+    return { fresh: true, oid: expected };
+  }
+
+  /**
+   * The Attempt's Rebase Task (ADR-0041): rebase the ticket branch checked out
+   * at `worktreePath` onto the base's current tip, recording one timeline row
+   * with the real outcome. The single place a rebase row is written — at
+   * Attempt start and on a landing freshness re-entry alike. A conflict is
+   * left in progress in the worktree: resolving it is the agent's work.
+   */
+  private async runRebaseTask(
+    task: TaskRow,
+    attemptNumber: number,
+    attemptStartedAt: number,
+    worktreePath: string,
+    baseBranch: string,
+  ): Promise<{ ok: true; tip: string } | { ok: false; detail: string }> {
+    const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, attemptStartedAt);
+    const row = await this.attempts.createTask(attempt.id, { type: 'rebase', logLocator: `git:rebase:${baseBranch}` });
+    await this.attempts.updateTask(row.id, { state: 'running', startedAt: Date.now() });
+    const baseOid = await Git.revParse(task.workingDir, baseBranch);
+    const rebased = await Git.rebaseOnto(worktreePath, baseOid);
+    if (!rebased.ok) {
+      await this.attempts.updateTask(row.id, {
+        state: 'failed',
+        verdict: 'fail',
+        endedAt: Date.now(),
+        logLocator: `git:rebase:${baseBranch}@${baseOid}\n${rebased.detail}`,
+      });
+      return { ok: false, detail: rebased.detail };
+    }
+    await this.attempts.updateTask(row.id, {
+      state: 'passed',
+      verdict: 'pass',
+      endedAt: Date.now(),
+      logLocator: `git:rebase:${baseBranch}@${baseOid}`,
+    });
+    return { ok: true, tip: rebased.rebasedTip };
+  }
+
+  /** A non-`proceed` verdict with a candidate: hand the failed Attempt up to
+   * the unified Attempt loop with the last verifier's output as feedback. */
+  private async verificationFailTurn(
+    run: RunRow,
+    decision: VerificationDecision,
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): Promise<TurnOutcome> {
+    const attempts = await this.verificationAttempts.list(run.id);
+    const output = attempts[attempts.length - 1]?.output ?? '';
+    record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
+    const reason = decision.outcome === 'block' ? decision.reason : `verification ${decision.outcome}: ${decision.reason}`;
+    return { kind: 'actionable-fail', reason, output };
+  }
+
+  /**
+   * The landing freshness gate (ADR-0041). Asserts the branch still sits at
+   * its verified tip and that tip contains the base's current tip; an Epic
+   * member is additionally submitted to the merge train inside the same fresh
+   * window (the train re-asserts both under its slot). If the base moved, the
+   * Run re-enters Rebase → Verification on the SAME Attempt and Session — a new
+   * Rebase Task row, the candidate re-pinned, the full verifier suite re-run at
+   * the new head — then re-checks. Nothing failed, so the attempt counter is
+   * untouched and no implementation turn runs. A rebase conflict or a failing
+   * re-verification IS a failed Attempt and goes to the unified loop; a Run
+   * with no ticket branch to rebase (direct mode), or a base that keeps
+   * advancing, Escalates.
+   */
+  private async freshenForLanding(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Workspace,
+    attemptNumber: number,
+    signal: AbortSignal,
+    record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
+  ): Promise<LandingGate> {
+    let current = await this.runStore.get(run.id);
+    for (let reentries = 0; ; reentries += 1) {
+      const freshness = await this.landingFreshness(task, current);
+      let stale = freshness.fresh ? null : freshness.reason;
+      let train: MergeTrainOutcome | null = null;
+      if (stale === null) {
+        const member = this.epicMemberFor(task, current, freshness.oid);
+        if (member) {
+          train = await this.mergeTrain!.submit(member);
+          if (train.status === 'stale') stale = train.reason;
+        }
+      }
+      if (stale === null) return { kind: 'fresh', oid: freshness.oid, train };
+      record('lifecycle', { event: 'freshness-rebase-required', reason: stale });
+      if (!workspace.worktree || !current.baseBranch) {
+        return { kind: 'escalate', reason: `${stale}; no ticket branch to rebase` };
+      }
+      if (reentries >= MAX_FRESHNESS_REENTRIES) {
+        return { kind: 'escalate', reason: `base kept advancing through ${MAX_FRESHNESS_REENTRIES} rebase+verify re-entries` };
+      }
+      const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, current.baseBranch);
+      if (!rebase.ok) {
+        return { kind: 'turn', outcome: { kind: 'actionable-fail', reason: 'rebase conflict', output: rebase.detail } };
+      }
+      current = await this.runStore.update(run.id, { candidateOid: rebase.tip });
+      record('lifecycle', { event: 'phase', phase: 'verifying' });
+      const { decision } = await this.runVerification(task, current, rebase.tip, signal, record, parent);
+      if (this.shuttingDown) return { kind: 'turn', outcome: { kind: 'terminal' } };
+      if (decision.outcome !== 'proceed') {
+        return { kind: 'turn', outcome: await this.verificationFailTurn(run, decision, record) };
+      }
+    }
   }
 
   /**
@@ -1928,15 +2050,7 @@ export class Runner {
     if (!start || !candidateOid) {
       return await reject('no-candidate', 'the re-merge turn left no start-state or candidate to land');
     }
-    // `landReMerge` is only reached for the #155 fallback, whose `remergeCtx`
-    // always carries the recorded allowed-set tree; a merge-train member's
-    // corrective turn (issue #163, `allowedTree` absent) re-lands through the
-    // train's `onHealComplete` and never reaches here. Guard so the type is
-    // narrowed and the impossible case fails closed rather than landing blind.
     const recordedCandidateTree = remergeCtx.allowedTree;
-    if (recordedCandidateTree === undefined) {
-      return await reject('no-candidate', 'the re-merge turn recorded no allowed-set tree to land against');
-    }
     try {
       const [correctiveTree, candidateDescendsFromStart, intendedContainsStart] = await Promise.all([
         Git.revParse(dir, `${candidateOid}^{tree}`).catch(() => null),
@@ -2048,24 +2162,6 @@ export class Runner {
         inFlightTurn = null;
       }
       if (outcome.kind === 'terminal') return;
-      if (outcome.kind === 'merge-train-heal') {
-        // The merge train hit a rebase conflict on this Epic member's land and
-        // already dispatched its one bounded corrective turn (issue #163): its
-        // `dispatchHeal` → {@link enqueueReMergeForMember} recorded the queue row
-        // (stashed in `pendingMemberReMerge`). Run exactly that turn; its land
-        // re-enters the train via `onHealComplete`. Do NOT re-enqueue here — the
-        // coordinator already did. Charge `remerges` so drive's existing "no
-        // second mutating turn" guard also holds if this corrective turn's own
-        // verification fails (the coordinator's `healAttempted` bounds the land
-        // rebase; this bounds the turn). `allowedTree` is unused: the member's
-        // land re-lands through the train, not the #155 allowed-set gate.
-        remerges += 1;
-        remergeCtx = { reason: 'merge-train rebase conflict', detail: outcome.detail };
-        healCtx = undefined;
-        inFlightTurn = this.pendingMemberReMerge.get(run.id) ?? null;
-        this.pendingMemberReMerge.delete(run.id);
-        continue;
-      }
       if (outcome.kind === 'remerge-needed') {
         // Bounded agent re-merge fallback (issue #155): dispatch exactly ONE
         // corrective turn to consolidate the ambiguous branch outcome. A Run that
@@ -2119,7 +2215,7 @@ export class Runner {
       const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
       await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
       if (attemptNumber >= maxAttempts) {
-        await this.settleEscalated(task, await this.runStore.get(run.id), `verification failed after ${attemptNumber} attempt(s): ${outcome.reason}`, {});
+        await this.settleEscalated(task, await this.runStore.get(run.id), `attempt ${attemptNumber} of ${maxAttempts} failed: ${outcome.reason}`, {});
         return;
       }
       attemptNumber += 1;
@@ -2228,24 +2324,6 @@ export class Runner {
   }
 
   /**
-   * The merge train's `dispatchHeal` (issue #163), wired in app.ts: a member's
-   * rebase conflicted on its land, so record its one bounded corrective turn on
-   * the member's Session turn queue — the same `re-merge` row {@link drive}
-   * dispatches for the #155 fallback. MUST return on *enqueue*, not on the
-   * corrective turn's completion: the coordinator holds the integration branch's
-   * lock slot across this call, so awaiting the whole turn would stall other
-   * ready members on the same branch. The turn itself is run by the `drive`
-   * loop (this in-process loop is the dispatch; the row is the durable record),
-   * which reads the stashed row id back from {@link pendingMemberReMerge} to
-   * settle it once the corrective turn has run.
-   */
-  async enqueueReMergeForMember(member: MergeTrainMember): Promise<void> {
-    const run = await this.runStore.get(member.runId);
-    const rowId = await this.enqueueReMerge(run, `run-${member.runId}`);
-    if (rowId !== null) this.pendingMemberReMerge.set(member.runId, rowId);
-  }
-
-  /**
    * Dispatch the bounded corrective turn for an integration refresh (issue
    * #315). The conflict is between the default branch and `epic/<ref>` itself
    * — no member's worktree can resolve it — so the turn operates on the
@@ -2260,8 +2338,7 @@ export class Runner {
    * every pre-turn failure returns `escalated` synchronously — the
    * coordinator's `resolving` flag is only set once this returns
    * `dispatched`. The turn itself must NOT run under that slot (it would
-   * stall other members' landings for the whole agent turn — the same reason
-   * {@link enqueueReMergeForMember} returns on enqueue), so it is chained as
+   * stall other members' landings for the whole agent turn), so it is chained as
    * the branch's NEXT train slot before dispatch returns: member landings
    * queue behind it rather than observing the checked-out integration branch
    * mid-resolution and falsely escalating. Once the turn's worktree is
@@ -2378,8 +2455,8 @@ export class Runner {
 
   /**
    * The merge train's `escalate` (issue #163), wired in app.ts: a member could
-   * not land (branch missing, second rebase conflict, unexpected checkout, or a
-   * concurrent advance beat its CAS). Hand the Task back to a human exactly as
+   * not land (branch missing, unexpected checkout, or a concurrent advance beat
+   * its CAS). Hand the Task back to a human exactly as
    * any other afk escalation does — Run failed, Task ready + escalated. This is
    * the SOLE settle authority on a merge-train escalate: `driveOnce` only records
    * the `escalated` outcome and stops, so the Run is never settled twice.
@@ -2394,17 +2471,16 @@ export class Runner {
    * The {@link MergeTrainMember} for a finishing Run when it is a parallel-Epic
    * member that should land through the merge train (issue #163), or `null` when
    * it is an ordinary Run that lands the direct way. A member is: a worktree Run
-   * (has a branch + retained worktree) whose base is an Epic integration branch
-   * (`epic/<ref>`), on a server with the train wired, and whose Merge Fate is
-   * `auto-merge` — `open-PR`/`artifact` deliberately never touch the integration
-   * branch, so they keep `onCompleted`'s behaviour.
+   * whose base is an Epic integration branch (`epic/<ref>`), on a server with
+   * the train wired, and whose Merge Fate is `auto-merge` — `open-PR`/`artifact`
+   * deliberately never touch the integration branch, so they keep
+   * `onCompleted`'s behaviour. `verifiedTip` is the only object the train lands.
    */
-  private epicMemberFor(task: TaskRow, run: RunRow, workspace: Workspace): MergeTrainMember | null {
+  private epicMemberFor(task: TaskRow, run: RunRow, verifiedTip: string): MergeTrainMember | null {
     if (!this.mergeTrain) return null;
     if (task.isolationMode !== 'worktree') return null;
     if (!run.branch || !run.baseBranch) return null;
     if (parseIntegrationBranch(run.baseBranch) === null) return null;
-    if (!workspace.worktree) return null;
     if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return null;
     return {
       runId: run.id,
@@ -2412,7 +2488,7 @@ export class Runner {
       repoDir: task.workingDir,
       integrationBranch: run.baseBranch,
       memberBranch: run.branch,
-      memberWorktreeDir: workspace.worktree.path,
+      verifiedTip,
     };
   }
 
@@ -2448,21 +2524,10 @@ export class Runner {
     };
     let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
 
-    // Rebase is the first, real operation in every Attempt. The row stays
-    // running while git operates and records its actual result below.
     const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
-    const tasksAtStart = await this.attempts.listTasks(attemptAtStart.id);
-    let rebaseTask = tasksAtStart.find((row) => row.type === 'rebase');
-    if (tasksAtStart.length === 0) {
-      rebaseTask = await this.attempts.createTask(attemptAtStart.id, {
-        type: 'rebase',
-        logLocator: `git:rebase:${run.baseBranch ?? 'pending'}`,
-      });
-      rebaseTask = await this.attempts.updateTask(rebaseTask.id, {
-        state: 'running',
-        startedAt: Date.now(),
-      });
-    }
+    // A turn re-entering an Attempt that already has rows (crash-resume, the
+    // #155 re-merge turn) does not open it again.
+    const opensAttempt = (await this.attempts.listTasks(attemptAtStart.id)).length === 0;
 
     // Attempt Tasks, rather than Run phases, own the execution pipeline. Runs
     // remain readable compatibility records, but a transition never writes or
@@ -2485,14 +2550,7 @@ export class Runner {
     let escalating: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
 
-    // A corrective turn opens a fresh Implementation Task on the same Attempt.
-    if (healCtx || remergeCtx) {
-      const attempt = await this.attempts.getForTaskNumber(task.id, attemptNumber);
-      if (!attempt) throw new DomainError('not_found', `attempt ${attemptNumber} for task ${task.id} not found`);
-      const implementation = await this.attempts.createTask(attempt.id, { type: 'implementation', logLocator: `session:${run.sessionRowId ?? run.id}` });
-      await this.attempts.updateTask(implementation.id, { state: 'running', startedAt: Date.now() });
-      record('lifecycle', { event: 'phase', phase: 'executing' });
-    }
+    if (healCtx || remergeCtx) record('lifecycle', { event: 'phase', phase: 'executing' });
 
     let child: ChildProcess;
     let workspace: Workspace;
@@ -2514,31 +2572,19 @@ export class Runner {
     let stderrTail = '';
     let stderrFlushed: Promise<void> = Promise.resolve();
     let releaseHarnessMutex: (() => void) | null = null;
+    // Every Attempt on a ticket branch opens with its Rebase Task (ADR-0041).
+    // A conflict is the agent's work: it stays in progress in the worktree and
+    // the implementation turn is told to resolve it — the Attempt continues.
+    let rebaseConflict: string | null = null;
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined || remergeCtx !== undefined);
-      if (rebaseTask && workspace.worktree) {
-        const current = await this.runStore.get(run.id);
-        const baseBranch = current.baseBranch ?? await this.resolveBaseBranch(task);
-        const baseOid = await Git.revParse(task.workingDir, baseBranch);
-        const rebased = await Git.rebaseOnto(workspace.worktree.path, baseOid);
-        if (!rebased.ok) {
-          await this.attempts.updateTask(rebaseTask.id, {
-            state: 'failed',
-            verdict: 'fail',
-            endedAt: Date.now(),
-            logLocator: `git:rebase:${baseBranch}\n${rebased.detail}`,
-          });
-          await this.finalizeWorkspace(task, run, workspace).catch(() => {});
-          return { kind: 'actionable-fail', reason: 'rebase conflict', output: rebased.detail };
+      if (opensAttempt && workspace.worktree) {
+        const baseBranch = (await this.runStore.get(run.id)).baseBranch ?? await this.resolveBaseBranch(task);
+        const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
+        if (!rebase.ok) {
+          rebaseConflict = rebase.detail;
+          record('lifecycle', { event: 'rebase-conflict', baseBranch, detail: rebase.detail });
         }
-        await this.attempts.updateTask(rebaseTask.id, {
-          state: 'passed',
-          verdict: 'pass',
-          endedAt: Date.now(),
-          logLocator: `git:rebase:${baseBranch}@${baseOid}`,
-        });
-      } else if (rebaseTask) {
-        await this.attempts.updateTask(rebaseTask.id, { state: 'passed', verdict: 'pass', endedAt: Date.now() });
       }
       const attemptTasks = await this.attempts.listTasks(attemptAtStart.id);
       if (!attemptTasks.some((row) => row.type === 'implementation' && row.state === 'running')) {
@@ -3354,8 +3400,8 @@ export class Runner {
       // cause, then finish, and the full suite reruns against the new candidate.
       if (healCtx) {
         promptText =
-          `${promptText}\n\n## Verification failed — fix required (self-heal ${healCtx.attempt})\n` +
-          `Your previous attempt did not pass verification:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
+          `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
+          `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.`;
       } else if (remergeCtx) {
         // Bounded agent re-merge turn (issue #155): the previous turn left the
@@ -3371,6 +3417,12 @@ export class Runner {
           `Re-home the work you already did as ordinary commits on top of \`${intended}\`. ` +
           `Do not create or switch branches, and do not change any files beyond the work you already did — ` +
           `only reproduce that same work cleanly. Then finish.`;
+      }
+      if (rebaseConflict !== null) {
+        promptText =
+          `${promptText}\n\n## Rebase conflict — resolve first\n` +
+          `Harmonic rebased your branch onto its base and the rebase stopped with conflicts, left in progress in this checkout:\n${rebaseConflict}\n\n` +
+          `Resolve the conflicted files, stage them, and run \`git rebase --continue\` before doing anything else.`;
       }
       // Persist the exact text sent so Task detail can show it on every Run —
       // native or mirrored — without re-deriving a template that may since have
@@ -3605,10 +3657,7 @@ export class Runner {
           // corrective feedback. `finalize()` already committed this turn's work
           // onto the Run's branch and the candidate ref holds it, so the
           // corrective turn resumes and fixes it.
-          const attempts = await this.verificationAttempts.list(run.id);
-          const output = attempts[attempts.length - 1]?.output ?? '';
-          record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
-          return { kind: 'actionable-fail', reason: decision.reason, output };
+          return await this.verificationFailTurn(run, decision, record);
         } else if (decision.outcome !== 'proceed') {
           // `escalate` = inconclusive (infra doubt: missing command, crashed or
           // malformed verifier, absent candidate). With no candidate snapshot
@@ -3622,15 +3671,57 @@ export class Runner {
             await this.settleEscalated(task, run, reason, patch);
             return { kind: 'terminal' };
           }
-          const attempts = await this.verificationAttempts.list(run.id);
-          const output = attempts[attempts.length - 1]?.output ?? '';
-          record('lifecycle', { event: 'verification-actionable-fail', reason: decision.reason });
-          return { kind: 'actionable-fail', reason: `verification ${decision.outcome}: ${decision.reason}`, output };
-        } else if (autoDriven) {
-          if (!(await this.verifiedHeadStillCurrent(task, run))) {
-            const reason = 'branch head moved after verification';
-            record('lifecycle', { event: 'freshness-rebase-required', reason });
-            return { kind: 'actionable-fail', reason, output: '' };
+          return await this.verificationFailTurn(run, decision, record);
+        } else if (autoDriven || (ran && autoAccept && this.autoAcceptLand)) {
+          // Harmonic lands this Run itself — no human gate — so the landing
+          // freshness gate (ADR-0041) runs first: the branch must still sit at
+          // its verified tip and that tip must contain the base's current tip.
+          // A moved base re-enters Rebase → Verification on this same Attempt
+          // (no counter increment, no implementation turn) before landing.
+          const gate = await this.freshenForLanding(task, run, workspace, attemptNumber, active.verifyAbort.signal, record, parent);
+          if (gate.kind === 'turn') return gate.outcome;
+          if (gate.kind === 'escalate') {
+            record('lifecycle', { event: 'escalated', reason: gate.reason });
+            await this.settleEscalated(task, run, gate.reason, patch);
+            return { kind: 'terminal' };
+          }
+          if (!autoDriven) {
+            // Native auto-accept (issue #138, ADR-0021): a verifier ran and
+            // PASSED, and the resolved config sets auto-accept — the verifier's
+            // pass IS the accept, so the Run lands WITHOUT the human review gate:
+            // executing → validating → verifying → landing → terminal ('auto' gate).
+            // `ran` (not just `outcome === 'proceed'`) is required — with NO
+            // verifier configured `combineVerdicts([])` is also `proceed`, but
+            // there's nothing verified to auto-accept, so that case falls through
+            // to the human-gated branch below instead.
+            await advanceTask('landing');
+            // Re-fetch: `run` (the drive-loop's original parameter) predates
+            // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
+            // mode) and the gate re-pinning the candidate, so `landingEffectsFor`
+            // asserts the real verified tip rather than a stale null.
+            const landed = await this.autoAcceptLand!(task, await this.runStore.get(run.id), patch, parent);
+            if (!landed.ok) {
+              // CRITICAL: `LandingCoordinator.land` writes the land fact + PONC
+              // BEFORE the (possibly failing) merge (#115). Calling any settle here
+              // would project that already-written land fact and SILENTLY COMPLETE
+              // a failed merge (`run-settle.ts` writes the terminal row while the
+              // Run is still `running`) — the exact "broken work lands" failure
+              // this epic exists to prevent. So do NOT settle here. Degrade to the
+              // human gate instead: park in review with the failure as feedback so
+              // a human resolves the conflict and re-accepts (landing reconciles
+              // the half-applied effect), or the review-SLA sweep (#114) collects
+              // it. No silent pass, no lease left wedged.
+              record('lifecycle', { event: 'auto-accept-landing-failed', reason: landed.detail ?? 'landing failed' });
+              await this.parkForReview(task, run, {
+                ...patch,
+                reviewFeedback: `auto-accept landing failed: ${landed.detail ?? 'merge conflict'}`,
+                stat: await this.diffstatFor(task, run.id),
+              });
+            }
+            // landed.ok: `LandingCoordinator.land` (via `autoAcceptLand`) already
+            // settled the Run completed + phase terminal and moved the Task to
+            // completed — nothing more to do here.
+            return { kind: 'terminal' };
           }
           // A mirrored Run has no human gate, so it runs the auto branch:
           // executing → validating → verifying → landing → terminal. The Merge
@@ -3658,32 +3749,15 @@ export class Runner {
           // — decides land-or-Escalate, with no second mutating turn.
           // Parallel-Epic member land (issue #163): a worktree auto-merge Run
           // whose base is an Epic integration branch (`epic/<ref>`) lands through
-          // the single-writer merge train — rebase onto the branch's current tip,
-          // ordered per integration branch, with a bounded conflict→heal→escalate
-          // — instead of `onCompleted`'s unordered plain merge. This is the one
-          // path where two members finishing at once land serially rather than
-          // the second one's non-fast-forward merge racing (or falling back).
-          const member = this.epicMemberFor(task, await this.runStore.get(run.id), workspace);
-          if (member) {
-            const trainOutcome = remergeCtx
-              ? await this.mergeTrain!.onHealComplete(member)
-              : await this.mergeTrain!.submit(member);
-            if (trainOutcome.status === 'healing') {
-              // The coordinator dispatched its one bounded corrective turn (its
-              // `dispatchHeal` → enqueueReMergeForMember). Hand up to `drive` to
-              // run exactly that turn; its land re-enters via `onHealComplete`.
-              record('lifecycle', { event: 'merge-train-heal', integrationBranch: member.integrationBranch });
-              return {
-                kind: 'merge-train-heal',
-                detail:
-                  'Your branch no longer rebases cleanly onto the Epic integration branch ' +
-                  `(${member.integrationBranch}); reconcile with its latest tip and resolve the conflicts.`,
-              };
-            }
-            if (trainOutcome.status === 'escalated') {
+          // the single-writer merge train — a fast-forward of the verified tip,
+          // ordered per integration branch — instead of `onCompleted`'s unordered
+          // plain merge. The gate above already submitted it (and re-entered
+          // rebase+verify on a `stale` outcome), so `gate.train` is its result.
+          if (gate.train) {
+            if (gate.train.status === 'escalated') {
               // The coordinator's `escalate` callback (→ settleEscalatedForMember)
               // already settled the Run; only record + stop here (no double-settle).
-              record('lifecycle', { event: 'escalated', reason: trainOutcome.reason });
+              record('lifecycle', { event: 'escalated', reason: gate.train.reason });
               return { kind: 'terminal' };
             }
             // landed | already-landed: the work is on the integration branch.
@@ -3722,43 +3796,6 @@ export class Runner {
               await this.settleAutoCompleted(task, run, patch);
             }
           }
-        } else if (ran && autoAccept && this.autoAcceptLand) {
-          // Native auto-accept (issue #138, ADR-0021): a verifier ran and
-          // PASSED, and the resolved config sets auto-accept — the verifier's
-          // pass IS the accept, so the Run lands WITHOUT the human review gate:
-          // executing → validating → verifying → landing → terminal ('auto' gate).
-          // `ran` (not just `outcome === 'proceed'`) is required here — with NO
-          // verifier configured `combineVerdicts([])` is also `proceed`, but
-          // there's nothing verified to auto-accept, so that case falls through
-          // to the human-gated branch below instead.
-          await advanceTask('landing');
-          // Re-fetch: `run` (the drive-loop's original parameter) predates
-          // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
-          // mode) — mirroring the fresh `this.runStore.get(run.id)` the sibling
-          // afk branch above already uses, so `landingEffectsFor` sees the real
-          // branch to merge rather than a stale null.
-          const landed = await this.autoAcceptLand(task, await this.runStore.get(run.id), patch, parent);
-          if (!landed.ok) {
-            // CRITICAL: `LandingCoordinator.land` writes the land fact + PONC
-            // BEFORE the (possibly failing) merge (#115). Calling any settle here
-            // would project that already-written land fact and SILENTLY COMPLETE
-            // a failed merge (`run-settle.ts` writes the terminal row while the
-            // Run is still `running`) — the exact "broken work lands" failure
-            // this epic exists to prevent. So do NOT settle here. Degrade to the
-            // human gate instead: park in review with the failure as feedback so
-            // a human resolves the conflict and re-accepts (landing reconciles
-            // the half-applied effect), or the review-SLA sweep (#114) collects
-            // it. No silent pass, no lease left wedged.
-            record('lifecycle', { event: 'auto-accept-landing-failed', reason: landed.detail ?? 'landing failed' });
-            await this.parkForReview(task, run, {
-              ...patch,
-              reviewFeedback: `auto-accept landing failed: ${landed.detail ?? 'merge conflict'}`,
-              stat: await this.diffstatFor(task, run.id),
-            });
-          }
-          // landed.ok: `LandingCoordinator.land` (via `autoAcceptLand`) already
-          // settled the Run completed + phase terminal and moved the Task to
-          // completed — nothing more to do here.
         } else {
           // A native Run is human-gated: no verifier ran, or one ran but
           // auto-accept is off, so a passing verification moves it

@@ -160,6 +160,18 @@ describe('EpicLandCoordinator', () => {
     expect(escalate).toHaveBeenCalledWith(42, expect.stringContaining('could not run'));
   });
 
+  it('defers (waiting, not escalated) when the land finds the verified tip stale — the next poll re-verifies at the new tips', async () => {
+    for (const reason of ['stale-head', 'stale-base', 'target-advanced'] as const) {
+      const { coord, retire, escalate } = build({
+        land: async () => ({ ok: false, reason, detail: 'moved between verify and land' }),
+      });
+      const out = await coord.submit({ ref: 42, members: members('completed') });
+      expect(out).toMatchObject({ status: 'waiting', reason: expect.stringContaining(reason) });
+      expect(retire).not.toHaveBeenCalled();
+      expect(escalate).not.toHaveBeenCalled();
+    }
+  });
+
   it('escalates when the atomic land fails (e.g. fallback-pr-manual with no lease)', async () => {
     const { coord, retire, escalate } = build({
       land: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'target checked out, no lease' }),
