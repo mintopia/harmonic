@@ -272,12 +272,13 @@ export function GraphView({
 
               {layout?.nodes.map((n) => {
                 const task = byId.get(n.id) ?? n.task;
+                const badge = task.mapRef == null ? undefined : badges.get(task.mapRef);
                 return (
                   <CardNode
                     key={n.id}
                     n={n}
                     task={task}
-                    badge={task.mapRef != null ? badges.get(task.mapRef) : undefined}
+                    {...(badge === undefined ? {} : { badge })}
                     hovered={hovered === n.id}
                     onHover={setHovered}
                     onActivate={() => onOpen(task)}
@@ -320,7 +321,7 @@ export function GraphView({
   );
 }
 
-function CardNode({
+export function CardNode({
   n,
   task,
   badge,
@@ -336,13 +337,18 @@ function CardNode({
   onActivate: () => void;
 }) {
   const sig = SIGNAL[task.state];
-  const mirrored = task.origin === 'mirrored';
+  const taskId = taskKey(task.id);
+  const originLabel = task.origin === 'mirrored' ? 'Mirrored task' : 'Native task';
+  const taskIdEnd = n.x + n.w - 14;
+  // The compact Task id is right-aligned; reserve its character width before
+  // placing the origin marker so larger ids keep the same clear gap.
+  const originMarkerX = taskIdEnd - taskId.length * 6 - 10;
   return (
     <g
       data-task-id={task.id}
       role="button"
       tabIndex={0}
-      aria-label={`${nodeTitle(task.prompt)} — ${STATE_LABEL[task.state]}, task ${task.id}. Open detail.`}
+      aria-label={`${nodeTitle(task.prompt)} — ${STATE_LABEL[task.state]}, ${originLabel.toLowerCase()}, task ${task.id}. Open detail.`}
       className={`node ${task.state} cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-accent`}
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
@@ -378,15 +384,17 @@ function CardNode({
         {STATE_LABEL[task.state].toUpperCase()}
       </text>
       <circle
-        cx={n.x + n.w - 24}
+        cx={originMarkerX}
         cy={n.y + 40}
         r={4}
-        fill={mirrored ? 'none' : 'var(--hm-muted)'}
+        fill={task.origin === 'mirrored' ? 'none' : 'var(--hm-muted)'}
         stroke="var(--hm-muted)"
         strokeWidth={1.5}
-      />
-      <text x={n.x + n.w - 14} y={n.y + 44} className="fill-faint" fontSize={10} textAnchor="end">
-        {taskKey(task.id)}
+      >
+        <title>{originLabel}</title>
+      </circle>
+      <text x={taskIdEnd} y={n.y + 44} className="fill-faint" fontSize={10} textAnchor="end">
+        {taskId}
       </text>
       {badge != null && (
         <text x={n.x + n.w - 10} y={n.y + 16} textAnchor="end" className="fill-faint" fontSize={9.5} fontWeight={700}>
