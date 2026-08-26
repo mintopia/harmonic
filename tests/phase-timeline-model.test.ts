@@ -37,9 +37,8 @@ describe('phaseTimelineFromEvents', () => {
       { phase: 'executing', status: 'done', at: 10, durationMs: 10 },
       { phase: 'validating', status: 'done', at: 20, durationMs: 10 },
       { phase: 'verifying', status: 'current', at: 30, durationMs: null },
-      // Nothing past 'verifying' has been entered yet, so review/landing/terminal
+      // Nothing past 'verifying' has been entered yet, so landing/terminal
       // are genuinely not-reached — pending, not gap.
-      { phase: 'review', status: 'pending', at: null, durationMs: null },
       { phase: 'landing', status: 'pending', at: null, durationMs: null },
       { phase: 'terminal', status: 'pending', at: null, durationMs: null },
     ]);
@@ -49,17 +48,16 @@ describe('phaseTimelineFromEvents', () => {
     const events = [
       phaseEvt(1, 'executing', 10),
       phaseEvt(2, 'validating', 20),
-      phaseEvt(3, 'verifying', 30),
       phaseEvt(4, 'landing', 40),
       phaseEvt(5, 'terminal', 50),
     ];
     const steps = phaseTimelineFromEvents(events, 'terminal', 'completed');
-    // 'review' never got its own event, but 'landing' (later in RUN_PHASES) did —
+    // 'verifying' never got its own event, but 'landing' (later in RUN_PHASES) did —
     // the run must have passed through it, so it reads as a gap, not pending.
-    expect(steps.map((s) => s.status)).toEqual(['done', 'done', 'done', 'gap', 'done', 'done']);
+    expect(steps.map((s) => s.status)).toEqual(['done', 'done', 'gap', 'done', 'done']);
     expect(steps.every((s) => s.status !== 'current')).toBe(true);
-    expect(steps.find((s) => s.phase === 'review')).toEqual({
-      phase: 'review',
+    expect(steps.find((s) => s.phase === 'verifying')).toEqual({
+      phase: 'verifying',
       status: 'gap',
       at: null,
       durationMs: null,
@@ -152,11 +150,10 @@ describe('phaseTimelineFromEvents', () => {
     it('reads a skipped-event phase between two entered phases as gap', () => {
       const events = [phaseEvt(1, 'executing', 10), phaseEvt(2, 'landing', 40)];
       const steps = phaseTimelineFromEvents(events, 'landing', 'running');
-      // validating, verifying, review all sit between two entered phases
-      // (executing done, landing current) with no event of their own.
+      // validating and verifying sit between two entered phases (executing
+      // done, landing current) with no event of their own.
       expect(steps.find((s) => s.phase === 'validating')?.status).toBe('gap');
       expect(steps.find((s) => s.phase === 'verifying')?.status).toBe('gap');
-      expect(steps.find((s) => s.phase === 'review')?.status).toBe('gap');
     });
 
     it('keeps a trailing not-yet-reached phase pending, never gap, since nothing later has been entered', () => {
@@ -168,7 +165,6 @@ describe('phaseTimelineFromEvents', () => {
         at: null,
         durationMs: null,
       });
-      expect(steps.find((s) => s.phase === 'review')?.status).toBe('pending');
       expect(steps.find((s) => s.phase === 'landing')?.status).toBe('pending');
       // 'terminal' is the last RUN_PHASES entry — nothing can ever be "later"
       // than it, so it can never read as gap, only pending, current or done.
@@ -181,17 +177,16 @@ describe('phaseTimelineFromEvents', () => {
       const events = [
         phaseEvt(1, 'executing', 0),
         phaseEvt(2, 'validating', 1_000),
-        phaseEvt(3, 'verifying', 3_500),
         phaseEvt(4, 'landing', 4_000),
         phaseEvt(5, 'terminal', 4_200),
       ];
       const steps = phaseTimelineFromEvents(events, 'terminal', 'completed');
       expect(steps.map((s) => [s.phase, s.durationMs])).toEqual([
         ['executing', 1_000],
-        ['validating', 2_500],
-        ['verifying', 500],
-        // 'review' is a gap: no 'at' of its own, so no duration either.
-        ['review', null],
+        // 'validating' spans to the next timestamped phase, past the gap.
+        ['validating', 3_000],
+        // 'verifying' is a gap: no 'at' of its own, so no duration either.
+        ['verifying', null],
         ['landing', 200],
         // The last entered phase is open-ended — nothing later to close it.
         ['terminal', null],
@@ -199,12 +194,12 @@ describe('phaseTimelineFromEvents', () => {
     });
 
     it('reaches past an un-entered phase to find the next timestamped one for duration', () => {
-      // 'review' never got an event; 'landing' did — 'verifying's duration
+      // 'verifying' never got an event; 'landing' did — 'validating's duration
       // should span to 'landing's timestamp, not stop short at the gap.
-      const events = [phaseEvt(1, 'verifying', 100), phaseEvt(2, 'landing', 160)];
+      const events = [phaseEvt(1, 'validating', 100), phaseEvt(2, 'landing', 160)];
       const steps = phaseTimelineFromEvents(events, 'landing', 'running');
-      expect(steps.find((s) => s.phase === 'verifying')?.durationMs).toBe(60);
-      expect(steps.find((s) => s.phase === 'review')?.durationMs).toBeNull();
+      expect(steps.find((s) => s.phase === 'validating')?.durationMs).toBe(60);
+      expect(steps.find((s) => s.phase === 'verifying')?.durationMs).toBeNull();
     });
 
     it('is null for the current live phase (no at yet), and for gap/pending phases', () => {
@@ -217,9 +212,9 @@ describe('phaseTimelineFromEvents', () => {
         at: null,
         durationMs: null,
       });
-      // 'validating'/'verifying'/'review' are gaps (between entered 'executing'
-      // and current 'landing') and, having no 'at', have no duration.
-      for (const phase of ['validating', 'verifying', 'review'] as const) {
+      // 'validating'/'verifying' are gaps (between entered 'executing' and
+      // current 'landing') and, having no 'at', have no duration.
+      for (const phase of ['validating', 'verifying'] as const) {
         const step = steps.find((s) => s.phase === phase);
         expect(step?.status).toBe('gap');
         expect(step?.durationMs).toBeNull();

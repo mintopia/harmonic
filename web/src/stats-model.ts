@@ -1,22 +1,25 @@
-import { TASK_STATES } from './types.js';
+import type { Run } from './types.js';
 
 export interface RunStateCount {
   state: string;
   count: number;
 }
 
-/** Run-state distribution in canonical TASK_STATES order, with zero-count states dropped.
- *  Any states present in the input but not in TASK_STATES are appended after the known ones,
- *  in input order, also dropping zeros. */
+/** The canonical Run-state order (mirrors the server's `RUN_STATES`): live, then landed, then the failure slices. */
+const RUN_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly Run['state'][];
+
+/** Run-state distribution in canonical Run-state order, with zero-count states dropped.
+ *  Any states present in the input but not in the canonical order are appended after
+ *  the known ones, in input order, also dropping zeros. */
 export function orderedRunStates(runsByState: Record<string, number>): RunStateCount[] {
   const known: RunStateCount[] = [];
-  for (const state of TASK_STATES) {
+  for (const state of RUN_STATE_ORDER) {
     const count = runsByState[state] ?? 0;
     if (count > 0) known.push({ state, count });
   }
   const unknown: RunStateCount[] = [];
   for (const [state, count] of Object.entries(runsByState)) {
-    if ((TASK_STATES as readonly string[]).includes(state)) continue;
+    if ((RUN_STATE_ORDER as readonly string[]).includes(state)) continue;
     if (count > 0) unknown.push({ state, count });
   }
   return [...known, ...unknown];

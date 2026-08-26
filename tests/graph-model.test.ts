@@ -44,8 +44,9 @@ const task = (
   trackerRef: null,
   workflow: null,
   wayfinderType: null,
-  drive: null,
-  escalated: false,
+  escalationReason: null,
+  openBlockerCount: 0,
+  agentWorkable: true,
   mapRef: null,
   url: null,
   mapTitle: null,
@@ -63,27 +64,27 @@ const task = (
 });
 
 describe('terminal-state visibility', () => {
-  it('treats completed / failed / cancelled as terminal, everything else active', () => {
-    for (const s of ['completed', 'failed', 'cancelled'] as TaskState[]) {
+  it('treats done / cancelled as terminal, everything else active (escalated waits on a human, it is not over)', () => {
+    for (const s of ['done', 'cancelled'] as TaskState[]) {
       expect(isTerminalState(s)).toBe(true);
     }
-    for (const s of ['draft', 'blocked', 'ready', 'running', 'awaiting-review'] as TaskState[]) {
+    for (const s of ['draft', 'ready', 'working', 'escalated'] as TaskState[]) {
       expect(isTerminalState(s)).toBe(false);
     }
   });
 
   it('shows only active-state Tasks by default', () => {
-    const tasks = [task(1, 'running'), task(2, 'completed'), task(3, 'cancelled'), task(4, 'ready')];
+    const tasks = [task(1, 'working'), task(2, 'done'), task(3, 'cancelled'), task(4, 'ready')];
     expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([1, 4]);
   });
 
-  it('keeps a failed/cancelled blocker that still gates an active Task, but hides a satisfied one', () => {
-    // 1 (cancelled) still blocks 2 → kept so the block is visible; 3 (completed)
-    // is satisfied → stays hidden. Matches the domain: unblock only on `completed`.
+  it('keeps a cancelled blocker that still gates an active Task, but hides a satisfied one', () => {
+    // 1 (cancelled) still blocks 2 → kept so the block is visible; 3 (done)
+    // is satisfied → stays hidden. Matches the domain: unblock only on `done`.
     const tasks = [
       task(1, 'cancelled'),
       task(2, 'ready', { dependsOn: [1] }),
-      task(3, 'completed'),
+      task(3, 'done'),
       task(4, 'ready', { dependsOn: [3] }),
     ];
     expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([1, 2, 4]);
@@ -91,25 +92,25 @@ describe('terminal-state visibility', () => {
 
   it('hides a terminal Task that blocks nothing active', () => {
     // 1 (cancelled) only blocks a terminal dependent, so it explains no live block.
-    const tasks = [task(1, 'cancelled'), task(2, 'completed', { dependsOn: [1] })];
+    const tasks = [task(1, 'cancelled'), task(2, 'done', { dependsOn: [1] })];
     expect(visibleTasks(tasks, false).map((t) => t.id)).toEqual([]);
   });
 
   it('reveals terminal Tasks when the toggle is on, preserving order', () => {
-    const tasks = [task(1, 'running'), task(2, 'completed'), task(4, 'ready')];
+    const tasks = [task(1, 'working'), task(2, 'done'), task(4, 'ready')];
     expect(visibleTasks(tasks, true).map((t) => t.id)).toEqual([1, 2, 4]);
   });
 });
 
 describe('dependency edges', () => {
   it('derives one directed edge per dependsOn (prerequisite → dependent)', () => {
-    const tasks = [task(1, 'completed'), task(2, 'ready', { dependsOn: [1] })];
+    const tasks = [task(1, 'done'), task(2, 'ready', { dependsOn: [1] })];
     expect(graphEdges(tasks)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
   });
 
   it('unifies native and mirrored Tasks over the same relation', () => {
     const tasks = [
-      task(1, 'completed', { origin: 'mirrored', trackerRef: 10 }),
+      task(1, 'done', { origin: 'mirrored', trackerRef: 10 }),
       task(2, 'ready', { origin: 'native', dependsOn: [1] }),
     ];
     expect(graphEdges(tasks)).toEqual<GraphEdge[]>([{ from: 1, to: 2 }]);
@@ -117,7 +118,7 @@ describe('dependency edges', () => {
 
   it('drops edges whose other endpoint is hidden, so nothing dangles', () => {
     // 2 depends on 1, but 1 (completed) is filtered out when terminal is hidden.
-    const all = [task(1, 'completed'), task(2, 'ready', { dependsOn: [1] })];
+    const all = [task(1, 'done'), task(2, 'ready', { dependsOn: [1] })];
     const visible = visibleTasks(all, false);
     expect(graphEdges(visible)).toEqual([]);
   });
@@ -184,13 +185,13 @@ describe('state-signal palette (the Signal Rule)', () => {
     expect(SIGNAL.cancelled).toEqual(neutral);
 
     // Every live state reads as something other than the neutral pair.
-    for (const s of ['blocked', 'ready', 'running', 'awaiting-review', 'completed', 'failed'] as TaskState[]) {
+    for (const s of ['ready', 'working', 'escalated', 'done'] as TaskState[]) {
       expect(SIGNAL[s]).not.toEqual(neutral);
     }
   });
 
-  it('speaks awaiting-review in the indigo review voice', () => {
-    expect(SIGNAL['awaiting-review']).toEqual({ color: 'var(--hm-await-dot)', text: 'var(--hm-await)' });
+  it('speaks escalated in the indigo needs-you voice', () => {
+    expect(SIGNAL.escalated).toEqual({ color: 'var(--hm-await-dot)', text: 'var(--hm-await)' });
   });
 });
 

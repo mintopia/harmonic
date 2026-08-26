@@ -23,15 +23,15 @@ async function renderLiveRegions(polite: string, assertive: string): Promise<HTM
 
 describe('ReviewLiveRegions', () => {
   it('keeps polite and assertive updates in separate, stable live regions', async () => {
-    const first = await renderLiveRegions('Check contrast is ready for review. Needs you: 1.', '');
+    const first = await renderLiveRegions('Check contrast needs you: escalated. Needs you: 1.', '');
     const polite = first.querySelector('[aria-live="polite"]');
     const assertive = first.querySelector('[aria-live="assertive"]');
 
     expect(polite?.getAttribute('aria-atomic')).toBe('true');
-    expect(polite?.textContent).toBe('Check contrast is ready for review. Needs you: 1.');
+    expect(polite?.textContent).toBe('Check contrast needs you: escalated. Needs you: 1.');
     expect(assertive?.textContent).toBe('');
 
-    const unchanged = await renderLiveRegions('Check contrast is ready for review. Needs you: 1.', '');
+    const unchanged = await renderLiveRegions('Check contrast needs you: escalated. Needs you: 1.', '');
     expect(unchanged.querySelector('[aria-live="polite"]')).toBe(polite);
     expect(unchanged.querySelector('[aria-live="assertive"]')).toBe(assertive);
 

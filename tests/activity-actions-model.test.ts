@@ -84,9 +84,9 @@ describe('activityRowActions', () => {
     expect(a.stopDemoted).toBe(false);
   });
 
-  it('an escalated Run resolves via unescalate and demotes Stop', () => {
+  it('an escalated ticket resolves on its own page (the three escalation actions live there) and demotes Stop', () => {
     const a = activityRowActions(proc({ taskId: 42, escalated: true }));
-    expect(a.resolve).toEqual({ kind: 'unescalate', taskId: 42 });
+    expect(a.resolve).toEqual({ kind: 'escalated', taskId: 42 });
     expect(a.stopDemoted).toBe(true);
     expect(a.stop).toEqual({ kind: 'run', taskId: 42 }); // Stop stays available, just demoted
   });

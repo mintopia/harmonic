@@ -8,9 +8,14 @@ const SOURCE = readFileSync(
 );
 
 describe('PhaseTimeline', () => {
-  it('uses indigo for the current review phase and labels landing as merging', () => {
-    expect(SOURCE).toContain("step.phase === 'review' ? 'bg-await-dot'");
-    expect(SOURCE).toContain("step.phase === 'review' ? 'text-await'");
+  it('labels landing as merging and never speaks a review phase (ADR-0041 deleted the gate)', () => {
     expect(SOURCE).toContain("landing: 'Merging'");
+    expect(SOURCE).not.toContain("'review'");
+    expect(SOURCE).not.toContain('bg-await-dot');
+  });
+
+  it('marks the current phase in the action accent, pulsing', () => {
+    expect(SOURCE).toContain("if (step.status === 'current') return 'bg-accent motion-safe:animate-pulse';");
+    expect(SOURCE).toContain("if (step.status === 'current') return 'text-accent';");
   });
 });

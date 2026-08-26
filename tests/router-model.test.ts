@@ -25,21 +25,21 @@ describe('parseRoute', () => {
   });
 
   it('parses the board peeked columns, dropping unknown states and duplicates', () => {
-    expect(parseRoute('/', '?peek=completed,failed').peeked).toEqual(['completed', 'failed']);
-    expect(parseRoute('/', '?peek=completed,bogus,completed').peeked).toEqual(['completed']);
+    expect(parseRoute('/', '?peek=done,cancelled').peeked).toEqual(['done', 'cancelled']);
+    expect(parseRoute('/', '?peek=done,bogus,done').peeked).toEqual(['done']);
     expect(parseRoute('/', '?peek=').peeked).toEqual([]);
   });
 
   it('drops non-terminal states from peek — only terminal columns are peekable', () => {
-    // running/ready aren't collapsible columns, so they can never be "peeked".
-    expect(parseRoute('/', '?peek=running,ready').peeked).toEqual([]);
-    expect(parseRoute('/', '?peek=completed,running,cancelled').peeked).toEqual(['completed', 'cancelled']);
+    // working/ready/escalated aren't collapsible columns, so they can never be "peeked".
+    expect(parseRoute('/', '?peek=working,ready,escalated').peeked).toEqual([]);
+    expect(parseRoute('/', '?peek=done,working,cancelled').peeked).toEqual(['done', 'cancelled']);
   });
 
   it('parses table filters and validates each against its allowed set', () => {
-    const t = parseRoute('/', '?view=table&state=running&harness=claude&priority=high&sort=cost&order=asc').table;
+    const t = parseRoute('/', '?view=table&state=working&harness=claude&priority=high&sort=cost&order=asc').table;
     expect(t).toEqual({
-      state: 'running',
+      state: 'working',
       harness: 'claude',
       priority: 'high',
       search: '',
@@ -96,7 +96,7 @@ describe('serializeRoute', () => {
   });
 
   it('emits peeked columns in TASK_STATES order regardless of input order', () => {
-    expect(serializeRoute({ ...DEFAULT_ROUTE, peeked: ['failed', 'completed'] })).toBe('/?peek=completed%2Cfailed');
+    expect(serializeRoute({ ...DEFAULT_ROUTE, peeked: ['cancelled', 'done'] })).toBe('/?peek=done%2Ccancelled');
   });
 
   it('omits default-valued table filters', () => {
@@ -107,7 +107,7 @@ describe('serializeRoute', () => {
     const route: Route = {
       ...DEFAULT_ROUTE,
       view: 'table',
-      table: { state: 'running', harness: '', priority: '', search: '', sortBy: 'cost', order: 'asc' },
+      table: { state: 'working', harness: '', priority: '', search: '', sortBy: 'cost', order: 'asc' },
     };
     const parsed = parseRoute('/', serializeRoute(route));
     expect(parsed.table).toEqual(route.table);
@@ -159,17 +159,17 @@ describe('round-trip', () => {
     {
       ...DEFAULT_ROUTE,
       view: 'table',
-      table: { state: 'running', harness: 'codex', priority: 'low', search: '', sortBy: 'priority', order: 'asc' },
+      table: { state: 'working', harness: 'codex', priority: 'low', search: '', sortBy: 'priority', order: 'asc' },
     },
-    { ...DEFAULT_ROUTE, peeked: ['completed', 'failed', 'cancelled'] },
-    { ...DEFAULT_ROUTE, view: 'stats', peeked: ['completed'], table: { ...DEFAULT_TABLE_FILTERS, sortBy: 'cost' } },
+    { ...DEFAULT_ROUTE, peeked: ['done', 'cancelled'] },
+    { ...DEFAULT_ROUTE, view: 'stats', peeked: ['done'], table: { ...DEFAULT_TABLE_FILTERS, sortBy: 'cost' } },
     { ...DEFAULT_ROUTE, task: 172 },
     { ...DEFAULT_ROUTE, view: 'table', task: 42, table: { ...DEFAULT_TABLE_FILTERS, priority: 'high' } },
     {
       ...DEFAULT_ROUTE,
       view: 'stats',
       task: 9,
-      peeked: ['completed', 'failed'],
+      peeked: ['done', 'cancelled'],
       table: { ...DEFAULT_TABLE_FILTERS, search: 'timeout', order: 'asc' },
     },
   ];

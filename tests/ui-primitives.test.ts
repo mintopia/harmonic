@@ -52,15 +52,7 @@ function tokenNames(selector: RegExp): Set<string> {
 const lightTokens = tokenNames(/:root\s*\{/);
 const darkTokens = tokenNames(/:root\[data-theme='dark'\]\s*\{/);
 
-const STATES = [
-  'draft',
-  'ready',
-  'running',
-  'awaiting-review',
-  'completed',
-  'failed',
-  'cancelled',
-] as const satisfies readonly TaskState[];
+const STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const satisfies readonly TaskState[];
 
 /** Every exported helper function, driven across its whole input domain so each
  * branch it can return is in the catalogue. Keyed by export name and asserted
@@ -134,10 +126,18 @@ function cssVarsOf(cls: string): string[] {
 }
 
 describe('ui.ts primitives (issue #180)', () => {
-  it('reserves indigo await tokens for awaiting review', () => {
-    expect(ui.STATE_CHIP_STYLES['awaiting-review']).toBe('bg-await-tint text-await');
-    expect(ui.laneBorder('awaiting-review')).toBe('border-await');
-    expect(ui.laneDot('awaiting-review')).toBe('bg-await-dot');
+  it('reserves the indigo await tokens for escalated — the one state that needs the operator (ADR-0041)', () => {
+    expect(ui.STATE_CHIP_STYLES.escalated).toBe('bg-await-tint text-await');
+    expect(ui.laneBorder('escalated')).toBe('border-await');
+    expect(ui.laneDot('escalated')).toBe('bg-await-dot');
+    for (const state of STATES) {
+      if (state !== 'escalated') expect(ui.STATE_CHIP_STYLES[state]).not.toContain('await');
+    }
+  });
+
+  it('keeps working on the running amber and done on the merged emerald', () => {
+    expect(ui.STATE_CHIP_STYLES.working).toBe('bg-running-tint text-running');
+    expect(ui.STATE_CHIP_STYLES.done).toBe('bg-merged-tint text-merged');
   });
 
   it('every --hm-* token is defined in both themes', () => {

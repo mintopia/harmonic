@@ -4,7 +4,6 @@ import {
   continuationDetail,
   continuationLabel,
   elapsed,
-  escalationActions,
   runForAttempt,
   stateTone,
   taskLabel,
@@ -22,7 +21,7 @@ const attempt = (over: Partial<Attempt> = {}): Attempt => ({
 });
 const run = (over: Partial<Run> = {}): Run => ({
   id: 1, taskId: 7, attempt: 1, state: 'running', phase: 'executing', reason: null, stopReason: null, sessionId: null, prompt: null, branch: null, baseBranch: null,
-  usage: null, cost: null, review: null, reviewFeedback: null, reviewedAt: null, reviewDeadline: null, startedAt: 1_000_000, finishedAt: null, ...over,
+  usage: null, cost: null, startedAt: 1_000_000, finishedAt: null, ...over,
 });
 
 describe('attempt timeline model', () => {
@@ -80,10 +79,4 @@ describe('attempt timeline model', () => {
     expect(runForAttempt(runs, { number: 4 })).toBeNull();
   });
 
-  it('offers the three escalation actions, gating candidate actions on a candidate', () => {
-    expect(escalationActions({ escalated: false, candidateRef: 'refs/x', state: 'ready' })).toBeNull();
-    expect(escalationActions({ escalated: true, candidateRef: 'refs/x', state: 'ready' })).toEqual({ accept: true, reject: true, close: true });
-    expect(escalationActions({ escalated: true, candidateRef: null, state: 'ready' })).toEqual({ accept: false, reject: false, close: true });
-    expect(escalationActions({ escalated: true, candidateRef: null, state: 'awaiting-review' })).toEqual({ accept: true, reject: true, close: true });
-  });
 });
