@@ -22,7 +22,7 @@ import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { AttemptTimeline } from './ticket/AttemptTimeline';
 import { TaskLog } from './ticket/TaskLog';
-import { runForAttempt, verifiedSha } from '../attempt-timeline-model';
+import { runFailureBannerLabel, runForAttempt, verifiedSha } from '../attempt-timeline-model';
 import { labelType } from '../ui';
 import { toastError } from '../toast';
 import { ticketIdentity } from '../id-format.js';
@@ -968,7 +968,9 @@ export function TicketPage({
   const latestRun = runs[runs.length - 1];
   // Escalation is the timeline's own entry (its attempt carries the trigger and
   // the actions); only a plain failure still needs this banner.
-  const failure = task.state !== 'escalated' && latestRun?.state === 'failed' && latestRun.reason ? latestRun.reason : null;
+  const latestAttempt = attempts.at(-1) ?? null;
+  const failureLabel = task.state === 'escalated' ? null : runFailureBannerLabel(latestRun, latestAttempt);
+  const failure = failureLabel ? latestRun?.reason ?? null : null;
   const skipHolderId = parseSkipReasonTaskRef(task.skipReason);
   const gateModel = gateForRun({ task, runs, selectedRunId });
   const selectedTask = attempts.flatMap((attempt) => attempt.tasks).find((row) => row.id === selectedTaskId) ?? null;
@@ -1082,7 +1084,7 @@ export function TicketPage({
             )}
             {failure && (
               <div className="mb-4 rounded-md bg-fail-tint px-3 py-2 text-small">
-                <span className="font-semibold text-fail">Run failed</span>
+                <span className="font-semibold text-fail">{failureLabel}</span>
                 <div className="mt-0.5 whitespace-pre-wrap break-words text-ink">{failure}</div>
               </div>
             )}

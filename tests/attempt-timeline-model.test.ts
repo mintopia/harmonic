@@ -4,6 +4,7 @@ import {
   continuationDetail,
   continuationLabel,
   elapsed,
+  runFailureBannerLabel,
   runForAttempt,
   stateTone,
   taskLabel,
@@ -77,6 +78,22 @@ describe('attempt timeline model', () => {
     expect(runForAttempt(runs, { number: 2 })?.id).toBe(10);
     expect(runForAttempt(runs, { number: 3 })?.id).toBe(20);
     expect(runForAttempt(runs, { number: 4 })).toBeNull();
+  });
+
+  it('marks failed resumed attempts distinctly from original failures', () => {
+    const continued = {
+      path: 'continued-session' as const,
+      reason: 'continued-within-limits' as const,
+      contextUsage: 0.2,
+      contextReuseThreshold: 0.7,
+      lastActiveAt: 1,
+      lastActiveAgeMs: 2_000,
+      warmWindowMs: 30_000,
+    };
+    expect(runFailureBannerLabel(run({ state: 'failed', reason: 'workspace disconnected' }), attempt())).toBe('Run failed');
+    expect(runFailureBannerLabel(run({ state: 'failed', reason: 'workspace disconnected', attempt: 2 }), attempt({ number: 2, continuation: continued }))).toBe('Resume failed');
+    expect(runFailureBannerLabel(run({ state: 'running', reason: 'workspace disconnected' }), attempt({ continuation: continued }))).toBeNull();
+    expect(runFailureBannerLabel(run({ state: 'failed', reason: null }), attempt({ continuation: continued }))).toBeNull();
   });
 
 });

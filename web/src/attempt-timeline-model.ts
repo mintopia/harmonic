@@ -74,6 +74,11 @@ export function runForAttempt(runs: readonly Run[], attempt: Pick<Attempt, 'numb
   return owner;
 }
 
+export function runFailureBannerLabel(run: Run | null | undefined, attempt: Pick<Attempt, 'continuation'> | null | undefined): string | null {
+  if (run?.state !== 'failed' || !run.reason) return null;
+  return attempt?.continuation ? 'Resume failed' : 'Run failed';
+}
+
 export type TaskLogSource =
   | { kind: 'output'; verificationAttemptId: number }
   | { kind: 'critic'; verificationAttemptId: number }
@@ -88,4 +93,3 @@ export function taskLogSource(task: AttemptTask): TaskLogSource | null {
   if (task.type === 'review') return id === null ? null : { kind: 'critic', verificationAttemptId: id };
   return { kind: 'run' };
 }
-
