@@ -800,40 +800,6 @@ export function App() {
             itself to the header's bottom edge (see toast.tsx). */}
         <Toaster />
 
-        {error && <div role="alert" className="mx-6 mt-4 rounded-lg bg-fail-tint px-4 py-2 text-fail">{error}</div>}
-
-        {showRunHint && (
-          <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
-            <span
-              aria-hidden="true"
-              className="mt-1 size-1.5 shrink-0 rounded-full bg-ready-dot"
-            />
-            <p className="flex-1 text-muted">
-              Your first task is ready, but nothing's running it yet. Press{' '}
-              <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
-              <span className="font-semibold text-ink">Auto-runner</span> on above.
-            </p>
-            <button className={`${btnQuiet} shrink-0`} onClick={dismissRunHint}>
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {showEscalationHint && (
-          <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
-            <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-await-dot" />
-            <p className="flex-1 text-muted">
-              A ticket is escalated. Open it to read why and the changes so far, then{' '}
-              <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
-              <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
-              <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
-            </p>
-            <button className={`${btnQuiet} shrink-0`} onClick={dismissEscalationHint}>
-              Dismiss
-            </button>
-          </div>
-        )}
-
         {/* The below-header region, and the Conversation's positioning
             context. The shell pins the header and scrolls only this, so the
             region's own top edge *is* the header's bottom edge at every
@@ -856,6 +822,7 @@ export function App() {
               onChanged={refresh}
               onClose={() => navigate({ ...route, task: null }, { replace: true })}
               onOpenTask={openTaskById}
+              error={error}
             />
           ) : (
             // Full-view surface (issue: shared crumb bar): the breadcrumb is
@@ -897,6 +864,41 @@ export function App() {
                     ) : undefined
                   }
                 />
+              )}
+              {error && (
+                <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
+                  {error}
+                </div>
+              )}
+              {showRunHint && (
+                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
+                  <span
+                    aria-hidden="true"
+                    className="mt-1 size-1.5 shrink-0 rounded-full bg-ready-dot"
+                  />
+                  <p className="flex-1 text-muted">
+                    Your first task is ready, but nothing's running it yet. Press{' '}
+                    <span className="font-semibold text-ink">Run now</span> on the card, or turn the{' '}
+                    <span className="font-semibold text-ink">Auto-runner</span> on above.
+                  </p>
+                  <button className={`${btnQuiet} shrink-0`} onClick={dismissRunHint}>
+                    Dismiss
+                  </button>
+                </div>
+              )}
+              {showEscalationHint && (
+                <div className="mx-6 mt-4 flex shrink-0 items-start gap-3 rounded-lg bg-raised px-4 py-2.5 text-small">
+                  <span aria-hidden="true" className="mt-1 size-1.5 shrink-0 rounded-full bg-await-dot" />
+                  <p className="flex-1 text-muted">
+                    A ticket is escalated. Open it to read why and the changes so far, then{' '}
+                    <span className="font-semibold text-ink">Accept</span> to merge as-is,{' '}
+                    <span className="font-semibold text-ink">Reject</span> with guidance for the next attempt, or{' '}
+                    <span className="font-semibold text-ink">Close</span> it — the one decision agents don't take for you.
+                  </p>
+                  <button className={`${btnQuiet} shrink-0`} onClick={dismissEscalationHint}>
+                    Dismiss
+                  </button>
+                </div>
               )}
               <main
                 id="main-content"
