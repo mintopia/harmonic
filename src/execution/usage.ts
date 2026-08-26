@@ -332,12 +332,31 @@ export function tallyToolCalls(
     // the current turn; counting them would attribute a whole prior conversation
     // to this turn (issue #144 AC2). Exclude replayed events from the tally.
     if (isReplay(event)) continue;
-    const payload = event.payload as any;
-    if (payload?.sessionUpdate !== 'tool_call') continue;
-    const name = preferredName(payload) ?? payload?.title ?? payload?.kind ?? 'unknown';
+    const payload = event.payload;
+    if (!isToolCall(payload)) continue;
+    const name = toolCallName(payload, preferredName);
     tally[name] = (tally[name] ?? 0) + 1;
   }
   return tally;
+}
+
+function isToolCall(payload: unknown): payload is Record<string, unknown> {
+  return isRecord(payload) && payload.sessionUpdate === 'tool_call';
+}
+
+/** The stable stats label for an ACP tool-call update. */
+export function toolCallName(payload: unknown, preferredName: (payload: unknown) => string | null): string {
+  const update = isRecord(payload) ? payload : null;
+  const kind = typeof update?.kind === 'string' ? update.kind : null;
+  const title = typeof update?.title === 'string' ? update.title : null;
+  // ACP uses the full shell command as the execute call's title. Keep it
+  // useful in the activity stream, but aggregate it under the tool name so
+  // every command does not become its own stats bucket.
+  return preferredName(payload) ?? (kind === 'execute' ? 'Bash' : title ?? kind ?? 'unknown');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 /** Wrap a per-model breakdown as a session-log-sourced RunUsage (ADR 0009). */

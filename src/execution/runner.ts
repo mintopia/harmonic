@@ -14,7 +14,7 @@ import {
   rematerializeCandidate,
 } from './execution-isolation.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, contextInputTokens, observedModelMismatch, activityLine, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
+import { collectUsage, collectUsageWithRetry, contextInputTokens, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { driveFields, promptForTask } from './prompt-template.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -2813,11 +2813,7 @@ export class Runner {
         const line = activityLine(update);
         if (line) active.activity = line;
         if (update.sessionUpdate === 'tool_call') {
-          const name =
-            adapterFor(task.harness).usage?.toolName(update) ??
-            (typeof update.title === 'string' ? update.title : null) ??
-            (typeof update.kind === 'string' ? update.kind : null) ??
-            'unknown';
+          const name = toolCallName(update, (payload) => adapterFor(task.harness).usage?.toolName(payload) ?? null);
           toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1);
         }
         observeTool(update); // feed the tool-timeout watchdog (issue #131)

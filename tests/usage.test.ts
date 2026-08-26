@@ -136,6 +136,24 @@ describe('replay quarantine (issue #144)', () => {
     expect(usage?.toolCalls).toEqual({ Bash: 1 });
   });
 
+  it('groups shell commands under Bash instead of their command text (issue #318)', async () => {
+    const { tallyToolCalls } = await import('../src/execution/usage.js');
+    const events: PersistedRunEvent[] = [
+      toolCall({
+        toolCallId: 't1',
+        title: 'while ps -p 92228 >/dev/null; do sleep 5; done',
+        payload: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 't1',
+          title: 'while ps -p 92228 >/dev/null; do sleep 5; done',
+          kind: 'execute',
+        },
+      }),
+    ];
+
+    expect(tallyToolCalls(events, () => null)).toEqual({ Bash: 1 });
+  });
+
   it('currentTurnEvents returns only the non-replay events', () => {
     const events: PersistedRunEvent[] = [
       toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
@@ -584,7 +602,15 @@ describe('usage collection and statistics', () => {
     server = await startServer(stubHarness());
     await runTask({
       prompt: JSON.stringify({
-        updates: [{ sessionUpdate: 'tool_call', toolCallId: 't1', title: 'Bash', kind: 'execute', status: 'pending' }],
+        updates: [
+          {
+            sessionUpdate: 'tool_call',
+            toolCallId: 't1',
+            title: 'while ps -p 92228 >/dev/null; do sleep 5; done',
+            kind: 'execute',
+            status: 'pending',
+          },
+        ],
         usage: { inputTokens: 5, outputTokens: 7, totalTokens: 12 },
       }),
     });
