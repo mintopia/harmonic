@@ -1,5 +1,10 @@
 # Per-workspace setting overrides with global-default inheritance
 
+> **Amended by ADR-0044.** The three-scope split below is generalised into a
+> single scope-declaring schema, and `drive.*`, `taskPrompt`, and
+> `guardrails.toolTimeoutMinutes` move from global-only into the overridable set.
+> The `null`-means-inherit resolution model here is unchanged and universalised.
+
 Settings split into three scopes: **global-only** (machine-level:
 harnesses, prices, notifications, permission rules, security, the drive
 prompt, the Machine Ceiling), **workspace-only** (a Workspace's identity and
