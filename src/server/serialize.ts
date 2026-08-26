@@ -55,6 +55,8 @@ export interface ApiAttempt {
   startedAt: number;
   endedAt: number | null;
   feedback: string | null;
+  verifiedSha: string | null;
+  escalationReason: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
   tasks: ApiAttemptTask[];
 }
@@ -92,17 +94,26 @@ const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
   const rows = await ctx.attempts.listForTask(taskId);
   return {
-    attempts: await Promise.all(rows.map(async (attempt) => ({
-      id: attempt.id,
-      taskId: attempt.taskId,
-      number: attempt.number,
-      state: attempt.state,
-      startedAt: attempt.startedAt,
-      endedAt: attempt.endedAt,
-      feedback: attempt.feedback,
-      continuation: continuationToApi(attempt.continuation),
-      tasks: (await ctx.attempts.listTasks(attempt.id)).map(attemptTaskToApi),
-    }))),
+    attempts: await Promise.all(rows.map(async (attempt) => {
+      const [tasks, verifiedSha, escalationReason] = await Promise.all([
+        ctx.attempts.listTasks(attempt.id),
+        ctx.attempts.verifiedSha(attempt.id),
+        ctx.attempts.escalationReason(attempt.id),
+      ]);
+      return {
+        id: attempt.id,
+        taskId: attempt.taskId,
+        number: attempt.number,
+        state: attempt.state,
+        startedAt: attempt.startedAt,
+        endedAt: attempt.endedAt,
+        feedback: attempt.feedback,
+        verifiedSha,
+        escalationReason,
+        continuation: continuationToApi(attempt.continuation),
+        tasks: tasks.map(attemptTaskToApi),
+      };
+    })),
   };
 }
 
