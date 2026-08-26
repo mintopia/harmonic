@@ -64,6 +64,15 @@ export const attemptTaskSchema = z
   })
   .meta({ id: 'AttemptTask' });
 
+/** One configured verifier category's reconciled read-time state (issue #327). */
+export const verifierStatusSchema = z
+  .object({
+    mechanism: z.enum(['command', 'critic']).meta({ example: 'critic' }),
+    state: z.enum(['passed', 'failed', 'inconclusive', 'skipped', 'disabled']).meta({ example: 'passed' }),
+    reason: z.string().nullable().meta({ example: null }),
+  })
+  .meta({ id: 'VerifierStatus' });
+
 /** One implementation-to-verification iteration and its ordered work rows. */
 export const attemptSchema = z
   .object({
@@ -88,6 +97,8 @@ export const attemptSchema = z
       lastActiveAgeMs: z.number(),
       warmWindowMs: z.number().nullable(),
     }).nullable(),
+    /** One row per verifier category, including skipped and disabled states. */
+    verifierStatuses: z.array(verifierStatusSchema),
     tasks: z.array(attemptTaskSchema),
   })
   .meta({ id: 'Attempt' });

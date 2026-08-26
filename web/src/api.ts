@@ -19,6 +19,7 @@ import type {
   VerificationAttempt,
   VerificationCommand,
   VerificationCritic,
+  VerifierStatus,
   VerifierOff,
   Workspace,
 } from './types.js';
@@ -189,7 +190,7 @@ export const api = {
   // #109): the REST surface over the attempts store, mirroring
   // `runGuardrailEvents`'s shape and 404 behaviour.
   runVerificationAttempts: (id: number) =>
-    request<{ verificationAttempts: VerificationAttempt[] }>('GET', `/api/runs/${id}/verification-attempts`),
+    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[] }>('GET', `/api/runs/${id}/verification-attempts`),
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   // A critic verification attempt's own native session transcript (ADR-0040) —

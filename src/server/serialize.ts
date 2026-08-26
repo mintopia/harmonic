@@ -7,10 +7,13 @@ import type {
   ConversationState,
   RunRow,
   RunState,
+  VerificationAttemptRow,
 } from '../db/schema.js';
 import { attempts, attemptTasks, guardrailEvents, landingJournal, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
+import { resolveVerifiers } from '../domain/setting-override.js';
+import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
 import { isDirectRef } from '../execution/execution-isolation.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
@@ -61,6 +64,7 @@ export interface ApiAttempt {
   verifiedSha: string | null;
   escalationReason: string | null;
   continuation: z.infer<typeof attemptContinuationSchema> | null;
+  verifierStatuses: VerifierStatus[];
   tasks: ApiAttemptTask[];
 }
 
@@ -97,14 +101,24 @@ const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
 
 /** One DTO builder for REST hydration and live timeline updates. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
-  const [rows, budgetBase] = await Promise.all([ctx.attempts.listForTask(taskId), ctx.attempts.budgetBase(taskId)]);
+  const [task, rows, budgetBase, taskRuns] = await Promise.all([
+    ctx.tasks.get(taskId),
+    ctx.attempts.listForTask(taskId),
+    ctx.attempts.budgetBase(taskId),
+    ctx.runs.listForTask(taskId),
+  ]);
+  const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
+  const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
+  const runsByAttempt = new Map(taskRuns.map((run) => [run.attempt, run]));
   return {
     budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
-      const [tasks, verifiedSha, escalationReason] = await Promise.all([
+      const run = runsByAttempt.get(attempt.number);
+      const [tasks, verifiedSha, escalationReason, verificationAttempts] = await Promise.all([
         ctx.attempts.listTasks(attempt.id),
         ctx.attempts.verifiedSha(attempt.id),
         ctx.attempts.escalationReason(attempt.id),
+        run ? ctx.verificationAttempts.list(run.id) : [],
       ]);
       return {
         id: attempt.id,
@@ -117,10 +131,23 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         verifiedSha,
         escalationReason,
         continuation: continuationToApi(attempt.continuation),
+        verifierStatuses: verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationAttempts }),
         tasks: tasks.map(attemptTaskToApi),
       };
     })),
   };
+}
+
+/** The configured-or-recorded verifier rows for one Run's always-visible read model. */
+export async function verifierStatusesToApi(
+  ctx: AppContext,
+  run: Pick<RunRow, 'id' | 'taskId'>,
+  recordedAttempts?: readonly VerificationAttemptRow[],
+): Promise<VerifierStatus[]> {
+  const task = await ctx.tasks.get(run.taskId);
+  const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
+  const attempts = recordedAttempts ?? await ctx.verificationAttempts.list(run.id);
+  return verifierStatuses({ verifiers: resolveVerifiers(workspace, ctx.configStore.get()), attempts });
 }
 
 type TicketTimelineKind =

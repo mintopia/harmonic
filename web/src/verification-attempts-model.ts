@@ -1,6 +1,6 @@
 import { combineVerdicts } from './verification-model.js';
 import type { VerifierVerdict, VerificationDecision } from './verification-model.js';
-import type { VerificationAttempt, VerificationMechanism } from './types.js';
+import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from './types.js';
 
 /**
  * Pure model helpers over a Run's Verification-attempt log (issue #169, part
@@ -37,6 +37,15 @@ export function latestAttempts(attempts: VerificationAttempt[]): VerificationAtt
     }
   }
   return order.map((mechanism) => latestByMechanism.get(mechanism)!);
+}
+
+/** Every verifier status paired with its latest recorded attempt, if it ran. */
+export function verificationRows(
+  statuses: VerifierStatus[],
+  attempts: VerificationAttempt[],
+): { status: VerifierStatus; attempt: VerificationAttempt | undefined }[] {
+  const latestByMechanism = new Map(latestAttempts(attempts).map((attempt) => [attempt.mechanism, attempt]));
+  return statuses.map((status) => ({ status, attempt: latestByMechanism.get(status.mechanism) }));
 }
 
 /**

@@ -82,6 +82,10 @@ describe('attempt timeline API', () => {
     expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
     expect(rest.body.attempts[0].escalationReason).toBe('escalated to human: attempts exhausted');
     expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextUsage: 0.2 });
+    expect(rest.body.attempts[0].verifierStatuses).toEqual([
+      { mechanism: 'command', state: 'disabled', reason: 'No command verifier is configured.' },
+      { mechanism: 'critic', state: 'disabled', reason: 'Critic verification is disabled.' },
+    ]);
     expect(rest.body.attempts[0].tasks[1]).not.toHaveProperty('verifiedSha');
     socket.close();
   });

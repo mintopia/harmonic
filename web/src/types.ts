@@ -79,6 +79,13 @@ export interface GuardrailEvent {
  * agent reviewer. Mirrors the server's `VERIFICATION_MECHANISMS`. */
 export type VerificationMechanism = 'critic' | 'command';
 
+/** One verifier category's current read-time status, including categories that did not run. */
+export interface VerifierStatus {
+  mechanism: VerificationMechanism;
+  state: 'passed' | 'failed' | 'inconclusive' | 'skipped' | 'disabled';
+  reason: string | null;
+}
+
 /** One persisted Verification-attempt event (issue #169, part of #109), as
  * `GET /api/runs/:id/verification-attempts` serves it — mirrors the server's
  * `VerificationAttemptRow` (`domain/verification-attempts.ts`). A Run's

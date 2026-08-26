@@ -19,8 +19,8 @@ import { Git } from '../../execution/git.js';
 import { DomainError } from '../../domain/errors.js';
 import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
-import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi, ticketTimelineToApi } from '../serialize.js';
-import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
+import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
+import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
 
 /** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -288,7 +288,10 @@ const verificationAttemptSchema = z.object({
   hasTranscript: z.boolean().meta({ example: false }),
 });
 
-const verificationAttemptsListResponseSchema = z.object({ verificationAttempts: z.array(verificationAttemptSchema) });
+const verificationAttemptsListResponseSchema = z.object({
+  verificationAttempts: z.array(verificationAttemptSchema),
+  verifierStatuses: z.array(verifierStatusSchema),
+});
 
 const usageResponseSchema = runUsageSchema.extend({
   cost: costSchema.nullable(),
@@ -903,12 +906,16 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
-      await ctx.runs.assertExists(req.params.id);
-      const attempts = await ctx.verificationAttempts.list(req.params.id);
+      const run = await ctx.runs.get(req.params.id);
+      const attempts = await ctx.verificationAttempts.list(run.id);
+      const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
       // The raw `transcriptPath`/`harness` columns stay server-only (an absolute
       // FS path is not the client's business); the response schema strips them
       // and the client reads the parsed log by attempt id when `hasTranscript`.
-      return { verificationAttempts: attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })) };
+      return {
+        verificationAttempts: attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })),
+        verifierStatuses,
+      };
     },
   );
 

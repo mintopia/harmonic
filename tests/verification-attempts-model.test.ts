@@ -5,8 +5,9 @@ import {
   overallDecision,
   latestCriticSummary,
   groupAttemptsByMechanism,
+  verificationRows,
 } from '../web/src/verification-attempts-model.js';
-import type { VerificationAttempt, VerificationMechanism } from '../web/src/types.js';
+import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from '../web/src/types.js';
 import type { Verdict } from '../web/src/verification-model.js';
 
 /** Fills the fields the model helpers don't look at with plain defaults so
@@ -57,6 +58,20 @@ describe('latestAttempts', () => {
     expect(latestAttempts(attempts).map((a) => [a.mechanism, a.seq, a.verdict])).toEqual([
       ['critic', 3, 'fail'],
       ['command', 2, 'pass'],
+    ]);
+  });
+});
+
+describe('verificationRows', () => {
+  it('joins each status to its latest recorded attempt without dropping skipped or disabled rows', () => {
+    const statuses: VerifierStatus[] = [
+      { mechanism: 'command', state: 'skipped', reason: 'No command verification attempt was recorded for this run.' },
+      { mechanism: 'critic', state: 'passed', reason: null },
+    ];
+
+    expect(verificationRows(statuses, [attempt(1, 'critic', 'fail'), attempt(2, 'critic', 'pass')])).toEqual([
+      { status: statuses[0], attempt: undefined },
+      { status: statuses[1], attempt: expect.objectContaining({ seq: 2, verdict: 'pass' }) },
     ]);
   });
 });

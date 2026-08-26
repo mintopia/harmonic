@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt } from '../types';
+import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt, VerifierStatus } from '../types';
 import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -9,7 +9,7 @@ import { DiffViewer } from './DiffViewer';
 import type { DiffFile } from '../types';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
-import { latestAttempts, overallDecision } from '../verification-attempts-model';
+import { overallDecision, verificationRows } from '../verification-attempts-model';
 import { changedFilesFromStat } from '../run-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
@@ -342,10 +342,9 @@ function CriticSessionLog({ attemptId, label }: { attemptId: number; label: stri
   );
 }
 
-function Verification({ attempts, run }: { attempts: VerificationAttempt[]; run: Run }) {
-  if (attempts.length === 0) return null;
+function Verification({ attempts, statuses, run }: { attempts: VerificationAttempt[]; statuses: VerifierStatus[]; run: Run }) {
   const decision = overallDecision(attempts);
-  const rows = latestAttempts(attempts);
+  const rows = verificationRows(statuses, attempts);
   // Every critic attempt with a transcript, oldest first (the store lists in
   // seq order): a corrective-attempt back-and-forth records one critic
   // session per pass, and the operator needs to see all of them, not just the
@@ -355,33 +354,35 @@ function Verification({ attempts, run }: { attempts: VerificationAttempt[]; run:
     <div className="mt-2">
       <div className="flex items-center">
         <span className={sectionCaps}>Verification</span>
-        <span className={`ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${OUTCOME_TONE[decision.outcome] ?? 'text-muted'}`}>
+        <span className={`ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${attempts.length > 0 ? OUTCOME_TONE[decision.outcome] ?? 'text-muted' : 'text-muted'}`}>
           <span className="size-2 rounded-full bg-current" />
-          {decision.outcome}
+          {attempts.length > 0 ? decision.outcome : 'not run'}
         </span>
       </div>
       <div className="mt-3 flex flex-col gap-3">
-        {rows.map((a) => (
-          <div key={a.mechanism} className="flex items-start gap-3">
+        {rows.map(({ status, attempt }) => (
+          <div key={status.mechanism} className="flex items-start gap-3">
             <span
               className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${
-                a.verdict === 'fail' ? 'bg-fail-tint text-fail' : 'bg-merged-tint text-merged'
+                status.state === 'failed' ? 'bg-fail-tint text-fail' : status.state === 'passed' ? 'bg-merged-tint text-merged' : 'bg-raised text-muted'
               }`}
             >
-              {a.verdict === 'fail' ? (
+              {status.state === 'failed' ? (
                 <span className="text-[11px] leading-none">✕</span>
-              ) : (
+              ) : status.state === 'passed' ? (
                 <Icon name="check" className="size-3" />
+              ) : (
+                <span className="text-[11px] leading-none">–</span>
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold text-ink">{mechanismName(a.mechanism, run)}</div>
+              <div className={`text-[13px] font-semibold ${status.state === 'disabled' ? 'text-muted' : 'text-ink'}`}>{mechanismName(status.mechanism, run)}</div>
               <div
                 className="mt-1 text-[13px] leading-[1.55] text-muted [&_code]:rounded-[5px] [&_code]:bg-raised [&_code]:px-[5px] [&_code]:py-px [&_code]:font-data [&_code]:text-[12px]"
               >
-                {a.mechanism === 'critic' ? <Markdown source={a.summary} className="text-muted" /> : a.summary}
+                {attempt ? (attempt.mechanism === 'critic' ? <Markdown source={attempt.summary} className="text-muted" /> : attempt.summary) : status.reason}
               </div>
-              {a.mechanism === 'critic' && criticSessions.length > 0 && (
+              {status.mechanism === 'critic' && criticSessions.length > 0 && (
                 <div className="mt-2 flex flex-col gap-1">
                   {criticSessions.map((c, i) => (
                     <CriticSessionLog
@@ -398,9 +399,9 @@ function Verification({ attempts, run }: { attempts: VerificationAttempt[]; run:
               )}
             </div>
             <span
-              className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${VERDICT_TONE[a.verdict] ?? 'text-muted'}`}
+              className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : 'text-muted'}`}
             >
-              {a.mechanism === 'critic' ? decision.outcome : a.verdict}
+              {status.state}
             </span>
           </div>
         ))}
@@ -749,6 +750,7 @@ export function TicketPage({
   const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
+  const [verifierStatuses, setVerifierStatuses] = useState<VerifierStatus[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
@@ -948,13 +950,18 @@ export function TicketPage({
   useEffect(() => {
     if (selectedRunId === null) {
       setVerificationAttempts([]);
+      setVerifierStatuses([]);
       return;
     }
     let live = true;
     const load = () =>
       api
         .runVerificationAttempts(selectedRunId)
-        .then(({ verificationAttempts }) => live && setVerificationAttempts(verificationAttempts));
+        .then(({ verificationAttempts, verifierStatuses }) => {
+          if (!live) return;
+          setVerificationAttempts(verificationAttempts);
+          setVerifierStatuses(verifierStatuses);
+        });
     load();
     const unsubscribe = subscribe((msg) => {
       if (msg.type === 'run_changed' && msg.run.id === selectedRunId) load();
@@ -1121,7 +1128,7 @@ export function TicketPage({
                 <>
                   <RunHeader run={selectedRun} />
                   {selectedTask && <TaskLog key={selectedTask.id} task={selectedTask} />}
-                  <Verification attempts={verificationAttempts} run={selectedRun} />
+                  <Verification attempts={verificationAttempts} statuses={verifierStatuses} run={selectedRun} />
                   <GuardrailAlert events={guardrailEvents} />
                   <SessionAgents run={selectedRun} snapshot={liveUsage.get(selectedRun.id)} />
                   <Transcript events={events} unavailable={logUnavailable} />
