@@ -118,6 +118,15 @@ export class EpicIntegrationCoordinator {
    * stay pickable). Recomputed each reconcile, like the poller's scan cache.
    */
   private readyMemberRefs = new Set<number>();
+  /**
+   * The refs of every leaf-most Epic the last reconcile derived — the durable
+   * membership signal {@link memberBaseNotReady} gates on so a member is held
+   * before its integration branch is even cut (issue #334 pre-cut race), while a
+   * non-Epic (nesting spine) parent stays unrecognised and is never gated.
+   * Refreshed each reconcile, and re-derived on demand from persisted tickets
+   * when a gate query names a ref this stale set does not yet know.
+   */
+  private leafEpicRefs = new Set<number>();
   private latestTickets: Ticket[] = [];
   private operations = new EpicOperations();
 
@@ -186,6 +195,7 @@ export class EpicIntegrationCoordinator {
       }
     }
     const epics = deriveEpics(tickets, readinessByRef);
+    this.leafEpicRefs = new Set(epics.map((epic) => epic.ref));
     const readyRefs = new Set<number>();
     for (const epic of epics) for (const ref of epic.ready) readyRefs.add(ref);
     // Publish the gate set before any await so a racing pick already sees these
@@ -330,17 +340,41 @@ export class EpicIntegrationCoordinator {
       // Already retargeted onto its integration branch: gated iff the branch has
       // since gone (retire / restart / degraded scan, #231 — transient).
       if (task.baseBranch === branch) return !exists;
-      // Not yet retargeted (null / develop / a stale branch): gate only once the
-      // integration branch actually exists. Its existence is the proof `mapRef`
-      // names a real, integration-branch-backed leaf Epic worth holding for —
-      // rather than a nesting "spine" parent whose `epic/<ref>` is never cut,
-      // which must be left to run normally, not gated forever. A genuine ready
-      // member is still held by the frontier arm above until its branch is cut.
-      return exists;
+      // Not yet retargeted (null / develop / a stale branch), branch already cut:
+      // gate until the reconcile points the base at it.
+      if (exists) return true;
+      // Branch not cut yet: gate only when `mapRef` names a real leaf-most Epic in
+      // the current scan. This closes the pre-cut race (issue #334) — a member
+      // mirrored and picked in the window before the reconcile cuts its branch is
+      // held rather than forked off develop — WITHOUT bricking a mirrored ticket
+      // whose parent is a nesting "spine" (its `epic/<ref>` is never cut), which
+      // stays unrecognised and runs normally.
+      return await this.isLeafEpic(epicRef, task.workspaceId);
     } catch (err) {
       this.onError(`epic ${epicRef} integration branch existence check failed: ${String(err)}`);
       return true; // fail closed: never fork off an unvouched base
     }
+  }
+
+  /**
+   * Whether `epicRef` is a leaf-most Epic in the current scan. Fast path: the
+   * cache the last reconcile refreshed. On a miss — the pre-cut race window,
+   * where a member was mirrored (its Epic's tickets persisted) but the reconcile
+   * that registers the Epic has not run yet — re-derive from the persisted
+   * tickets the mirror already wrote, so a genuine new member is recognised
+   * immediately. A non-Epic (spine) parent is absent from the derivation, so it
+   * is never gated and never bricks; the re-derive refreshes the cache for the
+   * rest of the pass.
+   */
+  private async isLeafEpic(epicRef: number, workspaceId: number | null): Promise<boolean> {
+    if (this.leafEpicRefs.has(epicRef)) return true;
+    const listArg = workspaceId == null ? undefined : { workspaceId };
+    const tickets = await persistedTickets(
+      await this.tasks.list(listArg),
+      await this.tasks.listTrackerContainers(workspaceId ?? undefined),
+    );
+    this.leafEpicRefs = new Set(deriveEpics(tickets).map((epic) => epic.ref));
+    return this.leafEpicRefs.has(epicRef);
   }
 
   /**

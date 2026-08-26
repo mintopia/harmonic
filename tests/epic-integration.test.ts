@@ -340,19 +340,32 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(await coord.memberBaseNotReady(m11)).toBe(true);
   });
 
-  it('does not brick a mirrored ticket whose parent has no integration branch (a spine parent, not a leaf Epic) (#334)', async () => {
-    // The membership arm is bounded by branch existence: a ticket whose `mapRef`
-    // points at a parent that is NOT an integration-branch-backed leaf Epic (its
-    // epic/<ref> is never cut) must run normally, not be gated into a permanent
-    // EpicBaseNotReady loop.
-    const tickets = epicTickets();
-    const mirrored = await mscan(tickets);
+  it('gates a leaf-Epic member before its integration branch is even cut, but never a spine parent’s child (pre-cut race, #334)', async () => {
+    // The residual pre-cut window: a member mirrored and picked before the very
+    // first reconcile cuts its Epic branch. `epic/10` does not exist yet and no
+    // reconcile has run, so neither the frontier arm nor a branch-existence check
+    // can recognise it — the gate falls back to structural membership derived from
+    // the persisted tickets the mirror already wrote.
+    const spine = [
+      ticket({ number: 1, title: 'Spine', isMap: true }),
+      ticket({ number: 10, title: 'Leaf Epic', parent: 1 }), // a sub-Epic ⇒ 1 is not leaf-most
+      ticket({ number: 11, parent: 10, labels: ['ready-for-agent'] }), // genuine leaf-Epic member
+      ticket({ number: 5, parent: 1, labels: ['ready-for-agent'] }), // plain child of the spine
+    ];
+    const mirrored = await mscan(spine);
     const m11 = mirrored.find((t) => t.trackerRef === 11)!;
-    expect(m11.baseBranch).toBeNull();
-    // No epic/10 branch exists (and none will be cut for a non-leaf parent).
+    const m5 = mirrored.find((t) => t.trackerRef === 5)!;
+    expect(m11.mapRef).toBe(10);
+    expect(m5.mapRef).toBe(1);
+
+    // Fresh coordinator: never reconciled, and no epic/* branch cut.
     const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
-    expect(coord.awaitsBase(m11)).toBe(false); // frontier not published
-    expect(await coord.memberBaseNotReady(m11)).toBe(false); // not gated ⇒ no brick
+    // The genuine member of leaf Epic 10 is held before epic/10 is cut…
+    expect(coord.awaitsBase(m11)).toBe(false);
+    expect(await coord.memberBaseNotReady(m11)).toBe(true);
+    // …but the spine parent's plain child (parent 1 is NOT a leaf Epic, so epic/1
+    // is never cut) is left to run normally — not bricked into a gate loop.
+    expect(await coord.memberBaseNotReady(m5)).toBe(false);
   });
 
   it('a continuation/retry never regresses an Epic member to develop: a base flipped to develop/null re-gates on membership (#334/#330-331)', async () => {
