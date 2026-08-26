@@ -25,7 +25,7 @@ const channelSchema = z
     config: z.record(z.string(), z.unknown()).meta({
       example: { url: 'https://discord.com/api/webhooks/000000000000000000/EXAMPLE-WEBHOOK-TOKEN' },
     }),
-    /** Subscribed event types; defaults to the review-gate and failure moments (DEFAULT_EVENTS). */
+    /** Subscribed event types; defaults to the escalation moment (DEFAULT_EVENTS). */
     events: z.array(z.enum(NOTIFICATION_EVENTS)).meta({ example: ['task.escalated'] }),
     createdAt: z.number().meta({ example: 1784030400000 }),
   })
