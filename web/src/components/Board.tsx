@@ -527,7 +527,7 @@ function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
   const steps = [
     { title: 'Create a task', body: 'Describe the work and point it at a repo on this machine.' },
     { title: 'Run it', body: 'Press Run now, or turn the auto-runner on to start ready tasks for you.' },
-    { title: 'Review the result', body: "The agent's steps stream live; read the diff and accept to merge." },
+    { title: 'Watch it land', body: "The agent's steps stream live; verified work merges on its own, and only an escalated ticket asks for you." },
   ];
   return (
     <div className="mx-auto mt-16 max-w-md text-center">

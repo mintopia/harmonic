@@ -47,10 +47,10 @@ function CloseButton({ onConfirm }: { onConfirm: () => void }) {
 /** ADR-0041's one escalation surface: the trigger and exactly three actions,
  * on the attempt that escalated. Accept lands the verified branch head as-is,
  * Reject with guidance resumes the loop, Close cancels the ticket and cleans up. */
-function Escalation({ attempt, task, onChanged, compact = false }: { attempt: Attempt; task: Task; onChanged: () => void; compact?: boolean }) {
+function Escalation({ attempt, task, onChanged, compact = false }: { attempt: Attempt | null; task: Task; onChanged: () => void; compact?: boolean }) {
   const [rejecting, setRejecting] = useState(false);
   const actions = escalationActions(task);
-  const reason = (attempt.escalationReason ?? task.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null;
+  const reason = (attempt?.escalationReason ?? task.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null;
   const accept = () =>
     api.acceptTask(task.id).then(() => {
       toastSuccess(`${ticketLabel(task.id)} accepted — merging`);
@@ -151,8 +151,10 @@ export function AttemptTimeline({
   const isAttemptSelected = (attempt: Attempt) =>
     selectedFile === null && attempt.id === currentAttemptId && !attempt.tasks.some((row) => row.id === selectedTaskId);
   // The escalation surface rides the attempt that escalated; an escalation with
-  // no attempt of its own (e.g. a missing integration branch) rides the latest.
+  // no attempt of its own (e.g. a missing integration branch) rides the latest,
+  // or stands alone when the ticket was never attempted.
   const escalated = task.state === 'escalated' ? [...attempts].reverse().find((attempt) => attempt.state === 'escalated') ?? attempts.at(-1) ?? null : null;
+  const standalone = task.state === 'escalated' && attempts.length === 0;
 
   return (
     <section className={strip ? '' : 'border-b border-hairline px-3.5 py-3.5'} aria-label="Attempt history">
@@ -160,7 +162,10 @@ export function AttemptTimeline({
         Attempts <span className={railSectionCount}>{attempts.length}{maxAttempts !== null && ` / ${maxAttempts}`}</span>
       </div>
       {attempts.length === 0 ? (
-        <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
+        <>
+          <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
+          {standalone && !strip && <Escalation attempt={null} task={task} onChanged={onChanged} />}
+        </>
       ) : (
         <ol className={strip ? 'flex gap-1.5 overflow-x-auto pb-0.5' : 'flex flex-col gap-2.5'}>
           {attempts.map((attempt) => {
@@ -208,7 +213,7 @@ export function AttemptTimeline({
           })}
         </ol>
       )}
-      {strip && escalated && <Escalation attempt={escalated} task={task} onChanged={onChanged} compact />}
+      {strip && (escalated || standalone) && <Escalation attempt={escalated} task={task} onChanged={onChanged} compact />}
     </section>
   );
 }
