@@ -155,7 +155,7 @@ function RowActions({
   onAnswered,
 }: {
   process: ActivityProcess;
-  pending?: PendingPermission;
+  pending?: PendingPermission | undefined;
   onAnswered: (reqId: string) => void;
 }) {
   const { resolve, ticketUrl, stop, stopDemoted } = activityRowActions(process, pending);
@@ -249,7 +249,7 @@ const ProcessRow = memo(function ProcessRow({
 }: {
   process: ActivityProcess;
   now: number;
-  pending?: PendingPermission;
+  pending?: PendingPermission | undefined;
   onAnswered: (reqId: string) => void;
   expandable: boolean;
   expanded: boolean;
@@ -523,8 +523,17 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
   const answered = useCallback((reqId: string) => setPending((current) => removePendingPermission(current, reqId)), []);
   const [filter, setFilter] = useState<ActivityFilter>(NO_ACTIVITY_FILTER);
   const [sort, setSort] = useState<ActivitySort>('attention');
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const toggleExpand = useCallback((key: string) => setExpandedKey((cur) => (cur === key ? null : key)), []);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
+  const toggleExpand = useCallback(
+    (key: string) =>
+      setExpandedKeys((cur) => {
+        const next = new Set(cur);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      }),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -680,7 +689,7 @@ export function ActivityView({ config }: { config: AppConfig | null }) {
                   {section.rows.map((p) => {
                     const key = p.type === 'run' ? `r${p.runId}` : `c${p.conversationId}`;
                     const expandable = p.type === 'run' && p.tree !== null;
-                    const expanded = expandable && expandedKey === key;
+                    const expanded = expandable && expandedKeys.has(key);
                     return (
                       <Fragment key={key}>
                         <ProcessRow
