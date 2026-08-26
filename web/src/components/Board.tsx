@@ -373,8 +373,14 @@ function BoardSection({
   );
 }
 
+const isBlocked = (item: PendingItem): boolean => item.openBlockerCount != null && item.openBlockerCount > 0;
+
+// Ready ≠ blocked (DESIGN.md § 5): a ticket whose stored state is `ready` but
+// which waits on a blocker shows the Blocked slate, never the actionable teal.
 function itemDot(item: PendingItem): string {
-  if (item.humanOnly || item.state === null) return item.state === null ? 'bg-edge' : 'bg-faint';
+  if (item.state === null) return 'bg-edge';
+  if (item.humanOnly) return 'bg-faint';
+  if (isBlocked(item)) return 'bg-blocked';
   return stateFill(item.state);
 }
 
@@ -390,7 +396,7 @@ function PendingCard({
   onChanged: () => void;
 }) {
   const muted = item.humanOnly;
-  const wash: TaskState | '' = muted || item.state === null ? '' : item.state;
+  const wash: TaskState | '' = muted || isBlocked(item) || item.state === null ? '' : item.state;
   return (
     <div className={`bold-wash ${wash} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
