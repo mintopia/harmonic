@@ -291,6 +291,12 @@ describe('agent critic end-to-end (issue #164)', () => {
     expect(response.body.attempts).toHaveLength(1);
     expect(response.body.attempts[0].tasks).toMatchObject([
       {
+        type: 'rebase',
+        state: 'passed',
+        verdict: 'pass',
+        logLocator: expect.stringMatching(/^git:rebase:.+@[0-9a-f]{40}$/),
+      },
+      {
         type: 'implementation',
         state: 'passed',
         verdict: 'pass',

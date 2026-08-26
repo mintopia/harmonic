@@ -194,7 +194,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(second.id).toBe(first.id);
     expect(reloaded).toEqual([first.harnessSessionId]);
     expect(run.sessionId).toBe(first.harnessSessionId);
-    expect(run.prompt).toContain('## Verification failed — fix required (self-heal 1)');
+    expect(run.prompt).toContain('## Previous attempt failed — fix required (self-heal 1)');
     expect(run.prompt).not.toContain('## Prior session (condensed)');
   });
 
@@ -208,8 +208,8 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     // The scenario head stays parseable; the condensed context is its own section
     // after the corrective feedback, naming the Session it condenses.
     const prompt = run.prompt!;
-    expect(JSON.parse(prompt.split('\n\n## Verification failed')[0]!)).toHaveProperty('turns');
-    const verification = prompt.indexOf('## Verification failed — fix required (self-heal 1)');
+    expect(JSON.parse(prompt.split('\n\n## Previous attempt failed')[0]!)).toHaveProperty('turns');
+    const verification = prompt.indexOf('## Previous attempt failed — fix required (self-heal 1)');
     const condensed = prompt.indexOf('## Prior session (condensed)');
     expect(verification).toBeGreaterThan(-1);
     expect(condensed).toBeGreaterThan(verification);

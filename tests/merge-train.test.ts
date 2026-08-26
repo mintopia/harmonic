@@ -1,73 +1,55 @@
 import { describe, it, expect } from 'vitest';
 import { decideMergeTrainLand, type MergeTrainGitFacts } from '../src/domain/merge-train.js';
 
-const REBASED_TIP = 'b'.repeat(40);
+const TIP = 'b'.repeat(40);
 
-/** A clean, landable set of facts — the happy path. Individual tests override
+/** A fresh, landable set of facts — the happy path. Individual tests override
  * the fields under test. */
-function cleanFacts(overrides: Partial<MergeTrainGitFacts> = {}): MergeTrainGitFacts {
+function freshFacts(overrides: Partial<MergeTrainGitFacts> = {}): MergeTrainGitFacts {
   return {
     integrationExists: true,
     alreadyMerged: false,
-    rebase: { status: 'clean', rebasedTip: REBASED_TIP },
+    memberTip: TIP,
+    verifiedTip: TIP,
+    basedOnIntegrationTip: true,
     ...overrides,
   };
 }
 
-describe('decideMergeTrainLand (issue #160, pure merge-train land decision)', () => {
+describe('decideMergeTrainLand (issue #160, ADR-0041 freshness gate)', () => {
   it('escalates when the integration branch is missing', () => {
-    const v = decideMergeTrainLand({
-      facts: cleanFacts({ integrationExists: false }),
-      healAttempted: false,
-    });
-    expect(v).toEqual({ action: 'escalate', reason: 'integration branch missing' });
-  });
-
-  it('already-merged wins over a conflicting rebase even with healAttempted true (idempotent crash/re-submit path)', () => {
-    const v = decideMergeTrainLand({
-      facts: cleanFacts({
-        alreadyMerged: true,
-        rebase: { status: 'conflict', detail: 'stale conflicting rebase' },
-      }),
-      healAttempted: true,
-    });
-    expect(v).toEqual({ action: 'already-landed' });
-  });
-
-  it('a clean rebase fast-forwards to the rebased tip', () => {
-    const v = decideMergeTrainLand({ facts: cleanFacts(), healAttempted: false });
-    expect(v).toEqual({ action: 'ff', toOid: REBASED_TIP });
-  });
-
-  it('a conflicting rebase with no prior heal attempt gets exactly one corrective turn, carrying the conflict detail', () => {
-    const v = decideMergeTrainLand({
-      facts: cleanFacts({ rebase: { status: 'conflict', detail: 'CONFLICT in src/foo.ts' } }),
-      healAttempted: false,
-    });
-    expect(v).toEqual({ action: 'heal', reason: 'CONFLICT in src/foo.ts' });
-  });
-
-  it('a conflicting rebase that persists after the corrective turn escalates (no second mutating turn)', () => {
-    const v = decideMergeTrainLand({
-      facts: cleanFacts({ rebase: { status: 'conflict', detail: 'CONFLICT in src/foo.ts' } }),
-      healAttempted: true,
-    });
-    expect(v).toEqual({
+    expect(decideMergeTrainLand(freshFacts({ integrationExists: false }))).toEqual({
       action: 'escalate',
-      reason: 'rebase still conflicts after corrective turn',
+      reason: 'integration branch missing',
     });
   });
 
-  it('escalates defensively when no rebase was observed at all (integration exists, not already merged)', () => {
-    const v = decideMergeTrainLand({
-      facts: cleanFacts({ rebase: null }),
-      healAttempted: false,
+  it('already-merged wins over staleness (idempotent crash/re-submit path)', () => {
+    expect(decideMergeTrainLand(freshFacts({ alreadyMerged: true, memberTip: 'moved', basedOnIntegrationTip: false }))).toEqual({
+      action: 'already-landed',
     });
-    expect(v).toEqual({ action: 'escalate', reason: 'internal: rebase not observed' });
+  });
+
+  it('fast-forwards to the verified tip when the member sits at it and it contains the integration tip', () => {
+    expect(decideMergeTrainLand(freshFacts())).toEqual({ action: 'ff', toOid: TIP });
+  });
+
+  it('is stale when the member branch moved off its verified tip', () => {
+    expect(decideMergeTrainLand(freshFacts({ memberTip: 'c'.repeat(40) }))).toEqual({
+      action: 'stale',
+      reason: 'member branch moved after verification',
+    });
+  });
+
+  it('is stale when the integration branch advanced past what the verified tip is based on', () => {
+    expect(decideMergeTrainLand(freshFacts({ basedOnIntegrationTip: false }))).toEqual({
+      action: 'stale',
+      reason: 'integration branch advanced after verification',
+    });
   });
 
   it('is total and deterministic: same input yields the same decision', () => {
-    const input = { facts: cleanFacts(), healAttempted: false };
+    const input = freshFacts();
     expect(decideMergeTrainLand(input)).toEqual(decideMergeTrainLand(input));
   });
 });

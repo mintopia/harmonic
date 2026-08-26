@@ -54,6 +54,15 @@ export interface LandBranchArgs {
   baseBranch: string;
   /** The Run's branch whose work is being landed into `baseBranch`. */
   branch: string;
+  /** Exact branch tip verified for this landing. The land consumes this OID,
+   * never a later resolution of `branch`. */
+  expectedOid: string;
+  /** `'fast-forward'` (default) lands only a tip that already contains the
+   * base's current tip — verification saw exactly the landed tree (ADR-0041);
+   * a base that advanced since is refused as `stale-base`. `'merge'` folds a
+   * diverged base in with a merge commit: integration-branch refreshes, where
+   * the "branch" is the default branch being merged into `epic/<ref>`. */
+  mode?: 'fast-forward' | 'merge';
   /**
    * An exclusive clean lease is held over the target checkout, permitting a
    * coherent in-place land of a **checked-out** target. When the target is not
@@ -107,7 +116,7 @@ export function defaultBranchPostLand(
 
 export type LandBranchOutcome =
   | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
-  | { ok: false; reason: 'conflict' | 'target-advanced' | 'fallback-pr-manual'; detail: string };
+  | { ok: false; reason: 'conflict' | 'target-advanced' | 'stale-head' | 'stale-base' | 'fallback-pr-manual'; detail: string };
 
 /** Run the one shared success-only post-land hook around a branch land.
  * `baseRepoDir` is the workspace's persistent base repo checkout, for the
@@ -146,25 +155,40 @@ export async function landBranch(args: LandBranchArgs): Promise<LandBranchOutcom
 }
 
 async function landBranchUnchecked(args: LandBranchArgs): Promise<LandBranchOutcome> {
-  const { repoDir, baseBranch, branch } = args;
+  const { repoDir, baseBranch, branch, expectedOid } = args;
+  // Resolve the mutable ref once, at the landing boundary, then land the
+  // immutable verified object. A moved branch can never slip through the
+  // landing window and land a tree that verification did not inspect.
+  const branchOid = await Git.revParse(repoDir, branch).catch(() => null);
+  if (branchOid !== expectedOid) {
+    return { ok: false, reason: 'stale-head', detail: `branch '${branch}' moved after verification` };
+  }
   const expectedOld = await Git.revParse(repoDir, baseBranch);
 
-  // Step 1: compute the merge in a dedicated admin worktree detached at the
-  // target's current tip. The live target checkout is never entered, so a
-  // conflict aborts against a throwaway tree and the base repo stays pristine.
-  const parent = mkdtempSync(join(args.adminWorktreeParent ?? tmpdir(), 'harmonic-land-'));
-  const adminPath = join(parent, 'admin');
+  // Step 1: the object to land. A fast-forward lands the verified tip itself;
+  // a merge is computed in a dedicated admin worktree detached at the target's
+  // current tip — the live target checkout is never entered, so a conflict
+  // aborts against a throwaway tree and the base repo stays pristine.
   let newOid: string;
-  try {
-    await Git.addDetachedWorktree(repoDir, adminPath, expectedOld);
-    const merged = await Git.mergeNoEdit(adminPath, branch);
-    if (!merged.ok) {
-      return { ok: false, reason: 'conflict', detail: merged.detail ?? 'merge conflict' };
+  if (args.mode === 'merge') {
+    const parent = mkdtempSync(join(args.adminWorktreeParent ?? tmpdir(), 'harmonic-land-'));
+    const adminPath = join(parent, 'admin');
+    try {
+      await Git.addDetachedWorktree(repoDir, adminPath, expectedOld);
+      const merged = await Git.mergeNoEdit(adminPath, expectedOid);
+      if (!merged.ok) {
+        return { ok: false, reason: 'conflict', detail: merged.detail ?? 'merge conflict' };
+      }
+      newOid = await Git.revParse(adminPath, 'HEAD');
+    } finally {
+      await Git.removeWorktree(repoDir, adminPath).catch(() => {});
+      rmSync(parent, { recursive: true, force: true });
     }
-    newOid = await Git.revParse(adminPath, 'HEAD');
-  } finally {
-    await Git.removeWorktree(repoDir, adminPath).catch(() => {});
-    rmSync(parent, { recursive: true, force: true });
+  } else {
+    if (!(await Git.isAncestor(repoDir, expectedOid, expectedOld))) {
+      return { ok: false, reason: 'stale-base', detail: `base '${baseBranch}' advanced after verification; rebase and re-verify before landing` };
+    }
+    newOid = expectedOid;
   }
 
   // Step 2: land the computed merge. Where the target is checked out decides

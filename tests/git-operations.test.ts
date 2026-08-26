@@ -62,15 +62,14 @@ describe('Git operation instrumentation (issue #287)', () => {
       git(repo, 'add', '-A');
       git(repo, 'commit', '-m', 'main moves');
       await Git.rebaseOnto(featurePath, await Git.revParse(repo, 'main'));
-      await Git.merge(repo, 'main', 'feature');
-      await Git.ffOnly(repo, await Git.revParse(repo, 'main'));
+      await Git.ffOnly(repo, await Git.revParse(repo, 'feature'));
     });
     parent.end();
 
     const spans = exporter.getFinishedSpans();
     const parentSpan = spans.find((span) => span.name === 'harmonic.run');
     if (!parentSpan) throw new Error('Expected parent operation span');
-    for (const name of ['harmonic.git.branch-cut', 'harmonic.git.rebase', 'harmonic.git.merge', 'harmonic.git.ff-only']) {
+    for (const name of ['harmonic.git.branch-cut', 'harmonic.git.rebase', 'harmonic.git.ff-only']) {
       expect(spans.find((span) => span.name === name)?.parentSpanContext?.spanId).toBe(parentSpan.spanContext().spanId);
       expect(spans.find((span) => span.name === name)?.attributes['git.result']).toBe('ok');
     }

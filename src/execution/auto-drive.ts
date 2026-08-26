@@ -1,6 +1,5 @@
 import { type AppConfig, type MergeFate } from '../config.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
-import { Git } from './git.js';
 import { resolveTrackerAdapter, type TrackerAdapter } from '../tracker/adapter.js';
 import { driveFields, fillTemplate, splitTitleBody } from './prompt-template.js';
 
@@ -18,7 +17,6 @@ export class AutoDrive {
     private readonly getConfig: () => AppConfig,
     private readonly urlFor: (task: TaskRow) => string | null,
     private readonly resolveAdapter: (repoRoot: string) => Promise<TrackerAdapter> = resolveTrackerAdapter,
-    private readonly git = Git,
   ) {}
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
@@ -80,13 +78,12 @@ export class AutoDrive {
    * execution-complete signal is the agent's `finish_task` (the Runner's
    * `agentFinished` gate), **not** the agent closing the ticket: under this
    * model Harmonic itself owns the close, and only after verify + land. So this
-   * never gates on the ticket state — it lands, then closes where the fate says:
+   * never gates on the ticket state — it closes where the fate says:
    *
-   * - **auto-merge** — merge the branch into its base, then Harmonic closes the
-   *   ticket. A merge conflict Escalates (nothing lands); a merge that lands but
-   *   whose close fails Escalates too (a human finishes the close, the work is
-   *   safe). Direct mode (no branch) has nothing to merge but still closes — the
-   *   work is already in place.
+   * - **auto-merge** — the Runner has already landed the verified tip (its
+   *   landing freshness gate, ADR-0041; the merge train for Epic members), so
+   *   Harmonic closes the ticket. A close that fails Escalates (a human finishes
+   *   the close, the work is safe).
    * - **open-PR** — open a PR and leave the ticket **open**: creating a PR is not
    *   landing, so the PR's own merge closes the issue later. A PR that can't be
    *   created Escalates. A tracker with no PR support degrades to artifact.
@@ -126,11 +123,8 @@ export class AutoDrive {
     }
 
     if (fate === 'auto-merge') {
-      if (worktree) {
-        const merge = await this.git.merge(task.workingDir, run.baseBranch!, run.branch!);
-        if (!merge.ok) return 'escalate';
-      }
-      // Merged (or direct/in-place): Harmonic owns the close (issue #139).
+      // The Runner has already landed the verified tip (SHA-asserted, ADR-0041);
+      // Harmonic owns the close (issue #139).
       return (await this.closeTicket(task)) ? 'completed' : 'escalate';
     }
 
@@ -141,7 +135,7 @@ export class AutoDrive {
   /**
    * The auto-merge close step, split out so the merge-train landing path (issue
    * #163) can reuse it: an Epic member's Run lands its branch onto the Epic
-   * integration branch through the {@link MergeTrainCoordinator} (rebase→ff)
+   * integration branch through the {@link MergeTrainCoordinator} (fast-forward of the verified tip)
    * rather than {@link onCompleted}'s plain `git.merge`, but the close-after-land
    * half is identical — Harmonic owns the close (#139), only after a successful
    * land. Returns whether the close was issued (false ⇒ the caller Escalates).

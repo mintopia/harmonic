@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { Git } from '../src/execution/git.js';
 
 /**
- * `Git.rebaseOnto` (issue #160): linear replay of a checked-out branch onto an
- * arbitrary OID, with the same "abort-to-clean, return the conflict signal
- * rather than throw" contract as `mergeNoEdit`. Every case runs against a
- * throwaway git repo — no server, no DB.
+ * `Git.rebaseOnto` (issue #160, ADR-0041): linear replay of a checked-out
+ * branch onto an arbitrary OID. A conflict is returned rather than thrown and
+ * left IN PROGRESS for the agent to resolve; a later rebase supersedes it.
+ * Every case runs against a throwaway git repo — no server, no DB.
  */
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -76,7 +76,7 @@ describe('Git.rebaseOnto (issue #160)', () => {
     expect(await Git.isDirty(featureWt)).toBe(false);
   });
 
-  it('conflict rebase: aborts and leaves the worktree clean, returning the conflict signal', async () => {
+  it('conflict rebase: returns the conflict signal and leaves the rebase in progress for the agent; the branch itself is untouched', async () => {
     const repo = makeRepo();
     // feature forks from A and changes base.txt one way.
     const featureWt = addBranchWorktree(repo, 'feature');
@@ -93,13 +93,18 @@ describe('Git.rebaseOnto (issue #160)', () => {
     const out = await Git.rebaseOnto(featureWt, baseTip);
 
     expect(out).toMatchObject({ ok: false, conflict: true });
-    expect('detail' in out && typeof out.detail).toBe('string');
-    // The feature branch's own tip is untouched by the aborted rebase.
-    expect(oid(featureWt, 'HEAD')).toBe(featureTipBefore);
-    // Crucially: the abort ran, so the worktree is left clean.
+    expect('detail' in out && out.detail).toMatch(/CONFLICT/);
+    // The branch ref is untouched; the conflict sits in the worktree, mid-rebase.
+    expect(oid(repo, 'feature')).toBe(featureTipBefore);
+    expect(oid(featureWt, 'REBASE_HEAD')).toBe(featureTipBefore);
+    expect(git(featureWt, 'status', '--porcelain')).toMatch(/^UU base\.txt/m);
+
+    // A later rebase supersedes the in-progress one rather than failing on it:
+    // with main wound back to A, the same call is a clean no-op.
+    git(repo, 'reset', '--hard', `${baseTip}~1`);
+    const again = await Git.rebaseOnto(featureWt, oid(repo, 'main'));
+    expect(again).toMatchObject({ ok: true, rebasedTip: featureTipBefore });
     expect(git(featureWt, 'status', '--porcelain')).toBe('');
-    expect(await Git.isDirty(featureWt)).toBe(false);
-    // No rebase left in progress.
     expect(() => git(featureWt, 'rev-parse', '--verify', 'REBASE_HEAD')).toThrow();
   });
 });

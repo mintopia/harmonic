@@ -1,6 +1,7 @@
 import { landBranch, type LandBranchArgs, type LandBranchOutcome } from './branch-landing.js';
+import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
-import type { MergeTrainCoordinator } from './merge-train-coordinator.js';
+import type { MergeTrainCoordinator, MergeTrainGit } from './merge-train-coordinator.js';
 
 /** A live integration branch that must follow one observed develop advance. */
 export interface EpicRefreshTarget {
@@ -31,6 +32,8 @@ export class EpicRefreshCoordinator {
 
   constructor(private readonly deps: {
     train: MergeTrainCoordinator;
+    /** Default = real {@link Git}. */
+    git?: Pick<MergeTrainGit, 'revParse'>;
     land?: (args: LandBranchArgs) => Promise<LandBranchOutcome>;
     dispatchResolve: (
       target: EpicRefreshTarget,
@@ -46,6 +49,8 @@ export class EpicRefreshCoordinator {
         repoDir: target.repoDir,
         baseBranch: branch,
         branch: target.defaultBranch,
+        expectedOid: await (this.deps.git ?? Git).revParse(target.repoDir, target.defaultBranch),
+        mode: 'merge',
         leaseHeld: true,
       });
       if (outcome.ok) {

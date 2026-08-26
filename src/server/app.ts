@@ -454,9 +454,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // effect list through the same `LandingCoordinator` — auto-accept is not a
   // second, divergent landing mechanism.
   const landingEffectsFor = (task: TaskRow, run: RunRow): LandingEffectExec[] => {
-    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return [];
+    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch || !run.candidateOid) return [];
     const baseBranch = run.baseBranch;
     const branch = run.branch;
+    const expectedOid = run.candidateOid;
     return [
       {
         effect: 'target-ref',
@@ -469,7 +470,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         // for the checked-out (worktree-mode base) path — `landBranch` still
         // falls back to PR/manual if that checkout has uncommitted operator work.
         apply: async () => {
-          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true }, postLand);
+          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true }, postLand);
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
@@ -478,14 +479,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   };
   // The single-writer merge train (issue #163): the ONE process-global
   // coordinator every Epic member's Run lands through, so its in-memory per-Epic
-  // integration-branch FIFO chains and one-heal bound are shared across all
-  // members and all Workspaces. Its heal/escalate effects are Runner methods, so
-  // it is bound to the Runner via the same late-holder idiom `trackerManagerRef`
-  // uses below — the Runner and the coordinator are mutually referential, so one
-  // must be constructed with a forward reference to the other.
+  // integration-branch FIFO chains are shared across all members and all
+  // Workspaces. Its escalate effect is a Runner method, so it is bound to the
+  // Runner via the same late-holder idiom `trackerManagerRef` uses below — the
+  // Runner and the coordinator are mutually referential, so one must be
+  // constructed with a forward reference to the other.
   const epicOperations = new EpicOperations();
   const mergeTrain = new MergeTrainCoordinator({
-    dispatchHeal: (member) => runnerRef!.enqueueReMergeForMember(member),
     escalate: (member, reason) => runnerRef!.settleEscalatedForMember(member, reason),
     operations: epicOperations,
   });
@@ -563,7 +563,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     landing,
     async (task, run) => {
       if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
-      const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, leaseHeld: true }, postLand);
+      if (!run.candidateOid) return { ok: false, detail: 'no verified branch head available for landing' };
+      const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, expectedOid: run.candidateOid, leaseHeld: true }, postLand);
       return outcome.ok ? { ok: true } : { ok: false, detail: outcome.detail };
     },
     landingEffectsFor,

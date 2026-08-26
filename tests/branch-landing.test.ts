@@ -58,7 +58,7 @@ describe('branch landing (issue #153)', () => {
     const refreshAfterDefaultBranchAdvance = vi.fn<(repoDir: string, defaultBranch: string) => Promise<void>>(async () => {});
 
     await expect(landBranchAndRunPostLand(
-      { repoDir: repo, baseBranch: 'main', branch: 'feat', leaseHeld: true },
+      { repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true },
       async ({ repoDir, baseBranch }) => refreshAfterDefaultBranchAdvance(repoDir, baseBranch),
     )).resolves.toMatchObject({ ok: true });
 
@@ -73,7 +73,7 @@ describe('branch landing (issue #153)', () => {
     const postLand = defaultBranchPostLand(refreshAfterDefaultBranchAdvance);
 
     await expect(landBranchAndRunPostLand(
-      { repoDir: repo, baseBranch: 'feature-base', branch: 'feat' },
+      { repoDir: repo, baseBranch: 'feature-base', branch: 'feat', expectedOid: oid(repo, 'feat') },
       postLand,
     )).resolves.toMatchObject({ ok: true });
 
@@ -93,7 +93,7 @@ describe('branch landing (issue #153)', () => {
     const postLand = defaultBranchPostLand(refreshAfterDefaultBranchAdvance);
 
     await expect(landBranchAndRunPostLand(
-      { repoDir: taskCheckout, baseRepoDir: repo, baseBranch: 'develop', branch: 'feat', leaseHeld: true },
+      { repoDir: taskCheckout, baseRepoDir: repo, baseBranch: 'develop', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true },
       postLand,
     )).resolves.toMatchObject({ ok: true });
 
@@ -121,7 +121,7 @@ describe('branch landing (issue #153)', () => {
     // Detach the base repo's HEAD so `main` is checked out by nobody.
     git(repo, 'checkout', '--detach', 'main');
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat' });
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
 
     expect(out).toMatchObject({ ok: true, mode: 'cas' });
     expect(oid(repo, 'main')).toBe(featTip); // fast-forwarded to feat
@@ -136,7 +136,7 @@ describe('branch landing (issue #153)', () => {
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const featTip = oid(repo, 'feat');
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', leaseHeld: true });
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
 
     expect(out).toMatchObject({ ok: true, mode: 'in-place' });
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main'); // still on main, not desynced
@@ -151,7 +151,7 @@ describe('branch landing (issue #153)', () => {
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     const base = oid(repo, 'main');
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat' }); // leaseHeld defaults false
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') }); // leaseHeld defaults false
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
     expect(oid(repo, 'main')).toBe(base); // target untouched
@@ -164,7 +164,7 @@ describe('branch landing (issue #153)', () => {
     const base = oid(repo, 'main');
     writeFileSync(join(repo, 'operator-wip.txt'), 'uncommitted operator work\n');
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', leaseHeld: true });
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'fallback-pr-manual' });
     expect(oid(repo, 'main')).toBe(base);
@@ -172,7 +172,39 @@ describe('branch landing (issue #153)', () => {
     expect(git(repo, 'status', '--porcelain')).toContain('operator-wip.txt');
   });
 
-  it('conflict: aborts in the admin worktree, returns ok:false, and never enters the live checkout', async () => {
+  it('stale-base (default fast-forward mode): a base that advanced after verification is refused, nothing merged, nothing touched', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'verified work\n');
+    // main moves after verification — even a non-conflicting advance is a tree
+    // nobody verified, so the land refuses instead of merging.
+    writeFileSync(join(repo, 'README.md'), '# main advanced\n');
+    git(repo, 'commit', '-am', 'main advances');
+    const mainTip = oid(repo, 'main');
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), leaseHeld: true });
+
+    expect(out).toMatchObject({ ok: false, reason: 'stale-base' });
+    expect(oid(repo, 'main')).toBe(mainTip); // untouched
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(worktreeCount(repo)).toBe(1); // no admin worktree was ever needed
+  });
+
+  it('merge mode: a diverged, non-conflicting base is folded in with a merge commit (integration refresh)', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
+    writeFileSync(join(repo, 'README.md'), '# main advanced\n');
+    git(repo, 'commit', '-am', 'main advances');
+    const featTip = oid(repo, 'feat');
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, mode: 'merge', leaseHeld: true });
+
+    expect(out).toMatchObject({ ok: true, mode: 'in-place' });
+    expect(git(repo, 'rev-parse', 'main^2')).toBe(featTip); // a real merge commit whose second parent is the verified tip
+    expect(git(repo, 'status', '--porcelain')).toBe('');
+    expect(worktreeCount(repo)).toBe(1); // admin worktree cleaned up
+  });
+
+  it('merge mode conflict: aborts in the admin worktree, returns ok:false, and never enters the live checkout', async () => {
     const repo = makeRepo();
     // feat forks from the original README and changes it one way...
     makeBranchAhead(repo, 'feat', 'README.md', '# from feat\n');
@@ -181,7 +213,7 @@ describe('branch landing (issue #153)', () => {
     git(repo, 'commit', '-am', 'main diverges');
     const mainTip = oid(repo, 'main');
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', leaseHeld: true });
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat'), mode: 'merge', leaseHeld: true });
 
     expect(out).toMatchObject({ ok: false, reason: 'conflict' });
     expect(oid(repo, 'main')).toBe(mainTip); // untouched
@@ -189,17 +221,35 @@ describe('branch landing (issue #153)', () => {
     expect(worktreeCount(repo)).toBe(1);
   });
 
+  it('refuses a branch that moved after verification and never attempts the merge', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'verified work\n');
+    const verifiedOid = oid(repo, 'feat');
+    makeBranchAhead(repo, 'later', 'later.txt', 'later work\n', 'feat');
+    git(repo, 'update-ref', 'refs/heads/feat', 'later');
+    const mainBefore = oid(repo, 'main');
+
+    await expect(landBranch({
+      repoDir: repo,
+      baseBranch: 'main',
+      branch: 'feat',
+      expectedOid: verifiedOid,
+      leaseHeld: true,
+    })).resolves.toMatchObject({ ok: false, reason: 'stale-head' });
+    expect(oid(repo, 'main')).toBe(mainBefore);
+  });
+
   it('AC3 idempotent (not checked out): re-landing an already-merged branch is a no-op, not a duplicate merge', async () => {
     const repo = makeRepo();
     makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
     git(repo, 'checkout', '--detach', 'main');
 
-    const first = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat' });
+    const first = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
     expect(first.ok).toBe(true);
     const afterFirst = oid(repo, 'main');
     const countAfterFirst = git(repo, 'rev-list', '--count', 'main');
 
-    const second = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat' });
+    const second = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
     expect(second).toMatchObject({ ok: true, mode: 'cas' });
     expect(oid(repo, 'main')).toBe(afterFirst); // did not move
     expect(git(repo, 'rev-list', '--count', 'main')).toBe(countAfterFirst); // no new commit
@@ -214,7 +264,7 @@ describe('branch landing (issue #153)', () => {
     const handTip = oid(repo, 'feat');
     git(repo, 'update-ref', 'refs/heads/main', handTip);
 
-    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat' });
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: oid(repo, 'feat') });
 
     expect(out).toMatchObject({ ok: true, mode: 'cas' });
     expect(oid(repo, 'main')).toBe(handTip); // the hand-merge stands

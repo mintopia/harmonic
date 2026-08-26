@@ -16,9 +16,11 @@ import type { CriticDriveRequest } from '../src/verification/critic.js';
 import { allWorkspaces, waitFor } from './helpers.js';
 
 const train = () => new MergeTrainCoordinator({
-  dispatchHeal: async () => {},
   escalate: async () => {},
 });
+
+/** The unit cases fake the land, so the default-branch tip the refresh pins is faked too. */
+const fakeGit = { revParse: async () => 'develop-tip' };
 
 const conflict = (detail = 'both changed package.json'): LandBranchOutcome => ({
   ok: false,
@@ -31,6 +33,7 @@ describe('EpicRefreshCoordinator', () => {
     const calls: string[] = [];
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
+      git: fakeGit,
       land: async ({ baseBranch, branch }) => {
         calls.push(`${baseBranch}<-${branch}`);
         return { ok: true, mode: 'cas', oid: 'merge-oid', baseBranch, branch };
@@ -51,6 +54,7 @@ describe('EpicRefreshCoordinator', () => {
     const escalations: Array<{ ref: number; reason: string }> = [];
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
+      git: fakeGit,
       land: async () => outcomes.shift()!,
       dispatchResolve: async (_target, detail) => {
         resolutions.push(detail);
@@ -75,6 +79,7 @@ describe('EpicRefreshCoordinator', () => {
     const starts: number[] = [];
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
+      git: fakeGit,
       land: async () => {
         starts.push(starts.length + 1);
         if (starts.length === 1) await first;
@@ -97,6 +102,7 @@ describe('EpicRefreshCoordinator', () => {
     const escalations: string[] = [];
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
+      git: fakeGit,
       land: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
       dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: (_ref, reason) => { escalations.push(reason); },
@@ -113,6 +119,7 @@ describe('EpicRefreshCoordinator', () => {
     const escalations: string[] = [];
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
+      git: fakeGit,
       land: async () => conflict('refresh conflict'),
       dispatchResolve: async (_target, detail) => {
         dispatches.push(detail);
@@ -134,6 +141,7 @@ describe('EpicRefreshCoordinator', () => {
   it('returns an escalation when no running member can host a refresh resolution, without stranding the resolving flag', async () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
+      git: fakeGit,
       land: async () => conflict('refresh conflict'),
       dispatchResolve: async () => ({
         status: 'escalated',

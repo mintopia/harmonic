@@ -121,7 +121,7 @@ export class EpicLandCoordinator {
    * would re-run the whole-Epic Verification (minutes of CI) and re-escalate on
    * every poll, forever. Once escalated it stays held until the member state
    * changes or the branch is gone; an operator force-land bypasses it. In-memory
-   * only (ADR-0024), mirroring the merge train's in-memory `healAttempted`. */
+   * only (ADR-0024). */
   private readonly settledEscalated = new Map<number, string>();
 
   /** The last whole-Epic Verification status per Epic ref (issue #178), retained
@@ -345,12 +345,18 @@ export class EpicLandCoordinator {
       type: 'merge',
       attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
       work: () => landBranchAndRunPostLand(
-        { repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld },
+        { repoDir: this.repoDir, baseBranch: defaultBranch, branch, expectedOid: candidateOid, leaseHeld: this.landLeaseHeld },
         this.postLand,
         this.land,
       ),
     });
     if (!landed.ok) {
+      // The integration branch or the default branch moved between verify and
+      // land (a refresh, a concurrent land): nothing failed, the verdict is just
+      // stale — the next poll re-verifies at the new tips (ADR-0041).
+      if (landed.reason === 'stale-head' || landed.reason === 'stale-base' || landed.reason === 'target-advanced') {
+        return { status: 'waiting', reason: `whole-Epic land deferred (${landed.reason}): ${landed.detail}` };
+      }
       return this.escalate(target, force, `whole-Epic land into '${defaultBranch}' failed (${landed.reason}): ${landed.detail}`);
     }
 
