@@ -33,7 +33,7 @@ export function TaskLog({ task }: { task: AttemptTask }) {
     return () => {
       live = false;
     };
-  }, [task.id, source?.kind]);
+  }, [source]);
 
   if (!source || source.kind === 'run') return null;
   return (
