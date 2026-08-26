@@ -160,7 +160,12 @@ export const verificationCommandOverrideSchema = z.union([z.array(verificationCo
 // false, prompt/model optional) to swallow a bare critic object or the off
 // sentinel and coerce it to a disabled review, so the stricter members must be
 // tried first — otherwise enabling the critic for a workspace persists as off.
-export const verificationCriticOverrideSchema = z.union([verifierOffSchema, verificationCriticSchema, verificationReviewSchema]);
+// The critic member is matched `.strict()` so a review-shaped object (one that
+// carries `enabled`) is NOT silently accepted here with `enabled` stripped —
+// which would drop an explicit `enabled: false` and let `resolveReview` re-wrap
+// it as enabled. Strict-rejecting the extra key lets it fall through to the
+// review schema, which round-trips `enabled` faithfully.
+export const verificationCriticOverrideSchema = z.union([verifierOffSchema, verificationCriticSchema.strict(), verificationReviewSchema]);
 
 /**
  * The budget Guardrail (issue #108/#126, ADR-0019): a mandatory wall-clock bound

@@ -150,6 +150,19 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'] }]);
 
+    // A review-shaped override round-trips its `enabled` flag faithfully: an
+    // explicit `enabled: false` must NOT be stripped and silently re-enabled (the
+    // critic union member is matched strictly so it can't swallow this shape).
+    const disabled = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      verificationCritic: { enabled: false, prompt: 'off for now', model: 'claude-opus-5' },
+    });
+    expect(disabled.status).toBe(200);
+    expect(disabled.body.verificationCritic).toEqual({ enabled: false, prompt: 'off for now', model: 'claude-opus-5' });
+    // Restore the enabled override the rest of the test asserts against.
+    await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
+      verificationCritic: { enabled: true, prompt: 'review the diff', model: 'claude-opus-5' },
+    });
+
     // null clears back to inherit.
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       verificationCommand: null,
