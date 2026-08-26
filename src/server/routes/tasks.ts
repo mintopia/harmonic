@@ -136,7 +136,7 @@ const taskSchema = taskWithDepsSchema
   .extend({
     /** The prompt's first line, bounded (ADR-0045): the card title every list
      * surface renders, so the Board need not carry the full prompt. Present on
-     * both list rows and the item GET; the full `prompt` is item-GET-only (issue #350). */
+     * both list rows and the item GET. */
     summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     cost: costSchema.nullable(),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
@@ -175,12 +175,7 @@ const taskSchema = taskWithDepsSchema
   })
   .meta({ id: 'Task' });
 
-/** A lean list row (ADR-0045, issue #350): the full task shape minus the full
- * `prompt`, which is dropped to keep the list payload small — list surfaces
- * render `summary` instead. The full prompt stays on the item GET (`Task`). */
-const taskListRowSchema = taskSchema.omit({ prompt: true }).meta({ id: 'TaskListRow' });
-
-const tasksListResponseSchema = listResponse('tasks', taskListRowSchema);
+const tasksListResponseSchema = listResponse('tasks', taskSchema);
 
 /** A run as the REST API and WebSocket both serve it (serialize.ts `ApiRun`). */
 const runSchema = z

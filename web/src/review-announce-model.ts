@@ -2,9 +2,7 @@ import type { TaskState } from './types.js';
 
 export interface ReviewAnnouncementTask {
   readonly id: number;
-  /** The card title (ADR-0045 summary) spoken in the live region — list rows
-   * carry no full prompt (issue #350). */
-  readonly summary: string;
+  readonly prompt: string;
   readonly state: TaskState;
 }
 
@@ -21,14 +19,14 @@ export const EMPTY_REVIEW_ANNOUNCEMENT_CURSOR: ReviewAnnouncementCursor = {
 };
 
 function politeStateAnnouncement(previous: TaskState, task: ReviewAnnouncementTask): string {
-  if (task.state === 'escalated') return `${task.summary} needs you: escalated.`;
-  if (previous === 'escalated') return `${task.summary} left escalation.`;
+  if (task.state === 'escalated') return `${task.prompt} needs you: escalated.`;
+  if (previous === 'escalated') return `${task.prompt} left escalation.`;
   return '';
 }
 
 function assertiveMergeAnnouncement(previous: TaskState, task: ReviewAnnouncementTask): string {
   if (previous === 'done' || task.state !== 'done') return '';
-  return `${task.summary} merged.`;
+  return `${task.prompt} merged.`;
 }
 
 /**

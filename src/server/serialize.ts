@@ -338,8 +338,7 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   workspaceId: number;
   /** The prompt's first line, bounded (ADR-0045): the card title every list
    * surface renders. Present on both the list rows and the item GET; the full
-   * `prompt` is served only on the item GET (and the WS `task_changed`), never
-   * on a list row (issue #350). */
+   * `prompt` stays on the row for now (additive) and always on the item GET. */
   summary: string;
   cost: Cost | null;
   /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
@@ -374,11 +373,6 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   candidateRef: string | null;
 };
 
-/** A lean list row (ADR-0045, issue #350): every {@link ApiTask} field except
- * the full `prompt`, which is dropped to keep the payload small — list surfaces
- * render {@link ApiTask.summary} instead. The full prompt stays on the item GET. */
-export type ApiTaskListRow = Omit<ApiTask, 'prompt'>;
-
 /** Longest a list-row {@link ApiTask.summary} may be; a longer first line is
  * truncated with an ellipsis so the payload stays lean (ADR-0045). */
 const SUMMARY_MAX = 200;
@@ -397,10 +391,8 @@ export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<Ap
   return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null);
 }
 
-/** Serialize a task list from its already-batched Runs (issue #258). The rows
- * are lean (ADR-0045, issue #350): the full `prompt` is dropped in favour of
- * `summary`, so no list surface carries the whole prompt. */
-export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTaskListRow[]> {
+/** Serialize a task list from its already-batched Runs (issue #258). */
+export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promise<ApiTask[]> {
   if (tasks.length === 0) return [];
   const runsByTask = new Map(tasks.map((task) => [task.id, [] as RunRow[]]));
   for (const run of await ctx.runs.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
@@ -412,14 +404,8 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   return tasks.map((task) => {
     const runs = runsByTask.get(task.id) ?? [];
     const activeRun = task.state === 'working' ? runs.find((run) => run.state === 'running') : undefined;
-    return toListRow(taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null));
+    return taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null);
   });
-}
-
-/** Drop the full `prompt` from a serialized task to make a lean list row
- * (issue #350); `summary` already carries the card title every list surface needs. */
-function toListRow({ prompt: _prompt, ...row }: ApiTask): ApiTaskListRow {
-  return row;
 }
 
 /** Peel the durable tracker-fact columns (issue #233) off a task: they are

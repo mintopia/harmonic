@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api } from '../api';
 import type { AppConfig, Task, Workspace } from '../types';
 import { Modal } from './Modal';
@@ -33,23 +33,6 @@ export function TaskForm({
   onSaved: () => void;
 }) {
   const [prompt, setPrompt] = useState(task?.prompt ?? '');
-  // A lean list row carries no full prompt (ADR-0045, issue #350); when editing
-  // from one, fetch the item GET so the textarea seeds with the real prompt
-  // instead of blank. A store row freshly filled by a WS `task_changed` already
-  // has it, so we only fetch when it is missing.
-  useEffect(() => {
-    if (!task || task.prompt !== undefined) return;
-    let cancelled = false;
-    api
-      .task(task.id)
-      .then((full) => {
-        if (!cancelled && full.prompt !== undefined) setPrompt(full.prompt);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [task]);
   const [ov, setOv] = useState<Overrides>(
     task?.overrides ?? { harness: null, model: null, isolationMode: null, priority: null },
   );

@@ -369,16 +369,15 @@ describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
     await server.close();
   });
 
-  it('returns lean rows: every task with a total, a summary, and no full prompt (issue #350)', async () => {
+  it('is additive: no params returns every task with a total, keeping the full prompt and adding summary', async () => {
     const res = await server.api('GET', '/api/tasks');
     expect(res.status).toBe(200);
     expect(res.body.tasks).toHaveLength(3);
     expect(res.body.total).toBe(3);
-    const first = res.body.tasks.find((t: any) => t.summary === 'Add rate limiting to POST /api/tasks');
-    // The full prompt is dropped from list rows (ADR-0045); summary is the first line.
-    expect(first).toBeDefined();
-    expect(first.prompt).toBeUndefined();
-    expect(res.body.tasks.every((t: any) => t.prompt === undefined)).toBe(true);
+    const first = res.body.tasks.find((t: any) => t.prompt.startsWith('Add rate limiting'));
+    // Full prompt still present (nothing breaks yet); summary is the first line.
+    expect(first.prompt).toBe('Add rate limiting to POST /api/tasks\n\nGuard the write path.');
+    expect(first.summary).toBe('Add rate limiting to POST /api/tasks');
   });
 
   it('paginates with limit/offset while total stays the full match count', async () => {
@@ -400,8 +399,7 @@ describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
     // "rate limiting" and "RATE limiter" both match, case-insensitively; "auth" does not.
     expect(res.body.total).toBe(2);
     expect(res.body.tasks).toHaveLength(2);
-    // Search is server-side over the full prompt; the lean rows carry only summary.
-    expect(res.body.tasks.every((t: any) => t.summary.toLowerCase().includes('rate'))).toBe(true);
+    expect(res.body.tasks.every((t: any) => t.prompt.toLowerCase().includes('rate'))).toBe(true);
   });
 
   it('a blank q matches everything (the no-search state)', async () => {

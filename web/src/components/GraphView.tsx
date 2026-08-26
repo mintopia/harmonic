@@ -366,7 +366,7 @@ export function CardNode({
       data-task-id={task.id}
       role="button"
       tabIndex={0}
-      aria-label={`${nodeTitle(task.summary)} — ${STATE_LABEL[task.state]}, ${originLabel.toLowerCase()}, task ${task.id}. Open detail.`}
+      aria-label={`${nodeTitle(task.prompt)} — ${STATE_LABEL[task.state]}, ${originLabel.toLowerCase()}, task ${task.id}. Open detail.`}
       className={`node ${task.state} cursor-pointer focus:outline-none focus-visible:outline-2 focus-visible:outline-accent`}
       onMouseEnter={() => onHover(n.id)}
       onMouseLeave={() => onHover(null)}
@@ -396,7 +396,7 @@ export function CardNode({
         className={task.state === 'working' ? 'motion-safe:animate-pulse' : undefined}
       />
       <text x={n.x + 30} y={n.y + 22} className="fill-ink" fontSize={12.5} fontWeight={600}>
-        {truncate(nodeTitle(task.summary), 24)}
+        {truncate(nodeTitle(task.prompt), 24)}
       </text>
       <text x={n.x + 30} y={n.y + 44} fontSize={10.5} fontWeight={600} fill={sig.text} letterSpacing="0.03em">
         {STATE_LABEL[task.state].toUpperCase()}
