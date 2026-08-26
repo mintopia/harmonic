@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startServer, type TestServer } from './helpers.js';
+import type { Epic } from '../src/domain/epic-view.js';
+import type { DerivedMap } from '../src/tracker/mirror.js';
 
 /**
  * The shared pagination envelope (ADR-0045, issue #352) applied to the migrated
@@ -51,5 +53,89 @@ describe('list endpoint pagination envelope', () => {
   it('rejects a limit over the shared max', async () => {
     const res = await server.api('GET', '/api/conversations?limit=1000');
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * The two derived read-model rollups this contract also covers (issue #351):
+ * `/api/epics` and `/api/maps` slice on the shared envelope even though their
+ * pages come from a query-time scan rather than a table. Pagination runs in the
+ * route over the whole derived list, so a fixed service result proves the
+ * slice/`total` behaviour without standing up a real tracker loop.
+ */
+describe('derived-rollup pagination (epics, maps)', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const epic = (ref: number): Epic => ({
+    ref,
+    title: `Epic ${ref}`,
+    kind: 'spec',
+    members: [],
+    ready: [],
+    integration: { branch: `epic/${ref}`, exists: true, tip: null },
+    verification: { status: null },
+    land: { inFlight: false, held: null },
+    foldedCount: 0,
+    memberCount: 0,
+  });
+
+  const map = (ref: number, workspaceId: number): DerivedMap => ({
+    workspaceId,
+    ref,
+    title: `Map ${ref}`,
+    url: `https://example.test/${ref}`,
+    taskRefs: [],
+    counts: {},
+  });
+
+  it('/api/epics slices to a page while total stays the full derived count', async () => {
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    vi.spyOn(server.app.ctx.trackerManager, 'listEpics').mockResolvedValue([epic(1), epic(2), epic(3)]);
+
+    const all = await server.api('GET', `/api/workspaces/${workspaceId}/epics`);
+    expect(all.body).toEqual({ epics: [epic(1), epic(2), epic(3)], total: 3 });
+
+    const page1 = await server.api('GET', `/api/workspaces/${workspaceId}/epics?limit=2`);
+    expect(page1.body).toEqual({ epics: [epic(1), epic(2)], total: 3 });
+
+    const page2 = await server.api('GET', `/api/workspaces/${workspaceId}/epics?limit=2&offset=2`);
+    expect(page2.body).toEqual({ epics: [epic(3)], total: 3 });
+  });
+
+  it('/api/epics rejects a limit over the shared max', async () => {
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    expect((await server.api('GET', `/api/workspaces/${workspaceId}/epics?limit=1000`)).status).toBe(400);
+  });
+
+  it('/api/maps slices to a page while total stays the full derived count', async () => {
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    vi.spyOn(server.app.ctx.trackerManager, 'maps').mockResolvedValue([
+      map(1, workspaceId),
+      map(2, workspaceId),
+      map(3, workspaceId),
+    ]);
+
+    const all = await server.api('GET', '/api/maps');
+    expect(all.body).toEqual({ maps: [map(1, workspaceId), map(2, workspaceId), map(3, workspaceId)], total: 3 });
+
+    const page1 = await server.api('GET', '/api/maps?limit=2');
+    expect(page1.body).toEqual({ maps: [map(1, workspaceId), map(2, workspaceId)], total: 3 });
+
+    const page2 = await server.api('GET', '/api/maps?limit=2&offset=2');
+    expect(page2.body).toEqual({ maps: [map(3, workspaceId)], total: 3 });
+  });
+
+  it('/api/maps rejects a limit over the shared max', async () => {
+    expect((await server.api('GET', '/api/maps?limit=1000')).status).toBe(400);
   });
 });
