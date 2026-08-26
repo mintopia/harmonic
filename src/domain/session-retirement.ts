@@ -14,7 +14,7 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  * can be exhaustively unit-tested (the same seam as `run-disposition.ts`).
  *
  * The Sessions move `active → idle → retiring → retired`: `active` while a live
- * or review-parked Run owns them; `idle` when no live Run remains but the
+ * Run owns them; `idle` when no live Run remains but the
  * worktree is retained under a `retireDeadline` (the reject-continuation / warm
  * window); `retiring` while the worktree removal is in flight (so a crash
  * mid-removal is re-driven from `retiring` at boot); `retired` once the worktree
@@ -49,7 +49,7 @@ export const DEFAULT_RETENTION: RetentionConfig = {
 
 /**
  * The cause of a Run's terminal settle, distilled to exactly what retirement
- * needs from the winning `run_fact` + review gate:
+ * needs from the winning `run_fact`:
  * - `landed` — a successful land + terminal success (native Accept, native
  *   auto-accept, or a mirrored land): the work is banked, retire immediately.
  * - `rejected` — a human rejected the review: retain for a reject-continuation.

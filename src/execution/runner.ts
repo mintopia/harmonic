@@ -519,7 +519,7 @@ export class Runner {
   private readonly sessionStore: SessionStore;
   private readonly attempts: AttemptStore;
   /** The shared terminal-disposition coordinator (issue #113/#114): every Run
-   * settle — drive-loop, operator cancel/complete, review-parked — funnels here
+   * settle — drive-loop, operator cancel/complete — funnels here
    * so the winning disposition is decided by precedence, once. */
   private readonly settleCoordinator: RunSettleCoordinator;
   private readonly sessionRetirement: SessionRetirementHook | undefined;
@@ -2870,7 +2870,7 @@ export class Runner {
     // non-interruptible land never counts, because the watchdog isn't armed
     // then. On fire it appends a structured `guardrail_events` row and settles
     // the Run through the coordinator by precedence — `guardrail-trip` →
-    // Escalation (afk→hitl), never a direct settle, never a new terminal state.
+    // Escalation, never a direct settle, never a new terminal state.
     let guardrailTimer: ReturnType<typeof setTimeout> | null = null;
     const armGuardrail = async () => {
       const started = await this.runStore.get(run.id);
@@ -3096,9 +3096,8 @@ export class Runner {
     // Work Context lease heartbeat (issue #122): coordinator-driven, on a
     // wall-clock timer independent of agent/tool output — a Run stuck in a
     // long tool call still bumps its lease's liveness, so the lease never
-    // lapses while the Run is genuinely alive. Phase-specific TTL (`lease-ttl.ts`):
-    // the Run's current phase sets the expiry budget, so the review gate rides
-    // a far longer window than the execution phases.
+    // lapses while the Run is genuinely alive. The TTL budget comes from
+    // `lease-ttl.ts`, keyed by the Run's current phase.
     let leaseHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
     const armLeaseHeartbeat = async () => {
       const key = this.workContextKeyFor(task, run);

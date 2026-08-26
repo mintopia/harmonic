@@ -48,9 +48,9 @@ function hasAssignedEpicBase(task: TaskRow): boolean {
 
 /**
  * Direct-mode Work Contexts occupied by an afk Run that is mid-flight (`running`)
- * or holding unreviewed work (`awaiting-review`), keyed by context to the Task
+ * (`working`), keyed by context to the Task
  * that holds it — the input to the House Rule pick predicate (ADR-0022, issue
- * #120). hitl Tasks (an operator drives them) and worktree Tasks (unique key per
+ * #120). Worktree Tasks (unique key per
  * Run) never occupy a context here. First holder found wins the key, so the skip
  * reason names a stable occupant.
  */
@@ -110,7 +110,7 @@ const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
  * inherits it when unset.
  *
  * A mirrored afk Task's pick is more than a spawn: the predicate is
- * `drive ≠ hitl ∧ deps satisfied (ready)`, and the sequence is
+ * `agent-workable ∧ deps satisfied (ready)`, and the sequence is
  * flip(ready→running) — the lock — then best-effort advisory claim before
  * spawning (issues #32, #230, and #232). Assignment is never read as an
  * eligibility or ownership signal (ADR-0030).
@@ -420,17 +420,16 @@ export class AutoRunner {
    * counts and occupancy — it never frees an earlier-skipped Task — so a forward
    * single pass is equivalent to the old restart-from-the-top pick loop.
    *
-   * Picks skip hitl Tasks and any parked this cycle, a Task whose Workspace is
+   * Picks skip any Task parked this cycle, a Task whose Workspace is
    * Auto-Runner-disabled (master is already on here, so an inheriting Workspace
    * counts as enabled) or already at its resolved cap — the per-Workspace half of
    * the two-level limit (ADR-0012, issue #60) — and, the House Rule (ADR-0022,
    * issue #120), a Task whose direct-mode Work Context is already occupied by a
-   * running or awaiting-review afk Run, so the Auto-Runner doesn't pick straight
+   * working Run, so the Auto-Runner doesn't pick straight
    * into the hard lease rejection from #119 (churn). That predicate is advisory —
    * the lease CAS in `Runner.beginRun` stays the authoritative gate — and reads
    * occupancy from **Task state**, not the lease store: the lease is released the
    * moment a Run settles (seam for #114), so by the time a Task sits in
-   * `awaiting-review` the lease is already gone, yet its work still holds the
    * context. A Task started earlier this pass is folded into `occupied`, so it
    * correctly blocks a same-context sibling visited later.
    */

@@ -1033,7 +1033,7 @@ export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
  * removal** (issue #148): a worktree Session's checkout is retained through the
  * human-rejection window (so a reject-and-continue lands in the same workspace)
  * and its builder worktree is removed **only** at retirement, coordinated with
- * the Work Context lease. `active` — a live or review-parked Run owns it; `idle`
+ * the Work Context lease. `active` — a live Run owns it; `idle`
  * — no live Run, retained under a `retireDeadline` (reject-continuation / warm
  * reuse window); `retiring` — worktree removal in progress (crash-re-driven at
  * boot); `retired` — worktree removed, terminal.
