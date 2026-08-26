@@ -103,6 +103,26 @@ export interface VerificationAttempt {
   hasTranscript: boolean;
 }
 
+/** One chronological audit record from the ticket-wide lifecycle projection. */
+export interface TicketTimelineEvent {
+  runId: number | null;
+  ts: number;
+  kind:
+    | 'attempt-started'
+    | 'attempt-finished'
+    | 'run-started'
+    | 'run-finished'
+    | 'lifecycle'
+    | 'verification'
+    | 'guardrail'
+    | 'escalation'
+    | 'operator-accept'
+    | 'operator-reject'
+    | 'landing'
+    | 'fact';
+  data: unknown;
+}
+
 /** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
 export type Workflow = 'wayfinder' | 'implement';

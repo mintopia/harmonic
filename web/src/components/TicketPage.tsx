@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
+import type { Attempt, AttemptTask, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, TicketTimelineEvent, VerificationAttempt } from '../types';
 import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -21,6 +21,7 @@ import { RunRail } from './ticket/RunRail';
 import { Gate } from './ticket/Gate';
 import { CrumbBar } from './CrumbBar';
 import { AttemptTimeline } from './ticket/AttemptTimeline';
+import { LifecycleTimeline } from './ticket/LifecycleTimeline';
 import { TaskLog } from './ticket/TaskLog';
 import { runFailureBannerLabel, runForAttempt, verifiedSha } from '../attempt-timeline-model';
 import { labelType } from '../ui';
@@ -748,6 +749,7 @@ export function TicketPage({
   const [logUnavailable, setLogUnavailable] = useState(false);
   const [guardrailEvents, setGuardrailEvents] = useState<GuardrailEvent[]>([]);
   const [verificationAttempts, setVerificationAttempts] = useState<VerificationAttempt[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [liveUsage, setLiveUsage] = useState<Map<number, RunUsageEvent>>(() => new Map());
@@ -763,6 +765,22 @@ export function TicketPage({
     api.tasks().then(({ tasks }) => live && setAllTasks(tasks), toastError);
     return () => {
       live = false;
+    };
+  }, [task.id]);
+
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api.taskTimeline(task.id).then(({ events: next }) => {
+        if (live) setTimelineEvents(next);
+      }, toastError);
+    load();
+    const unsubscribe = subscribe((msg) => {
+      if ((msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) || (msg.type === 'run_changed' && msg.run.taskId === task.id)) load();
+    });
+    return () => {
+      live = false;
+      unsubscribe();
     };
   }, [task.id]);
 
@@ -1113,6 +1131,7 @@ export function TicketPage({
                 <NoRunsYet />
               )}
             </div>
+            <LifecycleTimeline events={timelineEvents} />
           </div>
         </div>
 
