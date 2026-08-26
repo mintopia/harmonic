@@ -21,6 +21,7 @@ import { mergeUsage, type RunUsage } from '../../execution/usage.js';
 import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '../../execution/transcript-log.js';
 import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi, ticketTimelineToApi, verifierStatusesToApi } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema, verifierStatusSchema } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
 const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
@@ -133,6 +134,10 @@ const taskWithDepsSchema = z
 /** The task shape the REST API and WebSocket both serve (serialize.ts `ApiTask`) — `TaskWithDeps` plus Cost and the tracker url. */
 const taskSchema = taskWithDepsSchema
   .extend({
+    /** The prompt's first line, bounded (ADR-0045): the card title every list
+     * surface renders, so the Board need not carry the full prompt. Present on
+     * both list rows and the item GET. */
+    summary: z.string().meta({ example: 'Add rate limiting to POST /api/tasks' }),
     cost: costSchema.nullable(),
     /** The mirrored issue's tracker URL (from the last poll); null on native Tasks or before a poll. */
     url: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/35' }),
@@ -170,7 +175,7 @@ const taskSchema = taskWithDepsSchema
   })
   .meta({ id: 'Task' });
 
-const tasksListResponseSchema = z.object({ tasks: z.array(taskSchema) });
+const tasksListResponseSchema = listResponse('tasks', taskSchema);
 
 /** A run as the REST API and WebSocket both serve it (serialize.ts `ApiRun`). */
 const runSchema = z
@@ -418,13 +423,14 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'List tasks, optionally filtered and sorted. Reachable with a run-scoped Run Key.',
-        querystring: taskListQuerySchema,
-        response: { 200: tasksListResponseSchema.describe('Every task matching the filters, in the requested order.') },
+        description:
+          'List tasks: filtered (`state`, `harness`, `priority`), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with a run-scoped Run Key.',
+        querystring: taskListQuerySchema.extend(paginationQuerySchema.shape),
+        response: { 200: tasksListResponseSchema.describe('One page of tasks matching the filters, in the requested order, plus the full match `total`.') },
       },
     },
     async (req) => {
-      const { sortBy, ...query } = req.query;
+      const { sortBy, limit, offset, ...query } = req.query;
       // Cost is not a task column — it is derived from runs — so the cost
       // sort happens here, after serialization; unknown cost sorts lowest.
       const tasks = await tasksToApi(
@@ -435,7 +441,10 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         const dir = query.order === 'desc' ? -1 : 1;
         tasks.sort((a, b) => ((a.cost?.totalUsd ?? -1) - (b.cost?.totalUsd ?? -1)) * dir);
       }
-      return { tasks };
+      // Paginate last, over the fully filtered + sorted list, so `total` is the
+      // whole-Workspace match count and the page is stable under the cost sort.
+      const { items, total } = paginate(tasks, { limit, offset });
+      return { tasks: items, total };
     },
   );
 

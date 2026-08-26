@@ -87,6 +87,10 @@ export const taskListQuerySchema = z.object({
   state: z.union([z.enum(TASK_STATES), z.literal('open')]).optional().meta({ example: 'working' }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
+  /** Server-side search (ADR-0045): case-insensitive substring over the prompt
+   * and (for mirrored Tasks) the tracker title. Blank/whitespace matches every
+   * Task. Replaces the client-side `filterBySearch` (issue #104). */
+  q: z.string().optional().meta({ example: 'rate limiting' }),
   /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
   sortBy: z.enum(['createdAt', 'priority', 'cost']).optional().meta({ example: 'createdAt' }),
   order: z.enum(['asc', 'desc']).optional().meta({ example: 'desc' }),
@@ -1065,6 +1069,13 @@ export class TaskService {
     });
     if (query.harness) listed = listed.filter((task) => task.harness === query.harness);
     if (query.priority) listed = listed.filter((task) => task.priority === query.priority);
+    const needle = query.q?.trim().toLowerCase();
+    if (needle) {
+      listed = listed.filter(
+        (task) =>
+          task.prompt.toLowerCase().includes(needle) || (task.trackerTitle?.toLowerCase().includes(needle) ?? false),
+      );
+    }
     if (query.sortBy) {
       const dir = query.order === 'desc' ? -1 : 1;
       const rank: Record<string, number> = { high: 0, normal: 1, low: 2 };

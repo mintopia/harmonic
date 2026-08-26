@@ -336,6 +336,10 @@ type TrackerFactColumns =
 
 export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
   workspaceId: number;
+  /** The prompt's first line, bounded (ADR-0045): the card title every list
+   * surface renders. Present on both the list rows and the item GET; the full
+   * `prompt` stays on the row for now (additive) and always on the item GET. */
+  summary: string;
   cost: Cost | null;
   /** The mirrored issue's tracker URL, from the last poll's scan; null on native Tasks or before a poll (issue #35). */
   url: string | null;
@@ -368,6 +372,17 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
    * an operator note, without a fresh builder run (issue #191). */
   candidateRef: string | null;
 };
+
+/** Longest a list-row {@link ApiTask.summary} may be; a longer first line is
+ * truncated with an ellipsis so the payload stays lean (ADR-0045). */
+const SUMMARY_MAX = 200;
+
+/** The card title a list surface renders: the prompt's first non-empty line,
+ * bounded to {@link SUMMARY_MAX}. */
+export function summarize(prompt: string): string {
+  const firstLine = prompt.split('\n').find((line) => line.trim().length > 0)?.trim() ?? '';
+  return firstLine.length > SUMMARY_MAX ? `${firstLine.slice(0, SUMMARY_MAX - 1)}…` : firstLine;
+}
 
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
@@ -419,6 +434,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
   return {
     ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
+    summary: summarize(task.prompt),
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),

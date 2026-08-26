@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { trackerDismissals } from '../src/db/schema.js';
 import { startServer, waitFor, type TestServer } from './helpers.js';
+import { summarize } from '../src/server/serialize.js';
 
 describe('task authoring', () => {
   let server: TestServer;
@@ -352,5 +353,71 @@ describe('task skipReason (issue #171)', () => {
     const res = await server.api('GET', `/api/tasks/${blocked.body.id}`);
     expect(res.status).toBe(200);
     expect(res.body.skipReason).toBe(`Work Context held by task ${occupant.body.id} (working)`);
+  });
+});
+
+describe('task list pagination, search, and summary (ADR-0045, #347)', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    server = await startServer();
+    await server.api('POST', '/api/tasks', { prompt: 'Add rate limiting to POST /api/tasks\n\nGuard the write path.' });
+    await server.api('POST', '/api/tasks', { prompt: 'Rewrite the auth middleware' });
+    await server.api('POST', '/api/tasks', { prompt: 'Document the RATE limiter config' });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('is additive: no params returns every task with a total, keeping the full prompt and adding summary', async () => {
+    const res = await server.api('GET', '/api/tasks');
+    expect(res.status).toBe(200);
+    expect(res.body.tasks).toHaveLength(3);
+    expect(res.body.total).toBe(3);
+    const first = res.body.tasks.find((t: any) => t.prompt.startsWith('Add rate limiting'));
+    // Full prompt still present (nothing breaks yet); summary is the first line.
+    expect(first.prompt).toBe('Add rate limiting to POST /api/tasks\n\nGuard the write path.');
+    expect(first.summary).toBe('Add rate limiting to POST /api/tasks');
+  });
+
+  it('paginates with limit/offset while total stays the full match count', async () => {
+    const page1 = await server.api('GET', '/api/tasks?limit=2');
+    expect(page1.body.tasks).toHaveLength(2);
+    expect(page1.body.total).toBe(3);
+
+    const page2 = await server.api('GET', '/api/tasks?limit=2&offset=2');
+    expect(page2.body.tasks).toHaveLength(1);
+    expect(page2.body.total).toBe(3);
+
+    const ids = [...page1.body.tasks, ...page2.body.tasks].map((t: any) => t.id);
+    expect(new Set(ids).size).toBe(3); // disjoint pages covering the whole list
+  });
+
+  it('searches server-side: case-insensitive substring over the prompt, with a filtered total', async () => {
+    const res = await server.api('GET', '/api/tasks?q=rate');
+    expect(res.status).toBe(200);
+    // "rate limiting" and "RATE limiter" both match, case-insensitively; "auth" does not.
+    expect(res.body.total).toBe(2);
+    expect(res.body.tasks).toHaveLength(2);
+    expect(res.body.tasks.every((t: any) => t.prompt.toLowerCase().includes('rate'))).toBe(true);
+  });
+
+  it('a blank q matches everything (the no-search state)', async () => {
+    const res = await server.api('GET', '/api/tasks?q=%20');
+    expect(res.body.total).toBe(3);
+  });
+
+  it('rejects a limit over the max', async () => {
+    const res = await server.api('GET', '/api/tasks?limit=1000');
+    expect(res.status).toBe(400);
+  });
+
+  it('the item GET carries the full prompt and the summary too', async () => {
+    const { body } = await server.api('GET', '/api/tasks');
+    const id = body.tasks[0].id;
+    const res = await server.api('GET', `/api/tasks/${id}`);
+    expect(res.status).toBe(200);
+    expect(typeof res.body.prompt).toBe('string');
+    expect(res.body.summary).toBe(summarize(res.body.prompt));
   });
 });
