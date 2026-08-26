@@ -454,9 +454,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // effect list through the same `LandingCoordinator` — auto-accept is not a
   // second, divergent landing mechanism.
   const landingEffectsFor = (task: TaskRow, run: RunRow): LandingEffectExec[] => {
-    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return [];
+    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch || !run.candidateOid) return [];
     const baseBranch = run.baseBranch;
     const branch = run.branch;
+    const expectedOid = run.candidateOid;
     return [
       {
         effect: 'target-ref',
@@ -469,7 +470,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         // for the checked-out (worktree-mode base) path — `landBranch` still
         // falls back to PR/manual if that checkout has uncommitted operator work.
         apply: async () => {
-          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, leaseHeld: true }, postLand);
+          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true }, postLand);
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
@@ -563,7 +564,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     landing,
     async (task, run) => {
       if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
-      const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, leaseHeld: true }, postLand);
+      if (!run.candidateOid) return { ok: false, detail: 'no verified branch head available for landing' };
+      const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, expectedOid: run.candidateOid, leaseHeld: true }, postLand);
       return outcome.ok ? { ok: true } : { ok: false, detail: outcome.detail };
     },
     landingEffectsFor,

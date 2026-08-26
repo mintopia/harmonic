@@ -170,7 +170,7 @@ export class CrashRecoveryCoordinator {
           // the live path (issue #153); idempotent, so a target already advanced
           // by the pre-crash attempt is an "Already up to date" no-op here.
           const outcome = await landBranchAndRunPostLand(
-            { repoDir: task.workingDir, baseBranch, branch, leaseHeld: true },
+            { repoDir: task.workingDir, baseBranch, branch, expectedOid: run.candidateOid ?? branch, leaseHeld: true },
             this.opts.postLand,
           );
           return outcome.ok ? { ok: true, observed: { baseBranch, branch } } : { ok: false, detail: outcome.detail };

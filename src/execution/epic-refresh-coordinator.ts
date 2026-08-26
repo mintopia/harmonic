@@ -1,4 +1,5 @@
 import { landBranch, type LandBranchArgs, type LandBranchOutcome } from './branch-landing.js';
+import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
 import type { MergeTrainCoordinator } from './merge-train-coordinator.js';
 
@@ -46,6 +47,7 @@ export class EpicRefreshCoordinator {
         repoDir: target.repoDir,
         baseBranch: branch,
         branch: target.defaultBranch,
+        expectedOid: await Git.revParse(target.repoDir, target.defaultBranch),
         leaseHeld: true,
       });
       if (outcome.ok) {

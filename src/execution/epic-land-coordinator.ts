@@ -345,7 +345,7 @@ export class EpicLandCoordinator {
       type: 'merge',
       attributes: { 'git.base_branch': defaultBranch, 'git.branch': branch },
       work: () => landBranchAndRunPostLand(
-        { repoDir: this.repoDir, baseBranch: defaultBranch, branch, leaseHeld: this.landLeaseHeld },
+        { repoDir: this.repoDir, baseBranch: defaultBranch, branch, expectedOid: candidateOid, leaseHeld: this.landLeaseHeld },
         this.postLand,
         this.land,
       ),

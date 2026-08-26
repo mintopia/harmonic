@@ -54,6 +54,9 @@ export interface LandBranchArgs {
   baseBranch: string;
   /** The Run's branch whose work is being landed into `baseBranch`. */
   branch: string;
+  /** Exact branch tip verified for this landing. The merge consumes this OID,
+   * never a later resolution of `branch`. */
+  expectedOid: string;
   /**
    * An exclusive clean lease is held over the target checkout, permitting a
    * coherent in-place land of a **checked-out** target. When the target is not
@@ -107,7 +110,7 @@ export function defaultBranchPostLand(
 
 export type LandBranchOutcome =
   | { ok: true; mode: 'cas' | 'in-place'; oid: string; baseBranch: string; branch: string }
-  | { ok: false; reason: 'conflict' | 'target-advanced' | 'fallback-pr-manual'; detail: string };
+  | { ok: false; reason: 'conflict' | 'target-advanced' | 'stale-head' | 'fallback-pr-manual'; detail: string };
 
 /** Run the one shared success-only post-land hook around a branch land.
  * `baseRepoDir` is the workspace's persistent base repo checkout, for the
@@ -146,7 +149,14 @@ export async function landBranch(args: LandBranchArgs): Promise<LandBranchOutcom
 }
 
 async function landBranchUnchecked(args: LandBranchArgs): Promise<LandBranchOutcome> {
-  const { repoDir, baseBranch, branch } = args;
+  const { repoDir, baseBranch, branch, expectedOid } = args;
+  // Resolve the mutable ref once, at the landing boundary, then merge the
+  // immutable verified object. A moved branch can never slip through the
+  // admin-worktree window and land a tree that verification did not inspect.
+  const branchOid = await Git.revParse(repoDir, branch).catch(() => null);
+  if (branchOid !== expectedOid) {
+    return { ok: false, reason: 'stale-head', detail: `branch '${branch}' moved after verification` };
+  }
   const expectedOld = await Git.revParse(repoDir, baseBranch);
 
   // Step 1: compute the merge in a dedicated admin worktree detached at the
@@ -157,7 +167,7 @@ async function landBranchUnchecked(args: LandBranchArgs): Promise<LandBranchOutc
   let newOid: string;
   try {
     await Git.addDetachedWorktree(repoDir, adminPath, expectedOld);
-    const merged = await Git.mergeNoEdit(adminPath, branch);
+    const merged = await Git.mergeNoEdit(adminPath, expectedOid);
     if (!merged.ok) {
       return { ok: false, reason: 'conflict', detail: merged.detail ?? 'merge conflict' };
     }
