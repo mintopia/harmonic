@@ -1,3 +1,4 @@
+import { formatScheduledJobDuration } from './scheduled-jobs-model.js';
 import type { Attempt, AttemptState, AttemptTask, AttemptTaskState, Run, Task } from './types.js';
 
 export type TimelineTone = 'running' | 'passed' | 'failed' | 'neutral';
@@ -36,6 +37,16 @@ export function elapsed(startedAt: number | null, endedAt: number | null, now: n
 export function continuationLabel(continuation: Attempt['continuation']): string | null {
   if (!continuation) return null;
   return continuation.path === 'continued-session' ? 'continued session' : 'new session, condensed';
+}
+
+/** The recorded inputs the continuation rule decided on: context occupancy
+ * against its reuse threshold, and session idle age against the warm window. */
+export function continuationDetail(continuation: Attempt['continuation']): string | null {
+  if (!continuation) return null;
+  return [
+    `context ${continuation.contextUsage ?? 'unknown'}/${continuation.contextReuseThreshold}`,
+    `active ${formatScheduledJobDuration(continuation.lastActiveAgeMs)}/${formatScheduledJobDuration(continuation.warmWindowMs) ?? 'unknown'}`,
+  ].join(' · ');
 }
 
 export function verificationAttemptId(locator: string | null): number | null {

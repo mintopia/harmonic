@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../../api.js';
 import {
   attemptTone,
+  continuationDetail,
   continuationLabel,
   elapsed,
   escalationActions,
@@ -187,9 +188,10 @@ export function AttemptTimeline({
               <li key={attempt.id}>
                 {header}
                 {continuation && (
-                  <div className="mt-1 flex items-center gap-1.5 pl-2.5 text-[11.5px] text-faint">
+                  <div className="mt-1 flex flex-wrap items-center gap-x-1.5 pl-2.5 text-[11.5px] text-faint">
                     <Icon name="refresh" className="size-3" />
-                    {continuation}
+                    <span className="text-muted">{continuation}</span>
+                    <span>{continuationDetail(attempt.continuation)}</span>
                   </div>
                 )}
                 <ol className="ml-[13px] mt-1 flex flex-col gap-0.5 border-l border-hairline pl-2">

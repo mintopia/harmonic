@@ -13,6 +13,7 @@ import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost 
 import { isDirectRef } from '../execution/execution-isolation.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
+import { z } from 'zod';
 
 /**
  * API shapes for runs and tasks, used by both the REST routes and the
@@ -56,17 +57,21 @@ export interface ApiAttempt {
   feedback: string | null;
   verifiedSha: string | null;
   escalationReason: string | null;
-  continuation: {
-    path: 'continued-session' | 'new-session-condensed';
-    reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
-    contextUsage: number | null;
-    contextReuseThreshold: number;
-    lastActiveAt: number;
-    lastActiveAgeMs: number;
-    warmWindowMs: number | null;
-  } | null;
+  continuation: z.infer<typeof attemptContinuationSchema> | null;
   tasks: ApiAttemptTask[];
 }
+
+const attemptContinuationSchema = z.object({
+  path: z.enum(['continued-session', 'new-session-condensed']),
+  reason: z.enum(['continued-within-limits', 'context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
+  contextUsage: z.number().nullable(),
+  contextReuseThreshold: z.number(),
+  lastActiveAt: z.number(),
+  lastActiveAgeMs: z.number(),
+  warmWindowMs: z.number().nullable(),
+});
+
+const continuationToApi = (raw: string | null) => raw ? attemptContinuationSchema.parse(JSON.parse(raw) as unknown) : null;
 
 export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
@@ -105,8 +110,7 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         feedback: attempt.feedback,
         verifiedSha,
         escalationReason,
-        // The recorded session decision lands with the attempts.continuation column (#311); absent until then.
-        continuation: null,
+        continuation: continuationToApi(attempt.continuation),
         tasks: tasks.map(attemptTaskToApi),
       };
     })),

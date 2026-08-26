@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { AsyncDbHandle } from '../db/async.js';
 import { attempts, attemptTasks, runFacts, type AttemptRow, type AttemptState, type AttemptTaskRow, type AttemptTaskType, type RunFactType } from '../db/schema.js';
+import type { DeterministicContinuation } from './session-continuation.js';
 
 export interface AttemptTaskInput {
   type: AttemptTaskType;
@@ -72,5 +73,9 @@ export class AttemptStore {
 
   finish(attemptId: number, state: Exclude<AttemptState, 'running'>, now = Date.now(), feedback?: string): Promise<AttemptRow> {
     return this.db.write((db) => db.update(attempts).set({ state, endedAt: now, ...(feedback === undefined ? {} : { feedback }) }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
+  }
+
+  setContinuation(attemptId: number, continuation: DeterministicContinuation): Promise<AttemptRow> {
+    return this.db.write((db) => db.update(attempts).set({ continuation: JSON.stringify(continuation) }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
   }
 }

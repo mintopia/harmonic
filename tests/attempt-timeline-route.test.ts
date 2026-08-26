@@ -34,6 +34,15 @@ describe('attempt timeline API', () => {
       startedAt: 11,
       endedAt: 12,
     });
+    await server.app.ctx.attempts.setContinuation(attempt.id, {
+      path: 'new-session-condensed',
+      reason: 'context-usage',
+      contextUsage: 0.2,
+      contextReuseThreshold: 0.2,
+      lastActiveAt: 9,
+      lastActiveAgeMs: 1,
+      warmWindowMs: 60 * 60 * 1000,
+    });
     const verification = await server.app.ctx.attempts.createTask(attempt.id, {
       type: 'verification',
       command: 'npm test',
@@ -72,7 +81,7 @@ describe('attempt timeline API', () => {
     expect(rest.body.attempts[0].tasks.map((task: { position: number }) => task.position)).toEqual([1, 2]);
     expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
     expect(rest.body.attempts[0].escalationReason).toBe('escalated to human: attempts exhausted');
-    expect(rest.body.attempts[0].continuation).toBeNull();
+    expect(rest.body.attempts[0].continuation).toMatchObject({ path: 'new-session-condensed', contextUsage: 0.2 });
     expect(rest.body.attempts[0].tasks[1]).not.toHaveProperty('verifiedSha');
     socket.close();
   });

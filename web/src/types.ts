@@ -174,6 +174,7 @@ export interface Workspace {
   autoRunnerEnabled: boolean | null;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
+  contextReuseThreshold: number | null;
   /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
    * the command and critic: `null` inherits the global `config.verify` default,
    * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a

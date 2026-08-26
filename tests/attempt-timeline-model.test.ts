@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attemptTone,
+  continuationDetail,
   continuationLabel,
   elapsed,
   escalationActions,
@@ -66,6 +67,9 @@ describe('attempt timeline model', () => {
     const base = { reason: 'context-usage' as const, contextUsage: 0.9, contextReuseThreshold: 0.7, lastActiveAt: 1, lastActiveAgeMs: 2, warmWindowMs: 3 };
     expect(continuationLabel({ path: 'new-session-condensed', ...base })).toBe('new session, condensed');
     expect(continuationLabel({ path: 'continued-session', ...base })).toBe('continued session');
+    expect(continuationDetail({ path: 'continued-session', ...base, lastActiveAgeMs: 2_500, warmWindowMs: 30_000 })).toBe('context 0.9/0.7 · active 2.5s/30s');
+    expect(continuationDetail({ path: 'continued-session', ...base, contextUsage: null, warmWindowMs: null })).toBe('context unknown/0.7 · active 2ms/unknown');
+    expect(continuationDetail(null)).toBeNull();
   });
 
   it('maps an attempt to the run whose counter first reached it', () => {
