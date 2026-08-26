@@ -7,11 +7,11 @@ const event = (kind: TicketTimelineEvent['kind'], ts: number, data: unknown): Ti
 describe('lifecycleTimelineRows', () => {
   it('keeps the audit chronology and gives verification, escalation, disposition, and merge operator-readable labels', () => {
     const rows = lifecycleTimelineRows([
-      event('landing', 50, { effect: 'target-ref' }),
-      event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
-      event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
-      event('escalation', 30, {}),
       event('verification', 10, { verdict: 'pass', summary: 'checks passed' }),
+      event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
+      event('escalation', 30, {}),
+      event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
+      event('landing', 50, { effect: 'target-ref', payload: { ok: true } }),
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
@@ -31,5 +31,17 @@ describe('lifecycleTimelineRows', () => {
 
     expect(rows[0]).toMatchObject({ label: 'Verification disabled', tone: 'neutral' });
     expect(rows[1]).toMatchObject({ label: 'Ticket fact recorded', detail: null });
+  });
+
+  it('uses merging and failed copy for journal entries that are not successful merge results', () => {
+    const rows = lifecycleTimelineRows([
+      event('landing', 1, { effect: 'target-ref', payload: {} }),
+      event('landing', 2, { effect: 'target-ref', payload: { ok: false } }),
+    ]);
+
+    expect(rows.map((row) => [row.label, row.tone])).toEqual([
+      ['Merging', 'running'],
+      ['Merge failed', 'failed'],
+    ]);
   });
 });

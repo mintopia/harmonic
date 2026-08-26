@@ -44,9 +44,9 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'landing', 'attempt-finished', 'run-finished', 'lifecycle',
+      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'landing', 'attempt-finished', 'verification', 'run-finished', 'lifecycle',
     ]);
-    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([50, 100, 200, 250, 300, 400, 700, 800, 850, 900, expect.any(Number)]);
+    expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([50, 100, 200, 250, 300, 400, 700, 800, 850, 900, 900, expect.any(Number)]);
     expect(response.body.events.every((event: { runId: number | null }) => event.runId === null || event.runId === run.id)).toBe(true);
     expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
       verdict: 'pass', summary: 'checks passed', mechanism: 'command',
@@ -55,6 +55,7 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
       effect: 'target-ref', payload: { ok: true },
     } });
     expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });
+    expect(response.body.events.filter((event: { data: { outcome?: string } }) => event.data.outcome === 'disabled')).toHaveLength(1);
     expect(response.body.events.filter((event: { kind: string }) => event.kind === 'lifecycle')).toMatchObject([
       { data: { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } } },
     ]);

@@ -191,12 +191,30 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     ctx.asyncDb.read((db) => db.select({ fact: runFacts }).from(runFacts).innerJoin(runs, eq(runFacts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(runFacts.ts), desc(runFacts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ entry: landingJournal }).from(landingJournal).innerJoin(runs, eq(landingJournal.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(landingJournal.ts), desc(landingJournal.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
   ]);
+  const task = await ctx.tasks.get(taskId);
+  const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
+  const configuredVerifiers = resolveVerifiers(workspace, ctx.configStore.get());
+  const verificationByRun = new Map<number, VerificationAttemptRow[]>();
+  for (const { attempt } of verification) {
+    const rows = verificationByRun.get(attempt.runId) ?? [];
+    rows.push(attempt);
+    verificationByRun.set(attempt.runId, rows);
+  }
   const pending: PendingTicketTimelineEvent[] = [];
   const attemptsByNumber = new Map<number, AttemptRow>();
   const add = (event: ApiTicketTimelineEvent, order: number) => pending.push({ ...event, order });
 
   await forEachYielding(taskRuns, async (run) => {
     add({ runId: run.id, ts: run.startedAt, kind: 'run-started', data: { attempt: run.attempt, state: run.state, phase: run.phase } }, 0);
+    for (const status of verifierStatuses({ verifiers: configuredVerifiers, attempts: verificationByRun.get(run.id) ?? [] })) {
+      if (status.state !== 'disabled') continue;
+      add({
+        runId: run.id,
+        ts: run.finishedAt ?? run.startedAt,
+        kind: 'verification',
+        data: { outcome: 'disabled', mechanism: status.mechanism, reason: status.reason, derived: true },
+      }, 2);
+    }
     if (run.finishedAt !== null) add({ runId: run.id, ts: run.finishedAt, kind: 'run-finished', data: { attempt: run.attempt, state: run.state, phase: run.phase, reason: run.reason } }, 7);
   });
   await forEachYielding(taskAttempts, async (attempt) => {

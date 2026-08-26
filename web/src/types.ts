@@ -111,24 +111,24 @@ export interface VerificationAttempt {
 }
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */
-export interface TicketTimelineEvent {
-  runId: number | null;
-  ts: number;
-  kind:
-    | 'attempt-started'
-    | 'attempt-finished'
-    | 'run-started'
-    | 'run-finished'
-    | 'lifecycle'
-    | 'verification'
-    | 'guardrail'
-    | 'escalation'
-    | 'operator-accept'
-    | 'operator-reject'
-    | 'landing'
-    | 'fact';
-  data: unknown;
-}
+export type TicketTimelineKind =
+  | 'attempt-started'
+  | 'attempt-finished'
+  | 'run-started'
+  | 'run-finished'
+  | 'lifecycle'
+  | 'verification'
+  | 'guardrail'
+  | 'escalation'
+  | 'operator-accept'
+  | 'operator-reject'
+  | 'landing'
+  | 'fact';
+
+/** One chronological audit record from the ticket-wide lifecycle projection. */
+export type TicketTimelineEvent = {
+  [K in TicketTimelineKind]: { runId: number | null; ts: number; kind: K; data: unknown };
+}[TicketTimelineKind];
 
 /** Tracker mirroring (issue #30): a Task is authored here or a 1:1 projection of a tracker issue. */
 export type TaskOrigin = 'native' | 'mirrored';
