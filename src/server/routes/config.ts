@@ -115,17 +115,16 @@ const configPatchBodySchema = z
         command: verificationCommandSchema.nullable().meta({ example: { command: 'npm', args: ['test'] } }),
         /** The agent critic; null clears it. Send the whole object to set one. */
         critic: verificationCriticSchema.nullable().meta({ example: { prompt: 'Review the diff for correctness.', model: 'claude-opus-5' } }),
-        /** When true, a passing native Run lands without the human review gate (ADR-0021). */
+        /** Accepted and dropped: auto-accept described the review gate ADR-0041 removed. */
         autoAccept: z.boolean().meta({ example: true }),
       })
       .partial()
-      .meta({ example: { autoAccept: true } })
+      .meta({ example: { critic: null } })
       .optional(),
     verify: z
       .object({
         commands: z.array(verificationCommandSchema),
         review: verificationReviewSchema,
-        autoAccept: z.boolean(),
       })
       .partial()
       .optional(),

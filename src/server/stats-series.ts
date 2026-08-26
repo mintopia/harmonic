@@ -27,8 +27,6 @@ export interface DaySeriesRun {
   usage: string | null;
   /** The run's terminal `state`; omitted rows never count as a failure. */
   state?: string;
-  /** The run's review decision ('rejected' keeps it out of the fails count). */
-  review?: string | null;
 }
 
 /**
@@ -64,7 +62,7 @@ export function buildDaySeries<T extends DaySeriesRun>(
       const merged = mergeUsage(usages);
       const tokens = inputPlusOutput(merged);
       const fails = dayRows.filter((r) =>
-        r.state === undefined ? false : isExecutionFailure({ state: r.state, review: r.review ?? null }),
+        r.state === undefined ? false : isExecutionFailure({ state: r.state }),
       ).length;
       return {
         day,

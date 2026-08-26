@@ -44,9 +44,6 @@ export type ResolvedVerifiers = {
   /** Compatibility aliases during the Run-to-Attempt migration. */
   command: VerificationCommand | null;
   critic: VerificationCritic | null;
-  /** Auto-accept (issue #138, ADR-0021): when true, a native Run whose
-   * verifier(s) PASS lands without the human review gate. */
-  autoAccept: boolean;
 };
 
 /**
@@ -60,7 +57,7 @@ export type ResolvedVerifiers = {
  * resolves the config.
  */
 export function resolveVerifiers(
-  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic' | 'verificationAutoAccept'>,
+  ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
   const commands = resolveCommands(ws.verificationCommand, config.verify.commands);
@@ -70,7 +67,6 @@ export function resolveVerifiers(
     review,
     command: commands[0] ?? null,
     critic: review.enabled && review.prompt && review.model ? { prompt: review.prompt, model: review.model, ...(review.harness ? { harness: review.harness } : {}) } : null,
-    autoAccept: ws.verificationAutoAccept ?? config.verify.autoAccept,
   };
 }
 

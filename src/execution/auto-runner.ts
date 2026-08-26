@@ -57,8 +57,7 @@ function hasAssignedEpicBase(task: TaskRow): boolean {
 async function occupiedDirectContexts(tasks: readonly TaskRow[]): Promise<Map<string, TaskRow>> {
   const occupied = new Map<string, TaskRow>();
   await forEachYielding(tasks, (t) => {
-    if (t.drive === 'hitl') return;
-    if (t.state !== 'running' && t.state !== 'awaiting-review') return;
+    if (t.state !== 'working') return;
     const key = directContextKey(t);
     if (key && !occupied.has(key)) occupied.set(key, t);
   });
@@ -341,7 +340,7 @@ export class AutoRunner {
     await forEachYielding(readyWithDeps, (task) => {
       if (task.openBlockerCount === 0) return;
       dependencyBlocked.add(task.id);
-      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'completed');
+      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'done');
       record(
         task.id,
         blockers.length === 0 ? 'blocked by a dependency' : `blocked-by #${blockers.join(', #')}`,
@@ -351,10 +350,6 @@ export class AutoRunner {
     await forEachYielding(all, async (task) => {
       if (task.state !== 'ready') return;
       if (dependencyBlocked.has(task.id)) return;
-      if (task.drive === 'hitl') {
-        record(task.id, task.escalated ? 'hitl, escalated to human' : 'hitl');
-        return;
-      }
       if (!master) {
         record(task.id, 'Auto-Runner disabled');
         return;
@@ -383,8 +378,9 @@ export class AutoRunner {
         if (hasAssignedEpicBase(task)) {
           const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
           if (this.clock() - since >= this.missingEpicBaseGraceMs) {
-            await this.taskService.escalate(task.id);
-            record(task.id, 'integration branch missing, escalated to human');
+            const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
+            await this.taskService.escalate(task.id, reason);
+            record(task.id, `${reason}, escalated to human`);
             return;
           }
           missingThisPass.set(task.id, since);
@@ -465,9 +461,9 @@ export class AutoRunner {
     if (this.epicBaseNotReady) {
       const gate = this.epicBaseNotReady;
       await forEachYielding(all, async (t) => {
-        // Same cheap exclusions the pick filter below applies, so a task that's
-        // skipped or hitl doesn't cost a `branchExists` call.
-        if (t.state === 'ready' && t.origin === 'mirrored' && t.drive !== 'hitl' && !skip.has(t.id)) {
+        // Same cheap exclusions the pick filter below applies, so a skipped
+        // task doesn't cost a `branchExists` call.
+        if (t.state === 'ready' && t.origin === 'mirrored' && !skip.has(t.id)) {
           epicGate.set(t.id, await gate(t));
         }
       });
@@ -488,7 +484,7 @@ export class AutoRunner {
         runningByWorkspace.set(task.workspaceId, (runningByWorkspace.get(task.workspaceId) ?? 0) + 1);
       }
       const key = directContextKey(task);
-      if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'running' });
+      if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'working' });
     }
 
     // A Task no longer House-Rule-skipped this pass — started, or its
@@ -523,7 +519,7 @@ export class AutoRunner {
       epicGate: Map<number, boolean>;
     },
   ): boolean {
-    if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
+    if (t.state !== 'ready' || skip.has(t.id)) return false;
     if (epicGate.get(t.id)) return false;
     const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
     // Master is on (fill returned early otherwise), so an inheriting

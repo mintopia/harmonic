@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AppContext } from '../server/app.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES } from '../config.js';
+import { TASK_STATES } from '../db/schema.js';
 import { serializeRun } from '../domain/runs.js';
 import { DomainError } from '../domain/errors.js';
 import { buildLeaseDiagnostics } from '../domain/lease-diagnostics.js';
@@ -82,7 +83,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description: 'List Tasks, optionally filtered by state, harness, or priority.',
       inputSchema: {
         state: z
-          .enum(['draft', 'ready', 'running', 'awaiting-review', 'completed', 'failed', 'cancelled'])
+          .enum(TASK_STATES)
           .optional(),
         harness: z.enum(HARNESS_IDS).optional(),
         priority: z.enum(PRIORITIES).optional(),
@@ -118,14 +119,10 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     'queue_task',
     {
       description:
-        'Queue a Task for execution: promotes a draft to ready, or re-queues a failed Task (optionally with feedback appended to its prompt).',
-      inputSchema: { ...taskId, feedback: z.string().optional() },
+        'Queue a Task for execution: promotes a draft to ready. An escalated Task is a human decision (Accept / Reject with guidance / Close), never re-queued from here.',
+      inputSchema: { ...taskId },
     },
-    wrapAsync(async ({ taskId, feedback }) => {
-      const task = await ctx.tasks.get(taskId);
-      const queued = task.state === 'failed' ? await ctx.tasks.requeue(taskId, feedback) : await ctx.tasks.promote(taskId);
-      return ctx.tasks.withDeps(queued);
-    }),
+    wrapAsync(async ({ taskId }) => ctx.tasks.withDeps(await ctx.tasks.promote(taskId))),
   );
 
   server.registerTool(
@@ -202,9 +199,8 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description:
         'Signal that this Task is finished (the execution-complete signal) so Harmonic stops re-prompting ' +
         'you to continue. Call only when the work is genuinely complete. Do NOT close the tracker ticket ' +
-        'yourself — Harmonic verifies the work and then closes the ticket itself; a ticket you close before ' +
-        'that is reopened and the Task escalated. Ending your turn without this leaves the run looking ' +
-        'parked, and Harmonic will prompt you to continue.',
+        'yourself — Harmonic verifies the work, lands it, and then closes the ticket itself. Ending your ' +
+        'turn without this leaves the run looking parked, and Harmonic will prompt you to continue.',
       inputSchema: { ...taskId, summary: z.string().optional().describe('Optional note on what was finished') },
     },
     wrapAsync(async ({ taskId }) => {
@@ -217,10 +213,11 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     'escalate_task',
     {
       description:
-        'Raise this Task to a human and stop the run. Call when you are blocked on a decision, ' +
-        'need input only a human can give, or hit something you should not resolve unattended — ' +
-        'instead of guessing or idle-waiting. Include why in `reason`.',
-      inputSchema: { ...taskId, reason: z.string().min(1).describe('Why a human is needed') },
+        'Stop this attempt because you are blocked: a decision you cannot take, input you do not have, ' +
+        'or something you should not resolve unattended — instead of guessing or idle-waiting. No human ' +
+        'drives a Task (ADR-0041): the attempt ends as failed with your `reason` as feedback for the next ' +
+        'attempt, and only an exhausted attempt budget escalates the ticket to a human.',
+      inputSchema: { ...taskId, reason: z.string().min(1).describe('Why you are blocked') },
     },
     wrapAsync(async ({ taskId, reason }) => {
       await ctx.tasks.get(taskId); // 404s a bad id via DomainError

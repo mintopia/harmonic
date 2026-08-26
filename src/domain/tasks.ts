@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray, or } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notInArray, or } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AsyncDbHandle } from '../db/async.js';
 import {
@@ -16,7 +16,6 @@ import {
   type TaskState,
   type Workflow,
   type WayfinderType,
-  type Drive,
   type WorkspaceRow,
   type TrackerFacts,
   type TrackerContainerRow,
@@ -29,6 +28,7 @@ import { decideTaskDeletion } from './task-deletion.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { orderEligibleWorkYielding } from './work-ordering.js';
+import { mirroredAgentEligible } from './agent-workable.js';
 
 // Examples ride on the request schemas too, not just the responses: the API
 // page renders whatever the spec declares, so a bare field documents itself as
@@ -84,7 +84,7 @@ export interface TaskOverrides {
 export const taskListQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
   /** `open` excludes closed Tasks for the board poll; omitting state still returns every Task. */
-  state: z.union([z.enum(TASK_STATES), z.literal('open')]).optional().meta({ example: 'awaiting-review' }),
+  state: z.union([z.enum(TASK_STATES), z.literal('open')]).optional().meta({ example: 'working' }),
   harness: z.enum(HARNESS_IDS).optional().meta({ example: 'claude' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'high' }),
   /** 'cost' is handled by the API layer (cost is derived from runs, not a task column). */
@@ -97,7 +97,7 @@ export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 export interface TaskWithDeps extends TaskRow {
   dependsOn: number[];
   dependents: number[];
-  /** Legacy diagnostic retained for clients that distinguish failed blockers. */
+  /** A blocker is escalated or cancelled — the ticket will not unblock on its own. */
   blockedOnFailed: boolean;
   /** Number of blocker edges whose blocker has not completed. */
   openBlockerCount: number;
@@ -113,31 +113,19 @@ export interface OrderedEligibleTask extends TaskRow {
   blockedBy: number[];
 }
 
-/** States an operator may edit a task in. blocked is editable so its defaults
- * (model, harness, …) can be changed while it waits on a dependency (issue: a
- * blocked ticket often needs its model re-pointed before it ever runs). */
+/** States an operator may edit a task in (a blocked ticket is still `ready`,
+ * so its model can be re-pointed while it waits on a dependency). */
 const EDITABLE_STATES: TaskState[] = ['draft', 'ready'];
 /** States a task can be cancelled from — everything not terminal. */
-const CANCELLABLE_STATES: TaskState[] = [
-  'draft',
-  'ready',
-  'running',
-  'awaiting-review',
-  'failed',
-];
+const CANCELLABLE_STATES: TaskState[] = ['draft', 'ready', 'working', 'escalated'];
+const TERMINAL_STATES: TaskState[] = ['done', 'cancelled'];
 
-export type TaskNotification =
-  | 'task.created'
-  | 'run.started'
-  | 'task.awaiting-review'
-  | 'task.completed'
-  | 'task.failed';
+export type TaskNotification = 'task.created' | 'run.started' | 'task.escalated' | 'task.done';
 
 const STATE_NOTIFICATIONS: Partial<Record<TaskState, TaskNotification>> = {
-  running: 'run.started',
-  'awaiting-review': 'task.awaiting-review',
-  completed: 'task.completed',
-  failed: 'task.failed',
+  working: 'run.started',
+  escalated: 'task.escalated',
+  done: 'task.done',
 };
 
 /** Normalised input for a mirrored-Task upsert (issue #30); role fields already derived from labels. */
@@ -146,17 +134,15 @@ export interface MirrorInput {
   prompt: string;
   workflow: Workflow;
   wayfinderType: WayfinderType | null;
-  /** Seed only — applied on insert, preserved (Harmonic-owned) on re-poll. */
-  drive: Drive;
   mapRef: number | null;
-  /** The tracker open/closed axis; closed → completed. */
+  /** The tracker open/closed axis; closed → done. */
   closed: boolean;
   /**
    * Whether the resolved tracker adapter can close this ticket — i.e. owns the
-   * lifecycle write (issue #237). The `completed → ready` reopen flip below only
+   * lifecycle write (issue #237). The `done → ready` reopen flip below only
    * fires for a *writable* tracker, where a still-open ticket genuinely means a
    * human re-opened it. For an inbound-only ("freeform") adapter with no `close`
-   * capability Harmonic never owns the close, so a completed Task's ticket stays
+   * capability Harmonic never owns the close, so a done Task's ticket stays
    * open by design; flipping it back to `ready` would re-run it forever. Optional
    * and defaulting to capable: every shipped adapter (github/gitlab/local-markdown)
    * implements `close`, so an omitted signal preserves the genuine-reopen behaviour.
@@ -240,10 +226,33 @@ export class TaskService {
     };
   }
 
-  private agentWorkable(task: TaskRow, openBlockerCount: number): boolean {
+  /** ADR-0041's derived flag: opted in (mirrored: `mirroredAgentEligible` over the
+   * persisted labels) AND no open Blockers. Never stored. `epicRefs` are this
+   * Workspace's Epic containers as `workspaceId:trackerRef` (see {@link epicContainerRefs}). */
+  private agentWorkable(task: TaskRow, openBlockerCount: number, epicRefs: ReadonlySet<string>): boolean {
     if (openBlockerCount > 0) return false;
     if (task.origin !== 'mirrored') return true;
-    return task.trackerLabels === null ? task.drive !== 'hitl' : task.trackerLabels.includes('ready-for-agent');
+    return mirroredAgentEligible(
+      task.trackerLabels ?? [],
+      task.wayfinderType,
+      epicRefs.has(`${task.workspaceId}:${task.trackerRef}`),
+    );
+  }
+
+  /** An Epic is any ticket some other mirrored ticket names as its parent — a container, never worked itself. */
+  private async epicContainerRefs(workspaceId?: number): Promise<Set<string>> {
+    const rows = await this.db.read((db) =>
+      db
+        .selectDistinct({ workspaceId: tasks.workspaceId, parent: tasks.trackerParent })
+        .from(tasks)
+        .where(
+          workspaceId === undefined
+            ? isNotNull(tasks.trackerParent)
+            : and(isNotNull(tasks.trackerParent), eq(tasks.workspaceId, workspaceId)),
+        )
+        .all(),
+    );
+    return new Set(rows.map((row) => `${row.workspaceId}:${row.parent}`));
   }
 
   /** The raw stored row (four defaults nullable); TaskService-internal. */
@@ -320,16 +329,12 @@ export class TaskService {
    * (workspaceId, trackerRef) so re-polls are idempotent and each Workspace's
    * poll loop only ever touches its own board (issue #45). The tracker owns the issue's shape;
    * Harmonic owns execution state — so a re-poll refreshes prompt/role/mapRef
-   * and re-seeds `drive` from the ticket's labels (relabeling ready-for-agent↔
-   * ready-for-human flips it), *except while the Task is escalated*: an
-   * Escalation is a runtime afk→hitl flip Harmonic owns, and the ticket's label
-   * may still read ready-for-agent, so re-seeding would silently undo it. A
-   * re-poll also never
-   * moves a Task off `running` (nothing interrupts a live Run). A closed ticket
-   * settles a resting Task to completed; reopen reconciliation is left to the
-   * lifecycle work downstream. blocked⇄ready is not set here — it derives from
-   * the projected Dependency edges (see {@link reconcileMirroredDeps}, issue
-   * #31). Mirrored Tasks never enter draft or awaiting-review.
+   * and the persisted tracker facts (agent-workability derives from the labels
+   * at read time, ADR-0041). A re-poll never moves a Task off `working` or
+   * `escalated` (nothing interrupts a live Run, and an escalation is Harmonic's
+   * own fact). A closed ticket settles a resting Task to done. Blocked-ness is
+   * not set here — it derives from the projected Dependency edges (see
+   * {@link reconcileMirroredDeps}, issue #31). Mirrored Tasks never enter draft.
    */
   async upsertMirrored(input: MirrorInput, workspaceId?: number): Promise<TaskRow> {
     // Each Workspace's poll loop passes its own id; the default-Workspace
@@ -346,17 +351,17 @@ export class TaskService {
       const now = Date.now();
       if (existing) {
         const state: TaskState =
-          existing.state === 'running'
+          existing.state === 'working' || existing.state === 'escalated'
             ? existing.state
             : input.closed
-              ? 'completed'
-              : // A still-open ticket flips a resting completed Task back to
-                // ready only on a tracker Harmonic can close (a genuine external
+              ? 'done'
+              : // A still-open ticket flips a resting done Task back to ready
+                // only on a tracker Harmonic can close (a genuine external
                 // reopen). An inbound-only adapter that can't close leaves the
                 // ticket open by design, so suppress the flip — otherwise the
-                // Task re-runs, completes, the close no-ops, and it re-readies
+                // Task re-runs, lands, the close no-ops, and it re-readies
                 // forever (issue #237).
-                existing.state === 'completed' && input.trackerCanClose !== false
+                existing.state === 'done' && input.trackerCanClose !== false
                 ? 'ready'
               : existing.state;
         // Re-poll never touches the four operator picks (harness/model/isolation/
@@ -368,10 +373,6 @@ export class TaskService {
             state,
             workflow: input.workflow,
             wayfinderType: input.wayfinderType,
-            // Re-seed drive from the ticket's labels, so relabeling a mirrored
-            // issue flips Auto/You — except while escalated, where Harmonic's
-            // runtime hitl flip must survive a label that still reads afk.
-            drive: existing.escalated ? existing.drive : input.drive,
             mapRef: input.mapRef,
             // Refresh the durable facts each poll; omitting them leaves the last
             // known-good facts in place (issue #233).
@@ -398,14 +399,11 @@ export class TaskService {
           isolationMode: null,
           priority: null,
           workingDir: workspace.workingDir,
-          // Seed open Tasks ready; reconcileMirroredDeps re-derives blocked once
-          // edges are wired in the same poll.
-          state: input.closed ? 'completed' : 'ready',
+          state: input.closed ? 'done' : 'ready',
           origin: 'mirrored',
           trackerRef: input.trackerRef,
           workflow: input.workflow,
           wayfinderType: input.wayfinderType,
-          drive: input.drive,
           mapRef: input.mapRef,
           // Persist durable tracker facts on first mirror (issue #233).
           ...(input.facts ? trackerFactColumns(input.facts) : {}),
@@ -507,7 +505,7 @@ export class TaskService {
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state === 'open'
-        ? notInArray(tasks.state, ['completed', 'cancelled'])
+        ? notInArray(tasks.state, TERMINAL_STATES)
         : query.state
           ? eq(tasks.state, query.state)
           : undefined,
@@ -580,17 +578,18 @@ export class TaskService {
             db
               .select({ id: tasks.id })
               .from(tasks)
-              .where(and(inArray(tasks.id, blockerIds), eq(tasks.state, 'completed')))
+              .where(and(inArray(tasks.id, blockerIds), eq(tasks.state, 'done')))
               .all(),
           );
     const completedIds = new Set<number>();
     await forEachYielding(completedRows, (task) => {
       completedIds.add(task.id);
     });
+    const epicRefs = await this.epicContainerRefs(workspaceId);
     const nodes: OrderedEligibleTask[] = [];
     await forEachYielding(candidates, (task) => {
       const blockedBy = (blockersByTaskId.get(task.id) ?? []).filter((id) => !completedIds.has(id));
-      if (!this.agentWorkable(task, blockedBy.length)) return;
+      if (!this.agentWorkable(task, blockedBy.length, epicRefs)) return;
       nodes.push({
         ...task,
         blockedBy,
@@ -608,7 +607,7 @@ export class TaskService {
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ state: 'running', updatedAt: Date.now() })
+        .set({ state: 'working', updatedAt: Date.now() })
         .where(and(eq(tasks.id, id), eq(tasks.state, 'ready')))
         .returning()
         .get(),
@@ -657,20 +656,23 @@ export class TaskService {
   }
 
   /**
-   * Send a failed task back to ready for another attempt. Optional
-   * feedback is appended to the prompt so the retry learns from what
-   * went wrong.
+   * Resume an escalated ticket's Attempt loop (ADR-0041 "Reject with
+   * guidance"): back to ready with the guidance recorded as feedback for the
+   * next Attempt. Native Tasks bake it into the prompt; a mirrored Task's
+   * prompt is re-derived from its ticket each poll, so its feedback rides the
+   * column and is composed at run time.
    */
   async requeue(id: number, feedback?: string, continuation?: 'full' | 'condensed'): Promise<TaskRow> {
     const task = await this.get(id);
-    if (task.state !== 'failed') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only failed tasks can be re-queued`);
+    if (task.state !== 'escalated') {
+      throw new DomainError('invalid_state', `task ${id} is ${task.state}; only escalated tasks can be re-queued`);
     }
     const trimmed = feedback?.trim();
     const patch: Partial<TaskRow> = {
       state: 'ready',
+      escalationReason: null,
       updatedAt: Date.now(),
-      // Clear stale retry feedback unless this requeue supplies fresh feedback.
+      // Clear stale feedback unless this requeue supplies fresh guidance.
       feedback: null,
       // How the next Run continues the rejected Run's Session (issue #170), read
       // by the Runner's bindContinuationIfEligible. Cleared unless the operator
@@ -678,17 +680,8 @@ export class TaskService {
       continuationChoice: continuation ?? null,
     };
     if (trimmed) {
-      if (task.origin === 'mirrored') {
-        // A mirrored Task's prompt is re-derived from its ticket on every poll,
-        // so baking feedback into the prompt would be wiped on the next scan.
-        // Keep it in the feedback column instead: the prompt stays pristine,
-        // upsertMirrored never touches the column, and the feedback is composed
-        // at run time (promptForTask / the afk Drive Prompt).
-        patch.feedback = trimmed;
-      } else {
-        // Native Tasks own their prompt, so bake it in place.
-        patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
-      }
+      if (task.origin === 'mirrored') patch.feedback = trimmed;
+      else patch.prompt = `${task.prompt}\n\n## Feedback from the previous attempt\n\n${trimmed}`;
     }
     const row = await this.db.write((db) =>
       db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(),
@@ -710,62 +703,16 @@ export class TaskService {
   }
 
   /**
-   * Escalate an afk Run to a human (issue #33): the runtime afk→hitl flip.
-   * Lands the Task back in ready flagged "escalated", drive → hitl, so the
-   * Auto-Runner skips it and the poll's reconcile releases the advisory claim.
-   * Used both when a Run blocks on a human prompt and when the Attempt cap
-   * is exhausted.
+   * Hand the ticket to a human (ADR-0041's one escalation surface). `reason`
+   * is the trigger's recorded fact — attempts exhausted, a branch-contract
+   * violation, or a permanent infrastructure failure — and stays on the row
+   * until an operator Accepts, Rejects with guidance, or Closes it.
    */
-  async escalate(id: number): Promise<TaskRow> {
+  async escalate(id: number, reason: string): Promise<TaskRow> {
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ state: 'ready', drive: 'hitl', escalated: true, updatedAt: Date.now() })
-        .where(eq(tasks.id, id))
-        .returning()
-        .get(),
-    );
-    return await this.changed(row!);
-  }
-
-  /**
-   * Un-escalate a mirrored Task (issue #33 follow-up): the operator hands a
-   * Task Harmonic escalated back to autonomous drive. Clears the flag and flips
-   * drive hitl→afk; the Task stays where it is (usually ready), so the
-   * task_changed→poke path re-picks it for an afk Run. The inverse of
-   * {@link escalate}.
-   */
-  async unescalate(id: number): Promise<TaskRow> {
-    const task = await this.get(id);
-    if (task.origin !== 'mirrored') {
-      throw new DomainError('conflict', `task ${id} is native; only mirrored Tasks escalate`);
-    }
-    if (!task.escalated) throw new DomainError('invalid_state', `task ${id} is not escalated`);
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ drive: 'afk', escalated: false, updatedAt: Date.now() })
-        .where(eq(tasks.id, id))
-        .returning()
-        .get(),
-    );
-    return await this.changed(row!);
-  }
-
-  /**
-   * Clear the escalated flag without touching `drive` (issue #191): used by
-   * the Runner's Adopt & review / Note-to-critic operator escape hatches,
-   * which move an escalated Task straight to `awaiting-review` (a human
-   * disposition, not a hand-back to autonomous drive) — unlike
-   * {@link unescalate}, which flips `drive` hitl→afk and is guarded to
-   * mirrored Tasks only. This has no such guard: the caller has already
-   * checked `escalated` and moved `state` itself.
-   */
-  async clearEscalated(id: number): Promise<TaskRow> {
-    const row = await this.db.write((db) =>
-      db
-        .update(tasks)
-        .set({ escalated: false, updatedAt: Date.now() })
+        .set({ state: 'escalated', escalationReason: reason, updatedAt: Date.now() })
         .where(eq(tasks.id, id))
         .returning()
         .get(),
@@ -781,29 +728,29 @@ export class TaskService {
     return this.setState(id, 'cancelled');
   }
 
-  /** Operator override: force a running task straight to completed, skipping the
-   * review gate (ADR-0002). Unblocks dependents like any completion. Pairs with
-   * runner.completeForTask, which stops the still-running agent. Running only —
-   * every other state has its own path to (or away from) completion. */
+  /** Operator override: force a working task straight to done (ADR-0002).
+   * Unblocks dependents like any completion. Pairs with runner.completeForTask,
+   * which stops the still-running agent. Working only — every other state has
+   * its own path to (or away from) done. */
   async complete(id: number): Promise<TaskRow> {
     const task = await this.get(id);
-    if (task.state !== 'running') {
-      throw new DomainError('invalid_state', `task ${id} is ${task.state}, not running`);
+    if (task.state !== 'working') {
+      throw new DomainError('invalid_state', `task ${id} is ${task.state}, not working`);
     }
-    return this.setState(id, 'completed');
+    return this.setState(id, 'done');
   }
 
   /**
-   * Claim a mirrored afk Task for the Auto-Runner in one compare-and-set step.
-   * If the Task left the ready afk frontier after the scheduler scanned it, the
-   * claim is rejected and the caller must treat it as a clean no-op.
+   * Claim a mirrored Task for the Auto-Runner in one compare-and-set step. If
+   * the Task left the ready frontier after the scheduler scanned it, the claim
+   * is rejected and the caller must treat it as a clean no-op.
    */
   async claimMirroredAutoRun(id: number): Promise<TaskRow | undefined> {
     const row = await this.db.write((db) =>
       db
         .update(tasks)
-        .set({ state: 'running', updatedAt: Date.now() })
-        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored'), eq(tasks.drive, 'afk')))
+        .set({ state: 'working', updatedAt: Date.now() })
+        .where(and(eq(tasks.id, id), eq(tasks.state, 'ready'), eq(tasks.origin, 'mirrored')))
         .returning()
         .get(),
     );
@@ -812,7 +759,12 @@ export class TaskService {
 
   async setState(id: number, state: TaskState): Promise<TaskRow> {
     const row = await this.db.write((db) =>
-      db.update(tasks).set({ state, updatedAt: Date.now() }).where(eq(tasks.id, id)).returning().get(),
+      db
+        .update(tasks)
+        .set({ state, updatedAt: Date.now(), ...(state === 'escalated' ? {} : { escalationReason: null }) })
+        .where(eq(tasks.id, id))
+        .returning()
+        .get(),
     );
     const task = await this.resolve(row!);
     this.onChanged(task);
@@ -820,7 +772,7 @@ export class TaskService {
     if (notification) this.onNotify(notification, task);
     // Completion changes each dependent's derived blocker count. There is no
     // stored blocked state to flip, but live clients still need a fresh DTO.
-    if (state === 'completed') {
+    if (state === 'done') {
       for (const dependentId of await this.dependents(id)) {
         this.onChanged(await this.get(dependentId));
       }
@@ -1057,14 +1009,14 @@ export class TaskService {
   async withDeps(task: TaskRow): Promise<TaskWithDeps> {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
-    const openBlockerCount = depStates.filter((state) => state !== 'completed').length;
+    const openBlockerCount = depStates.filter((state) => state !== 'done').length;
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
-      blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'failed' || s === 'cancelled'),
+      blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
-      agentWorkable: this.agentWorkable(task, openBlockerCount),
+      agentWorkable: this.agentWorkable(task, openBlockerCount, await this.epicContainerRefs(task.workspaceId ?? undefined)),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
@@ -1077,7 +1029,7 @@ export class TaskService {
     const filters = [
       query.workspaceId ? eq(tasks.workspaceId, query.workspaceId) : undefined,
       query.state === 'open'
-        ? notInArray(tasks.state, ['completed', 'cancelled'])
+        ? notInArray(tasks.state, TERMINAL_STATES)
         : query.state
           ? eq(tasks.state, query.state)
           : undefined,
@@ -1135,17 +1087,18 @@ export class TaskService {
     const openBlockerCounts = new Map(ids.map((id) => [id, 0]));
     for (const edge of dependencyRows) {
       dependsOn.get(edge.taskId)?.push(edge.dependsOnId);
-      if (edge.state !== 'completed') openBlockerCounts.set(edge.taskId, (openBlockerCounts.get(edge.taskId) ?? 0) + 1);
-      if (edge.state === 'failed' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
+      if (edge.state !== 'done') openBlockerCounts.set(edge.taskId, (openBlockerCounts.get(edge.taskId) ?? 0) + 1);
+      if (edge.state === 'escalated' || edge.state === 'cancelled') failedDependencies.add(edge.taskId);
     }
     for (const edge of dependentRows) dependents.get(edge.dependsOnId)?.push(edge.taskId);
+    const epicRefs = await this.epicContainerRefs(query.workspaceId);
     return listed.map((task) => ({
       ...task,
       dependsOn: dependsOn.get(task.id) ?? [],
       dependents: dependents.get(task.id) ?? [],
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
-      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0),
+      agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, epicRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

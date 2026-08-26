@@ -60,7 +60,7 @@ export const DEFAULT_RETENTION: RetentionConfig = {
  *   guardrail-trip, branch-violation, process-death): retain as evidence under
  *   the retention-TTL backstop.
  */
-export type RetirementCause = 'landed' | 'rejected' | 'review-sla' | 'operator-cancel' | 'other';
+export type RetirementCause = 'landed' | 'operator-cancel' | 'other';
 
 /**
  * What the settle-hook should do to the settling Run's Session. `retire` removes
@@ -88,14 +88,6 @@ export function decideRetirement(
       return { kind: 'retire', reason: 'landed' };
     case 'operator-cancel':
       return { kind: 'retire', reason: 'operator-disposition' };
-    case 'review-sla':
-      return { kind: 'retire', reason: 'review-abandonment-sla' };
-    case 'rejected':
-      return {
-        kind: 'idle',
-        reason: 'reject-continuation-timeout',
-        retireDeadline: now + config.rejectContinuationMs,
-      };
     case 'other':
       return {
         kind: 'idle',

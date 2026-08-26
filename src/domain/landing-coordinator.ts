@@ -32,7 +32,7 @@ import { startOperation } from '../telemetry/operations.js';
  *     (`reconcile`, landing.ts) rather than trusting the journal alone.
  *
  * Today only the worktree merge (`target-ref`) has a live executor (wired in
- * src/server/app.ts's `ReviewService`); `open-pr`/`ticket-close` are
+ * src/server/app.ts's `EscalationService`); `open-pr`/`ticket-close` are
  * modelled (`LandingEffect`) but unused until later units add their
  * executors — this coordinator's contract doesn't change when they do.
  */
@@ -56,20 +56,17 @@ export class LandingCoordinator {
    * intends (matching `RunSettleCoordinator.settle`'s contract) — carried
    * through to the land `run_fact` and (on success) to the actual settle
    * call. `patch` rides the winning settle write exactly as it does for
-   * `RunSettleCoordinator.settle` directly (e.g. the review decoration
-   * `{ review: 'accepted', reviewedAt, reviewDeadline: null }`). `landFactType`
-   * (issue #191) is the disposition kind the land fact appends as; it defaults
-   * to {@link LAND_FACT_TYPE} (`agent-finish/unresolved`) so every existing
-   * caller is unchanged. `ReviewService.accept`'s native-running branch passes
-   * `'operator-accept'` instead: an explicit operator Accept must outrank an
-   * `escalate` fact already sitting on an adopted-for-review Run's log
+   * `RunSettleCoordinator.settle` directly. `landFactType` is the disposition
+   * kind the land fact appends as; it defaults to {@link LAND_FACT_TYPE}
+   * (`agent-finish/unresolved`). `EscalationService.accept` passes
+   * `'operator-accept'` instead: an explicit operator Accept must outrank the
+   * `escalate` fact already sitting on the Run's log
    * (`DISPOSITION_PRECEDENCE`, run-disposition.ts), which a bare
    * `agent-finish/unresolved` cannot.
    *
    * Ordering (the PONC mechanism):
    *
-   *   1. Ensure `run.phase === 'landing'` (recorded + a lifecycle event, same
-   *      as `ReviewService.accept`'s pre-#115 inline version of this step).
+   *   1. Ensure `run.phase === 'landing'` (recorded + a lifecycle event).
    *   2. Append the land disposition fact **directly** (NOT through `settle`
    *      yet, because `settle` would also write the Run row/release the
    *      lease/apply the Task action, and effects haven't run — the operator
@@ -184,7 +181,7 @@ export class LandingCoordinator {
         now(),
       );
       if (!result.ok) {
-        await this.reparkForReview(run);
+        await this.abandon(run, result.detail ?? 'landing failed');
         return { ok: false, detail: result.detail };
       }
     }
@@ -193,10 +190,16 @@ export class LandingCoordinator {
     return { ok: true };
   }
 
-  /** Return an unsuccessful landing to the operator's review gate. */
-  async reparkForReview(run: RunRow): Promise<void> {
-    await this.runStore.update(run.id, { phase: 'review' });
-    await this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'review' } });
+  /**
+   * Record that this landing did not happen: lifts the PONC (`poncCutoff`
+   * ignores a frozen cutoff followed by `abandoned`) so the caller's escalate
+   * fact can decide the Run instead of the land fact silently completing a
+   * failed merge. Nothing irreversible ran — effects are fail-fast and the
+   * failed one is the first non-ok result.
+   */
+  async abandon(run: RunRow, detail: string): Promise<void> {
+    await this.journal.append(run.id, 'abandoned', { payload: { detail } }, (this.opts.now ?? Date.now)());
+    await this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'landing-abandoned', detail } });
   }
 
   /**

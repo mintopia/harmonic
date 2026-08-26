@@ -64,8 +64,6 @@ export const workspaceOverridesSchema = z.object({
    * `{ off: true }` explicitly disables the verifier for this Workspace.
    */
   verificationCritic: verificationCriticOverrideSchema.nullable().optional(),
-  /** Auto-accept override (issue #138); null inherits `config.verification.autoAccept`. */
-  verificationAutoAccept: z.boolean().nullable().optional().meta({ example: true }),
   /** Budget-Guardrail override (issue #126); null inherits `config.guardrails.budget`. */
   guardrailBudget: budgetGuardrailSchema.nullable().optional(),
   /** Progress-detector toggle override (issue #126); null inherits `config.guardrails.progress`. */
@@ -176,7 +174,6 @@ export class WorkspaceService {
           contextReuseThreshold: patch(input.contextReuseThreshold, current.contextReuseThreshold),
           verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
           verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
-          verificationAutoAccept: patch(input.verificationAutoAccept, current.verificationAutoAccept),
           guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
           guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
           updatedAt: Date.now(),
@@ -204,7 +201,7 @@ export class WorkspaceService {
       db
         .select({ id: tasks.id })
         .from(tasks)
-        .where(and(eq(tasks.workspaceId, id), eq(tasks.state, 'running')))
+        .where(and(eq(tasks.workspaceId, id), eq(tasks.state, 'working')))
         .get(),
     );
     if (running) throw new DomainError('conflict', `workspace ${id} has a running task; stop it first`);

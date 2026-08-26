@@ -1,3 +1,4 @@
+import type { RunFactType, RunRow, TaskRow } from '../db/schema.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
@@ -62,6 +63,8 @@ export class CrashRecoveryCoordinator {
       isDirectContextClean?: (workingDir: string) => Promise<boolean>;
       postLand?: PostLandHook;
       yieldOptions?: YieldOptions;
+      /** Closes a mirrored Task's ticket (the `ticket-close` landing effect); absent ⇒ the effect re-applies as a no-op. */
+      closeTicket?: (task: TaskRow) => Promise<boolean>;
     } = {},
   ) {}
 
@@ -78,7 +81,7 @@ export class CrashRecoveryCoordinator {
 
   private async reconcileInterrupted(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
-    await this.reconcileLandingOrphans(ts);
+    await this.reconcileLandingOrphans();
     await this.reconcileTurnQueue(ts);
     // Pass C: the generic orphan sweep, moved here so it runs after A/B have
     // already resolved anything more specific about a `running` Run. Lease
@@ -121,7 +124,7 @@ export class CrashRecoveryCoordinator {
   }
 
   /** Pass A: resolve every Run mid-landing when the process died. */
-  private async reconcileLandingOrphans(now: number): Promise<void> {
+  private async reconcileLandingOrphans(): Promise<void> {
     await forEachYielding(await this.runStore.listLandingOrphans(), async (run) => {
       const task = await this.taskService.get(run.taskId);
       const poncSeq = await this.landingJournal.ponc(run.id);
@@ -129,7 +132,7 @@ export class CrashRecoveryCoordinator {
         // Died before the PONC ever froze — no irreversible effect could have
         // started (see landing.ts's module doc comment). Settle it as an
         // interrupted orphan, the same disposition the generic sweep would use.
-        await this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
+        await this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'ready', reason: 'interrupted' });
         return;
       }
 
@@ -149,10 +152,7 @@ export class CrashRecoveryCoordinator {
       const failedResult = [...latestResults.values()].find((row) => row.payload['ok'] === false);
       if (failedResult) {
         const detail = failedResult.payload['detail'];
-        await this.landing.reparkForReview(run);
-        await this.runStore.update(run.id, {
-          reviewFeedback: typeof detail === 'string' ? detail : 'landing failed; retry accept or land via PR/manual',
-        });
+        await this.escalateFailedLanding(task, run, typeof detail === 'string' ? detail : 'landing failed');
         return;
       }
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
@@ -163,6 +163,12 @@ export class CrashRecoveryCoordinator {
       }
       const observed = (effect: LandingEffect): ObservedState => (effect === 'target-ref' && merged ? 'present' : 'absent');
       const executors: Partial<Record<LandingEffect, LandingEffectExecutor>> = {
+        // Idempotent (the adapter reads the ticket's state first), so a close
+        // the pre-crash attempt already issued is a no-op here.
+        'ticket-close': async () =>
+          (await this.opts.closeTicket?.(task)) === false
+            ? { ok: false, detail: `ticket #${task.trackerRef} could not be closed` }
+            : { ok: true, observed: { trackerRef: task.trackerRef } },
         'target-ref': async (_key, expected) => {
           const baseBranch = expected['baseBranch'] as string;
           const branch = expected['branch'] as string;
@@ -186,22 +192,33 @@ export class CrashRecoveryCoordinator {
       // settle call (vacuously true when nothing was ever intended).
       const entries = foldJournal(await this.landingJournal.views(run.id));
       if (entries.every((entry) => entry.appliedOk)) {
-        // Same fact type + projection + patch as `land()`'s finishing settle
-        // call — the only "land" signal today (landing-coordinator.ts's
-        // `LAND_FACT_TYPE` doc comment, `ReviewService.accept`'s call site).
+        // Finish with the land fact the PONC froze — same type and projection
+        // as the landing that died (`LandingCoordinator.land` appends it before
+        // its first effect), so an operator Accept still outranks the escalate
+        // fact it was answering.
+        const landFact = (await this.settle.facts(run.id)).find((fact) => fact.seq === poncSeq);
         await this.settle.settle(
           task,
           run,
-          'agent-finish/unresolved',
-          { runState: 'completed', taskAction: 'completed', reason: null },
-          { review: 'accepted', reviewedAt: now, reviewDeadline: null },
+          (landFact?.type as RunFactType | undefined) ?? 'agent-finish/unresolved',
+          landFact?.projection ?? { runState: 'completed', taskAction: 'done', reason: null },
         );
+      } else {
+        const failed = (await this.landingJournal.views(run.id)).findLast((row) => row.kind === 'result' && row.payload['ok'] === false);
+        const detail = failed?.payload['detail'];
+        await this.escalateFailedLanding(task, run, typeof detail === 'string' ? detail : 'landing effect could not be re-applied');
       }
-      // else: a re-applied effect genuinely failed (e.g. a real merge
-      // conflict) — leave the Run parked in `landing` / the Task in
-      // `awaiting-review` for a human to retry accept. A later boot
-      // re-reconciles idempotently.
     }, this.opts.yieldOptions);
+  }
+
+  /** A landing that cannot complete is escalation trigger 3 (infrastructure): lift the PONC and hand the ticket to a human. */
+  private async escalateFailedLanding(task: TaskRow, run: RunRow, detail: string): Promise<void> {
+    await this.landing.abandon(run, detail);
+    await this.settle.settle(task, run, 'escalate', {
+      runState: 'failed',
+      taskAction: 'escalate',
+      reason: `escalated to human: landing failed after restart: ${detail}`,
+    });
   }
 
   /** Pass B: the turn queue — cancel every pending turn, resolve whatever is

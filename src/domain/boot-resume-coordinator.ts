@@ -153,11 +153,11 @@ export class BootResumeCoordinator {
       await this.runFacts.append(resumeRun.id, 'resume-entry', { resumedFromRunId: orphan.id }, ts);
 
       // The Task continues as live work rather than staying failed from the boot
-      // orphan-fail sweep — the resume Run is its live attempt now, parked
+      // orphan sweep — the resume Run is its live attempt now, parked
       // awaiting dispatch (the `resume-entry` marker keeps that Run, and this
-      // `running` Task, from being re-orphaned on a later boot — see
+      // `working` Task, from being re-orphaned on a later boot — see
       // `RunStore.markInterrupted` and the boot Task sweep in `app.ts`).
-      await this.taskService.setState(orphan.taskId, 'running');
+      await this.taskService.setState(orphan.taskId, 'working');
     }, this.opts.yielding);
   }
 

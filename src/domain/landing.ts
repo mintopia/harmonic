@@ -36,10 +36,12 @@
 export const LANDING_EFFECTS = ['target-ref', 'open-pr', 'ticket-close'] as const;
 export type LandingEffect = (typeof LANDING_EFFECTS)[number];
 
-/** The three journal row kinds, in the order a landing writes them: a `ponc`
- * marker (once, before the first effect), then an `intent`/`result` pair per
- * effect attempted. */
-export const LANDING_JOURNAL_KINDS = ['ponc', 'intent', 'result'] as const;
+/** The journal row kinds, in the order a landing writes them: a `ponc` marker
+ * (once, before the first effect), then an `intent`/`result` pair per effect
+ * attempted, and `abandoned` when an effect failed — nothing irreversible
+ * happened, so the PONC no longer freezes the disposition (ADR-0041 escalates
+ * the failed landing instead of parking it for review). */
+export const LANDING_JOURNAL_KINDS = ['ponc', 'intent', 'result', 'abandoned'] as const;
 export type LandingJournalKind = (typeof LANDING_JOURNAL_KINDS)[number];
 
 /** What the coordinator intends to do: apply `effect`, identified for
@@ -152,9 +154,10 @@ export function foldJournal(rows: readonly LandingJournalRowView[]): JournalEntr
  * the window a cancel could still have won in.
  */
 export function poncCutoff(rows: readonly LandingJournalRowView[]): number | null {
-  const row = rows.find((r) => r.kind === 'ponc');
-  if (!row) return null;
-  const cutoffSeq = row.payload.cutoffSeq;
+  const index = rows.findIndex((r) => r.kind === 'ponc');
+  if (index < 0) return null;
+  if (rows.slice(index + 1).some((r) => r.kind === 'abandoned')) return null;
+  const cutoffSeq = rows[index]!.payload.cutoffSeq;
   return typeof cutoffSeq === 'number' ? cutoffSeq : null;
 }
 

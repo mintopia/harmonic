@@ -1,37 +1,25 @@
 import type { SpanContext } from '@opentelemetry/api';
-import { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL, type Ticket } from './adapter.js';
+import type { Ticket } from './adapter.js';
 import type { MirrorInput, TaskService } from '../domain/tasks.js';
-import { WAYFINDER_TYPES, type Drive, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
+import { WAYFINDER_TYPES, type TaskRow, type TrackerFacts, type WayfinderType, type Workflow } from '../db/schema.js';
 import { forEachYielding } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 export interface MirroredRole {
   workflow: Workflow;
   wayfinderType: WayfinderType | null;
-  drive: Drive;
 }
 
 /**
- * Derive a mirrored issue's role from its labels (issue #30, per CONTEXT.md).
+ * Derive a mirrored issue's role from its labels (issue #30, per CONTEXT.md):
  * `workflow` = wayfinder when any `wayfinder:<type>` label is present, else
- * implement. Drive seeding is opt-*in* (issue #230): `ready-for-agent` is the
- * positive gate to AFK — present (and not a hitl kind) → afk; everything else →
- * hitl. So ready-for-human / grilling / prototype / task, AND any ticket lacking
- * `ready-for-agent` (unlabelled / needs-triage / needs-info / wontfix) stay hitl:
- * a human may drive them, but Harmonic never auto-runs them. Assignment is never
- * consulted — an assigned `ready-for-agent` ticket is still afk (issue #208).
+ * implement. Whether Harmonic may work the ticket is not stored — it derives
+ * from the persisted labels at read time (`mirroredAgentEligible`, ADR-0041).
  */
 export function deriveRole(ticket: Ticket): MirroredRole {
   const labels = new Set(ticket.labels);
   const wayfinderType = WAYFINDER_TYPES.find((t) => labels.has(`wayfinder:${t}`)) ?? null;
-  const workflow: Workflow = wayfinderType ? 'wayfinder' : 'implement';
-  const forcedHitl =
-    labels.has(READY_FOR_HUMAN_LABEL) ||
-    wayfinderType === 'grilling' ||
-    wayfinderType === 'prototype' ||
-    wayfinderType === 'task';
-  const afk = labels.has(READY_FOR_AGENT_LABEL) && !forcedHitl;
-  return { workflow, wayfinderType, drive: afk ? 'afk' : 'hitl' };
+  return { workflow: wayfinderType ? 'wayfinder' : 'implement', wayfinderType };
 }
 
 const mirrorPrompt = (t: Ticket): string => (t.body.trim() ? `${t.title}\n\n${t.body.trim()}` : t.title);
@@ -47,26 +35,17 @@ const trackerFacts = (ticket: Ticket): TrackerFacts => ({
   createdAt: ticket.createdAt,
 });
 
-/**
- * The upsert input for one ticket — role derived, open/closed axis resolved.
- * An Epic (a ticket with children) is a container, never auto-run: its drive is
- * forced to hitl so the Auto-Runner (pick predicate `drive !== hitl`) skips it.
- * upsertMirrored re-seeds an existing row's drive from this label-derived value
- * on every re-poll (relabeling flips Auto/You), except while the Task is
- * escalated — Harmonic's runtime hitl flip must not be undone by a stale label.
- */
-export function toMirrorInput(ticket: Ticket, isEpic = false, trackerCanClose = true): MirrorInput {
-  const role = deriveRole(ticket);
+/** The upsert input for one ticket — role derived, open/closed axis resolved. */
+export function toMirrorInput(ticket: Ticket, trackerCanClose = true): MirrorInput {
   return {
     trackerRef: ticket.number,
     prompt: mirrorPrompt(ticket),
-    ...role,
-    drive: isEpic ? 'hitl' : role.drive,
+    ...deriveRole(ticket),
     mapRef: ticket.parent,
     closed: ticket.state === 'closed',
     // Whether the resolved adapter owns the close (issue #237): gates the
-    // completed→ready reopen flip in upsertMirrored so an inbound-only tracker
-    // Harmonic can't close never re-runs a completed Task forever. Defaults to
+    // done→ready reopen flip in upsertMirrored so an inbound-only tracker
+    // Harmonic can't close never re-runs a done Task forever. Defaults to
     // capable, matching every shipped adapter.
     trackerCanClose,
     // Persist the normalised facts verbatim so they survive a restart (issue
@@ -110,10 +89,10 @@ export async function mirrorScan(
   await tasks.syncTrackerContainers(workspaceId, containers);
   // An Epic is any ticket with children — a Map or a Spec — identified
   // structurally as the parent of some ticket in this scan. Epics are containers:
-  // they neither run (drive forced hitl, below) nor block their children (a
-  // `Blocked by: #<epic>` edge is never projected; a re-poll also removes any
-  // that pre-date this rule, since reconcileMirroredDeps deletes edges not in
-  // the desired set).
+  // they never block their children (a `Blocked by: #<epic>` edge is never
+  // projected; a re-poll also removes any that pre-date this rule, since
+  // reconcileMirroredDeps deletes edges not in the desired set). That they are
+  // never worked derives from the same parent facts at read time (TaskService).
   const epicRefs = new Set<number>();
   await forEachYielding(tickets, (ticket) => {
     if (ticket.parent !== null) epicRefs.add(ticket.parent);
@@ -130,7 +109,7 @@ export async function mirrorScan(
         })
       : undefined;
     try {
-      const upsert = () => tasks.upsertMirrored(toMirrorInput(t, epicRefs.has(t.number), trackerCanClose), workspaceId);
+      const upsert = () => tasks.upsertMirrored(toMirrorInput(t, trackerCanClose), workspaceId);
       const row = operation ? await operation.run(upsert) : await upsert();
       rows.push(row);
       operation?.end();

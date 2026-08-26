@@ -69,8 +69,6 @@ export class TrackerPollerManager {
       featureIndex?: FeatureIndex,
     ) => Promise<TrackerAdapter> = resolveTrackerAdapter,
     private readonly onError: (msg: string) => void = logger.error,
-    /** A mirrored Task whose ticket closed while it was still running (board-refresh backstop) — routed to the Runner to stop the parked agent and settle it done. */
-    private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
     /**
      * The effective app config, read per poll to resolve a Workspace's
      * Verification verifiers for the whole-Epic land (issue #161). Absent ⇒ no
@@ -190,7 +188,6 @@ export class TrackerPollerManager {
       this.onError,
       mirror,
       (resolved) => this.resolved.set(ws.id, resolved), // keep the Resolved Tracker fresh every poll (issue #83)
-      this.onClosedWhileRunning,
       epics,
       { reconcileOnPoll: this.scheduler === undefined },
     );

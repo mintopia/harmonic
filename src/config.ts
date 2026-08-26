@@ -334,12 +334,6 @@ export const appConfigSchema = z.object({
     .object({
       commands: z.array(verificationCommandSchema).default([]),
       review: verificationReviewSchema.prefault({}),
-      /** Auto-accept (issue #138, ADR-0021): when true, a native Run whose
-       * verifier(s) PASS lands without the human review gate — the verifier's pass
-       * IS the accept (ADR-0021 folds in the old `agentReview` flag). Off → a
-       * passing native Run still parks for human review. No verifier configured →
-       * always review, regardless of this flag (nothing verified to auto-accept). */
-      autoAccept: z.boolean().default(false),
     })
     .prefault({}),
   /**
@@ -502,7 +496,6 @@ export function defaultConfig(): AppConfig {
     verify: {
       commands: [],
       review: { enabled: false },
-      autoAccept: false,
     },
     guardrails: {
       budget: { wallClockMinutes: 60, tokens: null, costUsd: null },
@@ -546,11 +539,10 @@ export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
     if (verify.review === undefined && 'critic' in legacyVerification) {
       verify.review = legacyVerification.critic === null ? { enabled: false } : { enabled: true, ...legacyVerification.critic! };
     }
-    if (verify.autoAccept === undefined && legacyVerification.autoAccept !== undefined) verify.autoAccept = legacyVerification.autoAccept;
-    // Legacy `maxSelfHeals` is dropped, not migrated: the self-heal budget was
-    // replaced by the top-level `maxAttempts` cap (#310), a different unit.
+    // Legacy `maxSelfHeals` and `autoAccept` are dropped, not migrated: the
+    // self-heal budget was replaced by the top-level `maxAttempts` cap (#310),
+    // and auto-accept described a review gate that no longer exists (ADR-0041).
   }
-  if (agentReview === true && verify.autoAccept === undefined) verify.autoAccept = true;
   return Object.keys(verify).length === 0 ? rest : { ...rest, verify };
 }
 

@@ -226,7 +226,7 @@ export const activityProcessSchema = z
     trackerRef: z.number().nullable().meta({ example: 51 }),
     /** The mirrored issue's tracker URL — the Activity row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
     trackerUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/55' }),
-    /** True when an afk Run escalated to a human at runtime (issue #33) — the "Needs you" signal; always false for a Conversation. */
+    /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
     escalated: z.boolean().meta({ example: false }),
     /** Rolled-up Usage; null before any tokens are reported. */
     usage: runUsageSchema.nullable(),

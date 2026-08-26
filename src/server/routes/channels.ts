@@ -26,7 +26,7 @@ const channelSchema = z
       example: { url: 'https://discord.com/api/webhooks/000000000000000000/EXAMPLE-WEBHOOK-TOKEN' },
     }),
     /** Subscribed event types; defaults to the review-gate and failure moments (DEFAULT_EVENTS). */
-    events: z.array(z.enum(NOTIFICATION_EVENTS)).meta({ example: ['task.awaiting-review', 'task.failed'] }),
+    events: z.array(z.enum(NOTIFICATION_EVENTS)).meta({ example: ['task.escalated'] }),
     createdAt: z.number().meta({ example: 1784030400000 }),
   })
   .meta({ id: 'Channel' });

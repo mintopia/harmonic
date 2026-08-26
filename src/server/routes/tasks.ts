@@ -10,7 +10,6 @@ import {
   TASK_ORIGINS,
   WORKFLOWS,
   WAYFINDER_TYPES,
-  DRIVES,
   GUARDRAIL_DIMENSIONS,
   GUARDRAIL_CONFIG_SOURCES,
   VERIFICATION_MECHANISMS,
@@ -23,28 +22,14 @@ import { readTranscriptLog, withOperatorMessages, type OperatorMessage } from '.
 import { attemptTimelineToApi, atRestWorkspaceId, costOfRuns, runToApi, taskToApi, tasksToApi } from '../serialize.js';
 import { attemptTimelineResponseSchema, errorResponse, idParamsSchema, costSchema, runUsageSchema, okResponseSchema } from '../schemas.js';
 
-/** The reviewer's note, carried onto the re-attempt or back to the queue. */
-const feedbackExample = 'The limiter is per-process; it needs to be shared across workers.';
-const requeueInputSchema = z
-  .object({
-    feedback: z.string().optional().meta({ example: feedbackExample }),
-    /** How the re-run continues the rejected Run's Session (issue #170): `'full'`
-     * (default) re-binds the warm Session, `'condensed'` starts fresh carrying
-     * only the feedback. Omit to keep the historical full-continuation. */
-    continuation: z.enum(['full', 'condensed']).optional().meta({ example: 'condensed' }),
-  })
-  .nullish();
-const rejectInputSchema = z.object({ feedback: z.string().optional().meta({ example: feedbackExample }) }).nullish();
-/** The operator's note-to-critic input (issue #191): a required human note
- * folded into the critic's trusted preamble for a targeted re-review. */
-const noteExample = 'The rate limiter must be shared across worker processes, not per-process.';
-const noteToCriticInputSchema = z.object({ note: z.string().trim().min(1).meta({ example: noteExample }) });
+/** The operator's guidance on an escalated ticket (ADR-0041 "Reject with guidance"): becomes the next Attempt's feedback. */
+const guidanceExample = 'The limiter is per-process; it needs to be shared across workers.';
+const rejectInputSchema = z.object({ guidance: z.string().trim().min(1).meta({ example: guidanceExample }) });
 const cancelInputSchema = z.object({ withDependents: z.boolean().optional().meta({ example: true }) }).nullish();
-/** The reject dialog's continuation preview (issue #170): what `planSessionContinuation`
- * offers for this Task's live Session, so the operator sees the full-continuation
- * cost estimate before choosing. `available: false` means there is nothing to
- * continue (no Run ever bound a Session, or it has been retired), so the dialog
- * shows only the plain re-attempt. */
+/** The reject dialog's continuation preview (issue #170, deterministic since
+ * #311): what the continuation rule will do with this Task's live Session, so
+ * the operator sees the warm-session estimate. `available: false` means there
+ * is nothing to continue (no Run ever bound a Session, or it has been retired). */
 const continuationPreviewSchema = z.discriminatedUnion('available', [
   z.object({ available: z.literal(false) }),
   z.object({
@@ -100,11 +85,13 @@ const taskWithDepsSchema = z
     baseBranch: z.string().nullable().meta({ example: 'integration/epic-42' }),
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string().meta({ example: 'normal' }),
-    state: z.enum(TASK_STATES).meta({ example: 'awaiting-review' }),
+    /** ADR-0041: draft → ready → working → done, plus escalated (the one human surface) and cancelled. Blocked-ness is derived (`openBlockerCount`), never stored. */
+    state: z.enum(TASK_STATES).meta({ example: 'working' }),
+    /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
+    escalationReason: z.string().nullable().meta({ example: null }),
     feedback: z.string().nullable().meta({ example: null }),
-    /** How a re-attempt continues the rejected Run's Session (issue #170): 'full'
-     * resumes the same Session, 'condensed' starts fresh; null on originals and
-     * pre-feature re-attempts (⇒ full). */
+    /** How the next Attempt continues the prior Session (issue #170, decided by the #311 rule): 'full'
+     * resumes the same Session, 'condensed' starts fresh; null before any continuation (⇒ full). */
     continuationChoice: z.enum(['full', 'condensed']).nullable().meta({ example: null }),
     /** 'native' (authored here) | 'mirrored' (1:1 tracker projection). */
     origin: z.enum(TASK_ORIGINS).meta({ example: 'native' }),
@@ -114,21 +101,17 @@ const taskWithDepsSchema = z
     workflow: z.enum(WORKFLOWS).nullable().meta({ example: null }),
     /** 'research'|'prototype'|'grilling'|'task'; null for implement and native. */
     wayfinderType: z.enum(WAYFINDER_TYPES).nullable().meta({ example: null }),
-    /** 'afk' | 'hitl'; null on native Tasks. */
-    drive: z.enum(DRIVES).nullable().meta({ example: null }),
-    /** An afk Run escalated to a human. */
-    escalated: z.boolean().meta({ example: false }),
     /** The parent Map issue's number (query-time Map rollup); null off-Map or native. */
     mapRef: z.number().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),
     updatedAt: z.number().meta({ example: 1784032260000 }),
     dependsOn: z.array(z.number()).meta({ example: [4818] }),
     dependents: z.array(z.number()).meta({ example: [4830] }),
-    /** blocked, and at least one dependency is failed or cancelled. */
+    /** Ready, and at least one blocker is escalated or cancelled — it will not unblock on its own. */
     blockedOnFailed: z.boolean().meta({ example: false }),
     /** Number of blocker edges whose blocker has not completed. */
     openBlockerCount: z.number().int().nonnegative().meta({ example: 1 }),
-    /** Whether the Auto-Runner may work this ticket now. */
+    /** ADR-0041's derived flag: opted in (mirrored: the `ready-for-agent` label, not an Epic container) and no open Blockers. */
     agentWorkable: z.boolean().meta({ example: false }),
     /** The four Task-default overrides as stored (ADR-0012): `null` ⇒ this field
      * *inherits* (Workspace override → global default), so the sibling
@@ -155,7 +138,7 @@ const taskSchema = taskWithDepsSchema
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
     /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
-    /** The latest run's diffstat, snapshotted at settle; null until awaiting-review or in direct mode. */
+    /** The latest run's diffstat, snapshotted at landing; null before then or in direct mode. */
     stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
     /** The running run's `startedAt`; null unless the Task is running (issue #100). */
     runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
@@ -163,9 +146,9 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
     runId: z.number().nullable().meta({ example: 41 }),
-    /** The running run's phase (executing → validating → verifying → [review] →
-     * landing → terminal), so the Board's Active card can badge it; null unless
-     * the Task is running (or a pre-phase-machine run). */
+    /** The running run's phase (executing → validating → verifying → landing →
+     * terminal), so the Board's Active card can badge it; null unless the Task
+     * is working (or a pre-phase-machine run). */
     phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
     /** The running run's context-window occupancy in tokens; null unless running
      * (or unreported). Live via the run_usage firehose (issue #52). */
@@ -178,10 +161,9 @@ const taskSchema = taskWithDepsSchema
      * capacity limit, disabled Workspace, or missing integration branch;
      * null when it is not waiting (issue #238). */
     skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
-    /** The latest run's frozen verification candidate ref (issue #134's Run
-     * `candidateRef`), surfaced here so an escalated Task's stranded candidate
-     * can be adopted for review, or re-reviewed with a note, without a fresh
-     * builder run (issue #191); null when no run has produced a candidate yet. */
+    /** The latest run's verified branch head ref (issue #134's Run `candidateRef`),
+     * surfaced so an escalated Task shows whether Accept has work to land; null
+     * when no run has produced a candidate yet. */
     candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
   })
   .meta({ id: 'Task' });
@@ -196,12 +178,8 @@ const runSchema = z
     attempt: z.number().meta({ example: 1 }),
     state: z.enum(RUN_STATES).meta({ example: 'completed' }),
     /** The Run's position in the phase machine (issue #114): executing →
-     * validating → verifying → [review] → landing → terminal. Null on
-     * pre-feature Runs. A native Run is `state:'running'`, `phase:'review'`
-     * while parked at the human gate. */
-    phase: z.enum(RUN_PHASES).nullable().meta({ example: 'review' }),
-    /** Review-SLA deadline (epoch ms) while parked in `review`; null otherwise. */
-    reviewDeadline: z.number().nullable().meta({ example: null }),
+     * validating → verifying → landing → terminal. Null on pre-feature Runs. */
+    phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
     /** Failure reason: 'interrupted', an error message, or null. */
     reason: z.string().nullable().meta({ example: null }),
     /** ACP stopReason from the session/prompt result. */
@@ -225,10 +203,6 @@ const runSchema = z
     candidateOid: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
     usage: runUsageSchema.nullable(),
-    /** 'accepted' | 'rejected' | null (domain/review.ts); stored as plain text. */
-    review: z.string().nullable().meta({ example: null }),
-    reviewFeedback: z.string().nullable().meta({ example: null }),
-    reviewedAt: z.number().nullable().meta({ example: null }),
     startedAt: z.number().meta({ example: 1784032020000 }),
     finishedAt: z.number().nullable().meta({ example: 1784032260000 }),
     cost: costSchema.nullable(),
@@ -474,7 +448,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Edit a draft, ready, or blocked task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with a run-scoped Run Key.',
+          'Edit a draft or ready task. Each Task-default field (harness, model, isolationMode, priority) accepts null to clear it back to inherit. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: updateTaskInputSchema,
         response: {
@@ -492,7 +466,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Promote a draft to ready (or blocked, if dependencies are unmet). Reachable with a run-scoped Run Key.',
+        description: 'Promote a draft to ready. Blocked-ness is derived from its open blockers. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -559,11 +533,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Force a running task to completed (operator override): stop the agent and settle it done, skipping the review gate. Operator only.',
+          'Force a working task to done (operator override): stop the agent and settle it done, skipping verification and landing. Operator only.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
-          409: errorResponse('The task is not running.'),
+          409: errorResponse('The task is not working.'),
         },
       },
     },
@@ -599,47 +573,12 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.post(
-    '/tasks/:id/unescalate',
-    {
-      schema: {
-        tags: ['Tasks'],
-        description:
-          'Un-escalate a mirrored Task: clear the escalated flag and flip drive back to afk, handing it back to autonomous drive. The Task keeps its state (usually ready), so the Auto-Runner re-picks it. Operator only.',
-        params: idParamsSchema,
-        response: {
-          200: taskSchema.describe('The Task, no longer escalated and back on afk drive.'),
-          409: errorResponse('The Task is native, or is not escalated.'),
-        },
-      },
-    },
-    async (req) => await withDeps(await ctx.tasks.unescalate(req.params.id)),
-  );
-
-  app.post(
-    '/tasks/:id/requeue',
-    {
-      schema: {
-        tags: ['Tasks'],
-        description:
-          "Send a failed task back to ready for another attempt, re-running the SAME task in place, with optional feedback for the retry. Native tasks append it to the prompt; mirrored tasks carry it in the feedback field (their prompt is re-derived from the ticket each poll). This is the reject re-run path for a mirrored task (which cannot be re-attempted as a new task), so it also accepts the issue #170 Session `continuation` choice. Reachable with a run-scoped Run Key.",
-        params: idParamsSchema,
-        body: requeueInputSchema,
-        response: {
-          200: taskSchema.describe('The task in its new state.'),
-          409: errorResponse('The task is not in a state this action can be applied to.'),
-        },
-      },
-    },
-    async (req) => await withDeps(await ctx.tasks.requeue(req.params.id, req.body?.feedback, req.body?.continuation)),
-  );
-
-  app.post(
     '/tasks/:id/uncancel',
     {
       schema: {
         tags: ['Tasks'],
         description:
-          'Return a cancelled task to the queue in place: ready, or blocked if it has unmet dependencies. Reachable with a run-scoped Run Key.',
+          'Return a cancelled task to the queue in place (ready; blocked-ness is derived from its open blockers). Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -655,11 +594,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Add a dependency edge, re-deriving blocked/ready. Reachable with a run-scoped Run Key.',
+        description: 'Add a dependency edge, re-deriving the open-blocker count. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
         body: dependsOnBodySchema,
         response: {
-          200: taskWithDepsSchema.describe('The task with the edge added, and blocked/ready re-derived.'),
+          200: taskWithDepsSchema.describe('The task with the edge added, and its open-blocker count re-derived.'),
           409: errorResponse('The edge is unknown, self-referential, or would close a dependency cycle.'),
         },
       },
@@ -675,9 +614,9 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'Remove a dependency edge, re-deriving blocked/ready. Reachable with a run-scoped Run Key.',
+        description: 'Remove a dependency edge, re-deriving the open-blocker count. Reachable with a run-scoped Run Key.',
         params: depParamsSchema,
-        response: { 200: taskWithDepsSchema.describe('The task with the edge removed, and blocked/ready re-derived.') },
+        response: { 200: taskWithDepsSchema.describe('The task with the edge removed, and its open-blocker count re-derived.') },
       },
     },
     async (req) => {
@@ -692,15 +631,15 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Accept an awaiting-review task, completing it (and merging its branch in worktree mode). Human-only.',
+          "Accept an escalated ticket (ADR-0041): land its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
         params: idParamsSchema,
         response: {
-          200: taskSchema.describe('The task in its new state.'),
-          409: errorResponse('The task is not in a state this action can be applied to.'),
+          200: taskSchema.describe('The task, done.'),
+          409: errorResponse('The task is not escalated, has no verified branch head to land, or the landing failed (the detail says why); it stays escalated.'),
         },
       },
     },
-    async (req) => await withDeps(await ctx.review.accept(req.params.id)),
+    async (req) => await withDeps(await ctx.escalation.accept(req.params.id)),
   );
 
   app.post(
@@ -709,58 +648,34 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Reject an awaiting-review task with optional feedback, failing it. Human-only.',
+          'Reject an escalated ticket with guidance (ADR-0041): the guidance becomes feedback for the next Attempt, the attempt budget resets, and the loop resumes on the same ticket and branch. Human-only.',
         params: idParamsSchema,
         body: rejectInputSchema,
         response: {
-          200: taskSchema.describe('The task in its new state.'),
-          409: errorResponse('The task is not in a state this action can be applied to.'),
+          200: taskSchema.describe('The task, back in the Attempt loop.'),
+          400: errorResponse('The guidance is empty.'),
+          409: errorResponse('The task is not escalated.'),
         },
       },
     },
-    async (req) => await withDeps(await ctx.review.reject(req.params.id, req.body?.feedback)),
+    async (req) => await withDeps(await ctx.escalation.reject(req.params.id, req.body.guidance)),
   );
 
   app.post(
-    '/tasks/:id/adopt-review',
+    '/tasks/:id/close',
     {
       schema: {
         tags: ['Tasks'],
         description:
-          "Operator escape hatch (issue #191): park an escalated task's existing stranded candidate at awaiting-review — no fresh builder run — so the ordinary accept (accept-anyway) can land it. Human-only.",
+          'Close an escalated ticket (ADR-0041): cancel it and clean up — remove its branch and worktree, close the tracker issue. Human-only.',
         params: idParamsSchema,
         response: {
-          200: taskSchema.describe('The task, now awaiting-review with the escalated flag cleared.'),
-          409: errorResponse('The task is not escalated, or its latest run has no candidate to adopt.'),
+          200: taskSchema.describe('The task, cancelled.'),
+          409: errorResponse('The task is not escalated.'),
         },
       },
     },
-    async (req) => {
-      await ctx.runner.adoptForReview(req.params.id);
-      return await withDeps({ id: req.params.id });
-    },
-  );
-
-  app.post(
-    '/tasks/:id/note-to-critic',
-    {
-      schema: {
-        tags: ['Tasks'],
-        description:
-          "Operator escape hatch (issue #191): re-run ONLY the agent critic against an escalated task's existing stranded candidate, with a human note folded into its trusted preamble, and re-fold the verdict. A `proceed` result parks the task at awaiting-review (never auto-landed); otherwise the task stays escalated with the new attempt recorded. Human-only.",
-        params: idParamsSchema,
-        body: noteToCriticInputSchema,
-        response: {
-          200: taskSchema.describe('The task — awaiting-review on a proceed verdict, still escalated otherwise.'),
-          400: errorResponse('The note is empty (blank/whitespace-only), or the resolved critic harness is not configured.'),
-          409: errorResponse('The task is not escalated, its latest run has no candidate, or no critic is configured.'),
-        },
-      },
-    },
-    async (req) => {
-      await ctx.runner.reverifyWithNote(req.params.id, req.body.note);
-      return await withDeps({ id: req.params.id });
-    },
+    async (req) => await withDeps(await ctx.escalation.close(req.params.id)),
   );
 
   app.get(
@@ -769,7 +684,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Preview the reject-time Session continuation choice (issue #170): if this task has a live Session, the full-continuation cost estimate (from planSessionContinuation) plus the condensed alternative the reject dialog offers. `available: false` when there is nothing to continue.',
+          'Preview the Session continuation a Reject with guidance will get (issue #170; decided by the #311 rule, not the operator): if this task has a live Session, the warm-session estimate and the condensed alternative. `available: false` when there is nothing to continue.',
         params: idParamsSchema,
         response: {
           200: continuationPreviewSchema.describe('The continuation offer for this task, or `available: false`.'),

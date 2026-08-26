@@ -4,10 +4,10 @@ import type { TaskService } from '../domain/tasks.js';
 import { forEachYielding } from '../reliability/yield.js';
 
 /**
- * The tracker-facing half of afk mirrored-Task execution (issue #32). Owns the
+ * The tracker-facing half of mirrored-Task execution (issue #32). Owns the
  * advisory tracker assignment: the post-lock claim advertisement and the
  * per-poll reconcile that drives the
- * tracker toward Harmonic's local intent (running ⇒ claimed, handed-back ⇒
+ * tracker toward Harmonic's local intent (working ⇒ claimed, handed-back ⇒
  * un-assigned). The assignment is never a lock — the local ready→running flip
  * is (see the Auto-Runner) — so every write here is best-effort and idempotent,
  * and a dropped one is retried on the next reconcile.
@@ -38,7 +38,7 @@ export class MirrorCoordinator {
   }
 
   /**
-   * Post-lock step for a mirrored afk Task: advertise the local claim. No
+   * Post-lock step for a mirrored Task: advertise the local claim. No
    * tracker read participates in the pick (issue #232, ADR-0030), and a failed
    * write does not block the locally claimed Task.
    */
@@ -64,7 +64,7 @@ export class MirrorCoordinator {
     await forEachYielding(await this.tasks.list({ workspaceId: this.workspaceId }), async (task) => {
       if (task.origin !== 'mirrored' || task.trackerRef == null) return;
       const ticket = ticketRef(task, task.trackerRef);
-      if (task.state === 'running') {
+      if (task.state === 'working') {
         if (this.advertised.get(task.id) === 'claimed') return;
         await adapter
           .claim(ticket)
@@ -86,11 +86,10 @@ function ticketRef(task: TaskRow, number: number): TicketRef {
 }
 
 /**
- * Harmonic has dropped drive back to the human frontier: a cancelled Run or a
- * runtime Escalation (issue #33). The unified Attempt loop retries a failed
- * afk Run within its cap (claim held across retries), so bare `failed` is no
- * longer a hand-back — only an exhausted Attempt cap (escalated) is.
+ * Harmonic has handed the ticket to a human: cancelled or escalated (ADR-0041).
+ * The Attempt loop retries within its cap with the claim held, so only an
+ * escalation or a cancel releases the advisory assignment.
  */
 function handedBack(task: TaskRow): boolean {
-  return task.state === 'cancelled' || task.escalated;
+  return task.state === 'cancelled' || task.state === 'escalated';
 }

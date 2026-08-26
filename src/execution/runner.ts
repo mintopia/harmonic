@@ -67,12 +67,7 @@ import {
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
-import {
-  combineVerdicts,
-  dispositionAfterNote,
-  type VerificationDecision,
-  type VerifierVerdict,
-} from '../verification/combine.js';
+import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
 import { resolveContextWindow, resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
@@ -173,7 +168,6 @@ async function acquireHarnessMutex(key: string): Promise<() => void> {
  * internal default until that lands. Seven days: long enough that a real review
  * queue never trips it, short enough that an abandoned review can't wedge a Work
  * Context lease forever. */
-const REVIEW_SLA_MS = 7 * 24 * 60 * 60 * 1000;
 const LIVE_RUN_LOG_EVENT_ID_OFFSET = 1_000_000_000;
 
 export interface RunnerEvents {
@@ -206,7 +200,7 @@ export interface RunnerOptions {
     mint: (runId: number) => Promise<string>;
     revoke: (runId: number) => void | Promise<void>;
   };
-  /** Auto-drive collaborator for afk mirrored Tasks (issue #33); absent on a native-only server. */
+  /** Auto-drive collaborator for mirrored Tasks (issue #33); absent on a native-only server. */
   autoDrive?: AutoDrive;
   /** Resolves a Task's ticket URL for the critic's `{url}` interpolation token
    * (`drive-prompt.ts` `driveFields`). Independent of `autoDrive` because the
@@ -229,25 +223,12 @@ export interface RunnerOptions {
         | 'guardrailProgress'
         | 'verificationCommand'
         | 'verificationCritic'
-        | 'verificationAutoAccept'
         | 'maxAttempts'
         | 'contextReuseThreshold'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
   >;
-  /** Lands a native auto-accept Run (issue #138): the verifier passed and the
-   * resolved verifier config sets auto-accept, so Harmonic lands the result via
-   * the same journaled LandingCoordinator the human Accept uses (#115), skipping
-   * the review gate. Absent → auto-accept never fires (Runs park for review).
-   * Returns ok:false on a landing failure (e.g. a merge conflict from a moved
-   * base) — the Runner then degrades to the human gate rather than settling. */
-  autoAcceptLand?: (
-    task: TaskRow,
-    run: RunRow,
-    patch: Partial<RunRow>,
-    parent: SpanContext,
-  ) => Promise<{ ok: boolean; detail?: string | undefined }>;
   /** Injectable agent-critic drive (issue #164): the seam `runCritic` speaks an
    * ACP turn over. Absent → the real drive (`createAcpCriticDrive`) spawns the
    * builder's configured harness as a contained read-only reviewer; tests
@@ -507,7 +488,6 @@ export class Runner {
   private readonly keys: RunnerOptions['keys'];
   private readonly autoDrive: AutoDrive | undefined;
   private readonly getWorkspace: RunnerOptions['getWorkspace'];
-  private readonly autoAcceptLand: RunnerOptions['autoAcceptLand'];
   private readonly postLand: RunnerOptions['postLand'];
   /** The single-writer merge train an Epic member's Run lands through (issue
    * #163); undefined on a server with no parallel-Epic execution. */
@@ -542,6 +522,7 @@ export class Runner {
    * settle — drive-loop, operator cancel/complete, review-parked — funnels here
    * so the winning disposition is decided by precedence, once. */
   private readonly settleCoordinator: RunSettleCoordinator;
+  private readonly sessionRetirement: SessionRetirementHook | undefined;
   private readonly tailer: LiveUsageTailer;
   /** One incremental session-log reader per active Run (#217): the tailer tick
    *  advances it off the event loop; the Activity snapshot and spend guard read
@@ -587,7 +568,6 @@ export class Runner {
     this.keys = options.keys;
     this.autoDrive = options.autoDrive;
     this.getWorkspace = options.getWorkspace;
-    this.autoAcceptLand = options.autoAcceptLand;
     this.postLand = options.postLand;
     this.mergeTrain = options.mergeTrain;
     this.gitBreaker = options.gitBreaker;
@@ -622,6 +602,7 @@ export class Runner {
       new LandingJournalStore(this.asyncDb),
       options.sessionRetirement,
     );
+    this.sessionRetirement = options.sessionRetirement;
     this.tailer = new LiveUsageTailer(
       {
         sample: (runId) => this.sampleSnapshot(runId),
@@ -673,38 +654,61 @@ export class Runner {
   }
 
   /**
-   * A human review rejection is the same failed Attempt as a verifier failure.
-   * Record its guidance on the completed attempt, then either start attempt N+1
-   * on this ticket or expose the ticket to a human once its cap is exhausted.
+   * ADR-0041 "Reject with guidance": the operator's guidance becomes the
+   * feedback of the escalated Attempt and of the next one, the attempt budget
+   * restarts (`AttemptStore.budgetBase` — history numbering is untouched), and
+   * the loop resumes on the same ticket and branch with a fresh Run.
    */
-  async retryAfterReviewReject(task: TaskRow, run: RunRow, feedback?: string): Promise<TaskRow> {
-    const attempt = await this.attempts.ensureForRun(task.id, run.attempt, run.startedAt);
-    const reason = feedback?.trim() || 'rejected in review';
-    await this.attempts.finish(attempt.id, 'failed', Date.now(), reason);
-
-    const workspace = await this.getWorkspace?.(task.workspaceId);
-    const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
-    if (run.attempt >= maxAttempts) return await this.taskService.escalate(task.id);
-
-    const nextAttempt = await this.attempts.ensureForRun(task.id, run.attempt + 1, Date.now());
-    const continuation = await this.decideContinuation(task, run, workspace);
-    await this.attempts.setContinuation(nextAttempt.id, continuation);
+  async resumeWithGuidance(task: TaskRow, guidance: string): Promise<void> {
+    const run = (await this.runStore.listForTask(task.id)).at(-1);
+    const escalated = (await this.attempts.listForTask(task.id)).findLast((attempt) => attempt.state === 'escalated');
+    if (escalated) await this.attempts.setFeedback(escalated.id, guidance);
+    const nextNumber = Math.max(escalated?.number ?? 0, run?.attempt ?? 0) + 1;
+    const nextAttempt = await this.attempts.ensureForRun(task.id, nextNumber, Date.now());
+    let choice: 'full' | 'condensed' | undefined;
+    if (run) {
+      const continuation = await this.decideContinuation(task, run, await this.getWorkspace?.(task.workspaceId));
+      await this.attempts.setContinuation(nextAttempt.id, continuation);
+      choice = continuation.path === 'continued-session' ? 'full' : 'condensed';
+    }
     // The condensed section is composed at dispatch (from the prior Session), not
     // baked into the Task prompt, which must stay the operator's text plus feedback.
-    await this.taskService.requeue(task.id, feedback, continuation.path === 'continued-session' ? 'full' : 'condensed');
+    await this.taskService.requeue(task.id, guidance, choice);
     await this.start(task.id);
-    return await this.taskService.get(task.id);
   }
 
   /**
-   * Spawn a run for a task the caller already flipped to running — the afk
+   * ADR-0041 "Close": the ticket is cancelled; remove its branch and worktree
+   * (the Session retirement drain owns the worktree) and close the tracker
+   * issue. Every step is a best-effort output side-effect.
+   */
+  async cleanupClosed(task: TaskRow, run: RunRow | undefined): Promise<void> {
+    if (run) {
+      try {
+        await this.sessionRetirement?.onRunSettled(run, 'operator-cancel');
+      } catch (err) {
+        logger.error(`task ${task.id} close: session retirement failed: ${String(err)}`);
+      }
+      if (run.branch && !isDirectRef(run.branch) && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
+        await Git.deleteBranch(task.workingDir, run.branch).catch((err) =>
+          logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`),
+        );
+      }
+    }
+    if (this.autoDrive && !(await this.autoDrive.closeTicket(task, `Closed by a Harmonic operator without landing (task ${task.id}).`))) {
+      logger.error(`task ${task.id} close: tracker issue could not be closed`);
+    }
+  }
+
+  /**
+   * Spawn a run for a task the caller already flipped to working — the
    * mirrored pick, whose sequence is flip (the lock) → recheck → claim →
    * spawn, so the flip lands before the tracker write, not with it (issue #32).
    */
   async launchClaimed(taskId: number, parent?: SpanContext): Promise<RunRow> {
     const task = await this.taskService.get(taskId);
-    if (task.state !== 'running') {
-      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to running`);
+    if (task.state !== 'working') {
+      throw new DomainError('invalid_state', `task ${taskId} is ${task.state}; launchClaimed expects a task already flipped to working`);
     }
     return this.beginRun(task, parent);
   }
@@ -858,7 +862,6 @@ export class Runner {
     for (let i = priors.length - 1; i >= 0; i--) {
       const prior = priors[i]!;
       if (prior.sessionRowId === null) continue;
-      if (prior.review !== 'rejected' || prior.reviewedAt === null) continue;
       try {
         const session = await this.sessionStore.get(prior.sessionRowId);
         return { prior, session, trigger: 'human-reject' };
@@ -984,13 +987,12 @@ export class Runner {
 
   /**
    * Stop a task's active run because an operator force-completed it (the task is
-   * already `completed` by the time we get here). Mirrors {@link cancelForTask}
+   * already `done` by the time we get here). Mirrors {@link cancelForTask}
    * but settles the Run `completed`: SIGKILL even mid-turn, and drive()'s catch
    * no-ops (finish is idempotent, and its settle only fires while the task is
-   * still `running`). Unlike {@link reopenClosedMirrored} this does not wait
-   * for the agent to park — the operator asked for it to stop now. The Task is
-   * already `completed`, so the projection leaves it untouched (taskAction none);
-   * the post-SIGKILL harness-exit fact loses to this agent-finish.
+   * still `working`). The Task is already `done`, so the projection leaves it
+   * untouched (taskAction none); the post-SIGKILL harness-exit fact loses to
+   * this agent-finish.
    */
   async completeForTask(taskId: number): Promise<void> {
     await this.settleTaskRun(taskId, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'none', reason: null });
@@ -998,12 +1000,9 @@ export class Runner {
 
   /**
    * Settle a task's Run through the coordinator with `type`/`projection`, whether
-   * it is the live harness in `active` (SIGKILLed here) or a Run parked in
-   * `phase:'review'` with no live process (issue #114). Shared by operator cancel
-   * and force-complete, which differ only in the disposition they record. A
-   * review-parked Run is still `running` and holds no live harness, so settling
-   * it releases its lease and prevents an operator action on an awaiting-review
-   * Task from wedging the Work Context.
+   * it is the live harness in `active` (SIGKILLed here) or a `running` Run with
+   * no live process (a resume re-entry awaiting dispatch). Shared by operator
+   * cancel and force-complete, which differ only in the disposition they record.
    */
   private async settleTaskRun(taskId: number, type: RunFactType, projection: SettleProjection): Promise<void> {
     let handled = false;
@@ -1042,61 +1041,6 @@ export class Runner {
   }
 
   /**
-   * Premature-closure backstop (issue #139). A mirrored Task's tracker ticket
-   * has closed while the Task is still `running` — but under the
-   * close-after-verify model Harmonic itself is the only thing that closes a
-   * ticket, and only after verify + land, by which point the Task is already
-   * terminal (never `running`). So a close observed here is **premature** — the
-   * agent-via-skill or an operator closed it — and a closed ticket must never
-   * stand in for verified, landed work. Revert it: reopen the ticket and
-   * Escalate the Task to a human. (This supersedes the pre-#139 ADR-0011
-   * behaviour, where a closed ticket *was* the completion signal and this
-   * settled the Task `completed`.)
-   *
-   * When an agent *is* attached, no-op unless its turn has ended (`idle`): a
-   * mid-turn agent is left to finish, never SIGKILLed mid-tool-call. Crucially
-   * the `!idle` guard also covers a Run that is **mid-landing** (post-loop,
-   * `idle` cleared) — so Harmonic's own auto-merge close is never mistaken for a
-   * premature one and reverted out from under a landing in flight. Otherwise:
-   * stop the parked agent, reopen the ticket, and settle the Run Escalated.
-   * Runs atomically against {@link drive}'s await points up to the reopen; the
-   * `externallySettled` latch it sets makes `drive` skip its own settle.
-   *
-   * When *no* agent is attached — the Task is `running` on the board but no Run
-   * is driving it — reopen the ticket and Escalate the Task directly. Guarded on
-   * there being no live Run row (a Run mid-spawn is imminent; leave it). Returns
-   * whether it acted.
-   */
-  async reopenClosedMirrored(taskId: number): Promise<boolean> {
-    for (const active of this.active.values()) {
-      if (active.taskId !== taskId) continue;
-      if (active.externallySettled || !active.idle) return false; // mid-turn / mid-landing / already settling
-      active.externallySettled = true;
-      // Flush the final usage snapshot before the log's cwd (worktree) is torn
-      // down, then drop the reader (finalize drops it too, but don't depend on
-      // that path always running).
-      await this.tailer.stop(active.runId);
-      this.readers.delete(active.runId);
-      const run = await this.runStore.get(active.runId);
-      const task = await this.taskService.get(taskId);
-      // Revert the premature close, then hand the Task to a human (#139).
-      await this.autoDrive?.reopenTicket(task);
-      await this.settleEscalated(task, run, 'ticket closed before verification and landing (reopened)', {});
-      this.kill(active); // stop the parked agent; drive() finalizes the worktree + keys
-      return true;
-    }
-    // No agent is working this Task. Only act on a still-running Task with no
-    // live Run in flight, so we never race a Run that is mid-spawn (its
-    // ActiveRun not yet registered).
-    if ((await this.taskService.get(taskId)).state !== 'running') return false;
-    if ((await this.runStore.listForTask(taskId)).some((r) => r.state === 'running')) return false;
-    // Reopen the premature close, then Escalate the orphaned Task directly (#139).
-    await this.autoDrive?.reopenTicket(await this.taskService.get(taskId));
-    await this.taskService.escalate(taskId);
-    return true;
-  }
-
-  /**
    * The agent-driven finish signal (`finish_task` MCP tool): mark this task's
    * active Run so the auto-drive continue loop stops re-prompting it. Returns
    * whether an active Run was found (false if the task isn't running here).
@@ -1108,9 +1052,10 @@ export class Runner {
   }
 
   /**
-   * The agent-driven escalate signal (`escalate_task` MCP tool): the agent is
-   * blocked on something only a human can resolve. Records the reason so the
-   * run settles Escalated instead of continuing. Returns whether a Run matched.
+   * The agent-driven stop signal (`escalate_task` MCP tool): the agent says it
+   * is blocked. No human drives a ticket (ADR-0041), so this ends the Attempt as
+   * failed with the reason as feedback — the loop retries and only the exhausted
+   * cap escalates. Returns whether a Run matched.
    */
   markEscalate(taskId: number, reason: string): boolean {
     return this.forActiveTask(taskId, (active) => {
@@ -1484,11 +1429,7 @@ export class Runner {
    * (#136, `runCritic`, integrated here in #164), each folding a verdict into the
    * same `combineVerdicts` — a fail/inconclusive from either blocks or escalates
    * the Run so broken work never lands. Also returns whether a verifier actually
-   * `ran` (produced a verdict) and the resolved `autoAccept` from the same
-   * `resolveVerifiers` call (issue #138): `drive` needs both, separately from the
-   * decision, to distinguish "proceed because a verifier passed" (auto-accept
-   * eligible) from "proceed, nothing configured to verify" (`combineVerdicts([])`
-   * is also `proceed`, but there's nothing to auto-accept). With no verifier
+   * `ran` (produced a verdict). With no verifier
    * configured the verdict set is empty and `combineVerdicts` returns `proceed`,
    * so a Run behaves exactly as it did before this gate existed.
    *
@@ -1509,11 +1450,11 @@ export class Runner {
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
     parent: SpanContext,
-  ): Promise<{ decision: VerificationDecision; ran: boolean; autoAccept: boolean }> {
+  ): Promise<{ decision: VerificationDecision; ran: boolean }> {
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
-    const { commands, review, autoAccept } = resolveVerifiers(
-      ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+    const { commands, review } = resolveVerifiers(
+      ws ?? { verificationCommand: null, verificationCritic: null },
       config,
     );
 
@@ -1631,7 +1572,7 @@ export class Runner {
       await this.runFacts.append(run.id, 'verified-head', { sha: oid, branch: branch ?? null });
     }
 
-    return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0, autoAccept };
+    return { decision: combineVerdicts(verdicts), ran: verdicts.length > 0 };
   }
 
   /**
@@ -1726,10 +1667,10 @@ export class Runner {
 
   /**
    * The landing freshness gate (ADR-0041). Asserts the branch still sits at
-   * its verified tip and that tip contains the base's current tip, then — for
-   * a Run Harmonic lands itself (`autoDriven`) — lands the worktree branch
-   * inside the same fresh window: an Epic member through the merge train, any
-   * other auto-merge worktree Run through the SHA-asserted, fast-forward-only
+   * its verified tip and that tip contains the base's current tip, then lands
+   * the worktree branch inside the same fresh window: an Epic member through
+   * the merge train, any other worktree Run (native, or mirrored with the
+   * auto-merge fate) through the SHA-asserted, fast-forward-only
    * {@link landBranch}. Both re-assert freshness at the moment of landing, so
    * two Runs passing the check concurrently cannot both land — the second is
    * `stale`. If the base moved, the Run re-enters Rebase → Verification on the
@@ -1755,14 +1696,14 @@ export class Runner {
       const freshness = await this.landingFreshness(task, current);
       let stale = freshness.fresh ? null : freshness.reason;
       let train: MergeTrainOutcome | null = null;
-      if (stale === null && autoDriven) {
-        const member = this.epicMemberFor(task, current, freshness.oid);
+      if (stale === null) {
+        const member = autoDriven ? this.epicMemberFor(task, current, freshness.oid) : null;
         if (member) {
           train = await this.mergeTrain!.submit(member);
           if (train.status === 'stale') stale = train.reason;
         } else if (
           task.isolationMode === 'worktree' && current.branch && current.baseBranch &&
-          this.autoDrive?.mergeFateFor(task) === 'auto-merge'
+          (!autoDriven || this.autoDrive?.mergeFateFor(task) === 'auto-merge')
         ) {
           const landed = await landBranchAndRunPostLand({
             repoDir: task.workingDir,
@@ -1813,7 +1754,7 @@ export class Runner {
    * branch and — since issue #148 — the worktree **retained** (bound to the Run's
    * Session), not dropped, so the checkout survives the human-rejection window
    * and Session retirement is the sole owner of its removal. Runs before the task
-   * settles so an awaiting-review task always has a reviewable artifact and the
+   * settles so an escalated task always has its branch as evidence and the
    * operator's checkout is coherent again.
    */
   private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
@@ -2178,6 +2119,10 @@ export class Runner {
     // inside this Run, so their usage is already in this Run's live snapshot,
     // which the chain-cumulative spend poll folds onto the chain's prior floor.
     let attemptNumber = run.attempt;
+    // The budget counts from the last operator "Reject with guidance" (ADR-0041):
+    // that escalated Attempt's number is the base, so history numbering keeps
+    // growing while the cap restarts.
+    const budgetBase = await this.attempts.budgetBase(task.id);
     // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
     // the count from the durable queue too, so the "at most one corrective
     // re-merge, and no mutating turn after it" bound survives a crash-resume of
@@ -2255,8 +2200,8 @@ export class Runner {
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
       await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
-      if (attemptNumber >= maxAttempts) {
-        await this.settleEscalated(task, await this.runStore.get(run.id), `attempt ${attemptNumber} of ${maxAttempts} failed: ${outcome.reason}`, {});
+      if (attemptNumber - budgetBase >= maxAttempts) {
+        await this.settleEscalated(task, await this.runStore.get(run.id), `attempt ${attemptNumber - budgetBase} of ${maxAttempts} failed: ${outcome.reason}`, {});
         return;
       }
       attemptNumber += 1;
@@ -2446,7 +2391,7 @@ export class Runner {
       await escalate(target.ref, reason);
       return { status: 'escalated', reason };
     };
-    const host = (await this.taskService.list({ state: 'running' })).find((task) => task.baseBranch === branch);
+    const host = (await this.taskService.list({ state: 'working' })).find((task) => task.baseBranch === branch);
     if (!host) {
       return escalated(`no active Epic member is available to resolve refresh conflict for ${branch}: ${detail}`);
     }
@@ -2633,9 +2578,13 @@ export class Runner {
       }
     };
 
-    // Set when an afk mirrored Run blocks on a human prompt: the Run stops and
-    // the Task Escalates (issue #33) instead of settling completed/failed.
+    // Set on an escalation trigger (ADR-0041): a branch-contract violation or a
+    // permanent infrastructure failure. The Run stops and the Task Escalates.
     let escalating: string | null = null;
+    // Set when the agent itself stopped short — it asked for a human
+    // (`escalate_task`) or a tool needed a permission no human is here to grant.
+    // That is a failed Attempt with the reason as feedback, never an escalation.
+    let stoppedShort: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
 
     if (healCtx || remergeCtx) record('lifecycle', { event: 'phase', phase: 'executing' });
@@ -2755,22 +2704,24 @@ export class Runner {
         // context off, so the *next* ready Task on this repo isn't re-picked and
         // re-spawning git on the following event-loop tick — turning a fork-rate
         // flood into a few spaced attempts. Escalate this Run to a human —
-        // rather than settle a plain `failed` — when the failure is PERMANENT (a
+        // rather than re-queue — when the failure is PERMANENT (a
         // detached/dirty base, a path that already exists, a bad revision: it
         // will never succeed on retry) or when the breaker has now tripped (a
-        // transient failure that kept recurring across Runs on this repo). A
-        // one-off transient failure settles this Run `failed` (terminal, as
-        // before); the backoff it arms is what bounds the *context*, not a
-        // self-retry of this Run.
+        // transient failure that kept recurring across Runs on this repo).
         const cls = classifyGitFailure([err.stderr, err.message].filter(Boolean).join('\n'));
         const failure = this.gitBreaker?.recordFailure(repoKey(task.workingDir));
         if (cls === 'permanent' || failure?.opened) {
           await this.settleEscalated(task, run, `git workspace preparation failed (${cls}): ${err.message}`, {});
         } else {
-          await this.settle(task, run, 'failed', err.message);
+          // A one-off transient git failure: nothing was attempted, so hand the
+          // ticket back to ready for the next pick — the breaker's backoff bounds
+          // the context, not this Run.
+          await this.coordinateSettle(task, run, 'failed', { runState: 'failed', taskAction: 'ready', reason: err.message });
         }
       } else {
-        await this.settle(task, run, 'failed', err instanceof Error ? err.message : String(err));
+        // Any other pre-spawn failure is a failed Attempt: the loop retries and
+        // the exhausted cap escalates, never a terminal failure (ADR-0041).
+        return { kind: 'actionable-fail', reason: err instanceof Error ? err.message : String(err), output: '' };
       }
       return { kind: 'terminal' };
     }
@@ -2852,14 +2803,14 @@ export class Runner {
             record('permission_request', { request: params, outcome });
             return { outcome };
           };
-          // An afk Run has no human on this turn, so a permission request →
-          // Escalate: decline, stop the turn, and flag it for the settle path to
-          // hand the Task back (issue #33). Codex asks per-action (on-request)
-          // rather than pre-triaging like Claude's auto mode, so it Escalates
-          // sooner — the held-request + Permission-Rule model (ADR-0007, planned
-          // for Runs) will replace this with hold-approve-remember.
+          // A mirrored Run has no human on this turn, so a permission request is
+          // declined and the turn stopped: the Attempt fails with the request as
+          // feedback and the loop retries (ADR-0041). Codex asks per-action
+          // (on-request) rather than pre-triaging like Claude's auto mode, so it
+          // stops sooner — the held-request + Permission-Rule model (ADR-0007,
+          // planned for Runs) will replace this with hold-approve-remember.
           if (autoDriven) {
-            escalating = (params as any)?.toolCall?.title ?? 'permission request';
+            stoppedShort = `permission request declined (no human on this turn): ${(params as any)?.toolCall?.title ?? 'permission request'}`;
             const outcome = { outcome: 'cancelled' };
             record('permission_request', { request: params, outcome });
             driver.cancel();
@@ -2929,15 +2880,10 @@ export class Runner {
         const attempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
         const attemptTasks = attempt ? await this.attempts.listTasks(attempt.id) : [];
         const activeTask = [...attemptTasks].reverse().find((row) => row.state === 'running');
-        if (!activeTask) return; // Attempt has reached review/landing; neither charges execution time.
+        if (!activeTask) return; // Attempt has reached landing, which never charges execution time.
+        // The critic (`review` Task) is the last verification step, so it charges as `verifying`.
         const guardrailPhase: RunPhase =
-          activeTask?.type === 'rebase'
-            ? 'validating'
-            : activeTask?.type === 'implementation'
-              ? 'executing'
-              : activeTask?.type === 'verification'
-                ? 'verifying'
-                : 'review';
+          activeTask?.type === 'rebase' ? 'validating' : activeTask?.type === 'implementation' ? 'executing' : 'verifying';
         // Phase-scoped (issue #127, reliability-design Unit A): a trip only
         // counts when observed inside an execution phase. `now - startedAt` is
         // the execution clock precisely because the counted phases are a
@@ -3531,13 +3477,13 @@ export class Runner {
       // operator can receive 200 while ACP is idle and miss the running turn.
       active.steerable = true;
       let result = await driver.prompt([{ type: 'text', text: promptText }]);
-      active.idle = true; // turn ended → parked; the backstop may Escalate a prematurely-closed ticket here
+      active.idle = true; // turn ended → parked
       // Steering + auto-drive continue loop. `attempt` counts only auto-drive
       // continue nudges, so operator steers never eat into the continue budget.
-      for (let attempt = 1; !escalating; ) {
-        if (active.externallySettled) break; // the poll Escalated a prematurely-closed ticket while parked
+      for (let attempt = 1; !escalating && !stoppedShort; ) {
+        if (active.externallySettled) break; // an operator settled the Run while it was parked
         if (active.escalateReason) {
-          escalating = active.escalateReason; // agent asked for a human → settle Escalated
+          stoppedShort = `the agent stopped and asked for a human: ${active.escalateReason}`;
           break;
         }
         // Progress Guardrail (issue #131), evaluated here at the turn boundary —
@@ -3578,26 +3524,26 @@ export class Runner {
       // this drain and it terminates. Skip when the Run was already settled out
       // from under us, or is escalating.
       active.steerable = false;
-      while (!active.externallySettled && !escalating && active.steerQueue.length > 0) {
+      while (!active.externallySettled && !escalating && !stoppedShort && active.steerQueue.length > 0) {
         const steer = active.steerQueue.shift()!;
         record('lifecycle', { event: 'steer_delivered', text: steer });
         result = await driver.prompt([{ type: 'text', text: steer }]);
       }
       if (active.externallySettled) {
-        // The poll already finished the Run completed and settled the Task; drop
-        // the harness and stop — settling again would finish the Run twice.
+        // An operator already settled the Run and its Task; drop the harness
+        // and stop — settling again would finish the Run twice.
         await finalize();
         return { kind: 'terminal' };
       }
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
-      // An afk Run that ended without the `finish_task` signal — its continue
+      // A mirrored Run that ended without the `finish_task` signal — its continue
       // budget spent, or a single turn that never finished — has no
       // execution-complete signal (#139), so there is nothing to verify or land:
       // route it to the unified Attempt loop (corrective turn, then Escalate at
-      // the cap) without freezing a candidate, verifying, or closing the
-      // ticket. A native Run always verifies its single ended turn.
-      const afkUnresolved = autoDriven && !escalating && !active.agentFinished;
+      // the cap) without verifying or closing the ticket. A native Run always
+      // verifies its single ended turn.
+      const afkUnresolved = autoDriven && !escalating && !stoppedShort && !active.agentFinished;
       // The `validating` branch-contract classification (issue #151), hoisted so
       // the afk landing block below can reach it for deterministic recovery
       // landing (issue #154). Null when the check does not apply (worktree mode,
@@ -3611,7 +3557,7 @@ export class Runner {
       let implementationHead: string | null = null;
       // The branch contract is checked at implementation end. It is a fact and
       // escalation trigger, never a user-facing validation stage.
-      if (!escalating && !afkUnresolved) {
+      if (!escalating && !stoppedShort && !afkUnresolved) {
         // A dirty implementation result gets one same-session reminder to
         // commit. This is corrective guidance within the current Attempt, not
         // a new Attempt or a retry budget charge.
@@ -3698,6 +3644,9 @@ export class Runner {
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
+      } else if (stoppedShort) {
+        record('lifecycle', { event: 'stopped-short', reason: stoppedShort });
+        return { kind: 'actionable-fail', reason: stoppedShort, output: '' };
       } else if (afkUnresolved) {
         // Clean turn(s) ended but the agent never signalled `finish_task` — not
         // success. It is a failed Attempt, so the shared loop records feedback,
@@ -3719,15 +3668,14 @@ export class Runner {
       } else {
         // Verification gate (issue #135, ADR-0021, reliability-design Unit B):
         // agent-finish begins validation — it does not settle the Run (#114).
-        // Enter `verifying` and run the configured verifiers against the frozen
-        // candidate. A pass lets the Run proceed toward landing (afk) / review
-        // (native). Any non-`proceed` verdict with a candidate hands the failed
-        // Attempt up to the `drive` loop for a bounded corrective turn
-        // (ADR-0041); an inconclusive with NO candidate Escalates in place with
-        // its cause — so broken work never lands.
+        // Enter `verifying` and run the configured verifiers against the branch
+        // head. A pass lets the Run proceed to landing. Any non-`proceed` verdict
+        // with a candidate hands the failed Attempt up to the `drive` loop for a
+        // bounded corrective turn (ADR-0041); an inconclusive with NO candidate
+        // Escalates in place with its cause — so broken work never lands.
         await advanceTask('verifying');
         record('lifecycle', { event: 'phase', phase: 'verifying' });
-        const { decision, ran, autoAccept } = await this.runVerification(
+        const { decision } = await this.runVerification(
           task,
           run,
           implementationHead,
@@ -3759,11 +3707,11 @@ export class Runner {
           return await this.verificationFailTurn(run, decision, record);
         } else if (decision.outcome !== 'proceed') {
           // `escalate` = inconclusive (infra doubt: missing command, crashed or
-          // malformed verifier, absent candidate). With no candidate snapshot
-          // there is nothing a corrective turn could fix — Escalate in place so
-          // the Task surfaces with a null candidate (the #191 escape hatches
-          // 409 on it). With a candidate, infra doubt consumes the same bounded
-          // Attempt loop as an actionable fail.
+          // malformed verifier, absent candidate). With no candidate there is
+          // nothing a corrective turn could fix — Escalate in place (trigger 3)
+          // so the Task surfaces with a null candidate (Accept 409s on it). With
+          // a candidate, infra doubt consumes the same bounded Attempt loop as
+          // an actionable fail.
           if ((await this.runStore.get(run.id)).candidateOid == null) {
             const reason = `verification ${decision.outcome}: ${decision.reason}`;
             record('lifecycle', { event: 'escalated', reason });
@@ -3771,12 +3719,15 @@ export class Runner {
             return { kind: 'terminal' };
           }
           return await this.verificationFailTurn(run, decision, record);
-        } else if (autoDriven || (ran && autoAccept && this.autoAcceptLand)) {
-          // Harmonic lands this Run itself — no human gate — so the landing
-          // freshness gate (ADR-0041) runs first: the branch must still sit at
-          // its verified tip and that tip must contain the base's current tip.
-          // A moved base re-enters Rebase → Verification on this same Attempt
-          // (no counter increment, no implementation turn) before landing.
+        } else {
+          // Harmonic lands every passing Run itself — there is no human gate
+          // (ADR-0041) — so the landing freshness gate runs first: the branch
+          // must still sit at its verified tip and that tip must contain the
+          // base's current tip. A moved base re-enters Rebase → Verification on
+          // this same Attempt (no counter increment, no implementation turn)
+          // before landing. The diffstat is snapshotted before the land
+          // fast-forwards the base onto the branch tip (issue #36).
+          const stat = await this.diffstatFor(task, run.id);
           const gate = await this.freshenForLanding(task, run, workspace, attemptNumber, autoDriven, active.verifyAbort.signal, record, parent);
           if (gate.kind === 'turn') return gate.outcome;
           if (gate.kind === 'escalate') {
@@ -3785,45 +3736,16 @@ export class Runner {
             return { kind: 'terminal' };
           }
           if (!autoDriven) {
-            // Native auto-accept (issue #138, ADR-0021): a verifier ran and
-            // PASSED, and the resolved config sets auto-accept — the verifier's
-            // pass IS the accept, so the Run lands WITHOUT the human review gate:
-            // executing → validating → verifying → landing → terminal ('auto' gate).
-            // `ran` (not just `outcome === 'proceed'`) is required — with NO
-            // verifier configured `combineVerdicts([])` is also `proceed`, but
-            // there's nothing verified to auto-accept, so that case falls through
-            // to the human-gated branch below instead.
+            // A native worktree Run's branch was landed by the gate (SHA-asserted,
+            // fast-forward-only); a native direct Run's commits already sit on
+            // the live branch. Nothing more to land: settle done.
             await advanceTask('landing');
-            // Re-fetch: `run` (the drive-loop's original parameter) predates
-            // `prepareWorkspace` setting branch/baseBranch on the DB row (worktree
-            // mode) and the gate re-pinning the candidate, so `landingEffectsFor`
-            // asserts the real verified tip rather than a stale null.
-            const landed = await this.autoAcceptLand!(task, await this.runStore.get(run.id), patch, parent);
-            if (!landed.ok) {
-              // CRITICAL: `LandingCoordinator.land` writes the land fact + PONC
-              // BEFORE the (possibly failing) merge (#115). Calling any settle here
-              // would project that already-written land fact and SILENTLY COMPLETE
-              // a failed merge (`run-settle.ts` writes the terminal row while the
-              // Run is still `running`) — the exact "broken work lands" failure
-              // this epic exists to prevent. So do NOT settle here. Degrade to the
-              // human gate instead: park in review with the failure as feedback so
-              // a human resolves the conflict and re-accepts (landing reconciles
-              // the half-applied effect), or the review-SLA sweep (#114) collects
-              // it. No silent pass, no lease left wedged.
-              record('lifecycle', { event: 'auto-accept-landing-failed', reason: landed.detail ?? 'landing failed' });
-              await this.parkForReview(task, run, {
-                ...patch,
-                reviewFeedback: `auto-accept landing failed: ${landed.detail ?? 'merge conflict'}`,
-                stat: await this.diffstatFor(task, run.id),
-              });
-            }
-            // landed.ok: `LandingCoordinator.land` (via `autoAcceptLand`) already
-            // settled the Run completed + phase terminal and moved the Task to
-            // completed — nothing more to do here.
+            record('lifecycle', { event: 'phase', phase: 'landing' });
+            await this.settleAutoCompleted(task, run, { ...patch, stat });
             return { kind: 'terminal' };
           }
-          // A mirrored Run has no human gate, so it runs the auto branch:
-          // executing → validating → verifying → landing → terminal. A worktree
+          // A mirrored Run: executing → validating → verifying → landing →
+          // terminal. A worktree
           // auto-merge Run's branch was landed by the gate above (SHA-asserted,
           // fast-forward-only); the Merge Fate then applies the rest in
           // onCompleted — open a PR, or (auto-merge) close the ticket — Harmonic
@@ -3867,7 +3789,7 @@ export class Runner {
             } else {
               await advanceTask('landing');
               record('lifecycle', { event: 'phase', phase: 'landing' });
-              await this.settleAutoCompleted(task, run, patch);
+              await this.settleAutoCompleted(task, run, { ...patch, stat });
             }
             return { kind: 'terminal' };
           }
@@ -3891,25 +3813,13 @@ export class Runner {
               // terminal (the coordinator marks the Run `phase:'terminal'`).
               await advanceTask('landing');
               record('lifecycle', { event: 'phase', phase: 'landing' });
-              await this.settleAutoCompleted(task, run, patch);
+              await this.settleAutoCompleted(task, run, { ...patch, stat });
             }
           }
-        } else {
-          // A native Run is human-gated: no verifier ran, or one ran but
-          // auto-accept is off, so a passing verification moves it
-          // executing → validating → verifying → review, where it PARKS —
-          // non-terminal, holding its Work Context lease — until the human
-          // accepts (lands) or rejects it, or its review SLA lapses (#114). It
-          // does NOT settle here.
-          record('lifecycle', { event: 'phase', phase: 'review' });
-          // Snapshot the diffstat once, here, so the awaiting-review board card can
-          // show it without an N+1 git spawn per refresh (issue #36).
-          await this.parkForReview(task, run, { ...patch, stat: await this.diffstatFor(task, run.id) });
         }
       }
-      // The turn settled or parked above (escalate / auto-land / auto-accept /
-      // human review / unresolved) — a terminal outcome; the heal loop stops.
-      // Only the `block` branch returns `actionable-fail`, earlier.
+      // The turn settled above (escalate / land) — a terminal outcome; the
+      // corrective loop stops. Only the fail branches return `actionable-fail`, earlier.
       return { kind: 'terminal' };
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
@@ -3932,17 +3842,15 @@ export class Runner {
       if (escalating) {
         record('lifecycle', { event: 'escalated', reason: escalating });
         await this.settleEscalated(task, run, escalating, patch);
-      } else if (autoDriven) {
-        // An implementation or harness failure is a failed Attempt too. Keep
-        // it inside `drive` so mirrored and native tickets share the cap.
-        return { kind: 'actionable-fail', reason, output: '' };
-      } else {
-        await this.settle(task, run, 'failed', reason, patch);
+        return { kind: 'terminal' };
       }
-      return { kind: 'terminal' };
+      // An implementation or harness failure is a failed Attempt too. Keep it
+      // inside `drive` so mirrored and native tickets share the cap.
+      await this.runStore.update(run.id, patch);
+      return { kind: 'actionable-fail', reason, output: '' };
     } finally {
       // Disarm the wall-clock watchdog: `driveOnce` is returning, so the Run is
-      // leaving every execution phase (parked in review, landing, or settled) —
+      // leaving every execution phase (landing or settled) —
       // and time past this point must not count against the execution budget.
       if (guardrailTimer) clearTimeout(guardrailTimer);
       if (toolTimeoutTimer) clearInterval(toolTimeoutTimer);
@@ -4128,9 +4036,9 @@ export class Runner {
   /**
    * The Runner's settle entry point (issue #113/#114): delegate to the shared
    * {@link RunSettleCoordinator}, which appends the ending-signal `run_fact` and
-   * replays the winning disposition by fixed precedence. Extracted so the review
-   * gate and the review-SLA sweep settle Runs through the *same* coordinator,
-   * with identical race-safety, rather than racing the Runner around the Run row.
+   * replays the winning disposition by fixed precedence. Extracted so the
+   * operator Accept lands through the *same* coordinator, with identical
+   * race-safety, rather than racing the Runner around the Run row.
    */
   private async coordinateSettle(
     task: TaskRow,
@@ -4162,243 +4070,18 @@ export class Runner {
     await this.finishRunOperation(run.id);
   }
 
-  /**
-   * Park a human-gated native Run in `phase:'review'` (issue #114). Unlike a
-   * settle, this leaves the Run **non-terminal** (`state:'running'`): the result
-   * is verified-but-not-yet-landed, and only the human accept (landing), a
-   * reject, an operator cancel, or a review-SLA expiry moves it terminal. The
-   * Task moves to `awaiting-review` (the human gate), and a review-SLA deadline
-   * is stamped so an abandoned review is eventually swept out.
-   *
-   * The Work Context lease is released here, at review entry — matching today's
-   * seam (the lease released at agent-finish before this ticket). Holding the
-   * lease across the whole review window is a deliberate follow-up: it needs the
-   * phase-specific lease TTLs + heartbeat of #122 (which builds on this phase
-   * machine), not the plain release-at-terminal the spine ships today, and
-   * blanket-holding it without a TTL would wedge a direct-mode Work Context
-   * behind an abandoned review. `patch` carries the run's usage/stopReason/
-   * diffstat decoration. Only a still-running Task is moved — a racing cancel
-   * that already transitioned it wins.
-   */
-  private async parkForReview(task: TaskRow, run: RunRow, patch: Partial<RunRow>): Promise<void> {
-    await this.reparkForReview(run, patch);
-    if ((await this.taskService.get(task.id)).state === 'running') {
-      await this.taskService.setState(task.id, 'awaiting-review');
-    }
-  }
-
-  /**
-   * Reset a Run to the non-terminal review phase — the shared core
-   * {@link parkForReview} extracts (issue #191): flips the Run to
-   * `state:'running', phase:'review'` with a fresh review-SLA deadline,
-   * clearing `finishedAt`/`reason`. The state reset is a no-op for
-   * `parkForReview`'s own native happy path (the Run was never settled
-   * terminal there), but is REQUIRED for the Adopt & review / Note-to-critic
-   * operator escape hatches (issue #191): those re-park an escalated Run that
-   * `settleEscalated` already settled `state:'failed', phase:'terminal'`, and
-   * `ReviewService.accept` (`review.ts:71`) only lands a Run through the
-   * journaled `LandingCoordinator` when `run.state === 'running'` — otherwise
-   * it takes the legacy already-terminal accept-hook path, which is wrong for
-   * a Run that never actually landed. Releases the Work Context lease
-   * (best-effort; already released at escalation there, so a no-op) and
-   * pushes the updated Run to the board. Callers own the Task-side
-   * transition: `parkForReview` moves a still-`running` Task, the escape
-   * hatches move an already-`ready`+escalated one (`parkEscalatedForReview`).
-   *
-   * This reset does NOT erase the Run's `run_facts` disposition log, which
-   * still carries the original `escalate` fact — `RunSettleCoordinator.settle`
-   * (`run-settle.ts`) recomputes the winning disposition over the Run's WHOLE
-   * fact log by the fixed, ADR-locked precedence in `run-disposition.ts`, rank
-   * not recency. That used to be a problem (issue #191): a later
-   * `ReviewService.accept` appended a bare `agent-finish/unresolved` land
-   * fact, which the older `escalate` fact still outranked, so the merge ran
-   * but the bookkeeping replayed back to escalated. It no longer is:
-   * `ReviewService.accept` now lands an adopted-and-accepted Run under the
-   * `operator-accept` disposition, which `DISPOSITION_PRECEDENCE` ranks just
-   * above `escalate` — an explicit operator Accept wins over the retained
-   * escalate, so accept and the record agree.
-   */
-  private async reparkForReview(run: RunRow, patch: Partial<RunRow> = {}): Promise<void> {
-    // Single write: the caller's decoration (`parkForReview`'s usage/stat
-    // `patch`) layered under the review-phase reset, so `phase`/`reviewDeadline`
-    // always win and the board sees one update, not two. Freeze the Cost here
-    // (issue #126): parking for review is the native Run's settle, so its price
-    // table is captured once and a later price edit can't retroactively reprice.
-    await this.runStore.updateWithFrozenCost(run.id, {
-      ...patch,
-      state: 'running',
-      phase: 'review',
-      reviewDeadline: Date.now() + REVIEW_SLA_MS,
-      finishedAt: null,
-      reason: null,
-    });
-    try {
-      await this.leaseStore.releaseByOwner(run.id);
-    } catch {
-      // best-effort; boot reconciliation is the backstop
-    }
-    // Push the updated Run (phase/stat) to the board; the Task transition (if
-    // any) already emitted its own change event.
-    this.events.onRunFinished?.(await this.runStore.get(run.id));
-  }
-
-  /**
-   * The tail both operator escape hatches for an escalated Run share (issue
-   * #191, "Adopt & review" and "Note-to-critic" on a re-folded `proceed`):
-   * re-park the Run non-terminal and move the Task from `ready`+escalated to
-   * `awaiting-review`, clearing the flag so it reads as an ordinary human
-   * review gate. Mirrors `parkForReview`'s Task-side transition, but for a
-   * `ready` Task rather than a `running` one — `parkForReview`'s own guard
-   * only moves a still-`running` Task (see its doc comment), which an
-   * already-escalated (`ready`) Task never is.
-   */
-  private async parkEscalatedForReview(task: TaskRow, run: RunRow): Promise<void> {
-    await this.reparkForReview(run);
-    await this.taskService.setState(task.id, 'awaiting-review');
-    await this.taskService.clearEscalated(task.id);
-  }
-
-  /**
-   * Operator escape hatch (a): "Adopt & review" (issue #191). An escalated
-   * Task's stranded candidate — parked at `run.candidateOid` on its last Run
-   * when `settleEscalated` terminaled it — gets no fresh builder Run; it is
-   * simply re-parked at `awaiting-review` so the existing `ReviewService.accept`
-   * (accept-anyway) can land it exactly as it would a native Run's own review
-   * gate. Guards: the Task must actually be escalated, and its latest Run must
-   * have a candidate to adopt — an escalation that never reached a candidate
-   * snapshot (dirty direct context, or a pre-`validating` escalate) has nothing
-   * to review.
-   */
-  /**
-   * The precondition both operator escape hatches (issue #191) share: the Task
-   * must be escalated and its latest Run must carry a stranded candidate. `verb`
-   * only shapes the error message ("adopt" / "reverify"). Returns the resolved
-   * Task, Run, and non-null candidate OID so callers skip the null-recheck.
-   */
-  private async resolveEscalatedCandidateRun(
-    taskId: number,
-    verb: string,
-  ): Promise<{ task: TaskRow; run: RunRow; oid: string }> {
-    const task = await this.taskService.get(taskId);
-    const run = (await this.runStore.listForTask(taskId)).at(-1);
-    if (!run) throw new DomainError('conflict', `task ${taskId} has no runs to ${verb}`);
-    if (!task.escalated) {
-      throw new DomainError('invalid_state', `task ${taskId} is not escalated; nothing to ${verb}`);
-    }
-    if (run.candidateOid == null) {
-      throw new DomainError('conflict', `task ${taskId}'s latest run has no candidate to ${verb}`);
-    }
-    return { task, run, oid: run.candidateOid };
-  }
-
-  async adoptForReview(taskId: number): Promise<void> {
-    const { task, run } = await this.resolveEscalatedCandidateRun(taskId, 'adopt');
-    await this.parkEscalatedForReview(task, run);
-  }
-
-  /**
-   * Operator escape hatch (b): "Note-to-critic" (issue #191). Re-runs ONLY the
-   * agent critic against an escalated Task's existing stranded candidate, with
-   * a human `note` folded into the critic's trusted preamble
-   * (`critic-prompt.ts`'s `operatorNote`) — never a fresh builder Run, and the
-   * note can never itself force a pass (ADR-0021 containment). The fresh critic
-   * verdict is persisted, then re-folded via `combineVerdicts` alongside the
-   * latest stored `command` verdict (if any command attempt exists), so an
-   * original command failure still blocks even if the critic now passes
-   * (honest fail-safe — never silently overridden by a note). A `proceed`
-   * decision re-parks the Task at `awaiting-review` exactly like
-   * {@link adoptForReview} (never auto-landed, whatever the Workspace's
-   * auto-accept setting); anything else leaves the Task escalated — the
-   * appended attempt is the only operator-visible result.
-   */
-  async reverifyWithNote(taskId: number, note: string): Promise<void> {
-    const { task, run, oid } = await this.resolveEscalatedCandidateRun(taskId, 'reverify');
-
-    const config = this.getConfig();
-    const ws = await this.getWorkspace?.(task.workspaceId);
-    const { review } = resolveVerifiers(
-      ws ?? { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
-      config,
-    );
-    if (!review.enabled || !review.prompt || !review.model) throw new DomainError('invalid_state', 'no review configured for this workspace');
-
-    // The critic's own harness (mirrors `runVerification`'s resolution,
-    // issue #174 FIX 2): reuses the builder task's harness only when
-    // `critic.harness` is unset ("Same as task").
-    const criticHarnessId = review.harness ?? task.harness;
-    const criticHarness = config.harnesses[criticHarnessId as keyof typeof config.harnesses];
-    if (!criticHarness) {
-      throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
-    }
-
-    mkdirSync(this.worktreesDir, { recursive: true });
-    const attempt = await runCritic({
-      repoDir: task.workingDir,
-      candidateOid: oid,
-      worktreePath: join(this.worktreesDir, `critic-reverify-${run.id}`),
-      critic: { prompt: review.prompt, model: review.model, ...(review.harness ? { harness: review.harness } : {}) },
-      fields: driveFields(task, this.urlFor),
-      harness: criticHarness,
-      harnessId: criticHarnessId,
-      operatorNote: note,
-      ...(this.criticDrive ? { drive: this.criticDrive } : {}),
-    });
-    await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
-
-    // Re-fold latest-per-verifier (mirrors `latestVerdicts`,
-    // `web/src/verification-attempts-model.ts`): the fresh critic verdict plus
-    // the latest stored `command` attempt, if this Run ever had one — an
-    // original command failure still blocks even if the critic now passes.
-    const priorCommand = (await this.verificationAttempts.list(run.id))
-      .filter((a) => a.mechanism === 'command')
-      .at(-1);
-    const verdicts: VerifierVerdict[] = [{ verifier: 'critic', verdict: attempt.verdict }];
-    if (priorCommand) verdicts.push({ verifier: 'command', verdict: priorCommand.verdict });
-
-    if (dispositionAfterNote(combineVerdicts(verdicts)) === 'park-review') {
-      await this.parkEscalatedForReview(task, run);
-    } else {
-      // Stays escalated: the appended attempt is the operator-visible
-      // result — push the Run's fresh verdict to the board.
-      this.events.onRunFinished?.(await this.runStore.get(run.id));
-    }
-  }
-
-  private async settle(
-    task: TaskRow,
-    run: RunRow,
-    state: 'completed' | 'failed',
-    reason: string | null,
-    patch: Partial<RunRow> = {},
-  ): Promise<void> {
-    // A native clean completion is the agent ending its turn (→ awaiting-review);
-    // a bare failure is the `failed` disposition (→ Task failed).
-    const projection: SettleProjection =
-      state === 'completed'
-        ? { runState: 'completed', taskAction: 'awaiting-review', reason }
-        : { runState: 'failed', taskAction: 'failed', reason };
-    const type: RunFactType = state === 'completed' ? 'agent-finish/unresolved' : 'failed';
-    await this.coordinateSettle(task, run, type, projection, patch);
-  }
-
-  /**
-   * Clean completion of an afk mirrored Run (issue #33): the Merge Fate +
-   * fallback-close already ran in {@link AutoDrive.onCompleted}. Mirrored Tasks
-   * bypass the review gate, so the Task goes straight to completed (the poll's
-   * closed-ticket reconcile confirms it). Only settle a still-running Task — a
-   * racing cancel wins.
-   */
+  /** A verified and landed Run: the ticket is done. Only settles a still-working Task — a racing cancel wins. */
   private async settleAutoCompleted(task: TaskRow, run: RunRow, patch: Partial<RunRow>): Promise<void> {
     await this.coordinateSettle(
       task,
       run,
       'agent-finish/unresolved',
-      { runState: 'completed', taskAction: 'completed', reason: null },
+      { runState: 'completed', taskAction: 'done', reason: null },
       patch,
     );
   }
 
-  /** Stop an afk Run and hand the Task back to a human (issue #33): Run failed, Task ready + escalated + drive hitl. */
+  /** ADR-0041's one escalation surface: Run failed, Task escalated with the trigger's reason. */
   private async settleEscalated(task: TaskRow, run: RunRow, reason: string, patch: Partial<RunRow>): Promise<void> {
     await this.coordinateSettle(task, run, 'escalate', {
       runState: 'failed',
