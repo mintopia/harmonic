@@ -319,6 +319,70 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(await gone.memberBaseNotReady(await m11())).toBe(true);
   });
 
+  it('gates a recognised Epic member under an existing integration branch, even before any reconcile publishes the ready frontier (#334/#332)', async () => {
+    // The poke race behind #332: the mirror insert makes the member `ready` and
+    // pokes the Auto-Runner in the SAME poll, BEFORE the reconcile retargets its
+    // base. A fresh coordinator has never reconciled, so its ready-frontier set is
+    // empty and `awaitsBase` is false — yet the member is a recognised Epic member
+    // (durable `mapRef`, set at mirror time) with a null base, under an Epic whose
+    // integration branch already exists (as epic/326 did for #332's siblings). It
+    // MUST be gated, not forked off develop.
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const m11 = mirrored.find((t) => t.trackerRef === 11)!;
+    expect(m11.mapRef).toBe(10); // recognised membership, set at mirror time
+    expect(m11.baseBranch).toBeNull(); // not yet retargeted onto epic/10
+
+    const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
+    // No reconcile has run: the ready-frontier arm cannot recognise it…
+    expect(coord.awaitsBase(m11)).toBe(false);
+    // …but the durable-membership arm gates it, so it never forks off develop.
+    expect(await coord.memberBaseNotReady(m11)).toBe(true);
+  });
+
+  it('does not brick a mirrored ticket whose parent has no integration branch (a spine parent, not a leaf Epic) (#334)', async () => {
+    // The membership arm is bounded by branch existence: a ticket whose `mapRef`
+    // points at a parent that is NOT an integration-branch-backed leaf Epic (its
+    // epic/<ref> is never cut) must run normally, not be gated into a permanent
+    // EpicBaseNotReady loop.
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const m11 = mirrored.find((t) => t.trackerRef === 11)!;
+    expect(m11.baseBranch).toBeNull();
+    // No epic/10 branch exists (and none will be cut for a non-leaf parent).
+    const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    expect(coord.awaitsBase(m11)).toBe(false); // frontier not published
+    expect(await coord.memberBaseNotReady(m11)).toBe(false); // not gated ⇒ no brick
+  });
+
+  it('a continuation/retry never regresses an Epic member to develop: a base flipped to develop/null re-gates on membership (#334/#330-331)', async () => {
+    // #330/#331: a member's run base flip-flopped develop↔epic/326 across attempts
+    // — an attempt re-resolved its base and dropped back to develop. Whatever a
+    // re-resolution leaves in the base column (develop, or null), the member's
+    // `mapRef` under a live integration branch still gates it (transient) until
+    // the reconcile re-points it at epic/10 — it can never spawn off develop.
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    const coord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
+    await coord.reconcile(tickets, mirrored);
+
+    const m11Id = mirrored.find((t) => t.trackerRef === 11)!.id;
+    // Attempt 1's base was set to the live integration branch, and it is spawnable.
+    expect((await tasks.get(m11Id)).baseBranch).toBe('epic/10');
+    expect(await coord.memberBaseNotReady(await tasks.get(m11Id))).toBe(false);
+
+    // A retry poll whose ready frontier is empty (the prior attempt emptied it):
+    // the ready-frontier arm is blind, but membership + the live branch still gate
+    // — for a base regressed to develop AND a base cleared to null alike.
+    const retryCoord = new EpicIntegrationCoordinator(tasks, dir, new FakeGit(['epic/10'], 'develop'));
+    for (const regressed of ['develop', null] as const) {
+      await tasks.setBaseBranch(m11Id, regressed);
+      const task = await tasks.get(m11Id);
+      expect(retryCoord.awaitsBase(task)).toBe(false); // empty frontier ⇒ blind
+      expect(await retryCoord.memberBaseNotReady(task)).toBe(true); // but gated, never develop
+    }
+  });
+
   it('a member whose epic branch exists is spawnable even when the ready frontier is empty; a missing branch is deferred (#231)', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);

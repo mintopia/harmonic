@@ -3,7 +3,9 @@ import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { tasks } from '../src/db/schema.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -343,6 +345,43 @@ describe('worktree isolation mode', () => {
     expect(runs[0].reason).toContain('epic/999');
 
     // The base repo is untouched: no worktree added, no run branch forged.
+    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
+    expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+  });
+
+  it('an Epic member (mapRef) never forks off the current branch: an unresolved epic base re-queues instead (issue #334)', async () => {
+    const repo = makeRepo(); // on branch main
+    git(repo, 'branch', 'epic/424'); // the Epic's integration branch exists
+    const worktreesBefore = git(repo, 'worktree', 'list').split('\n').length;
+
+    // A recognised Epic member (durable `mapRef`) whose base has NOT been
+    // retargeted onto its integration branch yet — the #332 shape. Created as a
+    // worktree Task so `resolveBaseBranch` runs, then stamped with the membership
+    // the mirror would set.
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'f.txt': 'nope\n' } }),
+      workingDir: repo,
+      isolationMode: 'worktree',
+    });
+    await server.app.ctx.asyncDb.write((d) =>
+      d.update(tasks).set({ mapRef: 424 }).where(eq(tasks.id, created.body.id)).run(),
+    );
+    await server.api('POST', `/api/tasks/${created.body.id}/run`);
+
+    // It must NOT resolve to main and fork off it: base is unresolved under a live
+    // integration branch, so the Run re-queues (ready, not escalated) until the
+    // reconcile points it at epic/424 — never a run recorded with base main.
+    const task = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+      return t.state === 'ready' ? t : undefined;
+    });
+    expect(task.state).toBe('ready');
+    const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
+    expect(runs.length).toBe(1);
+    expect(runs[0].state).toBe('failed');
+    expect(runs[0].reason).toContain('epic/424');
+    expect(runs[0].baseBranch ?? null).toBeNull(); // never resolved to main
+    // Base repo untouched: no worktree, no run branch forged off main.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
     expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
   });

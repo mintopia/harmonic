@@ -1196,6 +1196,26 @@ export class Runner {
    * {@link BaseBranchUnresolved} — the "why" and disposition live on that class.
    */
   private async resolveBaseBranch(task: TaskRow): Promise<string> {
+    // An Epic member (durable `mapRef`) forks from — and lands onto — its Epic's
+    // integration branch, never develop (issue #334). The reconcile retargets its
+    // `baseBranch` to `epic/<mapRef>` before it is pickable, and the start-funnel
+    // gate ({@link RunnerOptions.epicBaseNotReady}) holds it until then. Last-line
+    // invariant: a member that reaches resolution with a base that is not yet its
+    // integration branch (it raced the retarget) must NOT fall through to the
+    // symbolic-HEAD default below and silently fork off develop. Surface it as the
+    // transient it is ({@link EpicBaseNotReady}) so the Run re-queues. Bounded by
+    // the branch existing, matching the gate: a `mapRef` whose `epic/<ref>` is
+    // never cut (a nesting spine parent's child) resolves normally, not looped.
+    if (task.mapRef !== null) {
+      const branch = integrationBranchName(task.mapRef);
+      if (task.baseBranch === branch) return branch;
+      if (await Git.branchExists(task.workingDir, branch)) {
+        throw new EpicBaseNotReady(
+          `task ${task.id} is an Epic member (${branch}) whose base is not yet its integration branch ` +
+            `(currently ${task.baseBranch ?? 'unassigned'}); it is retargeted on the next tracker poll — retry shortly`,
+        );
+      }
+    }
     if (task.baseBranch) return task.baseBranch;
     const branch = await Git.symbolicBranch(task.workingDir);
     if (branch) return branch;

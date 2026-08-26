@@ -311,14 +311,35 @@ export class EpicIntegrationCoordinator {
    */
   async memberBaseNotReady(task: TaskRow): Promise<boolean> {
     if (task.origin !== 'mirrored') return false;
+    // Ready-frontier arm (issue #159): a member the last reconcile recognised as
+    // ready but has not yet been based.
     if (this.awaitsBase(task)) return true;
-    const ref = parseIntegrationBranch(task.baseBranch);
-    if (ref === null) return false;
+    // Durable-membership arm (issue #334): once an Epic's integration branch has
+    // been cut, EVERY mirrored member under it (`mapRef` = the Epic ref, set at
+    // mirror time) must fork from `epic/<ref>`, never develop — including one
+    // picked in the poke-race window before this reconcile retargets its base
+    // (base still null, `readyMemberRefs` not yet published), which is how a
+    // member slipped the frontier arm above and forked off develop. Fall back to
+    // the base branch's own encoded ref for a base-set member whose `mapRef` is
+    // unset (a merge-train-launched member, #160).
+    const epicRef = task.mapRef ?? parseIntegrationBranch(task.baseBranch);
+    if (epicRef === null) return false;
+    const branch = integrationBranchName(epicRef);
     try {
-      return !(await this.git.branchExists(this.workingDir, integrationBranchName(ref)));
+      const exists = await this.git.branchExists(this.workingDir, branch);
+      // Already retargeted onto its integration branch: gated iff the branch has
+      // since gone (retire / restart / degraded scan, #231 — transient).
+      if (task.baseBranch === branch) return !exists;
+      // Not yet retargeted (null / develop / a stale branch): gate only once the
+      // integration branch actually exists. Its existence is the proof `mapRef`
+      // names a real, integration-branch-backed leaf Epic worth holding for —
+      // rather than a nesting "spine" parent whose `epic/<ref>` is never cut,
+      // which must be left to run normally, not gated forever. A genuine ready
+      // member is still held by the frontier arm above until its branch is cut.
+      return exists;
     } catch (err) {
-      this.onError(`epic ${ref} integration branch existence check failed: ${String(err)}`);
-      return true;
+      this.onError(`epic ${epicRef} integration branch existence check failed: ${String(err)}`);
+      return true; // fail closed: never fork off an unvouched base
     }
   }
 
