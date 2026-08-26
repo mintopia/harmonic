@@ -24,6 +24,7 @@ const task = (
 ): Task => ({
   id,
   prompt: `task ${id}`,
+  summary: `task ${id}`,
   workspaceId: 1,
   harness: 'claude',
   model: 'claude-fable-5',

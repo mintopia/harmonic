@@ -119,6 +119,20 @@ function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void
   return [route, navigate];
 }
 
+// The Board renders every open task, grouped into Attention / Running / Pending,
+// so it can't show a single page — but it still fetches through the paginated
+// contract (ADR-0045), walking the open list in bounded pages and assembling the
+// whole set rather than pulling it back in one unbounded response.
+const BOARD_PAGE = 100;
+async function fetchOpenTasks(workspaceId: number): Promise<Task[]> {
+  const all: Task[] = [];
+  for (let offset = 0; ; offset += BOARD_PAGE) {
+    const { tasks, total } = await api.tasks({ workspaceId, state: 'open', limit: BOARD_PAGE, offset });
+    all.push(...tasks);
+    if (tasks.length === 0 || all.length >= total) return all;
+  }
+}
+
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
   light: 'sun',
@@ -240,10 +254,12 @@ export function App() {
   const refresh = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
-      // Epic frontier derivation needs terminal dependencies to distinguish a
-      // completed blocker from a failed or cancelled one, so every Board view
-      // keeps the Workspace task graph intact.
-      const { tasks } = await api.tasks({ workspaceId: activeWorkspaceId });
+      // Open work only: blocked-ness and epic-frontier correctness are
+      // server-derived (openBlockerCount/blockedOnFailed), so the lean open list
+      // carries everything the sections need without the terminal history that
+      // made the full fetch slow (ADR-0045). The Graph self-fetches its whole
+      // graph (#348); a focused terminal Ticket hydrates from its item GET.
+      const tasks = await fetchOpenTasks(activeWorkspaceId);
       setTasks(tasks);
       // The open Ticket derives from this list (see `openTask` below), so the
       // poll keeps its state-aware footer fresh with no extra bookkeeping —

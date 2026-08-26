@@ -7,6 +7,7 @@ import type { Task, TaskState } from '../web/src/types.js';
 const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {}): Task => ({
   id,
   prompt: `task ${id}`,
+  summary: `task ${id}`,
   workspaceId: 1,
   harness: 'claude',
   model: 'claude-fable-5',

@@ -7,6 +7,7 @@ import type { Task } from '../web/src/types.js';
 const task = (id: number, origin: Task['origin']): Task => ({
   id,
   prompt: 'Fix graph node layout',
+  summary: 'Fix graph node layout',
   workspaceId: 1,
   harness: 'claude',
   model: 'claude-sonnet-4-6',

@@ -85,13 +85,18 @@ export const api = {
   config: () => request<AppConfig>('GET', '/api/config'),
   updateConfig: (patch: object) => request<AppConfig>('PATCH', '/api/config', patch),
   replaceConfig: (config: AppConfig) => request<AppConfig>('PUT', '/api/config', config),
-  /** `open` is an explicit board optimization. Omit it for full task history. */
-  tasks: ({ workspaceId, state }: { workspaceId?: number; state?: 'open' } = {}) => {
+  /** `open` is an explicit board optimization. Omit it for full task history.
+   * The response is the shared paginated envelope (ADR-0045): the page under
+   * `tasks` plus the filtered `total`. Pass `limit`/`offset` to page through it;
+   * omit `limit` for the whole filtered list. */
+  tasks: ({ workspaceId, state, limit, offset }: { workspaceId?: number; state?: 'open'; limit?: number; offset?: number } = {}) => {
     const params = new URLSearchParams();
     if (workspaceId) params.set('workspaceId', String(workspaceId));
     if (state) params.set('state', state);
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
     const query = params.toString();
-    return request<{ tasks: Task[] }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
+    return request<{ tasks: Task[]; total: number }>('GET', query ? `/api/tasks?${query}` : '/api/tasks');
   },
   task: (id: number) => request<Task>('GET', `/api/tasks/${id}`),
   createTask: (input: Partial<Task> & { prompt: string; state?: 'draft' | 'ready' }) =>

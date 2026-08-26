@@ -75,9 +75,9 @@ function descriptionBody(prompt: string): string {
   return body || prompt;
 }
 
-function Description({ task }: { task: Task }) {
+function Description({ prompt }: { prompt: string }) {
   const [expanded, setExpanded] = useState(false);
-  const body = descriptionBody(task.prompt);
+  const body = descriptionBody(prompt);
   return (
     <div className="mb-[18px] mt-1">
       <div
@@ -763,6 +763,11 @@ export function TicketPage({
   const [timelineEvents, setTimelineEvents] = useState<TicketTimelineEvent[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
+  // The full prompt/description lives on the item GET, not the lean list row the
+  // Board/list pass in (ADR-0045). Fetch it here so the description renders the
+  // whole body even once list rows drop the prompt; the live `task` prop still
+  // drives everything state-related.
+  const [detail, setDetail] = useState<Task | null>(null);
   const [liveUsage, setLiveUsage] = useState<Map<number, RunUsageEvent>>(() => new Map());
   const [now, setNow] = useState(() => Date.now());
   // The worktree diffstat while a run is in flight. `task.stat` is only
@@ -774,6 +779,15 @@ export function TicketPage({
   useEffect(() => {
     let live = true;
     api.tasks().then(({ tasks }) => live && setAllTasks(tasks), toastError);
+    return () => {
+      live = false;
+    };
+  }, [task.id]);
+
+  useEffect(() => {
+    let live = true;
+    setDetail(null);
+    api.task(task.id).then((full) => live && setDetail(full), toastError);
     return () => {
       live = false;
     };
@@ -1075,14 +1089,14 @@ export function TicketPage({
           <div className="px-[30px]">
             <div className="flex items-start gap-4 pb-1 pt-7">
               <h1 className="max-w-[680px] text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em]">
-                {cardTitle(task.prompt)}
+                {cardTitle(task.summary)}
               </h1>
               <span className="mt-2.5">
                 <StatePill state={task.state} />
               </span>
             </div>
 
-            <Description task={task} />
+            <Description prompt={detail?.prompt ?? task.prompt} />
             <Metrics task={task} runs={runs} live={liveUsage} now={now} />
             <MetaLine task={task} allTasks={allTasks} />
 

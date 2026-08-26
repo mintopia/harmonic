@@ -22,7 +22,7 @@ import {
   touchTargetInline,
 } from '../ui';
 import { toastError, toastLandOutcome } from '../toast';
-import { fetchTasks, filterBySearch, paginate, TABLE_PAGE_SIZE } from '../table-model';
+import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
 import { taskKey } from '../id-format.js';
 import { EmptyState } from './EmptyState';
 import { ArmedButton } from './ArmedButton';
@@ -102,34 +102,59 @@ export function TableView({
   onForceLandEpic?: (epicRef: number) => Promise<EpicLandOutcome>;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [collapsedBands, setCollapsedBands] = useState<ReadonlySet<number>>(new Set());
   const { state, harness, priority, search, sortBy, order } = filters;
 
+  // Search is server-side now (ADR-0045): debounce the box so a keystroke burst
+  // folds to a single request instead of a fetch per character.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset to page 1 whenever the query (filters, search, or sort) changes, so
+  // narrowing the list never strands the operator on a page past the new end.
+  useEffect(() => {
+    setPage(1);
+  }, [workspaceId, state, harness, priority, sortBy, order, debouncedSearch]);
+
   useEffect(() => {
     if (workspaceId === null) return;
     setLoading(true);
-    fetchTasks({ workspaceId, state, harness, priority, sortBy, order })
-      .then(setTasks)
+    // Filter/search/sort/paginate are all server-side now (ADR-0045).
+    fetchTasks({
+      workspaceId,
+      state,
+      harness,
+      priority,
+      q: debouncedSearch,
+      sortBy,
+      order,
+      limit: TABLE_PAGE_SIZE,
+      offset: (page - 1) * TABLE_PAGE_SIZE,
+    })
+      .then(({ tasks, total }) => {
+        setTasks(tasks);
+        setTotal(total);
+      })
       .catch(toastError)
       .finally(() => setLoading(false));
-    // Refetch when the filter/sort selection changes. The destructured filter
-    // fields (from route.table, issue #103) are stable primitives, so this
-    // fires only on a real filter change — not on every re-render. `search`
-    // is deliberately excluded (issue #104): it filters the already-fetched
-    // list client-side, so typing in the box never triggers a refetch.
-  }, [workspaceId, state, harness, priority, sortBy, order]);
+  }, [workspaceId, state, harness, priority, debouncedSearch, sortBy, order, page]);
 
-  const filtered = filterBySearch(tasks, search);
-  const { items: pageTasks, page: currentPage, pageCount, total } = paginate(filtered, page);
+  const pageCount = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageTasks = tasks;
 
-  // Reset to page 1 whenever the result set's inputs change, so narrowing the
-  // list never leaves the operator staring at a now-out-of-range page. The
-  // paginate() clamp is the safety net; this is the intent.
+  // Pull the requested page back in range when a smaller `total` shrinks the
+  // page count (a deletion, say), so the offset the next fetch sends can never
+  // strand the operator on a blank page past the end.
   useEffect(() => {
-    setPage(1);
-  }, [workspaceId, state, harness, priority, sortBy, order, search]);
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const epicLookup = useMemo(() => epicByTaskId(epics), [epics]);
   const bands = epics
@@ -182,14 +207,14 @@ export function TableView({
       <div role="cell" className="min-w-0 pr-2">
         <button
           type="button"
-          title={task.prompt}
+          title={task.summary}
           className="block w-full cursor-pointer truncate text-left text-ink"
           onClick={(e) => {
             e.stopPropagation();
             onOpen(task);
           }}
         >
-          {task.prompt}
+          {task.summary}
         </button>
         <div className="mt-1 lg:hidden">
           <TaskIdentity harness={task.harness} model={task.model} compact className="text-small" />
@@ -342,7 +367,7 @@ export function TableView({
           </div>
         )}
 
-        {!loading && filtered.length === 0 && (
+        {!loading && total === 0 && (
           <div className="px-4">
             {state || harness || priority || search ? (
               <EmptyState

@@ -173,10 +173,10 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
         <button
           type="button"
           onClick={onOpen}
-          title={task.prompt}
+          title={task.summary}
           className="mt-2 line-clamp-2 cursor-pointer text-left text-[15px] font-semibold leading-[1.3] text-ink focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
         >
-          {cardTitle(task.prompt)}
+          {cardTitle(task.summary)}
         </button>
         {(task.escalationReason || task.origin === 'mirrored') && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
