@@ -5,6 +5,10 @@ dist/
 .astro/
 .DS_Store
 
+# Crash dumps — a full-suite run can leave a multi-hundred-MB core file behind
+core
+core.*
+
 scratch_*
 
 # Local scratch/working notes — never published
