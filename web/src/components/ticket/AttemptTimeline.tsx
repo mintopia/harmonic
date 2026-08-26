@@ -47,7 +47,7 @@ function CloseButton({ onConfirm }: { onConfirm: () => void }) {
  * on the attempt that escalated. Accept and Reject-with-guidance act on the
  * stranded candidate, so they first park it at review the way the operator
  * escape hatch does; Close cancels the ticket. */
-function Escalation({ attempt, task, onChanged }: { attempt: Attempt; task: Task; onChanged: () => void }) {
+function Escalation({ attempt, task, onChanged, compact = false }: { attempt: Attempt; task: Task; onChanged: () => void; compact?: boolean }) {
   const [rejecting, setRejecting] = useState(false);
   const actions = escalationActions(task);
   const reason = attempt.escalationReason?.replace(/^escalated to human:\s*/i, '') ?? null;
@@ -72,7 +72,7 @@ function Escalation({ attempt, task, onChanged }: { attempt: Attempt; task: Task
       </div>
       {reason && <p className="mt-1 whitespace-pre-wrap break-words text-ink">{reason}</p>}
       {actions && (
-        <div className="mt-2.5 flex flex-col gap-1.5 [&>button]:w-full [&>button]:justify-center">
+        <div className={compact ? 'mt-2 flex flex-wrap items-center gap-2' : 'mt-2.5 flex flex-col gap-1.5 [&>button]:w-full [&>button]:justify-center'}>
           <button type="button" className={btnAccept} disabled={!actions.accept} title={actions.accept ? undefined : 'No candidate to accept'} onClick={accept}>
             Accept
           </button>
@@ -209,6 +209,7 @@ export function AttemptTimeline({
           })}
         </ol>
       )}
+      {strip && escalated && <Escalation attempt={escalated} task={task} onChanged={onChanged} compact />}
     </section>
   );
 }
