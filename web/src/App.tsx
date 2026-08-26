@@ -934,11 +934,7 @@ export function App() {
                         <div className="flex h-full items-center justify-center text-muted">Loading graph…</div>
                       }
                     >
-                      <GraphView
-                        tasks={taskList}
-                        loading={tasks === null}
-                        onOpen={openRow}
-                      />
+                      <GraphView workspaceId={activeWorkspaceId} onOpen={openRow} />
                     </Suspense>
                   )}
                   {view === 'stats' && <StatsPage workspaceId={activeWorkspaceId} />}

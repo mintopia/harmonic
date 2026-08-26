@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../types';
+import { api } from '../api';
+import { toastError } from '../toast';
 import {
   SIGNAL,
   STATE_LABEL,
@@ -37,15 +39,31 @@ function initialTransform(w: number, h: number, vw: number, vh: number): Transfo
 }
 
 export function GraphView({
-  tasks,
-  loading,
+  workspaceId,
   onOpen,
 }: {
-  tasks: Task[];
-  loading: boolean;
+  /** Scopes the graph to the active Workspace (ADR-0008); no fetch until resolved. */
+  workspaceId: number | null;
   onOpen: (task: Task) => void;
 }) {
+  // The Graph owns its whole-graph dataset (ADR-0045): it fetches every task
+  // with its dependency context for the Workspace, lazily on open, rather than
+  // consuming the Board's now-paginated `tasks` page — which drops the terminal
+  // rows and off-page nodes the graph still needs to draw edges and the
+  // "Show terminal" toggle. No `limit` ⇒ the endpoint returns the whole graph.
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showTerminal, setShowTerminal] = useState(false);
+
+  useEffect(() => {
+    if (workspaceId === null) return;
+    setLoading(true);
+    api
+      .tasks({ workspaceId })
+      .then(({ tasks }) => setTasks(tasks))
+      .catch(toastError)
+      .finally(() => setLoading(false));
+  }, [workspaceId]);
 
   const visible = useMemo(() => visibleTasks(tasks, showTerminal), [tasks, showTerminal]);
   const edges = useMemo(() => graphEdges(visible), [visible]);
