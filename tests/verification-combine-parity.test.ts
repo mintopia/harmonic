@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { combineVerdicts as combineSrc, dispositionAfterNote } from '../src/verification/combine.js';
+import { combineVerdicts as combineSrc } from '../src/verification/combine.js';
 import { combineVerdicts as combineWeb, type VerifierVerdict } from '../web/src/verification-model.js';
 
 /**
@@ -30,21 +30,5 @@ describe('combineVerdicts src↔web parity (issue #135)', () => {
     for (const batch of batches) {
       expect(combineSrc(batch)).toEqual(combineWeb(batch));
     }
-  });
-});
-
-describe('dispositionAfterNote (issue #191)', () => {
-  it('a proceed decision parks for review', () => {
-    expect(dispositionAfterNote({ outcome: 'proceed', reason: 'all verifiers passed' })).toBe('park-review');
-  });
-
-  it('a block decision stays escalated', () => {
-    expect(dispositionAfterNote({ outcome: 'block', reason: 'verifier critic failed' })).toBe('stay-escalated');
-  });
-
-  it('an escalate decision stays escalated', () => {
-    expect(dispositionAfterNote({ outcome: 'escalate', reason: 'verifier critic inconclusive' })).toBe(
-      'stay-escalated',
-    );
   });
 });

@@ -44,7 +44,6 @@ const mirroredAfk = (trackerRef: number): MirrorInput => ({
   prompt: `ticket ${trackerRef}`,
   workflow: 'implement',
   wayfinderType: null,
-  drive: 'afk',
   mapRef: null,
   closed: false,
 });
@@ -73,10 +72,9 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     // Sanity: mirrored Tasks resolve to the global `direct` isolation default,
     // so this is genuinely the afk+direct path the gate guards (not worktree).
     expect(task.origin).toBe('mirrored');
-    expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
     expect(task.workingDir).toBe(repo);
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
@@ -136,10 +134,10 @@ describe('run-start-state admission gate — afk direct Run (issue #149)', () =>
     expect(run.reason ?? '').toMatch(/^escalated to human: /);
     expect((run.reason ?? '').toLowerCase()).toMatch(/uncommitted|dirty|clean context/);
 
-    // The Task is handed back to a human: ready, escalated, drive → hitl.
+    // The Task is handed back to a human: escalated with the gate's reason.
     const task = await server.app.ctx.tasks.get(taskId);
-    expect(task.escalated).toBe(true);
-    expect(task.drive).toBe('hitl');
+    expect(task.state).toBe('escalated');
+    expect((task.escalationReason ?? '').toLowerCase()).toMatch(/uncommitted|dirty|clean context/);
 
     // A rejected context records NO start-state fact.
     expect(await startStateFact(runId)).toBeUndefined();

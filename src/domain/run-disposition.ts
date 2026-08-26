@@ -31,26 +31,6 @@
  * only up to the point of no return; a cancel fact appended *after* the land's
  * PONC cutoff is late and cannot un-land a Run the accept has already
  * committed.
- *
- * `review-sla-expiry` (issue #114, reliability-design round-5 #4) is slotted
- * just above `agent-finish/unresolved`: an un-reviewed Run whose review SLA has
- * lapsed is a Harmonic-initiated give-up in the same tier as a guardrail trip,
- * so it outranks a bare agent-finish (it must be able to *resolve* a Run parked
- * in `review` to an explicit terminal disposition), while an operator cancel, an
- * escalate, a branch/verify violation, or a guardrail trip still win over it.
- *
- * `failed` — today's generic execution-failure terminal (the pre-spine
- * `RUN_STATES` 'failed') — is not named in that locked list, so it is slotted
- * between `agent-finish/unresolved` and `process-death`: a reported failure is a
- * more informative ending signal than a bare process death (we have an error,
- * not merely absence), but less deliberate than an agent that ended its own turn.
- *
- * `branch-violation`, `verify-fail`, and `guardrail-trip` have **no emitter
- * yet** (later spine units ship them) but hold their precedence slot so the
- * branch-validation / verification / guardrail units drop in later without
- * renumbering. This array is the single source of truth for precedence and the
- * one place a new disposition is ranked — extending the set never touches
- * `computeDisposition`.
  */
 export const DISPOSITION_PRECEDENCE = [
   'operator-cancel',
@@ -59,7 +39,6 @@ export const DISPOSITION_PRECEDENCE = [
   'branch-violation',
   'verify-fail',
   'guardrail-trip',
-  'review-sla-expiry',
   'agent-finish/unresolved',
   'failed',
   'process-death',

@@ -32,10 +32,10 @@ export const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
  * settled between the list and the cancel is fine.
  */
 export async function cancelRunningTasks(server: TestServer): Promise<void> {
-  const running = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'running');
+  const running = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'working');
   await Promise.all(running.map((t) => server.app.ctx.runner.cancelForTask(t.id).catch(() => {})));
   await waitFor(async () => {
-    const still = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'running');
+    const still = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'working');
     return still.length === 0 ? true : undefined;
   }).catch(() => {});
 }

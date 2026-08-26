@@ -14,8 +14,8 @@
          a quiet matte register, not a picture.
        · Two voices, deliberately: teal is the interface's action/tooling voice;
          indigo is reserved for the one state that needs the operator —
-         awaiting-review / "needs you." Deck's "awaiting-review = the accent" is
-         retired; in Paper the review state owns its own hue.
+         escalated / "needs you." Deck's "awaiting-review = the accent" is
+         retired; in Paper the escalated state owns its own hue.
        · Board (home): attention-ordered sections — Needs you → Active → Epics →
          Standalone — as horizontal card strips (Needs you / Active) and
          collapsible Epic bands that expand to a frontier-DAG (Frontier + Depth
@@ -166,13 +166,13 @@ spacing:
 
 **"Paper" is a register, not a picture.** No paper texture, no skeuomorphism, no costume — the name means *matte, low-chroma, tactile-but-flat, quiet*. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
 
-This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tasks flow `draft → ready → running → verifying → review → merged`, escalate `afk → hitl` when they need a human, and Epics **merge** as a batch through an integration branch and a merge train. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
+This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop lands its own verified work), reach `escalated` when they need a human (ADR-0041), and Epics **merge** as a batch through an integration branch and a merge train. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
 
-**The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: the review gate and escalations at the top of the Board; the review gate as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
+**The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: escalations at the top of the Board; the escalation surface (Accept / Reject with guidance / Close) as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
 
 Both themes are first-class. **Dark is the canonical operator identity** (warm-neutral near-black `#15161A` → `#202227`, depth from lightness steps); **Light** (the matte paper world, canvas `#F1F2EF` with white panels on soft shadows) ships for bright rooms. Theme follows `prefers-color-scheme` with a manual override persisted in `localStorage` and stamped as `data-theme` on the root. A **Soft ↔ Bold** density toggle is also first-class (§ 3). Which of Light/Dark and Soft/Bold ships as the default is **still open** — do not hardcode one away.
 
-Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (structure + hierarchy, not a wall of widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), **kanban-tool sprawl** (the Board is an attention queue with a review gate, not a project-management board).
+Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (structure + hierarchy, not a wall of widgets), **chat-app cuteness** (no avatars, no emoji status; agents are processes), **kanban-tool sprawl** (the Board is an attention queue with one escalation surface, not a project-management board).
 
 **Key characteristics:**
 - Attention-ordered surfaces: what needs the operator now is first and loudest.
@@ -186,10 +186,10 @@ Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (str
 Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes. The one deliberate exception is the running amber (below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper lands in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 non-exception failures across Light/Dark × Soft/Bold, 2026-08-21).
 
 ### The two voices
-- **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the `Accept & merge` gate button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
-- **Indigo Review** (`await` `#4B4FA6` light / `#9096E6` dark): reserved for the one state that needs the operator — **awaiting-review** pills, the **"Needs you"** section + count, the **Review →** button, and the **selected run chip**. **Await Tint** (`#ECEDF7` / `#25264C`): the awaiting-review pill, the selected run row, the review section header. This is the deliberate break from Deck: awaiting-review is **not** the action accent — the review state owns its own hue, so "needs you" never blurs into ordinary chrome.
+- **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the escalation `Accept` button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
+- **Indigo Escalated** (`await` `#4B4FA6` light / `#9096E6` dark): reserved for the one state that needs the operator — **escalated** pills, the **"Needs you"** section + count, the **Resolve →** button, and the **selected run chip**. **Await Tint** (`#ECEDF7` / `#25264C`): the escalated pill, the selected run row, the needs-you section header. This is the deliberate break from Deck: escalated is **not** the action accent — the state owns its own hue, so "needs you" never blurs into ordinary chrome.
 
-**The Two Voices Rule.** Teal means *action / tooling / ready-to-run*; indigo means *the operator's turn (review / needs-you)*. Never use teal for the review state, and never use indigo for a generic action. Each voice stays ≤~10% of any screen; if either is decorating something, it's wrong.
+**The Two Voices Rule.** Teal means *action / tooling / ready-to-run*; indigo means *the operator's turn (escalated / needs-you)*. Never use teal for the escalated state, and never use indigo for a generic action. Each voice stays ≤~10% of any screen; if either is decorating something, it's wrong.
 
 ### Neutral (low-chroma paper ground)
 - **Canvas** (`#F1F2EF` / `#15161A`): the page field and the gap between panels — a matte near-neutral, faintly warm in light, warm-neutral in dark.
@@ -203,10 +203,10 @@ Two voices — a **teal action accent** and an **indigo review hue** — over a 
 
 ### State-signal family (belongs to the work, not the chrome)
 Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, run-chip states, and merge-train segments:
-- **Running amber** (`#C0722A` / tint `#F6EBDC` · dark `#DE9A45` / tint `#3A2C16`): work in flight; also the escalation/attention register.
-- **Awaiting review = indigo** (see the two voices above) — the state that needs you.
+- **Working amber** (`#C0722A` / tint `#F6EBDC` · dark `#DE9A45` / tint `#3A2C16`): work in flight — the Attempt loop is executing.
+- **Escalated = indigo** (see the two voices above) — the state that needs you.
 - **Ready = teal** (`#0D7271` / tint `#DDEFEE` · dark `#33BDB4` / tint `#123330`): queued to run, in the ready frontier — the same hue as the action accent, because *ready* is "actionable now."
-- **Merged emerald** (`#267356` / tint `#E1F1EA` · dark `#37C48E` / tint `#12302A`): finished, accepted, folded. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald).
+- **Done emerald** (`#267356` / tint `#E1F1EA` · dark `#37C48E` / tint `#12302A`): verified, landed, folded. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald).
 - **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
 - **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
 - **Tooling = teal** (`= accent`): tool calls, branch/epic refs, harness metadata, the Epic kind badge. Paper folds Deck's separate tooling-cyan into the teal voice.
@@ -259,8 +259,8 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 
 ### The Board (home / signature surface)
 Full-width, attention-ordered sections, top → bottom:
-- **Needs you** — the sacred core, always first: *awaiting-review* Tasks (with an at-a-glance verification verdict) and *escalated / HITL* Tasks (amber). A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
-- **Active** — the running Tasks, a card strip; the count matches "N running." A running Epic member shows in its Epic band, not duplicated here.
+- **Needs you** — the sacred core, always first: *escalated* Tickets and Epics (indigo, with the escalation reason at a glance); non-agent-workable (human-only) tickets render muted with a distinct icon, never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
+- **Active** — the working Tickets, a card strip; the count matches "N working." A running Epic member shows in its Epic band, not duplicated here.
 - **Epics** — collapsible **bands**; each expands to a **frontier-DAG** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
 - **Standalone** — loose task cards on the canvas (not boxed in a band), their own frontier.
 
@@ -279,9 +279,9 @@ A full-width page you navigate into. Crumb: `harmonic / Epic epic/166 / Task 172
 - **Task header:** Display title + state pill; a **flat metrics row** — Cost · Tokens · Elapsed · Runs · Diff — as non-card, hairline-separated figures (never stat-cards); a meta line (origin · priority · agent · deps · notify); a clamped Brief/description with Show-more.
 - **Run-centric body** (`.tkshell`): a full-height right **run rail** (`<aside>`) + a main pane that shows **Run OR Changes**, driven by the rail's selection:
   - **Run rail** holds **Run attempts** (one selectable row per attempt: dot + `Run N` + `state · cost · duration`, selected on Await Tint + indigo ring), the **Worktree** (branch ref, base, isolation), and **Changed files** (per-file M/A badge + ± stat).
-  - **Run** view (a run attempt selected): a phase **stepper** for *this* run, the **Verification** block (Command / Critic mechanisms with pass/proceed verdicts), the **transcript** (native harness event stream), and a **per-agent usage table** (read/write/cached bars + cost per agent). A warm/continued run names its session continuity.
+  - **Run** view (an attempt selected): the attempt's **timeline rows** (rebase, implementation, each verification command, review) with command, output and verdict, the **transcript** (native harness event stream), and a **per-agent usage table** (read/write/cached bars + cost per agent). A warm/continued run names its session continuity.
   - **Changes** view (a changed file selected): the **run-agnostic worktree diff** — the cumulative diff of the worktree, not tied to any single run.
-- **Review gate:** pinned **actions** at the bottom of the rail — **Reject… (ghost)** then **Accept & merge (teal fill, last)** — the loudest element on the current run, and **sticky** so it stays reachable when the sidebar stacks below at narrow widths. On a historical / failed / rejected run the gate is a quiet read-only bar.
+- **Escalation surface:** on an escalated ticket, exactly three actions on the escalated attempt's timeline entry — **Close (quiet destructive)**, **Reject with guidance… (ghost)**, then **Accept (teal fill, last)** — the loudest element on the page, and **sticky** so it stays reachable when the sidebar stacks below at narrow widths. Accept is disabled when no verified head exists. Every other state shows the plain state actions.
 
 ### Other surfaces
 Activity, Table, Graph (dependency DAG), Stats, API, Workspace, Settings inherit the Paper system — the two voices, the state layer, the type scale, panels/cards — and are reached from the rail.
@@ -289,7 +289,7 @@ Activity, Table, Graph (dependency DAG), Stats, API, Workspace, Settings inherit
 ## 6. Components
 
 ### Board card (Needs you / Active / Standalone strips)
-A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** (Needs you) put harness·model on its own line below the action-description line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right **HITL badge** (person icon + "HITL", amber) — HITL cards get **no** Run-now. Right-aligned action by state: **Review →** (indigo), **Take over** (ghost), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket.
+A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** (Needs you) put harness·model on its own line below the action-description line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right **HITL badge** (person icon + "HITL", amber) — HITL cards get **no** Run-now. Right-aligned action by state: **Resolve →** (indigo, escalated), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket.
 
 ### Epic band + frontier-DAG node
 Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono), the title, the **merge-train** pips, a disclosure chevron. Expands to the frontier-DAG (§ 5). A **node**: state dot + mono id + title + dependency chips (satisfied = struck-through); ready frontier nodes get a teal ▷ **Run now**; blocked nodes carry their blocker chips. Merged nodes are hidden.
@@ -305,7 +305,7 @@ Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono)
 - **Review / Go:** indigo (`btn-go`) — the review state's forward move (`Review →`), and Bold fills it solid indigo.
 - **Run:** teal on Accent Tint (`btn-run` / `Run now`).
 - **Ghost:** Surface fill, 1px Edge border, ink text; hover darkens the border (`Take over`, `Reject…`).
-- **Review gate:** **Reject… (ghost)** then **Accept & merge (teal, last)** — the affirmative holds the terminal position. The gate arms only on the current run so a stale run can never be accepted.
+- **Escalation surface:** **Close (quiet destructive)**, **Reject with guidance… (ghost)**, then **Accept (teal, last)** — the affirmative holds the terminal position. Accept lands the verified head as-is; it refuses when the head has moved or none exists.
 - **Hit targets:** every interactive control gets a ≥44×44px hit area via an overlay pseudo-element (expand the hit box, not the visual). **Hover/Focus:** ~150ms ease; 2px teal `:focus-visible` outline.
 
 ### Dialogs & tooltips
@@ -313,13 +313,13 @@ Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono)
 - **Tooltips** are on-demand (`data-tip`, hover/focus), no standing chrome — the dense shorthand explains itself on demand rather than carrying permanent hint text.
 
 ### Accessibility baseline (built in, verified 2026-08-21)
-Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions (polite for state transitions and the live "Needs you" count, assertive for the merge outcome) — a screen-reader operator hears a task reach awaiting-review; colour-only state dots carry `role="img"` + label; all decorative SVGs and separator glyphs are `aria-hidden`; icon-only controls have accessible names; `prefers-reduced-motion` drops every animation (dot pulse included) but never the figure; full keyboard paths with visible `:focus-visible`.
+Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions (polite for state transitions and the live "Needs you" count, assertive for the merge outcome) — a screen-reader operator hears a ticket reach escalated; colour-only state dots carry `role="img"` + label; all decorative SVGs and separator glyphs are `aria-hidden`; icon-only controls have accessible names; `prefers-reduced-motion` drops every animation (dot pulse included) but never the figure; full keyboard paths with visible `:focus-visible`.
 
 ## 7. Do's and Don'ts
 
 ### Do
-- **Do** order every surface by the operator's attention — the review gate and escalations first, loudest.
-- **Do** keep the **two voices** clean: teal = action / tooling / ready; indigo = the operator's turn (review / needs-you). Each ≤~10% of a screen.
+- **Do** order every surface by the operator's attention — escalations first, loudest.
+- **Do** keep the **two voices** clean: teal = action / tooling / ready; indigo = the operator's turn (escalated / needs-you). Each ≤~10% of a screen.
 - **Do** keep state colour on the state layer only (dot, count pill, state pill, merge-train segment, run-chip state word).
 - **Do** flip glyph ink per theme on the bright await/merged fills (`--on-await` / `--on-done`) to hold AA — never darken the fill.
 - **Do** set everything read as language or a figure in sans with `tabular-nums`; reserve mono for genuine code and code-identity tokens.

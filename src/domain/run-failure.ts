@@ -1,29 +1,18 @@
 import { computeDisposition, type DispositionFact } from './run-disposition.js';
 
 /**
- * The reliability slices of a Run, kept honest per ADR-0028. A Run that ended in
- * RunState `failed` is only an *execution failure* when it was not review-rejected
- * — a rejection settles the Run to `state:'failed'` **and** `review:'rejected'`
- * together (`reject()` in `domain/review.ts`), so filtering by state alone folds
- * reviewer judgment calls into the failure rate. Cancelled and rejected Runs are
- * counted and shown as their own slices, never as failures.
+ * The reliability slices of a Run, kept honest per ADR-0028: a Run that ended
+ * in RunState `failed` is an *execution failure*; cancelled Runs are counted and
+ * shown as their own slice, never as failures.
  */
 export interface RunOutcome {
   /** The Run's terminal `state`. */
   state: string;
-  /** The Run's review decision: 'accepted' | 'rejected' | null. */
-  review: string | null;
 }
 
-/** True for a genuine execution failure (ADR-0028): `state:'failed'` that was
- *  not review-rejected. This is the failure-rate numerator's membership test. */
-export function isExecutionFailure({ state, review }: RunOutcome): boolean {
-  return state === 'failed' && review !== 'rejected';
-}
-
-/** True for a review-rejected Run — shown as its own slice, never a failure. */
-export function isReviewRejected({ review }: RunOutcome): boolean {
-  return review === 'rejected';
+/** The failure-rate numerator's membership test (ADR-0028). */
+export function isExecutionFailure({ state }: RunOutcome): boolean {
+  return state === 'failed';
 }
 
 /** A failed Run's classification input: its `run_facts` (the terminal

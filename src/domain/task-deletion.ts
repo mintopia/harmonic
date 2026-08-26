@@ -1,3 +1,4 @@
+import type { TaskState } from '../db/schema.js';
 /**
  * The hard-delete decision (issue #162, ADR-0025).
  *
@@ -8,8 +9,8 @@
  * the mirrored-vs-native branch exhaustively unit-testable in isolation (the
  * same seam style as `run-disposition.ts` / `session-resume.ts`).
  *
- * Delete is guarded to a Task that is **not currently running** — the same
- * guard `WorkspaceService.delete` applies to a Workspace with a running Task.
+ * Delete is guarded to a Task that is **not currently working** — the same
+ * guard `WorkspaceService.delete` applies to a Workspace with a working Task.
  * A mirrored Task additionally needs a tombstone on `(workspaceId,
  * trackerRef)` so a later poll doesn't resurrect the deleted row (ADR-0025);
  * a native Task never does, since nothing re-creates it.
@@ -18,7 +19,7 @@
 /** The facet of a Task this decision reads. Structurally assignable from a
  * `TaskRow`/`RawTaskRow`, so callers pass either directly. */
 export interface DeletableTaskFacts {
-  state: string;
+  state: TaskState;
   origin: string;
   trackerRef: number | null;
   workspaceId: number | null;
@@ -34,8 +35,8 @@ export interface DeletionDecision {
 }
 
 export function decideTaskDeletion(task: DeletableTaskFacts): DeletionDecision {
-  if (task.state === 'running') {
-    return { ok: false, reason: 'task is running; stop it before deleting', tombstone: null };
+  if (task.state === 'working') {
+    return { ok: false, reason: 'task is working; stop it before deleting', tombstone: null };
   }
   const tombstone =
     task.origin === 'mirrored' && task.trackerRef != null

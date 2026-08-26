@@ -16,7 +16,7 @@ import { SESSION_STATUSES } from '../src/db/schema.js';
  */
 describe('decideRetirement (issue #148)', () => {
   const now = 1_000_000;
-  const cfg: RetentionConfig = { rejectContinuationMs: 5_000, retentionTtlMs: 100_000 };
+  const cfg: RetentionConfig = { retentionTtlMs: 100_000 };
 
   it('retires immediately on a successful land', () => {
     expect(decideRetirement('landed', now, cfg)).toEqual({ kind: 'retire', reason: 'landed' });
@@ -29,22 +29,7 @@ describe('decideRetirement (issue #148)', () => {
     });
   });
 
-  it('retires immediately when the review SLA lapses unreviewed', () => {
-    expect(decideRetirement('review-sla', now, cfg)).toEqual({
-      kind: 'retire',
-      reason: 'review-abandonment-sla',
-    });
-  });
-
-  it('goes idle under the reject-continuation deadline on a human reject', () => {
-    expect(decideRetirement('rejected', now, cfg)).toEqual({
-      kind: 'idle',
-      reason: 'reject-continuation-timeout',
-      retireDeadline: now + cfg.rejectContinuationMs,
-    });
-  });
-
-  it('goes idle under the retention-TTL backstop on any other ending (fail/escalate/crash)', () => {
+  it('goes idle under the retention-TTL backstop on any other ending (escalate/guardrail/crash) — an escalated ticket keeps its branch as evidence', () => {
     expect(decideRetirement('other', now, cfg)).toEqual({
       kind: 'idle',
       reason: 'retention-ttl',
@@ -53,10 +38,10 @@ describe('decideRetirement (issue #148)', () => {
   });
 
   it('uses the default retention windows when none is passed', () => {
-    expect(decideRetirement('rejected', 0)).toEqual({
+    expect(decideRetirement('other', 0)).toEqual({
       kind: 'idle',
-      reason: 'reject-continuation-timeout',
-      retireDeadline: DEFAULT_RETENTION.rejectContinuationMs,
+      reason: 'retention-ttl',
+      retireDeadline: DEFAULT_RETENTION.retentionTtlMs,
     });
     expect(decideRetirement('other', 0)).toEqual({
       kind: 'idle',
@@ -66,7 +51,6 @@ describe('decideRetirement (issue #148)', () => {
   });
 
   it('default reject window is shorter than the retention-TTL backstop', () => {
-    expect(DEFAULT_RETENTION.rejectContinuationMs).toBeLessThan(DEFAULT_RETENTION.retentionTtlMs);
   });
 });
 

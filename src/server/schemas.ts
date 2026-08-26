@@ -94,9 +94,15 @@ export const attemptSchema = z
 
 /** The ticket timeline shape shared by REST and the WebSocket firehose. */
 export const attemptTimelineResponseSchema = z
-  .object({ attempts: z.array(attemptSchema) })
+  .object({
+    attempts: z.array(attemptSchema),
+    /** The attempt number the `maxAttempts` budget counts from (ADR-0041): the last
+     * escalated Attempt, or 0. `latest.number - budgetBase` is the position within
+     * the current budget — history numbering never resets, the budget does. */
+    budgetBase: z.number().int().nonnegative().meta({ example: 0 }),
+  })
   .meta({ id: 'AttemptTimelineResponse' })
-  .describe('Ordered attempt timeline, with each attempt task and its outcome.');
+  .describe('Ordered attempt timeline, with each attempt task and its outcome, plus the attempt number the budget counts from.');
 
 /** Per-model token counters (execution/usage.ts `ModelUsage`) — the four counters Cost prices. */
 export const modelUsageSchema = z
@@ -226,7 +232,7 @@ export const activityProcessSchema = z
     trackerRef: z.number().nullable().meta({ example: 51 }),
     /** The mirrored issue's tracker URL — the Activity row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
     trackerUrl: z.string().nullable().meta({ example: 'https://github.com/mintopia/harmonic/issues/55' }),
-    /** True when an afk Run escalated to a human at runtime (issue #33) — the "Needs you" signal; always false for a Conversation. */
+    /** True when the Task is escalated (ADR-0041) — the "Needs you" signal; always false for a Conversation. */
     escalated: z.boolean().meta({ example: false }),
     /** Rolled-up Usage; null before any tokens are reported. */
     usage: runUsageSchema.nullable(),

@@ -5,7 +5,7 @@ import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunFactStore } from './run-facts.js';
 import type { LandingJournalStore } from './landing-journal.js';
 import { computeDisposition, type Disposition } from './run-disposition.js';
-import { projectSettle, type CoordinatorFact, type SettleProjection, type SettleTaskAction } from './run-coordinator.js';
+import { projectSettle, type CoordinatorFact, type SettleProjection } from './run-coordinator.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
 import type { RetirementCause } from './session-retirement.js';
 
@@ -25,12 +25,11 @@ export interface RunBranchRetirementHook {
  * from the log alone.
  *
  * #113 kept this logic private to the Runner because the Runner was the only
- * settle authority. #114 adds a **second** authority — the human review gate
- * (`ReviewService.accept`/`reject`) and the review-SLA sweep both settle a Run
- * that is parked in `phase:'review'` long after its harness is gone. Extracting
- * the coordinator to a shared, dependency-injected class lets both drive it with
- * identical race-safety, instead of the review path racing the Runner around the
- * Run row.
+ * settle authority. A **second** authority — the operator Accept on an
+ * escalated ticket (`EscalationService.accept`, via `LandingCoordinator`) —
+ * settles a Run long after its harness is gone. Extracting the coordinator to a
+ * shared, dependency-injected class lets both drive it with identical
+ * race-safety, instead of the operator path racing the Runner around the Run row.
  *
  * `landingJournal` is a **third** settle-adjacent concern layered on top by
  * issue #115: the journaled non-interruptible landing's Point Of No Cancel
@@ -123,7 +122,11 @@ export class RunSettleCoordinator {
     // (settle exactly once), while a higher-precedence signal arriving late
     // overrides — even when it maps to the same Run state but a different Task
     // action (e.g. escalate after a bare failure).
-    if (before.state !== 'running' && disposition === priorDisposition) return;
+    // A terminal Run already showing the winning projection is a duplicate
+    // straggler. A terminal Run whose row does not (an escalated ticket's Run
+    // being landed by an operator Accept, whose land fact is on the log before
+    // this settle) still applies.
+    if (before.state !== 'running' && disposition === priorDisposition && before.state === winner.runState) return;
 
     // `patch` (usage/stat/stopReason) rides with the winning terminal write,
     // matching today's semantics — a losing straggler never decorates the row
@@ -146,7 +149,7 @@ export class RunSettleCoordinator {
     // worktree removal is a separate drain, and a hiccup must never crash settle.
     const finished = await this.runStore.get(run.id);
     try {
-      await this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner, patch));
+      await this.sessionRetirement?.onRunSettled(finished, this.retirementCause(disposition, winner));
     } catch {
       // best-effort; the boot/periodic drain reconciles from the Session row
     }
@@ -155,26 +158,20 @@ export class RunSettleCoordinator {
     } catch {
       // Best-effort. A later boot reconciliation retries branch retirement.
     }
-    await this.applySettleTaskAction(task.id, winner.taskAction);
+    await this.applySettleTaskAction(task.id, winner);
     this.onRunFinished?.(finished);
   }
 
   /**
-   * Map the winning disposition + review gate to the retirement cause a Session
-   * needs (issue #148): an operator cancel or an unreviewed review-SLA lapse
-   * retire immediately; a human reject retains for a continuation window; any
-   * `completed` Run landed (the phase machine only completes via landing); every
-   * other ending (generic fail, escalate, guardrail-trip, branch-violation,
-   * process-death) is retained under the retention-TTL backstop.
+   * Map the winning disposition to the retirement cause a Session needs (issue
+   * #148): an operator cancel retires immediately; any `completed` Run landed
+   * (the phase machine only completes via landing); every other ending
+   * (escalate, guardrail-trip, branch-violation, process-death) is retained
+   * under the retention-TTL backstop — an escalated ticket's branch is the
+   * evidence its Accept lands.
    */
-  private retirementCause(
-    disposition: Disposition | null,
-    winner: SettleProjection,
-    patch: Partial<RunRow>,
-  ): RetirementCause {
+  private retirementCause(disposition: Disposition | null, winner: SettleProjection): RetirementCause {
     if (disposition === 'operator-cancel') return 'operator-cancel';
-    if (disposition === 'review-sla-expiry') return 'review-sla';
-    if (patch.review === 'rejected') return 'rejected';
     if (winner.runState === 'completed') return 'landed';
     return 'other';
   }
@@ -187,6 +184,10 @@ export class RunSettleCoordinator {
   }
 
   /** A Run's fact log decoded into the coordinator's projection-carrying shape. */
+  async facts(runId: number): Promise<CoordinatorFact[]> {
+    return this.coordinatorFacts(runId);
+  }
+
   private async coordinatorFacts(runId: number): Promise<CoordinatorFact[]> {
     return (await this.runFacts.list(runId)).map((f) => ({
       seq: f.seq,
@@ -198,42 +199,31 @@ export class RunSettleCoordinator {
   /**
    * Apply the winning fact's Task transition. `none` leaves the Task to its
    * caller (operator cancel/complete already moved it). Every other action moves
-   * only a Task that is still `running` **or** `awaiting-review` — the latter is
-   * new for #114: a native Run's Task sits in `awaiting-review` while its Run is
-   * parked in `phase:'review'`, and accept/reject/SLA-expiry settle *from* there.
-   * A Task already in a terminal state (a racing cancel that moved it) makes the
+   * only a Task that is still `working` — or `escalated`, for the operator
+   * Accept that lands an escalated ticket (`done`). A Task already in a terminal state (a racing cancel that moved it) makes the
    * action no-op, so the higher-precedence signal still wins the Run row while the
    * Task keeps the disposition the race already gave it.
    */
-  private async applySettleTaskAction(taskId: number, action: SettleTaskAction): Promise<void> {
-    if (action === 'none') return;
+  private async applySettleTaskAction(taskId: number, winner: SettleProjection): Promise<void> {
+    if (winner.taskAction === 'none') return;
     const state = (await this.taskService.get(taskId)).state;
-    if (state !== 'running' && state !== 'awaiting-review') return;
-    switch (action) {
-      case 'awaiting-review':
-        await this.taskService.setState(taskId, 'awaiting-review');
-        break;
-      case 'completed':
-        await this.taskService.setState(taskId, 'completed');
-        break;
-      case 'failed':
-        await this.taskService.setState(taskId, 'failed');
+    if (state !== 'working' && !(state === 'escalated' && winner.taskAction !== 'ready')) return;
+    switch (winner.taskAction) {
+      case 'done':
+        await this.taskService.setState(taskId, 'done');
         break;
       case 'ready':
         await this.taskService.setState(taskId, 'ready');
         break;
       case 'escalate':
-        await this.taskService.escalate(taskId);
+        await this.taskService.escalate(taskId, winner.reason ?? 'escalated');
         break;
     }
   }
 
   /** Release the Work Context lease this Run holds, on any terminal disposition.
    * Idempotent and best-effort — a lease-release hiccup must never crash settle.
-   * Keyed by owner Run id so it needs no key recompute. A native Run parked in
-   * `review` already released its lease at review entry (#114 releases at that
-   * seam; holding it across the review window awaits the phase-specific lease
-   * TTLs of #122), so for those this is a harmless idempotent no-op. */
+   * Keyed by owner Run id so it needs no key recompute. */
   private async releaseLease(runId: number): Promise<void> {
     try {
       await this.leaseStore.releaseByOwner(runId);

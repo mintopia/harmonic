@@ -7,9 +7,8 @@ import { computeDisposition, type Disposition, type DispositionFact } from './ru
  *
  * The terminal state is **not** a fixed function of the winning disposition
  * kind. A single `agent-finish/unresolved` can land the Task in
- * `awaiting-review` (native clean completion), `completed` (mirrored / operator
- * force-complete), `ready` (a retry within the Attempt cap) or Escalated
- * (the cap spent), depending on the Merge Fate and attempt budget resolved at
+ * `done` (a landed ticket), leave it untouched (operator force-complete), or
+ * re-queue it, depending on the Merge Fate and attempt budget resolved at
  * signal time.
  * So each ending signal records the concrete projection it intends in its
  * `run_fact` payload, and the coordinator replays the **winning** fact's
@@ -25,17 +24,13 @@ export type RunTerminalState = 'completed' | 'failed' | 'cancelled';
  * What the coordinator does to the owning Task when the Run settles. `none`
  * leaves the Task untouched — the operator cancel/force-complete flow already
  * transitioned it through the Task service, so the coordinator must not fight
- * that. Every other action is applied only while the Task is still `running`
- * (a racing cancel/escalate that already moved it wins), preserving today's
- * guard.
+ * that. `done` lands the ticket, `ready` re-queues it (a transient fault the
+ * next pick retries), `escalate` hands it to a human with the fact's reason.
+ * Applied only while the Task is still `working` (or `escalated`, for the
+ * operator Accept that lands from there); a racing cancel that already moved
+ * it wins.
  */
-export type SettleTaskAction =
-  | 'awaiting-review'
-  | 'completed'
-  | 'failed'
-  | 'escalate'
-  | 'ready'
-  | 'none';
+export type SettleTaskAction = 'done' | 'escalate' | 'ready' | 'none';
 
 /** The terminal projection a single ending signal intends, persisted verbatim
  * in the emitting `run_fact`'s payload. */

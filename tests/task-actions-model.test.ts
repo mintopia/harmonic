@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { showsEscalationRecovery, taskActions } from '../web/src/task-actions-model.js';
+import { escalationActions, taskActions } from '../web/src/task-actions-model.js';
 import { TASK_STATES } from '../web/src/types.js';
 
 describe('taskActions', () => {
-  // Accept is last so the affirmative holds the terminal position, and cancel
-  // is absent by design: it's a disposition inside the Reject dialog, not a
-  // peer of the gate's two review verbs. Delete (issue #162) sits first,
-  // ahead of the gate, rather than disturbing Accept's terminal slot.
-  it('offers the review gate for awaiting-review, accept last, delete first, and no cancel', () => {
-    expect(taskActions('awaiting-review')).toEqual(['delete', 'reject', 'accept']);
+  // ADR-0041: escalated is the one human surface — exactly the three actions.
+  // Accept is last so the affirmative holds the terminal position, Close leads
+  // them as the destructive disposition, and Delete (issue #162) sits first,
+  // ahead of the surface, rather than disturbing Accept's terminal slot.
+  it('offers exactly the three escalation actions on escalated, accept last, delete first', () => {
+    expect(taskActions('escalated')).toEqual(['delete', 'close', 'reject', 'accept']);
   });
 
-  it('offers delete plus cancel for a failed task (retries live on the ticket, not a linked copy)', () => {
-    expect(taskActions('failed')).toEqual(['delete', 'cancel']);
+  it('never offers plain cancel or requeue on escalated — Close and Reject with guidance are the dispositions', () => {
+    expect(taskActions('escalated')).not.toContain('cancel');
+    expect(taskActions('escalated')).not.toContain('run');
   });
 
   it('offers delete plus run/ready and edit for the editable states', () => {
@@ -20,21 +21,30 @@ describe('taskActions', () => {
     expect(taskActions('draft')).toEqual(['delete', 'ready', 'edit', 'cancel']);
   });
 
-  // Issue #162: delete is guarded to non-running Tasks, mirroring the
-  // server's 409 — running is the one state that never offers it.
-  it('offers complete (operator override) and cancel while a task is running, no delete', () => {
-    expect(taskActions('running')).toEqual(['complete', 'cancel']);
+  // Issue #162: delete is guarded to non-working Tasks, mirroring the
+  // server's 409 — working is the one state that never offers it.
+  it('offers complete (operator override) and cancel while a task is working, no delete', () => {
+    expect(taskActions('working')).toEqual(['complete', 'cancel']);
   });
 
-  it('offers delete for completed (no other action), and delete plus uncancel for cancelled', () => {
-    expect(taskActions('completed')).toEqual(['delete']);
+  it('offers delete for done (no other action), and delete plus uncancel for cancelled', () => {
+    expect(taskActions('done')).toEqual(['delete']);
     expect(taskActions('cancelled')).toEqual(['delete', 'uncancel']);
   });
 
-  // Delete is the one action offered on every state except running (issue #162).
-  it('offers delete on every non-running state', () => {
+  // Delete is the one action offered on every state except working (issue #162).
+  it('offers delete on every non-working state', () => {
     for (const state of TASK_STATES) {
-      expect(taskActions(state).includes('delete')).toBe(state !== 'running');
+      expect(taskActions(state).includes('delete')).toBe(state !== 'working');
+    }
+  });
+
+  it('offers accept/reject/close only on escalated', () => {
+    for (const state of TASK_STATES) {
+      const actions = taskActions(state);
+      for (const action of ['accept', 'reject', 'close'] as const) {
+        expect(actions.includes(action)).toBe(state === 'escalated');
+      }
     }
   });
 
@@ -49,24 +59,23 @@ describe('taskActions', () => {
   });
 });
 
-// issue #191: an escalated Task's stranded-candidate recovery actions
-// (Adopt & review, Note to critic) are flag actions layered beside
-// taskActions(state) — mirroring Un-escalate — so they get their own pure
-// gate rather than living inline in the component.
-describe('showsEscalationRecovery', () => {
-  it('is false when the task is not escalated, even with a candidate', () => {
-    expect(showsEscalationRecovery({ escalated: false, candidateRef: 'refs/harmonic/candidate/run-9137' })).toBe(
-      false,
-    );
+// ADR-0041: Accept lands the verified branch head, so it needs one; Reject with
+// guidance and Close never depend on a candidate.
+describe('escalationActions', () => {
+  it('is null off the escalation surface, even with a candidate', () => {
+    expect(escalationActions({ state: 'ready', candidateRef: 'refs/harmonic/candidate/run-9137' })).toBeNull();
+    expect(escalationActions({ state: 'working', candidateRef: 'refs/harmonic/candidate/run-9137' })).toBeNull();
   });
 
-  it('is false when escalated but no run ever produced a candidate', () => {
-    expect(showsEscalationRecovery({ escalated: true, candidateRef: null })).toBe(false);
+  it('offers all three when the escalated ticket has a verified branch head', () => {
+    expect(escalationActions({ state: 'escalated', candidateRef: 'refs/harmonic/candidate/run-9137' })).toEqual({
+      accept: true,
+      reject: true,
+      close: true,
+    });
   });
 
-  it('is true only once both an escalation and a stranded candidate are present', () => {
-    expect(showsEscalationRecovery({ escalated: true, candidateRef: 'refs/harmonic/candidate/run-9137' })).toBe(
-      true,
-    );
+  it('withholds only Accept when no run ever produced a verified head', () => {
+    expect(escalationActions({ state: 'escalated', candidateRef: null })).toEqual({ accept: false, reject: true, close: true });
   });
 });

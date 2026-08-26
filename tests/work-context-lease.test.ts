@@ -207,15 +207,15 @@ describe('WorkContextLeaseStore (issue #118)', () => {
       expect(updated!.expiry).toBe(now + DEFAULT_LEASE_TTL.executionMs);
     });
 
-    it('heartbeat(key, now, "review") sets a far-future review-budget expiry', async () => {
+    it('heartbeat(key, now, "landing") records the phase and keeps the execution-budget expiry (no phase parks a lease)', async () => {
       await leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
       const now = Date.now();
 
-      await leases.heartbeat('direct:/tmp/repo', now, 'review');
+      await leases.heartbeat('direct:/tmp/repo', now, 'landing');
 
       const updated = await leases.getByKey('direct:/tmp/repo');
-      expect(updated!.phase).toBe('review');
-      expect(updated!.expiry).toBe(now + DEFAULT_LEASE_TTL.reviewMs);
+      expect(updated!.phase).toBe('landing');
+      expect(updated!.expiry).toBe(now + DEFAULT_LEASE_TTL.executionMs);
     });
 
     it('heartbeat(key, now) with no phase leaves expiry untouched (today\'s bump-timestamp-only behaviour)', async () => {
@@ -239,9 +239,9 @@ describe('WorkContextLeaseStore (issue #118)', () => {
 
       // held, future expiry -> untouched
       await leases.acquire('direct:/tmp/future', otherRunId, 'running');
-      await leases.heartbeat('direct:/tmp/future', now + 10_000, 'review');
+      await leases.heartbeat('direct:/tmp/future', now + 10_000, 'executing');
 
-      const sweptAt = now + DEFAULT_LEASE_TTL.executionMs + 20_000; // well past the expired one's expiry, still before the future one's
+      const sweptAt = now + DEFAULT_LEASE_TTL.executionMs + 5_000; // past the expired one's expiry, still before the future one's
 
       const swept = await leases.sweepExpired(sweptAt);
 
@@ -279,7 +279,7 @@ describe('WorkContextLeaseStore (issue #118)', () => {
       await leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
       await leases.markSuspect('direct:/tmp/repo');
 
-      const swept = await leases.sweepExpired(Date.now() + DEFAULT_LEASE_TTL.reviewMs);
+      const swept = await leases.sweepExpired(Date.now() + 2 * DEFAULT_LEASE_TTL.executionMs);
 
       expect(swept).toHaveLength(0);
     });

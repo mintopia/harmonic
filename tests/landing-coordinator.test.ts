@@ -11,14 +11,13 @@ import { RunFactStore } from '../src/domain/run-facts.js';
 import { LandingJournalStore } from '../src/domain/landing-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
 import { LandingCoordinator, type LandingEffectExec, type LandingEffectOutcome } from '../src/domain/landing-coordinator.js';
-import { ReviewService } from '../src/domain/review.js';
+import { EscalationService } from '../src/domain/escalation.js';
 import type { SettleProjection } from '../src/domain/run-coordinator.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
 
-/** The land projection every accept-path landing intends (mirrors
- * ReviewService.accept's pre-#115 direct settle call). */
-const LAND_PROJECTION: SettleProjection = { runState: 'completed', taskAction: 'completed', reason: null };
+/** The land projection every landing intends: the Run completed, the ticket done. */
+const LAND_PROJECTION: SettleProjection = { runState: 'completed', taskAction: 'done', reason: null };
 const CANCEL_PROJECTION: SettleProjection = { runState: 'cancelled', taskAction: 'none', reason: null };
 
 /**
@@ -57,15 +56,15 @@ describe('LandingCoordinator (issue #115)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /** A Task+Run pair parked exactly where `land` expects to find them: Task
-   * `awaiting-review`, Run `running` in `phase:'review'` — the state
-   * `ReviewService.accept` hands off in. */
+  /** A Task+Run pair where an operator Accept finds them: the ticket
+   * `escalated`, its Run still `running` past verification (the live shape a
+   * landing settles from). */
   async function fixture(): Promise<{ task: TaskRow; run: RunRow }> {
     const created = await tasks.create({ prompt: 'land me', state: 'ready' });
-    await tasks.setState(created.id, 'running');
+    await tasks.setState(created.id, 'working');
     let run = await runStore.create(created.id);
-    run = await runStore.update(run.id, { phase: 'review' });
-    await tasks.setState(created.id, 'awaiting-review');
+    run = await runStore.update(run.id, { phase: 'verifying', candidateOid: 'a'.repeat(40) });
+    await tasks.escalate(created.id, 'escalated to human: attempt 2 of 2 failed');
     return { task: await tasks.get(created.id), run };
   }
 
@@ -101,10 +100,10 @@ describe('LandingCoordinator (issue #115)', () => {
     const landedRun = await runStore.get(run.id);
     expect(landedRun.state).toBe('completed');
     expect(landedRun.phase).toBe('terminal');
-    expect((await tasks.get(task.id)).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('done');
   });
 
-  it('a merge-conflict-style failure stops the loop and leaves the Task awaiting-review (unsettled)', async () => {
+  it('a merge-conflict-style failure stops the loop, abandons the landing (PONC lifted), and leaves the Task escalated', async () => {
     const { task, run } = await fixture();
     const effect: LandingEffectExec = {
       effect: 'target-ref',
@@ -117,13 +116,18 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(outcome).toEqual({ ok: false, detail: 'merge conflict' });
 
     // Nothing settled: the Run never left `running`, the Task never left
-    // `awaiting-review` — exactly today's merge-conflict behaviour.
-    expect((await runStore.get(run.id)).state).toBe('running');
-    expect((await tasks.get(task.id)).state).toBe('awaiting-review');
+    // `escalated`, and the Run is back in the phase it was found in.
+    expect(await runStore.get(run.id)).toMatchObject({ state: 'running', phase: 'verifying' });
+    expect((await tasks.get(task.id)).state).toBe('escalated');
 
     const rows = await journal.views(run.id);
-    expect(rows.map((r) => r.kind)).toEqual(['ponc', 'intent', 'result']);
+    expect(rows.map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
     expect(rows[2]).toMatchObject({ payload: { ok: false, detail: 'merge conflict' } });
+    // The PONC no longer freezes the disposition: an escalate fact appended
+    // after the abandoned landing decides the Run instead of the land fact.
+    expect(await journal.ponc(run.id)).toBeNull();
+    await settle.settle(task, run, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: landing failed' });
+    expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
   });
 
   it('a cancel fact appended after the PONC is audit-only: the land still wins and settles the Run "completed"', async () => {
@@ -149,7 +153,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
-    expect((await tasks.get(task.id)).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('done');
 
     // The cancel fact is still in the log — audit, not decisive.
     const cancelFacts = (await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel');
@@ -191,7 +195,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const afterCancel = await runStore.get(run.id);
     expect(afterCancel.state).toBe('completed');
     expect(afterCancel.phase).toBe('terminal');
-    expect((await tasks.get(task.id)).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('done');
     expect((await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel')).toHaveLength(1);
 
     resolveApply({ ok: true, observed: {} });
@@ -250,35 +254,31 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(types).not.toContain('agent-finish/unresolved');
   });
 
-  it('re-parks a failed operator accept for review without consuming a run slot (issue #270)', async () => {
-    const { task, run } = await fixture();
-    await runFacts.append(run.id, 'escalate', {
-      runState: 'failed',
-      taskAction: 'escalated',
-      reason: 'critic requires human review',
-    });
-    const review = new ReviewService(
+  it('a failed operator Accept leaves the ticket escalated and its settled Run terminal — no run slot consumed (issue #270)', async () => {
+    const { task } = await fixture();
+    // The real shape: the escalated ticket's Run already settled `failed`.
+    let run = (await runStore.listForTask(task.id))[0]!;
+    await settle.settle(task, run, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: attempt 2 of 2 failed' });
+    run = await runStore.get(run.id);
+    expect(run).toMatchObject({ state: 'failed', phase: 'terminal' });
+    const escalation = new EscalationService(
       runStore,
       tasks,
-      settle,
       coordinator,
-      undefined,
       () => [{
         effect: 'target-ref',
         idempotencyKey: 'main@dirty-target',
         expected: {},
         apply: async () => ({ ok: false, detail: 'target branch has uncommitted changes; land via PR/manual' }),
       }],
+      { resume: async () => {}, cleanup: async () => {} },
     );
 
-    await expect(review.accept(task.id)).rejects.toThrow('target branch has uncommitted changes');
+    await expect(escalation.accept(task.id)).rejects.toThrow('target branch has uncommitted changes');
 
-    expect(await runStore.get(run.id)).toMatchObject({
-      state: 'running',
-      phase: 'review',
-      reviewFeedback: 'target branch has uncommitted changes; land via PR/manual',
-    });
-    expect((await tasks.get(task.id)).state).toBe('awaiting-review');
+    expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
+    expect((await tasks.get(task.id)).state).toBe('escalated');
+    expect((await journal.views(run.id)).map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
     expect(await runStore.countRunning()).toBe(0);
   });
 
@@ -296,7 +296,7 @@ describe('LandingCoordinator (issue #115)', () => {
     // operator-cancel fact within the frozen PONC window — the accept cannot
     // flip the Run back to completed.
     expect((await runStore.get(run.id)).state).toBe('cancelled');
-    expect((await tasks.get(task.id)).state).toBe('awaiting-review'); // taskAction 'none' on cancel left it here
+    expect((await tasks.get(task.id)).state).toBe('escalated'); // taskAction 'none' on cancel left it here
   });
 
   it('an operator-accept still wins over a cancel appended AFTER the land\'s PONC (issue #191)', async () => {
@@ -318,7 +318,7 @@ describe('LandingCoordinator (issue #115)', () => {
     const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
-    expect((await tasks.get(task.id)).state).toBe('completed');
+    expect((await tasks.get(task.id)).state).toBe('done');
 
     resolveApply({ ok: true, observed: {} });
     expect(await landPromise).toEqual({ ok: true });

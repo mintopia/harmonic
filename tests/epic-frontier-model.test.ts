@@ -26,8 +26,9 @@ const task = (id: number, state: TaskState, dependsOn: number[] = []): Task => (
   trackerRef: id,
   workflow: 'implement',
   wayfinderType: null,
-  drive: 'afk',
-  escalated: false,
+  escalationReason: null,
+  openBlockerCount: 0,
+  agentWorkable: true,
   mapRef: null,
   url: null,
   mapTitle: null,
@@ -68,11 +69,11 @@ const epic = (members: EpicMember[]): Epic => ({
 });
 
 describe('deriveEpicFrontier (issue #264)', () => {
-  it('puts ready members in Frontier and layers blocked members by depth (running members are promoted out)', () => {
-    const tasks = [task(1, 'ready'), task(2, 'running'), task(3, 'ready', [1]), task(4, 'ready', [3])];
+  it('puts ready members in Frontier and layers blocked members by depth (working members are promoted out)', () => {
+    const tasks = [task(1, 'ready'), task(2, 'working'), task(3, 'ready', [1]), task(4, 'ready', [3])];
     const model = deriveEpicFrontier(epic(tasks.map((t) => member(t.id, t.id))), tasks);
 
-    // The running member (2) is surfaced in the Board's Active section, not here.
+    // The working member (2) is surfaced in the Board's Active section, not here.
     expect(model.columns.map((column) => [column.label, column.nodes.map((node) => node.ref)])).toEqual([
       ['Frontier', [1]],
       ['Depth 1', [3]],
@@ -81,7 +82,7 @@ describe('deriveEpicFrontier (issue #264)', () => {
   });
 
   it('hides merged members while retaining their satisfied dependency chip', () => {
-    const merged = task(1, 'completed');
+    const merged = task(1, 'done');
     const blocked = task(2, 'ready', [1, 99]);
     const model = deriveEpicFrontier(
       epic([member(1, 1, { landStatus: 'completed' }), member(2, 2)]),
@@ -97,14 +98,14 @@ describe('deriveEpicFrontier (issue #264)', () => {
     ]);
   });
 
-  it('promotes running members out of the band and excludes HITL ready work from Run now', () => {
-    const running = task(1, 'running');
-    const hitl = task(2, 'ready');
-    hitl.drive = 'hitl';
-    const model = deriveEpicFrontier(epic([member(1, 1), member(2, 2)]), [running, hitl]);
+  it('promotes working members out of the band and excludes human-only ready work from Run now', () => {
+    const working = task(1, 'working');
+    const humanOnly = task(2, 'ready');
+    humanOnly.agentWorkable = false;
+    const model = deriveEpicFrontier(epic([member(1, 1), member(2, 2)]), [working, humanOnly]);
 
-    // Running member (1) is promoted to Active; only the HITL ready member
-    // remains, and it is not runnable.
+    // Working member (1) is promoted to Active; only the human-only ready
+    // member remains, and it is not runnable.
     expect(model.columns[0]).toMatchObject({
       label: 'Frontier',
       nodes: [{ ref: 2, runnable: false }],
@@ -134,7 +135,7 @@ describe('deriveEpicFrontier (issue #264)', () => {
 
   it('keeps a completed standalone dependency satisfied in the frontier', () => {
     const ready = task(2, 'ready', [1]);
-    const completed = task(1, 'completed');
+    const completed = task(1, 'done');
     const model = deriveEpicFrontier(epic([member(2, 2)]), [completed, ready]);
 
     expect(model.columns).toEqual([

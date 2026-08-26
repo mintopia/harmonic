@@ -76,7 +76,7 @@ describe('GET /api/runs/:id/log (issue #242)', () => {
 
   it('reads the native transcript after a Run finishes', async () => {
     const { runId, taskId } = await startRun({ updates: [], delayMs: 1 });
-    await waitFor(async () => (await server.app.ctx.runs.get(runId)).phase === 'review' ? true : undefined);
+    await waitFor(async () => (await server.app.ctx.runs.get(runId)).state !== 'running' ? true : undefined);
 
     const { status, body } = await server.api('GET', `/api/runs/${runId}/log`);
 

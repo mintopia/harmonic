@@ -80,7 +80,6 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     prompt,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -90,9 +89,8 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
-    expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
@@ -139,7 +137,7 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
 
     // The Run completed (verified → recovered → landed → ticket closed).
     expect(run.state).toBe('completed');
-    expect((await server.app.ctx.tasks.get(taskId)).escalated).toBe(false);
+    expect((await server.app.ctx.tasks.get(taskId)).state).not.toBe('escalated');
 
     // The reconstructed candidate LANDED: the intended branch advanced from the
     // recorded start and now carries the agent's file (its work is on `main`,
@@ -189,12 +187,12 @@ describe('deterministic recovery landing at validating (issue #154)', () => {
 
     await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      return t.escalated ? t : undefined;
+      return t.state === 'escalated' ? t : undefined;
     });
 
     // Escalated via the #151 fallback, and never deterministically recovered:
     // the intended branch never moved and no recovery fact/event was written.
-    expect((await server.app.ctx.tasks.get(taskId)).escalated).toBe(true);
+    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     expect(await factOfType(runId, 'branch-violation')).toBeDefined();
     expect(await factOfType(runId, 'branch-recovery')).toBeUndefined();
     expect((await lifecycleEvents(runId)).some((e) => e.event === 'recovery-landed')).toBe(false);

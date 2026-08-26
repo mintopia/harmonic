@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   loadDismissed,
-  shouldShowReviewHint,
+  shouldShowEscalationHint,
   shouldShowRunHint,
   storeDismissed,
   RUN_HINT_DISMISSED_KEY,
@@ -26,7 +26,7 @@ describe('shouldShowRunHint', () => {
   });
 
   it('retires once any run has been seen (aha reached)', () => {
-    for (const seen of ['running', 'awaiting-review', 'completed', 'failed', 'cancelled']) {
+    for (const seen of ['working', 'escalated', 'done', 'cancelled']) {
       expect(shouldShowRunHint([task('ready'), task(seen)], autoOff, false)).toBe(false);
     }
   });
@@ -36,24 +36,24 @@ describe('shouldShowRunHint', () => {
   });
 });
 
-describe('shouldShowReviewHint', () => {
-  it('shows while a task awaits review', () => {
-    expect(shouldShowReviewHint([task('running'), task('awaiting-review')], false)).toBe(true);
+describe('shouldShowEscalationHint', () => {
+  it('shows while a ticket is escalated', () => {
+    expect(shouldShowEscalationHint([task('working'), task('escalated')], false)).toBe(true);
   });
 
-  it('stays hidden with nothing awaiting review', () => {
-    expect(shouldShowReviewHint([task('ready'), task('running')], false)).toBe(false);
-    expect(shouldShowReviewHint([], false)).toBe(false);
+  it('stays hidden with nothing escalated', () => {
+    expect(shouldShowEscalationHint([task('ready'), task('working')], false)).toBe(false);
+    expect(shouldShowEscalationHint([], false)).toBe(false);
   });
 
   it('stays hidden once dismissed', () => {
-    expect(shouldShowReviewHint([task('awaiting-review')], true)).toBe(false);
+    expect(shouldShowEscalationHint([task('escalated')], true)).toBe(false);
   });
 
   it('hands off from the run hint — the run hint is gone by the time this shows', () => {
-    const tasks = [task('ready'), task('awaiting-review')];
+    const tasks = [task('ready'), task('escalated')];
     expect(shouldShowRunHint(tasks, autoOff, false)).toBe(false);
-    expect(shouldShowReviewHint(tasks, false)).toBe(true);
+    expect(shouldShowEscalationHint(tasks, false)).toBe(true);
   });
 });
 

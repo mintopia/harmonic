@@ -46,7 +46,7 @@ export function visibleTasks(tasks: Task[], showTerminal: boolean): Task[] {
     for (const dep of t.dependsOn) stillBlocking.add(dep);
   }
   return tasks.filter(
-    (t) => !isTerminalState(t.state) || (t.state !== 'completed' && stillBlocking.has(t.id)),
+    (t) => !isTerminalState(t.state) || (t.state !== 'done' && stillBlocking.has(t.id)),
   );
 }
 
@@ -117,16 +117,15 @@ export interface Signal {
  * (`web/src/index.css`, DESIGN.md § 2). The Signal Rule: only true states carry
  * a hue — `draft` and `cancelled` stay neutral (Faint dot / Muted text), nothing
  * is happening or it's over. Tokens re-theme for free, so this reads in both
- * themes. `awaiting-review` is the one state that speaks in Paper's indigo
- * review voice.
+ * themes. `escalated` is the one state that speaks in Paper's indigo
+ * needs-you voice.
  */
 export const SIGNAL: Record<TaskState, Signal> = {
   draft: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
   ready: { color: 'var(--hm-ready-dot)', text: 'var(--hm-ready)' },
-  running: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
-  'awaiting-review': { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
-  completed: { color: 'var(--hm-merged-dot)', text: 'var(--hm-merged)' },
-  failed: { color: 'var(--hm-fail-dot)', text: 'var(--hm-fail)' },
+  working: { color: 'var(--hm-running-dot)', text: 'var(--hm-running)' },
+  escalated: { color: 'var(--hm-await-dot)', text: 'var(--hm-await)' },
+  done: { color: 'var(--hm-merged-dot)', text: 'var(--hm-merged)' },
   cancelled: { color: 'var(--hm-faint)', text: 'var(--hm-muted)' },
 };
 
@@ -134,10 +133,9 @@ export const SIGNAL: Record<TaskState, Signal> = {
 export const STATE_LABEL: Record<TaskState, string> = {
   draft: 'Draft',
   ready: 'Ready',
-  running: 'Running',
-  'awaiting-review': 'Review',
-  completed: 'Merged',
-  failed: 'Failed',
+  working: 'Working',
+  escalated: 'Escalated',
+  done: 'Merged',
   cancelled: 'Cancelled',
 };
 

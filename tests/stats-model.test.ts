@@ -105,27 +105,27 @@ describe('formatAvgCostPerRun', () => {
 });
 
 describe('orderedRunStates', () => {
-  it('orders known states by TASK_STATES canonical order, not object-key order', () => {
-    const runsByState = { completed: 3, draft: 1, running: 2 };
+  it('orders known states by the canonical Run-state order, not object-key order', () => {
+    const runsByState = { failed: 1, completed: 3, running: 2 };
     expect(orderedRunStates(runsByState)).toEqual([
-      { state: 'draft', count: 1 },
       { state: 'running', count: 2 },
       { state: 'completed', count: 3 },
+      { state: 'failed', count: 1 },
     ]);
   });
 
   it('drops zero-count states', () => {
-    const runsByState = { draft: 0, ready: 5, running: 0, completed: 2 };
+    const runsByState = { running: 0, completed: 5, failed: 0, cancelled: 2 };
     expect(orderedRunStates(runsByState)).toEqual([
-      { state: 'ready', count: 5 },
-      { state: 'completed', count: 2 },
+      { state: 'completed', count: 5 },
+      { state: 'cancelled', count: 2 },
     ]);
   });
 
   it('appends unknown states after the known ones, in input order, dropping zeros', () => {
-    const runsByState = { zeta: 4, draft: 1, alpha: 0, completed: 2 };
+    const runsByState = { zeta: 4, running: 1, alpha: 0, completed: 2 };
     expect(orderedRunStates(runsByState)).toEqual([
-      { state: 'draft', count: 1 },
+      { state: 'running', count: 1 },
       { state: 'completed', count: 2 },
       { state: 'zeta', count: 4 },
     ]);
@@ -136,36 +136,28 @@ describe('orderedRunStates', () => {
   });
 
   it('returns [] when every state has a zero count', () => {
-    expect(orderedRunStates({ draft: 0, running: 0 })).toEqual([]);
+    expect(orderedRunStates({ failed: 0, running: 0 })).toEqual([]);
   });
 });
 
 describe('reliabilityStates', () => {
-  it('splits review-rejected out of the folded-in failed count, after failed, in canonical order', () => {
-    // runsByState.failed folds in the 2 rejections; failedRuns is failed-only (3).
-    const segments = reliabilityStates({ completed: 5, failed: 5, cancelled: 1 }, 3, 2);
+  it('uses the failed-only count for the failed slice, in canonical order, cancelled its own slice', () => {
+    const segments = reliabilityStates({ completed: 5, failed: 5, cancelled: 1 }, 3);
     expect(segments).toEqual([
       { state: 'completed', count: 5 },
       { state: 'failed', count: 3 },
-      { state: 'rejected', count: 2 },
       { state: 'cancelled', count: 1 },
     ]);
   });
 
-  it('drops the failed slice when every failure was a rejection, still showing rejected', () => {
-    const segments = reliabilityStates({ completed: 2, failed: 1 }, 0, 1);
-    expect(segments).toEqual([
-      { state: 'completed', count: 2 },
-      { state: 'rejected', count: 1 },
-    ]);
+  it('drops the failed slice when the failed-only count is zero', () => {
+    const segments = reliabilityStates({ completed: 2, failed: 1 }, 0);
+    expect(segments).toEqual([{ state: 'completed', count: 2 }]);
   });
 
-  it('omits the rejected slice entirely when there are no rejections', () => {
-    const segments = reliabilityStates({ completed: 2, failed: 1 }, 1, 0);
-    expect(segments).toEqual([
-      { state: 'completed', count: 2 },
-      { state: 'failed', count: 1 },
-    ]);
+  it('never invents a rejected slice — a reject is a resumed Attempt, not a run outcome (ADR-0041)', () => {
+    const segments = reliabilityStates({ completed: 2, failed: 1 }, 1);
+    expect(segments.map((s) => s.state)).toEqual(['completed', 'failed']);
   });
 });
 

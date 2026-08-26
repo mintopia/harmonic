@@ -19,14 +19,9 @@ import { fillSeries, METRIC_LABEL, type DayCost, type StatMetric } from './costC
 import { EmptyState } from './EmptyState';
 
 const STATE_DONUT_COLOR: Record<string, string> = {
-  draft: 'var(--hm-muted)',
-  blocked: 'var(--hm-blocked)',
-  ready: 'var(--hm-ready-dot)',
   running: 'var(--hm-running-dot)',
-  'awaiting-review': 'var(--hm-await)',
   completed: 'var(--hm-merged-dot)',
   failed: 'var(--hm-fail-dot)',
-  rejected: 'var(--hm-fail)',
   cancelled: 'var(--hm-faint)',
 };
 
@@ -48,7 +43,6 @@ const REASON_LABEL: Record<string, string> = {
   'guardrail-trip': 'Guardrail',
   'verify-fail': 'Verification',
   'branch-violation': 'Branch',
-  'review-sla-expiry': 'Review timeout',
   'agent-finish/unresolved': 'Unresolved',
   unknown: 'Unknown',
 };
@@ -60,10 +54,8 @@ interface Stats {
   to: number;
   runCount: number;
   runsByState: Record<string, number>;
-  /** Failed-only Run count (excludes review-rejected); the honest failure-rate numerator. */
+  /** Failed-only Run count (cancelled excluded); the honest failure-rate numerator. */
   failedRuns: number;
-  /** Review-rejected Run count; shown as its own slice, kept out of the failure numerator. */
-  rejectedRuns: number;
   /** Execution failures bucketed by winning terminal disposition; empty when nothing failed. */
   failuresByReason: Record<string, number>;
   /** p50 / p95 active-execution duration (ms); null when no run has a measurable duration. */
@@ -194,7 +186,7 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
         .sort((a, b) => b.value - a.value)
     : [];
   const reliabilitySegments: DonutSegment[] = stats
-    ? reliabilityStates(stats.runsByState, stats.failedRuns, stats.rejectedRuns).map(({ state, count }) => ({
+    ? reliabilityStates(stats.runsByState, stats.failedRuns).map(({ state, count }) => ({
         key: state,
         label: state,
         value: count,
@@ -332,7 +324,6 @@ export function StatsPage({ workspaceId }: { workspaceId: number | null }) {
                   label="Fails / day"
                   value={failsPerDay == null ? '—' : failsPerDay.toFixed(failsPerDay < 10 ? 1 : 0)}
                 />
-                <SummaryCell label="Rejected" value={fmt(stats.rejectedRuns)} />
                 <SummaryCell label="Cancelled" value={fmt(cancelledRuns)} />
                 <SummaryCell label="Duration p50" value={durP50 ?? '—'} />
                 <SummaryCell label="Duration p95" value={durP95 ?? '—'} />

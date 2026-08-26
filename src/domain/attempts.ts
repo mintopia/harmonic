@@ -42,6 +42,29 @@ export class AttemptStore {
     return this.latestFactField(attemptId, 'escalate', 'reason');
   }
 
+  /**
+   * The attempt number the `maxAttempts` budget counts from (ADR-0041 "Reject
+   * with guidance: counter resets"): the latest escalated Attempt, or 0 when the
+   * ticket never escalated. Attempts keep their history numbering; only the
+   * budget restarts, so `attempt - budgetBase` is the attempts spent since the
+   * operator last resumed the loop.
+   */
+  async budgetBase(taskId: number): Promise<number> {
+    const row = await this.db.read((db) =>
+      db
+        .select({ n: sql<number>`coalesce(max(${attempts.number}), 0)` })
+        .from(attempts)
+        .where(and(eq(attempts.taskId, taskId), eq(attempts.state, 'escalated')))
+        .get(),
+    );
+    return row?.n ?? 0;
+  }
+
+  /** Record the operator's guidance on the Attempt it answers (the escalated one). */
+  setFeedback(attemptId: number, feedback: string): Promise<AttemptRow> {
+    return this.db.write((db) => db.update(attempts).set({ feedback }).where(eq(attempts.id, attemptId)).returning().get()) as Promise<AttemptRow>;
+  }
+
   private async latestFactField(attemptId: number, type: RunFactType, field: string): Promise<string | null> {
     const fact = await this.db.read((db) =>
       db.select().from(runFacts)

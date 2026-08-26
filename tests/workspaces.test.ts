@@ -135,32 +135,27 @@ describe('Workspace CRUD (ADR-0008, issue #41)', () => {
     // A fresh Workspace inherits every verifier (null), not write-only holes.
     expect(created.body.verificationCommand).toBeNull();
     expect(created.body.verificationCritic).toBeNull();
-    expect(created.body.verificationAutoAccept).toBeNull();
+    expect(created.body).not.toHaveProperty('verificationAutoAccept'); // the review gate's knob is gone (ADR-0041)
 
     const set = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       verificationCommand: [{ command: 'npm', args: ['test'] }],
       verificationCritic: { enabled: true, prompt: 'review the diff', model: 'claude-opus-5' },
-      verificationAutoAccept: true,
     });
     expect(set.status).toBe(200);
     // The override reads back as the same shape it was PATCHed as (zod fills
     // the command's defaults), not the raw JSON string and not dropped.
     expect(set.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 }]);
     expect(set.body.verificationCritic).toEqual({ enabled: true, prompt: 'review the diff', model: 'claude-opus-5' });
-    expect(set.body.verificationAutoAccept).toBe(true); // scalar override serialised, not stripped
 
     const fetched = await server.api('GET', `/api/workspaces/${created.body.id}`);
     expect(fetched.body.verificationCommand).toMatchObject([{ command: 'npm', args: ['test'] }]);
-    expect(fetched.body.verificationAutoAccept).toBe(true);
 
     // null clears back to inherit.
     const cleared = await server.api('PATCH', `/api/workspaces/${created.body.id}`, {
       verificationCommand: null,
-      verificationAutoAccept: null,
     });
     expect(cleared.status).toBe(200);
     expect(cleared.body.verificationCommand).toBeNull();
-    expect(cleared.body.verificationAutoAccept).toBeNull();
     expect(cleared.body.verificationCritic).toMatchObject({ enabled: true, prompt: 'review the diff' }); // untouched
     rmSync(dir, { recursive: true, force: true });
   });

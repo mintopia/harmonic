@@ -16,7 +16,7 @@ const leaseDiagnosticSchema = z
     ownerRunId: z.number().meta({ example: 4821 }),
     ownerTaskId: z.number().nullable().meta({ example: 512 }),
     ownerTaskTitle: z.string().nullable().meta({ example: 'Add the Activity rail view' }),
-    ownerTaskState: z.string().nullable().meta({ example: 'running' }),
+    ownerTaskState: z.string().nullable().meta({ example: 'working' }),
     acquiredAt: z.number().meta({ example: 1784032260000 }),
     heartbeat: z.number().nullable().meta({ example: 1784032320000 }),
     expiry: z.number().nullable().meta({ example: 1784032440000 }),

@@ -31,8 +31,6 @@ const task = (over: Partial<TaskRow>): TaskRow =>
     trackerRef: null,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
-    escalated: false,
     mapRef: null,
     baseBranch: null,
     createdAt: 0,
@@ -47,8 +45,8 @@ const noFacts: EpicFacts = {
 };
 
 describe('composeEpicView', () => {
-  it('maps a completed member Task to landStatus completed, folds it in, and preserves its raw state', () => {
-    const memberTasks = new Map<number, TaskRow>([[11, task({ id: 101, trackerRef: 11, state: 'completed' })]]);
+  it('maps a done member Task to landStatus completed, folds it in, and preserves its raw state', () => {
+    const memberTasks = new Map<number, TaskRow>([[11, task({ id: 101, trackerRef: 11, state: 'done' })]]);
     const titleByRef = new Map([[11, 'Member eleven']]);
     const epic = composeEpicView(derived(), memberTasks, titleByRef, noFacts);
 
@@ -57,7 +55,7 @@ describe('composeEpicView', () => {
       ref: 11,
       title: 'Member eleven',
       taskId: 101,
-      state: 'completed',
+      state: 'done',
       escalated: false,
       landStatus: 'completed',
       ready: false,
@@ -65,8 +63,8 @@ describe('composeEpicView', () => {
     expect(epic.foldedCount).toBe(1);
   });
 
-  it('maps an escalated/failed member to landStatus blocked', () => {
-    const memberTasks = new Map<number, TaskRow>([[12, task({ id: 102, trackerRef: 12, state: 'failed', escalated: true })]]);
+  it('maps an escalated member to landStatus blocked', () => {
+    const memberTasks = new Map<number, TaskRow>([[12, task({ id: 102, trackerRef: 12, state: 'escalated', escalationReason: 'escalated to human: attempt 3 of 3 failed' })]]);
     const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts);
 
     const m12 = epic.members.find((m) => m.ref === 12);
@@ -101,9 +99,9 @@ describe('composeEpicView', () => {
 
   it('foldedCount counts only completed members; memberCount is the full member list length', () => {
     const memberTasks = new Map<number, TaskRow>([
-      [11, task({ id: 1, trackerRef: 11, state: 'completed' })],
-      [12, task({ id: 2, trackerRef: 12, state: 'completed' })],
-      [13, task({ id: 3, trackerRef: 13, state: 'running' })],
+      [11, task({ id: 1, trackerRef: 11, state: 'done' })],
+      [12, task({ id: 2, trackerRef: 12, state: 'done' })],
+      [13, task({ id: 3, trackerRef: 13, state: 'working' })],
     ]);
     const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts);
     expect(epic.foldedCount).toBe(2);

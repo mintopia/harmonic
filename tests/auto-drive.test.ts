@@ -26,7 +26,6 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
   prompt: `ticket ${ref}\n\nbody of ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
-  drive: 'afk',
   mapRef: null,
   closed: false,
   ...over,
@@ -42,7 +41,6 @@ const worktreeTask = (over: Partial<TaskRow> = {}): TaskRow =>
     isolationMode: 'worktree',
     wayfinderType: null,
     origin: 'mirrored',
-    drive: 'afk',
     ...over,
   }) as TaskRow;
 
@@ -157,14 +155,20 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(drive.continueAttempts()).toBe(3);
   });
 
-  it('reopenTicket reverts a prematurely-closed ticket via the adapter', async () => {
-    const { adapter, calls } = fakeAdapter('closed');
-    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => adapter);
-    expect(await drive.reopenTicket(worktreeTask())).toBe(true);
-    expect(calls.reopen).toEqual([7]); // worktreeTask trackerRef
+  it('closeTicket is idempotent and carries the caller\'s comment (the operator Close)', async () => {
+    const open = fakeAdapter('open');
+    const drive = new AutoDrive(() => defaultConfig(), () => null, async () => open.adapter);
+    expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without landing (task 1).')).toBe(true);
+    expect(open.calls.close).toEqual([7]); // worktreeTask trackerRef
 
-    // A native/direct Task with no ticket ref never reopens.
-    expect(await drive.reopenTicket(worktreeTask({ trackerRef: null }))).toBe(false);
+    // An already-closed ticket needs no second close (some trackers error on it).
+    const closed = fakeAdapter('closed');
+    const idempotent = new AutoDrive(() => defaultConfig(), () => null, async () => closed.adapter);
+    expect(await idempotent.closeTicket(worktreeTask())).toBe(true);
+    expect(closed.calls.close).toEqual([]);
+
+    // A native Task with no ticket ref has nothing to close.
+    expect(await drive.closeTicket(worktreeTask({ trackerRef: null }))).toBe(true);
   });
 
   it('completes after a verified landing when the adapter only supports inbound status', async () => {
@@ -305,7 +309,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   const startMirrored = async (id: number) => {
-    await tasks.setState(id, 'running'); // the afk pick's lock, before launchClaimed (issue #32)
+    await tasks.setState(id, 'working'); // the afk pick's lock, before launchClaimed (issue #32)
     await runner.launchClaimed(id);
   };
 
@@ -340,21 +344,22 @@ describe('Runner auto-drive settle (issue #33)', () => {
   const continueEvents = async (runId: number) =>
     (await runs.listEvents(runId)).filter((e) => e.type === 'lifecycle' && (e.payload as any).event === 'continue');
 
-  it('a Run blocking on a human prompt Escalates: stop, drive→hitl, ready + flag', async () => {
+  it('a Run blocking on a human prompt fails the Attempt (no human drives it); the exhausted cap then Escalates', async () => {
     // The Drive Prompt template IS what reaches the harness — script the stub there.
-    build(config({ prompt: JSON.stringify({ requestPermission: { title: 'Write file' } }) }));
+    build(config({ prompt: JSON.stringify({ requestPermission: { title: 'Write file' } }) }, 2));
     const task = await tasks.upsertMirrored(mirroredAfk(7));
     await startMirrored(task.id);
 
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
-      if (t.state !== 'ready') throw new Error(`still ${t.state}`);
+      if (t.state !== 'escalated') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
 
-    expect(settled.state).toBe('ready');
-    expect(settled.drive).toBe('hitl');
-    expect(settled.escalated).toBe(true);
+    expect(settled.escalationReason).toMatch(/attempt 2 of 2 failed: permission request declined/);
+    const attemptRows = await new AttemptStore(asyncDb).listForTask(task.id);
+    expect(attemptRows.map((attempt) => attempt.state)).toEqual(['failed', 'escalated']);
+    expect(attemptRows[0]!.feedback).toContain('Write file');
     const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.state).toBe('failed');
     expect(last.reason).toContain('escalated to human');
@@ -367,12 +372,11 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
-      if (t.state === 'running') throw new Error(`still ${t.state}`);
+      if (t.state === 'working') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
 
-    expect(settled.escalated).toBe(true);
-    expect(settled.drive).toBe('hitl');
+    expect(settled.state).toBe('escalated');
     const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.attempt).toBe(2);
     const modeSet = (await runs.listEvents(last.id)).find(
@@ -390,14 +394,14 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
-      if (t.state === 'running') throw new Error(`still ${t.state}`);
+      if (t.state === 'working') throw new Error(`still ${t.state}`);
       return t;
     }, { timeout: 10_000 });
 
     const last = (await runs.listForTask(task.id)).at(-1)!;
     expect(last.state).toBe('failed');
     expect(last.reason).toMatch(/unattended permission mode/);
-    expect(settled.escalated).toBe(true); // one permitted Attempt → escalates on the first failure
+    expect(settled.state).toBe('escalated'); // one permitted Attempt → escalates on the first failure
   });
 
   it('retries a failed afk Run within the cap, then Escalates when it is exhausted', async () => {
@@ -410,15 +414,14 @@ describe('Runner auto-drive settle (issue #33)', () => {
     await startMirrored(task.id);
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
-      if (!t.escalated) throw new Error('not escalated yet');
+      if (t.state !== 'escalated') throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
-    expect(settled.state).toBe('ready');
-    expect(settled.drive).toBe('hitl');
+    expect(settled.escalationReason).toMatch(/attempt 2 of 2 failed/);
     const taskAttempts = await new AttemptStore(asyncDb).listForTask(task.id);
     expect(taskAttempts.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
-      { number: 2, state: 'failed' },
+      { number: 2, state: 'escalated' },
     ]);
     const taskRuns = await runs.listForTask(task.id);
     expect(taskRuns).toHaveLength(1);
@@ -435,14 +438,14 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
-      if (!t.escalated) throw new Error('not escalated yet');
+      if (t.state !== 'escalated') throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
 
     const lastRun = (await runs.listForTask(task.id)).at(-1)!;
     expect(await continueEvents(lastRun.id)).toHaveLength(2); // re-prompted exactly continueAttempts times
     expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
-    expect(settled.escalated).toBe(true);
+    expect(settled.state).toBe('escalated');
   });
 
   it('continueAttempts 0 keeps the old single-turn behaviour — no continue re-prompt', async () => {
@@ -451,7 +454,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     await startMirrored(task.id);
 
     await vi.waitFor(async () => {
-      if (!(await tasks.get(task.id)).escalated) throw new Error('not escalated yet');
+      if ((await tasks.get(task.id)).state !== 'escalated') throw new Error('not escalated yet');
     }, { timeout: 10_000 });
 
     const lastRun = (await runs.listForTask(task.id)).at(-1)!;
@@ -470,16 +473,16 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
     const settled = await vi.waitFor(async () => {
       const t = await tasks.get(task.id);
-      if (!t.escalated) throw new Error('not escalated yet');
+      if (t.state !== 'escalated') throw new Error('not escalated yet');
       return t;
     }, { timeout: 10_000 });
 
-    expect(settled.state).not.toBe('completed'); // a closed ticket did not complete it
+    expect(settled.state).toBe('escalated'); // a closed ticket did not complete it
     const lastRun = (await runs.listForTask(task.id)).at(-1)!;
     expect(lastRun.reason).toMatch(/finish_task|escalated to human/);
   });
 
-  it('markAgentFinished / markEscalate no-op (return false) when the Task is not running here', () => {
+  it('markAgentFinished / markEscalate no-op (return false) when the Task is not working here', () => {
     build(config());
     expect(runner.markAgentFinished(999)).toBe(false);
     expect(runner.markEscalate(999, 'need input')).toBe(false);
@@ -537,7 +540,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       // resolveForTask mints it a fresh chain (branch 3) — different from the
       // predecessor's. sharesLineOfWork is false, so the funnel falls through
       // to acquire, which still hits the unique-key CAS.
-      await tasks.setState(target.id, 'running');
+      await tasks.setState(target.id, 'working');
       let caught: unknown;
       try {
         await runner.launchClaimed(target.id);

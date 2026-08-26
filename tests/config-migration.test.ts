@@ -8,16 +8,17 @@ import { migrateLegacyConfig } from '../src/config.js';
  * re-exposes the removed accept/reject surface.
  */
 describe('migrateLegacyConfig (#140, ADR-0021)', () => {
-  it('maps agentReview: true with no verification to verification.autoAccept: true, and drops agentReview', () => {
+  it('drops agentReview without inventing any verify key (the review gate it described is gone, ADR-0041)', () => {
     const result = migrateLegacyConfig({ agentReview: true });
-    expect(result.verify?.autoAccept).toBe(true);
     expect(result).not.toHaveProperty('agentReview');
+    expect(result).not.toHaveProperty('verify');
   });
 
-  it('leaves an explicit verification.autoAccept: false untouched (explicit wins), and drops agentReview', () => {
+  it('drops a legacy verification.autoAccept alongside agentReview', () => {
     const result = migrateLegacyConfig({ agentReview: true, verification: { autoAccept: false } });
-    expect(result.verify?.autoAccept).toBe(false);
     expect(result).not.toHaveProperty('agentReview');
+    expect(result).not.toHaveProperty('verification');
+    expect(result.verify ?? {}).not.toHaveProperty('autoAccept');
   });
 
   it('injects no verification when agentReview is false, and drops agentReview', () => {

@@ -78,19 +78,19 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   });
 
   /** A Task+Run pair parked mid-landing exactly as a crashed `land()` would
-   * leave them: Task `awaiting-review`, Run `running`/`phase:'landing'`, with
+   * leave them: Task `escalated`, Run `running`/`phase:'landing'`, with
    * a land fact frozen (PONC) and an intent recorded for the `target-ref`
    * effect but NO result — died between intent and result. */
   async function seedMidLanding(branch: string, baseBranch: string): Promise<{ task: TaskRow; run: RunRow; idempotencyKey: string }> {
     const created = await tasks.create({ prompt: 'land me', state: 'ready', workingDir: repo });
-    await tasks.setState(created.id, 'running');
+    await tasks.setState(created.id, 'working');
     let run = await runStore.create(created.id);
     run = await runStore.update(run.id, { phase: 'landing', branch, baseBranch });
-    await tasks.setState(created.id, 'awaiting-review');
+    await tasks.setState(created.id, 'escalated');
     const task = await tasks.get(created.id);
 
     const idempotencyKey = `${baseBranch}<-${branch}`;
-    const landFact = await runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'completed', reason: null });
+    const landFact = await runFacts.append(run.id, 'agent-finish/unresolved', { runState: 'completed', taskAction: 'done', reason: null });
     await journal.writePonc(run.id, landFact.seq);
     await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey, expected: { baseBranch, branch } });
     // No result row: the process died before `apply()` resolved.
@@ -124,10 +124,10 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     const landedRun = await runStore.get(run.id);
     expect(landedRun.state).toBe('completed');
     expect(landedRun.phase).toBe('terminal');
-    expect((await tasks.get(run.taskId)).state).toBe('completed');
+    expect((await tasks.get(run.taskId)).state).toBe('done');
   });
 
-  it('leaves the Run parked when the world says NOT merged and the real re-apply fails (no such branch to merge)', async () => {
+  it('escalates the ticket when the world says NOT merged and the real re-apply fails (no such branch to merge)', async () => {
     const branch = 'nonexistent-branch';
     const baseBranch = 'main';
     const { run } = await seedMidLanding(branch, baseBranch);
@@ -140,16 +140,19 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     await coord.reconcile();
 
     // The re-apply genuinely failed (no such branch in the real repo) —
-    // `foldJournal` shows not-all-ok, so the finishing settle never ran: the
-    // Run stays parked mid-landing for a human to retry, same as a real
-    // merge-conflict leaves it.
-    const parkedRun = await runStore.get(run.id);
-    expect(parkedRun.state).toBe('running');
-    expect(parkedRun.phase).toBe('landing');
-    expect((await tasks.get(run.taskId)).state).toBe('awaiting-review');
+    // `foldJournal` shows not-all-ok, so the landing is abandoned (PONC lifted)
+    // and the ticket escalates with the failure as its reason (trigger 3).
+    const failedRun = await runStore.get(run.id);
+    expect(failedRun.state).toBe('failed');
+    expect(failedRun.phase).toBe('terminal');
+    expect((await journal.views(run.id)).map((r) => r.kind)).toContain('abandoned');
+    expect(await tasks.get(run.taskId)).toMatchObject({
+      state: 'escalated',
+      escalationReason: expect.stringContaining('landing failed after restart'),
+    });
   });
 
-  it('re-parks a known failed landing without re-applying it (issue #270)', async () => {
+  it('escalates a known failed landing without re-applying it (issue #270)', async () => {
     const branch = 'nonexistent-branch';
     const baseBranch = 'main';
     const { run, idempotencyKey } = await seedMidLanding(branch, baseBranch);
@@ -165,10 +168,10 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     await coord.reconcile();
 
     expect(isMerged).not.toHaveBeenCalled();
-    expect(await runStore.get(run.id)).toMatchObject({
-      state: 'running',
-      phase: 'review',
-      reviewFeedback: 'target branch has uncommitted changes; land via PR/manual',
+    expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
+    expect(await tasks.get(run.taskId)).toMatchObject({
+      state: 'escalated',
+      escalationReason: expect.stringContaining('target branch has uncommitted changes; land via PR/manual'),
     });
     expect(await runStore.countRunning()).toBe(0);
   });
@@ -192,7 +195,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   it('yields while reconciling a large landing backlog', async () => {
     for (let i = 0; i < 25; i++) {
       const created = await tasks.create({ prompt: `landing ${i}`, state: 'ready', workingDir: repo });
-      await tasks.setState(created.id, 'awaiting-review');
+      await tasks.setState(created.id, 'working');
       const run = await runStore.create(created.id);
       await runStore.update(run.id, { phase: 'landing' });
     }
@@ -220,7 +223,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     expect(yields).toBeGreaterThan(0);
     expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
-    expect((await tasks.list()).every((task) => task.state === 'failed')).toBe(true);
+    expect((await tasks.list()).every((task) => task.state === 'ready')).toBe(true);
   });
 });
 

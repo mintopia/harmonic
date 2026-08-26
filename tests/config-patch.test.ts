@@ -11,17 +11,17 @@ describe('PATCH /api/config verification', () => {
     await server.close();
   });
 
-  it('accepts a partial verification patch (autoAccept only) and persists it', async () => {
+  it('drops a legacy verification.autoAccept patch — the review gate it toggled is gone (ADR-0041)', async () => {
     const current = (await server.api('GET', '/api/config')).body;
-    expect(current.verify.autoAccept).toBe(false);
+    expect(current.verify).not.toHaveProperty('autoAccept');
 
-    const patched = await server.api('PATCH', '/api/config', { verify: { autoAccept: true } });
+    const patched = await server.api('PATCH', '/api/config', { verification: { autoAccept: true } });
     expect(patched.status).toBe(200);
-    expect(patched.body.verify.autoAccept).toBe(true);
+    expect(patched.body.verify).not.toHaveProperty('autoAccept');
     expect(patched.body.verify.commands).toEqual([]);
 
     const after = await server.api('GET', '/api/config');
-    expect(after.body.verify.autoAccept).toBe(true);
+    expect(after.body.verify).not.toHaveProperty('autoAccept');
   });
 
   it('accepts a command verifier and fills its defaults', async () => {
@@ -32,7 +32,6 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.verify.commands[0].command).toBe('npm');
     expect(patched.body.verify.commands[0].args).toEqual(['test']);
     expect(patched.body.verify.commands[0].timeoutSeconds).toBe(600);
-    expect(patched.body.verify.autoAccept).toBe(false);
   });
 
   it('accepts an agent critic', async () => {
@@ -89,7 +88,7 @@ describe('PATCH /api/config verification', () => {
     const patched = await server.api('PATCH', '/api/config', { maxAttempts: 3 });
     expect(patched.status).toBe(200);
     expect(patched.body.maxAttempts).toBe(3);
-    expect(patched.body.verify.autoAccept).toBe(false);
+    expect(patched.body.verify).toEqual(current.verify);
   });
 
   it('round-trips the global context reuse threshold', async () => {

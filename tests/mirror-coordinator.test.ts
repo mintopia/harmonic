@@ -31,7 +31,6 @@ const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => 
   prompt: `ticket ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
-  drive: 'afk',
   mapRef: null,
   closed: false,
   ...over,
@@ -104,20 +103,20 @@ describe('MirrorCoordinator (issue #32)', () => {
 
   it('reconcile: derives advisory writes from local Task state only', async () => {
     const running = await tasks.upsertMirrored(mirrored(10));
-    await tasks.setState(running.id, 'running'); // claimed, but the scan shows it dropped
+    await tasks.setState(running.id, 'working'); // claimed, but the scan shows it dropped
     const escalated = await tasks.upsertMirrored(mirrored(11));
-    await tasks.escalate(escalated.id); // handed back to a human (retries exhausted / prompt), still ours
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // handed back to a human, still ours
     const retrying = await tasks.upsertMirrored(mirrored(14));
-    await tasks.setState(retrying.id, 'failed'); // mid Auto-Retry: bare failed is no longer a hand-back (issue #33)
+    await tasks.setState(retrying.id, 'working'); // mid Attempt loop: the claim is held across retries (ADR-0041)
     await tasks.upsertMirrored(mirrored(12)); // ready locally, so no ownership write
-    await tasks.upsertMirrored(mirrored(13, { closed: true })); // completed → close path (D5), not us
+    await tasks.upsertMirrored(mirrored(13, { closed: true })); // done → close path (D5), not us
 
     const { adapter, calls } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);
     await coord.observe(adapter);
     await coord.reconcile();
 
-    expect(calls.claim).toEqual([10]);
+    expect(calls.claim).toEqual([10, 14]);
     expect(calls.release).toEqual([11]);
     expect(calls.read).toEqual([]);
     expect(calls.release).not.toContain(14);
@@ -128,9 +127,9 @@ describe('MirrorCoordinator (issue #32)', () => {
 
   it('reconcile: idempotency guard skips redundant claim/release when state is unchanged, re-writes on change (issue #232)', async () => {
     const running = await tasks.upsertMirrored(mirrored(20));
-    await tasks.setState(running.id, 'running'); // → claim
+    await tasks.setState(running.id, 'working'); // → claim
     const escalated = await tasks.upsertMirrored(mirrored(21));
-    await tasks.escalate(escalated.id); // → release
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // → release
 
     const { adapter, calls } = fakeAdapter();
     const coord = new MirrorCoordinator(tasks, wsId);
@@ -146,8 +145,8 @@ describe('MirrorCoordinator (issue #32)', () => {
     expect(calls.claim).toEqual([20]);
     expect(calls.release).toEqual([21]);
 
-    // A state change (running → handed-back) must re-advertise: 20 now releases.
-    await tasks.escalate(running.id);
+    // A state change (working → handed-back) must re-advertise: 20 now releases.
+    await tasks.escalate(running.id, 'escalated to human: attempt 2 of 2 failed');
     await coord.reconcile();
     expect(calls.claim).toEqual([20]);
     expect(calls.release).toEqual([21, 20]);

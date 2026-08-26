@@ -14,9 +14,8 @@ import type { Run } from './types.js';
  */
 
 /** The state-signal family a run's dot/word draws from (DESIGN.md § Signal
- * Rule). `review` is the indigo gate colour (a run parked at the human gate);
- * `neutral` is the un-coloured register (cancelled). */
-export type RunDot = 'running' | 'fail' | 'merged' | 'review' | 'neutral';
+ * Rule); `neutral` is the un-coloured register (cancelled). */
+export type RunDot = 'running' | 'fail' | 'merged' | 'neutral';
 
 /** How a single run reads at a glance: its disposition word, the signal dot
  * that word rides, and whether the dot pulses (only live, unparked work). */
@@ -27,27 +26,19 @@ export interface RunDisplay {
 }
 
 /**
- * A run's disposition, folded from its terminal fate first (review verdict,
- * then run state) and only then its live phase. Order matters: an accepted or
- * rejected run is settled regardless of how its phase machine ended, so the
- * review verb wins; a still-`running` run reads by its phase, and a run parked
- * at the human gate (`phase:'review'`) reads "awaiting" in the cobalt gate
- * colour rather than as amber work-in-flight. Pure.
+ * A run's disposition, folded from its terminal state first and only then its
+ * live phase: a still-`running` run reads by its phase. Pure.
  */
 export function runDisplay(run: Run): RunDisplay {
-  if (run.review === 'accepted') return { word: 'merged', dot: 'merged', pulse: false };
-  if (run.review === 'rejected') return { word: 'rejected', dot: 'fail', pulse: false };
   switch (run.state) {
     case 'failed':
       return { word: 'failed', dot: 'fail', pulse: false };
     case 'cancelled':
       return { word: 'cancelled', dot: 'neutral', pulse: false };
     case 'completed':
-      // Merged/settled without an explicit review flag (e.g. an afk auto-merge
-      // or an operator Complete) — reads as done, not amber.
+      // Landed (or an operator Complete) — reads as done, not amber.
       return { word: 'merged', dot: 'merged', pulse: false };
     case 'running':
-      if (run.phase === 'review') return { word: 'awaiting', dot: 'review', pulse: false };
       // executing | validating | verifying carry their phase word; `landing`
       // displays as the operator-facing "merging" label.
       // a pre-feature run with no phase reads the generic 'running'.

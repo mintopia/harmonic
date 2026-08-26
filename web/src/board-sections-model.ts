@@ -8,14 +8,12 @@ import type { Epic } from './epic-model.js';
  * surface is ordered by the operator's attention:
  * `Needs you → Active → Epics → Standalone`.
  *
- * **Attention is promoted above the band.** A running Epic member surfaces in
+ * **Attention is promoted above the band.** A working Epic member surfaces in
  * Active and an escalated one in Needs you — the top sections gather all work
  * of that kind, so the Epic band's DAG shows only members that are neither
  * in-progress nor escalated (nor merged). A member of an already-landed Epic
  * falls back to standalone treatment, so its Task still surfaces normally.
  */
-
-const TERMINAL: readonly TaskState[] = ['completed', 'failed', 'cancelled'];
 
 const PRIORITY_RANK: Record<Task['priority'], number> = { high: 0, normal: 1, low: 2 };
 
@@ -33,22 +31,15 @@ function byProcessingOrder(a: Task, b: Task): number {
   return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id - b.id;
 }
 
-// Needs you is the sacred core: an *awaiting-review* Task (the review gate)
-// leads an *escalated-only* Task (afk→hitl), then processing order within.
-function needsYouRank(t: Task): number {
-  return t.state === 'awaiting-review' ? 0 : 1;
-}
-
 // Queued tiers so the section reads in the scheduler's reach order (DESIGN.md
 // § 5 Queued: ready work appears before draft work.
 const QUEUED_RANK: Partial<Record<TaskState, number>> = { ready: 0, draft: 1 };
 
 export interface BoardSections {
-  /** Awaiting-review standalone Tasks + any escalated Task (standalone or Epic
-   * member) — the sacred core, always first, above the fold (DESIGN.md § 5). */
+  /** Every escalated Task, standalone or Epic member — ADR-0041's one human
+   * surface, the sacred core, always first, above the fold (DESIGN.md § 5). */
   needsYou: Task[];
-  /** Running Tasks, standalone and active-Epic members alike (an escalated
-   * running Task is promoted to Needs you instead). */
+  /** Working Tasks, standalone and active-Epic members alike. */
   active: Task[];
   /** Active Epics, each rendered as a band; ascending by ref. */
   epics: Epic[];
@@ -89,30 +80,20 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
   const standalone = tasks.filter(
     (t) => !excluded.has(t.id) && !(t.trackerRef != null && epicRefs.has(t.trackerRef)),
   );
-  const isTerminal = (t: Task): boolean => TERMINAL.includes(t.state);
-
+  // An escalated Epic member is promoted to the top; its other members stay in
+  // the Epic band. The Epic's own driver ticket is never a Task card.
   const needsYou = tasks
-    .filter((t) => {
-      if (t.trackerRef != null && epicRefs.has(t.trackerRef)) return false; // not the Epic driver ticket
-      if (isTerminal(t)) return false;
-      // An escalated Epic member is promoted to the top; its other members
-      // (incl. awaiting-review) stay in the Epic band.
-      if (excluded.has(t.id)) return t.escalated;
-      return t.state === 'awaiting-review' || t.escalated;
-    })
-    .sort((a, b) => needsYouRank(a) - needsYouRank(b) || byProcessingOrder(a, b));
+    .filter((t) => t.state === 'escalated' && !(t.trackerRef != null && epicRefs.has(t.trackerRef)))
+    .sort(byProcessingOrder);
 
-  // All running work is surfaced together at the top of the Board, including
-  // active-Epic members (promoted out of their band); the Epic's own driver
-  // ticket is not a Task card, so it stays excluded.
+  // All working Tasks are surfaced together at the top of the Board, including
+  // active-Epic members (promoted out of their band).
   const active = tasks
-    .filter(
-      (t) => t.state === 'running' && !t.escalated && !(t.trackerRef != null && epicRefs.has(t.trackerRef)),
-    )
+    .filter((t) => t.state === 'working' && !(t.trackerRef != null && epicRefs.has(t.trackerRef)))
     .sort(byProcessingOrder);
 
   const standaloneTasks = standalone
-    .filter((t) => !t.escalated && QUEUED_RANK[t.state] !== undefined)
+    .filter((t) => QUEUED_RANK[t.state] !== undefined)
     .sort((a, b) => QUEUED_RANK[a.state]! - QUEUED_RANK[b.state]! || byQueueOrder(a, b));
 
   const activeEpics = epics.filter(isActiveEpic).sort((a, b) => a.ref - b.ref);
@@ -144,6 +125,6 @@ export function fmtElapsed(ms: number): string {
 }
 
 export function runningReadout(task: Task, now: number, liveTools?: number | null): { elapsed: string; tools: number } | null {
-  if (task.state !== 'running' || task.runStartedAt === null) return null;
+  if (task.state !== 'working' || task.runStartedAt === null) return null;
   return { elapsed: fmtElapsed(Math.max(0, now - task.runStartedAt)), tools: liveTools ?? task.toolCount ?? 0 };
 }

@@ -17,10 +17,6 @@ function run(over: Partial<Run> = {}): Run {
     baseBranch: null,
     usage: null,
     cost: null,
-    review: null,
-    reviewFeedback: null,
-    reviewedAt: null,
-    reviewDeadline: null,
     startedAt: 1_000_000,
     finishedAt: null,
     ...over,
@@ -28,15 +24,14 @@ function run(over: Partial<Run> = {}): Run {
 }
 
 describe('runDisplay', () => {
-  it('reads a settled review verdict before the run state', () => {
-    // A merged/rejected verdict wins over the phase machine's end — the run is settled.
-    expect(runDisplay(run({ review: 'accepted', state: 'completed', phase: 'landing' }))).toEqual({
+  it('reads a settled terminal state before the phase the machine ended in', () => {
+    expect(runDisplay(run({ state: 'completed', phase: 'landing' }))).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,
     });
-    expect(runDisplay(run({ review: 'rejected', state: 'running', phase: 'review' }))).toEqual({
-      word: 'rejected',
+    expect(runDisplay(run({ state: 'failed', phase: 'verifying' }))).toEqual({
+      word: 'failed',
       dot: 'fail',
       pulse: false,
     });
@@ -55,12 +50,11 @@ describe('runDisplay', () => {
     });
   });
 
-  it('reads a run parked at the human gate as cobalt "awaiting", not amber', () => {
-    expect(runDisplay(run({ state: 'running', phase: 'review' }))).toEqual({
-      word: 'awaiting',
-      dot: 'review',
-      pulse: false,
-    });
+  it('never reads a running run as anything but live work — there is no parked human gate (ADR-0041)', () => {
+    for (const phase of ['executing', 'validating', 'verifying', 'landing'] as const) {
+      expect(runDisplay(run({ state: 'running', phase })).pulse).toBe(true);
+      expect(runDisplay(run({ state: 'running', phase })).dot).toBe('running');
+    }
   });
 
   it('carries the live phase word on a pulsing amber dot for in-flight work', () => {
@@ -86,8 +80,8 @@ describe('runDisplay', () => {
     expect(runDisplay(run({ state: 'running', phase: 'terminal' })).word).toBe('running');
   });
 
-  it('reads a completed run without a review flag as done', () => {
-    expect(runDisplay(run({ state: 'completed', review: null, phase: 'landing' }))).toEqual({
+  it('reads a completed run as merged whatever phase it ended in', () => {
+    expect(runDisplay(run({ state: 'completed', phase: 'terminal' }))).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,

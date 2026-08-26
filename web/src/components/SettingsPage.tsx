@@ -345,15 +345,6 @@ function VerificationFields({
           </div>
         )}
       </div>
-      <div>
-        <span className={fieldLabel}>Auto-accept</span>
-        <div className="pt-1">
-          <Switch checked={v.autoAccept} onChange={(autoAccept) => onChange({ ...v, autoAccept })}>
-            Land a passing Run without the human review gate
-          </Switch>
-        </div>
-        <FieldError message={fieldErrors['verify.autoAccept']} />
-      </div>
     </div>
   );
 }

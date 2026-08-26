@@ -75,6 +75,8 @@ const continuationToApi = (raw: string | null) => raw ? attemptContinuationSchem
 
 export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
+  /** The attempt number the `maxAttempts` budget counts from (`AttemptStore.budgetBase`). */
+  budgetBase: number;
 }
 
 const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
@@ -92,8 +94,9 @@ const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
 
 /** One DTO builder for REST hydration and live timeline updates. */
 export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Promise<ApiAttemptTimeline> {
-  const rows = await ctx.attempts.listForTask(taskId);
+  const [rows, budgetBase] = await Promise.all([ctx.attempts.listForTask(taskId), ctx.attempts.budgetBase(taskId)]);
   return {
+    budgetBase,
     attempts: await Promise.all(rows.map(async (attempt) => {
       const [tasks, verifiedSha, escalationReason] = await Promise.all([
         ctx.attempts.listTasks(attempt.id),
@@ -243,7 +246,7 @@ export type ApiTask = Omit<TaskWithDeps, 'workspaceId' | TrackerFactColumns> & {
 /** A task's Cost sums ALL its runs — retries and failed attempts included. */
 export async function taskToApi(ctx: AppContext, task: TaskWithDeps): Promise<ApiTask> {
   const runs = await ctx.runs.listForTask(task.id);
-  const running = task.state === 'running' ? runs.find((r) => r.state === 'running') : undefined;
+  const running = task.state === 'working' ? runs.find((r) => r.state === 'running') : undefined;
   return taskToApiWithRuns(ctx, task, runs, running ? await runningToolCount(ctx, running) : null);
 }
 
@@ -253,13 +256,13 @@ export async function tasksToApi(ctx: AppContext, tasks: TaskWithDeps[]): Promis
   const runsByTask = new Map(tasks.map((task) => [task.id, [] as RunRow[]]));
   for (const run of await ctx.runs.listForTasks(tasks.map((task) => task.id))) runsByTask.get(run.taskId)?.push(run);
   const running = tasks.flatMap((task) => {
-    const run = task.state === 'running' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
+    const run = task.state === 'working' ? runsByTask.get(task.id)?.find((candidate) => candidate.state === 'running') : undefined;
     return run ? [run] : [];
   });
   const toolCounts = await ctx.runs.toolCallCounts(running.map((run) => run.id));
   return tasks.map((task) => {
     const runs = runsByTask.get(task.id) ?? [];
-    const activeRun = task.state === 'running' ? runs.find((run) => run.state === 'running') : undefined;
+    const activeRun = task.state === 'working' ? runs.find((run) => run.state === 'running') : undefined;
     return taskToApiWithRuns(ctx, task, runs, activeRun ? toolCounts.get(activeRun.id) ?? 0 : null);
   });
 }
@@ -277,10 +280,13 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
   return rest;
 }
 
+/** The ref an operator Accept would land: a direct Run's private ref, or a worktree Run's branch once it has a verified head. */
+function latestVerifiedRef(run: RunRow | undefined): string | null {
+  if (!run) return null;
+  return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
+}
+
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
-  // A review-parked run is still `state:'running'` (phase 'review'), so an
-  // awaiting-review card surfaces the same live elapsed + `ctx %` as an active
-  // one — matched to the Paper mockup's Needs-you cards.
   const running = runs.find((r) => r.state === 'running');
   const presentedBranch = (branch: string | null | undefined): string | null =>
     branch && !isDirectRef(branch) ? branch : null;
@@ -301,7 +307,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
     contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
-    candidateRef: runs.at(-1)?.candidateRef ?? null,
+    candidateRef: latestVerifiedRef(runs.at(-1)),
   };
 }
 
@@ -344,7 +350,7 @@ export interface ApiActivityProcess {
   trackerRef: number | null;
   /** The mirrored issue's tracker URL — the Activity row's ticket deep-link (issue #55); null on native Tasks, Conversations, or before a poll. */
   trackerUrl: string | null;
-  /** True when an afk Run escalated to a human at runtime (issue #33) — the Activity view's "Needs you" signal; always false for a Conversation. */
+  /** True when the Task is escalated — the Activity view's "Needs you" signal; always false for a Conversation. */
   escalated: boolean;
   usage: RunUsage | null;
   contextTokens: number | null;
@@ -390,7 +396,7 @@ export async function activitySnapshot(ctx: AppContext, includeChats: boolean): 
       startedAt: run.startedAt,
       trackerRef: task.trackerRef,
       trackerUrl: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
-      escalated: task.escalated,
+      escalated: task.state === 'escalated',
       usage: snapshot?.usage ?? null,
       contextTokens: snapshot?.contextTokens ?? null,
       contextWindow: contextWindowOf(ctx, task.model),

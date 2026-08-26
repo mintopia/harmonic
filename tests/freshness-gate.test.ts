@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 import { verificationCommandSchema } from '../src/config.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
-import { sessions } from '../src/db/schema.js';
+import { landingJournal, sessions } from '../src/db/schema.js';
+import { eq } from 'drizzle-orm';
 
 /**
  * Issue #313 — the landing freshness gate (ADR-0041), end to end through the
@@ -16,8 +17,9 @@ import { sessions } from '../src/db/schema.js';
  *    stale verdict, a Rebase Task re-bases the ticket branch, verification
  *    re-runs at the new head, and the land asserts the NEW SHA — all on the
  *    same Attempt and the same Session, no counter increment;
- *  - an operator Accept on a Run whose base moved since verification refuses
- *    (409, feedback on the Run) rather than landing what nobody verified.
+ *  - an operator Accept on an escalated ticket whose base moved since
+ *    verification refuses (409, landing abandoned) rather than landing what
+ *    nobody verified.
  */
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -99,7 +101,6 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     prompt: `ticket ${trackerRef}\n\nbody`,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -119,7 +120,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
   }
 
   async function launch(taskId: number): Promise<number> {
-    await server.app.ctx.tasks.setState(taskId, 'running');
+    await server.app.ctx.tasks.setState(taskId, 'working');
     return (await server.app.ctx.runner.launchClaimed(taskId)).id;
   }
 
@@ -151,10 +152,10 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const { taskId, runId, trackerRef } = await launchAfk();
     const task = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      if (t.escalated) throw new Error(`escalated instead of landing: ${(await server.app.ctx.runs.get(runId)).reason}`);
-      return t.state === 'completed' ? t : undefined;
+      if (t.state === 'escalated') throw new Error(`escalated instead of landing: ${(await server.app.ctx.runs.get(runId)).reason}`);
+      return t.state === 'done' ? t : undefined;
     });
-    expect(task.escalated).toBe(false);
+    expect(task.state).not.toBe('escalated');
     expect(existsSync(flag)).toBe(true); // the verifier really did move main
 
     // main = the rebased implementation, fast-forwarded on top of the commit
@@ -210,11 +211,11 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const completed = (taskId: number) =>
       waitFor(async () => {
         const t = await server.app.ctx.tasks.get(taskId);
-        if (t.escalated) {
+        if (t.state === 'escalated') {
           const runs = await server.app.ctx.runs.listForTask(taskId);
           throw new Error(`task ${taskId} escalated instead of landing: ${runs.map((r) => r.reason).join(' | ')}`);
         }
-        return t.state === 'completed' ? t : undefined;
+        return t.state === 'done' ? t : undefined;
       });
     await completed(a.taskId);
     await completed(b.taskId);
@@ -240,11 +241,16 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     ]);
   });
 
-  it('operator Accept on a stale head refuses (409) and leaves the Run parked with the reason instead of landing', async () => {
+  it('operator Accept on an escalated ticket whose base moved refuses (409), abandons the landing, and leaves the ticket escalated', async () => {
     const repo = makeRepo();
-    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: null });
+    // A verifier that fails: both attempts fail, so the ticket escalates with a
+    // real commit as its verified head — Accept has work to land.
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
+    });
 
-    // A native (human-gated) worktree Run: its prompt IS the stub scenario.
+    // A native worktree Run: its prompt IS the stub scenario.
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { 'impl-native.txt': 'implementation\n' } }),
     });
@@ -253,20 +259,26 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const started = await server.api('POST', `/api/tasks/${taskId}/run`);
     expect(started.status).toBe(201);
     const runId: number = started.body.id;
-    await waitFor(async () => ((await server.app.ctx.tasks.get(taskId)).state === 'awaiting-review' ? true : undefined));
+    const escalated = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+      return t.state === 'escalated' ? t : undefined;
+    });
+    expect(escalated.escalationReason).toMatch(/attempt 2 of 2 failed/);
     const verified = (await server.app.ctx.runs.get(runId)).candidateOid;
     expect(verified).toMatch(/^[0-9a-f]{40}$/);
 
-    // The base moves while the Run sits in review.
+    // The base moves while the ticket sits escalated.
     const mainTip = advanceMain(repo, 'other.txt', 'someone else landed\n');
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(409);
     expect(JSON.stringify(accepted.body)).toMatch(/advanced after verification/);
 
-    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('awaiting-review');
+    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     const run = await server.app.ctx.runs.get(runId);
-    expect(run.reviewFeedback).toMatch(/advanced after verification/);
+    expect(run).toMatchObject({ state: 'failed', phase: 'terminal' });
+    const journal = (await server.app.ctx.asyncDb.read((d) => d.select().from(landingJournal).where(eq(landingJournal.runId, runId)).all()));
+    expect(journal.map((row) => row.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
     expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing landed
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
   });

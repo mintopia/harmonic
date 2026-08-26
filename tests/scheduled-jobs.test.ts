@@ -70,7 +70,6 @@ describe('Scheduled Job registry (ADR-0038)', () => {
     expect(initial.body.jobs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'Work Context lease sweep', workspaceId: null }),
-        expect.objectContaining({ name: 'Review-SLA sweep', workspaceId: null }),
         expect.objectContaining({ name: 'Epic reconcile', workspaceId: null }),
         expect.objectContaining({ name: 'Session retirement drain', workspaceId: null, intervalMs: 5 * 60_000 }),
         expect.objectContaining({ name: 'Orphan worktree reconcile', workspaceId: null, intervalMs: 30 * 60 * 1000 }),

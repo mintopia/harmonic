@@ -62,7 +62,7 @@ describe('steering a running task', () => {
       // The steer turn (and everything after) runs, then the task settles.
       await waitFor(async () => {
         const { body } = await noSteerServer.api('GET', `/api/tasks/${taskId}`);
-        return body.state === 'awaiting-review' ? body : undefined;
+        return body.state === 'done' ? body : undefined;
       });
 
       const { body } = await noSteerServer.api('GET', `/api/runs/${runId}/events`);
@@ -110,7 +110,7 @@ describe('steering a running task', () => {
     // The turn (and everything after) runs, then the task settles.
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
 
     const { body } = await server.api('GET', `/api/runs/${runId}/events`);
@@ -134,7 +134,7 @@ describe('steering a running task', () => {
 
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
 
     const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'too late' });

@@ -75,7 +75,7 @@ describe('Runner.start (issue #272)', () => {
     expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected']);
     expect(beginRun).toHaveBeenCalledTimes(1);
     expect((await runs.listForTask(task.id)).map((run) => run.state)).toEqual(['running']);
-    expect((await tasks.get(task.id)).state).toBe('running');
+    expect((await tasks.get(task.id)).state).toBe('working');
   });
 
   it('returns the task to ready when launch fails after the claim', async () => {

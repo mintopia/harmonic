@@ -99,7 +99,7 @@ describe('RunFactStore (issue #112)', () => {
     expect(log.map((f) => f.type)).toEqual(['process-death']);
     expect(JSON.parse(log[0]!.payload)).toEqual({
       runState: 'failed',
-      taskAction: 'failed',
+      taskAction: 'ready',
       reason: 'interrupted',
     });
     expect(computeDisposition(log, log.length)).toBe('process-death');

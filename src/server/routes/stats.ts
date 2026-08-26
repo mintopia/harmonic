@@ -8,7 +8,7 @@ import { buildDaySeries } from '../stats-series.js';
 import { costSchema, modelUsageSchema, toolTokenUsageSchema } from '../schemas.js';
 import { yieldToEventLoop } from '../../reliability/yield.js';
 import { activeExecutionDurationMs, durationPercentiles } from '../../domain/run-duration.js';
-import { failuresByReason, isExecutionFailure, isReviewRejected } from '../../domain/run-failure.js';
+import { failuresByReason, isExecutionFailure } from '../../domain/run-failure.js';
 import { logger } from '../../logger.js';
 import type { DispositionFact } from '../../domain/run-disposition.js';
 
@@ -64,22 +64,8 @@ const statsResponseSchema = z.object({
   runCount: z.number().meta({ example: 3 }),
   /** Run counts keyed by RunState. */
   runsByState: z.record(z.string(), z.number()).meta({ example: { completed: 2, failed: 1 } }),
-  /**
-   * Failed-only Run count (ADR-0028): Runs in `state:'failed'` **excluding**
-   * review-rejected ones. A rejection settles the Run to `state:'failed'` *and*
-   * `review:'rejected'` together, so `runsByState.failed` folds rejections in —
-   * this count is the honest numerator for the failure rate, which cancelled and
-   * rejected Runs stay out of.
-   */
+  /** Failed-only Run count (ADR-0028): the failure-rate numerator; cancelled Runs stay out. */
   failedRuns: z.number().meta({ example: 1 }),
-  /**
-   * Review-rejected Run count (ADR-0028): Runs whose `review` is `rejected`. A
-   * rejection settles the Run to `state:'failed'`, so `runsByState.failed` folds
-   * these in — this count lets the reliability breakdown split them back out as
-   * their own slice, kept out of the failure numerator (a reviewer's judgment
-   * call, not an execution failure).
-   */
-  rejectedRuns: z.number().meta({ example: 1 }),
   /**
    * Execution failures (failed-only) bucketed by reason: the winning terminal
    * disposition (`failed`, `escalate`, `guardrail-trip`, `process-death`, …),
@@ -195,14 +181,9 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       const runsByState: Record<string, number> = {};
       for (const run of rows) runsByState[run.state] = (runsByState[run.state] ?? 0) + 1;
 
-      // Failure rate numerator (ADR-0028): failed-only. A review rejection writes
-      // `state:'failed'` together with `review:'rejected'`, so filtering by state
-      // alone silently counts rejections as execution failures — exclude them.
+      // Failure rate numerator (ADR-0028): failed-only; cancelled Runs stay out.
       const failures = rows.filter(isExecutionFailure);
       const failedRuns = failures.length;
-      // Review rejections, split back out from the folded-in `runsByState.failed`
-      // so the reliability breakdown shows them as their own (non-failure) slice.
-      const rejectedRuns = rows.filter(isReviewRejected).length;
       const failReasons = failuresByReason(
         failures.map((r) => ({ facts: factsByRun.get(r.id) ?? [], reason: r.reason })),
       );
@@ -239,7 +220,6 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         runCount: rows.length,
         runsByState,
         failedRuns,
-        rejectedRuns,
         failuresByReason: failReasons,
         durationMs,
         totals: merged?.totals ?? null,

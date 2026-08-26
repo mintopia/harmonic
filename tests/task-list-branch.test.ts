@@ -31,7 +31,7 @@ describe('task list payload: latest run branch', () => {
     await server.close();
   });
 
-  it('carries the latest run\'s branch once awaiting-review, spawning no git process', async () => {
+  it('carries the latest run\'s branch once done, spawning no git process', async () => {
     const repo = makeRepo();
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ writeFiles: { 'feature.txt': 'made by agent\n' } }),
@@ -40,12 +40,12 @@ describe('task list payload: latest run branch', () => {
     });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(
-      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
     );
 
     // No Git.* method may run during a list fetch — the list endpoint is read
     // from the persisted `runs.branch`/`runs.stat` columns, never shells out
-    // (issue #36: a board of N awaiting-review cards spawns 0 git processes).
+    // (issue #36: a board of N cards spawns 0 git processes).
     const gitSpies = Object.keys(Git).map((method) => vi.spyOn(Git as any, method));
     const list = await server.api('GET', '/api/tasks');
     for (const spy of gitSpies) expect(spy).not.toHaveBeenCalled();

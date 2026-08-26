@@ -10,7 +10,7 @@ describe('run-scoped key restrictions', () => {
 
   beforeAll(async () => {
     // Copilot, not Claude: this describe deliberately keeps a hung Run alive for
-    // the scoped key AND separately runs a Task to `awaiting-review` (the review
+    // the scoped key AND separately escalates a Task (the escalation
     // -gate test). The whole-run Claude harness lock (#237) makes those two
     // Claude Runs mutually exclusive; a non-mutexed harness lets them coexist as
     // they did before #237 (these tests are harness-agnostic).
@@ -57,23 +57,23 @@ describe('run-scoped key restrictions', () => {
     expect(await asAgent('POST', '/api/tasks/1/complete')).toBe(403);
   });
 
-  it('keeps the review gate human-only, always (#140, ADR-0021: retired agentReview flag)', async () => {
-    // A finished task to review, on its own workingDir — the beforeAll's
-    // scoped-key run hangs forever on the default one, holding its Work
-    // Context lease (issue #119) for the whole describe block.
+  it('keeps the escalation actions human-only, always (ADR-0041; #140 retired the agentReview flag)', async () => {
+    // An escalated task, on its own workingDir — the beforeAll's scoped-key
+    // run hangs forever on the default one, holding its Work Context lease
+    // (issue #119) for the whole describe block. The gate fires before the
+    // handler, so escalating through the service is enough.
     const done = await server.api('POST', '/api/tasks', {
-      prompt: 'review target',
+      prompt: 'escalation target',
       workingDir: mkdtempSync(join(tmpdir(), 'harmonic-scoped-')),
     });
-    await server.api('POST', `/api/tasks/${done.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${done.body.id}`)).body.state === 'awaiting-review');
+    await server.app.ctx.tasks.escalate(done.body.id, 'escalated to human: attempt 2 of 2 failed');
 
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
-    expect(await asAgent('POST', `/api/tasks/${done.body.id}/reject`, { feedback: 'x' })).toBe(403);
+    expect(await asAgent('POST', `/api/tasks/${done.body.id}/reject`, { guidance: 'x' })).toBe(403);
+    expect(await asAgent('POST', `/api/tasks/${done.body.id}/close`)).toBe(403);
 
     // Even a legacy PATCH still carrying the retired flag doesn't reopen the
-    // scoped-key surface — it's migrated into verification.autoAccept, which
-    // has no bearing on the scoped-key gate.
+    // scoped-key surface — it is dropped, and has no bearing on the gate.
     await server.api('PATCH', '/api/config', { agentReview: true });
     expect(await asAgent('POST', `/api/tasks/${done.body.id}/accept`)).toBe(403);
   });

@@ -73,17 +73,14 @@ export interface EpicRefreshTrigger {
 /**
  * Reduce a member's mirrored Task to its land state for the whole-Epic land
  * decision (issue #161): `completed` once it has landed onto the integration
- * branch (Task state `completed`); `blocked` when it cannot land (escalated to a
+ * branch (Task state `done`); `blocked` when it cannot land (escalated to a
  * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
  * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
  */
 export function reduceMemberState(task: TaskRow | undefined): MemberLandState {
   if (!task) return 'pending';
-  // `completed` wins over the `escalated` flag deliberately: a member that
-  // reached `completed` landed its work onto the integration branch, so a stale
-  // escalated flag from an earlier attempt must not hold the whole Epic back.
-  if (task.state === 'completed') return 'completed';
-  if (task.escalated || task.state === 'failed' || task.state === 'cancelled') return 'blocked';
+  if (task.state === 'done') return 'completed';
+  if (task.state === 'escalated' || task.state === 'cancelled') return 'blocked';
   return 'pending';
 }
 

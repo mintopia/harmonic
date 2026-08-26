@@ -17,7 +17,7 @@ export async function wsRoutes(fastify: FastifyInstance): Promise<void> {
     };
     const sendAttemptTimeline = (taskId: number) => {
       void attemptTimelineToApi(ctx, taskId)
-        .then(({ attempts }) => send({ type: 'attempt_timeline_changed', taskId, attempts }))
+        .then(({ attempts, budgetBase }) => send({ type: 'attempt_timeline_changed', taskId, attempts, budgetBase }))
         .catch(() => {});
     };
     // A read-scoped key (issue #35) gets a filtered firehose: the board's

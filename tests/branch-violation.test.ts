@@ -63,7 +63,6 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     prompt,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -77,9 +76,8 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
     // drive.prompt is the reliable seam.
     await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
-    expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
@@ -117,9 +115,9 @@ describe('branch-contract enforcement at validating (issue #151)', () => {
 
     const task = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      return t.escalated ? t : undefined;
+      return t.state === 'escalated' ? t : undefined;
     });
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     // A structured branch-violation run_fact was appended, carrying the verdict
     // and the offending unattributed ref delta.

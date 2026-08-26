@@ -276,7 +276,6 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     prompt,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -292,9 +291,8 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
     // where the stub can't parse it, so drive.prompt is the reliable seam.
     await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
-    expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
@@ -359,7 +357,7 @@ describe('execution isolation integration: afk-direct Run detaches + restores (i
 
     await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      return t.escalated ? t : undefined;
+      return t.state === 'escalated' ? t : undefined;
     });
 
     // Isolation held across BOTH turns: the live branch never moved and the

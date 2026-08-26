@@ -212,7 +212,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   it('delete refuses a running Task but allows the last Workspace (issue #61)', async () => {
     const a = await workspaces.create({ name: 'A', workingDir: repoA });
     const running = await tasks.create({ prompt: 'busy', workspaceId: a.id });
-    await tasks.setState(running.id, 'running');
+    await tasks.setState(running.id, 'working');
     await expect(workspaces.delete(a.id)).rejects.toThrow(/running/);
 
     await tasks.setState(running.id, 'ready');
@@ -321,7 +321,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
         close: async () => {},
         reopen: async () => {},
       };
-    }, undefined, undefined, undefined, undefined, undefined, {
+    }, undefined, undefined, undefined, undefined, {
       yieldOptions: {
         budgetMs: 0,
         now: () => tick++,

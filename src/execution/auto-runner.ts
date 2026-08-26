@@ -48,17 +48,16 @@ function hasAssignedEpicBase(task: TaskRow): boolean {
 
 /**
  * Direct-mode Work Contexts occupied by an afk Run that is mid-flight (`running`)
- * or holding unreviewed work (`awaiting-review`), keyed by context to the Task
+ * (`working`), keyed by context to the Task
  * that holds it — the input to the House Rule pick predicate (ADR-0022, issue
- * #120). hitl Tasks (an operator drives them) and worktree Tasks (unique key per
+ * #120). Worktree Tasks (unique key per
  * Run) never occupy a context here. First holder found wins the key, so the skip
  * reason names a stable occupant.
  */
 async function occupiedDirectContexts(tasks: readonly TaskRow[]): Promise<Map<string, TaskRow>> {
   const occupied = new Map<string, TaskRow>();
   await forEachYielding(tasks, (t) => {
-    if (t.drive === 'hitl') return;
-    if (t.state !== 'running' && t.state !== 'awaiting-review') return;
+    if (t.state !== 'working') return;
     const key = directContextKey(t);
     if (key && !occupied.has(key)) occupied.set(key, t);
   });
@@ -111,7 +110,7 @@ const DEFAULT_MISSING_EPIC_BASE_GRACE_MS = 300_000;
  * inherits it when unset.
  *
  * A mirrored afk Task's pick is more than a spawn: the predicate is
- * `drive ≠ hitl ∧ deps satisfied (ready)`, and the sequence is
+ * `agent-workable ∧ deps satisfied (ready)`, and the sequence is
  * flip(ready→running) — the lock — then best-effort advisory claim before
  * spawning (issues #32, #230, and #232). Assignment is never read as an
  * eligibility or ownership signal (ADR-0030).
@@ -158,7 +157,7 @@ export class AutoRunner {
   constructor(
     private readonly taskService: TaskService,
     private readonly runStore: Pick<RunStore, 'countRunning' | 'countRunningByWorkspace'>,
-    private readonly runner: { launchClaimed: RunLauncher },
+    private readonly runner: { launchClaimed: RunLauncher; escalateUnspawned: Runner['escalateUnspawned'] },
     private readonly getConfig: () => AppConfig,
     private readonly getWorkspaces: () => Promise<WorkspaceRow[]>,
     options: AutoRunnerOptions = {},
@@ -341,7 +340,7 @@ export class AutoRunner {
     await forEachYielding(readyWithDeps, (task) => {
       if (task.openBlockerCount === 0) return;
       dependencyBlocked.add(task.id);
-      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'completed');
+      const blockers = task.dependsOn.filter((id) => allById.get(id)?.state !== 'done');
       record(
         task.id,
         blockers.length === 0 ? 'blocked by a dependency' : `blocked-by #${blockers.join(', #')}`,
@@ -351,10 +350,6 @@ export class AutoRunner {
     await forEachYielding(all, async (task) => {
       if (task.state !== 'ready') return;
       if (dependencyBlocked.has(task.id)) return;
-      if (task.drive === 'hitl') {
-        record(task.id, task.escalated ? 'hitl, escalated to human' : 'hitl');
-        return;
-      }
       if (!master) {
         record(task.id, 'Auto-Runner disabled');
         return;
@@ -383,8 +378,9 @@ export class AutoRunner {
         if (hasAssignedEpicBase(task)) {
           const since = this.missingEpicBaseSince.get(task.id) ?? this.clock();
           if (this.clock() - since >= this.missingEpicBaseGraceMs) {
-            await this.taskService.escalate(task.id);
-            record(task.id, 'integration branch missing, escalated to human');
+            const reason = `integration branch ${task.baseBranch} missing for ${Math.round(this.missingEpicBaseGraceMs / 1000)}s`;
+            await this.runner.escalateUnspawned(task.id, reason);
+            record(task.id, `${reason}, escalated to human`);
             return;
           }
           missingThisPass.set(task.id, since);
@@ -424,17 +420,16 @@ export class AutoRunner {
    * counts and occupancy — it never frees an earlier-skipped Task — so a forward
    * single pass is equivalent to the old restart-from-the-top pick loop.
    *
-   * Picks skip hitl Tasks and any parked this cycle, a Task whose Workspace is
+   * Picks skip any Task parked this cycle, a Task whose Workspace is
    * Auto-Runner-disabled (master is already on here, so an inheriting Workspace
    * counts as enabled) or already at its resolved cap — the per-Workspace half of
    * the two-level limit (ADR-0012, issue #60) — and, the House Rule (ADR-0022,
    * issue #120), a Task whose direct-mode Work Context is already occupied by a
-   * running or awaiting-review afk Run, so the Auto-Runner doesn't pick straight
+   * working Run, so the Auto-Runner doesn't pick straight
    * into the hard lease rejection from #119 (churn). That predicate is advisory —
    * the lease CAS in `Runner.beginRun` stays the authoritative gate — and reads
    * occupancy from **Task state**, not the lease store: the lease is released the
    * moment a Run settles (seam for #114), so by the time a Task sits in
-   * `awaiting-review` the lease is already gone, yet its work still holds the
    * context. A Task started earlier this pass is folded into `occupied`, so it
    * correctly blocks a same-context sibling visited later.
    */
@@ -465,9 +460,9 @@ export class AutoRunner {
     if (this.epicBaseNotReady) {
       const gate = this.epicBaseNotReady;
       await forEachYielding(all, async (t) => {
-        // Same cheap exclusions the pick filter below applies, so a task that's
-        // skipped or hitl doesn't cost a `branchExists` call.
-        if (t.state === 'ready' && t.origin === 'mirrored' && t.drive !== 'hitl' && !skip.has(t.id)) {
+        // Same cheap exclusions the pick filter below applies, so a skipped
+        // task doesn't cost a `branchExists` call.
+        if (t.state === 'ready' && t.origin === 'mirrored' && !skip.has(t.id)) {
           epicGate.set(t.id, await gate(t));
         }
       });
@@ -488,7 +483,7 @@ export class AutoRunner {
         runningByWorkspace.set(task.workspaceId, (runningByWorkspace.get(task.workspaceId) ?? 0) + 1);
       }
       const key = directContextKey(task);
-      if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'running' });
+      if (key && !occupied.has(key)) occupied.set(key, { ...task, state: 'working' });
     }
 
     // A Task no longer House-Rule-skipped this pass — started, or its
@@ -523,7 +518,7 @@ export class AutoRunner {
       epicGate: Map<number, boolean>;
     },
   ): boolean {
-    if (t.state !== 'ready' || t.drive === 'hitl' || skip.has(t.id)) return false;
+    if (t.state !== 'ready' || skip.has(t.id)) return false;
     if (epicGate.get(t.id)) return false;
     const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
     // Master is on (fill returned early otherwise), so an inheriting

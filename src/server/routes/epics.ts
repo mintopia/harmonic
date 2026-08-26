@@ -28,7 +28,7 @@ const epicMemberSchema = z
     ref: z.number().int().meta({ example: 4821 }),
     title: z.string().meta({ example: 'Wire the peek modal' }),
     taskId: z.number().int().nullable().meta({ example: 12 }),
-    state: z.string().nullable().meta({ example: 'running' }),
+    state: z.string().nullable().meta({ example: 'working' }),
     escalated: z.boolean(),
     landStatus: z.enum(['completed', 'blocked', 'pending']).meta({ example: 'pending' }),
     ready: z.boolean(),

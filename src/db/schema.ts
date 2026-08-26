@@ -31,8 +31,6 @@ export const WORKFLOWS = ['wayfinder', 'implement'] as const;
 export type Workflow = (typeof WORKFLOWS)[number];
 export const WAYFINDER_TYPES = ['research', 'prototype', 'grilling', 'task'] as const;
 export type WayfinderType = (typeof WAYFINDER_TYPES)[number];
-export const DRIVES = ['afk', 'hitl'] as const;
-export type Drive = (typeof DRIVES)[number];
 
 /**
  * The durable per-issue tracker facts (issue #233, ADR-0030 "expand"): the
@@ -52,15 +50,8 @@ export interface TrackerFacts {
   createdAt: string;
 }
 
-export const TASK_STATES = [
-  'draft',
-  'ready',
-  'running',
-  'awaiting-review',
-  'completed',
-  'failed',
-  'cancelled',
-] as const;
+/** The stored Ticket states (ADR-0041). Blocked-ness and agent-workability are derived, never stored. */
+export const TASK_STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 /**
@@ -126,9 +117,6 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace progress-detector toggle override (issue #126); null inherits
    * `config.guardrails.progress`. */
   guardrailProgress: integer('guardrail_progress', { mode: 'boolean' }),
-  /** Per-Workspace auto-accept override (issue #138); null = inherit
-   * `config.verification.autoAccept`. */
-  verificationAutoAccept: integer('verification_auto_accept', { mode: 'boolean' }),
   /** Per-Workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: integer('max_attempts'),
   /** Per-Workspace continuation threshold; null inherits the global default. */
@@ -198,10 +186,8 @@ export const tasks = sqliteTable('tasks', {
   workflow: text('workflow').$type<Workflow>(),
   /** research/prototype/grilling/task; null for implement and native Tasks. */
   wayfinderType: text('wayfinder_type').$type<WayfinderType>(),
-  /** afk (Harmonic auto-runs) | hitl (human drives). Seeded from labels, then Harmonic-owned. */
-  drive: text('drive').$type<Drive>(),
-  /** Set when an afk Run escalated to a human (drive flipped afk→hitl at runtime). */
-  escalated: integer('escalated', { mode: 'boolean' }).notNull().default(false),
+  /** Why the Ticket is `escalated` (ADR-0041): the trigger's reason, recorded by every path into that state; null otherwise. */
+  escalationReason: text('escalation_reason'),
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
   mapRef: integer('map_ref'),
   /**
@@ -305,23 +291,13 @@ export const runs = sqliteTable('runs', {
   state: text('state').$type<RunState>().notNull(),
   /**
    * The Run's position in the phase machine (issue #114, reliability-design
-   * §0.2): `executing → validating → verifying → [review] → landing → terminal`,
-   * with human-gated native Runs passing through `review` before `landing` and
-   * mirrored / auto-accept Runs skipping it. Persisted so the phase survives a
-   * restart and is reconstructable from the Run row alone (never inferred from
-   * Task columns); surfaced on the Run API + card. Null on pre-feature Runs.
-   * Distinct from `state`: `state` is the execution/terminal RunState, `phase`
-   * is *where in its lifecycle* the Run is — a native Run is `state:'running'`
-   * while parked in `phase:'review'` awaiting the human accept/reject gate.
+   * §0.2): `executing → validating → verifying → landing → terminal`. Persisted
+   * so the phase survives a restart and is reconstructable from the Run row
+   * alone (never inferred from Task columns); surfaced on the Run API + card.
+   * Null on pre-feature Runs. Distinct from `state`: `state` is the
+   * execution/terminal RunState, `phase` is *where in its lifecycle* the Run is.
    */
   phase: text('phase').$type<RunPhase>(),
-  /**
-   * Review-SLA deadline (epoch ms) for a Run parked in `phase:'review'`: the
-   * point past which an un-reviewed Run is swept to a terminal disposition via
-   * a `review-sla-expiry` run_fact (issue #114, reliability-design round-5 #4).
-   * Set on entering `review`; null otherwise and on pre-feature Runs.
-   */
-  reviewDeadline: integer('review_deadline'),
   /** Failure reason: 'interrupted', an error message, or null. */
   reason: text('reason'),
   /** ACP stopReason from the session/prompt result. */
@@ -353,9 +329,9 @@ export const runs = sqliteTable('runs', {
   /** Worktree mode: the run's branch and the branch it was cut from. */
   branch: text('branch'),
   baseBranch: text('base_branch'),
-  /** `git diff --stat` snapshot taken when the run settles to awaiting-review;
-   * null in direct mode or before settle. The card and Task detail both read
-   * this so they can never disagree (issue #36). */
+  /** `git diff --stat` snapshot taken when the run settles; null in direct
+   * mode or before settle. The card and Task detail both read this so they
+   * can never disagree (issue #36). */
   stat: text('stat'),
   /**
    * The committed implementation head a Run is verified against (issue #134,
@@ -384,10 +360,6 @@ export const runs = sqliteTable('runs', {
   /** JSON: the effective price table (`PriceTable`) snapshotted at Run start, so
    * a mid-Run price edit can't retroactively change a cost trip (issue #126). */
   priceTable: text('price_table'),
-  /** Review decision on this run: 'accepted' | 'rejected' | null. */
-  review: text('review'),
-  reviewFeedback: text('review_feedback'),
-  reviewedAt: integer('reviewed_at'),
   startedAt: integer('started_at').notNull(),
   finishedAt: integer('finished_at'),
 });
@@ -745,7 +717,6 @@ export const RUN_FACT_TYPES = [
   'escalate',
   'branch-violation',
   'branch-recovery',
-  'review-sla-expiry',
   'agent-finish/unresolved',
   'failed',
   'process-death',
@@ -1062,7 +1033,7 @@ export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
  * removal** (issue #148): a worktree Session's checkout is retained through the
  * human-rejection window (so a reject-and-continue lands in the same workspace)
  * and its builder worktree is removed **only** at retirement, coordinated with
- * the Work Context lease. `active` — a live or review-parked Run owns it; `idle`
+ * the Work Context lease. `active` — a live Run owns it; `idle`
  * — no live Run, retained under a `retireDeadline` (reject-continuation / warm
  * reuse window); `retiring` — worktree removal in progress (crash-re-driven at
  * boot); `retired` — worktree removed, terminal.
@@ -1071,20 +1042,11 @@ export const SESSION_STATUSES = ['active', 'idle', 'retiring', 'retired'] as con
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**
- * Why a Session retired (issue #148), for the operator-legible record. Each is a
- * distinct retirement deadline from reliability-design Unit C: `landed` (a
- * successful land + terminal success), `reject-continuation-timeout` (the human
- * rejected and no continuation arrived in time), `review-abandonment-sla` (the
- * review SLA lapsed unreviewed), `operator-disposition` (cancel/operator action),
+ * Why a Session retired (issue #148), for the operator-legible record: `landed`
+ * (a successful land + terminal success), `operator-disposition` (cancel / Close),
  * `retention-ttl` (the backstop so no idle Session retains its worktree forever).
  */
-export const SESSION_RETIRE_REASONS = [
-  'landed',
-  'reject-continuation-timeout',
-  'review-abandonment-sla',
-  'operator-disposition',
-  'retention-ttl',
-] as const;
+export const SESSION_RETIRE_REASONS = ['landed', 'operator-disposition', 'retention-ttl'] as const;
 export type SessionRetireReason = (typeof SESSION_RETIRE_REASONS)[number];
 
 /**

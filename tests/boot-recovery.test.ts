@@ -32,6 +32,12 @@ function makeRepo(): string {
  * so before this sweep it stayed stuck `running` forever while its ticket
  * stayed open.
  */
+/** The next per-Run `run_facts.seq` (the store assigns `max(seq)+1`; a seed must not collide). */
+async function nextFactSeq(sqlite: ReturnType<typeof createClient>, runId: number): Promise<number> {
+  const row = (await sqlite.execute({ sql: 'SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM run_facts WHERE run_id = ?', args: [runId] })).rows[0] as unknown as { n: number };
+  return Number(row.n);
+}
+
 describe('boot crash-recovery', () => {
   let server: TestServer;
 
@@ -39,84 +45,75 @@ describe('boot crash-recovery', () => {
     await server.close();
   });
 
-  it('fails a Task stuck `running` with no Run row on the next boot', async () => {
+  it('re-queues a Task stuck `working` with no Run row on the next boot', async () => {
     server = await startServer();
     const created = await server.api('POST', '/api/tasks', { prompt: 'stuck mid-launch' });
     const id = created.body.id as number;
     const dataDir = server.dataDir;
 
-    // Simulate the crash: the auto-runner had flipped it to `running` but died
+    // Simulate the crash: the auto-runner had flipped it to `working` but died
     // before spawning a Run — so there is no `running` run for the run sweep.
     await server.app.close();
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: 'UPDATE tasks SET state = ? WHERE id = ?', args: ['running', id] });
+    await sqlite.execute({ sql: 'UPDATE tasks SET state = ? WHERE id = ?', args: ['working', id] });
     sqlite.close();
 
     server = await startServer(undefined, { dataDir });
     const recovered = await server.api('GET', `/api/tasks/${id}`);
-    expect(recovered.body.state).toBe('failed');
+    expect(recovered.body.state).toBe('ready'); // an interruption is not a failed Attempt (ADR-0041)
   });
 
-  it('leaves a review-parked native Run untouched across a restart (issue #114)', async () => {
-    // A Run parked in `phase:'review'` is `state:'running'` but has no live
-    // process — the review gate is defined by having none. Crash recovery must
-    // NOT fail it (each phase survives a restart), unlike an executing orphan.
+  it('leaves a done ticket and its landed Run untouched across a restart', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
 
     await server.app.close();
     server = await startServer(stubHarness(), { dataDir });
 
     const task = await server.api('GET', `/api/tasks/${created.body.id}`);
-    expect(task.body.state).toBe('awaiting-review'); // survived, not failed
+    expect(task.body.state).toBe('done');
     const run = await server.api('GET', `/api/runs/${started.body.id}`);
-    expect(run.body.state).toBe('running');
-    expect(run.body.phase).toBe('review');
+    expect(run.body.state).toBe('completed');
+    expect(run.body.phase).toBe('terminal');
   });
 
-  it('sweeps a review-parked Run past its SLA to a terminal disposition at boot, via a run_fact (issue #114)', async () => {
-    server = await startServer(stubHarness());
-    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
+  it('leaves an escalated ticket untouched across a restart — no sweep moves a human decision (ADR-0041)', async () => {
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 });
+    const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ exit: 'crash-before-response' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
+    const before = await server.api('GET', `/api/tasks/${created.body.id}`);
 
-    // Force the review SLA into the past (an abandoned review), then reboot.
     await server.app.close();
-    const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: 'UPDATE runs SET review_deadline = ? WHERE id = ?', args: [1, runId] });
-    sqlite.close();
-    server = await startServer(stubHarness(), { dataDir });
+    const count = async () => {
+      const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+      const n = ((await check.execute({ sql: 'SELECT COUNT(*) as n FROM run_facts WHERE run_id = ?', args: [runId] })).rows[0] as unknown as { n: number }).n;
+      check.close();
+      return n;
+    };
+    const factsBefore = await count();
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { dataDir });
 
-    // The boot sweep settled it to a terminal disposition: Run failed (phase
-    // terminal), Task failed — the review-sla-expiry disposition won.
+    const task = await server.api('GET', `/api/tasks/${created.body.id}`);
+    expect(task.body).toMatchObject({ state: 'escalated', escalationReason: before.body.escalationReason });
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('failed');
     expect(run.body.phase).toBe('terminal');
-    expect(run.body.reason).toContain('review SLA expired');
-    expect((await server.api('GET', `/api/tasks/${created.body.id}`)).body.state).toBe('failed');
-
-    // It appears as a `run_fact` resolved by the coordinator, not a bare state write.
-    const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    const fact = (
-      await check.execute({
-        sql: 'SELECT type FROM run_facts WHERE run_id = ? AND type = ?',
-        args: [runId, 'review-sla-expiry'],
-      })
-    ).rows[0];
-    check.close();
-    expect(fact).toBeTruthy();
+    await server.app.close();
+    expect(await count()).toBe(factsBefore);
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { dataDir });
   });
 
   it('reconciles a Run crashed mid-landing whose effect already applied — completes it without re-merging or duplicating the journal (issue #117, AC1/AC5)', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -128,16 +125,19 @@ describe('boot crash-recovery', () => {
     const baseBranch = 'main';
     const idempotencyKey = `${baseBranch}<-${branch}`;
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: "UPDATE runs SET phase = 'landing', branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'landing', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
     // Same fact type `LandingCoordinator.land()` writes at its step 2, before
-    // the PONC (landing-coordinator.ts's `LAND_FACT_TYPE`).
+    // the PONC (landing-coordinator.ts's `LAND_FACT_TYPE`); the landed Run's log
+    // already holds its own facts, so the seed appends at the next seq.
+    const landSeq = await nextFactSeq(sqlite, runId);
     await sqlite.execute({
       sql: 'INSERT INTO run_facts (run_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'completed', reason: null })],
+      args: [runId, landSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
     });
     await sqlite.execute({
       sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: 1 })],
+      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: landSeq })],
     });
     await sqlite.execute({
       sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -156,9 +156,8 @@ describe('boot crash-recovery', () => {
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('completed');
     expect(run.body.phase).toBe('terminal');
-    expect(run.body.review).toBe('accepted');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.state).toBe('completed');
+    expect(task.body.state).toBe('done');
 
     // No duplicate/re-applied result for the already-applied effect.
     const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
@@ -176,7 +175,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
 
@@ -185,14 +184,15 @@ describe('boot crash-recovery', () => {
     const baseBranch = 'main';
     const idempotencyKey = `${baseBranch}<-${branch}`;
     let sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: "UPDATE runs SET phase = 'landing', branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'landing', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    const landSeq = await nextFactSeq(sqlite, runId);
     await sqlite.execute({
       sql: 'INSERT INTO run_facts (run_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'completed', reason: null })],
+      args: [runId, landSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
     });
     await sqlite.execute({
       sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: 1 })],
+      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: landSeq })],
     });
     await sqlite.execute({
       sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -230,7 +230,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -245,14 +245,16 @@ describe('boot crash-recovery', () => {
     const baseBranch = 'main';
     const idempotencyKey = `${baseBranch}<-${branch}`;
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: "UPDATE runs SET phase = 'landing', branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'landing', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
+    const landSeq = await nextFactSeq(sqlite, runId);
     await sqlite.execute({
       sql: 'INSERT INTO run_facts (run_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'completed', reason: null })],
+      args: [runId, landSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
     });
     await sqlite.execute({
       sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: 1 })],
+      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: landSeq })],
     });
     await sqlite.execute({
       sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -277,7 +279,7 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('completed');
     expect(run.body.phase).toBe('terminal');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.state).toBe('completed');
+    expect(task.body.state).toBe('done');
 
     const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const results = (
@@ -302,7 +304,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -312,7 +314,7 @@ describe('boot crash-recovery', () => {
     await server.app.close();
     let sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?", args: [runId] });
-    await sqlite.execute({ sql: "UPDATE tasks SET state = 'running' WHERE id = ?", args: [taskId] });
+    await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
     await sqlite.execute({
       sql: `INSERT INTO turn_queue (session_id, run_id, seq, status, purpose, expected_workspace_oid, expected_fingerprint, enqueued_at, sent_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -326,9 +328,8 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('failed');
     expect(run.body.phase).toBe('terminal');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.state).toBe('ready');
-    expect(task.body.escalated).toBe(true);
-    expect(task.body.drive).toBe('hitl');
+    expect(task.body.state).toBe('escalated');
+    expect(task.body.escalationReason).toContain('interrupted by restart');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const escalateFacts = (await sqlite.execute({ sql: "SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'", args: [runId] })).rows[0] as unknown as {n: number };
@@ -343,8 +344,7 @@ describe('boot crash-recovery', () => {
     await server.app.close();
     server = await startServer(stubHarness(), { dataDir });
     const taskAgain = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(taskAgain.body.state).toBe('ready');
-    expect(taskAgain.body.escalated).toBe(true);
+    expect(taskAgain.body.state).toBe('escalated');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const escalateFactsAgain = (await sqlite.execute({ sql: "SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'", args: [runId] })).rows[0] as unknown as {n: number };
@@ -356,7 +356,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -368,7 +368,7 @@ describe('boot crash-recovery', () => {
     await server.app.close();
     let sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?", args: [runId] });
-    await sqlite.execute({ sql: "UPDATE tasks SET state = 'running' WHERE id = ?", args: [taskId] });
+    await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
     await sqlite.execute({
       sql: `INSERT INTO turn_queue (session_id, run_id, seq, status, purpose, expected_workspace_oid, expected_fingerprint, enqueued_at, sent_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -382,8 +382,8 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('failed');
     expect(run.body.phase).toBe('terminal');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.escalated).toBe(true);
-    expect(task.body.drive).toBe('hitl');
+    expect(task.body.state).toBe('escalated');
+    expect(task.body.escalationReason).toContain('interrupted by restart');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const escalateFacts = (await sqlite.execute({ sql: "SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'", args: [runId] })).rows[0] as unknown as {n: number };
@@ -404,7 +404,7 @@ describe('boot crash-recovery', () => {
       });
       const taskId = created.body.id as number;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
       const runId = started.body.id as number;
       const dataDir = server.dataDir;
       const key = workContextKey({ isolationMode: 'direct', workingDir: repo });
@@ -416,7 +416,7 @@ describe('boot crash-recovery', () => {
       await server.app.close();
       let sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?", args: [runId] });
-      await sqlite.execute({ sql: "UPDATE tasks SET state = 'running' WHERE id = ?", args: [taskId] });
+      await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
       await sqlite.execute({
         sql: `INSERT INTO work_context_leases (key, phase, owner_run_id, heartbeat, expiry, state, acquired_at)
            VALUES (?, 'running', ?, ?, NULL, 'held', ?)`,
@@ -442,13 +442,13 @@ describe('boot crash-recovery', () => {
       });
       const taskId2 = created2.body.id as number;
       const started2 = await server.api('POST', `/api/tasks/${taskId2}/run`);
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId2}`)).body.state === 'awaiting-review');
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId2}`)).body.state === 'done');
       const runId2 = started2.body.id as number;
 
       await server.app.close();
       sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
       await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?", args: [runId2] });
-      await sqlite.execute({ sql: "UPDATE tasks SET state = 'running' WHERE id = ?", args: [taskId2] });
+      await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId2] });
       await sqlite.execute({
         sql: `INSERT INTO work_context_leases (key, phase, owner_run_id, heartbeat, expiry, state, acquired_at)
            VALUES (?, 'running', ?, ?, NULL, 'held', ?)`,
@@ -472,10 +472,10 @@ describe('boot crash-recovery', () => {
 
   /**
    * Seed a Run that a restart interrupted mid-execution while it was bound to a
-   * durable Session: run a native Task to `awaiting-review` (which persists the
-   * Session, issue #141), then rewrite it to a plain executing orphan
-   * (`state:'running'`, a non-parked phase) with its Session binding intact, as a
-   * crash between the ready→running flip and the review gate would leave it.
+   * durable Session: run a native Task to `done` (which persists the Session,
+   * issue #141), then rewrite it to a plain executing orphan (`state:'running'`)
+   * with its Session binding intact, as a crash between the ready→working flip
+   * and the landing would leave it.
    * Returns the dataDir, the interrupted Run id, the Task id, and the harness
    * session id / Session row id the resume must reload against.
    */
@@ -488,7 +488,7 @@ describe('boot crash-recovery', () => {
   }> {
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -499,10 +499,10 @@ describe('boot crash-recovery', () => {
       sid: string;
       srid: number;
     };
-    // Rewrite the parked (phase:'review') Run into a plain executing orphan so
-    // the boot orphan-fail sweep fails it `interrupted` — the resume input.
+    // Rewrite the landed Run into a plain executing orphan so the boot orphan
+    // sweep fails it `interrupted` — the resume input.
     await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?", args: [runId] });
-    await sqlite.execute({ sql: "UPDATE tasks SET state = 'running' WHERE id = ?", args: [taskId] });
+    await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
     sqlite.close();
     return { dataDir, runId, taskId, harnessSessionId: runRow.sid, sessionRowId: runRow.srid };
   }
@@ -626,6 +626,6 @@ describe('boot crash-recovery', () => {
     expect(turnsAfterSecond).toBe(turnsAfterFirst); // no duplicate turn
     expect(survivingTurn.status).toBe('queued'); // preserved, not cancelled
     expect(resumeRun.state).toBe('running'); // parked awaiting dispatch, not re-orphaned
-    expect(taskState).toBe('running');
+    expect(taskState).toBe('working');
   });
 });

@@ -45,7 +45,7 @@ describe('live structured run event streaming and replay', () => {
     // (issue #114) — it stays `state:'running'`, so "done executing" is the
     // run_changed that carries the review phase, not a non-running state.
     await waitFor(async () =>
-      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.phase === 'review'),
+      ws.messages.some((m) => m.type === 'run_changed' && m.run.id === runId && m.run.phase === 'terminal'),
     );
 
     const streamed = ws.messages.filter(
@@ -77,7 +77,7 @@ describe('live structured run event streaming and replay', () => {
     await waitFor(async () => first.messages.some((m) => m.type === 'run_log_event' && m.event.runId === runId && m.event.seq === 1));
     first.close();
 
-    await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.phase === 'review');
+    await waitFor(async () => (await server.api('GET', `/api/runs/${runId}`)).body.phase === 'terminal');
     const reconnected = await connectWs(server);
     reconnected.send({ type: 'run_log_subscribe', runId, after: 1 });
     await waitFor(async () => reconnected.messages.filter((m) => m.type === 'run_log_event' && m.event.runId === runId).length === 2);
@@ -93,7 +93,7 @@ describe('live structured run event streaming and replay', () => {
 
     await waitFor(async () =>
       ws.messages.some(
-        (m) => m.type === 'task_changed' && m.task.id === created.body.id && m.task.state === 'awaiting-review',
+        (m) => m.type === 'task_changed' && m.task.id === created.body.id && m.task.state === 'done',
       ),
     );
     ws.close();

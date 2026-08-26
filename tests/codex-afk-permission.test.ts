@@ -14,8 +14,9 @@ import type { MirrorInput } from '../src/domain/tasks.js';
  * only mechanism that grants Codex full access over ACP (approval_policy /
  * command-line YOLO flags do not take effect there). A Codex build that
  * advertises no full-access mode falls back to the per-request handler, which
- * Escalates on the first request like every other afk Run (until ADR-0007
- * held-request approval lands). These pin both paths.
+ * declines the request and fails the Attempt like every other unattended Run
+ * (until ADR-0007 held-request approval lands); with a one-attempt budget that
+ * exhausts the cap and escalates. These pin both paths.
  */
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -45,7 +46,8 @@ describe('Codex afk permission model', () => {
       ...stubHarness('codex'),
       // Fallback path: Codex advertises no auto/bypass mode AND no
       // `danger-full-access` full-access mode, so the afk mode-force finds nothing
-      // to set and the per-request handler governs (no throw, then Escalate).
+      // to set and the per-request handler governs (no throw; the declined
+      // request fails the Attempt).
       harnesses: { codex: { command: process.execPath, args: [STUB_HARNESS], env: { STUB_MODES: 'default,read-only,agent' }, models: ['stub-model'], defaultModel: 'stub-model' } },
       defaults: { harness: 'codex' },
       maxAttempts: 1,
@@ -61,12 +63,11 @@ describe('Codex afk permission model', () => {
     prompt: 'go',
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
 
-  it('starts an afk Codex Run despite no auto/bypass mode, then Escalates a permission request', async () => {
+  it('starts an afk Codex Run despite no auto/bypass mode; a declined permission request fails the Attempt and the exhausted cap escalates', async () => {
     const repo = makeRepo();
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     await server.app.ctx.configStore.update({
@@ -75,7 +76,7 @@ describe('Codex afk permission model', () => {
 
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(9310));
     expect(task.harness).toBe('codex');
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
 
     const permission = await waitFor(async () => {
@@ -86,14 +87,15 @@ describe('Codex afk permission model', () => {
     // Getting a permission_request at all proves the afk mode-forcing block did
     // NOT throw "no unattended permission mode" for Codex (that would have failed
     // the Run before the prompt turn ever reached the request) — the mode-force is
-    // skipped for a request-gated harness. And the request Escalates (declined),
-    // like every other afk Run, until ADR-0007 held-request approval lands.
+    // skipped for a request-gated harness. The declined request is a failed
+    // Attempt (no human is on the turn); the one-attempt budget then escalates.
     expect(permission.payload.outcome).toMatchObject({ outcome: 'cancelled' });
     const settled = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(task.id);
-      return t.escalated ? t : undefined;
+      return t.state === 'escalated' ? t : undefined;
     });
-    expect(settled.escalated).toBe(true);
+    expect(settled.escalationReason).toMatch(/attempt 1 of 1 failed: permission request declined/);
+    expect(settled.escalationReason).toContain('Write hello.txt');
   });
 });
 
@@ -129,7 +131,6 @@ describe('Codex afk full-access mode', () => {
     prompt: 'go',
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -144,7 +145,7 @@ describe('Codex afk full-access mode', () => {
     });
 
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(9311));
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
 
     const modeSet = await waitFor(async () => {

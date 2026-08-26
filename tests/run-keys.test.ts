@@ -24,7 +24,7 @@ describe('run key lifecycle (issue 16)', () => {
     server = await startServer(stubHarness());
     const { taskId, token } = await startEchoRun(server, 'clean');
     await waitFor(
-      async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review',
+      async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done',
     );
 
     expect(await runKeyRows(server)).toEqual([]);
@@ -43,27 +43,27 @@ describe('run key lifecycle (issue 16)', () => {
     await waitFor(async () => (await runKeyRows(server)).length === 0 || undefined);
   });
 
-  it('hard-deletes the run key when a run fails', async () => {
-    server = await startServer(stubHarness());
+  it('hard-deletes the run key when a run escalates', async () => {
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({ exit: 'crash-before-response' }),
     });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(
-      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed',
+      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated',
     );
     expect(await runKeyRows(server)).toEqual([]);
   });
 
   it('hard-deletes the run key when the harness fails to even spawn', async () => {
-    server = await startServer(stubHarness());
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     // An empty command makes spawn throw synchronously — after the key
     // was already minted.
     await server.api('PATCH', '/api/config', { harnesses: { claude: { command: '' } } });
     const created = await server.api('POST', '/api/tasks', { prompt: 'never runs' });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(
-      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed',
+      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated',
     );
     expect(await runKeyRows(server)).toEqual([]);
   });

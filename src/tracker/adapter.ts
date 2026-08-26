@@ -30,16 +30,7 @@ export type TicketState = 'open' | 'closed';
 /** The label that marks a wayfinder Map — convention on every tracker; `isMap` hides which. */
 export const MAP_LABEL = 'wayfinder:map';
 
-/**
- * The one triage label that opts a ticket into AFK auto-driving (issue #230):
- * present ⇒ afk-eligible, absent ⇒ hitl (never auto-picked). Read through this
- * shared constant by every eligibility gate — `deriveRole` and the Epic
- * ready-frontier — so the polarity holds on every tracker, no per-call literal.
- */
-export const READY_FOR_AGENT_LABEL = 'ready-for-agent';
-
-/** The triage label that forces a ticket to hitl — a human must drive it (issue #230). */
-export const READY_FOR_HUMAN_LABEL = 'ready-for-human';
+export { READY_FOR_AGENT_LABEL, READY_FOR_HUMAN_LABEL } from '../domain/agent-workable.js';
 
 /** A directional edge target: the referenced ticket's portable identity + surface state. */
 export interface TicketRef {

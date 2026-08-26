@@ -5,13 +5,13 @@ import {
   continuationDetail,
   continuationLabel,
   elapsed,
-  escalationActions,
   runForAttempt,
   stateTone,
   taskLabel,
   type TimelineTone,
 } from '../../attempt-timeline-model.js';
 import type { Attempt, AttemptTask, Run, Task } from '../../types.js';
+import { escalationActions } from '../../task-actions-model.js';
 import { btnAccept, btnGhost, btnQuietDestructive, railSectionCount, railSectionHead } from '../../ui.js';
 import { toastError, toastSuccess } from '../../toast.js';
 import { taskLabel as ticketLabel } from '../../id-format.js';
@@ -45,39 +45,35 @@ function CloseButton({ onConfirm }: { onConfirm: () => void }) {
 }
 
 /** ADR-0041's one escalation surface: the trigger and exactly three actions,
- * on the attempt that escalated. Accept and Reject-with-guidance act on the
- * stranded candidate, so they first park it at review the way the operator
- * escape hatch does; Close cancels the ticket. */
-function Escalation({ attempt, task, onChanged, compact = false }: { attempt: Attempt; task: Task; onChanged: () => void; compact?: boolean }) {
+ * on the attempt that escalated. Accept lands the verified branch head as-is,
+ * Reject with guidance resumes the loop, Close cancels the ticket and cleans up. */
+function Escalation({ attempt, task, onChanged, compact = false }: { attempt: Attempt | null; task: Task; onChanged: () => void; compact?: boolean }) {
   const [rejecting, setRejecting] = useState(false);
   const actions = escalationActions(task);
-  const reason = attempt.escalationReason?.replace(/^escalated to human:\s*/i, '') ?? null;
-  const parkForReview = () => (task.state === 'awaiting-review' ? Promise.resolve() : api.adoptReview(task.id));
+  const reason = (attempt?.escalationReason ?? task.escalationReason)?.replace(/^escalated to human:\s*/i, '') ?? null;
   const accept = () =>
-    parkForReview()
-      .then(() => api.acceptTask(task.id))
-      .then(() => {
-        toastSuccess(`${ticketLabel(task.id)} accepted — merging`);
-        onChanged();
-      }, toastError);
+    api.acceptTask(task.id).then(() => {
+      toastSuccess(`${ticketLabel(task.id)} accepted — merging`);
+      onChanged();
+    }, toastError);
   const close = () =>
-    api.cancelTask(task.id).then(() => {
+    api.closeTask(task.id).then(() => {
       toastSuccess(`${ticketLabel(task.id)} closed`);
       onChanged();
     }, toastError);
   return (
-    <div className="mt-2 rounded-sm bg-running-tint px-2.5 py-2 text-small">
-      <div className="flex items-center gap-1.5 font-semibold text-running">
+    <div className="mt-2 rounded-sm bg-await-tint px-2.5 py-2 text-small">
+      <div className="flex items-center gap-1.5 font-semibold text-await">
         <Icon name="alert-triangle" className="size-3.5" />
         Escalated
       </div>
       {reason && <p className="mt-1 whitespace-pre-wrap break-words text-ink">{reason}</p>}
       {actions && (
         <div className={compact ? 'mt-2 flex flex-wrap items-center gap-2' : 'mt-2.5 flex flex-col gap-1.5 [&>button]:w-full [&>button]:justify-center'}>
-          <button type="button" className={btnAccept} disabled={!actions.accept} title={actions.accept ? undefined : 'No candidate to accept'} onClick={accept}>
+          <button type="button" className={btnAccept} disabled={!actions.accept} title={actions.accept ? undefined : 'No verified branch head to land'} onClick={accept}>
             Accept
           </button>
-          <button type="button" className={btnGhost} disabled={!actions.reject} title={actions.reject ? undefined : 'No candidate to reject'} onClick={() => setRejecting(true)}>
+          <button type="button" className={btnGhost} onClick={() => setRejecting(true)}>
             Reject with guidance…
           </button>
           <CloseButton onConfirm={close} />
@@ -86,7 +82,6 @@ function Escalation({ attempt, task, onChanged, compact = false }: { attempt: At
       {rejecting && (
         <RejectDialog
           taskId={task.id}
-          reject={(feedback) => parkForReview().then(() => api.rejectTask(task.id, feedback))}
           onClose={() => setRejecting(false)}
           onDone={() => {
             setRejecting(false);
@@ -155,7 +150,11 @@ export function AttemptTimeline({
     selectedAttemptId ?? [...attempts].reverse().find((attempt) => runForAttempt(runs, attempt)?.id === selectedRunId)?.id ?? null;
   const isAttemptSelected = (attempt: Attempt) =>
     selectedFile === null && attempt.id === currentAttemptId && !attempt.tasks.some((row) => row.id === selectedTaskId);
-  const escalated = task.escalated ? [...attempts].reverse().find((attempt) => attempt.state === 'escalated') ?? null : null;
+  // The escalation surface rides the attempt that escalated; an escalation with
+  // no attempt of its own (e.g. a missing integration branch) rides the latest,
+  // or stands alone when the ticket was never attempted.
+  const escalated = task.state === 'escalated' ? [...attempts].reverse().find((attempt) => attempt.state === 'escalated') ?? attempts.at(-1) ?? null : null;
+  const standalone = task.state === 'escalated' && attempts.length === 0;
 
   return (
     <section className={strip ? '' : 'border-b border-hairline px-3.5 py-3.5'} aria-label="Attempt history">
@@ -163,7 +162,10 @@ export function AttemptTimeline({
         Attempts <span className={railSectionCount}>{attempts.length}{maxAttempts !== null && ` / ${maxAttempts}`}</span>
       </div>
       {attempts.length === 0 ? (
-        <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
+        <>
+          <p className="text-small text-muted">This ticket hasn't been attempted yet.</p>
+          {standalone && !strip && <Escalation attempt={null} task={task} onChanged={onChanged} />}
+        </>
       ) : (
         <ol className={strip ? 'flex gap-1.5 overflow-x-auto pb-0.5' : 'flex flex-col gap-2.5'}>
           {attempts.map((attempt) => {
@@ -211,7 +213,7 @@ export function AttemptTimeline({
           })}
         </ol>
       )}
-      {strip && escalated && <Escalation attempt={escalated} task={task} onChanged={onChanged} compact />}
+      {strip && (escalated || standalone) && <Escalation attempt={escalated} task={task} onChanged={onChanged} compact />}
     </section>
   );
 }

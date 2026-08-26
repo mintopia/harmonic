@@ -21,10 +21,10 @@ export class AutoDrive {
 
   /** The auto-driven path: a mirrored Task Harmonic runs unattended. */
   handles(task: TaskRow): boolean {
-    return task.origin === 'mirrored' && task.drive === 'afk';
+    return task.origin === 'mirrored';
   }
 
-  /** The Drive Prompt for a mirrored afk Task — the global template filled from it. */
+  /** The Drive Prompt for a mirrored Task — the global template filled from it. */
   prompt(task: TaskRow): string {
     const drive = fillTemplate(this.getConfig().drive.prompt, driveFields(task, this.urlFor));
     // A re-queued mirrored Task carries operator feedback in its column (the
@@ -145,13 +145,13 @@ export class AutoDrive {
   }
 
   /**
-   * Close the Task's ticket as the final auto-merge landing step (issue #139) —
-   * Harmonic, not the agent, owns the close, and only reaches here after verify
-   * + a successful land. Returns whether the close was issued; a read/write
-   * failure (or no tracker ref) returns false so the Runner Escalates rather
-   * than reporting a completion whose close never landed.
+   * Close the Task's ticket — the final landing step (issue #139; Harmonic, not
+   * the agent, owns the close), or an operator Close. A pure output side-effect
+   * (ADR-0041): returns whether the close was issued; a read/write failure
+   * returns false so the caller can record the infrastructure failure. No
+   * tracker ref means nothing to close.
    */
-  private async closeTicket(task: TaskRow): Promise<boolean> {
+  async closeTicket(task: TaskRow, comment = `Completed and landed by Harmonic (task ${task.id}).`): Promise<boolean> {
     if (task.trackerRef == null) return true; // native/direct with no ticket — nothing to close
     try {
       const adapter = await this.resolveAdapter(task.workingDir);
@@ -164,32 +164,9 @@ export class AutoDrive {
       // Idempotent close: a ticket already closed (a replayed landing effect, or
       // a re-accept after a prior close) needs no second close — and closing an
       // already-closed issue errors on some trackers (`gh issue close`), which
-      // would otherwise report failure and repark the accept for review in a loop.
+      // would otherwise report a failure for work that did land.
       if ((await adapter.readTicket(ref)).state === 'closed') return true;
-      await adapter.close(ref, `Completed and landed by Harmonic (task ${task.id}).`);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Re-open a Task's ticket that was closed before Harmonic landed it (issue
-   * #139): under the close-after-verify model only Harmonic closes a ticket, so
-   * a close it did not make (agent-via-skill, or an operator) is premature —
-   * revert it so a closed ticket never stands in for verified, landed work.
-   * Best-effort: returns whether the reopen was issued.
-   */
-  async reopenTicket(task: TaskRow): Promise<boolean> {
-    if (task.trackerRef == null) return false;
-    try {
-      const adapter = await this.resolveAdapter(task.workingDir);
-      if (!adapter.reopen) return false;
-      const { title } = splitTitleBody(task.prompt);
-      await adapter.reopen(
-        { number: task.trackerRef, title, state: 'closed' },
-        `Reopened by Harmonic: the ticket was closed before verification and landing completed (task ${task.id}).`,
-      );
+      await adapter.close(ref, comment);
       return true;
     } catch {
       return false;

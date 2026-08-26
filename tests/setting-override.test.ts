@@ -39,10 +39,10 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
   describe('resolveVerifiers (issue #132, ADR-0021)', () => {
     it('resolves an empty verifier set when nothing is configured anywhere', () => {
-      const config = { verify: { commands: [], review: { enabled: false }, autoAccept: false } };
+      const config = { verify: { commands: [], review: { enabled: false } } };
       expect(
         resolveVerifiers(
-          { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+          { verificationCommand: null, verificationCritic: null },
           config,
         ),
       ).toEqual({
@@ -50,17 +50,16 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         review: { enabled: false },
         command: null,
         critic: null,
-        autoAccept: false,
       });
     });
 
     it('inherits the global commands when the Workspace column is null, per-key from review', () => {
       const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
       const config = {
-        verify: { commands: [globalCommand], review: { enabled: false }, autoAccept: false },
+        verify: { commands: [globalCommand], review: { enabled: false } },
       };
       const resolved = resolveVerifiers(
-        { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+        { verificationCommand: null, verificationCritic: null },
         config as any,
       );
       expect(resolved.commands).toEqual([globalCommand]);
@@ -70,13 +69,12 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
     it('uses a Workspace command override over the global default, independent of review', () => {
       const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
-      const config = { verify: { commands: [], review: globalReview, autoAccept: false } };
+      const config = { verify: { commands: [], review: globalReview } };
       const override = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
       const resolved = resolveVerifiers(
         {
           verificationCommand: JSON.stringify(override),
           verificationCritic: null,
-          verificationAutoAccept: null,
         },
         config as any,
       );
@@ -88,13 +86,12 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
     it('uses a Workspace review override over the global default, independent of commands', () => {
       const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-      const config = { verify: { commands: [globalCommand], review: { enabled: false }, autoAccept: false } };
+      const config = { verify: { commands: [globalCommand], review: { enabled: false } } };
       const override = { prompt: 'review the diff', model: 'claude-opus-5' };
       const resolved = resolveVerifiers(
         {
           verificationCommand: null,
           verificationCritic: JSON.stringify(override),
-          verificationAutoAccept: null,
         },
         config as any,
       );
@@ -103,30 +100,20 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved.commands).toEqual([globalCommand]); // commands still inherit their own global
     });
 
-    it('inherits the global auto-accept when the Workspace column is null, and a Workspace override wins', () => {
-      const config = { verify: { commands: [], review: { enabled: false }, autoAccept: true } };
-      const inherited = resolveVerifiers(
-        { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
-        config as any,
-      );
-      expect(inherited.autoAccept).toBe(true);
-
-      const overridden = resolveVerifiers(
-        { verificationCommand: null, verificationCritic: null, verificationAutoAccept: false },
-        config as any,
-      );
-      expect(overridden.autoAccept).toBe(false); // an explicit "off", not inherit
+    it('resolves no auto-accept at all — a passing verification lands, there is no gate to skip (ADR-0041)', () => {
+      const config = { verify: { commands: [], review: { enabled: false } } };
+      const resolved = resolveVerifiers({ verificationCommand: null, verificationCritic: null }, config as any);
+      expect(resolved).not.toHaveProperty('autoAccept');
     });
 
     describe('the off sentinel (issue #174)', () => {
       it('resolves commands to empty when the Workspace column holds the off sentinel, even with a configured global default', () => {
         const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
-        const config = { verify: { commands: [globalCommand], review: { enabled: false }, autoAccept: false } };
+        const config = { verify: { commands: [globalCommand], review: { enabled: false } } };
         const resolved = resolveVerifiers(
           {
             verificationCommand: JSON.stringify({ off: true }),
             verificationCritic: null,
-            verificationAutoAccept: null,
           },
           config as any,
         );
@@ -136,12 +123,11 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
 
       it('resolves review to disabled when the Workspace column holds the off sentinel, even with a configured global default', () => {
         const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
-        const config = { verify: { commands: [], review: globalReview, autoAccept: false } };
+        const config = { verify: { commands: [], review: globalReview } };
         const resolved = resolveVerifiers(
           {
             verificationCommand: null,
             verificationCritic: JSON.stringify({ off: true }),
-            verificationAutoAccept: null,
           },
           config as any,
         );
@@ -153,10 +139,10 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
         const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
         const config = {
-          verify: { commands: [globalCommand], review: globalReview, autoAccept: false },
+          verify: { commands: [globalCommand], review: globalReview },
         };
         const resolved = resolveVerifiers(
-          { verificationCommand: null, verificationCritic: null, verificationAutoAccept: null },
+          { verificationCommand: null, verificationCritic: null },
           config as any,
         );
         expect(resolved.commands).toEqual([globalCommand]);
@@ -164,14 +150,13 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       });
 
       it('still overrides with a stored verifier object, distinct from the off sentinel', () => {
-        const config = { verify: { commands: [], review: { enabled: false }, autoAccept: false } };
+        const config = { verify: { commands: [], review: { enabled: false } } };
         const commandOverride = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
         const criticOverride = { prompt: 'review the diff', model: 'claude-opus-5' };
         const resolved = resolveVerifiers(
           {
             verificationCommand: JSON.stringify(commandOverride),
             verificationCritic: JSON.stringify(criticOverride),
-            verificationAutoAccept: null,
           },
           config as any,
         );
@@ -180,14 +165,13 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       });
 
       it('an ordered multi-command Workspace override resolves whole, in order', () => {
-        const config = { verify: { commands: [], review: { enabled: false }, autoAccept: false } };
+        const config = { verify: { commands: [], review: { enabled: false } } };
         const first = { command: 'npm', args: ['run', 'typecheck'], env: {}, timeoutSeconds: 300 };
         const second = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
         const resolved = resolveVerifiers(
           {
             verificationCommand: JSON.stringify([first, second]),
             verificationCritic: null,
-            verificationAutoAccept: null,
           },
           config as any,
         );

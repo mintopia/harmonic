@@ -6,7 +6,7 @@ import {
 } from '../src/domain/run-disposition.js';
 
 /** A fact at `seq` of kind `type`; keeps the precedence tables readable. */
-const fact = (seq: number, type: Disposition) => ({ seq, type });
+const fact = (seq: number, type: Disposition | 'review-sla-expiry') => ({ seq, type });
 
 describe('computeDisposition (issue #112)', () => {
   it('returns null when there are no facts', () => {
@@ -35,7 +35,6 @@ describe('computeDisposition (issue #112)', () => {
       'branch-violation',
       'verify-fail',
       'guardrail-trip',
-      'review-sla-expiry',
       'agent-finish/unresolved',
       'failed',
       'process-death',
@@ -62,19 +61,13 @@ describe('computeDisposition (issue #112)', () => {
     });
   });
 
-  describe('review-sla-expiry (issue #114) sits above agent-finish, below the deliberate signals', () => {
-    it('resolves a parked Run whose only prior signal would be agent-finish', () => {
-      // A native Run parks in `review` with no disposition fact yet; the SLA
-      // sweep appends `review-sla-expiry`, which must be able to settle it.
-      expect(computeDisposition([fact(1, 'review-sla-expiry')], 1)).toBe('review-sla-expiry');
+  describe('a retired disposition kind (the review-SLA sweep, ADR-0041) is unranked', () => {
+    it('sinks below every ranked kind rather than deciding the Run', () => {
+      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'failed')], 2)).toBe('failed');
+      expect(computeDisposition([fact(1, 'agent-finish/unresolved'), fact(2, 'review-sla-expiry')], 2)).toBe('agent-finish/unresolved');
     });
-    it('outranks a bare agent-finish/unresolved and a failure', () => {
-      expect(computeDisposition([fact(1, 'agent-finish/unresolved'), fact(2, 'review-sla-expiry')], 2)).toBe('review-sla-expiry');
-      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'failed')], 2)).toBe('review-sla-expiry');
-    });
-    it('loses to an operator cancel, an escalate, or a guardrail trip', () => {
-      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'operator-cancel')], 2)).toBe('operator-cancel');
-      expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'guardrail-trip')], 2)).toBe('guardrail-trip');
+    it('alone in a legacy log it decides nothing — an unranked kind never settles a Run', () => {
+      expect(computeDisposition([fact(1, 'review-sla-expiry')], 1)).toBeNull();
     });
   });
 

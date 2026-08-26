@@ -21,7 +21,7 @@ export const btnQuiet = 'inline-flex min-h-11 items-center font-medium text-mute
  * minimum while the visual stays as compact as the layout wants. `touchTarget`
  * centres a bounded control (a segmented pill, a Stop/Grant button);
  * `touchTargetInline` is the min-height-only variant for a text link that sizes
- * its own width (a ticket deep-link, Un-escalate). Compose with the control's
+ * its own width (a ticket deep-link, Resolve →). Compose with the control's
  * own text/colour classes. */
 export const touchTarget = 'inline-flex min-h-11 min-w-11 items-center justify-center';
 export const touchTargetInline = 'inline-flex min-h-11 items-center';
@@ -50,9 +50,9 @@ export const btnQuietDestructive =
 export const btnDestructive =
   'inline-flex min-h-11 items-center justify-center rounded-md bg-fail px-3.5 py-2 font-semibold text-on-fail shadow-btn transition-colors duration-150 hover:opacity-90 disabled:opacity-50 disabled:hover:opacity-50';
 
-/** Review-gate actions (DESIGN.md § 6 Buttons) — the product's core promise,
- * so this is the one place a second cobalt primary is sanctioned alongside the
- * view's own ("One per view (plus the review gate's Accept)"). Accept is that
+/** Escalation actions (DESIGN.md § 6 Buttons) — the one human surface, so this
+ * is the one place a second cobalt primary is sanctioned alongside the view's
+ * own ("One per view (plus the escalation surface's Accept)"). Accept is that
  * primary: the loudest thing on the card or the detail footer, and deliberately
  * unguarded, because the operator's read IS the review. Reject is the Ghost
  * beside it — present and readable, never loud; its dialog exists to take a
@@ -124,15 +124,6 @@ export const card = 'rounded-lg bg-surface shadow-card';
  * and the token's 0.05em tracking (DESIGN.md § 6: "Small (11px, weight 600)"). */
 export const chip = 'rounded-full px-2 py-0.5 text-label font-semibold uppercase';
 
-/** The mirrored Task's `escalated` tag — the one sanctioned non-state use of a
- * state colour (DESIGN.md § Signal Rule, mirrored-card carve-out, issue #34): an
- * afk→hitl escalation reuses Running amber's tint/ink because "work in flight,
- * now yours" is the closest existing meaning. One shared string so the tag can't
- * fork registers between surfaces (issue #99): the Board card and the Activity
- * row render the identical amber chip. `escalated` is a boolean flag, not a
- * `TaskState`, so it sits outside `STATE_CHIP_STYLES`. */
-export const escalatedChip = `${chip} bg-running-tint text-running`;
-
 /** Tool call / permission chip — harness metadata, Tooling cyan (the Signal
  * Rule). Shared by EventStream's tool-call lines and the permission
  * prompt (issue #11). */
@@ -144,13 +135,13 @@ export const toolChip = `${chip} bg-tool-tint text-tool`;
  * condensed", whose band is computed *relative to* the full path (issue #177,
  * `estimateCondensedContinuationCost`). Both paths render through this one chip:
  * `cold` reuses Running amber's tint/ink as harness-attention chrome ("this path
- * will cost you"), the one sanctioned non-state use here (DESIGN.md § Signal
- * Rule's continuation-cost carve-out); `warm`/`unknown` stay neutral — differing
+ * will cost you") — the one deliberate exception to DESIGN.md's "state colour on
+ * the state layer only" rule; `warm`/`unknown` stay neutral — differing
  * by muted vs faint ink so cold is never the only distinguishable band. Because
  * the two paths trade places on which is cheaper, amber lands on **whichever
  * path is the pricier one right now** — never both, never dressing the cheaper
  * one up as the promoted choice. One shared vocabulary so the chip can't fork
- * registers between surfaces, the same reason `escalatedChip` moved here (#99). */
+ * registers between surfaces (#99). */
 const CONTINUATION_COST_STYLES: Record<'warm' | 'cold' | 'unknown', string> = {
   cold: 'bg-running-tint text-running',
   warm: 'bg-raised text-muted',
@@ -186,15 +177,17 @@ export function permissionOptionButtonClass(kind: PermissionAcpRequest['options'
   return PERMISSION_OPTION_STYLES[kind] ?? btnQuiet;
 }
 
-/** State chips: tinted fill behind the state's text color (the Signal
- * Rule — only true states get a color). */
+/** State chips: tinted fill behind the state's text color (DESIGN.md: state
+ * colour on the state layer only). Escalated takes the indigo "needs
+ * you" hue DESIGN.md § 2 reserves for the one state that needs the operator —
+ * ADR-0041 made escalated that state; working is Running amber, done is
+ * Merged emerald. Failed rose is an Attempt/Run register, never a ticket state. */
 export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   draft: 'bg-raised text-muted',
   ready: 'bg-ready-tint text-ready',
-  running: 'bg-running-tint text-running',
-  'awaiting-review': 'bg-await-tint text-await',
-  completed: 'bg-merged-tint text-merged',
-  failed: 'bg-fail-tint text-fail',
+  working: 'bg-running-tint text-running',
+  escalated: 'bg-await-tint text-await',
+  done: 'bg-merged-tint text-merged',
   cancelled: 'bg-raised text-muted',
 };
 
@@ -209,7 +202,7 @@ export function stateChip(state: TaskState): string {
  * and a Conversation can sit active-but-idle between Turns), so coloring it
  * amber would misstate the state. Both render in the neutral Raised
  * register, distinguished only by ink vs muted text — the same
- * non-chromatic treatment Task's own 'ready'/'awaiting-review' states use. */
+ * non-chromatic treatment Task's own 'draft'/'cancelled' states use. */
 const CONVERSATION_STATE_CHIP_STYLES: Record<Conversation['state'], string> = {
   active: 'bg-raised text-ink',
   ended: 'bg-raised text-muted',
@@ -224,10 +217,9 @@ export function conversationStateChip(state: Conversation['state']): string {
 const STATE_COUNT_COLORS: Record<TaskState, string> = {
   draft: 'text-muted',
   ready: 'text-ready',
-  running: 'text-running',
-  'awaiting-review': 'text-await',
-  completed: 'text-merged',
-  failed: 'text-fail',
+  working: 'text-running',
+  escalated: 'text-await',
+  done: 'text-merged',
   cancelled: 'text-muted',
 };
 
@@ -236,13 +228,12 @@ export function stateCountColor(state: TaskState, count: number): string {
 }
 
 /** Board column-header count pill: raised neutral until the count means
- * a state worth coloring (running amber, failed red, completed green). */
+ * a state worth coloring (working amber, escalated indigo, done green). */
 const STATE_COUNT_PILLS: Partial<Record<TaskState, string>> = {
   ready: 'bg-ready-tint text-ready',
-  running: 'bg-running-tint text-running',
-  'awaiting-review': 'bg-await-tint text-await',
-  completed: 'bg-merged-tint text-merged',
-  failed: 'bg-fail-tint text-fail',
+  working: 'bg-running-tint text-running',
+  escalated: 'bg-await-tint text-await',
+  done: 'bg-merged-tint text-merged',
 };
 
 export function stateCountPill(state: TaskState, count: number): string {
@@ -260,10 +251,9 @@ export function stateCountPill(state: TaskState, count: number): string {
 const LANE_BORDER: Record<TaskState, string> = {
   draft: 'border-faint',
   ready: 'border-ready-dot',
-  running: 'border-running-dot',
-  'awaiting-review': 'border-await',
-  completed: 'border-merged-dot',
-  failed: 'border-fail-dot',
+  working: 'border-running-dot',
+  escalated: 'border-await',
+  done: 'border-merged-dot',
   cancelled: 'border-faint',
 };
 /** State fill: the state's solid dot/bar colour with no shape or size — the one
@@ -273,10 +263,9 @@ const LANE_BORDER: Record<TaskState, string> = {
 const STATE_FILL: Record<TaskState, string> = {
   draft: 'bg-faint',
   ready: 'bg-ready-dot',
-  running: 'bg-running-dot',
-  'awaiting-review': 'bg-await-dot',
-  completed: 'bg-merged-dot',
-  failed: 'bg-fail-dot',
+  working: 'bg-running-dot',
+  escalated: 'bg-await-dot',
+  done: 'bg-merged-dot',
   cancelled: 'bg-faint',
 };
 
@@ -337,7 +326,6 @@ export const runDotFill: Record<RunDot, string> = {
   running: 'bg-running-dot',
   fail: 'bg-fail-dot',
   merged: 'bg-merged-dot',
-  review: 'bg-await-dot',
   neutral: 'bg-edge',
 };
 

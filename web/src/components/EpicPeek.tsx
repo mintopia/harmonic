@@ -11,7 +11,7 @@ import {
   statusLineParts,
 } from '../epic-model';
 import { toastError } from '../toast';
-import { btnQuiet, btnQuietDestructive, chip, escalatedChip, labelType, panelTitle } from '../ui';
+import { btnQuiet, btnQuietDestructive, chip, labelType, panelTitle, stateChip } from '../ui';
 import { ArmedButton } from './ArmedButton';
 import { Modal } from './Modal';
 
@@ -58,7 +58,7 @@ function MemberRow({
     <>
       <span className="w-12 shrink-0 font-data text-small tabular-nums text-muted">#{member.ref}</span>
       <span className="min-w-0 flex-1 truncate text-ink">{member.title || '—'}</span>
-      {member.escalated && <span className={`${escalatedChip} shrink-0`}>escalated</span>}
+      {member.escalated && <span className={`${stateChip('escalated')} shrink-0`}>escalated</span>}
       <span className={`${chip} shrink-0 ${memberStatusTone(status)}`}>{memberStatusLabel(status)}</span>
     </>
   );

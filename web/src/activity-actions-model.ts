@@ -19,18 +19,16 @@ import {
  *   (issue #11): Grant / Deny the request in place, wired to the same
  *   `answerPermission` the conversation panel uses. Grant/Deny collapse the
  *   request's full option list into two verbs (see `permissionGrantDeny`).
- * - **unescalate** — an afk Run that escalated to a human (issue #33): hand it
- *   back to autonomous drive (`unescalateTask`), the purpose-built resolve for
- *   an escalated mirrored Task and the "Needs you" tier's retry. (Labelled
- *   "Un-escalate" in the UI, the same verb TaskActions uses for this call —
- *   the ticket stays in `ready` when escalation hands control back.)
+ * - **escalated** — the process's ticket is escalated (ADR-0041): the resolve
+ *   is the ticket itself, where the three escalation actions live, so the row
+ *   deep-links there (`Resolve →`).
  *
  * The row's ticket deep-link (`ticketUrl`) is orthogonal to the resolve — a
  * passive link to the mirrored issue, shown whenever the process carries one.
  */
 export type ActivityResolve =
   | { kind: 'permission'; pending: PendingPermission; grantOptionId: string | null; denyOptionId: string | null }
-  | { kind: 'unescalate'; taskId: number };
+  | { kind: 'escalated'; taskId: number };
 
 /** How Stop ends a process: cancel the Run's Task (`cancelForTask` server-side) or end the Conversation. */
 export type ActivityStop =
@@ -90,7 +88,7 @@ export function activityRowActions(
     const { grantOptionId, denyOptionId } = permissionGrantDeny(pending);
     resolve = { kind: 'permission', pending, grantOptionId, denyOptionId };
   } else if (process.escalated && process.taskId !== null) {
-    resolve = { kind: 'unescalate', taskId: process.taskId };
+    resolve = { kind: 'escalated', taskId: process.taskId };
   }
 
   return { resolve, ticketUrl: process.trackerUrl, stop, stopDemoted: resolve !== null };

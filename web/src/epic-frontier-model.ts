@@ -55,11 +55,11 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
   for (const member of members) {
     if (member.taskId != null) membersByTaskId.set(member.taskId, member);
   }
-  // Running and escalated members are promoted to the Board's Active / Needs you
+  // Working and escalated members are promoted to the Board's Active / Needs you
   // sections, so they leave the band's DAG — like merged members do.
   const promotedToTop = (member: EpicMember): boolean => {
     const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
-    return task != null && (task.escalated || task.state === 'running');
+    return task != null && (task.state === 'escalated' || task.state === 'working');
   };
   const visibleMembers = members.filter((member) => !isMerged(member) && !promotedToTop(member));
   const visibleTaskIds = new Set(
@@ -75,7 +75,7 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
         taskId,
         label: dependencyLabel(dependency, taskId),
         satisfied:
-          dependency?.state === 'completed' ||
+          dependency?.state === 'done' ||
           dependencyMember?.landStatus === 'completed',
       };
     });
@@ -93,8 +93,7 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
       ready,
       runnable:
         task?.state === 'ready' &&
-        task.drive !== 'hitl' &&
-        !task.escalated &&
+        task.agentWorkable &&
         dependencies.every((dependency) => dependency.satisfied),
       dependencies,
     };
@@ -102,7 +101,7 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
 
   const nodes = visibleMembers.map(nodeFor);
   const frontier = nodes.filter(
-    (node) => node.state === 'running' || (node.ready && node.dependencies.every((dependency) => dependency.satisfied)),
+    (node) => node.state === 'working' || (node.ready && node.dependencies.every((dependency) => dependency.satisfied)),
   );
   const frontierRefs = new Set(frontier.map((node) => node.ref));
   const depthByRef = new Map<number, number>();
@@ -144,7 +143,7 @@ function frontierFromMembers(members: EpicMember[], tasks: Task[]): EpicFrontier
   return { columns };
 }
 
-const isSettled = (state: Task['state'] | undefined): boolean => state === 'completed' || state === 'cancelled';
+const isSettled = (state: Task['state'] | undefined): boolean => state === 'done' || state === 'cancelled';
 
 /** The blockers of a Task — its `dependsOn` edges resolved to display labels and
  * whether each is already settled (satisfied). */
@@ -163,7 +162,7 @@ export interface TaskColumn {
 
 /**
  * Lay out standalone (non-Epic) Tasks in the same Frontier→Depth columns as an
- * Epic band, by unsatisfied-dependency depth: Frontier = running or no open
+ * Epic band, by unsatisfied-dependency depth: Frontier = working or no open
  * blocker; Depth N = blocked, one past its deepest open blocker in the set.
  */
 export function deriveStandaloneColumns(standalone: Task[], allTasks: Task[]): TaskColumn[] {
@@ -171,7 +170,7 @@ export function deriveStandaloneColumns(standalone: Task[], allTasks: Task[]): T
   const standaloneIds = new Set(standalone.map((task) => task.id));
   const openDeps = (task: Task): number[] =>
     resolveBlockers(task, tasksById).filter((dep) => !dep.satisfied).map((dep) => dep.taskId);
-  const inFrontier = (task: Task): boolean => task.state === 'running' || openDeps(task).length === 0;
+  const inFrontier = (task: Task): boolean => task.state === 'working' || openDeps(task).length === 0;
 
   const depthByTaskId = new Map<number, number>();
   const depthFor = (task: Task, visiting: Set<number>): number => {

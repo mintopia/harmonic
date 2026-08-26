@@ -6,7 +6,7 @@ import type { Channel, ChannelService, NotificationEvent } from './channels.js';
 /**
  * The generic webhook payload — documented shape, kept stable:
  * {
- *   "event":     "task.awaiting-review",        // notification event type
+ *   "event":     "task.escalated",               // notification event type
  *   "timestamp": 1784020800000,                 // ms since epoch
  *   "task": {                                   // absent for queue.idle
  *     "id": 3, "prompt": "…", "state": "…", "harness": "…",
@@ -31,9 +31,8 @@ const summarize = (event: NotificationEvent, task?: TaskRow): string => {
   const label: Record<NotificationEvent, string> = {
     'task.created': 'created',
     'run.started': 'started running',
-    'task.awaiting-review': 'awaiting review',
-    'task.completed': 'completed',
-    'task.failed': 'FAILED',
+    'task.escalated': 'ESCALATED — needs you',
+    'task.done': 'done',
     'queue.idle': 'queue idle',
   };
   return `Harmonic: task ${task.id} ${label[event]} — "${excerpt}"`;

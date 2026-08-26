@@ -1,5 +1,5 @@
 import { formatScheduledJobDuration } from './scheduled-jobs-model.js';
-import type { Attempt, AttemptState, AttemptTask, AttemptTaskState, Run, Task } from './types.js';
+import type { Attempt, AttemptState, AttemptTask, AttemptTaskState, Run } from './types.js';
 
 export type TimelineTone = 'running' | 'passed' | 'failed' | 'neutral';
 
@@ -89,15 +89,3 @@ export function taskLogSource(task: AttemptTask): TaskLogSource | null {
   return { kind: 'run' };
 }
 
-export interface EscalationActions {
-  /** Accept and Reject-with-guidance act on the stranded candidate, so they need one. */
-  accept: boolean;
-  reject: boolean;
-  close: boolean;
-}
-
-export function escalationActions(task: Pick<Task, 'escalated' | 'candidateRef' | 'state'>): EscalationActions | null {
-  if (!task.escalated) return null;
-  const reviewable = task.candidateRef !== null || task.state === 'awaiting-review';
-  return { accept: reviewable, reject: reviewable, close: true };
-}

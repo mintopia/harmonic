@@ -26,7 +26,7 @@ import { WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { ConversationStore } from '../domain/conversations.js';
 import { WorkspaceService } from '../domain/workspaces.js';
 import { PermissionRuleStore } from '../domain/permission-rules.js';
-import { ReviewService } from '../domain/review.js';
+import { EscalationService } from '../domain/escalation.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
@@ -117,16 +117,15 @@ const PUBLIC_API_PATHS = new Set([
 /**
  * What an ephemeral scoped key (a Run Key or a Conversation Key) may reach:
  * the agent surface from issue 13 — task CRUD, dependencies, queue/cancel,
- * runs and events, and MCP (which gates its own tool list). Accept/Reject are
- * always human-only (#140, ADR-0021 retired the agent-review flag: a
- * verifier's pass is now the accept, never a scoped key's own call).
+ * runs and events, and MCP (which gates its own tool list). The escalation
+ * actions (Accept / Reject with guidance / Close) are always human-only.
  * Everything else — key management, config, channels, Conversations — is
  * operator-only.
  */
 function scopedKeyAllowed(path: string): boolean {
   if (path.startsWith('/mcp')) return true;
   // Force-complete is a manual operator override (kills a running agent mid-work,
-  // skips the review gate) with no agent-facing use — agents signal via finish_task.
+  // skips verification) with no agent-facing use — agents signal via finish_task.
   if (/^\/api\/tasks\/\d+\/complete$/.test(path)) return false;
   // Steering redirects a running agent — a manual operator override; an agent
   // does not steer itself (it drives its own turn).
@@ -150,8 +149,8 @@ function scopedKeyAllowed(path: string): boolean {
   // and falls through to the default `false`; this early return exists only
   // to document the decision alongside its siblings.
   if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
-  // Accept/reject are human-only, always — never reachable by a run-scoped key.
-  if (/^\/api\/tasks\/\d+\/(accept|reject)$/.test(path)) return false;
+  // The escalation actions are human-only, always — never reachable by a run-scoped key.
+  if (/^\/api\/tasks\/\d+\/(accept|reject|close)$/.test(path)) return false;
   if (/^\/api\/tasks\/\d+\/channels(\/|$)/.test(path)) return false;
   if (path === '/api/tasks' || path.startsWith('/api/tasks/')) return true;
   if (path.startsWith('/api/runs')) return true;
@@ -218,7 +217,7 @@ export interface AppContext {
   conversations: ConversationStore;
   conversationDriver: ConversationDriver;
   permissionRules: PermissionRuleStore;
-  review: ReviewService;
+  escalation: EscalationService;
   autoRunner: AutoRunner;
   guardrailEvents: GuardrailEventStore;
   verificationAttempts: VerificationAttemptStore;
@@ -298,19 +297,19 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       revoke: (conversationId) => auth.deleteKeysForConversation(conversationId),
     },
   });
-  // Accepting a worktree-mode task merges the run's branch (ADR-0002). The
-  // review gate lands/fails a Run parked in `phase:'review'` through the shared
-  // settle coordinator (issue #114), so accept/reject/SLA-expiry are race-safe
+  // Accepting an escalated worktree-mode task merges the run's branch (ADR-0002,
+  // ADR-0041) through the shared settle coordinator, so Accept is race-safe
   // against a concurrent operator cancel. The `LandingJournalStore` is fed into
-  // both `reviewSettle` (its optional PONC-clamp dependency) and `landing` (issue
-  // #115): once Accept's journaled landing freezes its PONC, a cancel/guardrail
-  // signal racing in through this same `reviewSettle` instance can no longer win.
+  // both `operatorSettle` (its optional PONC-clamp dependency) and `landing`
+  // (issue #115): once Accept's journaled landing freezes its PONC, a
+  // cancel/guardrail signal racing in through this same `operatorSettle`
+  // instance can no longer win.
   // Built here, ahead of the crash-recovery sweep below (issue #117):
   // `CrashRecoveryCoordinator` needs this same `landing`/`landingJournal` pair
   // to reconcile a Run that died mid-landing.
   // Session retirement (issue #148, reliability-design Unit C): the sole owner of
   // builder-worktree removal. Its sync settle-hook is injected into every settle
-  // coordinator (the review-side one below and the Runner's own, via options) so
+  // coordinator (the operator-side one below and the Runner's own, via options) so
   // every terminal disposition records its Session's retirement intent right
   // after the lease releases; its async `drain` performs the actual worktree
   // removal — at boot, and on every `run_changed` below (a settle emits one, so
@@ -353,7 +352,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       }
     },
   );
-  const reviewSettle = new RunSettleCoordinator(
+  const operatorSettle = new RunSettleCoordinator(
     runs,
     tasks,
     leases,
@@ -365,7 +364,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     landingJournal,
     sessionRetirement,
   );
-  const landing = new LandingCoordinator(runs, asyncDb, landingJournal, reviewSettle, {
+  const landing = new LandingCoordinator(runs, asyncDb, landingJournal, operatorSettle, {
     parentForRun: (runId) => runnerRef?.operationParent(runId),
     onTerminalRun: (runId) => runnerRef?.finishRunOperation(runId) ?? Promise.resolve(),
   });
@@ -384,37 +383,36 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     runs,
     tasks,
     leases,
-    reviewSettle,
+    operatorSettle,
     landing,
     landingJournal,
     new TurnQueueStore(asyncDb),
-    { postLand },
+    { postLand, closeTicket: (task) => autoDrive.closeCompleted(task) },
   );
   await crashRecovery.reconcile();
-  // A fresh process is executing nothing, so any Task still `running` was
-  // orphaned by the restart — fail it loudly (re-queueable, with feedback).
-  // This is a superset of "fail the interrupted runs' tasks": it also catches a
-  // mirrored afk Task that crashed between the ready→running flip (the lock) and
-  // its Run being created. No orphaned Run row exists for that one, so the run
-  // sweep alone left it stuck `running` while its ticket stayed open — and the
-  // poll never rescues it (upsertMirrored refuses to move a Task off `running`).
+  // A fresh process is executing nothing, so any Task still `working` was
+  // orphaned by the restart — hand it back to ready (an interruption is not a
+  // failed Attempt, ADR-0041). This is a superset of "re-queue the interrupted
+  // runs' tasks": it also catches a mirrored Task that crashed between the
+  // ready→working flip (the lock) and its Run being created. No orphaned Run
+  // row exists for that one, so the run sweep alone left it stuck `working`
+  // while its ticket stayed open — and the poll never rescues it
+  // (upsertMirrored refuses to move a Task off `working`).
   //
   // Exception: a Task that still has a surviving `running` Run is not orphaned —
   // that Run is a resume re-entry parked awaiting dispatch (issue #146, exempted
-  // from the run orphan-fail sweep above), so the Task is genuinely occupied and
-  // must stay `running`. Every non-resume running Run was already failed by the
-  // sweep, so this only ever spares a resume Task; a Task with no Run row (the
-  // mid-launch crash) has no running Run and is still failed.
-  for (const orphan of await tasks.list({ state: 'running' })) {
+  // from the run orphan sweep above), so the Task is genuinely occupied and
+  // must stay `working`.
+  for (const orphan of await tasks.list({ state: 'working' })) {
     if ((await runs.listForTask(orphan.id)).some((run) => run.state === 'running')) continue;
-    await tasks.setState(orphan.id, 'failed');
+    await tasks.setState(orphan.id, 'ready');
   }
   // Resume: a restart-interrupted Run that was mid-conversation on a durable
   // Session comes back as a NEW Run + a new prompt turn on the (reloaded or
   // fail-forward) Session, rather than starting cold (issue #146, Unit C). Runs
-  // last — after the whole crash-recovery reconciliation and the orphan-fail
+  // last — after the whole crash-recovery reconciliation and the orphan
   // sweeps above — so it acts only on a reconciled repository and re-drives the
-  // Task the fail sweep just failed. The environment a reload would target is
+  // Task the sweep just re-queued. The environment a reload would target is
   // resolved from the Session's capability axes: the adapter version recomputed
   // fresh (so a harness/adapter upgrade across the restart is detected and forces
   // a fresh Session), the model, and the live permission mode. The cwd axis is
@@ -436,25 +434,34 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // A Conversation cannot survive a restart — its warm harness is gone — so
   // any still marked active is ended; its transcript survives read-only (issue 15).
   await conversations.markActiveEnded();
-  // Auto-drive afk mirrored Tasks (issue #33): the Drive Prompt + completion /
+  // Auto-drive mirrored Tasks (issue #33): the Drive Prompt + completion /
   // failure decisions. Its {url} comes from the Task's Workspace poll loop's
   // last scan; the manager is built below, so bind it late through this holder.
   const autoDrive = new AutoDrive(
     () => configStore.get(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
   );
-  // The one live landing effect today (issue #115): a worktree Task's merge,
-  // journaled as `target-ref`. Idempotency identity is the base/run branch
-  // pair — stable for the Run's whole lifetime and known before the merge
-  // ever runs, so `recordIntent` doesn't need to wait on a Git call. Empty for
-  // a non-worktree Task — "no effects -> straight land" preserves the
-  // pre-#115 no-op `acceptHook` default exactly. Named (not inline) so both
-  // the human Accept path (`ReviewService`, below) and the native auto-accept
-  // path (`Runner.autoAcceptLand`, issue #138) journal/apply the identical
-  // effect list through the same `LandingCoordinator` — auto-accept is not a
-  // second, divergent landing mechanism.
+  // The landing effects an operator Accept applies (issue #115, ADR-0041): a
+  // worktree Task's merge, journaled as `target-ref` (idempotency identity is
+  // the base/run branch pair — stable for the Run's whole lifetime and known
+  // before the merge ever runs, so `recordIntent` doesn't need to wait on a Git
+  // call), then a mirrored Task's ticket close (`ticket-close`, idempotent via
+  // the closed-state read). Empty for a direct-mode native Task — "no effects
+  // -> straight land". Crash recovery re-applies the same effects.
   const landingEffectsFor = (task: TaskRow, run: RunRow): LandingEffectExec[] => {
-    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch || !run.candidateOid) return [];
+    const effects: LandingEffectExec[] = [];
+    if (task.trackerRef != null) {
+      effects.push({
+        effect: 'ticket-close',
+        idempotencyKey: `ticket-${task.trackerRef}`,
+        expected: { trackerRef: task.trackerRef },
+        apply: async () =>
+          (await autoDrive.closeCompleted(task))
+            ? { ok: true, observed: { trackerRef: task.trackerRef } }
+            : { ok: false, detail: `ticket #${task.trackerRef} could not be closed` },
+      });
+    }
+    if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch || !run.candidateOid) return effects;
     const baseBranch = run.baseBranch;
     const branch = run.branch;
     const expectedOid = run.candidateOid;
@@ -475,6 +482,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode } };
         },
       },
+      ...effects,
     ];
   };
   // The single-writer merge train (issue #163): the ONE process-global
@@ -535,20 +543,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         return undefined;
       }
     },
-    // Lands a native auto-accept Run (issue #138) through the same journaled
-    // LandingCoordinator the human Accept uses, skipping the review gate: the
-    // verifier's pass IS the accept, so no `review: 'accepted'` decoration —
-    // no human reviewed it. `patch` still carries the run's usage/stopReason.
-    autoAcceptLand: async (task, run, patch, parent) =>
-      landing.land(
-        task,
-        run,
-        { runState: 'completed', taskAction: 'completed', reason: null },
-        landingEffectsFor(task, run),
-        patch,
-        undefined,
-        parent,
-      ),
   });
   // Close the forward reference the merge train's heal/escalate callbacks hold
   // (issue #163) — exactly as `trackerManagerRef = trackerManager` does below.
@@ -556,29 +550,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
   await runner.backfillUsage();
-  const review = new ReviewService(
-    runs,
-    tasks,
-    reviewSettle,
-    landing,
-    async (task, run) => {
-      if (task.isolationMode !== 'worktree' || !run.branch || !run.baseBranch) return { ok: true };
-      if (!run.candidateOid) return { ok: false, detail: 'no verified branch head available for landing' };
-      const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch: run.baseBranch, branch: run.branch, expectedOid: run.candidateOid, leaseHeld: true }, postLand);
-      return outcome.ok ? { ok: true } : { ok: false, detail: outcome.detail };
-    },
-    landingEffectsFor,
-    {},
-    async (task, run, feedback) => await runner.retryAfterReviewReject(task, run, feedback),
-  );
-  // Review-SLA sweep at boot (issue #114): a Run left parked in `review` past its
-  // deadline by a previous instance is settled to a terminal disposition now, so
-  // an abandoned review never wedges its Work Context lease across a restart.
-  await review.sweepExpiredReviews();
+  const escalation = new EscalationService(runs, tasks, landing, landingEffectsFor, {
+    resume: (task, guidance) => runner.resumeWithGuidance(task, guidance),
+    cleanup: (task, run) => runner.cleanupClosed(task, run),
+  });
   // Session-retirement drain at boot (issue #148): reclaim any builder worktree
   // owed removal by a Session left `retiring` (a crash mid-removal) or an `idle`
-  // Session whose retention deadline lapsed while the process was down. Runs
-  // after the review sweep so a just-settled review-SLA Session is included.
+  // Session whose retention deadline lapsed while the process was down.
   await drainRetirement();
   // Recurring operational drains are Scheduler Jobs so their timing and result
   // facts share one visible, durable surface (issue #305).
@@ -586,11 +564,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     name: 'Work Context lease sweep',
     intervalMs: opts.leaseTuning?.sweepMs ?? 60_000,
     run: async () => { await leases.sweepExpired(); },
-  });
-  scheduler.register({
-    name: 'Review-SLA sweep',
-    intervalMs: 60_000,
-    run: async () => { await review.sweepExpiredReviews(); },
   });
   scheduler.register({
     name: 'Session retirement drain',
@@ -645,13 +618,6 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     undefined,
     undefined,
-    // Premature-closure backstop (issue #139): a ticket closed while its
-    // mirrored Task was still running — under the close-after-verify model only
-    // Harmonic closes a ticket (after verify + land), so this is premature. Stop
-    // the agent, reopen the ticket, and Escalate.
-    (taskId) => {
-      void runner.reopenClosedMirrored(taskId);
-    },
     // Resolve each Workspace's Verification verifiers for the whole-Epic land
     // (issue #161): read per poll so a config change follows without a rebuild.
     () => configStore.get(),
@@ -684,12 +650,8 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // endpoint is known — so even the first auto-started run gets its
   // scoped key + endpoint injected.
   // queue.idle: the last actively-executing run drained and nothing is waiting.
-  // A native Run parking in `phase:'review'` (issue #114) is done executing even
-  // though it stays `state:'running'`, so that run_changed also counts as a
-  // drain — matching the pre-phase-machine behaviour where a native Run left
-  // `running` at agent-finish. `countRunning()` already excludes review-parked.
   bus.on('run_changed', (run) => {
-    if (run.state === 'running' && run.phase !== 'review') return;
+    if (run.state === 'running') return;
     // Both the ready-Task probe and the running-Run count are async reads now;
     // run them in a fire-and-forget chain so the EventBus listener stays sync.
     void (async () => {
@@ -698,7 +660,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, review, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

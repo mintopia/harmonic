@@ -82,18 +82,18 @@ describe('command verifier end-to-end (issue #135)', () => {
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
-  it('AC1/AC3/AC4/AC5: a passing command lets a native Run park for review, attempt records the frozen candidate OID', async () => {
+  it('AC1/AC3/AC4/AC5: a passing command lands a native Run to done; the attempt records the verified head OID', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(0) });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('review');
+    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC3/AC5: the attempt is persisted at the branch head the command saw.
@@ -117,14 +117,12 @@ describe('command verifier end-to-end (issue #135)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
     expect(run.finishedAt).not.toBeNull();
 
-    // The Task did not reach awaiting-review; it was handed back to a human.
+    // The Task never landed; it was handed back to a human.
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -137,7 +135,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
-      { number: 2, state: 'failed' },
+      { number: 2, state: 'escalated' },
     ]);
     expect(timeline.body.attempts[0].feedback).toContain('verifier command failed');
   });
@@ -157,10 +155,6 @@ describe('command verifier end-to-end (issue #135)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
-
-    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -168,7 +162,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
-      { number: 2, state: 'failed' },
+      { number: 2, state: 'escalated' },
     ]);
   });
 
@@ -179,17 +173,13 @@ describe('command verifier end-to-end (issue #135)', () => {
     });
     writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
 
-    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
+    const { runId } = await createAndRun({ stopReason: 'end_turn' });
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.candidateOid).toBeNull();
-
-    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(1);
@@ -218,9 +208,14 @@ describe('command verifier end-to-end (issue #135)', () => {
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
       return events.some((event: { payload: { event?: string } }) => event.payload.event === 'commit-nudge') ? true : undefined;
     });
+    // The nudge is corrective guidance inside the Attempt, not a new one: the
+    // Run settles on the same single Attempt.
+    await waitFor(async () => ((await server.api('GET', `/api/runs/${runId}`)).body.state !== 'running' ? true : undefined));
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts).toHaveLength(1);
-    expect(timeline.body.attempts[0]).toMatchObject({ number: 1, state: 'running' });
+    expect(timeline.body.attempts[0]).toMatchObject({ number: 1 });
+    // Leave the shared repo clean for the landings that follow (the stub never committed).
+    rmSync(join(repoDir, 'nudge-me.txt'), { force: true });
   });
 
   it('a pass records a verified-head fact at the exact SHA, and the gate refuses a moved tip', async () => {
@@ -231,7 +226,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const { taskId, runId } = await createAndRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
@@ -251,7 +246,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const runRow = await server.app.ctx.runs.get(runId);
     await expect(runner.landingFreshness(taskRow, runRow)).resolves.toEqual({ fresh: true, oid: payload.sha });
     // …and refuses once the branch tip moved after verification.
-    git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main'));
+    git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main~1'));
     await expect(runner.landingFreshness(taskRow, runRow)).resolves.toEqual({
       fresh: false,
       oid: payload.sha,
@@ -267,7 +262,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const { taskId } = await createAndRun();
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
 
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
@@ -309,7 +304,7 @@ describe('command verifier end-to-end (issue #135)', () => {
 });
 
 /**
- * Native review-before-land transition table + auto-accept (issue #138,
+ * Native landing (issue #138,
  * ADR-0021). The single new row: native + a verifier that actually RAN and
  * PASSED + auto-accept ON → land with no human gate. Every other cell of the
  * table (no verifier, auto-accept off, a fail/inconclusive verdict) still
@@ -318,7 +313,7 @@ describe('command verifier end-to-end (issue #135)', () => {
  * and never fires with nothing verified. A dedicated server + repo (rather
  * than the shared one above) keeps each transition's Workspace state isolated.
  */
-describe('native auto-accept (issue #138, ADR-0021)', () => {
+describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
   let server: TestServer;
   let repoDir: string;
   let workspaceId: number;
@@ -348,36 +343,34 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
 
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
 
-  it('row 2 (regression): auto-accept OFF + a pass still parks for review', async () => {
+  it('a passing verification lands directly — there is no review gate to park at (ADR-0041)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
-      verificationAutoAccept: false,
     });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('review');
+    expect(run.state).toBe('completed');
+    expect(run.phase).toBe('terminal');
   });
 
-  it('row 3 (NEW): auto-accept ON + a pass lands directly, never parking for review', async () => {
+  it('a pass lands under Harmonic\'s own land fact, never the operator disposition', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
-      verificationAutoAccept: true,
     });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'completed' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('completed');
-    expect(task.state).not.toBe('awaiting-review');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('completed');
@@ -388,19 +381,18 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
 
-    // Auto-accept is Harmonic landing the Run, not an operator — it must
-    // keep appending the default `agent-finish/unresolved` land fact (issue
-    // #191), never the operator-only `operator-accept` disposition, so the
-    // audit log stays honest about who actually accepted the work.
+    // Harmonic landing the Run is not an operator — it appends the default
+    // `agent-finish/unresolved` land fact, never the operator-only
+    // `operator-accept` disposition, so the audit log stays honest about who
+    // actually accepted the work.
     const factTypes = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).map((f) => f.type);
     expect(factTypes).toContain('agent-finish/unresolved');
     expect(factTypes).not.toContain('operator-accept');
   });
 
-  it('safety: auto-accept ON + a fail still Escalates — auto-accept never rescues a red verdict', async () => {
+  it('safety: a fail on every attempt Escalates — landing never rescues a red verdict', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(1),
-      verificationAutoAccept: true,
     });
     const { taskId, runId } = await createAndRun();
 
@@ -409,40 +401,38 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
-    expect(run.phase).not.toBe('review');
+    expect(run.phase).toBe('terminal');
 
-    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('completed');
-    expect(task.state).not.toBe('awaiting-review');
-    expect(task.escalated).toBe(true);
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'escalated' ? body : undefined;
+    });
+    expect(task.escalationReason).toMatch(/failed/);
   });
 
-  it('row 1: auto-accept ON but NO verifier configured still parks for review (nothing to auto-accept)', async () => {
+  it('with NO verifier configured a run still lands — nothing to verify means nothing blocks (ADR-0041)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
-      verificationAutoAccept: true,
     });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('review');
-    expect(run.state).toBe('running'); // parked, not settled
+    expect(run.state).toBe('completed');
+    expect(run.phase).toBe('terminal');
 
     // No verifier ran at all — the attempt log is empty.
     expect(await attempts(runId)).toHaveLength(0);
   });
 
-  it('a worktree auto-accept lands the merge into the base branch (no human gate)', async () => {
+  it('a worktree run lands the merge into the base branch (no human gate)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
-      verificationAutoAccept: true,
     });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
@@ -457,9 +447,9 @@ describe('native auto-accept (issue #138, ADR-0021)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${created.body.id}`);
-      return body.state === 'completed' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('completed');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
     expect(run.state).toBe('completed');

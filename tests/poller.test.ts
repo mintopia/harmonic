@@ -216,62 +216,45 @@ describe('TrackerPoller.poll', () => {
     expect(poller.titleForMap(null)).toBeNull(); // unmapped Task
   });
 
-  /** Poll #42, flip it running, then re-poll it with a new state — the board-refresh path. */
-  async function pollThenReRunning(finalState: 'open' | 'closed') {
+  /** Poll #42, flip it working, then re-poll it with a new state — the board-refresh path. */
+  async function pollThenReWorking(finalState: 'open' | 'closed') {
     const first = ticket({ number: 42, labels: ['ready-for-agent'] });
     let current = first;
-    const closed: number[] = [];
-    const poller = new TrackerPoller(
-      tasks,
-      wsId,
-      dir,
-      60_000,
-      async () => ({ ...stubAdapter([]).adapter, scan: async () => [current] }),
-      undefined,
-      undefined,
-      undefined,
-      (id) => closed.push(id),
-    );
+    const poller = new TrackerPoller(tasks, wsId, dir, 60_000, async () => ({ ...stubAdapter([]).adapter, scan: async () => [current] }));
     await poller.poll();
     const task = (await tasks.list())[0]!;
-    await tasks.setState(task.id, 'running'); // a live Run flipped it (Runner.start / launchClaimed)
+    await tasks.setState(task.id, 'working'); // a live Run flipped it (Runner.start / launchClaimed)
     current = ticket({ number: 42, labels: ['ready-for-agent'], state: finalState });
     await poller.poll();
-    return { closed, taskId: task.id };
+    return { taskId: task.id };
   }
 
-  it('reports a running Task whose ticket closed, so the Runner stops the parked agent', async () => {
-    const { closed, taskId } = await pollThenReRunning('closed');
-    expect(closed).toEqual([taskId]);
-    // The poll itself never moves a Task off running — the Runner callback does.
-    expect((await tasks.get(taskId)).state).toBe('running');
+  it('a working Task whose ticket closed is left alone — tracker state is never a control path (ADR-0041)', async () => {
+    const { taskId } = await pollThenReWorking('closed');
+    // The poll never moves a Task off working; the Run's own landing closes
+    // the ticket idempotently when it gets there.
+    expect((await tasks.get(taskId)).state).toBe('working');
   });
 
-  it('does not report a running Task whose ticket is still open', async () => {
-    const { closed } = await pollThenReRunning('open');
-    expect(closed).toEqual([]);
+  it('a working Task whose ticket is still open is left alone too', async () => {
+    const { taskId } = await pollThenReWorking('open');
+    expect((await tasks.get(taskId)).state).toBe('working');
   });
 
-  it('does not report a resting Task that closed — upsert completes it directly', async () => {
+  it('a resting Task that closed is settled done by the upsert', async () => {
     const { adapter } = stubAdapter([ticket({ number: 42, labels: ['ready-for-agent'] })]);
     let state: 'open' | 'closed' = 'open';
-    const closed: number[] = [];
     const poller = new TrackerPoller(
       tasks,
       wsId,
       dir,
       60_000,
       async () => ({ ...adapter, scan: async () => [ticket({ number: 42, labels: ['ready-for-agent'], state })] }),
-      undefined,
-      undefined,
-      undefined,
-      (id) => closed.push(id),
     );
     await poller.poll(); // ready
     state = 'closed';
-    await poller.poll(); // resting → completed via upsert, not the backstop
-    expect(closed).toEqual([]);
-    expect((await tasks.list())[0]!.state).toBe('completed');
+    await poller.poll(); // resting → done via upsert
+    expect((await tasks.list())[0]!.state).toBe('done');
   });
 
   it('accepts an inbound reopen of a completed Task as tracker truth', async () => {
@@ -285,7 +268,7 @@ describe('TrackerPoller.poll', () => {
     );
 
     await poller.poll();
-    expect((await tasks.list())[0]!.state).toBe('completed');
+    expect((await tasks.list())[0]!.state).toBe('done');
 
     state = 'open';
     await poller.poll();
@@ -308,7 +291,7 @@ describe('TrackerPoller.poll', () => {
     labels = [];
     await poller.poll();
 
-    expect((await tasks.list())[0]).toMatchObject({ state: 'ready', drive: 'hitl' });
+    expect((await tasks.list())[0]).toMatchObject({ state: 'ready' });
   });
 
   it('runs epic integration after mirroring without scheduling work (issue #159)', async () => {
@@ -331,7 +314,6 @@ describe('TrackerPoller.poll', () => {
       dir,
       60_000,
       async () => adapter,
-      undefined,
       undefined,
       undefined,
       undefined,
@@ -368,7 +350,6 @@ describe('TrackerPoller.poll', () => {
       (m) => errors.push(m),
       undefined,
       undefined,
-      undefined,
       epics,
     );
 
@@ -383,12 +364,11 @@ describe('TrackerPoller.poll', () => {
     expect(reconcile?.status).toMatchObject({ code: 2, message: 'git boom' });
   });
 
-  it('yields while walking a large closed-running backlog', async () => {
+  it('yields while re-mirroring a large backlog of working tickets that closed', async () => {
     let current = Array.from({ length: 30 }, (_, index) => ticket({ number: index + 1, labels: ['ready-for-agent'] }));
     let tick = 0;
     let yields = 0;
     const order: string[] = [];
-    const closed: number[] = [];
     const poller = new TrackerPoller(
       tasks,
       wsId,
@@ -398,7 +378,6 @@ describe('TrackerPoller.poll', () => {
       undefined,
       undefined,
       undefined,
-      (id) => closed.push(id),
       undefined,
       {
         yieldOptions: {
@@ -413,7 +392,7 @@ describe('TrackerPoller.poll', () => {
     );
 
     await poller.poll();
-    for (const task of await tasks.list()) await tasks.setState(task.id, 'running');
+    for (const task of await tasks.list()) await tasks.setState(task.id, 'working');
     current = current.map((row) => ({ ...row, state: 'closed' }));
     const done = poller.poll().then(() => order.push('done'));
     setImmediate(() => order.push('immediate'));
@@ -423,6 +402,6 @@ describe('TrackerPoller.poll', () => {
     expect(yields).toBeGreaterThan(0);
     expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
-    expect(closed).toHaveLength(30);
+    expect((await tasks.list()).every((task) => task.state === 'working')).toBe(true);
   });
 });

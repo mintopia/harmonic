@@ -27,7 +27,8 @@ export type IconName =
   | 'collapse'
   | 'refresh'
   | 'branch'
-  | 'alert-triangle';
+  | 'alert-triangle'
+  | 'user';
 
 const PATHS: Record<IconName, JSX.Element> = {
   board: (
@@ -137,6 +138,12 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M8 2.25 14.5 13.5H1.5Z" />
       <path d="M8 6.25v3.25" />
       <path d="M8 11.75v.01" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="8" cy="5.25" r="2.75" />
+      <path d="M2.75 14.25a5.25 5.25 0 0 1 10.5 0" />
     </>
   ),
 };

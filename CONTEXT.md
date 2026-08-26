@@ -202,7 +202,7 @@ _Avoid_: downgrade, fallback, handoff, adopt / note-to-critic / un-escalate
 (deleted escape hatches, ADR-0027 superseded)
 
 **Drive Prompt**:
-The prompt Harmonic injects to auto-run an afk mirrored Task: a **global**
+The prompt Harmonic injects to auto-run a mirrored Ticket: a **global**
 settings template (no per-Task override) of a workflow slash-command plus a
 short preamble, filled from the Task — `{skill}` from its Workflow /
 Wayfinder Type (research→`/research`, implement→`/implement`), plus `{ref}`
@@ -213,10 +213,10 @@ skills stay the source of truth. The Run then streams Run Events like any Run
 _Avoid_: injected command, auto-prompt
 
 **Merge Fate**:
-What becomes of a worktree Run's branch when an afk mirrored Task is resolved
-(the agent closed its ticket) — **auto-merge** (default: merge into base once
-resolved; a conflict Escalates rather than awaiting-review, which mirrored Tasks
-lack),
+What becomes of a worktree Run's branch when a mirrored Ticket's Attempt
+passes verification — **auto-merge** (default: land onto the base at the
+verified SHA; a stale base re-enters Rebase → Verification, a conflict is a
+failed Attempt),
 **open-PR** (branch → GitHub PR, review off-Harmonic), or **artifact** (leave
 the branch for a human/CI). Global default, per-Task override; worktree-only
 (direct isolation has no branch). Research findings branches are always
@@ -277,9 +277,9 @@ stalled. A second conflict Escalates — there is no second Heal.
 _Avoid_: retry, auto-resolve
 
 **Member land status**:
-Where a Member sits from the Epic's view — **pending** (running / not started /
-awaiting review), **completed** (its work is folded into the Integration
-branch), or **blocked** (escalated / failed / cancelled — a Blocking Member that
+Where a Member sits from the Epic's view — **pending** (working / not started),
+**completed** (its work is folded into the Integration branch), or **blocked**
+(escalated / cancelled — a Blocking Member that
 holds the whole Epic back). Mid-landing a Member may also read **healing** (a
 corrective turn) or **escalated**.
 _Avoid_: merge status
@@ -314,8 +314,8 @@ _Avoid_: force merge, partial land
 **Conversation**:
 An interactive, multi-turn exchange the operator drives with a Harness in a
 Working Directory over ACP — a sibling to Task, not a variant of it. Unlike
-a Task it is never queued, never picked by the Auto-Runner, and never enters
-the review gate; the human is in the loop for every turn. "Chat" is the
+a Task it is never queued, never picked by the Auto-Runner, and never verified
+or landed; the human is in the loop for every turn. "Chat" is the
 informal UI verb ("open a chat"); the domain noun is Conversation.
 It is **active** while its harness process is warm (spawned on the first
 turn, kept alive across widget/socket close) and **ended** once explicitly
@@ -420,8 +420,8 @@ up to the Workspace's own concurrency cap, never exceeding the Machine
 Ceiling in total. A global **master switch** gates all of them: a Task runs
 only when the master is on *and* its Workspace has the Auto-Runner enabled, so
 the master is the one-click fleet-wide pause. It also honours the Work Context
-House Rule: it will not start an afk Run into a Work Context already occupied by
-an afk Run that is running or awaiting verification/review.
+House Rule: it will not start a Run into a Work Context already occupied by a
+working Ticket's Run.
 _Avoid_: daemon, worker pool
 
 **Guardrail**:
@@ -442,9 +442,8 @@ _Avoid_: limit, timeout, watchdog, quota
 The (Working Directory + branch) an automatic Run occupies — in *direct* mode
 the shared directory on its live branch, in *worktree* mode the Run's own
 worktree and branch. The unit of the **House Rule**: at most **one automatic
-(afk) Run per Work Context** may be running or awaiting verification/review at
-once, so unreviewed work is never stacked on top of. Enforced by the
-Auto-Runner as a pick predicate.
+Run per Work Context** may be working at once, so unverified work is never
+stacked on top of. Enforced by the Auto-Runner as a pick predicate.
 _Avoid_: workspace (that is the board container), sandbox
 
 **Verification**:

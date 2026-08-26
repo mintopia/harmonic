@@ -7,39 +7,30 @@
  * it (`work-context-leases.ts`) and the Runner timer that drives it.
  */
 
-/** TTL budgets for the two kinds of occupancy a Work Context lease spans. */
+/** TTL budget for the occupancy a Work Context lease spans. */
 export interface LeaseTtl {
-  /** TTL budget (ms) for active execution phases (executing/validating/verifying/landing). */
+  /** TTL budget (ms) for the execution phases (executing/validating/verifying/landing). */
   executionMs: number;
-  /** TTL budget (ms) for the review gate — a Run parked awaiting a human holds far longer. */
-  reviewMs: number;
 }
 
 /**
  * Execution phases get a short budget — several missed coordinator
  * heartbeats' worth, so a Run that is still genuinely alive (heartbeating on
  * its own wall-clock timer, independent of agent/tool output) never lapses,
- * while a Run whose process actually died is swept promptly. The review gate
- * rides the same window as the review SLA (7d, aligned with `runner.ts`'s
- * `REVIEW_SLA_MS`) — a Run parked awaiting a human is not a crash.
+ * while a Run whose process actually died is swept promptly.
  */
 export const DEFAULT_LEASE_TTL: LeaseTtl = {
   executionMs: 2 * 60_000,
-  reviewMs: 7 * 24 * 60 * 60 * 1000,
 };
 
 /**
- * The TTL budget (ms) for `phase` (issue #122 acceptance: TTL is
- * phase-specific — the review gate uses a different budget than the
- * execution phases). `review` maps to `ttl.reviewMs`; every other phase —
- * including the pre-phase-machine literal `'running'`, and `null`/`undefined`
- * (no phase recorded yet) — maps to `ttl.executionMs`. Total over any string:
- * an unrecognized phase falls back to the execution budget rather than
- * throwing, matching `countsTowardExecutionBudget`'s null-counts-as-executing
- * precedent in `guardrail-budget.ts`.
+ * The TTL budget (ms) for `phase` (issue #122). Every phase — including the
+ * pre-phase-machine literal `'running'`, and `null`/`undefined` (no phase
+ * recorded yet) — maps to `ttl.executionMs`: with the review gate gone
+ * (ADR-0041) no phase parks a lease awaiting a human. Kept phase-keyed so the
+ * heartbeat/sweep contract stays total over any string.
  */
-export function leaseTtlMsForPhase(phase: string | null | undefined, ttl: LeaseTtl = DEFAULT_LEASE_TTL): number {
-  if (phase === 'review') return ttl.reviewMs;
+export function leaseTtlMsForPhase(_phase: string | null | undefined, ttl: LeaseTtl = DEFAULT_LEASE_TTL): number {
   return ttl.executionMs;
 }
 

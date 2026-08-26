@@ -227,7 +227,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
   async function runningMember(baseBranch: string): Promise<void> {
     const task = await tasks.create({ prompt: 'member work' });
     await tasks.setBaseBranch(task.id, baseBranch);
-    await tasks.setState(task.id, 'running');
+    await tasks.setState(task.id, 'working');
   }
 
   it('conflict → one corrective turn against epic/<ref> → the refresh completes', async () => {

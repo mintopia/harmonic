@@ -61,9 +61,6 @@ const workspaceSchema = z
     // disabled for this Workspace.
     verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
     verificationCritic: verificationCriticOverrideSchema.nullable().meta({ example: null }),
-    // Auto-accept (issue #138) is a scalar override, so it passes straight through
-    // the row spread — null ⇒ inherit `config.verification.autoAccept`.
-    verificationAutoAccept: z.boolean().nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),
     guardrailProgress: z.boolean().nullable().meta({ example: null }),
     createdAt: z.number().meta({ example: 1784030400000 }),

@@ -52,14 +52,6 @@ export class TrackerPoller {
     /** Report each cycle's Resolved Tracker so the manager's cache stays fresh at poll time (issue #83). */
     private readonly onResolved: (r: ResolvedTracker) => void = () => {},
     /**
-     * A mirrored Task whose ticket has closed in the tracker but which is still
-     * `running` on the board. Under the close-after-verify model (issue #139)
-     * only Harmonic closes a ticket, and only after verify + land, so a close
-     * seen while the Task still runs is premature: the Runner stops the parked
-     * agent, reopens the ticket, and Escalates. No-op by default (native-only server).
-     */
-    private readonly onClosedWhileRunning: (taskId: number) => void = () => {},
-    /**
      * The Epic integration-branch reconcile (issue #159). Runs after mirroring
      * so a ready Epic member's `baseBranch` points at its
      * integration branch before the Auto-Runner spawns its worktree Run. Absent
@@ -152,16 +144,6 @@ export class TrackerPoller {
         this.onError(`epic integration reconcile failed: ${String(err)}`);
       }
     }
-    // Backstop: upsertMirrored never moves a Task off `running` (nothing
-    // interrupts a live Run), so a ticket closed mid-run (agent-via-skill or an
-    // operator) leaves the Task stuck running with a parked agent. Under the
-    // close-after-verify model (#139) that close is premature — hand those to the
-    // Runner to stop the agent, reopen the ticket, and Escalate.
-    await forEachYielding(mirrored, (task) => {
-      if (task.state === 'running' && task.trackerRef != null && closedRefs.has(task.trackerRef)) {
-        this.onClosedWhileRunning(task.id);
-      }
-    }, this.opts.yieldOptions);
     await this.mirror?.reconcile();
   }
 

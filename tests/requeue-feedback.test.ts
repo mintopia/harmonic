@@ -56,8 +56,8 @@ describe('requeue feedback — origin-aware placement', () => {
 
   it('bakes feedback into a native Task’s prompt, leaving the feedback column clear', async () => {
     const task = await tasks.create({ prompt: 'original prompt' });
-    await tasks.setState(task.id, 'running');
-    await tasks.setState(task.id, 'failed');
+    await tasks.setState(task.id, 'working');
+    await tasks.setState(task.id, 'escalated');
 
     const requeued = await tasks.requeue(task.id, '  do it differently  ');
     expect(requeued.state).toBe('ready');
@@ -69,8 +69,8 @@ describe('requeue feedback — origin-aware placement', () => {
   it('keeps a mirrored Task’s prompt pristine and carries feedback in the column', async () => {
     const [mirrored] = await mirrorScan(tasks, [ticket({ number: 100 })], wsId);
     const derivedPrompt = mirrored!.prompt;
-    await tasks.setState(mirrored!.id, 'running');
-    await tasks.setState(mirrored!.id, 'failed');
+    await tasks.setState(mirrored!.id, 'working');
+    await tasks.setState(mirrored!.id, 'escalated');
 
     const requeued = await tasks.requeue(mirrored!.id, 'try harder');
     expect(requeued.state).toBe('ready');
@@ -80,8 +80,8 @@ describe('requeue feedback — origin-aware placement', () => {
 
   it('mirrored feedback survives a re-poll (upsertMirrored never clears the column)', async () => {
     const [mirrored] = await mirrorScan(tasks, [ticket({ number: 100 })], wsId);
-    await tasks.setState(mirrored!.id, 'running');
-    await tasks.setState(mirrored!.id, 'failed');
+    await tasks.setState(mirrored!.id, 'working');
+    await tasks.setState(mirrored!.id, 'escalated');
     await tasks.requeue(mirrored!.id, 'try harder');
 
     // The ticket is still open — the next poll re-derives the prompt but must

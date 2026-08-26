@@ -46,11 +46,11 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     // shape — parked non-terminal in phase:'review' at agent-finish. ---
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('done');
     const runApi = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(runApi).toMatchObject({ taskId, attempt: 1, state: 'running', phase: 'review', stopReason: 'end_turn' });
+    expect(runApi).toMatchObject({ taskId, attempt: 1, state: 'completed', phase: 'terminal', stopReason: 'end_turn' });
 
     // --- The rest reads the durable rows directly (sessionRowId/session
     // internals aren't on the public Run API — same pattern execution.test.ts
@@ -106,7 +106,7 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     const capabilities = JSON.parse(session.capabilitySnapshot);
     expect(capabilities).toMatchObject({ protocolVersion: 1, agentCapabilities: { loadSession: true } });
     expect(session.supportsLoadSession).toBe(true);
-    expect(session.status).toBe('active');
+    expect(['retiring', 'retired']).toContain(session.status); // the Run landed, so its Session is owed retirement (issue #148)
     expect(session.lastActiveAt).toBeGreaterThan(0);
 
     // Permission mode is only resolved for auto-driven (afk mirrored) Runs —

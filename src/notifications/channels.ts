@@ -7,15 +7,14 @@ import { DomainError } from '../domain/errors.js';
 export const NOTIFICATION_EVENTS = [
   'task.created',
   'run.started',
-  'task.awaiting-review',
-  'task.completed',
-  'task.failed',
+  'task.escalated',
+  'task.done',
   'queue.idle',
 ] as const;
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 
-/** The noise floor stays low: review-gate and failure moments only. */
-export const DEFAULT_EVENTS: NotificationEvent[] = ['task.awaiting-review', 'task.failed'];
+/** The noise floor stays low: the one moment a human is needed. */
+export const DEFAULT_EVENTS: NotificationEvent[] = ['task.escalated'];
 
 const chatConfigSchema = z.object({ url: z.url() });
 const webhookConfigSchema = z.object({ url: z.url(), secret: z.string().optional() });
@@ -52,7 +51,7 @@ export const createChannelSchema = z.object({
   events: z
     .array(z.enum(NOTIFICATION_EVENTS))
     .optional()
-    .meta({ example: ['task.awaiting-review', 'task.failed'] }),
+    .meta({ example: ['task.escalated'] }),
 });
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 

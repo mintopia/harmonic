@@ -78,7 +78,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     // What `markInterrupted` writes for a generic orphan.
     await runFacts.append(run.id, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' });
     const failed = await runStore.update(run.id, { state: 'failed', phase: 'terminal', reason: 'interrupted', finishedAt: Date.now() });
-    await tasks.setState(created.id, 'failed');
+    await tasks.setState(created.id, 'escalated');
     return { task: await tasks.get(created.id), run: failed, session };
   }
 
@@ -124,7 +124,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     // Idempotency ledger + Task re-driven.
     expect((await runFacts.list(run.id)).some((f) => f.type === 'session-resumed')).toBe(true);
     expect((await runFacts.list(resumeRun.id)).find((f) => f.type === 'resume-entry')).toMatchObject({ attemptId: resumeAttempt!.id });
-    expect((await tasks.get(task.id)).state).toBe('running');
+    expect((await tasks.get(task.id)).state).toBe('working');
   });
 
   it('incompatible (session/load unsupported) → fails forward: new Session, summarized prompt, reason recorded', async () => {
@@ -207,7 +207,7 @@ describe('BootResumeCoordinator (issue #146)', () => {
     expect(yields).toBeGreaterThan(0);
     expect(order.indexOf('immediate')).toBeGreaterThanOrEqual(0);
     expect(order.indexOf('immediate')).toBeLessThan(order.indexOf('done'));
-    expect((await tasks.list({ state: 'running' })).length).toBe(12);
+    expect((await tasks.list({ state: 'working' })).length).toBe(12);
   });
 
   it('leaves an interrupted Run with no Session alone (nothing to resume)', async () => {

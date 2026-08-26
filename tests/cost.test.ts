@@ -145,7 +145,7 @@ describe('cost surfaces (API)', () => {
     return startServer(overrides);
   };
 
-  const runToDone = async (workingDir: string, expectState = 'awaiting-review') => {
+  const runToDone = async (workingDir: string, expectState = 'done') => {
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({}), workingDir });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === expectState);
@@ -200,10 +200,14 @@ describe('cost surfaces (API)', () => {
       { modelA: flatPrice(2) },
     );
     const { taskId } = await runToDone(workDir);
-    await server.api('POST', `/api/tasks/${taskId}/reject`);
-    await server.api('POST', `/api/tasks/${taskId}/requeue`);
+    // A second Run on the same ticket (re-queued directly: an operator Reject
+    // would bake guidance into the prompt the stub parses as its scenario).
+    await server.app.ctx.tasks.setState(taskId, 'ready');
     await server.api('POST', `/api/tasks/${taskId}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'done' && (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.length === 2 ? true : undefined;
+    });
 
     const agg = (await server.api('GET', `/api/tasks/${taskId}/usage`)).body;
     expect(agg.runCount).toBe(2);
@@ -250,7 +254,7 @@ describe('cost surfaces (API)', () => {
       workingDir: workDir,
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const before = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
     expect(before.usage.models).toEqual({});
     expect(before.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });

@@ -77,7 +77,6 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     prompt,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -87,9 +86,8 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
     await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
     await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify(scenario) } });
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(ref++, 'go'));
-    expect(task.drive).toBe('afk');
     expect(task.isolationMode === null || task.isolationMode === 'direct').toBe(true);
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id };
   }
@@ -132,7 +130,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
 
     const run = await settledRun(runId);
     expect(run.state).toBe('completed');
-    expect((await server.app.ctx.tasks.get(taskId)).escalated).toBe(false);
+    expect((await server.app.ctx.tasks.get(taskId)).state).not.toBe('escalated');
 
     // The intended branch advanced to exactly the agent's work.
     expect(git(repo, 'rev-parse', 'main')).not.toBe(startOid);
@@ -175,7 +173,7 @@ describe('bounded agent re-merge fallback at validating (issue #155)', () => {
 
     const run = await settledRun(runId);
     expect(run.state).toBe('failed');
-    expect((await server.app.ctx.tasks.get(taskId)).escalated).toBe(true);
+    expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
 
     // Rejected, not landed: the intended branch never moved and no recovery fact
     // was written; the branch-violation fact records the re-merge rejection.

@@ -14,7 +14,7 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  * can be exhaustively unit-tested (the same seam as `run-disposition.ts`).
  *
  * The Sessions move `active → idle → retiring → retired`: `active` while a live
- * or review-parked Run owns them; `idle` when no live Run remains but the
+ * Run owns them; `idle` when no live Run remains but the
  * worktree is retained under a `retireDeadline` (the reject-continuation / warm
  * window); `retiring` while the worktree removal is in flight (so a crash
  * mid-removal is re-driven from `retiring` at boot); `retired` once the worktree
@@ -29,10 +29,6 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  * the sweep reclaims it, and are deliberately generous.
  */
 export interface RetentionConfig {
-  /** How long after a human **reject** the worktree is retained for a
-   * reject-and-continue to land in the same workspace before the sweep retires
-   * the Session (`reject-continuation-timeout`). */
-  rejectContinuationMs: number;
   /** Backstop retention for any other non-landing ending (a failed/escalated
    * Run whose git state is evidence): retained this long for diagnosis, then
    * swept (`retention-ttl`) so no idle Session keeps its worktree forever. An
@@ -40,27 +36,22 @@ export interface RetentionConfig {
   retentionTtlMs: number;
 }
 
-/** Default retention windows (issue #148): 30 min for a reject continuation, 24 h
- * as the backstop for a failed/escalated Run's evidence. */
+/** Default retention window (issue #148): 24 h as the backstop for a failed/escalated Run's evidence. */
 export const DEFAULT_RETENTION: RetentionConfig = {
-  rejectContinuationMs: 30 * 60 * 1000,
   retentionTtlMs: 24 * 60 * 60 * 1000,
 };
 
 /**
  * The cause of a Run's terminal settle, distilled to exactly what retirement
- * needs from the winning `run_fact` + review gate:
- * - `landed` — a successful land + terminal success (native Accept, native
- *   auto-accept, or a mirrored land): the work is banked, retire immediately.
- * - `rejected` — a human rejected the review: retain for a reject-continuation.
- * - `review-sla` — the review SLA lapsed unreviewed: the review is abandoned,
- *   retire.
- * - `operator-cancel` — an operator disposition (cancel): retire.
+ * needs from the winning `run_fact`:
+ * - `landed` — a successful land + terminal success (Harmonic's own landing or
+ *   an operator Accept): the work is banked, retire immediately.
+ * - `operator-cancel` — an operator disposition (cancel / Close): retire.
  * - `other` — any other non-landing ending (generic fail, escalate,
  *   guardrail-trip, branch-violation, process-death): retain as evidence under
  *   the retention-TTL backstop.
  */
-export type RetirementCause = 'landed' | 'rejected' | 'review-sla' | 'operator-cancel' | 'other';
+export type RetirementCause = 'landed' | 'operator-cancel' | 'other';
 
 /**
  * What the settle-hook should do to the settling Run's Session. `retire` removes
@@ -73,9 +64,8 @@ export type RetirementAction =
 
 /**
  * Decide what a Run's Session should do when the Run settles terminal, from the
- * settle `cause`. Pure and total: a landing/abandonment/cancel retires now; a
- * reject or any other ending goes idle under the matching retention deadline
- * computed from `now`. Recomputing over the same inputs always yields the same
+ * settle `cause`. Pure and total: a landing or cancel retires now; any other
+ * ending goes idle under the retention deadline computed from `now`. Recomputing over the same inputs always yields the same
  * action.
  */
 export function decideRetirement(
@@ -88,14 +78,6 @@ export function decideRetirement(
       return { kind: 'retire', reason: 'landed' };
     case 'operator-cancel':
       return { kind: 'retire', reason: 'operator-disposition' };
-    case 'review-sla':
-      return { kind: 'retire', reason: 'review-abandonment-sla' };
-    case 'rejected':
-      return {
-        kind: 'idle',
-        reason: 'reject-continuation-timeout',
-        retireDeadline: now + config.rejectContinuationMs,
-      };
     case 'other':
       return {
         kind: 'idle',

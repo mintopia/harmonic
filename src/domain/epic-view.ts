@@ -25,7 +25,7 @@ export interface EpicMember {
   title: string;
   /** Mirrored Harmonic Task id for a TaskDetail deep-link; `null` if unmirrored. */
   taskId: number | null;
-  /** Raw `TaskState` (running|completed|failed|cancelled|...), or `null` if unmirrored. */
+  /** Raw `TaskState` (working|escalated|done|cancelled|...), or `null` if unmirrored. */
   state: string | null;
   escalated: boolean;
   landStatus: MemberLandStatus;
@@ -98,7 +98,7 @@ export function composeEpicView(
       title: titleByRef.get(ref) ?? '',
       taskId: task?.id ?? null,
       state: task?.state ?? null,
-      escalated: task?.escalated ?? false,
+      escalated: task?.state === 'escalated',
       landStatus: reduceMemberState(task),
       ready: readySet.has(ref),
     };

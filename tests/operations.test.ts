@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { context, trace } from '@opentelemetry/api';
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
-import { defaultConfig } from '../src/config.js';
+import { defaultConfig, verificationCommandSchema } from '../src/config.js';
+import { execFileSync } from 'node:child_process';
 import { openAsyncDb } from '../src/db/async.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { AutoRunner } from '../src/execution/auto-runner.js';
@@ -198,6 +199,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         countRunningByWorkspace: async () => new Map<number, number>(),
       },
       {
+        escalateUnspawned: async () => {},
         launchClaimed: async () => {
           launchAttempts += 1;
           throw new Error('launch failed');
@@ -237,6 +239,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         countRunningByWorkspace: async () => new Map<number, number>(),
       },
       {
+        escalateUnspawned: async () => {},
         launchClaimed: async () => {
           launchAttempts += 1;
         },
@@ -262,30 +265,45 @@ describe('Auto-Runner operations (issue #289)', () => {
 });
 
 describe('Run operations (issue #290)', () => {
-  it('keeps a Run open through review and parents landing from the saved span context', async () => {
+  it('closes the Run operation at escalation and lands the operator Accept as its own operation on that Run', async () => {
     const { exporter, registry } = installOperations();
-    const server = await startServer(stubHarness());
+    // One attempt with a failing verifier: the ticket escalates with a real
+    // verified head, so the operator Accept lands it.
+    const server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     try {
-      const task = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
+      const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-land-'));
+      execFileSync('git', ['init', '-b', 'main', repo]);
+      execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '--allow-empty', '-m', 'init']);
+      const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
+      await server.app.ctx.workspaces.update(wsId, {
+        workingDir: repo,
+        verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
+      });
+      const task = await server.api('POST', '/api/tasks', {
+        prompt: JSON.stringify({ writeFiles: { 'ops.txt': 'work\n' } }),
+        workingDir: repo,
+        isolationMode: 'worktree',
+      });
       const started = await server.api('POST', `/api/tasks/${task.body.id}/run`);
       expect(started.status).toBe(201);
 
       await vi.waitFor(async () => {
-        expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('awaiting-review');
+        expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('escalated');
       });
       const runId = started.body.id;
-      const live = registry.list().find((operation) => operation.name === 'harmonic.run' && operation.attributes['run.id'] === runId);
-      expect(live).toBeDefined();
-      expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.run' && span.attributes['run.id'] === runId)).toBeUndefined();
+      // Escalation settles the Run: its operation closes there (the human
+      // decision is not part of the Run's execution), and nothing is left live.
+      await vi.waitFor(() => {
+        expect(exporter.getFinishedSpans().find((span) => span.name === 'harmonic.run' && span.attributes['run.id'] === runId)).toBeDefined();
+      });
+      expect(registry.list().find((operation) => operation.name === 'harmonic.run' && operation.attributes['run.id'] === runId)).toBeUndefined();
 
+      // The operator Accept lands as its own operation, keyed to the same Run.
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
-        const spans = exporter.getFinishedSpans();
-        const run = spans.find((span) => span.name === 'harmonic.run' && span.attributes['run.id'] === runId);
-        const land = spans.find((span) => span.name === 'harmonic.land' && span.attributes['run.id'] === runId);
-        expect(run).toBeDefined();
+        const land = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.land' && span.attributes['run.id'] === runId);
         expect(land).toBeDefined();
-        expect(land?.parentSpanContext?.spanId).toBe(run?.spanContext().spanId);
+        expect(land?.attributes['landing.mechanism']).toBe('coordinator');
       });
     } finally {
       await server.close();

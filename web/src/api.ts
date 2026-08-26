@@ -120,7 +120,6 @@ export const api = {
       autoRunnerEnabled?: boolean | null;
       verificationCommand?: VerificationCommand | VerifierOff | null;
       verificationCritic?: VerificationCritic | VerifierOff | null;
-      verificationAutoAccept?: boolean | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;
     },
@@ -146,47 +145,33 @@ export const api = {
   promoteTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/ready`),
   cancelTask: (id: number, withDependents = false) =>
     request<Task>('POST', `/api/tasks/${id}/cancel`, withDependents ? { withDependents } : {}),
-  /** Operator override: stop a running task's agent and settle it completed, skipping review. */
+  /** Operator override: stop a working task's agent and settle it done, skipping verification. */
   completeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/complete`),
   /** Steer a running task: queue a message for its active run, delivered at the next turn boundary. */
   steerTask: (id: number, text: string) =>
     request<{ ok: true }>('POST', `/api/tasks/${id}/steer`, { text }),
   uncancelTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/uncancel`),
-  /** Send a failed task back to ready in place (failed → ready), carrying optional
-   * feedback and, for the mirrored-reject re-run path, the issue #170 continuation
-   * choice ('full' resumes the same Session, 'condensed' starts fresh). */
-  requeueTask: (id: number, feedback?: string, continuation?: 'full' | 'condensed') =>
-    request<Task>('POST', `/api/tasks/${id}/requeue`, {
-      ...(feedback ? { feedback } : {}),
-      ...(continuation ? { continuation } : {}),
-    }),
   addDependency: (id: number, dependsOnId: number) =>
     request<Task>('POST', `/api/tasks/${id}/dependencies`, { dependsOnId }),
   removeDependency: (id: number, depId: number) =>
     request<Task>('DELETE', `/api/tasks/${id}/dependencies/${depId}`),
-  // The retry continuation preview (issue #170): whether the task has a
-  // live Session to continue, and if so the cost estimate for resuming it in
-  // full vs starting condensed. Feeds the retry controls.
+  // The continuation preview (issue #170): what the deterministic rule (#311)
+  // will do with the task's live Session when the loop resumes — shown in the
+  // reject dialog as information, never a choice.
   continuationPreview: (id: number) => request<ContinuationPreview>('GET', `/api/tasks/${id}/continuation`),
+  // The three escalation actions (ADR-0041), escalated tickets only.
   acceptTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/accept`),
-  // Escalated-task recovery (issue #191): adopt the stranded candidate from an
-  // escalated/failed run straight to awaiting-review (no fresh builder run),
-  // or send the critic a human note and re-run verification against the same
-  // candidate. Both apply only while `task.escalated && task.candidateRef`.
-  adoptReview: (id: number) => request<Task>('POST', `/api/tasks/${id}/adopt-review`),
-  noteToCritic: (id: number, note: string) => request<Task>('POST', `/api/tasks/${id}/note-to-critic`, { note }),
+  rejectTask: (id: number, guidance: string) => request<Task>('POST', `/api/tasks/${id}/reject`, { guidance }),
+  closeTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/close`),
   // Hard-delete (issue #162, ADR-0025): cascades the Task's Runs/history and
   // vanishes it from the board/graph via the `task_removed` WS broadcast
   // (App.tsx). 409 if the Task is running (stop it first); 404 if it's
   // already gone.
   deleteTask: (id: number) => request<{ id: number }>('DELETE', `/api/tasks/${id}`),
-  rejectTask: (id: number, feedback?: string) =>
-    request<Task>('POST', `/api/tasks/${id}/reject`, feedback ? { feedback } : {}),
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
-  unescalateTask: (id: number) => request<Task>('POST', `/api/tasks/${id}/unescalate`),
   taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
   /** Ordered durable Attempt/Task history for the ticket page. */
-  taskAttempts: (id: number) => request<{ attempts: Attempt[] }>('GET', `/api/tasks/${id}/attempts`),
+  taskAttempts: (id: number) => request<{ attempts: Attempt[]; budgetBase: number }>('GET', `/api/tasks/${id}/attempts`),
   taskUsage: (id: number) =>
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
