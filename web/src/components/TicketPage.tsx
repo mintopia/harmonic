@@ -9,7 +9,7 @@ import { DiffViewer } from './DiffViewer';
 import type { DiffFile } from '../types';
 import { describeGuardrailTrip } from '../guardrail-trip-model';
 import { parseSkipReasonTaskRef } from '../skip-reason-model';
-import { overallDecision, verificationRows } from '../verification-attempts-model';
+import { overallDecision, verificationRows, criticUnavailableReason } from '../verification-attempts-model';
 import { changedFilesFromStat } from '../run-rail-model';
 import { sumCosts } from '../activity-model';
 import { Markdown } from './Markdown';
@@ -329,7 +329,7 @@ function CriticSessionLog({ attemptId, label }: { attemptId: number; label: stri
         <div className="mt-2">
           {state === 'loading' && <p className="text-[12px] text-muted">Loading critic session…</p>}
           {(state === 'unavailable' || (state === 'ready' && events.length === 0)) && (
-            <p className="text-[12px] text-muted">Critic session log unavailable.</p>
+            <p className="text-[12px] text-muted">Critic session log could not be loaded.</p>
           )}
           {state === 'ready' && events.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-hairline bg-surface">
@@ -360,7 +360,14 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
         </span>
       </div>
       <div className="mt-3 flex flex-col gap-3">
-        {rows.map(({ status, attempt }) => (
+        {rows.map(({ status, attempt }) => {
+          // With no critic-session log to show, say *why* (driven by the #327
+          // status): disabled / did-not-run / not-captured — not a bare blank.
+          const criticReason =
+            status.mechanism === 'critic' && criticSessions.length === 0
+              ? criticUnavailableReason(status.state, !!attempt, false)
+              : null;
+          return (
           <div key={status.mechanism} className="flex items-start gap-3">
             <span
               className={`mt-px grid size-[18px] shrink-0 place-items-center rounded-md ${
@@ -397,6 +404,7 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
                   ))}
                 </div>
               )}
+              {criticReason && <p className="mt-2 text-[12px] text-muted">{criticReason}</p>}
             </div>
             <span
               className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] ${attempt ? VERDICT_TONE[attempt.verdict] ?? 'text-muted' : 'text-muted'}`}
@@ -404,7 +412,8 @@ function Verification({ attempts, statuses, run }: { attempts: VerificationAttem
               {status.state}
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

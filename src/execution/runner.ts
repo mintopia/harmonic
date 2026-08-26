@@ -1572,6 +1572,17 @@ export class Runner {
           ...(this.criticDrive ? { drive: this.criticDrive } : {}),
         });
         const persisted = await this.verificationAttempts.append(run.id, criticAttemptToInput(attempt));
+        // The harness may not have flushed its log by the session-end boundary,
+        // so `attempt.transcriptPath` is often null here; resolve it off the hot
+        // path and fill the row once the `${sessionId}.jsonl` lands (ADR-0040).
+        if (attempt.transcriptPath === null && attempt.sessionId) {
+          void this.captureCriticTranscriptPath({
+            attemptId: persisted.id,
+            sessionId: attempt.sessionId,
+            harnessId: criticHarnessId,
+            sessionLogDir: criticHarness.sessionLogDir,
+          });
+        }
         const timelineAttempt = await this.attempts.getForTaskNumber(task.id, run.attempt);
         if (timelineAttempt) {
           const timelineTask = await this.attempts.createTask(timelineAttempt.id, { type: 'review', logLocator: `verification_attempt:${persisted.id}` });
@@ -3933,6 +3944,28 @@ export class Runner {
       );
       if (!transcriptPath) continue;
       await this.sessionStore.setTranscriptPath(input.sessionRowId, transcriptPath, Date.now()).catch(() => {});
+      return;
+    }
+  }
+
+  /** The critic equivalent of {@link captureTranscriptPath}: the harness may
+   * not have flushed its `${sessionId}.jsonl` by the time the critic turn ends
+   * and the attempt is appended (root cause of a persistently null critic
+   * transcript). Retry a few times off the hot path, then fill the attempt's
+   * transcript locator so the operator's on-demand critic-session log resolves. */
+  private async captureCriticTranscriptPath(input: {
+    attemptId: number;
+    sessionId: string;
+    harnessId: string;
+    sessionLogDir: string | undefined;
+  }): Promise<void> {
+    const resolver = adapterFor(input.harnessId).usage?.resolveTranscriptPath;
+    if (!resolver) return;
+    for (const delayMs of [100, 500, 2_000]) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      const transcriptPath = await resolver({ sessionLogDir: input.sessionLogDir, sessionId: input.sessionId }).catch(() => null);
+      if (!transcriptPath) continue;
+      await this.verificationAttempts.setTranscriptPath(input.attemptId, transcriptPath).catch(() => {});
       return;
     }
   }

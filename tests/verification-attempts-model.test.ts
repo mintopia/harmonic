@@ -6,6 +6,7 @@ import {
   latestCriticSummary,
   groupAttemptsByMechanism,
   verificationRows,
+  criticUnavailableReason,
 } from '../web/src/verification-attempts-model.js';
 import type { VerificationAttempt, VerificationMechanism, VerifierStatus } from '../web/src/types.js';
 import type { Verdict } from '../web/src/verification-model.js';
@@ -206,5 +207,26 @@ describe('groupAttemptsByMechanism', () => {
     expect(group.attempts[0]).toEqual(
       expect.objectContaining({ id: 1, mechanism: 'command', verdict: 'fail', summary: 'lint broke' }),
     );
+  });
+});
+
+describe('criticUnavailableReason (#331)', () => {
+  it('is null when a transcript is present — nothing to explain', () => {
+    expect(criticUnavailableReason('passed', true, true)).toBeNull();
+    expect(criticUnavailableReason('disabled', false, true)).toBeNull();
+  });
+
+  it('says disabled when the verifier is off for the workspace', () => {
+    expect(criticUnavailableReason('disabled', false, false)).toBe('Critic disabled for this workspace.');
+  });
+
+  it('says did-not-run when no attempt was recorded (skipped / never ran)', () => {
+    expect(criticUnavailableReason('skipped', false, false)).toBe('Critic did not run.');
+    expect(criticUnavailableReason('inconclusive', false, false)).toBe('Critic did not run.');
+  });
+
+  it('says not-captured when the critic ran but its log was not captured', () => {
+    expect(criticUnavailableReason('passed', true, false)).toBe('Critic session log was not captured.');
+    expect(criticUnavailableReason('failed', true, false)).toBe('Critic session log was not captured.');
   });
 });

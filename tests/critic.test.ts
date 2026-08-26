@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -122,7 +122,41 @@ describe('runCritic (issue #136)', () => {
       // The fake drive reports no sessionId, so no transcript resolves (ADR-0040).
       transcriptPath: null,
       harness: 'claude',
+      sessionId: null,
     });
+  });
+
+  it('resolves a critic transcript already flushed at the turn boundary, and returns the sessionId', async () => {
+    // runCritic resolves the transcript best-effort at the session-end boundary
+    // (single shot, no blocking retry). A log not yet flushed stays null and is
+    // filled by the runner's deferred poll — so this covers the flushed case and
+    // the sessionId that the deferred poll needs (#331, ADR-0040).
+    const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-flushed-transcript');
+    const sessionLogDir = mkdtempSync(join(tmpdir(), 'harmonic-critic-logs-'));
+    tmpDirs.push(sessionLogDir);
+    const sessionId = 'critic-flushed-transcript';
+    const transcriptPath = join(sessionLogDir, 'project', `${sessionId}.jsonl`);
+    mkdirSync(join(sessionLogDir, 'project'));
+    const drive: CriticHarnessDrive = {
+      run: async () => {
+        writeFileSync(transcriptPath, '{"type":"summary"}\n');
+        return { output: '{"verdict":"pass","summary":"looks good"}', permissionRequests: [], sessionId };
+      },
+    };
+
+    const attempt = await runCritic({
+      repoDir: repo,
+      candidateOid: oid,
+      fields: FIELDS,
+      worktreePath: freshWorktreePath('harmonic-critic-wt-flushed-transcript-'),
+      critic: { prompt: 'Review the diff.', model: 'stub-model' },
+      harness: { ...FAKE_HARNESS, sessionLogDir },
+      harnessId: 'claude',
+      drive,
+    });
+
+    expect(attempt.transcriptPath).toBe(transcriptPath);
+    expect(attempt.sessionId).toBe(sessionId);
   });
 
   it('opens a verify.critic child operation under the run span when a parent context is supplied', async () => {

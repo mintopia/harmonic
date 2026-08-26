@@ -272,6 +272,10 @@ export interface CriticAttempt {
    * no session id was captured or the harness resolves no transcript. */
   transcriptPath: string | null;
   harness: string | null;
+  /** The harness session id for this critic turn (ADR-0040). Retained so the
+   * runner can defer a non-blocking transcript re-resolve when the harness had
+   * not flushed its `${sessionId}.jsonl` by the session-end boundary. */
+  sessionId: string | null;
 }
 
 /** Generous default for a single read-only review turn — long enough for a
@@ -379,6 +383,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
       inputOid: args.candidateOid,
       transcriptPath: null,
       harness: args.harnessId,
+      sessionId: null,
     };
   }
 
@@ -415,6 +420,7 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
     inputOid: args.candidateOid,
     transcriptPath,
     harness: args.harnessId,
+    sessionId,
   };
 }
 

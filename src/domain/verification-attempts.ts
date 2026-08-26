@@ -85,6 +85,16 @@ export class VerificationAttemptStore {
     });
   }
 
+  /** Fill in a critic attempt's transcript locator after the fact (ADR-0040).
+   * The harness often has not flushed its `${sessionId}.jsonl` at the
+   * session-end boundary, so `append` stores a null path; the runner's
+   * deferred, non-blocking poll resolves it later and writes it here. */
+  setTranscriptPath(id: number, transcriptPath: string): Promise<void> {
+    return this.db.write(async (db) => {
+      await db.update(verificationAttempts).set({ transcriptPath }).where(eq(verificationAttempts.id, id)).run();
+    });
+  }
+
   /** One attempt by id, or undefined — backs the attempt-log endpoint, which
    * reads back the row's `transcriptPath`/`harness` to parse its critic log. */
   get(id: number): Promise<VerificationAttemptRow | undefined> {

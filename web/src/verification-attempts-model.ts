@@ -39,6 +39,24 @@ export function latestAttempts(attempts: VerificationAttempt[]): VerificationAtt
   return order.map((mechanism) => latestByMechanism.get(mechanism)!);
 }
 
+/**
+ * Why a critic's native session transcript (ADR-0040) isn't showing, driven by
+ * the #327 verifier status — not a bare "unavailable". `null` when a transcript
+ * is present (nothing to explain). Distinguishes: the verifier is disabled for
+ * this workspace; the critic never ran (skipped / no attempt); or it ran but
+ * its log wasn't captured. Pure — testable without a DOM.
+ */
+export function criticUnavailableReason(
+  state: VerifierStatus['state'],
+  hasAttempt: boolean,
+  hasTranscript: boolean,
+): string | null {
+  if (hasTranscript) return null;
+  if (state === 'disabled') return 'Critic disabled for this workspace.';
+  if (!hasAttempt) return 'Critic did not run.';
+  return 'Critic session log was not captured.';
+}
+
 /** Every verifier status paired with its latest recorded attempt, if it ran. */
 export function verificationRows(
   statuses: VerifierStatus[],
