@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { dominantModel, foldModels, usageFromModels, type ParsedSession, type ProcessNode, type UsageTurn } from '../usage.js';
+import { forEachYielding } from '../../reliability/yield.js';
 import type { HarnessAdapter, ModelUsage, SessionTailReader } from './adapter.js';
 import { LineCursor, type LineAccumulator } from './incremental-log.js';
 
@@ -11,6 +12,14 @@ interface RolloutScan {
   models: Record<string, ModelUsage>;
   contextTokens: number | null;
   turns: UsageTurn[];
+}
+
+interface Rollout {
+  id: string;
+  parentId: string | null;
+  name: string;
+  file: string;
+  scan: RolloutScan;
 }
 
 /**
@@ -39,10 +48,15 @@ class RolloutAcc implements LineAccumulator {
   readonly models: Record<string, ModelUsage> = {};
   private model: string | null = null;
   private contextTokens: number | null = null;
-  private readonly prev = { input: 0, cached: 0, output: 0 };
+  private prev = { input: 0, cached: 0, output: 0 };
   private tools: string[] = [];
   private readonly seenToolCalls = new Set<string>();
   readonly turns: UsageTurn[] = [];
+  private started: boolean;
+
+  constructor(private readonly subagent = false) {
+    this.started = !subagent;
+  }
 
   fold(line: string): void {
     if (!line.trim()) return;
@@ -50,6 +64,18 @@ class RolloutAcc implements LineAccumulator {
     try {
       entry = JSON.parse(line);
     } catch {
+      return;
+    }
+    if (this.subagent && !this.started) {
+      if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
+        this.model = entry.payload.model;
+      } else if (entry?.type === 'event_msg' && entry.payload?.type === 'token_count') {
+        const total = entry.payload.info?.total_token_usage;
+        if (total) this.prev = { input: num(total.input_tokens), cached: num(total.cached_input_tokens), output: num(total.output_tokens) };
+      } else if (entry?.type === 'inter_agent_communication_metadata' && entry.payload?.trigger_turn === true) {
+        this.started = true;
+        this.tools = [];
+      }
       return;
     }
     if (entry?.type === 'turn_context' && typeof entry.payload?.model === 'string') {
@@ -116,38 +142,56 @@ class RolloutAcc implements LineAccumulator {
 }
 
 /** One whole-file pass over a rollout log (the run-end `collectUsage` path). */
-function scanRollout(file: string): RolloutScan {
-  const acc = new RolloutAcc();
+function scanRollout(file: string, subagent = false): RolloutScan {
+  const acc = new RolloutAcc(subagent);
   if (!existsSync(file)) return acc.snapshot();
   for (const line of readFileSync(file, 'utf8').split('\n')) acc.fold(line);
   return acc.snapshot();
 }
 
-/**
- * Codex has no Subagent concept, so its Process Tree is a single root node:
- * its own tokens are the whole session and its context fill is the latest
- * request's input footprint. Shared by the whole-file `parse` and the
- * incremental `CodexSessionTailReader`.
- *
- * ponytail: single-model-per-node — a session that switched models (manual
- * resume with a different pin) collapses the node's tokens under its dominant
- * model. The flat `usage` keeps the true per-model split; only the tree node
- * is lossy. Split per model if the Activity view ever needs exact per-node
- * pricing.
- */
-function buildRolloutTree(rootId: string, scan: RolloutScan): ParsedSession {
-  const root: ProcessNode = {
-    id: rootId,
-    name: 'root',
-    model: dominantModel(scan.models) ?? 'unknown',
-    usage: foldModels(scan.models),
-    contextTokens: scan.contextTokens,
+function mergeModels(scans: RolloutScan[]): Record<string, ModelUsage> {
+  const models: Record<string, ModelUsage> = {};
+  for (const scan of scans) {
+    for (const [model, usage] of Object.entries(scan.models)) {
+      const bucket = (models[model] ??= { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
+      bucket.inputTokens += usage.inputTokens;
+      bucket.outputTokens += usage.outputTokens;
+      bucket.cacheReadTokens += usage.cacheReadTokens;
+      bucket.cacheWriteTokens += usage.cacheWriteTokens;
+    }
+  }
+  return models;
+}
+
+/** Build Codex's recursive Process Tree from rollout `parent_thread_id`s. */
+function buildRolloutTree(rootId: string, rollouts: Rollout[]): ParsedSession {
+  const byParent = new Map<string, Rollout[]>();
+  const included = new Map<string, Rollout>();
+  for (const rollout of rollouts) included.set(rollout.id, rollout);
+  for (const rollout of rollouts) {
+    if (!rollout.parentId || !included.has(rollout.parentId)) continue;
+    const children = byParent.get(rollout.parentId) ?? [];
+    children.push(rollout);
+    byParent.set(rollout.parentId, children);
+  }
+  const node = (rollout: Rollout, depth: number): ProcessNode => ({
+    id: rollout.id,
+    name: depth === 0 ? 'root' : rollout.name,
+    model: dominantModel(rollout.scan.models) ?? 'unknown',
+    usage: foldModels(rollout.scan.models),
+    contextTokens: rollout.scan.contextTokens,
     status: 'active',
-    depth: 0,
+    depth,
     toolUseId: null,
-    children: [],
-  };
-  return { usage: usageFromModels(scan.models), tree: root, turns: scan.turns } satisfies ParsedSession;
+    children: (byParent.get(rollout.id) ?? []).map((child) => node(child, depth + 1)),
+  });
+  const root = included.get(rootId);
+  if (!root) throw new Error(`Missing Codex root rollout ${rootId}`);
+  return {
+    usage: usageFromModels(mergeModels(rollouts.map((rollout) => rollout.scan))),
+    tree: node(root, 0),
+    turns: rollouts.flatMap((rollout) => rollout.scan.turns),
+  } satisfies ParsedSession;
 }
 
 /**
@@ -158,7 +202,7 @@ function buildRolloutTree(rootId: string, scan: RolloutScan): ParsedSession {
  * file exists — keep re-resolving until it appears, then the path is stable.
  */
 class CodexSessionTailReader implements SessionTailReader {
-  private cursor: LineCursor<RolloutAcc> | null = null;
+  private readonly cursors = new Map<string, LineCursor<RolloutAcc>>();
   private cached: ParsedSession | null = null;
   private inflight: Promise<ParsedSession | null> | null = null;
 
@@ -180,13 +224,18 @@ class CodexSessionTailReader implements SessionTailReader {
   }
 
   private async doSample(): Promise<ParsedSession | null> {
-    if (!this.cursor) {
-      const file = codexAdapter.usage!.sessionLogFile(this.input);
-      if (!file) return this.cached; // rollout not written yet → stays null
-      this.cursor = new LineCursor(file, () => new RolloutAcc());
+    const rollouts = await findRolloutsYielding(this.input);
+    if (rollouts.length === 0) return this.cached; // rollout not written yet → stays null
+    for (const rollout of rollouts) {
+      let cursor = this.cursors.get(rollout.file);
+      if (!cursor) {
+        cursor = new LineCursor(rollout.file, () => new RolloutAcc(rollout.parentId !== null));
+        this.cursors.set(rollout.file, cursor);
+      }
+      await cursor.advance();
+      rollout.scan = cursor.acc.snapshot();
     }
-    await this.cursor.advance();
-    this.cached = buildRolloutTree(this.input.sessionId, this.cursor.acc.snapshot());
+    this.cached = buildRolloutTree(this.input.sessionId, rollouts);
     return this.cached;
   }
 }
@@ -198,6 +247,121 @@ function entriesNewestFirst(dir: string): string[] {
   } catch {
     return [];
   }
+}
+
+function rolloutHeader(file: string): Pick<Rollout, 'id' | 'parentId' | 'name'> | null {
+  try {
+    const [line] = readFileSync(file, 'utf8').split('\n', 1);
+    const entry: any = JSON.parse(line ?? '');
+    const payload = entry?.type === 'session_meta' ? entry.payload : null;
+    const id = payload?.id ?? payload?.session_id;
+    if (typeof id !== 'string') return null;
+    const spawn = payload?.source?.subagent?.thread_spawn;
+    return {
+      id,
+      parentId: typeof payload?.parent_thread_id === 'string' ? payload.parent_thread_id : null,
+      name:
+        typeof spawn?.agent_path === 'string'
+          ? spawn.agent_path
+          : typeof payload?.agent_path === 'string'
+            ? payload.agent_path
+            : typeof spawn?.agent_nickname === 'string'
+              ? spawn.agent_nickname
+              : typeof payload?.agent_nickname === 'string'
+                ? payload.agent_nickname
+                : 'subagent',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sessionsRoot(input: { sessionLogDir?: string | undefined }): string {
+  const codexHome = process.env.CODEX_HOME;
+  return input.sessionLogDir ?? (codexHome ? join(codexHome, 'sessions') : join(homedir(), '.codex', 'sessions'));
+}
+
+function rolloutFiles(root: string): string[] {
+  const files: string[] = [];
+  for (const year of entriesNewestFirst(root)) {
+    for (const month of entriesNewestFirst(join(root, year))) {
+      for (const day of entriesNewestFirst(join(root, year, month))) {
+        for (const file of entriesNewestFirst(join(root, year, month, day))) {
+          if (file.startsWith('rollout-') && file.endsWith('.jsonl')) files.push(join(root, year, month, day, file));
+        }
+      }
+    }
+  }
+  return files;
+}
+
+async function rolloutFilesYielding(root: string): Promise<string[]> {
+  const files: string[] = [];
+  await forEachYielding(entriesNewestFirst(root), async (year) => {
+    await forEachYielding(entriesNewestFirst(join(root, year)), async (month) => {
+      await forEachYielding(entriesNewestFirst(join(root, year, month)), async (day) => {
+        const dir = join(root, year, month, day);
+        await forEachYielding(entriesNewestFirst(dir), (file) => {
+          if (file.startsWith('rollout-') && file.endsWith('.jsonl')) files.push(join(dir, file));
+        });
+      });
+    });
+  });
+  return files;
+}
+
+function findRollouts(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }, scan = true): Rollout[] {
+  const rootFile = codexAdapter.usage!.sessionLogFile(input);
+  if (!rootFile) return [];
+  const root = sessionsRoot(input);
+  const rollouts = new Map<string, Rollout>([
+    [input.sessionId, { id: input.sessionId, parentId: null, name: 'root', file: rootFile, scan: scan ? scanRollout(rootFile) : emptyScan() }],
+  ]);
+  for (const file of rolloutFiles(root)) {
+    if (file === rootFile) continue;
+    const header = rolloutHeader(file);
+    if (!header || !header.parentId || rollouts.has(header.id)) continue;
+    rollouts.set(header.id, { ...header, file, scan: scan ? scanRollout(file, true) : emptyScan() });
+  }
+  const included = new Set([input.sessionId]);
+  for (;;) {
+    let added = false;
+    for (const rollout of rollouts.values()) {
+      if (rollout.parentId && included.has(rollout.parentId) && !included.has(rollout.id)) {
+        included.add(rollout.id);
+        added = true;
+      }
+    }
+    if (!added) return [...rollouts.values()].filter((rollout) => included.has(rollout.id));
+  }
+}
+
+async function findRolloutsYielding(input: { sessionLogDir?: string | undefined; cwd: string; sessionId: string }): Promise<Rollout[]> {
+  const files = await rolloutFilesYielding(sessionsRoot(input));
+  const rootFile = files.find((file) => file.endsWith(`-${input.sessionId}.jsonl`));
+  if (!rootFile) return [];
+  const rollouts = new Map<string, Rollout>([[input.sessionId, { id: input.sessionId, parentId: null, name: 'root', file: rootFile, scan: emptyScan() }]]);
+  await forEachYielding(files, (file) => {
+    if (file === rootFile) return;
+    const header = rolloutHeader(file);
+    if (!header || !header.parentId || rollouts.has(header.id)) return;
+    rollouts.set(header.id, { ...header, file, scan: emptyScan() });
+  });
+  const included = new Set([input.sessionId]);
+  for (;;) {
+    let added = false;
+    await forEachYielding(rollouts.values(), (rollout) => {
+      if (rollout.parentId && included.has(rollout.parentId) && !included.has(rollout.id)) {
+        included.add(rollout.id);
+        added = true;
+      }
+    });
+    if (!added) return [...rollouts.values()].filter((rollout) => included.has(rollout.id));
+  }
+}
+
+function emptyScan(): RolloutScan {
+  return { models: {}, contextTokens: null, turns: [] };
 }
 
 /**
@@ -252,9 +416,9 @@ export const codexAdapter: HarnessAdapter = {
      * appeared yet. See `buildRolloutTree` for the single-node tree shape.
      */
     parse(input) {
-      const file = codexAdapter.usage!.sessionLogFile(input);
-      if (!file || !existsSync(file)) return null;
-      return buildRolloutTree(input.sessionId ?? file, scanRollout(file));
+      if (!input.sessionId) return null;
+      const rollouts = findRollouts({ ...input, sessionId: input.sessionId });
+      return rollouts.length > 0 ? buildRolloutTree(input.sessionId, rollouts) : null;
     },
 
     /** The live path (#217): an incremental, off-the-event-loop tailer that
@@ -303,9 +467,7 @@ export const codexAdapter: HarnessAdapter = {
      */
     sessionLogFile({ sessionLogDir, sessionId }) {
       if (!sessionId) return null;
-      const codexHome = process.env.CODEX_HOME;
-      const root =
-        sessionLogDir ?? (codexHome ? join(codexHome, 'sessions') : join(homedir(), '.codex', 'sessions'));
+      const root = sessionsRoot({ sessionLogDir });
       const suffix = `-${sessionId}.jsonl`;
       for (const year of entriesNewestFirst(root)) {
         for (const month of entriesNewestFirst(join(root, year))) {

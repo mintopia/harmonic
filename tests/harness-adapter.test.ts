@@ -297,7 +297,7 @@ describe('harness adapters', () => {
     });
   });
 
-  it("codex's parse() builds a single-node tree with context fill and the dominant model", () => {
+  it("codex's parse() builds a root tree with context fill and the dominant model", () => {
     const lines = [
       JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'low' } }),
       JSON.stringify({
@@ -340,6 +340,47 @@ describe('harness adapters', () => {
     expect(parsed.tree.usage).toEqual({ inputTokens: 16235, outputTokens: 26, cacheReadTokens: 15488, cacheWriteTokens: 0 });
     // No rollout yet → no log coming, never a fake zero.
     expect(adapterFor('codex').usage!.parse!({ sessionLogDir: root, cwd: '/w', sessionId: 'missing' })).toBeNull();
+  });
+
+  it("codex's parse() discovers Subagent rollouts without counting their forked parent history", () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-subagent-parse-'));
+    const day = join(root, '2026', '08', '24');
+    mkdirSync(day, { recursive: true });
+    const tokenCount = (input: number, output: number) =>
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: output } } },
+      });
+    const turn = (model: string) => JSON.stringify({ type: 'turn_context', payload: { model } });
+    writeFileSync(
+      join(day, 'rollout-x-root.jsonl'),
+      [JSON.stringify({ type: 'session_meta', payload: { id: 'root' } }), turn('gpt-5.6-sol'), tokenCount(100, 10)].join('\n'),
+    );
+    writeFileSync(
+      join(day, 'rollout-x-child.jsonl'),
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: {
+            id: 'child',
+            parent_thread_id: 'root',
+            source: { subagent: { thread_spawn: { agent_path: '/root/issue_investigation' } } },
+          },
+        }),
+        turn('gpt-5.6-sol'),
+        tokenCount(100, 10), // copied parent history before the spawn boundary
+        JSON.stringify({ type: 'inter_agent_communication_metadata', payload: { trigger_turn: true } }),
+        turn('gpt-5.6-mini'),
+        tokenCount(30, 3),
+      ].join('\n'),
+    );
+
+    const parsed = adapterFor('codex').usage!.parse!({ sessionLogDir: root, cwd: '/w', sessionId: 'root' })!;
+    expect(parsed.tree).toMatchObject({ id: 'root', children: [{ id: 'child', name: '/root/issue_investigation', depth: 1 }] });
+    expect(parsed.usage.models).toEqual({
+      'gpt-5.6-sol': { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      'gpt-5.6-mini': { inputTokens: 30, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
   });
 
   it("claude's parse() builds a recursive Subagent tree and rolls every Subagent's tokens up", () => {
@@ -601,5 +642,33 @@ describe("codex's incremental rollout tail reader (#217)", () => {
     appendFileSync(file, tc.slice(half) + '\n');
     const complete = await reader.sample();
     expect(complete!.usage.models['gpt-5.6-sol']).toEqual({ inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 });
+  });
+
+  it('picks up a Codex Subagent rollout that appears after the first tick', async () => {
+    const { file, reader } = setup('root');
+    writeFileSync(file, turn('gpt-5.6-sol') + '\n' + tokenCount(100, 0, 10, 100) + '\n');
+    expect((await reader.sample())!.tree.children).toEqual([]);
+
+    const child = join(file.slice(0, file.lastIndexOf('/')), 'rollout-x-child.jsonl');
+    writeFileSync(
+      child,
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: {
+            id: 'child',
+            parent_thread_id: 'root',
+            source: { subagent: { thread_spawn: { agent_path: '/root/reviewer' } } },
+          },
+        }),
+        JSON.stringify({ type: 'inter_agent_communication_metadata', payload: { trigger_turn: true } }),
+        turn('gpt-5.6-mini'),
+        tokenCount(20, 0, 2, 20),
+      ].join('\n'),
+    );
+
+    const updated = await reader.sample();
+    expect(updated!.tree.children).toMatchObject([{ id: 'child', name: '/root/reviewer', depth: 1 }]);
+    expect(updated!.usage.models['gpt-5.6-mini']).toMatchObject({ inputTokens: 20, outputTokens: 2 });
   });
 });

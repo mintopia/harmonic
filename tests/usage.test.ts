@@ -88,6 +88,51 @@ describe('collectUsage rolls Subagent models + per-agent breakdown into the pers
     expect(usage.agents?.root).toMatchObject({ inputTokens: 100, outputTokens: 10 });
     expect(usage.agents?.['code-reviewer']).toMatchObject({ inputTokens: 40, outputTokens: 4 });
   });
+
+  it('uses Codex child rollout usage instead of root-only prompt-result usage', () => {
+    const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-codex-agents-logs-'));
+    const day = join(logRoot, '2026', '08', '24');
+    mkdirSync(day, { recursive: true });
+    const turn = (model: string) => JSON.stringify({ type: 'turn_context', payload: { model } });
+    const tokenCount = (input: number, output: number) =>
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: output } } },
+      });
+    writeFileSync(join(day, 'rollout-x-root.jsonl'), [turn('gpt-5.6-sol'), tokenCount(100, 10)].join('\n'));
+    writeFileSync(
+      join(day, 'rollout-x-child.jsonl'),
+      [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: {
+            id: 'child',
+            parent_thread_id: 'root',
+            source: { subagent: { thread_spawn: { agent_path: '/root/code-review' } } },
+          },
+        }),
+        JSON.stringify({ type: 'inter_agent_communication_metadata', payload: { trigger_turn: true } }),
+        turn('gpt-5.6-mini'),
+        tokenCount(40, 4),
+      ].join('\n'),
+    );
+
+    const usage = collectUsage({
+      harnessId: 'codex',
+      harness: { command: 'x', args: [], env: {}, models: [], defaultModel: 'x', sessionLogDir: logRoot },
+      cwd: '/w',
+      sessionId: 'root',
+      promptResult: { usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110 } },
+      events: [],
+    })!;
+
+    expect(usage.models).toMatchObject({
+      'gpt-5.6-sol': { inputTokens: 100, outputTokens: 10 },
+      'gpt-5.6-mini': { inputTokens: 40, outputTokens: 4 },
+    });
+    expect(usage.totals).toMatchObject({ inputTokens: 140, outputTokens: 14 });
+    expect(usage.agents?.['/root/code-review']).toMatchObject({ inputTokens: 40, outputTokens: 4 });
+  });
 });
 
 describe('replay quarantine (issue #144)', () => {

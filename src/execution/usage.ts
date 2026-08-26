@@ -195,8 +195,9 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
   // per-model split next (claude/copilot — this is where a Subagent's model,
   // e.g. a Sonnet helper, now shows up instead of being dropped); the raw
   // session-log reader (parent only) as the last resort.
+  const hasSubagents = (parsed?.tree.children.length ?? 0) > 0;
   let models =
-    input.promptResult && collector?.modelsFromPromptResult
+    !hasSubagents && input.promptResult && collector?.modelsFromPromptResult
       ? collector.modelsFromPromptResult(input.promptResult)
       : {};
   if (Object.keys(models).length === 0) {
@@ -216,7 +217,7 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
     models,
     ...(agents && Object.keys(agents).length > 0 ? { agents } : {}),
     ...(attribution ?? {}),
-    totals: acpTotals ?? sumModels(models),
+    totals: hasSubagents ? sumModels(models) : acpTotals ?? sumModels(models),
     toolCalls,
     source: acpTotals && Object.keys(models).length > 0 ? 'combined' : acpTotals ? 'acp' : 'session-log',
   };
