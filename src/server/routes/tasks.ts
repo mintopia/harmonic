@@ -978,7 +978,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Attempts'],
         description: 'Read a verification task outcome and its captured command output.',
         params: idParamsSchema,
-        response: { 200: z.object({ output: z.string(), summary: z.string(), hasTranscript: z.boolean() }) },
+        response: {
+          200: z
+            .object({ output: z.string(), summary: z.string(), hasTranscript: z.boolean() })
+            .describe("The verification task's captured command output and summary, and whether a critic transcript exists."),
+        },
       },
     },
     async (req) => {

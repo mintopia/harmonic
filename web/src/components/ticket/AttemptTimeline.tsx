@@ -106,7 +106,7 @@ function TaskRow({ task, now, selected, onSelect }: { task: AttemptTask; now: nu
         type="button"
         aria-pressed={selected}
         onClick={onSelect}
-        className={`flex min-h-9 w-full items-center gap-2 rounded-sm border px-2 py-1.5 text-left text-small transition-colors ${selected ? SELECTED : IDLE}`}
+        className={`flex min-h-11 w-full items-center gap-2 rounded-sm border px-2 py-1.5 text-left text-small transition-colors ${selected ? SELECTED : IDLE}`}
       >
         <span role="img" aria-label={task.state} className={`size-1.5 shrink-0 rounded-full ${DOT[tone]}`} />
         <span className="min-w-0 flex-1 truncate text-ink">{taskLabel(task)}</span>
