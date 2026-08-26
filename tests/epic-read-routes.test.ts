@@ -55,7 +55,7 @@ describe('Epic read model operator surface (issue #167)', () => {
 
       const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics`);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ epics: list });
+      expect(res.body).toEqual({ epics: list, total: list.length });
       expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()));
     });
 
@@ -63,7 +63,7 @@ describe('Epic read model operator surface (issue #167)', () => {
       vi.spyOn(ctx().trackerManager, 'listEpics').mockResolvedValue([]);
       const res = await server.api('GET', `/api/workspaces/${(await defaultWorkspaceId())}/epics`);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ epics: [] });
+      expect(res.body).toEqual({ epics: [], total: 0 });
     });
 
     it('404s when the Workspace does not exist', async () => {

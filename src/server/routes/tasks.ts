@@ -216,7 +216,7 @@ const runSchema = z
   })
   .meta({ id: 'Run' });
 
-const runsListResponseSchema = z.object({ runs: z.array(runSchema) });
+const runsListResponseSchema = listResponse('runs', runSchema);
 
 const runEventSchema = z.object({
   id: z.number().meta({ example: 55210 }),
@@ -231,15 +231,14 @@ const runEventSchema = z.object({
   }),
 });
 
-const eventsListResponseSchema = z.object({ events: z.array(runEventSchema) });
-const ticketTimelineResponseSchema = z.object({
-  events: z.array(z.object({
-    runId: z.number().nullable(),
-    ts: z.number(),
-    kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'escalation', 'operator-accept', 'operator-reject', 'landing', 'fact']),
-    data: z.unknown(),
-  })),
+const eventsListResponseSchema = listResponse('events', runEventSchema);
+const ticketTimelineEventSchema = z.object({
+  runId: z.number().nullable(),
+  ts: z.number(),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'escalation', 'operator-accept', 'operator-reject', 'landing', 'fact']),
+  data: z.unknown(),
 });
+const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
 const runLogResponseSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('available'), events: z.array(runEventSchema), liveCursor: z.number() }),
   z.object({ status: z.literal('unavailable'), liveCursor: z.number() }),
@@ -265,7 +264,7 @@ const guardrailEventSchema = z.object({
   payload: z.unknown().meta({ example: {} }),
 });
 
-const guardrailEventsListResponseSchema = z.object({ guardrailEvents: z.array(guardrailEventSchema) });
+const guardrailEventsListResponseSchema = listResponse('guardrailEvents', guardrailEventSchema);
 
 /** One persisted verification attempt as the REST API serves it (`domain/verification-attempts.ts` `VerificationAttemptRow`, issue #169, part of #109). */
 const verificationAttemptSchema = z.object({
@@ -293,8 +292,7 @@ const verificationAttemptSchema = z.object({
   hasTranscript: z.boolean().meta({ example: false }),
 });
 
-const verificationAttemptsListResponseSchema = z.object({
-  verificationAttempts: z.array(verificationAttemptSchema),
+const verificationAttemptsListResponseSchema = listResponse('verificationAttempts', verificationAttemptSchema).extend({
   verifierStatuses: z.array(verifierStatusSchema),
 });
 
@@ -328,7 +326,7 @@ const diffFileSchema = z.object({
   lines: z.array(diffLineSchema),
 });
 
-const diffFilesResponseSchema = z.object({ files: z.array(diffFileSchema) });
+const diffFilesResponseSchema = listResponse('files', diffFileSchema);
 
 type DiffFile = z.infer<typeof diffFileSchema>;
 
@@ -762,12 +760,16 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Attempts'],
         description: "A ticket's attempt timeline. Tasks are ordered exactly as they ran.",
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: { 200: attemptTimelineResponseSchema },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      return attemptTimelineToApi(ctx, req.params.id);
+      const { limit, offset } = req.query;
+      const { attempts, budgetBase } = await attemptTimelineToApi(ctx, req.params.id);
+      const { items, total } = paginate(attempts, { limit, offset });
+      return { attempts: items, total, budgetBase };
     },
   );
 
@@ -778,12 +780,16 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'A chronological projection of the ticket lifecycle, verification, guardrail, operator, and landing event logs.',
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: { 200: ticketTimelineResponseSchema.describe('Chronological lifecycle events for this task.'), 404: errorResponse('No task has that id.') },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      return ticketTimelineToApi(ctx, req.params.id);
+      const { limit, offset } = req.query;
+      const { events } = await ticketTimelineToApi(ctx, req.params.id);
+      const { items, total } = paginate(events, { limit, offset });
+      return { events: items, total };
     },
   );
 
@@ -794,12 +800,16 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: "List a task's runs (retries included). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: { 200: runsListResponseSchema.describe("Every run for the task, including failed retries, oldest first.") },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      return { runs: (await ctx.runs.listForTask(req.params.id)).map((run) => runToApi(ctx, run)) };
+      const { limit, offset } = req.query;
+      const runs = (await ctx.runs.listForTask(req.params.id)).map((run) => runToApi(ctx, run));
+      const { items, total } = paginate(runs, { limit, offset });
+      return { runs: items, total };
     },
   );
 
@@ -870,10 +880,15 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: 'Replay a run\'s persisted events, in order — the same records streamed live over the WebSocket. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: { 200: eventsListResponseSchema.describe('The run\'s persisted events in sequence order.') },
       },
     },
-    async (req) => ({ events: await ctx.runs.listEvents(req.params.id) }),
+    async (req) => {
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.runs.listEvents(req.params.id), { limit, offset });
+      return { events: items, total };
+    },
   );
 
   app.get(
@@ -883,6 +898,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Runs'],
         description: "Replay a run's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: {
           200: guardrailEventsListResponseSchema.describe("The run's Guardrail-trip events in sequence order."),
           404: errorResponse('No run has that id.'),
@@ -891,12 +907,13 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.runs.assertExists(req.params.id);
-      return {
-        guardrailEvents: (await ctx.guardrailEvents.list(req.params.id)).map((r) => ({
-          ...r,
-          payload: JSON.parse(r.payload) as unknown,
-        })),
-      };
+      const { limit, offset } = req.query;
+      const guardrailEvents = (await ctx.guardrailEvents.list(req.params.id)).map((r) => ({
+        ...r,
+        payload: JSON.parse(r.payload) as unknown,
+      }));
+      const { items, total } = paginate(guardrailEvents, { limit, offset });
+      return { guardrailEvents: items, total };
     },
   );
 
@@ -908,6 +925,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description:
           "Replay a run's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: {
           200: verificationAttemptsListResponseSchema.describe("The run's verification attempts in sequence order."),
           404: errorResponse('No run has that id.'),
@@ -916,15 +934,19 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const run = await ctx.runs.get(req.params.id);
+      const { limit, offset } = req.query;
       const attempts = await ctx.verificationAttempts.list(run.id);
+      // verifierStatuses is derived from the whole attempt set, so compute it
+      // before paginating the attempts page (ADR-0045).
       const verifierStatuses = await verifierStatusesToApi(ctx, run, attempts);
       // The raw `transcriptPath`/`harness` columns stay server-only (an absolute
       // FS path is not the client's business); the response schema strips them
       // and the client reads the parsed log by attempt id when `hasTranscript`.
-      return {
-        verificationAttempts: attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })),
-        verifierStatuses,
-      };
+      const { items, total } = paginate(
+        attempts.map((a) => ({ ...a, hasTranscript: a.transcriptPath != null })),
+        { limit, offset },
+      );
+      return { verificationAttempts: items, total, verifierStatuses };
     },
   );
 
@@ -1035,24 +1057,29 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         description:
           'Per-file unified-diff hunks for the review pane (worktree-mode runs only). Empty `files` outside worktree mode or when the branch/worktree is gone. Reachable with a run-scoped Run Key.',
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: { 200: diffFilesResponseSchema.describe("The run's changed files with parsed +/- hunks; empty outside worktree mode.") },
       },
     },
     async (req) => {
       const run = await ctx.runs.get(req.params.id);
       const task = await ctx.tasks.get(run.taskId);
+      const { limit, offset } = req.query;
+      let files: DiffFile[];
       try {
         const raw = run.diffBaseOid && run.diffHeadOid
           ? await Git.diffRange(task.workingDir, run.diffBaseOid, run.diffHeadOid)
           : run.branch && run.baseBranch
             ? await Git.diffUnified(task.workingDir, run.baseBranch, run.branch)
             : '';
-        return { files: parseUnifiedDiff(raw) };
+        files = parseUnifiedDiff(raw);
       } catch {
         // A missing revision (legacy row or pruned object) is "nothing to diff",
         // not a server error — mirror the empty-state contract.
-        return { files: [] };
+        files = [];
       }
+      const { items, total } = paginate(files, { limit, offset });
+      return { files: items, total };
     },
   );
 }

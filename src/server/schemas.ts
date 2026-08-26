@@ -6,6 +6,7 @@ import {
   RUN_STATES,
   CONVERSATION_STATES,
 } from '../db/schema.js';
+import { listResponse } from './pagination.js';
 
 /**
  * Shared response schemas for zod-declared routes (ADR-0005). Every route's
@@ -103,10 +104,12 @@ export const attemptSchema = z
   })
   .meta({ id: 'Attempt' });
 
-/** The ticket timeline shape shared by REST and the WebSocket firehose. */
-export const attemptTimelineResponseSchema = z
-  .object({
-    attempts: z.array(attemptSchema),
+/** The ticket timeline shape shared by REST and the WebSocket firehose. The REST
+ * `/tasks/:id/attempts` view carries the shared `total` envelope (ADR-0045); the
+ * firehose broadcast (ws.ts) sends the whole `attempts` list and simply omits the
+ * REST-only `total`, so both surfaces stay in step when no page is requested. */
+export const attemptTimelineResponseSchema = listResponse('attempts', attemptSchema)
+  .extend({
     /** The attempt number the `maxAttempts` budget counts from (ADR-0041): the last
      * escalated Attempt, or 0. `latest.number - budgetBase` is the position within
      * the current budget — history numbering never resets, the budget does. */

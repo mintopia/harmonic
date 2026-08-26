@@ -83,7 +83,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
 
     it('returns an empty list when nothing is leased', async () => {
       const res = await server.api('GET', '/api/leases');
-      expect(res.body).toEqual({ leases: [] });
+      expect(res.body).toEqual({ leases: [], total: 0 });
     });
   });
 

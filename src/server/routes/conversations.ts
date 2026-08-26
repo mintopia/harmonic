@@ -8,6 +8,7 @@ import { resolve as resolveOverride } from '../../domain/setting-override.js';
 import { DomainError } from '../../domain/errors.js';
 import { conversationToApi } from '../serialize.js';
 import { costSchema, errorResponse, idParamsSchema, okResponseSchema, runUsageSchema } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const createConversationInputSchema = z.object({
   /** The owning Workspace (ADR-0008); defaults to the earliest-created Workspace when omitted. */
@@ -77,7 +78,7 @@ const conversationSchema = z
   })
   .meta({ id: 'Conversation' });
 
-const conversationsListResponseSchema = z.object({ conversations: z.array(conversationSchema) });
+const conversationsListResponseSchema = listResponse('conversations', conversationSchema);
 const conversationsListQuerySchema = z.object({
   /** Scope to one Workspace's Conversations (ADR-0008); omitted means every Workspace. */
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
@@ -96,7 +97,7 @@ const conversationEventSchema = z.object({
   }),
 });
 
-const eventsListResponseSchema = z.object({ events: z.array(conversationEventSchema) });
+const eventsListResponseSchema = listResponse('events', conversationEventSchema);
 
 export async function conversationRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -143,17 +144,20 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
         description:
           'List Conversations, newest first, optionally scoped to one Workspace. Operator only; not reachable with a run-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
-        querystring: conversationsListQuerySchema,
+        querystring: conversationsListQuerySchema.extend(paginationQuerySchema.shape),
         response: {
           200: conversationsListResponseSchema.describe('Every matching Conversation, active and ended alike, newest first.'),
         },
       },
     },
-    async (req) => ({
-      conversations: await Promise.all(
-        (await ctx.conversations.list(req.query.workspaceId)).map((c) => conversationToApi(ctx, c)),
-      ),
-    }),
+    async (req) => {
+      const { workspaceId, limit, offset } = req.query;
+      const conversations = await Promise.all(
+        (await ctx.conversations.list(workspaceId)).map((c) => conversationToApi(ctx, c)),
+      );
+      const { items, total } = paginate(conversations, { limit, offset });
+      return { conversations: items, total };
+    },
   );
 
   app.get(
@@ -229,13 +233,18 @@ export async function conversationRoutes(fastify: FastifyInstance): Promise<void
           "Replay a Conversation's persisted events, in order — the same records streamed live over the WebSocket. Operator only; not reachable with a run-scoped key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: {
           200: eventsListResponseSchema.describe("The Conversation's persisted events in sequence order."),
           404: errorResponse('No Conversation has that id.'),
         },
       },
     },
-    async (req) => ({ events: await ctx.conversations.listEvents(req.params.id) }),
+    async (req) => {
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.conversations.listEvents(req.params.id), { limit, offset });
+      return { events: items, total };
+    },
   );
 
   app.post(

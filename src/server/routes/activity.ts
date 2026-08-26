@@ -4,8 +4,9 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { activityProcessSchema } from '../schemas.js';
 import { activitySnapshot } from '../serialize.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
-const activityResponseSchema = z.object({ processes: z.array(activityProcessSchema) });
+const activityResponseSchema = listResponse('processes', activityProcessSchema);
 
 export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -23,6 +24,10 @@ export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
           '`run_usage` firehose. A Read Key (a read-scoped API key) sees Runs only — Conversations are excluded, ' +
           'matching the firehose filter.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: paginationQuerySchema.extend({
+          /** A bearer token passed as a query param (e.g. an EventSource that cannot set an Authorization header). */
+          token: z.string().optional(),
+        }),
         response: {
           200: activityResponseSchema.describe(
             'Every live process across Workspaces (Runs then Conversations); an empty array when nothing is running. ' +
@@ -32,10 +37,12 @@ export async function activityRoutes(fastify: FastifyInstance): Promise<void> {
       },
     },
     async (req) => {
+      const { limit, offset, token: queryToken } = req.query;
       const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-      const token = bearer ?? (req.query as Record<string, string | undefined>)?.token;
+      const token = bearer ?? queryToken;
       const readOnly = (token ? await ctx.auth.verifyKey(token) : null)?.scope === 'read';
-      return { processes: await activitySnapshot(ctx, !readOnly) };
+      const { items, total } = paginate(await activitySnapshot(ctx, !readOnly), { limit, offset });
+      return { processes: items, total };
     },
   );
 }

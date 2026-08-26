@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { errorResponse, okResponseSchema } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 export const SESSION_COOKIE = 'harmonic_session';
 
@@ -61,7 +62,7 @@ const keyWithTokenSchema = keySchema.extend({
   token: z.string().meta({ example: '<the-new-key-token, shown only in this response>' }),
 });
 
-const keysListResponseSchema = z.object({ keys: z.array(keySchema) });
+const keysListResponseSchema = listResponse('keys', keySchema);
 
 export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -224,6 +225,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Keys'],
         description: 'List operator API keys (Run Keys are internal and never listed).',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: paginationQuerySchema,
         response: {
           200: keysListResponseSchema.describe(
             'Every full-scope operator key, revoked ones included, newest first; no token values.',
@@ -231,7 +233,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
     },
-    async () => ({ keys: await ctx.auth.listKeys() }),
+    async (req) => {
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.auth.listKeys(), { limit, offset });
+      return { keys: items, total };
+    },
   );
 
   app.delete(

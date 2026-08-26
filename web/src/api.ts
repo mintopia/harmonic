@@ -100,7 +100,7 @@ export const api = {
   // path starts at the server user's home. Operator-only (full-scope session).
   browseFs: (path?: string) =>
     request<FsListing>('GET', path ? `/api/fs?path=${encodeURIComponent(path)}` : '/api/fs'),
-  workspaces: () => request<{ workspaces: Workspace[] }>('GET', '/api/workspaces'),
+  workspaces: () => request<{ workspaces: Workspace[]; total: number }>('GET', '/api/workspaces'),
   createWorkspace: (input: { name: string; workingDir: string }) =>
     request<Workspace>('POST', '/api/workspaces', input),
   // Overridable fields (ADR-0012, issue #64) accept `null` to clear an override
@@ -171,26 +171,26 @@ export const api = {
   // already gone.
   deleteTask: (id: number) => request<{ id: number }>('DELETE', `/api/tasks/${id}`),
   runTask: (id: number) => request<Run>('POST', `/api/tasks/${id}/run`),
-  taskRuns: (id: number) => request<{ runs: Run[] }>('GET', `/api/tasks/${id}/runs`),
+  taskRuns: (id: number) => request<{ runs: Run[]; total: number }>('GET', `/api/tasks/${id}/runs`),
   /** Ordered durable Attempt/Task history for the ticket page. */
-  taskAttempts: (id: number) => request<{ attempts: Attempt[]; budgetBase: number }>('GET', `/api/tasks/${id}/attempts`),
+  taskAttempts: (id: number) => request<{ attempts: Attempt[]; budgetBase: number; total: number }>('GET', `/api/tasks/${id}/attempts`),
   /** Ticket-wide chronological lifecycle audit projection. */
-  taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[] }>('GET', `/api/tasks/${id}/timeline`),
+  taskTimeline: (id: number) => request<{ events: TicketTimelineEvent[]; total: number }>('GET', `/api/tasks/${id}/timeline`),
   taskUsage: (id: number) =>
     request<{ cost: Cost | null; runCount: number }>('GET', `/api/tasks/${id}/usage`),
   run: (id: number) => request<Run>('GET', `/api/runs/${id}`),
-  runEvents: (id: number) => request<{ events: RunEvent[] }>('GET', `/api/runs/${id}/events`),
+  runEvents: (id: number) => request<{ events: RunEvent[]; total: number }>('GET', `/api/runs/${id}/events`),
   runLog: (id: number) =>
     request<{ status: 'available'; events: RunLogEvent[]; liveCursor: number } | { status: 'unavailable'; liveCursor: number }>('GET', `/api/runs/${id}/log`),
   // Guardrail-trip event log for a Run (issue #171): the REST surface over
   // `GuardrailEventStore.list`, mirroring `runEvents`'s shape and 404 behaviour.
   runGuardrailEvents: (id: number) =>
-    request<{ guardrailEvents: GuardrailEvent[] }>('GET', `/api/runs/${id}/guardrail-events`),
+    request<{ guardrailEvents: GuardrailEvent[]; total: number }>('GET', `/api/runs/${id}/guardrail-events`),
   // Per-verifier Verification-attempt log for a Run (issue #169, part of
   // #109): the REST surface over the attempts store, mirroring
   // `runGuardrailEvents`'s shape and 404 behaviour.
   runVerificationAttempts: (id: number) =>
-    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[] }>('GET', `/api/runs/${id}/verification-attempts`),
+    request<{ verificationAttempts: VerificationAttempt[]; verifierStatuses: VerifierStatus[]; total: number }>('GET', `/api/runs/${id}/verification-attempts`),
   verificationAttempt: (id: number) =>
     request<{ output: string; summary: string; hasTranscript: boolean }>('GET', `/api/verification-attempts/${id}`),
   // A critic verification attempt's own native session transcript (ADR-0040) —
@@ -206,14 +206,14 @@ export const api = {
       'GET',
       `/api/runs/${id}/diff`,
     ),
-  runDiffFiles: (id: number) => request<{ files: DiffFile[] }>('GET', `/api/runs/${id}/diff/files`),
+  runDiffFiles: (id: number) => request<{ files: DiffFile[]; total: number }>('GET', `/api/runs/${id}/diff/files`),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
 
   removePassword: (currentPassword: string) =>
     request<{ ok: true }>('DELETE', '/api/auth/password', { currentPassword }),
   conversations: (workspaceId?: number) =>
-    request<{ conversations: Conversation[] }>(
+    request<{ conversations: Conversation[]; total: number }>(
       'GET',
       workspaceId ? `/api/conversations?workspaceId=${workspaceId}` : '/api/conversations',
     ),
@@ -228,7 +228,7 @@ export const api = {
   // panel removes it from the list locally on success (no WS broadcast).
   deleteConversation: (id: number) => request<{ ok: true }>('DELETE', `/api/conversations/${id}`),
   conversationEvents: (id: number) =>
-    request<{ events: ConversationEvent[] }>('GET', `/api/conversations/${id}/events`),
+    request<{ events: ConversationEvent[]; total: number }>('GET', `/api/conversations/${id}/events`),
   // `queued: true` (issue #14's LOCKED contract) means a Turn was already
   // running server-side and this message was enqueued as the next Turn
   // rather than started immediately.
@@ -250,9 +250,9 @@ export const api = {
       `/api/conversations/${conversationId}/permissions/${reqId}`,
       remember ? { optionId, remember } : { optionId },
     ),
-  permissionRules: () => request<{ rules: PermissionRule[] }>('GET', '/api/permission-rules'),
+  permissionRules: () => request<{ rules: PermissionRule[]; total: number }>('GET', '/api/permission-rules'),
   deletePermissionRule: (id: number) => request<unknown>('DELETE', `/api/permission-rules/${id}`),
-  channels: () => request<{ channels: Channel[] }>('GET', '/api/channels'),
+  channels: () => request<{ channels: Channel[]; total: number }>('GET', '/api/channels'),
   createChannel: (input: { name: string; type: Channel['type']; config: Record<string, unknown> }) =>
     request<Channel>('POST', '/api/channels', input),
   updateChannel: (id: number, patch: { events: string[] }) =>
@@ -261,7 +261,7 @@ export const api = {
 
   // Work Context lease diagnostics + operator controls (issue #125):
   // operator-only, 403 for anyone else.
-  leases: () => request<{ leases: LeaseDiagnostic[] }>('GET', '/api/leases'),
+  leases: () => request<{ leases: LeaseDiagnostic[]; total: number }>('GET', '/api/leases'),
   /** Hand a held/suspect lease to a chosen Run, superseding its current owner. */
   supersedeLease: (key: string, runId: number) =>
     request<{ ok: true }>('POST', '/api/leases/supersede', { key, runId }),
@@ -270,7 +270,7 @@ export const api = {
 
   // Parallel-Epic read model + force-land (issue #167, ADR-0026): operator-scope
   // only, mirroring the force-land allowlist. See epic-model.ts for the DTO shape.
-  epics: (workspaceId: number) => request<{ epics: Epic[] }>('GET', `/api/workspaces/${workspaceId}/epics`),
+  epics: (workspaceId: number) => request<{ epics: Epic[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics`),
   epic: (workspaceId: number, epicRef: number) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
   forceLandEpic: (workspaceId: number, epicRef: number) =>

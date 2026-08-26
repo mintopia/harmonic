@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { z } from 'zod';
 import type { App } from '../app.js';
 import { scheduledJobSchema } from '../schemas.js';
 import { scheduledJobsToApi } from '../serialize.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
-const scheduledJobsResponseSchema = z.object({ jobs: z.array(scheduledJobSchema) });
+const scheduledJobsResponseSchema = listResponse('jobs', scheduledJobSchema);
 
 export async function scheduledJobRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -15,7 +15,12 @@ export async function scheduledJobRoutes(fastify: FastifyInstance): Promise<void
       tags: ['Scheduled Jobs'],
       description: 'Read-only registry of recurring Harmonic Scheduled Jobs (ADR-0038), including durable last-run facts and computed next run.',
       security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+      querystring: paginationQuerySchema,
       response: { 200: scheduledJobsResponseSchema.describe('The current Scheduled Job registry snapshot.') },
     },
-  }, async () => ({ jobs: scheduledJobsToApi(await ctx.scheduler.snapshot()) }));
+  }, async (req) => {
+    const { limit, offset } = req.query;
+    const { items, total } = paginate(scheduledJobsToApi(await ctx.scheduler.snapshot()), { limit, offset });
+    return { jobs: items, total };
+  });
 }

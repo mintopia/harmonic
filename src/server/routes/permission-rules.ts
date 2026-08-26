@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { App } from '../app.js';
 import { idParamsSchema, okResponseSchema, errorResponse } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /** A persistent Permission Rule as the API serves it (ADR-0007). */
 const permissionRuleSchema = z
@@ -15,7 +16,7 @@ const permissionRuleSchema = z
   })
   .meta({ id: 'PermissionRule' });
 
-const permissionRulesListResponseSchema = z.object({ rules: z.array(permissionRuleSchema) });
+const permissionRulesListResponseSchema = listResponse('rules', permissionRuleSchema);
 
 export async function permissionRuleRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -29,10 +30,15 @@ export async function permissionRuleRoutes(fastify: FastifyInstance): Promise<vo
         description:
           'List persistent Permission Rules (auto-approve a tool kind in a Working Directory across Conversations). Operator only; not reachable with a run-scoped key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: paginationQuerySchema,
         response: { 200: permissionRulesListResponseSchema.describe('Every Permission Rule in force, newest first.') },
       },
     },
-    async () => ({ rules: await ctx.permissionRules.list() }),
+    async (req) => {
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.permissionRules.list(), { limit, offset });
+      return { rules: items, total };
+    },
   );
 
   app.delete(

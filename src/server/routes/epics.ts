@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 import type { Epic } from '../../domain/epic-view.js';
 
 /** Path params for a whole-Epic action: the owning Workspace and the Epic's tracker ref. */
@@ -69,7 +70,7 @@ const epicSchema = z
   })
   .meta({ id: 'Epic' });
 
-const epicsListResponseSchema = z.object({ epics: z.array(epicSchema) });
+const epicsListResponseSchema = listResponse('epics', epicSchema);
 
 /** `EpicLandOutcome` (`execution/epic-land-coordinator.ts`) as the API serves it — a discriminated union on `status`. */
 const epicLandOutcomeSchema = z
@@ -103,6 +104,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
           'member land state, integration-branch tip, and whole-Epic land/verification state. Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicListParamsSchema,
+        querystring: paginationQuerySchema,
         response: {
           200: epicsListResponseSchema.describe("Every derived Epic for this Workspace's last scan (possibly empty)."),
           404: errorResponse('No Workspace has that id.'),
@@ -112,7 +114,9 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       const epics = await ctx.trackerManager.listEpics(req.params.workspaceId);
-      return { epics: epics.map(epicToApi) };
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(epics.map(epicToApi), { limit, offset });
+      return { epics: items, total };
     },
   );
 

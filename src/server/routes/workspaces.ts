@@ -14,6 +14,7 @@ import {
 } from '../../config.js';
 import { DomainError } from '../../domain/errors.js';
 import { idParamsSchema, errorResponse } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /**
  * The Resolved Tracker of a Workspace (issue #83), flattened for the API: a
@@ -68,7 +69,7 @@ const workspaceSchema = z
   })
   .meta({ id: 'Workspace' });
 
-const workspacesListResponseSchema = z.object({ workspaces: z.array(workspaceSchema) });
+const workspacesListResponseSchema = listResponse('workspaces', workspaceSchema);
 
 export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -99,10 +100,15 @@ export async function workspaceRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Workspaces'],
         description: 'List Workspaces. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: paginationQuerySchema,
         response: { 200: workspacesListResponseSchema.describe('Every Workspace, oldest first.') },
       },
     },
-    async () => ({ workspaces: (await ctx.workspaces.list()).map(serialize) }),
+    async (req) => {
+      const { limit, offset } = req.query;
+      const { items, total } = paginate((await ctx.workspaces.list()).map(serialize), { limit, offset });
+      return { workspaces: items, total };
+    },
   );
 
   app.post(

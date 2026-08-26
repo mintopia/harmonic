@@ -168,6 +168,46 @@
           "endedAt"
         ]
       },
+      "VerifierStatusInput": {
+        "type": "object",
+        "properties": {
+          "mechanism": {
+            "type": "string",
+            "enum": [
+              "command",
+              "critic"
+            ],
+            "example": "critic"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "inconclusive",
+              "skipped",
+              "disabled"
+            ],
+            "example": "passed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          }
+        },
+        "required": [
+          "mechanism",
+          "state",
+          "reason"
+        ]
+      },
       "AttemptInput": {
         "type": "object",
         "properties": {
@@ -311,6 +351,12 @@
               }
             ]
           },
+          "verifierStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerifierStatusInput"
+            }
+          },
           "tasks": {
             "type": "array",
             "items": {
@@ -329,6 +375,7 @@
           "verifiedSha",
           "escalationReason",
           "continuation",
+          "verifierStatuses",
           "tasks"
         ]
       },
@@ -341,6 +388,12 @@
               "$ref": "#/components/schemas/AttemptInput"
             }
           },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 340
+          },
           "budgetBase": {
             "type": "integer",
             "minimum": 0,
@@ -350,6 +403,7 @@
         },
         "required": [
           "attempts",
+          "total",
           "budgetBase"
         ]
       },
@@ -1624,6 +1678,10 @@
               "priority": null
             }
           },
+          "summary": {
+            "type": "string",
+            "example": "Add rate limiting to POST /api/tasks"
+          },
           "cost": {
             "anyOf": [
               {
@@ -1802,6 +1860,7 @@
           "agentWorkable",
           "humanOnly",
           "overrides",
+          "summary",
           "cost",
           "url",
           "mapTitle",
@@ -2836,27 +2895,14 @@
                   {
                     "type": "object",
                     "properties": {
-                      "enabled": {
-                        "default": false,
-                        "type": "boolean"
-                      },
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "harness": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
+                      "off": {
+                        "type": "boolean",
+                        "const": true
                       }
-                    }
+                    },
+                    "required": [
+                      "off"
+                    ]
                   },
                   {
                     "type": "object",
@@ -2884,19 +2930,33 @@
                     "required": [
                       "prompt",
                       "model"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
                     "properties": {
-                      "off": {
-                        "type": "boolean",
-                        "const": true
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "harness": {
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
                       }
-                    },
-                    "required": [
-                      "off"
-                    ]
+                    }
                   }
                 ]
               },
@@ -3845,6 +3905,47 @@
         ],
         "additionalProperties": false
       },
+      "VerifierStatus": {
+        "type": "object",
+        "properties": {
+          "mechanism": {
+            "type": "string",
+            "enum": [
+              "command",
+              "critic"
+            ],
+            "example": "critic"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "inconclusive",
+              "skipped",
+              "disabled"
+            ],
+            "example": "passed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "example": null
+          }
+        },
+        "required": [
+          "mechanism",
+          "state",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
       "Attempt": {
         "type": "object",
         "properties": {
@@ -3989,6 +4090,12 @@
               }
             ]
           },
+          "verifierStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerifierStatus"
+            }
+          },
           "tasks": {
             "type": "array",
             "items": {
@@ -4007,6 +4114,7 @@
           "verifiedSha",
           "escalationReason",
           "continuation",
+          "verifierStatuses",
           "tasks"
         ],
         "additionalProperties": false
@@ -4020,6 +4128,12 @@
               "$ref": "#/components/schemas/Attempt"
             }
           },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "example": 340
+          },
           "budgetBase": {
             "type": "integer",
             "minimum": 0,
@@ -4029,6 +4143,7 @@
         },
         "required": [
           "attempts",
+          "total",
           "budgetBase"
         ],
         "additionalProperties": false
@@ -5318,6 +5433,10 @@
               "priority": null
             }
           },
+          "summary": {
+            "type": "string",
+            "example": "Add rate limiting to POST /api/tasks"
+          },
           "cost": {
             "anyOf": [
               {
@@ -5496,6 +5615,7 @@
           "agentWorkable",
           "humanOnly",
           "overrides",
+          "summary",
           "cost",
           "url",
           "mapTitle",
@@ -6557,29 +6677,13 @@
                   {
                     "type": "object",
                     "properties": {
-                      "enabled": {
-                        "default": false,
-                        "type": "boolean"
-                      },
-                      "prompt": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "model": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "harness": {
-                        "type": "string",
-                        "enum": [
-                          "claude",
-                          "codex",
-                          "copilot"
-                        ]
+                      "off": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "required": [
-                      "enabled"
+                      "off"
                     ],
                     "additionalProperties": false
                   },
@@ -6615,13 +6719,29 @@
                   {
                     "type": "object",
                     "properties": {
-                      "off": {
-                        "type": "boolean",
-                        "const": true
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      },
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "harness": {
+                        "type": "string",
+                        "enum": [
+                          "claude",
+                          "codex",
+                          "copilot"
+                        ]
                       }
                     },
                     "required": [
-                      "off"
+                      "enabled"
                     ],
                     "additionalProperties": false
                   }
@@ -7576,7 +7696,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "List tasks, optionally filtered and sorted. Reachable with a run-scoped Run Key.",
+        "description": "List tasks: filtered (`state`, `harness`, `priority`), searched (`q`, server-side substring over prompt + title), sorted, and paginated (`limit`/`offset`, with a `total` count). An omitted `limit` returns every match. Reachable with a run-scoped Run Key.",
         "parameters": [
           {
             "schema": {
@@ -7646,6 +7766,15 @@
           },
           {
             "schema": {
+              "example": "rate limiting",
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          },
+          {
+            "schema": {
               "example": "createdAt",
               "type": "string",
               "enum": [
@@ -7670,11 +7799,33 @@
             "in": "query",
             "name": "order",
             "required": false
+          },
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
           }
         ],
         "responses": {
           "200": {
-            "description": "Every task matching the filters, in the requested order.",
+            "description": "One page of tasks matching the filters, in the requested order, plus the full match `total`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7685,13 +7836,20 @@
                       "items": {
                         "$ref": "#/components/schemas/Task"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "tasks"
+                    "tasks",
+                    "total"
                   ],
                   "additionalProperties": false,
-                  "description": "Every task matching the filters, in the requested order."
+                  "description": "One page of tasks matching the filters, in the requested order, plus the full match `total`."
                 }
               }
             }
@@ -8718,6 +8876,28 @@
         "parameters": [
           {
             "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
@@ -8742,6 +8922,131 @@
         }
       }
     },
+    "/api/tasks/{id}/timeline": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and landing event logs.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991,
+              "example": 4821
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chronological lifecycle events for this task.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ts": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "attempt-started",
+                              "attempt-finished",
+                              "run-started",
+                              "run-finished",
+                              "lifecycle",
+                              "verification",
+                              "guardrail",
+                              "escalation",
+                              "operator-accept",
+                              "operator-reject",
+                              "landing",
+                              "fact"
+                            ]
+                          },
+                          "data": {}
+                        },
+                        "required": [
+                          "runId",
+                          "ts",
+                          "kind",
+                          "data"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "total"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Chronological lifecycle events for this task."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No task has that id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{id}/runs": {
       "get": {
         "tags": [
@@ -8749,6 +9054,28 @@
         ],
         "description": "List a task's runs (retries included). Reachable with a run-scoped Run Key.",
         "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
           {
             "schema": {
               "type": "integer",
@@ -8774,10 +9101,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Run"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "runs"
+                    "runs",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every run for the task, including failed retries, oldest first."
@@ -8959,6 +9293,28 @@
         "parameters": [
           {
             "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
@@ -9021,10 +9377,17 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "events"
+                    "events",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "The run's persisted events in sequence order."
@@ -9042,6 +9405,28 @@
         ],
         "description": "Replay a run's Guardrail-trip event log, in sequence order (issue #171). Reachable with a run-scoped Run Key.",
         "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
           {
             "schema": {
               "type": "integer",
@@ -9139,10 +9524,17 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "guardrailEvents"
+                    "guardrailEvents",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "The run's Guardrail-trip events in sequence order."
@@ -9170,6 +9562,28 @@
         ],
         "description": "Replay a run's verification-attempt log (per-verifier verdicts + summaries), in sequence order (issue #169, part of #109). Reachable with a run-scoped Run Key.",
         "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
           {
             "schema": {
               "type": "integer",
@@ -9276,10 +9690,24 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    },
+                    "verifierStatuses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VerifierStatus"
+                      }
                     }
                   },
                   "required": [
-                    "verificationAttempts"
+                    "verificationAttempts",
+                    "total",
+                    "verifierStatuses"
                   ],
                   "additionalProperties": false,
                   "description": "The run's verification attempts in sequence order."
@@ -9768,6 +10196,28 @@
         "parameters": [
           {
             "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
@@ -9868,10 +10318,17 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "files"
+                    "files",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "The run's changed files with parsed +/- hunks; empty outside worktree mode."
@@ -9899,6 +10356,28 @@
             "in": "query",
             "name": "workspaceId",
             "required": false
+          },
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
           }
         ],
         "responses": {
@@ -9914,10 +10393,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Map"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "maps"
+                    "maps",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every derived Map, newest tracker scan."
@@ -9988,6 +10474,30 @@
           "Workspaces"
         ],
         "description": "List Workspaces. Operator only; not reachable with a run-scoped Run Key.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -10009,10 +10519,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Workspace"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "workspaces"
+                    "workspaces",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every Workspace, oldest first."
@@ -10445,27 +10962,16 @@
                           {
                             "type": "object",
                             "properties": {
-                              "enabled": {
-                                "default": false,
-                                "type": "boolean"
-                              },
-                              "prompt": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "model": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "harness": {
-                                "type": "string",
+                              "off": {
+                                "type": "boolean",
                                 "enum": [
-                                  "claude",
-                                  "codex",
-                                  "copilot"
+                                  true
                                 ]
                               }
-                            }
+                            },
+                            "required": [
+                              "off"
+                            ]
                           },
                           {
                             "type": "object",
@@ -10493,21 +10999,33 @@
                             "required": [
                               "prompt",
                               "model"
-                            ]
+                            ],
+                            "additionalProperties": false
                           },
                           {
                             "type": "object",
                             "properties": {
-                              "off": {
-                                "type": "boolean",
+                              "enabled": {
+                                "default": false,
+                                "type": "boolean"
+                              },
+                              "prompt": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "model": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "harness": {
+                                "type": "string",
                                 "enum": [
-                                  true
+                                  "claude",
+                                  "codex",
+                                  "copilot"
                                 ]
                               }
-                            },
-                            "required": [
-                              "off"
-                            ]
+                            }
                           }
                         ]
                       },
@@ -10867,6 +11385,28 @@
             "in": "query",
             "name": "workspaceId",
             "required": false
+          },
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
           }
         ],
         "security": [
@@ -10890,10 +11430,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Conversation"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "conversations"
+                    "conversations",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every matching Conversation, active and ended alike, newest first."
@@ -11098,6 +11645,28 @@
         "parameters": [
           {
             "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
@@ -11165,10 +11734,17 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "events"
+                    "events",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "The Conversation's persisted events in sequence order."
@@ -11535,6 +12111,30 @@
           "Conversations"
         ],
         "description": "List persistent Permission Rules (auto-approve a tool kind in a Working Directory across Conversations). Operator only; not reachable with a run-scoped key.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -11556,10 +12156,17 @@
                       "items": {
                         "$ref": "#/components/schemas/PermissionRule"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "rules"
+                    "rules",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every Permission Rule in force, newest first."
@@ -14059,6 +14666,30 @@
           "Keys"
         ],
         "description": "List operator API keys (Run Keys are internal and never listed).",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -14146,10 +14777,17 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "keys"
+                    "keys",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every full-scope operator key, revoked ones included, newest first; no token values."
@@ -14563,6 +15201,38 @@
           "Activity"
         ],
         "description": "Instance-wide snapshot of every capacity-consuming Run and warm Conversation across Workspaces (ADR 0010). Runs come from persisted state and join their latest live Usage, context fill, derived Cost, current-activity line, and Process Tree when available. The Activity view loads this once on page-load, then follows the live `run_usage` firehose. A Read Key (a read-scoped API key) sees Runs only — Conversations are excluded, matching the firehose filter.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "token",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -14584,10 +15254,17 @@
                       "items": {
                         "$ref": "#/components/schemas/ActivityProcess"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "processes"
+                    "processes",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every live process across Workspaces (Runs then Conversations); an empty array when nothing is running. Unordered beyond that — the Activity view applies its own attention ranking."
@@ -14604,6 +15281,30 @@
           "Operations"
         ],
         "description": "Current open Operation tree plus a bounded, in-memory history of recently completed root Operations.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -14626,6 +15327,12 @@
                         "$ref": "#/components/schemas/Operation"
                       }
                     },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
+                    },
                     "recent": {
                       "type": "array",
                       "items": {
@@ -14635,6 +15342,7 @@
                   },
                   "required": [
                     "operations",
+                    "total",
                     "recent"
                   ],
                   "additionalProperties": false,
@@ -14652,6 +15360,30 @@
           "Scheduled Jobs"
         ],
         "description": "Read-only registry of recurring Harmonic Scheduled Jobs (ADR-0038), including durable last-run facts and computed next run.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -14673,10 +15405,17 @@
                       "items": {
                         "$ref": "#/components/schemas/ScheduledJob"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "jobs"
+                    "jobs",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "The current Scheduled Job registry snapshot."
@@ -14787,6 +15526,30 @@
           "Channels"
         ],
         "description": "List notification channels. Operator only; not reachable with a run-scoped Run Key.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -14808,10 +15571,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Channel"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "channels"
+                    "channels",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every configured notification channel."
@@ -15109,6 +15879,28 @@
         "parameters": [
           {
             "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
@@ -15139,14 +15931,18 @@
                       "type": "array",
                       "items": {
                         "type": "number"
-                      },
-                      "example": [
-                        3702
-                      ]
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "channelIds"
+                    "channelIds",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "The channel ids overridden for the task, empty when it relies solely on the channels' own subscriptions."
@@ -15291,6 +16087,30 @@
           "Leases"
         ],
         "description": "List every Work Context lease with operator diagnostics: owner Run/Task, TTL state, and the ready Tasks queued behind it. Operator only.",
+        "parameters": [
+          {
+            "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          }
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -15312,10 +16132,17 @@
                       "items": {
                         "$ref": "#/components/schemas/LeaseDiagnostic"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "leases"
+                    "leases",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every held or suspect lease, with its queue diagnostics."
@@ -15431,6 +16258,28 @@
         "parameters": [
           {
             "schema": {
+              "example": 50,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "example": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991,
@@ -15462,10 +16311,17 @@
                       "items": {
                         "$ref": "#/components/schemas/Epic"
                       }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "example": 340
                     }
                   },
                   "required": [
-                    "epics"
+                    "epics",
+                    "total"
                   ],
                   "additionalProperties": false,
                   "description": "Every derived Epic for this Workspace's last scan (possibly empty)."

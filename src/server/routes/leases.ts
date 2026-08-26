@@ -5,6 +5,7 @@ import type { App } from '../app.js';
 import { LEASE_STATES } from '../../db/schema.js';
 import { buildLeaseDiagnostics } from '../../domain/lease-diagnostics.js';
 import { errorResponse, okResponseSchema } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /** One Work Context lease's operator-facing diagnostic row (`LeaseDiagnostic`,
  * domain/lease-diagnostics.ts) as the API serves it. */
@@ -27,7 +28,7 @@ const leaseDiagnosticSchema = z
   })
   .meta({ id: 'LeaseDiagnostic' });
 
-const leasesListResponseSchema = z.object({ leases: z.array(leaseDiagnosticSchema) });
+const leasesListResponseSchema = listResponse('leases', leaseDiagnosticSchema);
 
 const supersedeBodySchema = z
   .object({
@@ -52,20 +53,24 @@ export async function leaseRoutes(fastify: FastifyInstance): Promise<void> {
         description:
           'List every Work Context lease with operator diagnostics: owner Run/Task, TTL state, and the ready Tasks queued behind it. Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: paginationQuerySchema,
         response: {
           200: leasesListResponseSchema.describe('Every held or suspect lease, with its queue diagnostics.'),
         },
       },
     },
-    async () => ({
-      leases: buildLeaseDiagnostics({
+    async (req) => {
+      const { limit, offset } = req.query;
+      const leases = buildLeaseDiagnostics({
         leases: await ctx.leases.listAll(),
         runs: await ctx.runs.listAll(),
         tasks: await ctx.tasks.list(),
         waitingSince: (id) => ctx.autoRunner.waitingSince(id),
         now: Date.now(),
-      }),
-    }),
+      });
+      const { items, total } = paginate(leases, { limit, offset });
+      return { leases: items, total };
+    },
   );
 
   app.post(

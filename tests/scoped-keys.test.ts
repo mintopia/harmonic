@@ -129,7 +129,7 @@ describe('read-scoped key (issue #35)', () => {
 
   it('serves /maps as a JSON rollup array', async () => {
     const res = await fetch(`${server.baseUrl}/api/maps`, { headers: { authorization: `Bearer ${readToken}` } });
-    expect(await res.json()).toEqual({ maps: [] });
+    expect(await res.json()).toEqual({ maps: [], total: 0 });
   });
 
   it('filters the WebSocket to task/run/run-event/run-usage, dropping Conversation and permission traffic', async () => {

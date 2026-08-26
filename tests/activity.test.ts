@@ -85,7 +85,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   it('returns an empty processes array when nothing is running', async () => {
     const { status, body } = await server.api('GET', '/api/activity');
     expect(status).toBe(200);
-    expect(body).toEqual({ processes: [] });
+    expect(body).toEqual({ processes: [], total: 0 });
   });
 
   it('lists a persisted running Run whose completed Task no longer has a live Runner', async () => {

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { App } from '../app.js';
 import { DomainError } from '../../domain/errors.js';
 import { errorResponse } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 /**
  * A derived Map (D7, issue #35): a `wayfinder:map` issue paired with the
@@ -23,7 +24,7 @@ const mapSchema = z
   })
   .meta({ id: 'Map' });
 
-const mapsListResponseSchema = z.object({ maps: z.array(mapSchema) });
+const mapsListResponseSchema = listResponse('maps', mapSchema);
 
 const refParamsSchema = z.object({ ref: z.coerce.number().int().meta({ example: 19 }) });
 const workspaceQuerySchema = z.object({
@@ -41,11 +42,15 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Maps'],
         description:
           "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
-        querystring: workspaceQuerySchema,
+        querystring: workspaceQuerySchema.extend(paginationQuerySchema.shape),
         response: { 200: mapsListResponseSchema.describe('Every derived Map, newest tracker scan.') },
       },
     },
-    async (req) => ({ maps: await ctx.trackerManager.maps(req.query.workspaceId) }),
+    async (req) => {
+      const { workspaceId, limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.trackerManager.maps(workspaceId), { limit, offset });
+      return { maps: items, total };
+    },
   );
 
   app.get(

@@ -5,6 +5,7 @@ import type { App } from '../app.js';
 import { createChannelSchema, updateChannelSchema, NOTIFICATION_EVENTS } from '../../notifications/channels.js';
 import { CHANNEL_TYPES } from '../../db/schema.js';
 import { idParamsSchema, okResponseSchema, errorResponse } from '../schemas.js';
+import { listResponse, paginate, paginationQuerySchema } from '../pagination.js';
 
 const channelIdParamsSchema = z.object({
   id: z.coerce.number().int().meta({ example: 4821 }),
@@ -31,8 +32,10 @@ const channelSchema = z
   })
   .meta({ id: 'Channel' });
 
-const channelsListResponseSchema = z.object({ channels: z.array(channelSchema) });
+const channelsListResponseSchema = listResponse('channels', channelSchema);
+/** The full (unpaginated) channel-id override list a mutation echoes back. */
 const channelIdsResponseSchema = z.object({ channelIds: z.array(z.number()).meta({ example: [3702] }) });
+const channelIdsListResponseSchema = listResponse('channelIds', z.number());
 
 export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
@@ -65,10 +68,15 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Channels'],
         description: 'List notification channels. Operator only; not reachable with a run-scoped Run Key.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
+        querystring: paginationQuerySchema,
         response: { 200: channelsListResponseSchema.describe('Every configured notification channel.') },
       },
     },
-    async () => ({ channels: await ctx.channels.list() }),
+    async (req) => {
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.channels.list(), { limit, offset });
+      return { channels: items, total };
+    },
   );
 
   app.get(
@@ -183,8 +191,9 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
           "List a task's per-task channel overrides. Operator only; not reachable with a run-scoped Run Key.",
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: idParamsSchema,
+        querystring: paginationQuerySchema,
         response: {
-          200: channelIdsResponseSchema.describe(
+          200: channelIdsListResponseSchema.describe(
             "The channel ids overridden for the task, empty when it relies solely on the channels' own subscriptions.",
           ),
         },
@@ -192,7 +201,9 @@ export async function channelRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       await ctx.tasks.get(req.params.id);
-      return { channelIds: await ctx.channels.channelIdsForTask(req.params.id) };
+      const { limit, offset } = req.query;
+      const { items, total } = paginate(await ctx.channels.channelIdsForTask(req.params.id), { limit, offset });
+      return { channelIds: items, total };
     },
   );
 }
