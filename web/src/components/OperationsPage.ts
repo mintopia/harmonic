@@ -1,5 +1,5 @@
 import { createElement, useEffect, useState, type ReactNode } from 'react';
-import { operationForest, type Operation, type OperationForest } from '../operations-model.js';
+import { operationForest, visibleOperationForest, type Operation, type OperationForest } from '../operations-model.js';
 import { card, displayTitle, labelType, sectionTitle } from '../ui.js';
 import { subscribe, type OperationEvent } from '../ws.js';
 import { ScheduledJobsView } from './ScheduledJobsView.js';
@@ -82,23 +82,24 @@ function OperationsReadout() {
   }, []);
 
   if (forest === null) return createElement('p', { className: 'text-small text-muted' }, 'Loading operations…');
-  if (forest.operations.length === 0 && forest.recent.length === 0) {
+  const visibleForest = visibleOperationForest(forest);
+  if (visibleForest.operations.length === 0 && visibleForest.recent.length === 0) {
     return createElement('p', { className: 'text-small text-muted' }, 'No live or recently completed operations.');
   }
   return createElement('div', { className: 'grid gap-4' },
     createElement('div', { className: card },
       createElement('h3', { className: `${labelType} border-b border-hairline px-4 py-2.5 text-muted` }, 'Live operations'),
-      forest.operations.length === 0
+      visibleForest.operations.length === 0
         ? createElement('p', { className: 'px-4 py-3 text-small text-muted' }, 'No operations running.')
-        : createElement('ul', { 'aria-label': 'Live operation tree', className: 'px-4' }, forest.operations.map((operation) =>
+        : createElement('ul', { 'aria-label': 'Live operation tree', className: 'px-4' }, visibleForest.operations.map((operation) =>
           createElement(OperationRow, { key: operation.spanId, operation, now, depth: 0 }),
         )),
     ),
     createElement('div', { className: card },
       createElement('h3', { className: `${labelType} border-b border-hairline px-4 py-2.5 text-muted` }, 'Recently completed'),
-      forest.recent.length === 0
+      visibleForest.recent.length === 0
         ? createElement('p', { className: 'px-4 py-3 text-small text-muted' }, 'No completed operations yet.')
-        : createElement('ul', { 'aria-label': 'Recently completed operations', className: 'px-4' }, forest.recent.map((operation) =>
+        : createElement('ul', { 'aria-label': 'Recently completed operations', className: 'px-4' }, visibleForest.recent.map((operation) =>
           createElement(OperationRow, { key: operation.spanId, operation, now, depth: 0 }),
         )),
     ),

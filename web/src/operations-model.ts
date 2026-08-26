@@ -8,6 +8,31 @@ export interface OperationForest {
 }
 
 const RECENT_LIMIT = 100;
+const SUPPRESSED_OPERATION_TYPES = new Set(['tracker.mirror.issue']);
+
+function isSuppressed(operation: Operation): boolean {
+  return SUPPRESSED_OPERATION_TYPES.has(operation.type);
+}
+
+function visibleOperation(operation: Operation): Operation | null {
+  if (isSuppressed(operation)) return null;
+  return {
+    ...operation,
+    children: operation.children.flatMap((child) => {
+      const visible = visibleOperation(child);
+      return visible === null ? [] : [visible];
+    }),
+  };
+}
+
+/** Removes noisy operations that do not help operators understand system state. */
+export function visibleOperationForest(forest: OperationForest): OperationForest {
+  const visible = (operations: readonly Operation[]) => operations.flatMap((operation) => {
+    const next = visibleOperation(operation);
+    return next === null ? [] : [next];
+  });
+  return { operations: visible(forest.operations), recent: visible(forest.recent) };
+}
 
 function removeOperation(operations: readonly Operation[], spanId: string): Operation[] {
   return operations.flatMap((operation) => {
@@ -54,6 +79,7 @@ function recentWith(recent: readonly Operation[], operation: Operation): Operati
 
 /** Applies one firehose event to the same operation forest returned by GET /api/operations. */
 export function operationForest(forest: OperationForest, event: OperationEvent): OperationForest {
+  if (isSuppressed(event.operation)) return forest;
   if (event.type === 'op-ended') {
     const operations = removeOperation(forest.operations, event.operation.spanId);
     return event.operation.parentSpanId === null

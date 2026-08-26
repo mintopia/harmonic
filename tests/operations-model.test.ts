@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeOperationEvent, operationForest, type Operation } from '../web/src/operations-model.js';
+import { mergeOperationEvent, operationForest, visibleOperationForest, type Operation } from '../web/src/operations-model.js';
 
 const operation = (overrides: Partial<Operation> = {}): Operation => ({
   type: 'poll',
@@ -37,5 +37,44 @@ describe('operations read model (issue #294)', () => {
     const afterSecond = operationForest(afterFirst, { type: 'op-ended', operation: secondEnded });
 
     expect(afterSecond).toEqual({ operations: [], recent: [secondEnded, firstEnded] });
+  });
+
+  it('suppresses per-issue tracker mirror operations from the rendered forest', () => {
+    const mirror = operation({
+      type: 'tracker.mirror.issue',
+      name: 'harmonic.tracker.mirror.one',
+      spanId: 'mirror',
+      parentSpanId: 'poll',
+    });
+    const detail = operation({
+      type: 'tracker.mirror.issue.detail',
+      name: 'harmonic.tracker.mirror.issue.detail',
+      spanId: 'detail',
+      parentSpanId: 'poll',
+    });
+    const poll = operation({
+      spanId: 'poll',
+      name: 'harmonic.tracker.poll',
+      children: [mirror, detail],
+    });
+
+    expect(visibleOperationForest({ operations: [poll], recent: [mirror] })).toEqual({
+      operations: [operation({ spanId: 'poll', name: 'harmonic.tracker.poll', children: [detail] })],
+      recent: [],
+    });
+    expect(poll.children).toEqual([mirror, detail]);
+  });
+
+  it('does not let suppressed completed roots displace visible history', () => {
+    const completed = operation({ spanId: 'completed', endedAt: 2_000 });
+    const mirror = operation({
+      type: 'tracker.mirror.issue',
+      name: 'harmonic.tracker.mirror.one',
+      spanId: 'mirror',
+      endedAt: 2_100,
+    });
+
+    const forest = operationForest({ operations: [completed], recent: [] }, { type: 'op-ended', operation: completed });
+    expect(operationForest(forest, { type: 'op-ended', operation: mirror })).toEqual(forest);
   });
 });
