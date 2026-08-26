@@ -23,6 +23,7 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     await server.app.ctx.attempts.finish(attempt.id, 'passed', 850);
     await server.app.ctx.runs.update(run.id, { startedAt: 100, finishedAt: 900, state: 'completed', phase: 'terminal' });
     await server.app.ctx.runs.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } });
+    await server.app.ctx.runs.appendEvent(run.id, { type: 'permission_request', payload: { reason: 'outside the timeline' } });
     const facts = new RunFactStore(server.app.ctx.asyncDb);
     await facts.append(run.id, 'escalate', { reason: 'needs an operator' }, 300);
     await facts.append(run.id, 'operator-accept', {}, 700);
@@ -54,6 +55,34 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
       effect: 'target-ref', payload: { ok: true },
     } });
     expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });
+    expect(response.body.events.filter((event: { kind: string }) => event.kind === 'lifecycle')).toMatchObject([
+      { data: { type: 'lifecycle', payload: { event: 'phase', phase: 'verifying' } } },
+    ]);
+  });
+
+  it('derives Reject with guidance from adjacent attempts without misreporting Close as Reject', async () => {
+    const task = await server.api('POST', '/api/tasks', { prompt: 'disposition target' });
+    const run = await server.app.ctx.runs.create(task.body.id);
+    const escalated = await server.app.ctx.attempts.ensureForRun(task.body.id, 1, 100);
+    await server.app.ctx.attempts.finish(escalated.id, 'escalated', 150);
+    await server.app.ctx.attempts.setFeedback(escalated.id, 'Use the documented timeout.');
+    await server.app.ctx.attempts.ensureForRun(task.body.id, 2, 200);
+    await new RunFactStore(server.app.ctx.asyncDb).append(run.id, 'operator-cancel', { reason: 'operator closed it' }, 250);
+
+    const response = await server.api('GET', `/api/tasks/${task.body.id}/timeline`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.events).toContainEqual(expect.objectContaining({
+      kind: 'operator-reject',
+      ts: 200,
+      data: { attempt: 1, feedback: 'Use the documented timeout.' },
+    }));
+    expect(response.body.events).toContainEqual(expect.objectContaining({
+      kind: 'fact',
+      ts: 250,
+      data: { type: 'operator-cancel', payload: { reason: 'operator closed it' } },
+    }));
+    expect(response.body.events.filter((event: { kind: string }) => event.kind === 'operator-reject')).toHaveLength(1);
   });
 
   it('returns an empty timeline for an existing task with no runs and 404 for an unknown task', async () => {

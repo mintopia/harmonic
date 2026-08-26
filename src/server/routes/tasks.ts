@@ -766,7 +766,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Tasks'],
         description: 'A chronological projection of the ticket lifecycle, verification, guardrail, operator, and landing event logs.',
         params: idParamsSchema,
-        response: { 200: ticketTimelineResponseSchema, 404: errorResponse('No task has that id.') },
+        response: { 200: ticketTimelineResponseSchema.describe('Chronological lifecycle events for this task.'), 404: errorResponse('No task has that id.') },
       },
     },
     async (req) => {
