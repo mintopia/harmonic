@@ -211,7 +211,8 @@ describe('mcp server & scoped keys', () => {
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
 
     const all = await server.api('GET', '/api/tasks');
-    const followUp = all.body.tasks.find((t: any) => t.prompt === 'follow-up work');
+    // Lean list rows carry `summary`, not the full `prompt` (issue #350).
+    const followUp = all.body.tasks.find((t: any) => t.summary === 'follow-up work');
     expect(followUp).toBeDefined();
     expect(followUp.state).toBe('ready');
     expect(followUp.dependsOn).toEqual([created.body.id]);

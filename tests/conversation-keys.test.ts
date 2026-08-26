@@ -44,7 +44,8 @@ describe('conversation key lifecycle (issue 16)', () => {
     });
     await waitFor(async () => {
       const { body } = await server.api('GET', '/api/tasks');
-      return (body.tasks as any[]).some((t) => t.prompt === 'scheduled from a conversation') || undefined;
+      // Lean list rows carry `summary`, not the full `prompt` (issue #350).
+      return (body.tasks as any[]).some((t) => t.summary === 'scheduled from a conversation') || undefined;
     });
   });
 

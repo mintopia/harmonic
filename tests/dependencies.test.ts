@@ -183,7 +183,11 @@ describe('dependencies', () => {
     vi.restoreAllMocks();
 
     for (const task of list.body.tasks) {
-      expect((await server.api('GET', `/api/tasks/${task.id}`)).body).toEqual(task);
+      // The item GET is the lean list row plus the full `prompt`, which list
+      // rows drop (issue #350); everything else is byte-for-byte identical.
+      const { prompt, ...rest } = (await server.api('GET', `/api/tasks/${task.id}`)).body;
+      expect(typeof prompt).toBe('string');
+      expect(rest).toEqual(task);
     }
   });
 });
