@@ -107,12 +107,20 @@ function itemLabel(task: Task | undefined, taskId: number): string {
   return task.origin === 'mirrored' && task.trackerRef != null ? issueRef(task.trackerRef) : taskKey(task.id);
 }
 
-/** A Task's `dependsOn` edges resolved to display labels; satisfied ⇔ the blocker is done. */
+/**
+ * A Task's `dependsOn` edges resolved to display labels; satisfied ⇔ the blocker
+ * is done. The Board now fetches a lean, open-only page (ADR-0045), so a done
+ * blocker is no longer in the array to look up — satisfaction is read from the
+ * server's derived `openBlockerCount` (0 ⇒ every edge is cleared) instead. A
+ * still-visible blocker that reads `done` (a full-list caller like the Graph, or
+ * a done row lingering from a socket update) also counts.
+ */
 export function resolveBlockers(task: Task, tasksById: ReadonlyMap<number, Task>): Blocker[] {
+  const allCleared = task.openBlockerCount === 0;
   return task.dependsOn.map((taskId) => ({
     taskId,
     label: itemLabel(tasksById.get(taskId), taskId),
-    satisfied: tasksById.get(taskId)?.state === 'done',
+    satisfied: allCleared || tasksById.get(taskId)?.state === 'done',
   }));
 }
 
@@ -121,7 +129,7 @@ function taskItem(task: Task, tasksById: ReadonlyMap<number, Task>): PendingItem
     key: `task:${task.id}`,
     taskId: task.id,
     label: itemLabel(task, task.id),
-    title: task.prompt,
+    title: task.summary,
     state: task.state,
     openBlockerCount: task.openBlockerCount,
     blockedOnFailed: task.blockedOnFailed,

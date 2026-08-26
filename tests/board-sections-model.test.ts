@@ -18,6 +18,7 @@ import type { Task, TaskState } from '../web/src/types.js';
 const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => ({
   id,
   prompt: `task ${id}`,
+  summary: `task ${id}`,
   workspaceId: 1,
   harness: 'claude',
   model: 'claude-fable-5',
@@ -287,13 +288,31 @@ describe('blocker columns', () => {
     ]);
   });
 
-  it('resolves a blocker as satisfied only when it is done — a cancelled blocker still counts, as on the server', () => {
+  it('resolves a visible blocker as satisfied only when it is done — a cancelled blocker still counts, as on the server', () => {
     const tasks = new Map([task(1, 'done'), task(2, 'cancelled')].map((t) => [t.id, t]));
-    expect(resolveBlockers(task(3, 'ready', { dependsOn: [1, 2, 4] }), tasks)).toEqual([
+    // Server-consistent: blockers 2 (cancelled) and 4 (absent) are the two
+    // non-done edges, so openBlockerCount is 2 and blockedOnFailed is set.
+    const dependant = task(3, 'ready', { dependsOn: [1, 2, 4], openBlockerCount: 2, blockedOnFailed: true });
+    expect(resolveBlockers(dependant, tasks)).toEqual([
       { taskId: 1, label: 'T-1', satisfied: true },
       { taskId: 2, label: 'T-2', satisfied: false },
       { taskId: 4, label: 'Task 4', satisfied: false },
     ]);
+  });
+
+  it('reads satisfied from openBlockerCount when the done blocker is off the lean page (ADR-0045)', () => {
+    // The Board now fetches an open-only page, so a done blocker is absent from
+    // the array. openBlockerCount === 0 means every edge is cleared, so the
+    // chip strikes through even though its blocker task is not in the map.
+    const cleared = task(9, 'ready', { dependsOn: [1, 2], openBlockerCount: 0 });
+    expect(resolveBlockers(cleared, new Map())).toEqual([
+      { taskId: 1, label: 'Task 1', satisfied: true },
+      { taskId: 2, label: 'Task 2', satisfied: true },
+    ]);
+    // With an open blocker still outstanding, an absent edge we cannot prove
+    // done stays unsatisfied rather than falsely clearing.
+    const partly = task(10, 'ready', { dependsOn: [1, 2], openBlockerCount: 1 });
+    expect(resolveBlockers(partly, new Map()).map((b) => b.satisfied)).toEqual([false, false]);
   });
 });
 

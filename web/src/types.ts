@@ -255,6 +255,10 @@ export interface BudgetGuardrail {
 export interface Task {
   id: number;
   prompt: string;
+  /** The prompt's first line, bounded server-side (ADR-0045): the card title
+   * every list surface renders, so the Board never processes the full prompt.
+   * Present on both list rows and the item GET. */
+  summary: string;
   /** The owning Workspace (ADR-0008). */
   workspaceId: number;
   /** Effective (resolved) Task defaults: a pinned override, else the
