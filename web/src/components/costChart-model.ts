@@ -13,15 +13,16 @@ export interface DayCost {
   fails?: number;
 }
 
-/** Zero-fill the gaps between buckets so a quiet day reads as $0, not as
- * a skipped point — but only over ranges small enough to label honestly.
+/** Zero-fill a bounded requested range so quiet days read as $0, not skipped
+ * points — including quiet days before the first recorded bucket.
+ * Ranges must still be small enough to label honestly.
  * A day already present with an unpriceable (null) total is preserved as-is:
  * it is *not* a quiet day, so it must never be flattened to $0. */
 export function fillSeries(series: DayCost[], from: number, to: number): DayCost[] {
   const first = series[0];
   if (!first) return [];
   const DAY = 24 * 3600_000;
-  const start = new Date(Math.max(from, first.day));
+  const start = new Date(from);
   start.setHours(0, 0, 0, 0);
   const end = new Date(Math.min(to, Date.now()));
   end.setHours(0, 0, 0, 0);

@@ -25,6 +25,19 @@ describe('fillSeries', () => {
     expect(out[1]).toEqual({ day: d2, totalUsd: 0, incomplete: false, tokens: 0, runs: 0, fails: 0 });
   });
 
+  it('zero-fills leading quiet days so a recent first run still produces a graph', () => {
+    const d1 = day(2026, 0, 10);
+    const d2 = day(2026, 0, 11);
+    const d3 = day(2026, 0, 12);
+    const out = fillSeries([{ day: d3, totalUsd: 2, incomplete: false, tokens: 200, runs: 1 }], d1, d3);
+
+    expect(out).toEqual([
+      { day: d1, totalUsd: 0, incomplete: false, tokens: 0, runs: 0, fails: 0 },
+      { day: d2, totalUsd: 0, incomplete: false, tokens: 0, runs: 0, fails: 0 },
+      { day: d3, totalUsd: 2, incomplete: false, tokens: 200, runs: 1 },
+    ]);
+  });
+
   it('preserves an unpriceable day instead of flattening it to $0', () => {
     const d1 = day(2026, 0, 10);
     const d2 = day(2026, 0, 11);
