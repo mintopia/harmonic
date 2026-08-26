@@ -82,6 +82,14 @@ from the attempt-centric `AttemptTimeline` tree (which stays as the
 attempt-switching control). The projection is derived on read from persisted
 events; it introduces no new write path.
 
+**Placement (locked with Jess).** The lifecycle timeline lives in the **main
+panel**, below the ticket description and stats and *above* the per-Attempt
+section — it is not a right-rail element. The right rail stays exactly three
+sections in order: **Attempts** (`AttemptTimeline`), **Files Changed**
+(`RunRail`), **Actions** (`Gate`) — no timeline in the rail. Separately, the
+main-panel "helpful guides" (the hints telling the operator a ticket has
+something to do) render **below** the breadcrumb bar, never above it.
+
 **C. The transcript distinguishes the main agent from subagents.**
 
 `TranscriptTimeline` groups and labels events by their agent of origin, using the
