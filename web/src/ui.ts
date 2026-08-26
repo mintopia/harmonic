@@ -187,7 +187,7 @@ export const STATE_CHIP_STYLES: Record<TaskState, string> = {
   ready: 'bg-ready-tint text-ready',
   working: 'bg-running-tint text-running',
   escalated: 'bg-await-tint text-await',
-  done: 'bg-merged-tint text-merged',
+  done: 'bg-merged text-on-done',
   cancelled: 'bg-raised text-muted',
 };
 

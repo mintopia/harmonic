@@ -138,7 +138,12 @@ describe('ui.ts primitives (issue #180)', () => {
 
   it('keeps working on the running amber and done on the merged emerald', () => {
     expect(ui.STATE_CHIP_STYLES.working).toBe('bg-running-tint text-running');
-    expect(ui.STATE_CHIP_STYLES.done).toBe('bg-merged-tint text-merged');
+    expect(ui.STATE_CHIP_STYLES.done).toBe('bg-merged text-on-done');
+  });
+
+  it('makes completed work visually distinct from ready work', () => {
+    expect(ui.STATE_CHIP_STYLES.ready).toBe('bg-ready-tint text-ready');
+    expect(ui.STATE_CHIP_STYLES.done).toBe('bg-merged text-on-done');
   });
 
   it('every --hm-* token is defined in both themes', () => {
