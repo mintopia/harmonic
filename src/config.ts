@@ -281,6 +281,8 @@ export const appConfigSchema = z.object({
   }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).default(2).meta({ example: 2 }),
+  /** Maximum context-window fraction that may continue into Attempt N+1. */
+  contextReuseThreshold: z.number().min(0).max(1).default(0.2).meta({ example: 0.2 }),
   /**
    * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
    * global Drive Prompt template; `unattendedReminder` is appended to every
@@ -487,6 +489,7 @@ export function defaultConfig(): AppConfig {
       maxConcurrentRuns: 1,
     },
     maxAttempts: 2,
+    contextReuseThreshold: 0.2,
     drive: {
       prompt: DEFAULT_DRIVE_PROMPT,
       unattendedReminder: UNATTENDED_REMINDER,

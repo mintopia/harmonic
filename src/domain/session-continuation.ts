@@ -35,6 +35,41 @@
 
 import type { RunRow, SessionRow } from '../db/schema.js';
 
+/** Fixed provider cache windows. They are execution facts, not settings. */
+export const HARNESS_SESSION_WARM_WINDOWS_MS: Readonly<Record<string, number>> = {
+  claude: 60 * 60 * 1000,
+  codex: 5 * 60 * 1000,
+  copilot: 5 * 60 * 1000,
+};
+
+export type DeterministicContinuation = {
+  path: 'continued-session' | 'new-session-condensed';
+  reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
+  contextUsage: number | null;
+  contextReuseThreshold: number;
+  lastActiveAt: number;
+  lastActiveAgeMs: number;
+  warmWindowMs: number | null;
+};
+
+/** Deterministically choose Attempt N+1's Session. Boundary values start fresh. */
+export function decideAttemptContinuation(input: {
+  harness: string;
+  contextUsage: number | null;
+  lastActiveAt: number;
+  contextReuseThreshold: number;
+  now: number;
+}): DeterministicContinuation {
+  const warmWindowMs = HARNESS_SESSION_WARM_WINDOWS_MS[input.harness] ?? null;
+  const lastActiveAgeMs = input.now - input.lastActiveAt;
+  const facts = { contextUsage: input.contextUsage, contextReuseThreshold: input.contextReuseThreshold, lastActiveAt: input.lastActiveAt, lastActiveAgeMs, warmWindowMs };
+  if (input.contextUsage === null) return { path: 'new-session-condensed', reason: 'missing-context-usage', ...facts };
+  if (warmWindowMs ===null) return { path: 'new-session-condensed', reason: 'missing-warm-window', ...facts };
+  if (input.contextUsage >= input.contextReuseThreshold) return { path: 'new-session-condensed', reason: 'context-usage', ...facts };
+  if (lastActiveAgeMs >= warmWindowMs) return { path: 'new-session-condensed', reason: 'session-cold', ...facts };
+  return { path: 'continued-session', reason: 'continued-within-limits', ...facts };
+}
+
 /**
  * What prompted the continuation. Two are **automated** (they reuse the Session
  * silently); one is a **human** rejection (it surfaces the cost-gated choice).

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import { formatCost } from '../cost';
-import type { Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
+import type { Attempt, Cost, GuardrailEvent, Run, RunLogEvent, RunUsageEvent, Task, VerificationAttempt } from '../types';
 import { appendRunLogEvents, eventsAfterLiveCursor, runLogCursor } from '../run-log-stream-model';
 import { EmptyState } from './EmptyState';
 import { TranscriptTimeline } from './TranscriptTimeline';
@@ -804,6 +804,7 @@ export function TicketPage({
   onOpenTask: (taskId: number) => void;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
+  const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [events, setEvents] = useState<RunLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
@@ -825,6 +826,14 @@ export function TicketPage({
     return () => {
       live = false;
     };
+  }, [task.id]);
+
+  useEffect(() => {
+    let live = true;
+    api.taskAttempts(task.id).then(({ attempts }) => live && setAttempts(attempts), toastError);
+    return subscribe((msg) => {
+      if (msg.type === 'attempt_timeline_changed' && msg.taskId === task.id) setAttempts(msg.attempts);
+    });
   }, [task.id]);
 
   useEffect(() => {
@@ -1089,6 +1098,7 @@ export function TicketPage({
             <div className="sticky top-0 z-20 -mx-[30px] mb-1 border-y border-hairline bg-canvas px-[30px] py-2.5 rail:hidden">
               <RunAttempts
                 runs={runs}
+                attempts={attempts}
                 selectedRunId={selectedRunId}
                 selectedFile={selectedFile}
                 onSelectRun={(runId) => {
@@ -1125,6 +1135,7 @@ export function TicketPage({
           <div className="min-h-0 flex-1 overflow-y-auto max-rail:overflow-visible">
             <RunRail
               runs={runs}
+              attempts={attempts}
               worktree={{
                 branch: task.branch,
                 baseBranch: task.baseBranch,

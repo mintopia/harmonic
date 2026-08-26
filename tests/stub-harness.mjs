@@ -82,14 +82,16 @@ async function handlePrompt(msg) {
   // Harmonic may append after it — the auto-drive "## You are running
   // unattended" reminder, a self-heal turn's "## Verification failed" corrective
   // feedback (issue #137), and a bounded agent re-merge turn's "## Branch
-  // consolidation required" corrective feedback (issue #155). These are stripped
-  // specifically (not any "## " header) so a re-attempt's "## Feedback from the
-  // previous attempt" still leaves the prompt non-JSON, preserving the
-  // echo-scenario fallback.
+  // consolidation required" corrective feedback (issue #155), and a fresh
+  // Session's trailing "## Prior session (condensed)" seed (issue #311). These
+  // are stripped specifically (not any "## " header) so a re-attempt's
+  // "## Feedback from the previous attempt" still leaves the prompt non-JSON,
+  // preserving the echo-scenario fallback.
   const jsonText = rawText
     .split('\n\n## Running unattended')[0]
     .split('\n\n## Verification failed')[0]
-    .split('\n\n## Branch consolidation required')[0];
+    .split('\n\n## Branch consolidation required')[0]
+    .split('\n\n## Prior session (condensed)')[0];
   let scenario;
   try {
     scenario = JSON.parse(jsonText);

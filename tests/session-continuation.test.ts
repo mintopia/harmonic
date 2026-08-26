@@ -8,9 +8,35 @@ import {
   previewHumanRejectContinuation,
   CONTINUATION_TRIGGERS,
   AUTOMATED_CONTINUATION_TRIGGERS,
+  decideAttemptContinuation,
   type SessionWarmthFacts,
 } from '../src/domain/session-continuation.js';
 import type { RunRow, SessionRow } from '../src/db/schema.js';
+
+describe('decideAttemptContinuation (issue #311)', () => {
+  const now = 10 * 60 * 60 * 1000;
+  const input = { harness: 'claude', contextUsage: 0.19, contextReuseThreshold: 0.2, lastActiveAt: now - 59 * 60 * 1000, now };
+
+  it('continues only below the threshold and inside the fixed harness window', () => {
+    expect(decideAttemptContinuation(input)).toMatchObject({ path: 'continued-session', contextUsage: 0.19, warmWindowMs: 60 * 60 * 1000 });
+  });
+
+  it('starts a condensed Session at the context threshold boundary', () => {
+    expect(decideAttemptContinuation({ ...input, contextUsage: 0.2 })).toMatchObject({ path: 'new-session-condensed', reason: 'context-usage' });
+  });
+
+  it('starts a condensed Session at the warm-window boundary', () => {
+    expect(decideAttemptContinuation({ ...input, lastActiveAt: now - 60 * 60 * 1000 })).toMatchObject({ path: 'new-session-condensed', reason: 'session-cold' });
+  });
+
+  it('starts condensed when context usage is unavailable', () => {
+    expect(decideAttemptContinuation({ ...input, contextUsage: null })).toMatchObject({ path: 'new-session-condensed', reason: 'missing-context-usage' });
+  });
+
+  it('starts condensed when the harness has no fixed warm window', () => {
+    expect(decideAttemptContinuation({ ...input, harness: 'unknown' })).toMatchObject({ path: 'new-session-condensed', reason: 'missing-warm-window' });
+  });
+});
 
 /**
  * The pure retry/reject continuation decision (issue #147, reliability-design

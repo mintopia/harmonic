@@ -53,6 +53,7 @@ const workspaceSchema = z
     autoRunnerEnabled: z.boolean().nullable().meta({ example: null }),
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
+    contextReuseThreshold: z.number().nullable().meta({ example: null }),
     // Verification verifier overrides (issue #132), tri-state (issue #174): the
     // raw JSON columns parsed back into their object shape, so a client reads a
     // set override the same shape it PATCHes. null ⇒ inherit

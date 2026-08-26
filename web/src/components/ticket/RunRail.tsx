@@ -5,7 +5,8 @@ import {
   type RunChip,
   type RunDot,
 } from '../../run-rail-model';
-import type { Run } from '../../types';
+import { formatScheduledJobDuration } from '../../scheduled-jobs-model';
+import type { Attempt, Run } from '../../types';
 import { runDotFill } from '../../ui';
 import { Icon } from '../Icon';
 
@@ -45,12 +46,14 @@ export function RunAttempts({
   selectedFile,
   onSelectRun,
   layout = 'rail',
+  attempts = [],
 }: {
   runs: Run[];
   selectedRunId: number | null;
   selectedFile?: string | null;
   onSelectRun: (runId: number) => void;
   layout?: 'rail' | 'strip';
+  attempts?: Attempt[];
 }) {
   const chips = runRailChips(runs);
   const note = continuationNote(runs);
@@ -98,6 +101,15 @@ export function RunAttempts({
           {note}
         </div>
       )}
+      {!strip && attempts.some((attempt) => attempt.continuation) && (
+        <div className="mt-2.5 space-y-1 text-small text-faint">
+          {attempts.flatMap((attempt) => attempt.continuation ? [{ attempt, continuation: attempt.continuation }] : []).map(({ attempt, continuation }) => (
+            <div key={attempt.id}>
+              Attempt {attempt.number}: {continuation.path === 'continued-session' ? 'continued session' : 'new session (condensed)'} · context {continuation.contextUsage ?? 'unknown'}/{continuation.contextReuseThreshold} · active {formatScheduledJobDuration(continuation.lastActiveAgeMs)}/{formatScheduledJobDuration(continuation.warmWindowMs) ?? 'unknown'}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -110,6 +122,7 @@ export function RunRail({
   onSelectRun,
   onSelectFile,
   onSelectChanges,
+  attempts = [],
 }: {
   runs: Run[];
   worktree: {
@@ -123,6 +136,7 @@ export function RunRail({
   onSelectRun: (runId: number) => void;
   onSelectFile: (path: string) => void;
   onSelectChanges: () => void;
+  attempts?: Attempt[];
 }) {
   const files = changedFilesFromStat(worktree.stat);
   const hasWorktree = worktree.isolationMode === 'worktree' && Boolean(worktree.branch);
@@ -136,6 +150,7 @@ export function RunRail({
           selectedRunId={selectedRunId}
           selectedFile={selectedFile}
           onSelectRun={onSelectRun}
+          attempts={attempts}
         />
       </div>
 

@@ -24,6 +24,7 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   trackerEnabled: false,
   trackerPollIntervalSeconds: 60,
   maxAttempts: null,
+  contextReuseThreshold: null,
   resolvedTracker: null,
   harness: null,
   model: null,
