@@ -153,46 +153,67 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(phases).toEqual(['verifying', 'executing', 'verifying', 'landing']);
   });
 
-  it('uses the recorded continuation rule at the corrective dispatch boundary', async () => {
-    await server.app.ctx.configStore.update({ modelInfo: { stub: { contextWindow: 100 } } });
+  /** The durable Session an Attempt's implementation Task points at (`session:<row id>`). */
+  async function implementationSession(attemptId: number) {
+    const tasks = await new AttemptStore(server.app.ctx.asyncDb).listTasks(attemptId);
+    const locator = tasks.find((task) => task.type === 'implementation')?.logLocator ?? '';
+    const match = /^session:(\d+)$/.exec(locator);
+    expect(match, `implementation locator ${locator}`).not.toBeNull();
+    return server.app.ctx.sessions.get(Number(match![1]));
+  }
+
+  /** Attempt 1 reports `inputTokens` of a 100-token window; the rule (threshold 0.2)
+   * decides Attempt 2's Session from that. */
+  async function runContinuationScenario(inputTokens: number) {
+    await server.app.ctx.configStore.update({ modelInfo: { 'stub-model': { contextWindow: 100 } } });
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: markerCommand('ok'),
       verificationAutoAccept: true,
       contextReuseThreshold: 0.2,
-    });
-    Object.defineProperty(server.app.ctx.runner, 'latestSnapshot', {
-      value: async () => ({ contextTokens: 10 }),
-      configurable: true,
     });
     const { taskId, runId } = await runWorktreeTask({
-      turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
+      turns: [
+        { writeFiles: { 'marker.txt': 'bad\n' }, usage: { inputTokens, outputTokens: 1 } },
+        { writeFiles: { 'marker.txt': 'ok\n' } },
+      ],
     });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'completed' ? true : undefined);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'completed' ? true : undefined));
     const attemptsByTicket = await ticketAttempts(taskId);
-    expect(attemptsByTicket[1]!.continuation).toContain('continued-session');
-    const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
-    expect(events.some((event: { payload: { event?: string } }) => event.payload.event === 'session-reloaded')).toBe(true);
+    expect(attemptsByTicket.map((a) => a.state)).toEqual(['failed', 'passed']);
+    const [first, second] = await Promise.all([implementationSession(attemptsByTicket[0]!.id), implementationSession(attemptsByTicket[1]!.id)]);
+    const run = await server.app.ctx.runs.get(runId);
+    const reloaded = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
+      .filter((event: { payload: { event?: string } }) => event.payload.event === 'session-reloaded')
+      .map((event: { payload: { sessionId: string } }) => event.payload.sessionId);
+    return { continuation: JSON.parse(attemptsByTicket[1]!.continuation!), first, second, run, reloaded };
+  }
+
+  it('continues the prior Session below the threshold: attempt 2 reloads the same session id', async () => {
+    const { continuation, first, second, run, reloaded } = await runContinuationScenario(10);
+    expect(continuation).toMatchObject({ path: 'continued-session', reason: 'continued-within-limits', contextUsage: 0.1, contextReuseThreshold: 0.2 });
+    expect(second.id).toBe(first.id);
+    expect(reloaded).toEqual([first.harnessSessionId]);
+    expect(run.sessionId).toBe(first.harnessSessionId);
+    expect(run.prompt).toContain('## Verification failed — fix required (self-heal 1)');
+    expect(run.prompt).not.toContain('## Prior session (condensed)');
   });
 
-  it('starts a condensed Session above the threshold and keeps the source locator', async () => {
-    await server.app.ctx.configStore.update({ modelInfo: { stub: { contextWindow: 100 } } });
-    await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: markerCommand('ok'),
-      verificationAutoAccept: true,
-      contextReuseThreshold: 0.2,
-    });
-    Object.defineProperty(server.app.ctx.runner, 'latestSnapshot', {
-      value: async () => ({ contextTokens: 90 }),
-      configurable: true,
-    });
-    const { taskId } = await runWorktreeTask({
-      turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
-    });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'completed' ? true : undefined);
-    const attemptsByTicket = await ticketAttempts(taskId);
-    expect(attemptsByTicket[1]!.continuation).toContain('new-session-condensed');
-    const tasks = await new AttemptStore(server.app.ctx.asyncDb).listTasks(attemptsByTicket[1]!.id);
-    expect(tasks.find((task) => task.type === 'implementation')?.logLocator).toMatch(/^session:/);
+  it('starts a condensed Session at/above the threshold: fresh session id, condensed section after the corrective feedback', async () => {
+    const { continuation, first, second, run, reloaded } = await runContinuationScenario(90);
+    expect(continuation).toMatchObject({ path: 'new-session-condensed', reason: 'context-usage', contextUsage: 0.9, contextReuseThreshold: 0.2 });
+    expect(second.id).not.toBe(first.id);
+    expect(second.harnessSessionId).not.toBe(first.harnessSessionId);
+    expect(reloaded).toEqual([]);
+    expect(run.sessionId).toBe(second.harnessSessionId);
+    // The scenario head stays parseable; the condensed context is its own section
+    // after the corrective feedback, naming the Session it condenses.
+    const prompt = run.prompt!;
+    expect(JSON.parse(prompt.split('\n\n## Verification failed')[0]!)).toHaveProperty('turns');
+    const verification = prompt.indexOf('## Verification failed — fix required (self-heal 1)');
+    const condensed = prompt.indexOf('## Prior session (condensed)');
+    expect(verification).toBeGreaterThan(-1);
+    expect(condensed).toBeGreaterThan(verification);
+    expect(prompt.slice(condensed)).toContain(first.harnessSessionId);
   });
 
   it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
