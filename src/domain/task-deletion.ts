@@ -1,3 +1,4 @@
+import type { TaskState } from '../db/schema.js';
 /**
  * The hard-delete decision (issue #162, ADR-0025).
  *
@@ -18,7 +19,7 @@
 /** The facet of a Task this decision reads. Structurally assignable from a
  * `TaskRow`/`RawTaskRow`, so callers pass either directly. */
 export interface DeletableTaskFacts {
-  state: string;
+  state: TaskState;
   origin: string;
   trackerRef: number | null;
   workspaceId: number | null;

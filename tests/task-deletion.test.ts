@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { decideTaskDeletion, type DeletableTaskFacts } from '../src/domain/task-deletion.js';
 
 /**
- * The pure hard-delete decision (issue #162, ADR-0025): `state === 'running'`
+ * The pure hard-delete decision (issue #162, ADR-0025): `state === 'working'`
  * is refused regardless of origin; otherwise a mirrored Task with a
  * tracker ref carries a tombstone instruction, native never does.
  */
@@ -14,22 +14,22 @@ describe('decideTaskDeletion (issue #162)', () => {
     workspaceId: 1,
   };
 
-  it('rejects a running native task', () => {
-    const decision = decideTaskDeletion({ ...base, state: 'running' });
+  it('rejects a working native task', () => {
+    const decision = decideTaskDeletion({ ...base, state: 'working' });
     expect(decision.ok).toBe(false);
-    expect(decision.reason).toMatch(/running/);
+    expect(decision.reason).toMatch(/working/);
     expect(decision.tombstone).toBeNull();
   });
 
-  it('rejects a running mirrored task', () => {
+  it('rejects a working mirrored task', () => {
     const decision = decideTaskDeletion({
       ...base,
-      state: 'running',
+      state: 'working',
       origin: 'mirrored',
       trackerRef: 42,
     });
     expect(decision.ok).toBe(false);
-    expect(decision.reason).toMatch(/running/);
+    expect(decision.reason).toMatch(/working/);
     expect(decision.tombstone).toBeNull();
   });
 
@@ -40,7 +40,7 @@ describe('decideTaskDeletion (issue #162)', () => {
     });
   });
 
-  it.each(['done', 'escalated', 'cancelled', 'draft', 'ready'])(
+  it.each(['done', 'escalated', 'cancelled', 'draft', 'ready'] as const)(
     'allows a %s native task with no tombstone',
     (state) => {
       const decision = decideTaskDeletion({ ...base, state });
