@@ -153,6 +153,48 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(phases).toEqual(['verifying', 'executing', 'verifying', 'landing']);
   });
 
+  it('uses the recorded continuation rule at the corrective dispatch boundary', async () => {
+    await server.app.ctx.configStore.update({ modelInfo: { stub: { contextWindow: 100 } } });
+    await server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: markerCommand('ok'),
+      verificationAutoAccept: true,
+      contextReuseThreshold: 0.2,
+    });
+    Object.defineProperty(server.app.ctx.runner, 'latestSnapshot', {
+      value: async () => ({ contextTokens: 10 }),
+      configurable: true,
+    });
+    const { taskId, runId } = await runWorktreeTask({
+      turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
+    });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'completed' ? true : undefined);
+    const attemptsByTicket = await ticketAttempts(taskId);
+    expect(attemptsByTicket[1]!.continuation).toContain('continued-session');
+    const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
+    expect(events.some((event: { payload: { event?: string } }) => event.payload.event === 'session-reloaded')).toBe(true);
+  });
+
+  it('starts a condensed Session above the threshold and keeps the source locator', async () => {
+    await server.app.ctx.configStore.update({ modelInfo: { stub: { contextWindow: 100 } } });
+    await server.app.ctx.workspaces.update(workspaceId, {
+      verificationCommand: markerCommand('ok'),
+      verificationAutoAccept: true,
+      contextReuseThreshold: 0.2,
+    });
+    Object.defineProperty(server.app.ctx.runner, 'latestSnapshot', {
+      value: async () => ({ contextTokens: 90 }),
+      configurable: true,
+    });
+    const { taskId } = await runWorktreeTask({
+      turns: [{ writeFiles: { 'marker.txt': 'bad\n' } }, { writeFiles: { 'marker.txt': 'ok\n' } }],
+    });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'completed' ? true : undefined);
+    const attemptsByTicket = await ticketAttempts(taskId);
+    expect(attemptsByTicket[1]!.continuation).toContain('new-session-condensed');
+    const tasks = await new AttemptStore(server.app.ctx.asyncDb).listTasks(attemptsByTicket[1]!.id);
+    expect(tasks.find((task) => task.type === 'implementation')?.logLocator).toMatch(/^session:/);
+  });
+
   it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: inconclusiveCommand() });
 

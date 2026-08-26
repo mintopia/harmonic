@@ -5,6 +5,7 @@ import {
   type RunChip,
   type RunDot,
 } from '../../run-rail-model';
+import { formatScheduledJobDuration } from '../../scheduled-jobs-model';
 import type { Attempt, Run } from '../../types';
 import { runDotFill } from '../../ui';
 import { Icon } from '../Icon';
@@ -104,7 +105,7 @@ export function RunAttempts({
         <div className="mt-2.5 space-y-1 text-small text-faint">
           {attempts.flatMap((attempt) => attempt.continuation ? [{ attempt, continuation: attempt.continuation }] : []).map(({ attempt, continuation }) => (
             <div key={attempt.id}>
-              Attempt {attempt.number}: {continuation.path === 'continued-session' ? 'continued session' : 'new session (condensed)'} · context {continuation.contextUsage ?? 'unknown'}/{continuation.contextReuseThreshold} · active {continuation.lastActiveAgeMs}ms/{continuation.warmWindowMs ?? 'unknown'}ms
+              Attempt {attempt.number}: {continuation.path === 'continued-session' ? 'continued session' : 'new session (condensed)'} · context {continuation.contextUsage ?? 'unknown'}/{continuation.contextReuseThreshold} · active {formatScheduledJobDuration(continuation.lastActiveAgeMs)}/{formatScheduledJobDuration(continuation.warmWindowMs) ?? 'unknown'}
             </div>
           ))}
         </div>
@@ -112,6 +113,7 @@ export function RunAttempts({
     </section>
   );
 }
+
 
 export function RunRail({
   runs,

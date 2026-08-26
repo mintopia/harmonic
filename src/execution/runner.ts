@@ -31,7 +31,6 @@ import {
   type DeterministicContinuation,
 } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
-import { buildResumeFallbackSummary } from '../domain/session-fallback.js';
 import { DomainError } from '../domain/errors.js';
 import type { RunStore, PersistedRunEvent, RunGuardrailSnapshot } from '../domain/runs.js';
 import { RunFactStore } from '../domain/run-facts.js';
@@ -74,7 +73,7 @@ import {
   type VerificationDecision,
   type VerifierVerdict,
 } from '../verification/combine.js';
-import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
+import { resolveContextWindow, resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { logger } from '../logger.js';
@@ -2172,7 +2171,7 @@ export class Runner {
   ): Promise<DeterministicContinuation> {
     const now = Date.now();
     const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
-    const contextWindow = this.getConfig().modelInfo[task.model]?.contextWindow;
+    const contextWindow = resolveContextWindow(task.model, this.getConfig().modelInfo);
     const snapshot = await this.latestSnapshot(run.id);
     const contextUsage = contextWindow && snapshot?.contextTokens !== null && snapshot?.contextTokens !== undefined
       ? snapshot.contextTokens / contextWindow
@@ -2191,15 +2190,16 @@ export class Runner {
     const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
     if (!session) return null;
     const current = await this.runStore.get(run.id);
-    return buildResumeFallbackSummary({
-      trigger: 'continuation-threshold',
-      detail: 'Attempt N+1 started a fresh Session under the deterministic continuation rule.',
-      session,
-      candidate: { oid: current.candidateOid, status: null },
-      facts: await this.runFacts.list(run.id),
-      events: await this.runStore.listEvents(run.id),
-      trackerLinks: [],
-    });
+    const facts = await this.runFacts.list(run.id);
+    const events = await this.runStore.listEvents(run.id);
+    return [
+      '# Condensed continuation',
+      '',
+      'Attempt N+1 starts a fresh Session under the deterministic continuation rule.',
+      `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
+      `Candidate: ${current.candidateOid ?? '(none produced)'}`,
+      `Recorded facts: ${facts.length}; run events: ${events.length}.`,
+    ].join('\n');
   }
 
   /**
@@ -3365,7 +3365,7 @@ export class Runner {
       // cause, then finish, and the full suite reruns against the new candidate.
       if (healCtx) {
         promptText =
-          `${healCtx.condensedContext ? `${healCtx.condensedContext}\n\n` : ''}${promptText}\n\n## Verification failed — fix required (self-heal ${healCtx.attempt})\n` +
+          `${promptText}${healCtx.condensedContext ? `\n\n${healCtx.condensedContext}` : ''}\n\n## Verification failed — fix required (self-heal ${healCtx.attempt})\n` +
           `Your previous attempt did not pass verification:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.`;
       } else if (remergeCtx) {
