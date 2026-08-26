@@ -14,7 +14,7 @@ import {
   rematerializeCandidate,
 } from './execution-isolation.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
+import { collectUsage, collectUsageWithRetry, contextInputTokens, observedModelMismatch, activityLine, agentsFromTree, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { driveFields, promptForTask } from './prompt-template.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -26,7 +26,9 @@ import { assessResumeEligibility, sessionFacts, type ResumeEnvironment } from '.
 import {
   planSessionContinuation,
   sessionWarmthFacts,
+  decideAttemptContinuation,
   type ContinuationTrigger,
+  type DeterministicContinuation,
 } from '../domain/session-continuation.js';
 import { repoKey } from './repo-lock.js';
 import { DomainError } from '../domain/errors.js';
@@ -71,7 +73,7 @@ import {
   type VerificationDecision,
   type VerifierVerdict,
 } from '../verification/combine.js';
-import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
+import { resolveContextWindow, resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { logger } from '../logger.js';
@@ -229,6 +231,7 @@ export interface RunnerOptions {
         | 'verificationCritic'
         | 'verificationAutoAccept'
         | 'maxAttempts'
+        | 'contextReuseThreshold'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -387,6 +390,8 @@ interface HealContext {
   reason: string;
   output: string;
   attempt: number;
+  continuation: DeterministicContinuation;
+  condensedContext: string | null;
 }
 
 /**
@@ -545,6 +550,9 @@ export class Runner {
   private readonly readers = new Map<number, SessionTailReader>();
   /** Bounded per-Run ACP rollups, retained across corrective turns. */
   private readonly toolCallTotals = new Map<number, Map<string, number>>();
+  /** The latest turn's ACP-reported input footprint per run — the context-usage
+   * source for harnesses whose session log the tailer cannot read (stub, codex). */
+  private readonly lastTurnContextTokens = new Map<number, number>();
   /** Reduced, bounded progress traces. Raw ACP payloads are discarded at
    * ingest, so neither memory nor detector work grows with a Run. */
   private readonly progressEvents = new Map<number, ProgressEvent[]>();
@@ -678,7 +686,12 @@ export class Runner {
     const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
     if (run.attempt >= maxAttempts) return await this.taskService.escalate(task.id);
 
-    await this.taskService.requeue(task.id, feedback);
+    const nextAttempt = await this.attempts.ensureForRun(task.id, run.attempt + 1, Date.now());
+    const continuation = await this.decideContinuation(task, run, workspace);
+    await this.attempts.setContinuation(nextAttempt.id, continuation);
+    // The condensed section is composed at dispatch (from the prior Session), not
+    // baked into the Task prompt, which must stay the operator's text plus feedback.
+    await this.taskService.requeue(task.id, feedback, continuation.path === 'continued-session' ? 'full' : 'condensed');
     await this.start(task.id);
     return await this.taskService.get(task.id);
   }
@@ -2223,8 +2236,16 @@ export class Runner {
       // this before driving the corrective turn: timeline rows, settling, and
       // a post-crash resume all resolve the current Attempt through runs.attempt.
       run = await this.runStore.update(run.id, { attempt: attemptNumber });
-      await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
-      healCtx = { reason: outcome.reason, output: outcome.output, attempt: attemptNumber - 1 };
+      const nextAttempt = await this.attempts.ensureForRun(task.id, attemptNumber, Date.now());
+      const continuation = await this.decideContinuation(task, run, workspace);
+      await this.attempts.setContinuation(nextAttempt.id, continuation);
+      healCtx = {
+        reason: outcome.reason,
+        output: outcome.output,
+        attempt: attemptNumber - 1,
+        continuation,
+        condensedContext: continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null,
+      };
       remergeCtx = undefined;
       inFlightTurn = await this.enqueueCorrectiveAttempt(run, sessionKey);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
@@ -2233,10 +2254,49 @@ export class Runner {
       }
     } finally {
       this.toolCallTotals.delete(run.id);
+      this.lastTurnContextTokens.delete(run.id);
       this.progressEvents.delete(run.id);
       this.progressSequences.delete(run.id);
       this.outstandingProgressActions.delete(run.id);
     }
+  }
+
+  private async decideContinuation(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Awaited<ReturnType<NonNullable<RunnerOptions['getWorkspace']>>>,
+  ): Promise<DeterministicContinuation> {
+    const now = Date.now();
+    const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
+    const contextWindow = resolveContextWindow(task.model, this.getConfig().modelInfo);
+    // Live tailer snapshot → the in-flight turn's ACP usage (self-heal, before the
+    // Run persists usage) → the settled Run's persisted usage (review reject).
+    const persisted = run.usage ? (JSON.parse(run.usage) as RunUsage).contextTokens ?? null : null;
+    const contextTokens = (await this.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
+    const contextUsage = contextWindow !== null && contextTokens !== null ? contextTokens / contextWindow : null;
+    return decideAttemptContinuation({
+      harness: task.harness,
+      contextUsage,
+      lastActiveAt: session?.lastActiveAt ?? now,
+      contextReuseThreshold: workspace?.contextReuseThreshold ?? this.getConfig().contextReuseThreshold,
+      now,
+    });
+  }
+
+  private async condensedContext(run: RunRow): Promise<string | null> {
+    if (run.sessionRowId === null) return null;
+    const session = await this.sessionStore.get(run.sessionRowId).catch(() => null);
+    if (!session) return null;
+    const current = await this.runStore.get(run.id);
+    const facts = await this.runFacts.list(run.id);
+    const events = await this.runStore.listEvents(run.id);
+    return [
+      '## Prior session (condensed)',
+      'This attempt starts a fresh Session under the deterministic continuation rule.',
+      `Prior Session: ${session.harness} / ${session.model} / ${session.harnessSessionId}`,
+      `Candidate: ${current.candidateOid ?? '(none produced)'}`,
+      `Recorded facts: ${facts.length}; run events: ${events.length}.`,
+    ].join('\n');
   }
 
   /**
@@ -3293,16 +3353,13 @@ export class Runner {
       const onInitialize = (result: AcpInitializeResult) => {
         sessionInit = result;
       };
-      // Retry & reject continuation (issue #147): a first (non-corrective) turn
-      // on a Run pre-bound to a prior Session (`bindContinuationIfEligible`)
-      // reloads that conversation via `session/load` instead of a cold
-      // `session/new`, so the agent still remembers what it tried and the
-      // feedback it got. A corrective turn (self-heal #137 / re-merge #155)
-      // re-drives the SAME live process and must NOT reload — it carries its
-      // correction as prompt text below — so it always takes the fresh
-      // handshake. On any load incompatibility Harmonic fails forward to a fresh
-      // Session rather than leaving the Run session-less.
-      const continueSessionId = healCtx === undefined && remergeCtx === undefined ? run.sessionId : null;
+      // A corrective Attempt follows the recorded continuation decision. Reuse
+      // reloads the prior Session with feedback appended below. A condensed path
+      // starts a fresh Session and retains the prior Session row for transcript
+      // lookup until the new dispatch replaces the Run binding.
+      const continueSessionId = remergeCtx === undefined && (healCtx === undefined || healCtx.continuation.path === 'continued-session')
+        ? run.sessionId
+        : null;
       if (continueSessionId) {
         const outcome = await driver.load({
           sessionId: continueSessionId,
@@ -3398,11 +3455,21 @@ export class Runner {
       // A self-heal turn (issue #137) re-drives the same builder on its resumed
       // work, so append the verification failure as corrective feedback: fix the
       // cause, then finish, and the full suite reruns against the new candidate.
+      // The condensed prior-Session seed (#311) is always the trailing section.
+      let condensed: string | null = null;
       if (healCtx) {
         promptText =
           `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
           `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.`;
+        condensed = healCtx.condensedContext ?? null;
+      } else if (task.continuationChoice === 'condensed' && !remergeCtx) {
+        // A review reject the continuation rule routed to a fresh Session (#311)
+        // or the operator's "start condensed" pick (#170): the feedback already
+        // rides the Task prompt; seed the new Session with the prior one's
+        // condensed context.
+        const src = await this.resolveContinuationSource(task);
+        condensed = src ? await this.condensedContext(src.prior) : null;
       } else if (remergeCtx) {
         // Bounded agent re-merge turn (issue #155): the previous turn left the
         // repository in a branch state Harmonic cannot deterministically land.
@@ -3424,6 +3491,7 @@ export class Runner {
           `Harmonic rebased your branch onto its base and the rebase stopped with conflicts, left in progress in this checkout:\n${rebaseConflict}\n\n` +
           `Resolve the conflicted files, stage them, and run \`git rebase --continue\` before doing anything else.`;
       }
+      if (condensed) promptText = `${promptText}\n\n${condensed}`;
       // Persist the exact text sent so Task detail can show it on every Run —
       // native or mirrored — without re-deriving a template that may since have
       // changed (the "Prompt" tab reads this column). Steer/continue turns are
@@ -3593,6 +3661,8 @@ export class Runner {
         }
       }
       await finalize();
+      const turnContextTokens = contextInputTokens(result.usage);
+      if (turnContextTokens !== null) this.lastTurnContextTokens.set(run.id, turnContextTokens);
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
       this.noteModelMismatch(task, usage, record);
       const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
@@ -3952,9 +4022,13 @@ export class Runner {
         sessionId: (await this.runStore.get(run.id)).sessionId,
         promptResult,
       });
-      return usage
-        ? { ...usage, toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))) }
-        : null;
+      if (!usage) return null;
+      const contextTokens = contextInputTokens(promptResult?.usage);
+      return {
+        ...usage,
+        ...(contextTokens !== null ? { contextTokens } : {}),
+        toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))),
+      };
     } catch {
       return null;
     }

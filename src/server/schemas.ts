@@ -75,6 +75,15 @@ export const attemptSchema = z
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
     /** Feedback that caused this attempt to begin, when it is a corrective attempt. */
     feedback: z.string().nullable().meta({ example: 'The rate limiter must be shared across workers.' }),
+    continuation: z.object({
+      path: z.enum(['continued-session', 'new-session-condensed']),
+      reason: z.enum(['continued-within-limits', 'context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
+      contextUsage: z.number().nullable(),
+      contextReuseThreshold: z.number(),
+      lastActiveAt: z.number(),
+      lastActiveAgeMs: z.number(),
+      warmWindowMs: z.number().nullable(),
+    }).nullable(),
     tasks: z.array(attemptTaskSchema),
   })
   .meta({ id: 'Attempt' });
