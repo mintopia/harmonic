@@ -25,6 +25,17 @@ Before the final test run, run `npm run typecheck` and `npm run lint`.
 Run `npm test` once when the work is complete. It starts ACP harnesses and
 covers shared-lock integration cases, so it is slower than a focused test.
 
+### Branching and rebasing
+
+Work only on the branch you start on. The integration line is `develop` and the
+`epic/*` branches; `main` is the stale release branch (`origin/main`,
+`origin/HEAD`, and `v1.0.0` all sit on the tagged release, far behind develop).
+
+Never `git rebase origin/main` (or `origin`/`origin/HEAD`) — that replays your
+work onto the release tip and drags in a mountain of divergence. If you must
+rebase, rebase onto your task's own base branch (the `develop` or `epic/*` ref
+you started from), never the release line.
+
 ## Agent skills
 
 ### Issue tracker
