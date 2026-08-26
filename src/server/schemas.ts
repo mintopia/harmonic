@@ -58,7 +58,6 @@ export const attemptTaskSchema = z
     state: z.enum(ATTEMPT_TASK_STATES).meta({ example: 'passed' }),
     command: z.string().nullable().meta({ example: 'npm test' }),
     verdict: z.string().nullable().meta({ example: 'pass' }),
-    verifiedSha: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
     logLocator: z.string().nullable().meta({ example: 'verification_attempt:31' }),
     startedAt: z.number().nullable().meta({ example: 1784032140000 }),
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
@@ -76,6 +75,19 @@ export const attemptSchema = z
     endedAt: z.number().nullable().meta({ example: 1784032200000 }),
     /** Feedback that caused this attempt to begin, when it is a corrective attempt. */
     feedback: z.string().nullable().meta({ example: 'The rate limiter must be shared across workers.' }),
+    /** The branch tip this attempt's verification proved (its `verified-head` fact); null until verification ran. */
+    verifiedSha: z.string().nullable().meta({ example: '0f758cd2200565e7605902a86c2827c65ad25ce0' }),
+    /** Why this attempt handed the ticket to a human (its `escalate` settle fact); null unless it escalated. */
+    escalationReason: z.string().nullable().meta({ example: 'escalated to human: verification failed after 3 attempt(s)' }),
+    continuation: z.object({
+      path: z.enum(['continued-session', 'new-session-condensed']),
+      reason: z.enum(['continued-within-limits', 'context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
+      contextUsage: z.number().nullable(),
+      contextReuseThreshold: z.number(),
+      lastActiveAt: z.number(),
+      lastActiveAgeMs: z.number(),
+      warmWindowMs: z.number().nullable(),
+    }).nullable(),
     tasks: z.array(attemptTaskSchema),
   })
   .meta({ id: 'Attempt' });

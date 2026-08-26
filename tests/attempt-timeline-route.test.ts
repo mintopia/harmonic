@@ -48,7 +48,9 @@ describe('attempt timeline API', () => {
     await server.app.ctx.attempts.finish(attempt.id, 'passed', 15);
 
     const run = await server.app.ctx.runs.create(created.body.id);
-    await new RunFactStore(server.app.ctx.asyncDb).append(run.id, 'verified-head', { sha: 'verified-sha' });
+    const facts = new RunFactStore(server.app.ctx.asyncDb);
+    await facts.append(run.id, 'verified-head', { sha: 'verified-sha' });
+    await facts.append(run.id, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: attempts exhausted' });
     server.app.ctx.bus.emit('run_changed', run);
     await waitFor(async () => messages.find(
       (message) => typeof message === 'object'
@@ -68,7 +70,10 @@ describe('attempt timeline API', () => {
     expect(rest.status).toBe(200);
     expect(Reflect.get(event!, 'attempts')).toEqual(rest.body.attempts);
     expect(rest.body.attempts[0].tasks.map((task: { position: number }) => task.position)).toEqual([1, 2]);
-    expect(rest.body.attempts[0].tasks[1].verifiedSha).toBe('verified-sha');
+    expect(rest.body.attempts[0].verifiedSha).toBe('verified-sha');
+    expect(rest.body.attempts[0].escalationReason).toBe('escalated to human: attempts exhausted');
+    expect(rest.body.attempts[0].continuation).toBeNull();
+    expect(rest.body.attempts[0].tasks[1]).not.toHaveProperty('verifiedSha');
     socket.close();
   });
 });

@@ -41,7 +41,6 @@ export interface ApiAttemptTask {
   state: AttemptTaskRow['state'];
   command: string | null;
   verdict: string | null;
-  verifiedSha: string | null;
   logLocator: string | null;
   startedAt: number | null;
   endedAt: number | null;
@@ -55,6 +54,17 @@ export interface ApiAttempt {
   startedAt: number;
   endedAt: number | null;
   feedback: string | null;
+  verifiedSha: string | null;
+  escalationReason: string | null;
+  continuation: {
+    path: 'continued-session' | 'new-session-condensed';
+    reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
+    contextUsage: number | null;
+    contextReuseThreshold: number;
+    lastActiveAt: number;
+    lastActiveAgeMs: number;
+    warmWindowMs: number | null;
+  } | null;
   tasks: ApiAttemptTask[];
 }
 
@@ -62,7 +72,7 @@ export interface ApiAttemptTimeline {
   attempts: ApiAttempt[];
 }
 
-const attemptTaskToApi = (task: AttemptTaskRow, verifiedSha: string | null): ApiAttemptTask => ({
+const attemptTaskToApi = (task: AttemptTaskRow): ApiAttemptTask => ({
   id: task.id,
   attemptId: task.attemptId,
   type: task.type,
@@ -70,7 +80,6 @@ const attemptTaskToApi = (task: AttemptTaskRow, verifiedSha: string | null): Api
   state: task.state,
   command: task.command,
   verdict: task.verdict,
-  verifiedSha: task.type === 'verification' || task.type === 'review' ? verifiedSha : null,
   logLocator: task.logLocator,
   startedAt: task.startedAt,
   endedAt: task.endedAt,
@@ -81,7 +90,11 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
   const rows = await ctx.attempts.listForTask(taskId);
   return {
     attempts: await Promise.all(rows.map(async (attempt) => {
-      const [tasks, verifiedSha] = await Promise.all([ctx.attempts.listTasks(attempt.id), ctx.attempts.verifiedSha(attempt.id)]);
+      const [tasks, verifiedSha, escalationReason] = await Promise.all([
+        ctx.attempts.listTasks(attempt.id),
+        ctx.attempts.verifiedSha(attempt.id),
+        ctx.attempts.escalationReason(attempt.id),
+      ]);
       return {
         id: attempt.id,
         taskId: attempt.taskId,
@@ -90,7 +103,11 @@ export async function attemptTimelineToApi(ctx: AppContext, taskId: number): Pro
         startedAt: attempt.startedAt,
         endedAt: attempt.endedAt,
         feedback: attempt.feedback,
-        tasks: tasks.map((task) => attemptTaskToApi(task, verifiedSha)),
+        verifiedSha,
+        escalationReason,
+        // The recorded session decision lands with the attempts.continuation column (#311); absent until then.
+        continuation: null,
+        tasks: tasks.map(attemptTaskToApi),
       };
     })),
   };

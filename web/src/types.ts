@@ -28,8 +28,6 @@ export interface AttemptTask {
   state: AttemptTaskState;
   command: string | null;
   verdict: string | null;
-  /** Branch tip proved by the Attempt's verification, when this is a verification/review task. */
-  verifiedSha: string | null;
   logLocator: string | null;
   startedAt: number | null;
   endedAt: number | null;
@@ -44,6 +42,19 @@ export interface Attempt {
   endedAt: number | null;
   /** Feedback recorded before this corrective attempt began. */
   feedback: string | null;
+  /** Branch tip this attempt's verification proved; null until verification ran. */
+  verifiedSha: string | null;
+  /** Why this attempt handed the ticket to a human; null unless it escalated. */
+  escalationReason: string | null;
+  continuation: {
+    path: 'continued-session' | 'new-session-condensed';
+    reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
+    contextUsage: number | null;
+    contextReuseThreshold: number;
+    lastActiveAt: number;
+    lastActiveAgeMs: number;
+    warmWindowMs: number | null;
+  } | null;
   tasks: AttemptTask[];
 }
 
