@@ -113,8 +113,19 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     );
     expect(attentionIds(sections)).toEqual(['task:2', 'task:1']);
     expect(sections.running.map((entry) => entry.id)).toEqual([3, 4]);
-    // The Epic band stays in Pending (header only — its one member is Running).
-    expect(sections.pending.map((group) => [group.epic?.ref ?? null, group.columns.length])).toEqual([[30, 0]]);
+    // Nothing of Epic 30 is pending (its one member is Running), so it has no band.
+    expect(sections.pending).toEqual([]);
+  });
+
+  it('skips a Pending band for an Epic whose members are all promoted or merged', () => {
+    const sections = boardSections(
+      [task(1, 'working'), task(2, 'done'), task(3, 'ready')],
+      [
+        epic(30, [member(301, 1, { state: 'working' }), member(302, 2, { landStatus: 'completed', state: 'done' })]),
+        epic(31, [member(311, 3)]),
+      ],
+    );
+    expect(sections.pending.map((group) => group.epic?.ref)).toEqual([31]);
   });
 
   it('surfaces an escalated Epic (held whole-Epic merge) in Attention after the escalated tickets', () => {
@@ -125,8 +136,8 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     expect(isEscalatedEpic(held)).toBe(true);
     expect(isActiveEpic(held)).toBe(true);
     expect(attentionIds(sections)).toEqual(['task:7', 'epic:60']);
-    // Its folded member is not pending work: the band renders header-only.
-    expect(sections.pending).toEqual([{ epic: held, columns: [] }]);
+    // Its folded member is not pending work, so the Attention card is its only surface.
+    expect(sections.pending).toEqual([]);
   });
 
   it('promotes an escalated Epic member to Attention and keeps it out of the band', () => {
@@ -193,6 +204,7 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     const sections = boardSections([task(501, 'ready')], [merged]);
     expect(isActiveEpic(merged)).toBe(false);
     expect(sections.pending).toEqual([{ epic: null, columns: [expect.objectContaining({ label: 'Frontier' })] }]);
+    expect(sections.attention).toEqual([]);
     expect(sections.pending[0]!.columns[0]!.items.map((item) => item.taskId)).toEqual([501]);
   });
 

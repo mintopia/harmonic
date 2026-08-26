@@ -188,7 +188,7 @@ Two voices — a **teal action accent** and an **indigo review hue** — over a 
 
 ### The two voices
 - **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the escalation `Accept` button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
-- **Indigo Escalated** (`await` `#4B4FA6` light / `#9096E6` dark): reserved for the one state that needs the operator — **escalated** pills, the **"Needs you"** section + count, the **Resolve →** button, and the **selected run chip**. **Await Tint** (`#ECEDF7` / `#25264C`): the escalated pill, the selected run row, the needs-you section header. This is the deliberate break from Deck: escalated is **not** the action accent — the state owns its own hue, so "needs you" never blurs into ordinary chrome.
+- **Indigo Escalated** (`await` `#4B4FA6` light / `#9096E6` dark): reserved for the one state that needs the operator — **escalated** pills, the **Attention** section + count, the **Resolve →** button, and the **selected run chip**. **Await Tint** (`#ECEDF7` / `#25264C`): the escalated pill, the selected run row, the Attention section header. This is the deliberate break from Deck: escalated is **not** the action accent — the state owns its own hue, so "needs you" never blurs into ordinary chrome.
 
 **The Two Voices Rule.** Teal means *action / tooling / ready-to-run*; indigo means *the operator's turn (escalated / needs-you)*. Never use teal for the escalated state, and never use indigo for a generic action. Each voice stays ≤~10% of any screen; if either is decorating something, it's wrong.
 
@@ -256,7 +256,7 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 
 ## 5. Layout & Information Architecture
 
-**App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the "Needs you" count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the Soft/Bold toggle, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
+**App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the Attention count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the Soft/Bold toggle, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
 
 ### The Board (home / signature surface)
 Full-width, attention-ordered sections, top → bottom (ADR-0041 Visibility; state is implied by colour, **never a column**):
@@ -314,7 +314,7 @@ Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono)
 - **Tooltips** are on-demand (`data-tip`, hover/focus), no standing chrome — the dense shorthand explains itself on demand rather than carrying permanent hint text.
 
 ### Accessibility baseline (built in, verified 2026-08-21)
-Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions (polite for state transitions and the live "Needs you" count, assertive for the merge outcome) — a screen-reader operator hears a ticket reach escalated; colour-only state dots carry `role="img"` + label; all decorative SVGs and separator glyphs are `aria-hidden`; icon-only controls have accessible names; `prefers-reduced-motion` drops every animation (dot pulse included) but never the figure; full keyboard paths with visible `:focus-visible`.
+Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions (polite for state transitions and the live Attention count, assertive for the merge outcome) — a screen-reader operator hears a ticket reach escalated; colour-only state dots carry `role="img"` + label; all decorative SVGs and separator glyphs are `aria-hidden`; icon-only controls have accessible names; `prefers-reduced-motion` drops every animation (dot pulse included) but never the figure; full keyboard paths with visible `:focus-visible`.
 
 ## 7. Do's and Don'ts
 

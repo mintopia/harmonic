@@ -125,6 +125,26 @@ describe('mirrorScan upsert', () => {
     expect((await tasks.withDeps(second)).agentWorkable).toBe(false); // derived from the new label
   });
 
+  it('derives humanOnly from the labels alone — a blocked ticket keeps its agent/human identity', async () => {
+    const blockedBy = [{ number: 1, title: 'blocker', state: 'open' as const }];
+    const scanned = await mscan([
+      ticket({ number: 1, labels: ['ready-for-agent'] }),
+      ticket({ number: 2, labels: ['ready-for-agent'], blockedBy }),
+      ticket({ number: 3, labels: ['ready-for-human'], blockedBy }),
+    ]);
+    const byRef = (ref: number) => tasks.withDeps(scanned.find((t) => t.trackerRef === ref)!);
+    expect(await byRef(1)).toMatchObject({ humanOnly: false, agentWorkable: true, openBlockerCount: 0 });
+    // Blocked, but still the agent's once the blocker clears.
+    expect(await byRef(2)).toMatchObject({ humanOnly: false, agentWorkable: false, openBlockerCount: 1 });
+    // Blocked and human-only: agentWorkable alone could not tell these two apart.
+    expect(await byRef(3)).toMatchObject({ humanOnly: true, agentWorkable: false, openBlockerCount: 1 });
+    expect((await tasks.listWithDeps({ workspaceId: wsId })).map((t) => [t.trackerRef, t.humanOnly])).toEqual([
+      [1, false],
+      [2, false],
+      [3, true],
+    ]);
+  });
+
   it('re-poll never moves an escalated Task, even when the label still reads ready-for-agent', async () => {
     const t = ticket({ number: 8, labels: ['ready-for-agent'] });
     const first = (await mscan([t]))[0]!;

@@ -726,6 +726,7 @@ export class TaskService {
     );
     const task = await this.changed(row!);
     this.onNotify('task.escalated', task);
+    await this.emitDependents(id);
     return task;
   }
 
@@ -779,14 +780,17 @@ export class TaskService {
     this.onChanged(task);
     const notification = STATE_NOTIFICATIONS[state];
     if (notification) this.onNotify(notification, task);
-    // Completion changes each dependent's derived blocker count. There is no
-    // stored blocked state to flip, but live clients still need a fresh DTO.
-    if (state === 'done') {
-      for (const dependentId of await this.dependents(id)) {
-        this.onChanged(await this.get(dependentId));
-      }
-    }
+    if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
     return task;
+  }
+
+  /** A blocker settling changes each dependent's derived `openBlockerCount` /
+   * `blockedOnFailed`. There is no stored blocked state to flip, but live
+   * clients still need a fresh DTO. */
+  private async emitDependents(id: number): Promise<void> {
+    for (const dependentId of await this.dependents(id)) {
+      this.onChanged(await this.get(dependentId));
+    }
   }
 
   /**

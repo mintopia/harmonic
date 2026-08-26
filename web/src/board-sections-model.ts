@@ -216,7 +216,11 @@ export function boardSections(tasks: Task[], epics: Epic[]): BoardSections {
 
   const running = tasks.filter((t) => t.state === 'working' && !isDriver(t)).sort(byProcessingOrder);
 
-  const pending: PendingGroup[] = activeEpics.map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }));
+  // An Epic with nothing pending (members all merged or promoted) has no band —
+  // a held one is already its Attention card.
+  const pending: PendingGroup[] = activeEpics
+    .map((epic) => ({ epic, columns: epicPendingColumns(epic, tasks) }))
+    .filter((group) => group.columns.length > 0);
   const standalone = tasks
     .filter((t) => isPending(t) && !activeMemberIds.has(t.id) && !isDriver(t))
     .sort(byPendingOrder)
