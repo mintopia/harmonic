@@ -10,10 +10,10 @@ Use subagents for tasks.
 Use multiple subagents in parallel working as a team, with agent messaging to co-ordinate.
 Subagents must use an appropriate model, defaults:
 
- - Explore, Coding, Code Reviews: Sonnet
- - Codebase Mapping: jcodemunch MCP and Sonnet
- - Reasoning and Planning: Opus
- - Trivial, Documentation: Haiku
+ - Explore, Coding, Code Reviews: Sonnet / Terra
+ - Codebase Mapping: jcodemunch MCP and Sonnet / Terra
+ - Reasoning and Planning: Opus / Sol
+ - Trivial, Documentation: Haiku / Luna
 
 Explicitly specify the model when starting a subagent.
 Subagents must use an appropriate subagent type.
