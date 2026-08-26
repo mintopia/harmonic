@@ -16,10 +16,11 @@
          indigo is reserved for the one state that needs the operator —
          escalated / "needs you." Deck's "awaiting-review = the accent" is
          retired; in Paper the escalated state owns its own hue.
-       · Board (home): attention-ordered sections — Needs you → Active → Epics →
-         Standalone — as horizontal card strips (Needs you / Active) and
-         collapsible Epic bands that expand to a frontier-DAG (Frontier + Depth
-         columns), not panelled row-lists.
+       · Board (home): attention-ordered sections — Attention → Running →
+         Pending (ADR-0041, 2026-08-26) — as horizontal card strips (Attention /
+         Running) and, inside Pending, collapsible Epic bands plus a standalone
+         group, each laid out in open-blocker-count columns (Frontier / 1 blocker
+         / 2 blockers …), not panelled row-lists. State is never a column.
        · Vocabulary: "merged" / "merging", never "landing" / "landed", on every
          surface (code-internal landBranch / EpicLandCoordinator unaffected).
 
@@ -258,21 +259,21 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 **App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the "Needs you" count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the Soft/Bold toggle, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
 
 ### The Board (home / signature surface)
-Full-width, attention-ordered sections, top → bottom:
-- **Needs you** — the sacred core, always first: *escalated* Tickets and Epics (indigo, with the escalation reason at a glance); non-agent-workable (human-only) tickets render muted with a distinct icon, never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
-- **Active** — the working Tickets, a card strip; the count matches "N working." A running Epic member shows in its Epic band, not duplicated here.
-- **Epics** — collapsible **bands**; each expands to a **frontier-DAG** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
-- **Standalone** — loose task cards on the canvas (not boxed in a band), their own frontier.
+Full-width, attention-ordered sections, top → bottom (ADR-0041 Visibility; state is implied by colour, **never a column**):
+- **Attention** — the sacred core, always first: *escalated* Tickets **and escalated Epics** (a held whole-Epic merge), indigo, with the escalation reason at a glance; the Epic card carries its merge-train and opens the Epic peek. Human-only tickets are never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
+- **Running** — the working Tickets, a card strip; the count (amber tint) matches "N working." A running Epic member is promoted here, out of its band.
+- **Pending** — every ready / draft ticket, **grouped into Epics** (collapsible **bands**, ascending by ref) with a **standalone** group last (loose nodes on the canvas, not boxed). Each group lays its tickets out in **open-blocker-count columns** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
 
-### The frontier-DAG (inside an Epic band)
+### Blocker columns (inside an Epic band, and the standalone group)
 The one place the parallel-Epic machinery is legible at a glance:
-- **Column 0 = Frontier** (ready + running — actionable now), then **Depth 1..N** of blocked tasks by dependency depth. Horizontal scroll **inside** the panel; fixed ~300px node cards, never squashed to fit.
-- **Ready ≠ blocked.** A node is in the Frontier only if all blockers are satisfied; otherwise it sits in a Depth column. Never show "ready" inside a depth column.
-- **Merged members are hidden from the DAG entirely** (folded into the epic branch). An epic whose members all merged collapses to its merge-train + integration tip; empty columns drop out.
+- **Column 0 = Frontier** (zero open blockers — actionable now), then **1 blocker / 2 blockers / …** by the API's derived `openBlockerCount` (#308) — never a client-side re-derivation. Horizontal scroll **inside** the panel; fixed ~300px node cards, never squashed to fit. Columns update live as blockers resolve (the server re-broadcasts dependants on completion).
+- **Ready ≠ blocked.** A node is in the Frontier only when its open-blocker count is zero; "blocked" is the count, not a state — a **blocker-count badge** (Blocked slate; Failed rose when a blocker is escalated/cancelled and will not clear on its own) sits top-right on every blocked node and card.
+- **Merged members are hidden entirely** (folded into the epic branch); working / escalated members are promoted to Running / Attention. An epic whose remaining members are all promoted or merged collapses to its header + merge-train; empty columns drop out. An Epic member no Task mirrors yet sits in a trailing **Unmirrored** column (its blocker count is unknown).
 - **Cross-epic dependencies are chips, never drawn lines.** No connector lines at all — column position + colour carry flow. Satisfied blockers are struck-through chips.
-- **Node state = the dot only** (plus an sr-only status word). No status text, no colored left bar on nodes; ready/running nodes get a subtle colored border, blocked = hairline.
+- **Node state = the dot only** (plus an sr-only status word). No status text, no colored left bar on nodes; runnable frontier nodes get a subtle teal border, everything else hairline.
+- **Human-only (HITL) nodes render in place, muted** — faint dot, muted title, a neutral **HITL badge** (person icon), no Run now — so a blocker chain through a human ticket stays visually contiguous.
 - **Merge-train pips = merge PROGRESS:** one green only — green merged, amber running, neutral grey everything not-yet-merged. Never give *ready* its own green.
-- Column headers terse: **Frontier / Depth 1 / Depth 2 …**
+- Column headers terse: **Frontier / 1 blocker / 2 blockers …**, each with its count.
 
 ### The Ticket page (its own route)
 A full-width page you navigate into. Crumb: `harmonic / Epic epic/166 / Task 172 · issue #185` (the epic crumb only when the task is in an epic). It separates **task-level** facts (constant) from **run-level** facts (per attempt):
@@ -288,11 +289,11 @@ Activity, Table, Graph (dependency DAG), Stats, API, Workspace, Settings inherit
 
 ## 6. Components
 
-### Board card (Needs you / Active / Standalone strips)
-A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** (Needs you) put harness·model on its own line below the action-description line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right **HITL badge** (person icon + "HITL", amber) — HITL cards get **no** Run-now. Right-aligned action by state: **Resolve →** (indigo, escalated), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket.
+### Board card (Attention / Running strips)
+A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** put harness·model on its own line below the escalation-reason line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right: the state chip (escalated / the running phase) and, when blocked, the **blocker-count badge**. Right-aligned action by state: **Resolve →** (indigo, escalated), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket. The **escalated Epic card** shares the shape: kind badge · `epic/<ref>` · title · the held-merge reason (indigo) · merge-train + "n of m merged" · **Resolve →** into the Epic peek.
 
-### Epic band + frontier-DAG node
-Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono), the title, the **merge-train** pips, a disclosure chevron. Expands to the frontier-DAG (§ 5). A **node**: state dot + mono id + title + dependency chips (satisfied = struck-through); ready frontier nodes get a teal ▷ **Run now**; blocked nodes carry their blocker chips. Merged nodes are hidden.
+### Epic band + blocker-column node
+Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono), the title, an indigo "N in attention" chip when members are escalated, the **merge-train** pips, a disclosure chevron. Expands to the blocker columns (§ 5). A **node**: state dot + mono id + title + dependency chips (satisfied = struck-through); runnable frontier nodes get a teal ▷ **Run now**; blocked nodes carry the **blocker-count badge** (slate / rose) and their blocker chips; human-only nodes the neutral **HITL badge** (person icon) and muted ink — the 2026-08-26 ADR-0041 rework retired the amber HITL badge, since HITL is not a state and amber is Running's. Merged nodes are hidden.
 
 ### Run rail, stepper & verification
 - **Run attempt row:** dot + `Run N` + `state · cost · duration`; selected on Await Tint + indigo ring.

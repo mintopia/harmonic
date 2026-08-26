@@ -4,19 +4,19 @@ import { describe, expect, it } from 'vitest';
 
 // Source-contract tests (same approach as paper-a11y.test.ts): Board.tsx and
 // EpicPeek.tsx carry JSX and can't be imported into the node test project, so
-// assert the held-merge surfacing against their source. The board-drop half of
-// the fix is proven by render logic in board-sections-model.test.ts.
+// assert the held-merge surfacing against their source. The Attention-section
+// promotion itself is proven in board-sections-model.test.ts.
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
 describe('Epic land.held surfacing', () => {
-  it('surfaces the held merge as an amber escalation chip on the Board band', () => {
+  it('renders the held Epic as an escalated (indigo) card in the Board\'s Attention section', () => {
     const board = source('web/src/components/Board.tsx');
-    expect(board).toContain('epic.land.held != null');
-    expect(board).toContain('Merge escalated — needs you');
-    // Reuses the established escalation register (amber), not a new colour.
-    expect(board).toContain('bg-running-tint text-running');
-    // The held reason rides along as the chip's hover detail.
-    expect(board).toContain('title={epic.land.held}');
+    expect(board).toContain('function EpicAttentionCard');
+    // The escalated state's own colour, never a borrowed register.
+    expect(board).toContain("stateFill('escalated')");
+    expect(board).toContain("stateChip('escalated')");
+    // The held reason is the card's escalation line.
+    expect(board).toContain('{epic.land.held}');
   });
 
   it('shows the held reason next to the Force-merge control in the peek', () => {

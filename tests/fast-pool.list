@@ -38,7 +38,6 @@ tests/db-migration.test.ts
 tests/directory-picker-model.test.ts
 tests/drive-prompt.test.ts
 tests/epic-derivation.test.ts
-tests/epic-frontier-model.test.ts
 tests/epic-land-coordinator.test.ts
 tests/epic-land-held-surfacing.test.ts
 tests/epic-land.test.ts
