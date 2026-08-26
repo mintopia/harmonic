@@ -264,6 +264,8 @@ export interface Task {
   openBlockerCount: number;
   /** ADR-0041's derived flag: opted in (mirrored: `ready-for-agent`, not an Epic container) and no open blockers. */
   agentWorkable: boolean;
+  /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, a human wayfinder kind); independent of blockers. */
+  humanOnly: boolean;
   /** Summed over ALL runs, retries and failed attempts included. */
   cost: Cost | null;
   /** native = authored here; mirrored = a projection of a tracker issue (issue #30). */

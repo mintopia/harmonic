@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Task } from '../types';
+import type { Task, TaskState } from '../types';
 import type { Epic, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
 import { railSegments } from '../epic-model';
-import { boardSections, cardTitle, fmtElapsed } from '../board-sections-model';
 import {
-  deriveEpicFrontier,
-  deriveStandaloneColumns,
-  resolveBlockers,
-  type EpicFrontier,
-  type FrontierDependency,
-  type FrontierNode,
-} from '../epic-frontier-model';
+  boardSections,
+  cardTitle,
+  epicPendingColumns,
+  fmtElapsed,
+  type AttentionEntry,
+  type BlockerColumn,
+  type PendingItem,
+} from '../board-sections-model';
 import { issueRef, taskKey } from '../id-format.js';
 import { api } from '../api';
 import { subscribe } from '../ws';
@@ -18,9 +18,11 @@ import { toastError } from '../toast';
 import { Icon } from './Icon';
 import { formatModelLabel, providerLabel } from './TaskIdentity';
 import {
+  blockerBadge,
   btnPrimary,
   chip,
   displayTitle,
+  hitlBadge,
   panel,
   sectionLabel,
   stateChip,
@@ -47,21 +49,6 @@ function Dot({ task }: { task: Task }) {
 }
 
 const HIT44 = "after:absolute after:left-1/2 after:top-1/2 after:size-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-['']";
-
-function OpenButton({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      className={`relative inline-flex items-center rounded-md border border-edge bg-surface px-[13px] py-[7px] text-[13px] font-medium text-ink transition-colors hover:border-muted ${HIT44}`}
-      onClick={(e) => {
-        e.stopPropagation();
-        onOpen();
-      }}
-    >
-      Take over
-    </button>
-  );
-}
 
 function RunningReadoutLine({ task }: { task: Task }) {
   const runId = task.runId;
@@ -98,38 +85,26 @@ function RunningReadoutLine({ task }: { task: Task }) {
   );
 }
 
-function RunNowButton({ taskId, onChanged, icon }: { taskId: number; onChanged: () => void; icon?: boolean }) {
-  const run = (e: { stopPropagation: () => void }) => {
+function runTask(taskId: number, onChanged: () => void) {
+  return (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
     api.runTask(taskId).then(onChanged, toastError);
   };
-  if (icon) {
-    return (
-      <button
-        type="button"
-        aria-label="Run now"
-        title="Run now"
-        onClick={run}
-        className={`${btnPrimary} relative z-10 grid size-8 min-h-11 min-w-11 shrink-0 place-items-center p-0`}
-      >
-        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M7 5l12 7-12 7V5z" />
-        </svg>
-      </button>
-    );
-  }
+}
+
+function RunNowButton({ taskId, onChanged }: { taskId: number; onChanged: () => void }) {
   return (
     <button
       type="button"
       className={`relative inline-flex items-center rounded-md border border-accent bg-accent px-[13px] py-[7px] text-[13px] font-semibold text-on-accent transition-colors hover:opacity-90 ${HIT44}`}
-      onClick={run}
+      onClick={runTask(taskId, onChanged)}
     >
       Run now
     </button>
   );
 }
 
-/** The escalated card's one action: open the ticket, where Accept / Reject with guidance / Close live. */
+/** The escalated card's one action: open the ticket (or Epic peek), where the resolution lives. */
 function ResolveButton({ onOpen }: { onOpen: () => void }) {
   return (
     <button
@@ -150,19 +125,30 @@ function WhoLine({ harness, model }: { harness: string; model: string }) {
   );
 }
 
-function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: () => void; onChanged: () => void; blockers?: FrontierDependency[] }) {
+function BlockerBadge({ count, blockedOnFailed }: { count: number; blockedOnFailed: boolean }) {
+  return (
+    <span className={blockerBadge(blockedOnFailed)} title={blockedOnFailed ? 'A blocker is escalated or cancelled' : undefined}>
+      {count === 1 ? '1 blocker' : `${count} blockers`}
+    </span>
+  );
+}
+
+function HitlBadge() {
+  return (
+    <span className={hitlBadge} title="Human-only ticket — Harmonic takes no actions on it">
+      <Icon name="user" className="size-3" />
+      HITL
+    </span>
+  );
+}
+
+/** Attention / Running card: the full ~420px ticket card (DESIGN.md § 6). */
+function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void; onChanged: () => void }) {
   const hasReadout = task.runStartedAt != null;
-  const openBlockers = (blockers ?? []).filter((blocker) => !blocker.satisfied);
-  // A mirrored ticket the agent may not work (no `ready-for-agent`, an Epic
-  // container, a human-only wayfinder kind) is human-only: visible because it can
-  // block others, never runnable from here.
-  const humanOnly = task.origin === 'mirrored' && !task.agentWorkable && task.openBlockerCount === 0;
   const action =
     task.state === 'escalated' ? (
       <ResolveButton onOpen={onOpen} />
-    ) : humanOnly ? (
-      <OpenButton onOpen={onOpen} />
-    ) : task.state === 'ready' ? (
+    ) : task.state === 'ready' && task.agentWorkable ? (
       <RunNowButton taskId={task.id} onChanged={onChanged} />
     ) : null;
   const showFoot = !!task.branch || hasReadout || !!action;
@@ -175,18 +161,14 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
           {task.mapRef != null && <span className={toolChip}>epic/{task.mapRef}</span>}
           <Dot task={task} />
           <span className="font-data text-small text-faint">{rowId(task)}</span>
-          {task.state === 'escalated' ? (
-            <span className={`ml-auto ${stateChip(task.state)}`}>escalated</span>
-          ) : humanOnly ? (
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-raised px-2 py-0.5 text-label font-semibold uppercase text-muted">
-              <Icon name="user" className="size-3" />
-              human
-            </span>
-          ) : task.state === 'working' && task.phase && task.phase !== 'terminal' ? (
-            <span className="ml-auto rounded-full bg-running-tint px-2 py-0.5 text-label font-semibold uppercase text-running">
-              {task.phase === 'landing' ? 'merging' : task.phase}
-            </span>
-          ) : null}
+          <span className="ml-auto flex items-center gap-1.5">
+            {task.openBlockerCount > 0 && <BlockerBadge count={task.openBlockerCount} blockedOnFailed={task.blockedOnFailed} />}
+            {task.state === 'escalated' ? (
+              <span className={stateChip(task.state)}>escalated</span>
+            ) : task.state === 'working' && task.phase && task.phase !== 'terminal' ? (
+              <span className={stateChip(task.state)}>{task.phase === 'landing' ? 'merging' : task.phase}</span>
+            ) : null}
+          </span>
         </div>
         <button
           type="button"
@@ -211,16 +193,6 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
         <div className="-mt-1">
           <WhoLine harness={task.harness} model={task.model} />
         </div>
-        {openBlockers.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-small text-muted">
-            <span className="text-faint">Blocked by</span>
-            {openBlockers.map((blocker) => (
-              <span key={blocker.taskId} className={chip}>
-                {blocker.label}
-              </span>
-            ))}
-          </div>
-        )}
         {showFoot && (
           <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
             {task.branch && (
@@ -240,17 +212,79 @@ function TaskCard({ task, onOpen, onChanged, blockers }: { task: Task; onOpen: (
   );
 }
 
-function CardStrip({
-  tasks,
-  onOpen,
-  onChanged,
-  blockersFor,
-}: {
-  tasks: Task[];
-  onOpen: (task: Task) => void;
-  onChanged: () => void;
-  blockersFor?: (task: Task) => FrontierDependency[];
-}) {
+const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
+  landed: 'bg-merged-dot',
+  running: 'bg-running-dot',
+  healing: 'bg-running-dot motion-safe:animate-pulse',
+  waiting: 'bg-raised',
+  blocking: 'bg-raised',
+};
+
+function MergeTrain({ epic }: { epic: Epic }) {
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1"
+      role="img"
+      aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} merged`}
+    >
+      {railSegments(epic).map((seg) => (
+        <span key={seg.ref} className={`h-1.5 w-4 rounded-full ${SEGMENT_FILL[seg.status]}`} />
+      ))}
+    </span>
+  );
+}
+
+function EpicKindBadge({ epic }: { epic: Epic }) {
+  return (
+    <span className="shrink-0 rounded bg-tool-tint px-1.5 py-0.5 text-label font-bold text-tool">
+      {epic.kind === 'map' ? 'Map' : 'Epic'}
+    </span>
+  );
+}
+
+/** An escalated Epic in Attention: the whole-Epic merge is held for the operator (ADR-0041). */
+function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epic: Epic) => void }) {
+  const open = () => onOpenEpic?.(epic);
+  return (
+    <article data-epic-ref={epic.ref} className="group bold-wash escalated relative flex w-[26.25rem] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-surface shadow-card transition-shadow duration-150 motion-reduce:transition-none hover:shadow-float">
+      <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[5px] ${stateFill('escalated')}`} />
+      <div className="flex flex-1 flex-col px-4 py-4 pl-5">
+        <div className="flex items-center gap-2">
+          <EpicKindBadge epic={epic} />
+          <span role="img" aria-label="escalated epic" className={stateDot('escalated')} />
+          <span className="font-data text-small text-faint">epic/{epic.ref}</span>
+          <span className={`ml-auto ${stateChip('escalated')}`}>escalated</span>
+        </div>
+        <button
+          type="button"
+          onClick={open}
+          title={epic.title}
+          className="mt-2 line-clamp-2 cursor-pointer text-left text-[15px] font-semibold leading-[1.3] text-ink focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent after:absolute after:inset-0 after:content-['']"
+        >
+          {epic.title}
+        </button>
+        <div className="mt-2 text-[12.5px]">
+          <span className="line-clamp-2 text-await" title={epic.land.held ?? undefined}>
+            {epic.land.held}
+          </span>
+        </div>
+        <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
+          <MergeTrain epic={epic} />
+          <span className="tabular-nums">
+            {epic.foldedCount} of {epic.memberCount} merged
+          </span>
+          {onOpenEpic && (
+            <span className="relative z-10 ml-auto">
+              <ResolveButton onOpen={open} />
+            </span>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CardStrip({ count, children }: { count: number; children: React.ReactNode }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const [more, setMore] = useState(0);
 
@@ -259,7 +293,7 @@ function CardStrip({
     if (!strip) return;
     const measure = () => {
       const visibleCards = Math.max(1, Math.floor(strip.clientWidth / 432));
-      setMore(Math.max(0, tasks.length - visibleCards));
+      setMore(Math.max(0, count - visibleCards));
     };
     measure();
     if (typeof ResizeObserver === 'undefined') {
@@ -269,14 +303,12 @@ function CardStrip({
     const observer = new ResizeObserver(measure);
     observer.observe(strip);
     return () => observer.disconnect();
-  }, [tasks.length]);
+  }, [count]);
 
   return (
     <div className="relative">
       <div ref={stripRef} data-board-layout="card-strip" className="flex gap-3 overflow-x-auto pb-2 pr-20 [scrollbar-width:thin]">
-        {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} blockers={blockersFor?.(task)} />
-        ))}
+        {children}
       </div>
       {more > 0 && (
         <>
@@ -299,17 +331,28 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+type SectionTone = 'attn' | 'running' | 'neutral';
+
+// The count pill carries the section's state colour (the Signal Rule): solid
+// indigo for Attention, Running amber tint, neutral for Pending.
+const SECTION_COUNT: Record<SectionTone, string> = {
+  attn: 'bg-await text-on-await',
+  running: 'bg-running-tint text-running',
+  neutral: 'bg-raised text-muted',
+};
+
 function BoardSection({
   label,
   count,
-  attn = false,
+  tone = 'neutral',
   children,
 }: {
   label: string;
   count?: string;
-  attn?: boolean;
+  tone?: SectionTone;
   children: React.ReactNode;
 }) {
+  const attn = tone === 'attn';
   return (
     <section className="mb-[26px]">
       <div className="mb-[13px] flex items-center gap-2.5 px-0.5">
@@ -318,7 +361,7 @@ function BoardSection({
           <span
             aria-atomic="true"
             aria-live={attn ? 'polite' : undefined}
-            className={`rounded-full px-2 py-px text-[11px] font-bold ${attn ? 'bg-await text-on-await' : 'bg-raised text-muted'}`}
+            className={`rounded-full px-2 py-px text-[11px] font-bold tabular-nums ${SECTION_COUNT[tone]}`}
           >
             {count}
           </span>
@@ -330,111 +373,104 @@ function BoardSection({
   );
 }
 
-const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
-  landed: 'bg-merged-dot',
-  running: 'bg-running-dot',
-  healing: 'bg-running-dot motion-safe:animate-pulse',
-  waiting: 'bg-raised',
-  blocking: 'bg-raised',
-};
+const isBlocked = (item: PendingItem): boolean => item.openBlockerCount != null && item.openBlockerCount > 0;
 
-function frontierDot(state: FrontierNode['state']): string {
-  switch (state) {
-    case null:
-    case 'draft':
-    case 'done':
-      return 'bg-edge';
-    case 'working':
-      return 'bg-running-dot motion-safe:animate-pulse';
-    case 'ready':
-      return 'bg-ready-dot';
-    case 'escalated':
-      return 'bg-await-dot';
-    case 'cancelled':
-      return 'bg-faint';
-    default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
-    }
-  }
+// Ready ≠ blocked (DESIGN.md § 5): a ticket whose stored state is `ready` but
+// which waits on a blocker shows the Blocked slate, never the actionable teal.
+function itemDot(item: PendingItem): string {
+  if (item.state === null) return 'bg-edge';
+  if (item.humanOnly) return 'bg-faint';
+  if (isBlocked(item)) return 'bg-blocked';
+  return stateFill(item.state);
 }
 
-function FrontierNodeCard({
-  node,
+/** Pending node (DESIGN.md § 6): state dot + mono id + title + blocker chips; the
+ * ▷ Run now on a runnable frontier node, the blocker-count or HITL badge otherwise. */
+function PendingCard({
+  item,
   onOpenTask,
   onChanged,
 }: {
-  node: FrontierNode;
+  item: PendingItem;
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
 }) {
-  const runnable = node.runnable && node.taskId != null;
+  const muted = item.humanOnly;
+  const wash: TaskState | '' = muted || isBlocked(item) || item.state === null ? '' : item.state;
   return (
-    <div className={`bold-wash ${node.state ?? ''} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${runnable || node.state === 'working' ? 'border-ready-dot' : 'border-hairline'}`}>
+    <div className={`bold-wash ${wash} relative w-[300px] shrink-0 cursor-pointer rounded-lg border bg-surface p-2.5 transition duration-150 motion-reduce:transition-none hover:-translate-y-0.5 hover:border-edge hover:shadow-float ${item.runnable ? 'border-ready-dot/40' : 'border-hairline'}`}>
       <div className="flex items-center gap-2">
-        <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${frontierDot(node.state)}`} />
-        <span className="font-data text-small text-faint">#{node.ref}</span>
-        <span className="sr-only">{node.state ?? 'blocked'}</span>
+        <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${itemDot(item)}`} />
+        <span className="font-data text-small text-faint">{item.label}</span>
+        <span className="sr-only">{item.humanOnly ? 'human-only' : (item.state ?? 'unmirrored')}</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          {item.humanOnly && <HitlBadge />}
+          {item.openBlockerCount != null && item.openBlockerCount > 0 && (
+            <BlockerBadge count={item.openBlockerCount} blockedOnFailed={item.blockedOnFailed} />
+          )}
+          {item.runnable && item.taskId != null && (
+            <button
+              type="button"
+              aria-label="Run now"
+              title="Run now"
+              onClick={runTask(item.taskId, onChanged)}
+              className="relative z-10 grid size-[23px] place-items-center rounded-md border border-ready-dot/40 bg-ready-tint text-ready transition-colors duration-150 hover:bg-ready-dot hover:text-white after:absolute after:-inset-2.5 after:content-['']"
+            >
+              <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M7 5l12 7-12 7V5z" />
+              </svg>
+            </button>
+          )}
+        </span>
       </div>
       <button
         type="button"
-        disabled={node.taskId == null}
-        onClick={() => node.taskId != null && onOpenTask(node.taskId)}
-        title={node.title}
-        className="mt-1 block w-full min-w-0 cursor-pointer truncate pr-7 text-left text-small font-medium text-ink disabled:cursor-pointer focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent enabled:after:absolute enabled:after:inset-0 enabled:after:content-['']"
+        disabled={item.taskId == null}
+        onClick={() => item.taskId != null && onOpenTask(item.taskId)}
+        title={item.title}
+        className={`mt-1 block w-full min-w-0 cursor-pointer truncate text-left text-small font-medium disabled:cursor-default focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] ${muted ? 'text-muted' : 'text-ink'}`}
       >
-        {node.title}
+        {cardTitle(item.title)}
       </button>
-      {node.dependencies.length > 0 && (
+      {item.blockers.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {node.dependencies.map((dependency) => (
+          {item.blockers.map((blocker) => (
             <span
-              key={dependency.taskId}
-              className={`rounded bg-raised px-1.5 py-0.5 text-label text-muted ${dependency.satisfied ? 'line-through' : ''}`}
+              key={blocker.taskId}
+              className={`rounded bg-raised px-1.5 py-0.5 text-label text-muted ${blocker.satisfied ? 'line-through' : ''}`}
             >
-              {dependency.label}
+              {blocker.label}
             </span>
           ))}
         </div>
-      )}
-      {runnable && node.taskId != null && (
-        <button
-          type="button"
-          aria-label="Run now"
-          title="Run now"
-          onClick={(e) => {
-            e.stopPropagation();
-            api.runTask(node.taskId!).then(onChanged, toastError);
-          }}
-          className="absolute right-2.5 top-2.5 z-10 grid size-[23px] place-items-center rounded-md border border-ready-dot/40 bg-ready-tint text-ready transition-colors duration-150 hover:bg-ready-dot hover:text-white after:absolute after:-inset-2.5 after:content-['']"
-        >
-          <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M7 5l12 7-12 7V5z" />
-          </svg>
-        </button>
       )}
     </div>
   );
 }
 
-function FrontierColumns({
-  frontier,
+function BlockerColumns({
+  columns,
   onOpenTask,
   onChanged,
+  className = '',
 }: {
-  frontier: EpicFrontier;
+  columns: BlockerColumn[];
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
+  className?: string;
 }) {
   return (
-    <div className="overflow-x-auto p-4">
-      <div className="flex min-w-max gap-4">
-        {frontier.columns.map((column) => (
+    <div data-board-layout="blocker-columns" className={`overflow-x-auto [scrollbar-width:thin] ${className}`}>
+      <div className="flex min-w-max items-start gap-4">
+        {columns.map((column) => (
           <section key={column.label} className="w-[300px] shrink-0">
-            <h3 className="mb-2 text-label font-bold uppercase text-faint">{column.label}</h3>
+            <h3 className="mb-2 flex items-center gap-1.5 text-label font-bold uppercase text-faint">
+              {column.label}
+              <span className="font-semibold tabular-nums">· {column.items.length}</span>
+            </h3>
             <div className="flex flex-col gap-2">
-              {column.nodes.map((node) => (
-                <FrontierNodeCard key={node.ref} node={node} onOpenTask={onOpenTask} onChanged={onChanged} />
+              {column.items.map((item) => (
+                <PendingCard key={item.key} item={item} onOpenTask={onOpenTask} onChanged={onChanged} />
               ))}
             </div>
           </section>
@@ -446,15 +482,15 @@ function FrontierColumns({
 
 function EpicBand({
   epic,
+  columns,
   defaultOpen = false,
-  tasks,
   onOpenTask,
   onChanged,
   onOpenEpic,
 }: {
   epic: Epic;
+  columns: BlockerColumn[];
   defaultOpen?: boolean;
-  tasks: Task[];
   onOpenTask: (taskId: number) => void;
   onChanged: () => void;
   /** Open the full Epic peek (ADR-0026) — the deep view behind the band, where
@@ -462,46 +498,29 @@ function EpicBand({
   onOpenEpic?: (epic: Epic) => void;
 }) {
   const attention = epic.members.filter((m) => m.escalated);
-  const segments = railSegments(epic);
-  const frontier = useMemo(() => deriveEpicFrontier(epic, tasks), [epic, tasks]);
-  const hasDag = frontier.columns.length > 0;
-  // The Board shows the frontier-DAG inline by default (the Paper mockup); a
-  // fully-merged epic has no visible members (hasDag=false) and stays collapsed.
-  const [open, setOpen] = useState(defaultOpen || attention.length > 0 || hasDag);
+  const hasColumns = columns.length > 0;
+  // A band with pending members opens by default; one whose members are all
+  // merged or promoted to the top sections has nothing to expand.
+  const [open, setOpen] = useState(defaultOpen || hasColumns);
 
   return (
     <div className={panel}>
       <div className="flex items-center gap-2.5 px-4 py-3">
         <button
           type="button"
-          aria-expanded={hasDag ? open : undefined}
-          onClick={() => (hasDag ? setOpen((v) => !v) : onOpenEpic?.(epic))}
+          aria-expanded={hasColumns ? open : undefined}
+          onClick={() => (hasColumns ? setOpen((v) => !v) : onOpenEpic?.(epic))}
           className={`${touchTargetInline} min-w-0 flex-1 gap-2.5 text-left`}
         >
-          <span className="shrink-0 rounded bg-tool-tint px-1.5 py-0.5 text-label font-bold text-tool">
-            {epic.kind === 'map' ? 'Map' : 'Epic'}
-          </span>
+          <EpicKindBadge epic={epic} />
           <span className="shrink-0 font-data text-small text-faint">epic/{epic.ref}</span>
           <span className="truncate text-title font-semibold text-ink">{epic.title}</span>
         </button>
-        {epic.land.held != null && (
-          <span className={`${chip} shrink-0 bg-running-tint text-running`} title={epic.land.held}>
-            Merge escalated — needs you
-          </span>
-        )}
         {attention.length > 0 && (
-          <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} need you</span>
+          <span className={`${chip} shrink-0 bg-await-tint text-await`}>{attention.length} in attention</span>
         )}
-        <span
-          className="flex shrink-0 items-center gap-1"
-          role="img"
-          aria-label={`Merge train — ${epic.foldedCount} of ${epic.memberCount} merged`}
-        >
-          {segments.map((seg) => (
-            <span key={seg.ref} className={`h-1.5 w-4 rounded-full ${SEGMENT_FILL[seg.status]}`} />
-          ))}
-        </span>
-        {hasDag && (
+        <MergeTrain epic={epic} />
+        {hasColumns && (
           <button
             type="button"
             aria-expanded={open}
@@ -514,9 +533,9 @@ function EpicBand({
         )}
       </div>
 
-      {open && hasDag && (
+      {open && hasColumns && (
         <div className="border-t border-hairline">
-          <FrontierColumns frontier={frontier} onOpenTask={onOpenTask} onChanged={onChanged} />
+          <BlockerColumns columns={columns} onOpenTask={onOpenTask} onChanged={onChanged} className="p-4" />
         </div>
       )}
     </div>
@@ -584,6 +603,21 @@ function AllClear() {
   );
 }
 
+function AttentionCard({
+  entry,
+  onOpen,
+  onChanged,
+  onOpenEpic,
+}: {
+  entry: AttentionEntry;
+  onOpen: (task: Task) => void;
+  onChanged: () => void;
+  onOpenEpic?: (epic: Epic) => void;
+}) {
+  if (entry.kind === 'epic') return <EpicAttentionCard epic={entry.epic} onOpenEpic={onOpenEpic} />;
+  return <TaskCard task={entry.task} onOpen={() => onOpen(entry.task)} onChanged={onChanged} />;
+}
+
 export function Board({
   tasks,
   loading,
@@ -609,9 +643,7 @@ export function Board({
   onClearFocus?: () => void;
 }) {
   const sections = useMemo(() => boardSections(tasks, epics), [tasks, epics]);
-  const tasksById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const standaloneColumns = useMemo(() => deriveStandaloneColumns(sections.standalone, tasks), [sections.standalone, tasks]);
-  const blockersFor = (task: Task): FrontierDependency[] => resolveBlockers(task, tasksById);
+  const focusColumns = useMemo(() => (focusEpic ? epicPendingColumns(focusEpic, tasks) : []), [focusEpic, tasks]);
 
   if (loading) return <BoardSkeleton />;
 
@@ -626,62 +658,69 @@ export function Board({
             </button>
           )}
         </div>
-        <EpicBand epic={focusEpic} defaultOpen tasks={tasks} onOpenTask={onOpenTask} onChanged={onChanged} onOpenEpic={onOpenEpic} />
+        <EpicBand epic={focusEpic} columns={focusColumns} defaultOpen onOpenTask={onOpenTask} onChanged={onChanged} onOpenEpic={onOpenEpic} />
       </div>
     );
   }
 
   if (tasks.length === 0 && epics.length === 0) return <FirstRunBoard onNewTask={onNewTask} />;
 
-  const { needsYou, active, epics: activeEpics, standalone } = sections;
-  const nothingActive =
-    needsYou.length === 0 && active.length === 0 && activeEpics.length === 0 && standalone.length === 0;
-  if (nothingActive) return <AllClear />;
+  const { attention, running, pending } = sections;
+  if (attention.length === 0 && running.length === 0 && pending.length === 0) return <AllClear />;
+
+  const pendingCount = pending.reduce((n, group) => n + group.columns.reduce((m, column) => m + column.items.length, 0), 0);
+  const hasEpicGroups = pending.some((group) => group.epic !== null);
 
   return (
     <div>
       <h1 className="sr-only">Board</h1>
 
-      {needsYou.length > 0 && (
-        <BoardSection label="Needs you" count={String(needsYou.length)} attn>
-          <CardStrip tasks={needsYou} onOpen={onOpen} onChanged={onChanged} />
-        </BoardSection>
-      )}
-
-      {active.length > 0 && (
-        <BoardSection label="Active" count={String(active.length)}>
-          <CardStrip tasks={active} onOpen={onOpen} onChanged={onChanged} />
-        </BoardSection>
-      )}
-
-      {activeEpics.length > 0 && (
-        <BoardSection label="Epics" count={activeEpics.length === 1 ? '1 active' : `${activeEpics.length} active`}>
-          <div className="flex flex-col gap-3">
-            {activeEpics.map((epic) => (
-              <EpicBand
-                key={epic.ref}
-                epic={epic}
-                tasks={tasks}
-                onOpenTask={onOpenTask}
+      {attention.length > 0 && (
+        <BoardSection label="Attention" count={String(attention.length)} tone="attn">
+          <CardStrip count={attention.length}>
+            {attention.map((entry) => (
+              <AttentionCard
+                key={entry.kind === 'epic' ? `epic:${entry.epic.ref}` : `task:${entry.task.id}`}
+                entry={entry}
+                onOpen={onOpen}
                 onChanged={onChanged}
                 onOpenEpic={onOpenEpic}
               />
             ))}
-          </div>
+          </CardStrip>
         </BoardSection>
       )}
 
-      {standalone.length > 0 && (
-        <BoardSection label="Standalone" count={String(standalone.length)}>
-          <div data-board-layout="standalone-columns" className="flex items-start gap-4 overflow-x-auto pb-2 [scrollbar-width:thin]">
-            {standaloneColumns.map((column) => (
-              <div key={column.label} className="flex shrink-0 flex-col gap-3">
-                <div className={sectionLabel}>{column.label}</div>
-                {column.tasks.map((task) => (
-                  <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} blockers={blockersFor(task)} />
-                ))}
-              </div>
+      {running.length > 0 && (
+        <BoardSection label="Running" count={String(running.length)} tone="running">
+          <CardStrip count={running.length}>
+            {running.map((task) => (
+              <TaskCard key={task.id} task={task} onOpen={() => onOpen(task)} onChanged={onChanged} />
             ))}
+          </CardStrip>
+        </BoardSection>
+      )}
+
+      {pending.length > 0 && (
+        <BoardSection label="Pending" count={String(pendingCount)}>
+          <div className="flex flex-col gap-3">
+            {pending.map((group) =>
+              group.epic ? (
+                <EpicBand
+                  key={`epic:${group.epic.ref}`}
+                  epic={group.epic}
+                  columns={group.columns}
+                  onOpenTask={onOpenTask}
+                  onChanged={onChanged}
+                  onOpenEpic={onOpenEpic}
+                />
+              ) : (
+                <div key="standalone" className={hasEpicGroups ? 'mt-2' : ''}>
+                  {hasEpicGroups && <div className={`${sectionLabel} mb-2.5 px-0.5`}>Standalone</div>}
+                  <BlockerColumns columns={group.columns} onOpenTask={onOpenTask} onChanged={onChanged} className="pb-2" />
+                </div>
+              ),
+            )}
           </div>
         </BoardSection>
       )}

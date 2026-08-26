@@ -195,6 +195,18 @@ export function stateChip(state: TaskState): string {
   return `${chip} ${STATE_CHIP_STYLES[state]}`;
 }
 
+/** The Board card's open-blocker count badge (ADR-0041: blocked-ness is a derived
+ * count, never a state). Blocked slate by default; Failed rose when a blocker is
+ * escalated or cancelled, so the ticket will not unblock on its own. */
+export function blockerBadge(blockedOnFailed: boolean): string {
+  return `${chip} ${blockedOnFailed ? 'bg-fail-tint text-fail' : 'bg-blocked-tint text-blocked'}`;
+}
+
+/** The human-only (HITL) badge: a mirrored ticket Harmonic never works. Neutral
+ * raised/muted — HITL is not a Task state, so it borrows no state colour
+ * (ADR-0041: "muted state colours, distinct icon"). */
+export const hitlBadge = `${chip} inline-flex items-center gap-1 bg-raised text-muted`;
+
 /** Conversation lifecycle chips (issue #15): active/ended are operator-facing
  * lifecycle, not the Running/Accept/Fail/Tool vocabulary the Signal
  * Rule reserves for the work itself — an active Conversation isn't

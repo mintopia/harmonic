@@ -103,6 +103,10 @@ export interface TaskWithDeps extends TaskRow {
   openBlockerCount: number;
   /** A ticket the Auto-Runner may work: opt-in label (when mirrored) and no open Blockers. */
   agentWorkable: boolean;
+  /** A mirrored ticket Harmonic never works (no opt-in label, an Epic container, a
+   * human wayfinder kind) — visible because it can block others. Independent of
+   * blockers, unlike `agentWorkable`. */
+  humanOnly: boolean;
   /** The four defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
@@ -230,9 +234,12 @@ export class TaskService {
    * persisted labels) AND no open Blockers. Never stored. `epicRefs` are this
    * Workspace's Epic containers as `workspaceId:trackerRef` (see {@link epicContainerRefs}). */
   private agentWorkable(task: TaskRow, openBlockerCount: number, epicRefs: ReadonlySet<string>): boolean {
-    if (openBlockerCount > 0) return false;
-    if (task.origin !== 'mirrored') return true;
-    return mirroredAgentEligible(
+    return openBlockerCount === 0 && !this.humanOnly(task, epicRefs);
+  }
+
+  private humanOnly(task: TaskRow, epicRefs: ReadonlySet<string>): boolean {
+    if (task.origin !== 'mirrored') return false;
+    return !mirroredAgentEligible(
       task.trackerLabels ?? [],
       task.wayfinderType,
       epicRefs.has(`${task.workspaceId}:${task.trackerRef}`),
@@ -719,6 +726,7 @@ export class TaskService {
     );
     const task = await this.changed(row!);
     this.onNotify('task.escalated', task);
+    await this.emitDependents(id);
     return task;
   }
 
@@ -772,14 +780,17 @@ export class TaskService {
     this.onChanged(task);
     const notification = STATE_NOTIFICATIONS[state];
     if (notification) this.onNotify(notification, task);
-    // Completion changes each dependent's derived blocker count. There is no
-    // stored blocked state to flip, but live clients still need a fresh DTO.
-    if (state === 'done') {
-      for (const dependentId of await this.dependents(id)) {
-        this.onChanged(await this.get(dependentId));
-      }
-    }
+    if (state === 'done' || state === 'cancelled') await this.emitDependents(id);
     return task;
+  }
+
+  /** A blocker settling changes each dependent's derived `openBlockerCount` /
+   * `blockedOnFailed`. There is no stored blocked state to flip, but live
+   * clients still need a fresh DTO. */
+  private async emitDependents(id: number): Promise<void> {
+    for (const dependentId of await this.dependents(id)) {
+      this.onChanged(await this.get(dependentId));
+    }
   }
 
   /**
@@ -1012,13 +1023,15 @@ export class TaskService {
     const dependsOn = await this.dependsOn(task.id);
     const depStates = await Promise.all(dependsOn.map(async (depId) => (await this.get(depId)).state));
     const openBlockerCount = depStates.filter((state) => state !== 'done').length;
+    const epicRefs = await this.epicContainerRefs(task.workspaceId ?? undefined);
     return {
       ...task,
       dependsOn,
       dependents: await this.dependents(task.id),
       blockedOnFailed: task.state === 'ready' && depStates.some((s) => s === 'escalated' || s === 'cancelled'),
       openBlockerCount,
-      agentWorkable: this.agentWorkable(task, openBlockerCount, await this.epicContainerRefs(task.workspaceId ?? undefined)),
+      agentWorkable: this.agentWorkable(task, openBlockerCount, epicRefs),
+      humanOnly: this.humanOnly(task, epicRefs),
       // The resolved row can't tell inherit from pin, so read the raw overrides
       // straight from storage — the editor needs to distinguish the two.
       overrides: this.overridesOf(await this.getRaw(task.id)),
@@ -1101,6 +1114,7 @@ export class TaskService {
       blockedOnFailed: task.state === 'ready' && failedDependencies.has(task.id),
       openBlockerCount: openBlockerCounts.get(task.id) ?? 0,
       agentWorkable: this.agentWorkable(task, openBlockerCounts.get(task.id) ?? 0, epicRefs),
+      humanOnly: this.humanOnly(task, epicRefs),
       overrides: this.overridesOf(rawById.get(task.id) ?? task),
     }));
   }

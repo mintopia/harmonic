@@ -399,14 +399,14 @@ export function App() {
     };
   }, [route.task, tasks]);
 
-  // The rail's indigo "Needs you" badge (DESIGN.md §5): escalated Tasks — the
-  // one state that wants an operator's eyes now (ADR-0041). Derived from
+  // The rail's indigo "Needs you" badge (DESIGN.md §5): escalated Tasks and
+  // Epics — what wants an operator's eyes now (ADR-0041). Derived from
   // `boardSections` (not a local predicate) so the badge is the exact count of
-  // the Board's Needs-you section: a hand-rolled filter drifts — it keeps
+  // the Board's Attention section: a hand-rolled filter drifts — it keeps
   // counting an Epic's own driver ticket, so the badge stuck above the real item
   // count. One source of truth means the number always matches what's shown.
   const needsYouCount = useMemo(
-    () => boardSections(tasks ?? [], epics).needsYou.length,
+    () => boardSections(tasks ?? [], epics).attention.length,
     [tasks, epics],
   );
   const reviewAnnouncementCursor = useRef<ReviewAnnouncementCursor>(EMPTY_REVIEW_ANNOUNCEMENT_CURSOR);

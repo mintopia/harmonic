@@ -117,9 +117,29 @@ describe('live structured run event streaming and replay', () => {
     expect(msg.task.dependsOn).toEqual([dep.body.id]);
     expect(msg.task.dependents).toEqual([]);
     expect(msg.task.blockedOnFailed).toBe(false);
+    // The Board's Pending columns and HITL treatment read these off the payload.
+    expect(msg.task.openBlockerCount).toBe(1);
+    expect(msg.task.humanOnly).toBe(false);
 
     const rest = await server.api('GET', `/api/tasks/${created.body.id}`);
     expect(msg.task).toEqual(rest.body);
+    ws.close();
+  });
+
+  it('re-broadcasts a dependant when its blocker escalates, so blockedOnFailed shows live', async () => {
+    const ws = await connectWs(server);
+    const blocker = await server.api('POST', '/api/tasks', { prompt: 'blocker' });
+    const dependant = await server.api('POST', '/api/tasks', { prompt: 'dependant', dependsOn: [blocker.body.id] });
+    await waitFor(async () => ws.messages.some((m) => m.type === 'task_changed' && m.task.id === dependant.body.id));
+    ws.messages.length = 0;
+
+    await server.app.ctx.tasks.escalate(blocker.body.id, 'escalated to human: attempt 3 of 3 failed');
+
+    await waitFor(async () =>
+      ws.messages.some((m) => m.type === 'task_changed' && m.task.id === dependant.body.id && m.task.blockedOnFailed),
+    );
+    const msg = ws.messages.find((m) => m.type === 'task_changed' && m.task.id === dependant.body.id);
+    expect(msg.task).toMatchObject({ state: 'ready', openBlockerCount: 1, blockedOnFailed: true, agentWorkable: false });
     ws.close();
   });
 });

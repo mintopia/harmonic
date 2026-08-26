@@ -59,6 +59,7 @@ const STATES = ['draft', 'ready', 'working', 'escalated', 'done', 'cancelled'] a
  * complete below, so a newly added helper forces itself into coverage. */
 const HELPERS: Record<string, () => readonly string[]> = {
   stateChip: () => STATES.map(ui.stateChip),
+  blockerBadge: () => [ui.blockerBadge(false), ui.blockerBadge(true)],
   stateDot: () => STATES.map(ui.stateDot),
   stateFill: () => STATES.map(ui.stateFill),
   laneBorder: () => STATES.map(ui.laneBorder),
