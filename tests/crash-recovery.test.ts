@@ -103,7 +103,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     const baseBranch = 'main';
     const { run, idempotencyKey } = await seedMidLanding(branch, baseBranch);
 
-    const mergeSpy = vi.spyOn(Git, 'merge');
+    const mergeSpy = vi.spyOn(Git, 'casUpdateRef');
     const isMerged = vi.fn(async () => true);
     const coord = new CrashRecoveryCoordinator(runStore, tasks, leases, settle, landing, journal, turnQueue, {
       now: () => 1_000_000,

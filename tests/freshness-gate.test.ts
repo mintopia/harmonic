@@ -104,14 +104,28 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     closed: false,
   });
 
-  /** Launch a mirrored afk worktree Task (auto-merge onto main). */
-  async function launchAfk(): Promise<{ taskId: number; runId: number; trackerRef: number }> {
+  /** Mirror an afk Task (auto-merge onto main) with its local-markdown ticket
+   * committed on main: the ticket file lives in the base repo's checkout, and an
+   * in-place land requires that checkout clean. Seeded already `closed` so the
+   * post-land close rewrites it byte-identically (the helper's fixed point) and
+   * a second Run's land still finds main clean. */
+  async function seedAfk(): Promise<{ taskId: number; trackerRef: number }> {
     const trackerRef = ref++;
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
-    seedLocalMarkdownTicket(task.workingDir, trackerRef);
-    await server.app.ctx.tasks.setState(task.id, 'running');
-    const run = await server.app.ctx.runner.launchClaimed(task.id);
-    return { taskId: task.id, runId: run.id, trackerRef };
+    seedLocalMarkdownTicket(task.workingDir, trackerRef, 'closed');
+    git(task.workingDir, 'add', '-A');
+    git(task.workingDir, 'commit', '-q', '-m', `ticket ${trackerRef}`);
+    return { taskId: task.id, trackerRef };
+  }
+
+  async function launch(taskId: number): Promise<number> {
+    await server.app.ctx.tasks.setState(taskId, 'running');
+    return (await server.app.ctx.runner.launchClaimed(taskId)).id;
+  }
+
+  async function launchAfk(): Promise<{ taskId: number; runId: number; trackerRef: number }> {
+    const seeded = await seedAfk();
+    return { ...seeded, runId: await launch(seeded.taskId) };
   }
 
   const timelineFor = async (taskId: number) =>
@@ -137,7 +151,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const { taskId, runId, trackerRef } = await launchAfk();
     const task = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      if (t.escalated) throw new Error('escalated instead of landing');
+      if (t.escalated) throw new Error(`escalated instead of landing: ${(await server.app.ctx.runs.get(runId)).reason}`);
       return t.state === 'completed' ? t : undefined;
     });
     expect(task.escalated).toBe(false);
@@ -146,8 +160,8 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     // main = the rebased implementation, fast-forwarded on top of the commit
     // that landed mid-verification — no merge commit.
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
-    expect(git(repo, 'log', '--format=%s', '-3', 'main')).toBe(
-      ['stub implementation', 'main advances during verification', 'init'].join('\n'),
+    expect(git(repo, 'log', '--format=%s', '-2', 'main')).toBe(
+      ['stub implementation', 'main advances during verification'].join('\n'),
     );
     expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
     const run = await server.app.ctx.runs.get(runId);
@@ -175,6 +189,55 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     ]);
     expect(events.filter((e) => e.event === 'verification')).toHaveLength(2);
     expect(events.map((e) => e.event)).not.toContain('escalated');
+  });
+
+  it('two afk worktree Runs landing concurrently on one base: the second is refused stale at the land, rebases + re-verifies, then lands its own SHA — no unverified merge commit', async () => {
+    const repo = makeRepo();
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
+    });
+    await server.app.ctx.configStore.update({
+      drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
+    });
+    // Seed both tickets first so neither launch moves main under the other's fork.
+    const seededA = await seedAfk();
+    const seededB = await seedAfk();
+    const countBefore = Number(git(repo, 'rev-list', '--count', 'main'));
+    const [runA, runB] = await Promise.all([launch(seededA.taskId), launch(seededB.taskId)]);
+    const a = { ...seededA, runId: runA };
+    const b = { ...seededB, runId: runB };
+    const completed = (taskId: number) =>
+      waitFor(async () => {
+        const t = await server.app.ctx.tasks.get(taskId);
+        if (t.escalated) {
+          const runs = await server.app.ctx.runs.listForTask(taskId);
+          throw new Error(`task ${taskId} escalated instead of landing: ${runs.map((r) => r.reason).join(' | ')}`);
+        }
+        return t.state === 'completed' ? t : undefined;
+      });
+    await completed(a.taskId);
+    await completed(b.taskId);
+
+    // Two fast-forwards, never a merge commit: main's tip IS one Run's verified
+    // SHA and its parent the other's.
+    expect(Number(git(repo, 'rev-list', '--count', 'main')) - countBefore).toBe(2);
+    expect(git(repo, 'log', '--merges', 'main')).toBe('');
+    expect(git(repo, 'show', `main:impl-${a.trackerRef}.txt`)).toBe(`implementation ${a.trackerRef}`);
+    expect(git(repo, 'show', `main:impl-${b.trackerRef}.txt`)).toBe(`implementation ${b.trackerRef}`);
+    const [ra, rb] = await Promise.all([server.app.ctx.runs.get(a.runId), server.app.ctx.runs.get(b.runId)]);
+    expect([ra.candidateOid, rb.candidateOid].sort()).toEqual([git(repo, 'rev-parse', 'main'), git(repo, 'rev-parse', 'main~1')].sort());
+
+    // Both stayed on Attempt 1; the one refused stale re-entered rebase+verify
+    // on that Attempt (a second passed rebase + verification row).
+    expect(ra.attempt).toBe(1);
+    expect(rb.attempt).toBe(1);
+    const timelines = [await timelineFor(a.taskId), await timelineFor(b.taskId)];
+    const shapes = timelines.map((t) => t[0]!.tasks.map((x) => `${x.type}:${x.state}`).join(',')).sort();
+    expect(shapes).toEqual([
+      'rebase:passed,implementation:passed,verification:passed',
+      'rebase:passed,implementation:passed,verification:passed,rebase:passed,verification:passed',
+    ]);
   });
 
   it('operator Accept on a stale head refuses (409) and leaves the Run parked with the reason instead of landing', async () => {

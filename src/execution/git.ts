@@ -442,34 +442,6 @@ export const Git = {
     await git(worktreePath, ...IDENTITY, 'commit', '-m', message);
   },
 
-  /**
-   * Merge `branch` into `baseBranch` inside `dir` (ADR-0002). On conflict
-   * the merge is aborted and { ok: false } returned with git's output.
-   */
-  async merge(dir: string, baseBranch: string, branch: string): Promise<{ ok: boolean; detail?: string }> {
-    return withGitOperation(
-      'git.merge',
-      { 'git.branch': branch, 'git.ref': baseBranch },
-      () =>
-        withRepoLock(dir, async () => {
-          const current = await Git.currentBranch(dir);
-          if (current !== baseBranch) await git(dir, 'checkout', baseBranch);
-          try {
-            await git(dir, ...IDENTITY, 'merge', '--no-edit', branch);
-            return { ok: true };
-          } catch (err) {
-            const detail = err instanceof GitError ? err.message : String(err);
-            try {
-              await git(dir, 'merge', '--abort');
-            } catch {
-              // No merge in progress (e.g. the merge failed before starting).
-            }
-            return { ok: false, detail };
-          }
-        }),
-    );
-  },
-
   /** Diffstat of what the run's branch adds over the merge base. */
   diffStat: (dir: string, baseBranch: string, branch: string) =>
     git(dir, 'diff', '--stat', `${baseBranch}...${branch}`),
@@ -683,16 +655,18 @@ export const Git = {
 
   /**
    * Rebase the branch checked out at `worktreeDir` onto `ontoOid` (linear replay).
-   * A conflict is left IN PROGRESS (markers, `REBASE_HEAD`) — resolving it is
-   * the agent's work in the Attempt's implementation turn (ADR-0041) — and
-   * returned rather than thrown. A rebase an earlier conflict left in progress
-   * is aborted first: it is superseded, never resumed. On success the worktree
-   * HEAD is the rebased tip (a descendant of `ontoOid`).
+   * A conflict (`conflict: true`) is left IN PROGRESS (markers, `REBASE_HEAD`) —
+   * resolving it is the agent's work in the Attempt's implementation turn
+   * (ADR-0041) — and returned rather than thrown; any other failure (a missing
+   * worktree, a dirty tree) is `conflict: false`, nothing in progress. A rebase
+   * an earlier conflict left in progress is aborted first: it is superseded,
+   * never resumed. On success the worktree HEAD is the rebased tip (a descendant
+   * of `ontoOid`).
    */
   async rebaseOnto(
     worktreeDir: string,
     ontoOid: string,
-  ): Promise<{ ok: true; rebasedTip: string } | { ok: false; conflict: true; detail: string }> {
+  ): Promise<{ ok: true; rebasedTip: string } | { ok: false; conflict: boolean; detail: string }> {
     return withGitOperation(
       'git.rebase',
       { 'git.branch': 'HEAD', 'git.ref': ontoOid },
@@ -703,7 +677,8 @@ export const Git = {
           const rebasedTip = await Git.revParse(worktreeDir, 'HEAD');
           return { ok: true, rebasedTip };
         } catch (err) {
-          return { ok: false, conflict: true, detail: err instanceof GitError ? err.message : String(err) };
+          const conflict = await git(worktreeDir, 'rev-parse', '--verify', '--quiet', 'REBASE_HEAD').then(() => true, () => false);
+          return { ok: false, conflict, detail: err instanceof GitError ? err.message : String(err) };
         }
       },
     );
