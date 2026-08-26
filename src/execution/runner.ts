@@ -689,12 +689,9 @@ export class Runner {
     const nextAttempt = await this.attempts.ensureForRun(task.id, run.attempt + 1, Date.now());
     const continuation = await this.decideContinuation(task, run, workspace);
     await this.attempts.setContinuation(nextAttempt.id, continuation);
-    const condensedContext = continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null;
-    await this.taskService.requeue(
-      task.id,
-      [feedback, condensedContext].filter((part): part is string => Boolean(part)).join('\n\n'),
-      continuation.path === 'continued-session' ? 'full' : 'condensed',
-    );
+    // The condensed section is composed at dispatch (from the prior Session), not
+    // baked into the Task prompt, which must stay the operator's text plus feedback.
+    await this.taskService.requeue(task.id, feedback, continuation.path === 'continued-session' ? 'full' : 'condensed');
     await this.start(task.id);
     return await this.taskService.get(task.id);
   }
@@ -2176,7 +2173,10 @@ export class Runner {
     const now = Date.now();
     const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
     const contextWindow = resolveContextWindow(task.model, this.getConfig().modelInfo);
-    const contextTokens = (await this.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? null;
+    // Live tailer snapshot → the in-flight turn's ACP usage (self-heal, before the
+    // Run persists usage) → the settled Run's persisted usage (review reject).
+    const persisted = run.usage ? (JSON.parse(run.usage) as RunUsage).contextTokens ?? null : null;
+    const contextTokens = (await this.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
     const contextUsage = contextWindow !== null && contextTokens !== null ? contextTokens / contextWindow : null;
     return decideAttemptContinuation({
       harness: task.harness,
@@ -3370,6 +3370,14 @@ export class Runner {
           `Your previous attempt did not pass verification:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.` +
           (healCtx.condensedContext ? `\n\n${healCtx.condensedContext}` : '');
+      } else if (task.continuationChoice === 'condensed' && !remergeCtx) {
+        // A review reject the continuation rule routed to a fresh Session (#311)
+        // or the operator's "start condensed" pick (#170): the feedback already
+        // rides the Task prompt; seed the new Session with the prior one's
+        // condensed context as a trailing section.
+        const src = await this.resolveContinuationSource(task);
+        const condensed = src ? await this.condensedContext(src.prior) : null;
+        if (condensed) promptText = `${promptText}\n\n${condensed}`;
       } else if (remergeCtx) {
         // Bounded agent re-merge turn (issue #155): the previous turn left the
         // repository in a branch state Harmonic cannot deterministically land.
@@ -3931,9 +3939,13 @@ export class Runner {
         sessionId: (await this.runStore.get(run.id)).sessionId,
         promptResult,
       });
-      return usage
-        ? { ...usage, toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))) }
-        : null;
+      if (!usage) return null;
+      const contextTokens = contextInputTokens(promptResult?.usage);
+      return {
+        ...usage,
+        ...(contextTokens !== null ? { contextTokens } : {}),
+        toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))),
+      };
     } catch {
       return null;
     }

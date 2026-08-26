@@ -81,7 +81,11 @@ describe('review: accept / reject (direct mode)', () => {
   });
 
   it('a rejected task continues its corrective attempt in the SAME Session (issue #147)', async () => {
-    const taskId = await runToAwaitingReview('continue me');
+    // The continuation rule (#311) continues only a warm Session whose reported
+    // context usage sits under the threshold: attempt 1 reports 10 of a 100-token
+    // window, read back from the settled Run's persisted usage.
+    await server.app.ctx.configStore.update({ modelInfo: { 'stub-model': { contextWindow: 100 } } });
+    const taskId = await runToAwaitingReview(JSON.stringify({ usage: { inputTokens: 10, outputTokens: 1 } }));
     const run1 = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
     // The first attempt bound a durable Session on dispatch.
     expect(run1.sessionRowId).not.toBeNull();
