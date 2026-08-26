@@ -271,7 +271,7 @@ describe('Run operations (issue #290)', () => {
       expect(started.status).toBe(201);
 
       await vi.waitFor(async () => {
-        expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('awaiting-review');
+        expect((await server.api('GET', `/api/tasks/${task.body.id}`)).body.state).toBe('escalated');
       });
       const runId = started.body.id;
       const live = registry.list().find((operation) => operation.name === 'harmonic.run' && operation.attributes['run.id'] === runId);

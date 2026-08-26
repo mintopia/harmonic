@@ -14,7 +14,7 @@ describe('task list filtering and sorting (table view backend)', () => {
     const d = await server.api('POST', '/api/tasks', { prompt: 'd', priority: 'high' });
     await server.api('POST', `/api/tasks/${d.body.id}/cancel`);
     const e = await server.api('POST', '/api/tasks', { prompt: 'e' });
-    await server.app.ctx.tasks.setState(e.body.id, 'completed');
+    await server.app.ctx.tasks.setState(e.body.id, 'done');
   });
   afterAll(async () => {
     await server.close();

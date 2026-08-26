@@ -97,7 +97,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
 
   async function seed(): Promise<{ taskId: number; runId: number; member: MergeTrainMember }> {
     const task = await tasks.create({ prompt: 'do work' });
-    await tasks.setState(task.id, 'running');
+    await tasks.setState(task.id, 'working');
     const run = await runs.create(task.id);
     return {
       taskId: task.id,
@@ -124,9 +124,8 @@ describe('Runner merge-train adapters (issue #163)', () => {
     expect(settledRun.reason).toContain('integration branch unexpectedly checked out');
 
     const settledTask = await tasks.get(taskId);
-    expect(settledTask.state).toBe('ready');
-    expect(settledTask.escalated).toBe(true);
-    expect(settledTask.drive).toBe('hitl');
+    expect(settledTask.state).toBe('escalated');
+    expect(settledTask.escalationReason).toContain('integration branch unexpectedly checked out');
   });
 
   it('settleEscalatedForMember is the sole settle authority: driveOnce never re-settles what it already resolved', async () => {
@@ -141,7 +140,7 @@ describe('Runner merge-train adapters (issue #163)', () => {
     // nothing flips back.
     await expect(runner.settleEscalatedForMember(member, 'integration branch missing')).resolves.toBeUndefined();
     expect((await runs.get(runId)).state).toBe('failed');
-    expect((await tasks.get(taskId)).escalated).toBe(true);
+    expect((await tasks.get(taskId)).state).toBe('escalated');
   });
 
   it('start refuses to spawn an Epic member whose integration base is not ready — no run row, Task stays ready (funnel gate, issue #159)', async () => {
@@ -195,7 +194,6 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     prompt: `ticket ${trackerRef}\n\nbody`,
     workflow: 'implement',
     wayfinderType: null,
-    drive: 'afk',
     mapRef: null,
     closed: false,
   });
@@ -205,9 +203,8 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     const trackerRef = ref++;
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
     seedLocalMarkdownTicket(task.workingDir, trackerRef);
-    expect(task.drive).toBe('afk');
     await server.app.ctx.tasks.setBaseBranch(task.id, epicBranch);
-    await server.app.ctx.tasks.setState(task.id, 'running');
+    await server.app.ctx.tasks.setState(task.id, 'working');
     const run = await server.app.ctx.runner.launchClaimed(task.id);
     return { taskId: task.id, runId: run.id, trackerRef };
   }
@@ -245,13 +242,13 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     const completed = (taskId: number) =>
       waitFor(async () => {
         const t = await server.app.ctx.tasks.get(taskId);
-        if (t.escalated) throw new Error(`member ${taskId} escalated instead of landing`);
-        return t.state === 'completed' ? t : undefined;
+        if (t.state === 'escalated') throw new Error(`member ${taskId} escalated instead of landing`);
+        return t.state === 'done' ? t : undefined;
       });
     const t1 = await completed(m1.taskId);
     const t2 = await completed(m2.taskId);
-    expect(t1.escalated).toBe(false);
-    expect(t2.escalated).toBe(false);
+    expect(t1.state).not.toBe('escalated');
+    expect(t2.state).not.toBe('escalated');
 
     // The integration tip advanced exactly once per member (two new commits) —
     // never merge commits, so each land was a fast-forward of a verified tip.
@@ -310,10 +307,9 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
 
     const settledTask = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      return t.escalated ? t : undefined;
+      return t.state === 'escalated' ? t : undefined;
     });
-    expect(settledTask.state).toBe('ready');
-    expect(settledTask.drive).toBe('hitl');
+    expect(settledTask.escalationReason).toMatch(/attempt 2 of 2 failed: rebase conflict/);
 
     const settledRun = await server.app.ctx.runs.get(runId);
     expect(settledRun.state).toBe('failed');

@@ -392,7 +392,7 @@ describe('usage collection and statistics', () => {
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${created.body.id}`);
-      return body.state === 'awaiting-review' || body.state === 'failed';
+      return body.state === 'done' || body.state === 'failed';
     });
     return { taskId: created.body.id, runId: started.body.id };
   };
@@ -562,12 +562,14 @@ describe('usage collection and statistics', () => {
       exit: 'clean',
     });
     const { taskId } = await runTask({ prompt: usageScenario });
-    // A feedback-less reject keeps the corrective attempt's prompt identical,
-    // so the stub replays the same usage scenario on attempt 2.
-    await server.api('POST', `/api/tasks/${taskId}/reject`, {});
+    // A second Run on the same ticket with an identical prompt replays the same
+    // usage scenario (the ticket is re-queued directly: an operator Reject would
+    // bake guidance into the prompt, which the stub parses as its scenario).
+    await server.app.ctx.tasks.setState(taskId, 'ready');
+    await server.api('POST', `/api/tasks/${taskId}/run`);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      if (body.state !== 'awaiting-review') return undefined;
+      if (body.state !== 'done') return undefined;
       return (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.length === 2 ? true : undefined;
     });
 

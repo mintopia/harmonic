@@ -33,7 +33,7 @@ describe('auto-runner', () => {
   });
 
   it('starts ready tasks in priority-then-FIFO order, one at a time by default', async () => {
-    // Distinct workingDirs: these afk Tasks each reach awaiting-review and sit
+    // Distinct workingDirs: these Tasks each land to done and sit
     // there unaccepted, so a shared direct-mode Work Context would keep the
     // House Rule (issue #120) holding the context and block every Task after the
     // first — this test exercises priority/FIFO *ordering*, not context contention.
@@ -47,7 +47,7 @@ describe('auto-runner', () => {
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
     for (const task of [high, normal1, normal2, low]) {
-      await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
+      await waitFor(async () => (await state(task.body.id)) === 'done');
     }
 
     // Run ids are allocated at start: they encode the actual start order.
@@ -84,16 +84,16 @@ describe('auto-runner', () => {
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
     // Two start immediately, the third waits.
-    await waitFor(async () => (await state(t1.body.id)) === 'running' && (await state(t2.body.id)) === 'running');
+    await waitFor(async () => (await state(t1.body.id)) === 'working' && (await state(t2.body.id)) === 'working');
     expect(await state(t3.body.id)).toBe('ready');
 
     // A slot frees → the third starts; still never more than two at once.
-    await waitFor(async () => (await state(t3.body.id)) === 'running');
+    await waitFor(async () => (await state(t3.body.id)) === 'working');
     const states = await Promise.all([t1, t2, t3].map((t) => state(t.body.id)));
-    expect(states.filter((s) => s === 'running').length).toBeLessThanOrEqual(2);
+    expect(states.filter((s) => s === 'working').length).toBeLessThanOrEqual(2);
 
     for (const t of [t1, t2, t3]) {
-      await waitFor(async () => (await state(t.body.id)) === 'awaiting-review');
+      await waitFor(async () => (await state(t.body.id)) === 'done');
     }
   });
 
@@ -102,7 +102,7 @@ describe('auto-runner', () => {
     server.app.ctx.autoRunner.stop();
     const finishedTask = await server.api('POST', '/api/tasks', { prompt: 'finished', workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-event-')) });
     await server.api('POST', `/api/tasks/${finishedTask.body.id}/run`);
-    await waitFor(async () => (await state(finishedTask.body.id)) === 'awaiting-review');
+    await waitFor(async () => (await state(finishedTask.body.id)) === 'done');
     const task = await server.api('POST', '/api/tasks', { prompt: slowScenario(80), workingDir: mkdtempSync(join(tmpdir(), 'harmonic-ar-event-')) });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -111,7 +111,7 @@ describe('auto-runner', () => {
     // `run_changed` is the capacity-free wake-up path. It schedules a fill even
     // with no timer running, so this cannot pass through interval polling.
     server.app.ctx.bus.emit('run_changed', (await server.app.ctx.runs.listForTask(finishedTask.body.id))[0]!);
-    await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
+    await waitFor(async () => (await state(task.body.id)) === 'done');
   });
 
   it('starts nothing when off, while manual run-now still works', async () => {
@@ -120,10 +120,10 @@ describe('auto-runner', () => {
     expect(await state(task.body.id)).toBe('ready');
 
     await server.api('POST', `/api/tasks/${task.body.id}/run`);
-    await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
+    await waitFor(async () => (await state(task.body.id)) === 'done');
   });
 
-  it('holds the Work Context House Rule: a second afk Task waits on a busy direct context through running AND awaiting-review, then starts once it frees (issue #120)', async () => {
+  it('holds the Work Context House Rule: a second Task waits on a busy direct context while it is working, then starts once it lands (issue #120)', async () => {
     // Ceiling 2 so the slot cap has room — what holds the second Task back is the
     // House Rule, not the Machine Ceiling.
     await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 2 } });
@@ -134,32 +134,22 @@ describe('auto-runner', () => {
 
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
-    // First (lower id) wins the pick; the second is held ready while the context runs.
-    await waitFor(async () => (await state(first.body.id)) === 'running');
-    expect(await state(second.body.id)).toBe('ready');
-
-    // First settles to awaiting-review — the hard lease (#119) is released at this
-    // seam, but the House Rule still holds the context on Task state, so the
-    // second does not slip in on top of the unreviewed work. Wait for the
-    // scheduler to record its House-Rule skip of the second — deterministic
-    // proof a pass ran and declined, instead of a fixed sleep window (the
-    // pre-fff48cb idiom that flaked under CPU contention).
-    await waitFor(async () => (await state(first.body.id)) === 'awaiting-review');
+    // First (lower id) wins the pick; the second is held ready while the context
+    // works. Wait for the scheduler to record its House-Rule skip of the second —
+    // deterministic proof a pass ran and declined, instead of a fixed sleep
+    // window (the pre-fff48cb idiom that flaked under CPU contention).
+    await waitFor(async () => (await state(first.body.id)) === 'working');
     await waitFor(
       async () =>
         server.app.ctx.autoRunner.skipReasonFor(second.body.id) ===
-        `Work Context held by task ${first.body.id} (awaiting-review)`,
+        `Work Context held by task ${first.body.id} (working)`,
     );
     expect(await state(second.body.id)).toBe('ready');
 
-    // Accept the first → its Work Context frees (the Task leaves awaiting-review
-    // for completed). The next scheduler pass admits the second: the predicate no
-    // longer sees an occupant. (Accept itself doesn't poke; a config nudge stands
-    // in for the next natural poke — waking a freed context is the anti-starvation
-    // ticket's job, not this one.)
-    expect((await server.api('POST', `/api/tasks/${first.body.id}/accept`)).status).toBe(200);
-    await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
-    await waitFor(async () => (await state(second.body.id)) === 'awaiting-review');
+    // The first lands → done, its Work Context frees, and the settle's
+    // run_changed pokes the scheduler: the second is admitted and lands too.
+    await waitFor(async () => (await state(first.body.id)) === 'done');
+    await waitFor(async () => (await state(second.body.id)) === 'done');
   });
 
   it('picks up newly ready tasks (e.g. unblocked dependents) without prodding', async () => {
@@ -170,12 +160,12 @@ describe('auto-runner', () => {
       dependsOn: [dep.body.id],
     });
 
-    await waitFor(async () => (await state(dep.body.id)) === 'awaiting-review');
+    await waitFor(async () => (await state(dep.body.id)) === 'done');
     expect(await state(dependent.body.id)).toBe('ready');
 
     await server.api('POST', `/api/tasks/${dep.body.id}/accept`);
-    // The last blocker resolves → auto-started → awaiting-review, hands-free.
-    await waitFor(async () => (await state(dependent.body.id)) === 'awaiting-review');
+    // The last blocker resolves → auto-started → done, hands-free.
+    await waitFor(async () => (await state(dependent.body.id)) === 'done');
   });
 });
 
@@ -237,7 +227,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
 
   const allSettled = (ids: number[]) => async () => {
     const states = await Promise.all(ids.map(state));
-    return states.every((s) => s === 'awaiting-review');
+    return states.every((s) => s === 'done');
   };
 
   it('never breaches the Machine Ceiling even when per-workspace caps sum higher (3+3, ceiling 4 → ≤4)', async () => {
@@ -287,7 +277,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
 
     // The enabled Workspace's Task runs to completion; the disabled one never leaves ready.
-    await waitFor(async () => (await state(enabled.body.id)) === 'awaiting-review');
+    await waitFor(async () => (await state(enabled.body.id)) === 'done');
     expect(await state(disabled.body.id)).toBe('ready');
   });
 
@@ -302,6 +292,6 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
 
     // Flip the master on → it starts.
     await server.api('PATCH', '/api/config', { autoRunner: { enabled: true } });
-    await waitFor(async () => (await state(task.body.id)) === 'awaiting-review');
+    await waitFor(async () => (await state(task.body.id)) === 'done');
   });
 });

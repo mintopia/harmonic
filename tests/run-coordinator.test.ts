@@ -10,11 +10,11 @@ const fact = (seq: number, type: Disposition, projection: SettleProjection): Coo
 });
 
 // The concrete projections the live settle path records for each signal.
-const AGENT_FINISH_NATIVE: SettleProjection = { runState: 'completed', taskAction: 'awaiting-review', reason: null };
-const AGENT_FINISH_MIRRORED: SettleProjection = { runState: 'completed', taskAction: 'completed', reason: null };
+const AGENT_FINISH_NATIVE: SettleProjection = { runState: 'completed', taskAction: 'done', reason: null };
+const AGENT_FINISH_MIRRORED: SettleProjection = { runState: 'completed', taskAction: 'done', reason: null };
 const ESCALATED: SettleProjection = { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: blocked' };
 const OPERATOR_CANCEL: SettleProjection = { runState: 'cancelled', taskAction: 'none', reason: null };
-const FAILED: SettleProjection = { runState: 'failed', taskAction: 'failed', reason: 'boom' };
+const FAILED: SettleProjection = { runState: 'failed', taskAction: 'ready', reason: 'boom' };
 
 describe('projectSettle (issue #113 — settle coordinator projection)', () => {
   it('returns null when the Run has no facts (has not ended)', () => {
@@ -79,8 +79,8 @@ describe('projectSettle (issue #113 — settle coordinator projection)', () => {
   });
 
   it('duplicate facts of the winning kind collapse to the earliest one deterministically', () => {
-    const first: SettleProjection = { runState: 'completed', taskAction: 'awaiting-review', reason: 'first' };
-    const second: SettleProjection = { runState: 'completed', taskAction: 'awaiting-review', reason: 'second' };
+    const first: SettleProjection = { runState: 'completed', taskAction: 'done', reason: 'first' };
+    const second: SettleProjection = { runState: 'completed', taskAction: 'done', reason: 'second' };
     const facts = [fact(1, 'agent-finish/unresolved', first), fact(2, 'agent-finish/unresolved', second)];
     expect(projectSettle(facts, 2)).toEqual(first);
     // Order-independent: still the earliest seq, not the first array element.
@@ -110,7 +110,7 @@ describe('projectSettle (issue #113 — settle coordinator projection)', () => {
     const facts = [
       fact(1, 'failed', FAILED),
       fact(2, 'escalate', ESCALATED),
-      fact(3, 'process-death', { runState: 'failed', taskAction: 'failed', reason: 'interrupted' }),
+      fact(3, 'process-death', { runState: 'failed', taskAction: 'ready', reason: 'interrupted' }),
     ];
     const once = projectSettle(facts, 3);
     expect(projectSettle(facts, 3)).toEqual(once);

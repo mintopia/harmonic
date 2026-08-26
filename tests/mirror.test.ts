@@ -8,6 +8,7 @@ import { tasks as tasksTable } from '../src/db/schema.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { deriveRole, mirrorScan, deriveMaps, toMirrorInput } from '../src/tracker/mirror.js';
+import { mirroredAgentEligible } from '../src/domain/agent-workable.js';
 import type { Ticket } from '../src/tracker/adapter.js';
 import { allWorkspaces } from './helpers.js';
 
@@ -29,40 +30,40 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
   ...over,
 });
 
-describe('deriveRole (labels → workflow/wayfinderType/drive)', () => {
-  it('research → wayfinder/research/afk', () => {
+describe('deriveRole (labels → workflow/wayfinderType)', () => {
+  it('research → wayfinder/research', () => {
     expect(deriveRole(ticket({ labels: ['wayfinder:research', 'ready-for-agent'] }))).toEqual({
       workflow: 'wayfinder',
       wayfinderType: 'research',
-      drive: 'afk',
     });
   });
-  it('grilling/prototype/bare-task → hitl', () => {
-    expect(deriveRole(ticket({ labels: ['wayfinder:grilling'] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: ['wayfinder:prototype'] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: ['wayfinder:task'] })).drive).toBe('hitl');
+  it('no wayfinder label → implement', () => {
+    expect(deriveRole(ticket({ labels: ['ready-for-agent'] }))).toEqual({ workflow: 'implement', wayfinderType: null });
   });
-  it('implement: ready-for-agent is the positive afk gate; its absence ⇒ hitl (issue #230)', () => {
-    expect(deriveRole(ticket({ labels: ['ready-for-agent'] }))).toEqual({
-      workflow: 'implement',
-      wayfinderType: null,
-      drive: 'afk',
-    });
-    // ready-for-human wins even when ready-for-agent is also present.
-    expect(deriveRole(ticket({ labels: ['ready-for-agent', 'ready-for-human'] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: ['ready-for-human'] })).drive).toBe('hitl');
+});
+
+describe('mirroredAgentEligible (labels → agent-workable, ADR-0041; the label half of the derived flag)', () => {
+  it('grilling/prototype/bare-task are human-only even with ready-for-agent', () => {
+    expect(mirroredAgentEligible(['ready-for-agent'], 'grilling', false)).toBe(false);
+    expect(mirroredAgentEligible(['ready-for-agent'], 'prototype', false)).toBe(false);
+    expect(mirroredAgentEligible(['ready-for-agent'], 'task', false)).toBe(false);
   });
-  it('no ready-for-agent ⇒ hitl regardless of any other label (opt-in, not opt-out)', () => {
-    // Unlabelled, needs-triage, needs-info, wontfix — none opt into afk.
-    expect(deriveRole(ticket({ labels: [] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: ['needs-triage'] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: ['needs-info'] })).drive).toBe('hitl');
-    expect(deriveRole(ticket({ labels: ['wontfix'] })).drive).toBe('hitl');
-    // wayfinder:research is not a hitl kind, but still needs the opt-in to run afk.
-    expect(deriveRole(ticket({ labels: ['wayfinder:research'] })).drive).toBe('hitl');
+  it('implement: ready-for-agent is the positive gate; ready-for-human wins even when both are present (issue #230)', () => {
+    expect(mirroredAgentEligible(['ready-for-agent'], null, false)).toBe(true);
+    expect(mirroredAgentEligible(['ready-for-agent', 'ready-for-human'], null, false)).toBe(false);
+    expect(mirroredAgentEligible(['ready-for-human'], null, false)).toBe(false);
   });
-  it('assignment is never consulted: an assigned ready-for-agent ticket is still afk (issue #208)', () => {
-    expect(deriveRole(ticket({ labels: ['ready-for-agent'], assignees: ['octocat'] })).drive).toBe('afk');
+  it('no ready-for-agent ⇒ human-only regardless of any other label (opt-in, not opt-out)', () => {
+    expect(mirroredAgentEligible([], null, false)).toBe(false);
+    expect(mirroredAgentEligible(['needs-triage'], null, false)).toBe(false);
+    expect(mirroredAgentEligible(['needs-info'], null, false)).toBe(false);
+    expect(mirroredAgentEligible(['wontfix'], null, false)).toBe(false);
+    // wayfinder:research is not a human-only kind, but still needs the opt-in.
+    expect(mirroredAgentEligible(['wayfinder:research'], 'research', false)).toBe(false);
+    expect(mirroredAgentEligible(['wayfinder:research', 'ready-for-agent'], 'research', false)).toBe(true);
+  });
+  it('an Epic container is never agent-workable, whatever its labels', () => {
+    expect(mirroredAgentEligible(['ready-for-agent'], null, true)).toBe(false);
   });
 });
 
@@ -93,52 +94,48 @@ describe('mirrorScan upsert', () => {
       trackerRef: 42,
       workflow: 'implement',
       wayfinderType: null,
-      drive: 'afk',
       state: 'ready',
-      escalated: false,
       prompt: 'Add rate limiting\n\nper CONTEXT.md',
       harness: 'claude',
       priority: 'normal',
     });
   });
 
-  it('unescalate flips an escalated Task back to afk and clears the flag', async () => {
+  it('escalate records the reason on the ticket; requeue with guidance clears it and returns the ticket to ready', async () => {
     const t = (await mscan([ticket({ number: 9, labels: ['ready-for-agent'] })]))[0]!;
-    await tasks.escalate(t.id); // afk Run handed to a human
-    expect(await tasks.get(t.id)).toMatchObject({ drive: 'hitl', escalated: true });
+    await tasks.escalate(t.id, 'escalated to human: attempt 2 of 2 failed');
+    expect(await tasks.get(t.id)).toMatchObject({ state: 'escalated', escalationReason: 'escalated to human: attempt 2 of 2 failed' });
 
-    const back = await tasks.unescalate(t.id);
-    expect(back).toMatchObject({ drive: 'afk', escalated: false, state: 'ready' });
+    const back = await tasks.requeue(t.id, 'try the other endpoint');
+    expect(back).toMatchObject({ state: 'ready', escalationReason: null, feedback: 'try the other endpoint' });
 
-    // Guards: not escalated, and native.
-    await expect(tasks.unescalate(t.id)).rejects.toThrow(/not escalated/);
-    const native = await tasks.create({ prompt: 'native' });
-    await expect(tasks.unescalate(native.id)).rejects.toThrow(/native/);
+    // Guard: only an escalated ticket takes guidance.
+    await expect(tasks.requeue(t.id, 'again')).rejects.toThrow(/only escalated/);
   });
 
-  it('is idempotent across re-polls: 1:1, updates in place, re-seeds drive from labels', async () => {
+  it('is idempotent across re-polls: 1:1, updates in place, agent-workability follows the labels', async () => {
     const t = ticket({ number: 7, labels: ['ready-for-agent'] });
     const first = (await mscan([t]))[0]!;
-    expect(first.drive).toBe('afk'); // seeded from ready-for-agent
-    // Operator relabels the ticket for a human: a re-poll re-seeds drive.
+    expect((await tasks.withDeps(first)).agentWorkable).toBe(true); // opted in by ready-for-agent
+    // Operator relabels the ticket for a human: a re-poll re-derives workability.
     const second = (await mscan([{ ...t, title: 'Retitled on the tracker', labels: ['ready-for-human'] }]))[0]!;
     expect(second.id).toBe(first.id); // same row, not a duplicate
     expect(await tasks.list()).toHaveLength(1);
     expect(second.prompt).toContain('Retitled on the tracker'); // shape refreshed
-    expect(second.drive).toBe('hitl'); // re-seeded from the new label
+    expect((await tasks.withDeps(second)).agentWorkable).toBe(false); // derived from the new label
   });
 
-  it('re-poll preserves an escalated Task’s drive even when the label still reads ready-for-agent', async () => {
+  it('re-poll never moves an escalated Task, even when the label still reads ready-for-agent', async () => {
     const t = ticket({ number: 8, labels: ['ready-for-agent'] });
     const first = (await mscan([t]))[0]!;
-    // Harmonic escalates at runtime (afk→hitl, escalated flag) without touching the label.
-    await asyncDb.write((d) => d.update(tasksTable).set({ drive: 'hitl', escalated: true }).where(eq(tasksTable.id, first.id)).run());
+    // Harmonic escalates at runtime without touching the label.
+    await tasks.escalate(first.id, 'escalated to human: attempt 2 of 2 failed');
     const second = (await mscan([t]))[0]!; // same ready-for-agent label
-    expect(second.drive).toBe('hitl'); // escalation preserved, not re-seeded to afk
-    expect(second.escalated).toBe(true);
+    expect(second.state).toBe('escalated'); // an escalation is Harmonic's own fact
+    expect(second.escalationReason).toBe('escalated to human: attempt 2 of 2 failed');
   });
 
-  it('closed ticket → completed; open blocker → a real edge; Maps not mirrored', async () => {
+  it('closed ticket → done; open blocker → a real edge; Maps not mirrored', async () => {
     const results = await mscan([
       ticket({ number: 1 }), // open blocker
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
@@ -151,27 +148,30 @@ describe('mirrorScan upsert', () => {
     expect((await tasks.list()).some((t) => t.trackerRef === 3)).toBe(false);
   });
 
-  it('an Epic parent mirrors as hitl — a container is never auto-run', async () => {
-    // #200 carries ready-for-agent (would seed afk), but it has a child (#201),
-    // so it is an Epic → forced hitl so the Auto-Runner never runs the container.
+  it('an Epic parent is never agent-workable — a container is never auto-run', async () => {
+    // #200 carries ready-for-agent, but it has a child (#201), so it is an
+    // Epic → derived not agent-workable so the Auto-Runner never runs the container.
     const results = await mscan([
       ticket({ number: 200, labels: ['ready-for-agent'] }),
       ticket({ number: 201, parent: 200, labels: ['ready-for-agent'] }),
     ]);
     const epic = results.find((t) => t.trackerRef === 200)!;
     const child = results.find((t) => t.trackerRef === 201)!;
-    expect(epic.drive).toBe('hitl'); // Epic → not auto-run despite ready-for-agent
-    expect(child.drive).toBe('afk'); // leaf child still afk
+    expect((await tasks.withDeps(epic)).agentWorkable).toBe(false); // Epic → not auto-run despite ready-for-agent
+    expect((await tasks.withDeps(child)).agentWorkable).toBe(true); // leaf child still workable
+    expect((await tasks.listWithDeps({ workspaceId: wsId })).map((t) => [t.trackerRef, t.agentWorkable])).toEqual(
+      expect.arrayContaining([[200, false], [201, true]]),
+    );
   });
 
-  it('an unlabelled parent that is momentarily childless mirrors hitl by the rule (issue #229/#230)', async () => {
+  it('an unlabelled parent that is momentarily childless is still not agent-workable (issue #229/#230)', async () => {
     // The create-before-children window: an Epic is created, then its members.
-    // While childless it is not yet an Epic (epicRefs is empty), so the
-    // isEpic→hitl override does not fire. The opt-in rule alone must still keep
-    // it hitl — under the old opt-out polarity it defaulted to afk and was
-    // auto-driven (task 226 / run 275).
-    const result = await mscan([ticket({ number: 229, labels: [] })]);
-    expect(result).toMatchObject([{ trackerRef: 229, drive: 'hitl' }]);
+    // While childless it is not yet an Epic, so the container rule does not
+    // fire. The opt-in rule alone must still keep it human-only — under the old
+    // opt-out polarity it defaulted to auto-run (task 226 / run 275).
+    const [result] = await mscan([ticket({ number: 229, labels: [] })]);
+    expect(result).toMatchObject({ trackerRef: 229 });
+    expect((await tasks.withDeps(result!)).agentWorkable).toBe(false);
   });
 
   it('an Epic parent is never a blocker: a child "Blocked by" its parent gets no edge', async () => {
@@ -227,34 +227,33 @@ describe('mirrorScan upsert', () => {
     expect(results.map((t) => t.state)).toEqual(['completed', 'ready']);
   });
 
-  it('a running Task whose own ticket closes stays running — never mirror-completed (issue #139)', async () => {
-    // Under the close-after-verify model a mid-run close is premature (only
-    // Harmonic closes a ticket, after verify + land). mirrorScan must NOT settle
-    // it completed — it leaves the Task running for the premature-closure backstop
-    // (Runner.reopenClosedMirrored) to reopen + Escalate.
+  it('a working Task whose own ticket closes stays working — never mirror-completed (issue #139, ADR-0041)', async () => {
+    // Tracker state is an input, never a control path: nothing interrupts a
+    // live Run, and the landing's own close is idempotent, so mirrorScan must
+    // NOT settle it done.
     const [task] = await mscan([ticket({ number: 8, labels: ['ready-for-agent'] })]);
-    await tasks.setState(task!.id, 'running');
+    await tasks.setState(task!.id, 'working');
     const [after] = await mscan([ticket({ number: 8, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })]);
-    expect(after!.state).toBe('running');
+    expect(after!.state).toBe('working');
   });
 
-  it('completed Task on a close-incapable (inbound-only) tracker stays completed — no reopen re-run loop (issue #237)', async () => {
+  it('done Task on a close-incapable (inbound-only) tracker stays done — no reopen re-run loop (issue #237)', async () => {
     const [task] = await mscan([ticket({ number: 237, labels: ['ready-for-agent'] })]);
-    await tasks.setState(task!.id, 'completed');
+    await tasks.setState(task!.id, 'done');
 
     // The ticket still reads open (an inbound-only adapter never owns the close),
-    // so a naive completed→ready flip would re-run it, complete, no-op the close,
+    // so a naive done→ready flip would re-run it, land, no-op the close,
     // and re-ready forever. Gated on trackerCanClose=false → the flip is suppressed.
     const held = await tasks.upsertMirrored(
-      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false, false),
+      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false),
       wsId,
     );
-    expect(held.state).toBe('completed');
+    expect(held.state).toBe('done');
 
     // A writable tracker (can close) still treats a still-open ticket as a
-    // genuine external reopen and flips the resting completed Task back to ready.
+    // genuine external reopen and flips the resting done Task back to ready.
     const reopened = await tasks.upsertMirrored(
-      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false, true),
+      toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), true),
       wsId,
     );
     expect(reopened.state).toBe('ready');
@@ -265,13 +264,13 @@ describe('mirrorScan upsert', () => {
       ticket({ number: 1 }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'open' }] }),
     ]);
-    await tasks.setState(dependent!.id, 'running'); // Auto-Runner picked it up
-    // Blocker closes on the next poll — the running dependent must stay running.
+    await tasks.setState(dependent!.id, 'working'); // Auto-Runner picked it up
+    // Blocker closes on the next poll — the working dependent must stay working.
     const results = await mscan([
       ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
     ]);
-    expect(results[1]!.state).toBe('running');
+    expect(results[1]!.state).toBe('working');
   });
 
   it('a Dismissed ref is skipped on re-poll — deleting a mirrored Task does not resurrect it (issue #162)', async () => {

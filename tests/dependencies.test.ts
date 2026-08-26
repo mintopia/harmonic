@@ -19,9 +19,9 @@ describe('dependencies', () => {
 
   const getTask = async (id: number) => (await server.api('GET', `/api/tasks/${id}`)).body;
 
-  const runToAwaitingReview = async (id: number) => {
+  const runToDone = async (id: number) => {
     await server.api('POST', `/api/tasks/${id}/run`);
-    await waitFor(async () => (await getTask(id)).state === 'awaiting-review');
+    await waitFor(async () => (await getTask(id)).state === 'done');
   };
 
   it('derives blocker count and agent-workable from the last open blocker', async () => {
@@ -33,7 +33,7 @@ describe('dependencies', () => {
     expect(dependent.dependsOn).toEqual([dep.id]);
 
     // Dependency finishes its run → it remains an open blocker until accepted.
-    await runToAwaitingReview(dep.id);
+    await runToDone(dep.id);
     expect((await getTask(dependent.id)).openBlockerCount).toBe(1);
 
     // Accept immediately changes the derived fields, without a stored flip.
@@ -47,11 +47,11 @@ describe('dependencies', () => {
     const dep2 = await createTask({});
     const dependent = await createTask({ dependsOn: [dep1.id, dep2.id] });
 
-    await runToAwaitingReview(dep1.id);
+    await runToDone(dep1.id);
     await server.api('POST', `/api/tasks/${dep1.id}/accept`);
     expect((await getTask(dependent.id)).openBlockerCount).toBe(1);
 
-    await runToAwaitingReview(dep2.id);
+    await runToDone(dep2.id);
     await server.api('POST', `/api/tasks/${dep2.id}/accept`);
     expect((await getTask(dependent.id)).state).toBe('ready');
   });
@@ -88,7 +88,7 @@ describe('dependencies', () => {
     // The hiccup is retryable: requeue the dep, run, accept — pipeline resumes.
     await server.api('POST', `/api/tasks/${dep.id}/requeue`, { feedback: JSON.stringify({}) });
     // requeue appended feedback, making the prompt non-JSON; run defaults to echo scenario
-    await runToAwaitingReview(dep.id);
+    await runToDone(dep.id);
     await server.api('POST', `/api/tasks/${dep.id}/accept`);
     const after = await getTask(dependent.id);
     expect(after.openBlockerCount).toBe(0);

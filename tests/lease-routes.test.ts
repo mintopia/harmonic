@@ -40,7 +40,7 @@ describe('Work Context lease operator surface (issue #125)', () => {
     // A Task genuinely occupying a context is `running` (Runner.beginRun flips
     // this before acquiring the lease) — matching that here keeps the Task
     // itself out of its own "waiting" count in the diagnostics view.
-    task = await ctx().tasks.setState(task.id, 'running');
+    task = await ctx().tasks.setState(task.id, 'working');
     return { task, run, key, lease };
   };
   const ctx = () => server.app.ctx;

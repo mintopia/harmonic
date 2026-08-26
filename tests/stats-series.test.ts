@@ -25,12 +25,11 @@ const usageJson = (input: number, output: number, cacheRead = 0, cacheWrite = 0)
   } satisfies RunUsage);
 
 const run = (startedAt: number, usage: string | null): DaySeriesRun => ({ startedAt, usage });
-// A run carrying its terminal state/review, for the per-day fails count.
-const outcome = (startedAt: number, state: string, review: string | null = null): DaySeriesRun => ({
+// A run carrying its terminal state, for the per-day fails count.
+const outcome = (startedAt: number, state: string): DaySeriesRun => ({
   startedAt,
   usage: null,
   state,
-  review,
 });
 
 // A pricing stub that just tallies $1 per run in the bucket — enough to prove
@@ -97,11 +96,10 @@ describe('buildDaySeries', () => {
     expect(buildDaySeries([], perRunDollar)).toEqual([]);
   });
 
-  it('counts failed-only runs per day, excluding rejected/cancelled/completed (ADR-0028)', () => {
+  it('counts failed-only runs per day, excluding cancelled/completed (ADR-0028)', () => {
     const series = buildDaySeries(
       [
         outcome(at(2026, 0, 10, 8), 'failed'), // genuine failure
-        outcome(at(2026, 0, 10, 9), 'failed', 'rejected'), // review rejection — not a fail
         outcome(at(2026, 0, 10, 10), 'cancelled'), // operator cancel — not a fail
         outcome(at(2026, 0, 10, 11), 'completed'),
         outcome(at(2026, 0, 11, 8), 'failed'),

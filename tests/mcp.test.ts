@@ -67,7 +67,7 @@ describe('mcp server & scoped keys', () => {
 
     // Run the dep for real and read runs + events over MCP.
     await server.api('POST', `/api/tasks/${dep.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${dep.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${dep.id}`)).body.state === 'done');
     const runs = parse(await client.callTool({ name: 'get_runs', arguments: { taskId: dep.id } }));
     expect(runs).toHaveLength(1);
     const events = parse(await client.callTool({ name: 'get_run_events', arguments: { runId: runs[0].id } }));
@@ -128,7 +128,7 @@ describe('mcp server & scoped keys', () => {
       prompt: JSON.stringify({ echoEnv: ['HARMONIC_API_KEY', 'HARMONIC_MCP_URL'] }),
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
 
     // Run Keys are never listed, and the row is deleted once the run finished (issue 16).
     const keys = await server.api('GET', '/api/keys');
@@ -146,7 +146,7 @@ describe('mcp server & scoped keys', () => {
       });
       const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(
-        async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+        async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
 
       const events = await codexServer.api('GET', `/api/runs/${started.body.id}/events`);
@@ -185,8 +185,8 @@ describe('mcp server & scoped keys', () => {
     expect(tools).not.toContain('reject_task');
     await client.close();
 
-    // A legacy PATCH still carrying the retired flag is migrated (folded into
-    // verify.autoAccept) rather than re-exposing the MCP tools.
+    // A legacy PATCH still carrying the retired flag is dropped rather than
+    // re-exposing the MCP tools.
     await server.api('PATCH', '/api/config', { agentReview: true });
     const stillHidden = await mcpClient(server, token);
     const stillHiddenTools = (await stillHidden.listTools()).tools.map((t) => t.name);
@@ -195,7 +195,7 @@ describe('mcp server & scoped keys', () => {
     await stillHidden.close();
 
     const config = (await server.api('GET', '/api/config')).body;
-    expect(config.verify.autoAccept).toBe(true);
+    expect(config.verify).not.toHaveProperty('autoAccept');
     expect(config.agentReview).toBeUndefined();
   });
 
@@ -208,7 +208,7 @@ describe('mcp server & scoped keys', () => {
     });
     await server.api('POST', `/api/tasks/${created.body.id}/ready`);
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
 
     const all = await server.api('GET', '/api/tasks');
     const followUp = all.body.tasks.find((t: any) => t.prompt === 'follow-up work');

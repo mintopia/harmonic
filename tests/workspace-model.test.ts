@@ -36,7 +36,6 @@ const ws = (id: number, name = `ws-${id}`): Workspace => ({
   autoRunnerEnabled: null,
   verificationCommand: null,
   verificationCritic: null,
-  verificationAutoAccept: null,
   guardrailBudget: null,
   guardrailProgress: null,
   createdAt: id,

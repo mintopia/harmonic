@@ -3,28 +3,21 @@ import {
   failureReasonKey,
   failuresByReason,
   isExecutionFailure,
-  isReviewRejected,
   type FailedRun,
 } from '../src/domain/run-failure.js';
 import type { DispositionFact } from '../src/domain/run-disposition.js';
 
 const fact = (seq: number, type: string): DispositionFact => ({ seq, type });
 
-describe('isExecutionFailure / isReviewRejected', () => {
-  it('counts a bare failed Run as an execution failure', () => {
-    expect(isExecutionFailure({ state: 'failed', review: null })).toBe(true);
-    expect(isReviewRejected({ state: 'failed', review: null })).toBe(false);
+describe('isExecutionFailure', () => {
+  it('counts a failed Run as an execution failure', () => {
+    expect(isExecutionFailure({ state: 'failed' })).toBe(true);
   });
 
-  it('excludes a review-rejected Run from execution failures (ADR-0028 trap)', () => {
-    // A rejection settles to state:'failed' + review:'rejected' together.
-    expect(isExecutionFailure({ state: 'failed', review: 'rejected' })).toBe(false);
-    expect(isReviewRejected({ state: 'failed', review: 'rejected' })).toBe(true);
-  });
-
-  it('does not treat completed or cancelled Runs as failures', () => {
-    expect(isExecutionFailure({ state: 'completed', review: 'accepted' })).toBe(false);
-    expect(isExecutionFailure({ state: 'cancelled', review: null })).toBe(false);
+  it('does not treat completed, cancelled, or still-running Runs as failures (ADR-0028)', () => {
+    expect(isExecutionFailure({ state: 'completed' })).toBe(false);
+    expect(isExecutionFailure({ state: 'cancelled' })).toBe(false);
+    expect(isExecutionFailure({ state: 'running' })).toBe(false);
   });
 });
 

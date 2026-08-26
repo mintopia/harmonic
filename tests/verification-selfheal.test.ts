@@ -73,7 +73,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     // Reset per-test verifier config and cap; each test sets its own.
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
-      verificationAutoAccept: null,
       maxAttempts: null,
     });
     await server.app.ctx.configStore.update({ maxAttempts: 2 });
@@ -97,7 +96,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   it('AC1/AC2: an actionable fail creates Attempt N+1 with feedback and re-verifies', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: markerCommand('ok'),
-      verificationAutoAccept: true,
     });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
@@ -109,9 +107,9 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'completed' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('completed');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('completed');
@@ -168,7 +166,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     await server.app.ctx.configStore.update({ modelInfo: { 'stub-model': { contextWindow: 100 } } });
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: markerCommand('ok'),
-      verificationAutoAccept: true,
       contextReuseThreshold: 0.2,
     });
     const { taskId, runId } = await runWorktreeTask({
@@ -177,7 +174,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
         { writeFiles: { 'marker.txt': 'ok\n' } },
       ],
     });
-    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'completed' ? true : undefined));
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
     const attemptsByTicket = await ticketAttempts(taskId);
     expect(attemptsByTicket.map((a) => a.state)).toEqual(['failed', 'passed']);
     const [first, second] = await Promise.all([implementationSession(attemptsByTicket[0]!.id), implementationSession(attemptsByTicket[1]!.id)]);
@@ -223,13 +220,12 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.escalated ? body : undefined;
+      return body.state === 'escalated' ? body : undefined;
     });
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
 
     // The verifier runs once per Attempt and the failed Attempt retains feedback.
@@ -252,11 +248,10 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     // Both implementation attempts fail; no third attempt is created.
     const rows = await attempts(runId);
@@ -281,7 +276,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(run.state).toBe('failed');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     expect((await attempts(runId)).map((r) => r.verdict)).toEqual(['fail']);
     expect(await ticketAttempts(taskId)).toMatchObject([{ number: 1, state: 'failed' }]);

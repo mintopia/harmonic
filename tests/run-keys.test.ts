@@ -24,7 +24,7 @@ describe('run key lifecycle (issue 16)', () => {
     server = await startServer(stubHarness());
     const { taskId, token } = await startEchoRun(server, 'clean');
     await waitFor(
-      async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review',
+      async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done',
     );
 
     expect(await runKeyRows(server)).toEqual([]);

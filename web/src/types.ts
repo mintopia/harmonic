@@ -170,10 +170,9 @@ export interface Workspace {
    * the command and critic: `null` inherits the global `config.verify` default,
    * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
    * configured object overrides it. Both read back as the shape they were PATCHed
-   * as. `verificationAutoAccept` stays a plain nullable boolean. */
+   * as. */
   verificationCommand: VerificationCommand | VerifierOff | null;
   verificationCritic: VerificationCritic | VerifierOff | null;
-  verificationAutoAccept: boolean | null;
   /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed
    * object shape it was PATCHed as. */

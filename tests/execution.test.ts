@@ -34,7 +34,7 @@ describe('run execution over ACP (direct mode)', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  it('runs a ready task to awaiting-review, persisting tool-call aggregates but no session/update events', async () => {
+  it('runs a ready task to done, persisting tool-call aggregates but no session/update events', async () => {
     const updates = [
       { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'working…' } },
       {
@@ -49,25 +49,23 @@ describe('run execution over ACP (direct mode)', () => {
     ];
     const { taskId, runId } = await createAndRun({ updates, stopReason: 'end_turn' });
 
-    // Task passes through running…
+    // Task passes through working to done — no human gate (ADR-0041).
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('done');
 
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.status).toBe(200);
-    // A native Run parks non-terminal in `phase:'review'` at agent-finish — it
-    // holds `state:'running'` until the human accepts/rejects it (issue #114).
-    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'running', phase: 'review', stopReason: 'end_turn' });
-    expect(run.body.finishedAt).toBeNull();
-    // Agent-finish took it executing → verifying → review, never jumping
+    expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', phase: 'terminal', stopReason: 'end_turn' });
+    expect(run.body.finishedAt).toBeGreaterThan(0);
+    // Agent-finish took it executing → verifying → landing, never jumping
     // straight to a terminal phase (`validating` retired by the reshape).
     const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phaseEvents).toEqual(['verifying', 'review']);
+    expect(phaseEvents).toEqual(['verifying', 'landing']);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -82,60 +80,37 @@ describe('run execution over ACP (direct mode)', () => {
     );
   });
 
-  it('accepting a review-parked native Run lands it terminal — completed exactly once (issue #114)', async () => {
+  it('a native Run lands terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
     const { taskId, runId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],
       stopReason: 'end_turn',
     });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
-    // Parked non-terminal in `review`, holding no terminal disposition yet.
-    const parked = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(parked.state).toBe('running');
-    expect(parked.phase).toBe('review');
-    expect(parked.finishedAt).toBeNull();
-
-    // Accept lands it: Run → completed (phase terminal), Task → completed.
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(200);
-    expect(accepted.body.state).toBe('completed');
     const landed = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(landed.state).toBe('completed');
     expect(landed.phase).toBe('terminal');
-    expect(landed.review).toBe('accepted');
     expect(landed.finishedAt).toBeGreaterThan(0);
 
     // The full phase path is reconstructable from the persisted event log:
-    // executing → verifying → review (drive loop) then landing on Accept
-    // (§0.2: landing happens after Accept; `validating` retired by the
-    // reshape). `terminal` is the coordinator's row write, not a drive-loop
-    // phase event.
+    // executing → verifying → landing (the drive loop lands itself; `validating`
+    // retired by the reshape). `terminal` is the coordinator's row write, not a
+    // drive-loop phase event.
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['verifying', 'review', 'landing']);
-    // A second accept refuses — the Task is terminal.
+    expect(phases).toEqual(['verifying', 'landing']);
+    // Done is terminal: the human surface does not apply, and nothing re-lands.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
+    expect((await server.api('GET', `/api/runs/${runId}`)).body).toMatchObject({ state: 'completed', phase: 'terminal' });
   });
 
-  it('rejecting a review-parked native Run fails it terminal (issue #114)', async () => {
-    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
-
-    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'nope' });
-    expect(rejected.status).toBe(200);
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.state).toBe('failed');
-    expect(run.phase).toBe('terminal');
-    expect(run.review).toBe('rejected');
-    // The reject seeds the unified loop: the ticket itself is not terminal.
-    expect(rejected.body.state).not.toBe('failed');
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
-  });
-
-  it('cancelling an awaiting-review Task settles its review-parked Run cancelled (issue #114)', async () => {
-    const { taskId, runId } = await createAndRun({ stopReason: 'end_turn' });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+  it('cancelling a working Task settles its running Run cancelled (issue #114)', async () => {
+    const { taskId, runId } = await createAndRun({ delayMs: 60_000, stopReason: 'end_turn' });
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'working');
+    await waitFor(async () => ((await server.api('GET', `/api/runs/${runId}`)).body.sessionId ? true : undefined));
     expect((await server.api('GET', `/api/runs/${runId}`)).body.state).toBe('running');
 
     const cancelled = await server.api('POST', `/api/tasks/${taskId}/cancel`);
@@ -146,33 +121,36 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.phase).toBe('terminal');
   });
 
-  it('records each attempt as a distinct run and history survives retries', async () => {
+  it('records each resumed loop as a distinct run and history survives a Reject with guidance', async () => {
     const { taskId, runId } = await createAndRun({ exit: 'crash-before-response' });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'failed');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
+    const firstAttempts = (await server.api('GET', `/api/runs/${runId}`)).body.attempt;
 
-    const requeued = await server.api('POST', `/api/tasks/${taskId}/requeue`);
-    expect(requeued.status).toBe(200);
-    expect(requeued.body.state).toBe('ready');
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'try again' });
+    expect(rejected.status).toBe(200);
 
-    const second = await server.api('POST', `/api/tasks/${taskId}/run`);
-    expect(second.status).toBe(201);
-    expect(second.body.id).not.toBe(runId);
-    expect(second.body.attempt).toBe(2);
+    const second = await waitFor(async () => {
+      const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+      return runs.length === 2 ? runs[1] : undefined;
+    });
+    expect(second.id).not.toBe(runId);
+    expect(second.attempt).toBe(firstAttempts + 1); // history numbering continues across the reset budget
 
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'failed');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
     const runs = await server.api('GET', `/api/tasks/${taskId}/runs`);
     expect(runs.body.runs).toHaveLength(2);
   });
 
-  it('moves the task to failed when the harness crashes mid-run', async () => {
+  it('escalates the task when the harness crashes on every attempt', async () => {
     const { taskId, runId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'about to die' } }],
       exit: 'crash-before-response',
     });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'failed');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('failed');
     expect(run.body.reason).toBeTruthy();
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).toMatch(/^escalated to human: attempt \d+ of \d+ failed/);
   });
 
   it('serialises Claude harness processes globally, releasing the lock when the first run stops (#237)', async () => {
@@ -257,7 +235,7 @@ describe('run execution over ACP (direct mode)', () => {
 
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
-      return body.state === 'completed' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
     expect(run.state).toBe('completed');
 
@@ -269,7 +247,7 @@ describe('run execution over ACP (direct mode)', () => {
     const { taskId, runId } = await createAndRun({
       requestPermission: { title: 'Write hello.txt' },
     });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     const types = events.body.events.map((e: any) => e.type);
@@ -343,7 +321,7 @@ describe('run execution over ACP (direct mode)', () => {
         });
         const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
         await waitFor(
-          async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+          async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
         );
         const events = await codexServer.api('GET', `/api/runs/${started.body.id}/events`);
         return events.body.events.find((e: any) => e.payload?.event === 'model_mismatch');
@@ -371,7 +349,7 @@ describe('run execution over ACP (direct mode)', () => {
       });
       const started = await srv.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(
-        async () => (await srv.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+        async () => (await srv.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
       );
       const events = await srv.api('GET', `/api/runs/${started.body.id}/events`);
       return events.body.events.find((e: any) => e.type === 'session_update') ?? null;
@@ -534,9 +512,9 @@ describe('wall-clock guardrail (issue #127)', () => {
       // The trip Escalates: the Task is flagged and handed back to a human.
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-        return body.escalated ? body : undefined;
+        return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalated).toBe(true);
+      expect(task.state).toBe('escalated');
 
       // The Run settled to a terminal disposition (never a new state) with the
       // budget reason on the card — the reason derives from the trip evidence.
@@ -659,9 +637,9 @@ describe('token/cost budget guardrail (issue #128)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.escalated ? body : undefined;
+      return body.state === 'escalated' ? body : undefined;
     });
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     return { taskId, runId, task, run };
@@ -780,9 +758,9 @@ describe('token/cost budget guardrail (issue #128)', () => {
 
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-        return body.escalated ? body : undefined;
+        return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalated).toBe(true);
+      expect(task.state).toBe('escalated');
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
@@ -856,9 +834,9 @@ describe('token/cost budget guardrail (issue #128)', () => {
 
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-        return body.escalated ? body : undefined;
+        return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalated).toBe(true);
+      expect(task.state).toBe('escalated');
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
@@ -908,9 +886,9 @@ describe('progress guardrail (issue #131)', () => {
 
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-        return body.escalated ? body : undefined;
+        return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalated).toBe(true);
+      expect(task.state).toBe('escalated');
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');
@@ -940,7 +918,7 @@ describe('progress guardrail (issue #131)', () => {
     // unpaired tool_call still in flight. Idle detection SUSPENDS while a tool
     // call is outstanding (a slow build is indistinguishable from a stuck
     // agent), so the detector returns null: no nudge, no trip — the Run
-    // completes normally to awaiting-review. Tool-timeout is left at its
+    // completes normally to done. Tool-timeout is left at its
     // generous default, so it never fires inside the test window.
     const server = await startServer({
       ...stubHarness(),
@@ -961,9 +939,9 @@ describe('progress guardrail (issue #131)', () => {
       const taskId = created.body.id;
       const runId = startedId(await server.api('POST', `/api/tasks/${taskId}/run`));
 
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
       const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-      expect(task.escalated).toBeFalsy();
+      expect(task.state).toBe('done');
 
       const events = (await server.api('GET', `/api/runs/${runId}/events`)).body.events;
       expect(events.some((e: any) => e.type === 'lifecycle' && e.payload.event === 'progress-nudge')).toBe(false);
@@ -996,9 +974,9 @@ describe('progress guardrail (issue #131)', () => {
 
       const task = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-        return body.escalated ? body : undefined;
+        return body.state === 'escalated' ? body : undefined;
       });
-      expect(task.escalated).toBe(true);
+      expect(task.state).toBe('escalated');
 
       const run = (await server.api('GET', `/api/runs/${runId}`)).body;
       expect(run.state).toBe('failed');

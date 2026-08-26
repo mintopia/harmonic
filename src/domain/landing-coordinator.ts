@@ -199,6 +199,9 @@ export class LandingCoordinator {
    */
   async abandon(run: RunRow, detail: string): Promise<void> {
     await this.journal.append(run.id, 'abandoned', { payload: { detail } }, (this.opts.now ?? Date.now)());
+    // The Run never landed, so it leaves `landing` for wherever it was — an
+    // already-settled (escalated) Run goes back to `terminal`.
+    if (run.phase !== 'landing') await this.runStore.update(run.id, { phase: run.phase });
     await this.runStore.appendEvent(run.id, { type: 'lifecycle', payload: { event: 'landing-abandoned', detail } });
   }
 

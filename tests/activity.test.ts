@@ -91,7 +91,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   it('lists a persisted running Run whose completed Task no longer has a live Runner', async () => {
     const task = (await server.api('POST', '/api/tasks', { prompt: 'wedged landing', workingDir: workDir })).body;
     const run = await server.app.ctx.runs.create(task.id);
-    await server.app.ctx.tasks.setState(task.id, 'completed');
+    await server.app.ctx.tasks.setState(task.id, 'done');
 
     const { body } = await server.api('GET', '/api/activity');
     expect(body.processes).toContainEqual(expect.objectContaining({
@@ -106,16 +106,17 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(await server.app.ctx.runs.countRunning()).toBe(1);
   });
 
-  it('keeps a review-parked running Run visible on its Task run rail', async () => {
+  it("keeps an escalated ticket's settled Run visible on its run rail without counting it as running", async () => {
     const runningBefore = await server.app.ctx.runs.countRunning();
-    const task = (await server.api('POST', '/api/tasks', { prompt: 'awaiting review', workingDir: workDir })).body;
+    const task = (await server.api('POST', '/api/tasks', { prompt: 'escalated', workingDir: workDir })).body;
     const run = await server.app.ctx.runs.create(task.id);
-    await server.app.ctx.runs.update(run.id, { phase: 'review' });
-    await server.app.ctx.tasks.setState(task.id, 'awaiting-review');
+    await server.app.ctx.runs.update(run.id, { state: 'failed', phase: 'terminal', reason: 'escalated to human: attempt 3 of 3 failed' });
+    await server.app.ctx.tasks.escalate(task.id, 'escalated to human: attempt 3 of 3 failed');
 
     const { body } = await server.api('GET', `/api/tasks/${task.id}/runs`);
-    expect(body.runs).toContainEqual(expect.objectContaining({ id: run.id, state: 'running', phase: 'review' }));
+    expect(body.runs).toContainEqual(expect.objectContaining({ id: run.id, state: 'failed', phase: 'terminal' }));
     expect(await server.app.ctx.runs.countRunning()).toBe(runningBefore);
+    expect((await server.api('GET', `/api/tasks/${task.id}`)).body.escalationReason).toBe('escalated to human: attempt 3 of 3 failed');
   });
 
   it('lists a live Run with its Usage snapshot, Process Tree, and derived Cost', async () => {
@@ -140,7 +141,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(proc.startedAt).toBeGreaterThan(0);
     expect(proc.trackerRef).toBeNull(); // native task, not a mirrored ticket
     expect(proc.trackerUrl).toBeNull(); // native task has no ticket deep-link (issue #55)
-    expect(proc.escalated).toBe(false); // afk run, not escalated (issue #52)
+    expect(proc.state).not.toBe('escalated'); // afk run, not escalated (issue #52)
     expect(proc.contextWindow).toBeNull(); // stub-model has no configured window
     expect(proc.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 100, outputTokens: 10, cacheReadTokens: 5 });
     expect(proc.contextTokens).toBe(105); // input + cache read
@@ -171,7 +172,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     expect(chat.tree).toBeNull(); // no live tailer for Conversations
     expect(chat.trackerRef).toBeNull();
     expect(chat.trackerUrl).toBeNull(); // Conversations have no ticket deep-link (issue #55)
-    expect(chat.escalated).toBe(false); // Conversations don't carry the afk-escalation flag (issue #52)
+    expect(chat.state).not.toBe('escalated'); // Conversations don't carry the afk-escalation flag (issue #52)
     expect(typeof chat.title).toBe('string');
     expect(typeof chat.workspaceId).toBe('number');
     expect(typeof chat.workspaceName).toBe('string');

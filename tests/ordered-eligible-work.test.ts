@@ -33,7 +33,6 @@ describe('TaskService.orderedEligibleWork', () => {
       prompt: 'mirrored',
       workflow: 'implement',
       wayfinderType: null,
-      drive: 'afk',
       mapRef: null,
       closed: false,
     }, workspaceId);
@@ -52,7 +51,7 @@ describe('TaskService.orderedEligibleWork', () => {
     const blocker = await taskService.create({ prompt: 'blocker', workspaceId });
     const dependent = await taskService.create({ prompt: 'dependent', workspaceId, dependsOn: [blocker.id] });
 
-    await taskService.setState(blocker.id, 'completed');
+    await taskService.setState(blocker.id, 'done');
 
     expect((await taskService.orderedEligibleWork(workspaceId)).map((task) => task.id)).toEqual([dependent.id]);
   });

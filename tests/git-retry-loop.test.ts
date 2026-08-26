@@ -50,16 +50,15 @@ describe('git workspace-prep failure does not spin the run driver (issue #199)',
       return r.state !== 'running' ? r : undefined;
     });
 
-    // ...and the Task is handed to a human (escalated → drive hitl), NOT left as
-    // a bare `failed` that the scheduler would keep re-touching. Before the fix
-    // this settled a plain `failed`; now the permanent git failure escalates.
+    // ...and the Task is handed to a human (escalated, trigger 3), NOT re-queued
+    // for the scheduler to keep re-touching.
     const settled = await server.app.ctx.tasks.get(task.id);
-    expect(settled.escalated).toBe(true);
-    expect(settled.drive).toBe('hitl');
+    expect(settled.state).toBe('escalated');
+    expect(settled.escalationReason).toMatch(/git workspace preparation failed \(permanent\)/);
 
     // And crucially there was no respawn flood: exactly one Run was ever created
-    // for this Task. An escalated Task is `hitl`, which `AutoRunner.pickNext`
-    // skips, so no further git is spawned for it.
+    // for this Task. An escalated Task is off the ready frontier, so
+    // `AutoRunner.pickNext` never re-spawns git for it.
     const runs = await server.app.ctx.runs.listForTask(task.id);
     expect(runs.length).toBe(1);
   });

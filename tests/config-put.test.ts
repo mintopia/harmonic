@@ -107,7 +107,7 @@ describe('PUT /api/config', () => {
 
     await waitFor(async () => {
       const task = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
-      return task.state === 'running' || task.state === 'awaiting-review';
+      return task.state === 'working' || task.state === 'done';
     });
   });
 });

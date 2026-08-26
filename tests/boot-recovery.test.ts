@@ -64,24 +64,24 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
 
     await server.app.close();
     server = await startServer(stubHarness(), { dataDir });
 
     const task = await server.api('GET', `/api/tasks/${created.body.id}`);
-    expect(task.body.state).toBe('awaiting-review'); // survived, not failed
+    expect(task.body.state).toBe('escalated'); // survived, not failed
     const run = await server.api('GET', `/api/runs/${started.body.id}`);
     expect(run.body.state).toBe('running');
-    expect(run.body.phase).toBe('review');
+    expect(run.body.phase).toBe('terminal');
   });
 
   it('sweeps a review-parked Run past its SLA to a terminal disposition at boot, via a run_fact (issue #114)', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
 
@@ -116,7 +116,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -158,7 +158,7 @@ describe('boot crash-recovery', () => {
     expect(run.body.phase).toBe('terminal');
     expect(run.body.review).toBe('accepted');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.state).toBe('completed');
+    expect(task.body.state).toBe('done');
 
     // No duplicate/re-applied result for the already-applied effect.
     const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
@@ -176,7 +176,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
 
@@ -230,7 +230,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -277,7 +277,7 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('completed');
     expect(run.body.phase).toBe('terminal');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.state).toBe('completed');
+    expect(task.body.state).toBe('done');
 
     const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const results = (
@@ -302,7 +302,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -326,9 +326,8 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('failed');
     expect(run.body.phase).toBe('terminal');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.state).toBe('ready');
-    expect(task.body.escalated).toBe(true);
-    expect(task.body.drive).toBe('hitl');
+    expect(task.body.state).toBe('escalated');
+    expect(task.body.escalationReason).toContain('escalated to human');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const escalateFacts = (await sqlite.execute({ sql: "SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'", args: [runId] })).rows[0] as unknown as {n: number };
@@ -344,7 +343,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness(), { dataDir });
     const taskAgain = await server.api('GET', `/api/tasks/${taskId}`);
     expect(taskAgain.body.state).toBe('ready');
-    expect(taskAgain.body.escalated).toBe(true);
+    expect(taskAgain.body.state).toBe('escalated');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const escalateFactsAgain = (await sqlite.execute({ sql: "SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'", args: [runId] })).rows[0] as unknown as {n: number };
@@ -356,7 +355,7 @@ describe('boot crash-recovery', () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
@@ -382,8 +381,8 @@ describe('boot crash-recovery', () => {
     expect(run.body.state).toBe('failed');
     expect(run.body.phase).toBe('terminal');
     const task = await server.api('GET', `/api/tasks/${taskId}`);
-    expect(task.body.escalated).toBe(true);
-    expect(task.body.drive).toBe('hitl');
+    expect(task.body.state).toBe('escalated');
+    expect(task.body.escalationReason).toContain('escalated to human');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const escalateFacts = (await sqlite.execute({ sql: "SELECT COUNT(*) as n FROM run_facts WHERE run_id = ? AND type = 'escalate'", args: [runId] })).rows[0] as unknown as {n: number };
@@ -404,7 +403,7 @@ describe('boot crash-recovery', () => {
       });
       const taskId = created.body.id as number;
       const started = await server.api('POST', `/api/tasks/${taskId}/run`);
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
       const runId = started.body.id as number;
       const dataDir = server.dataDir;
       const key = workContextKey({ isolationMode: 'direct', workingDir: repo });
@@ -442,7 +441,7 @@ describe('boot crash-recovery', () => {
       });
       const taskId2 = created2.body.id as number;
       const started2 = await server.api('POST', `/api/tasks/${taskId2}/run`);
-      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId2}`)).body.state === 'awaiting-review');
+      await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId2}`)).body.state === 'done');
       const runId2 = started2.body.id as number;
 
       await server.app.close();
@@ -488,7 +487,7 @@ describe('boot crash-recovery', () => {
   }> {
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const dataDir = server.dataDir;
     const runId = started.body.id as number;
     const taskId = created.body.id as number;

@@ -42,7 +42,7 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
   it('still refuses a Workspace with a running Task (409/conflict)', async () => {
     const ws = (await workspaces.list())[0]!;
     const task = await tasks.create({ prompt: 'busy' });
-    await tasks.setState(task.id, 'running');
+    await tasks.setState(task.id, 'working');
 
     await expect(workspaces.delete(ws.id)).rejects.toThrowError(/running task/);
     expect(await workspaces.list()).toHaveLength(1); // untouched

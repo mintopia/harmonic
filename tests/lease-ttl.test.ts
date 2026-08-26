@@ -13,9 +13,6 @@ import {
  */
 describe('lease-ttl (issue #122)', () => {
   describe('leaseTtlMsForPhase', () => {
-    it('review gets the review budget', () => {
-      expect(leaseTtlMsForPhase('review')).toBe(DEFAULT_LEASE_TTL.reviewMs);
-    });
 
     it('an execution phase gets the execution budget', () => {
       expect(leaseTtlMsForPhase('executing')).toBe(DEFAULT_LEASE_TTL.executionMs);
@@ -33,10 +30,11 @@ describe('lease-ttl (issue #122)', () => {
       expect(leaseTtlMsForPhase(undefined)).toBe(DEFAULT_LEASE_TTL.executionMs);
     });
 
-    it('respects a custom LeaseTtl override', () => {
-      const ttl = { executionMs: 111, reviewMs: 222 };
+    it('respects a custom LeaseTtl override, for every phase (no phase parks a lease awaiting a human)', () => {
+      const ttl = { executionMs: 111 };
       expect(leaseTtlMsForPhase('executing', ttl)).toBe(111);
-      expect(leaseTtlMsForPhase('review', ttl)).toBe(222);
+      expect(leaseTtlMsForPhase('landing', ttl)).toBe(111);
+      expect(leaseTtlMsForPhase('terminal', ttl)).toBe(111);
     });
   });
 
@@ -44,12 +42,12 @@ describe('lease-ttl (issue #122)', () => {
     it('is now + the phase budget', () => {
       const now = 1_000_000;
       expect(leaseExpiryFor('executing', now)).toBe(now + DEFAULT_LEASE_TTL.executionMs);
-      expect(leaseExpiryFor('review', now)).toBe(now + DEFAULT_LEASE_TTL.reviewMs);
+      expect(leaseExpiryFor('landing', now)).toBe(now + DEFAULT_LEASE_TTL.executionMs);
     });
 
     it('respects a custom LeaseTtl override', () => {
       const now = 1_000_000;
-      const ttl = { executionMs: 111, reviewMs: 222 };
+      const ttl = { executionMs: 111 };
       expect(leaseExpiryFor('executing', now, ttl)).toBe(now + 111);
     });
   });

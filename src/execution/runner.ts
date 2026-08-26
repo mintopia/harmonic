@@ -689,11 +689,21 @@ export class Runner {
       } catch (err) {
         logger.error(`task ${task.id} close: session retirement failed: ${String(err)}`);
       }
+      // The worktree goes now, not on the retirement drain's cadence: the
+      // branch it checks out cannot be deleted while it exists.
+      const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
+      if (session?.worktreePath && session.worktreeRepoDir && existsSync(session.worktreePath)) {
+        await Git.removeWorktree(session.worktreeRepoDir, session.worktreePath).catch((err) =>
+          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`),
+        );
+      }
       if (run.branch && !isDirectRef(run.branch) && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
         await Git.deleteBranch(task.workingDir, run.branch).catch((err) =>
           logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`),
         );
       }
+      // A settled-Run event drives the retirement drain (which retires the Session row) and a scheduler refill.
+      this.events.onRunFinished?.(await this.runStore.get(run.id));
     }
     if (this.autoDrive && !(await this.autoDrive.closeTicket(task, `Closed by a Harmonic operator without landing (task ${task.id}).`))) {
       logger.error(`task ${task.id} close: tracker issue could not be closed`);
@@ -2199,11 +2209,15 @@ export class Runner {
       }
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
-      await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
       if (attemptNumber - budgetBase >= maxAttempts) {
+        // The exhausted Attempt is recorded `escalated` (not `failed`): it is the
+        // timeline row the escalation surface hangs off, and the number the
+        // budget restarts from after a Reject with guidance.
+        await this.attempts.finish(attempt.id, 'escalated', Date.now(), feedback);
         await this.settleEscalated(task, await this.runStore.get(run.id), `attempt ${attemptNumber - budgetBase} of ${maxAttempts} failed: ${outcome.reason}`, {});
         return;
       }
+      await this.attempts.finish(attempt.id, 'failed', Date.now(), feedback);
       attemptNumber += 1;
       // The Run is the durable owner of the current unified Attempt. Persist
       // this before driving the corrective turn: timeline rows, settling, and

@@ -145,7 +145,7 @@ describe('cost surfaces (API)', () => {
     return startServer(overrides);
   };
 
-  const runToDone = async (workingDir: string, expectState = 'awaiting-review') => {
+  const runToDone = async (workingDir: string, expectState = 'done') => {
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({}), workingDir });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === expectState);
@@ -203,7 +203,7 @@ describe('cost surfaces (API)', () => {
     await server.api('POST', `/api/tasks/${taskId}/reject`);
     await server.api('POST', `/api/tasks/${taskId}/requeue`);
     await server.api('POST', `/api/tasks/${taskId}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
     const agg = (await server.api('GET', `/api/tasks/${taskId}/usage`)).body;
     expect(agg.runCount).toBe(2);
@@ -250,7 +250,7 @@ describe('cost surfaces (API)', () => {
       workingDir: workDir,
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
     const before = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
     expect(before.usage.models).toEqual({});
     expect(before.cost).toEqual({ totalUsd: null, byModel: {}, incomplete: true });

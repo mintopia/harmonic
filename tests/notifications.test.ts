@@ -64,7 +64,7 @@ describe('notification channels', () => {
   let server: TestServer;
 
   beforeAll(async () => {
-    server = await startServer(stubHarness());
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 });
   });
   afterAll(async () => {
     await server.close();
@@ -77,14 +77,14 @@ describe('notification channels', () => {
     return created.body.id;
   };
 
-  it('creates channels with default subscriptions (awaiting-review + failed), edits and deletes them', async () => {
+  it('creates channels with the default subscription (escalated — the one moment a human is needed), edits and deletes them', async () => {
     const created = await server.api('POST', '/api/channels', {
       name: 'hooks',
       type: 'webhook',
       config: { url: 'http://127.0.0.1:1/unused' },
     });
     expect(created.status).toBe(201);
-    expect(created.body.events).toEqual(['task.awaiting-review', 'task.failed']);
+    expect(created.body.events).toEqual(['task.escalated']);
 
     const patched = await server.api('PATCH', `/api/channels/${created.body.id}`, {
       events: ['task.created', 'queue.idle'],
@@ -121,21 +121,21 @@ describe('notification channels', () => {
       name: 'sig',
       type: 'webhook',
       config: { url: `${sink.url}/hook`, secret: 'shh' },
-      // default events: awaiting-review + failed
+      // default events: escalated
     });
 
-    const taskId = await runToState('notify me', 'awaiting-review');
+    const taskId = await runToState(JSON.stringify({ exit: 'crash-before-response' }), 'escalated');
 
     await waitFor(async () => sink.requests.length > 0);
     const delivery = sink.requests[0]!;
     const payload = JSON.parse(delivery.body);
-    expect(payload.event).toBe('task.awaiting-review');
+    expect(payload.event).toBe('task.escalated');
     expect(payload.task.id).toBe(taskId);
     expect(typeof payload.timestamp).toBe('number');
 
     const expected = 'sha256=' + createHmac('sha256', 'shh').update(delivery.body).digest('hex');
     expect(delivery.headers['x-harmonic-signature']).toBe(expected);
-    expect(delivery.headers['x-harmonic-event']).toBe('task.awaiting-review');
+    expect(delivery.headers['x-harmonic-event']).toBe('task.escalated');
 
     // task.created is not subscribed: creating another task sends nothing new
     // for it (the accept below proves deliveries still flow afterwards).
@@ -163,7 +163,7 @@ describe('notification channels', () => {
       config: { url: `${sink.url}/slack` },
     });
 
-    await runToState('chat ping', 'awaiting-review');
+    await runToState(JSON.stringify({ exit: 'crash-before-response' }), 'escalated');
     await waitFor(async () => sink.requests.length >= 2);
 
     const byPath = Object.fromEntries(sink.requests.map((r) => [r.path, JSON.parse(r.body)]));
@@ -202,8 +202,8 @@ describe('notification channels', () => {
 
     await server.api('POST', `/api/tasks/${task.body.id}/run`);
     await server.api('POST', `/api/tasks/${other.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${task.body.id}`)).body.state === 'awaiting-review');
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${other.body.id}`)).body.state === 'awaiting-review');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${task.body.id}`)).body.state === 'done');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${other.body.id}`)).body.state === 'done');
     await waitFor(async () => sink.requests.length > 0);
     await new Promise((r) => setTimeout(r, 100));
 
@@ -251,7 +251,7 @@ describe('notification channels', () => {
       events: ['queue.idle'],
     });
 
-    await runToState('drain me', 'awaiting-review');
+    await runToState(JSON.stringify({ exit: 'crash-before-response' }), 'escalated');
     await waitFor(async () => sink.requests.some((r) => JSON.parse(r.body).event === 'queue.idle'));
 
     await server.api('DELETE', `/api/channels/${channel.body.id}`);

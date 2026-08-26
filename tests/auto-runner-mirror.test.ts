@@ -11,6 +11,7 @@ import { repoKey } from '../src/execution/repo-lock.js';
 import type { RunStore } from '../src/domain/runs.js';
 import type { Runner } from '../src/execution/runner.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
+import type { TrackerFacts } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
 
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
@@ -18,10 +19,21 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
   prompt: `ticket ${ref}`,
   workflow: 'implement',
   wayfinderType: null,
-  drive: 'afk',
   mapRef: null,
   closed: false,
   ...over,
+});
+
+/** Persisted tracker facts for a ticket a human must drive: no `ready-for-agent` label (ADR-0041). */
+const humanOnlyFacts = (ref: number): TrackerFacts => ({
+  state: 'open',
+  parent: null,
+  blockedBy: [],
+  labels: ['ready-for-human'],
+  title: `ticket ${ref}`,
+  body: '',
+  url: `https://example.test/${ref}`,
+  createdAt: '2026-08-01T00:00:00Z',
 });
 
 describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (issue #32)', () => {
@@ -47,10 +59,10 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('picks drive≠hitl regardless of assignment, flips ready→running before claim, and spawns through a failed claim', async () => {
+  it('picks agent-workable tickets regardless of assignment, flips ready→working before claim, and spawns through a failed claim', async () => {
     const native = await tasks.create({ prompt: 'native', state: 'ready' });
     const afk = await tasks.upsertMirrored(mirroredAfk(42));
-    const hitl = await tasks.upsertMirrored(mirroredAfk(43, { drive: 'hitl' }));
+    const hitl = await tasks.upsertMirrored(mirroredAfk(43, { facts: humanOnlyFacts(43) }));
     const assigned = await tasks.upsertMirrored(mirroredAfk(44));
     const failedClaim = await tasks.upsertMirrored(mirroredAfk(45));
 
@@ -67,7 +79,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
     const runner = {
       start: async (id: number) => {
         started.push({ id, via: 'start' });
-        await tasks.setState(id, 'running'); // native path flips inside the runner
+        await tasks.setState(id, 'working'); // native path flips inside the runner
       },
       launchClaimed: (id: number) => {
         started.push({ id, via: 'launchClaimed' });
@@ -144,7 +156,7 @@ describe('AutoRunner — self-scheduling from DB (issue #236)', () => {
     try {
       const claims = await Promise.all([tasks.claimReady(task.id), secondTasks.claimReady(task.id)]);
       expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1);
-      expect((await tasks.get(task.id)).state).toBe('running');
+      expect((await tasks.get(task.id)).state).toBe('working');
     } finally {
       await secondDb.close();
     }
@@ -184,7 +196,7 @@ describe('AutoRunner — parallel-Epic base pick gate (issue #159)', () => {
     const runner = {
       start: async (id: number) => {
         started.push(id);
-        await tasks.setState(id, 'running');
+        await tasks.setState(id, 'working');
       },
       launchClaimed: (id: number) => started.push(id),
     } as unknown as Runner;
@@ -296,18 +308,19 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     // The next scheduler pass still permits tracker reconciliation to re-cut
     // the branch. An absent branch alone is not proof that it cannot recover.
     autoRunner.poke();
-    await vi.waitFor(async () => expect((await tasks.get(task.id)).escalated).toBe(false));
+    await vi.waitFor(async () => expect((await tasks.get(task.id)).state).not.toBe('escalated'));
 
     now = 100;
     autoRunner.poke();
-    // The escalate DB write lands mid-pass; the terminal 'hitl, escalated to
-    // human' reason is only recorded by the fill loop's SECOND refresh pass.
-    // Poll DB state and skip reason together so the assertion can't observe
-    // the window between them (the transient 'integration branch missing,
-    // escalated to human' reason, or a mid-rebuild empty map).
+    // The escalate is trigger 3 (permanent infrastructure failure): the ticket
+    // leaves the ready frontier with the reason recorded on it, so the
+    // scheduler no longer has a skip reason to keep for it.
     await vi.waitFor(async () => {
-      expect(await tasks.get(task.id)).toMatchObject({ state: 'ready', drive: 'hitl', escalated: true });
-      expect(autoRunner.skipReasonFor(task.id)).toBe('hitl, escalated to human');
+      expect(await tasks.get(task.id)).toMatchObject({
+        state: 'escalated',
+        escalationReason: expect.stringContaining('integration branch epic/207 missing'),
+      });
+      expect(autoRunner.skipReasonFor(task.id)).toBeUndefined();
     }, { timeout: 5000 });
     expect(started).toEqual([]);
   });
@@ -338,18 +351,17 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     autoRunner.poke();
     await vi.waitFor(() => expect(started).toEqual([task.id]));
     expect(autoRunner.skipReasonFor(task.id)).toBeUndefined();
-    expect((await tasks.get(task.id)).escalated).toBe(false);
+    expect((await tasks.get(task.id)).state).not.toBe('escalated');
   });
 });
 
 /**
  * The Work Context House Rule pick predicate (ADR-0022, issue #120): the
- * Auto-Runner skips a ready afk Task whose direct-mode Work Context is already
- * occupied by a running or awaiting-review afk Run, leaving it `ready` with a
- * legible skip-reason. The hard lease (#119) stays the authoritative gate; this
- * predicate exists to avoid pick churn and produce a diagnosable queue. It reads
- * occupancy from Task state (not the lease store) because the lease is released
- * the moment a Run settles into awaiting-review (seam for #114).
+ * Auto-Runner skips a ready Task whose direct-mode Work Context is already
+ * occupied by a working Run, leaving it `ready` with a legible skip-reason. The
+ * hard lease (#119) stays the authoritative gate; this predicate exists to
+ * avoid pick churn and produce a diagnosable queue. It reads occupancy from
+ * Task state (not the lease store) so the two can never disagree.
  */
 describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR-0022)', () => {
   let dir: string;
@@ -373,7 +385,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     const runner = {
       start: async (id: number) => {
         started.push(id);
-        await tasks.setState(id, 'running'); // native path flips inside the runner
+        await tasks.setState(id, 'working'); // native path flips inside the runner
       },
       launchClaimed: (id: number) => started.push(id),
     } as unknown as Runner;
@@ -393,7 +405,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
   it('skips a ready afk Task whose direct Work Context holds a running afk Run; admits a distinct-context Task, with a reason naming the occupant', async () => {
     const busy = freshDir();
     const occupant = await directTask(busy, 'occupant');
-    await tasks.setState(occupant.id, 'running');
+    await tasks.setState(occupant.id, 'working');
     const blocked = await directTask(busy, 'same context'); // shares the occupied dir
     const free = await directTask(freshDir(), 'other context'); // distinct dir → admits
 
@@ -409,7 +421,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
   it('reports only open blocker edges in a ready task dependency diagnostic', async () => {
     const completedBlocker = await directTask(freshDir(), 'completed blocker');
-    await tasks.setState(completedBlocker.id, 'completed');
+    await tasks.setState(completedBlocker.id, 'done');
     const openBlocker = await tasks.create({ prompt: 'open blocker', workingDir: freshDir() });
     const dependent = await directTask(freshDir(), 'dependent');
     await tasks.addDependency(dependent.id, completedBlocker.id);
@@ -421,26 +433,25 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     await vi.waitFor(() => expect(ar.skipReasonFor(dependent.id)).toBe(`blocked-by #${openBlocker.id}`));
   });
 
-  it('still skips when the occupying Run sits in awaiting-review — the lease is gone but the work is not', async () => {
+  it('an escalated occupant no longer holds the context — its Run settled and the branch is evidence, not live work (ADR-0041)', async () => {
     const busy = freshDir();
-    const reviewing = await directTask(busy, 'awaiting review');
-    await tasks.setState(reviewing.id, 'awaiting-review'); // hard lease already released here
-    const blocked = await directTask(busy, 'same context');
-    const free = await directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
+    const escalated = await directTask(busy, 'escalated');
+    await tasks.escalate(escalated.id, 'escalated to human: attempt 2 of 2 failed'); // its Run settled; lease released
+    const next = await directTask(busy, 'same context');
 
     const { ar, started } = build();
     ar.poke();
-    await vi.waitFor(() => expect(started).toContain(free.id));
+    await vi.waitFor(() => expect(started).toContain(next.id));
 
-    expect(started).not.toContain(blocked.id);
-    expect((await tasks.get(blocked.id)).state).toBe('ready');
-    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${reviewing.id} (awaiting-review)`);
+    expect(started).not.toContain(escalated.id);
+    expect((await tasks.get(escalated.id)).state).toBe('escalated');
+    expect(ar.skipReasonFor(next.id)).toBeUndefined();
   });
 
   it('exempts worktree-mode Tasks — a unique key per Run means they parallelize even off a shared base dir', async () => {
     const shared = freshDir();
     const occupant = await tasks.create({ prompt: 'wt occupant', workingDir: shared, isolationMode: 'worktree' });
-    await tasks.setState(occupant.id, 'running');
+    await tasks.setState(occupant.id, 'working');
     const candidate = await tasks.create({ prompt: 'wt candidate', workingDir: shared, isolationMode: 'worktree' });
 
     const { ar, started } = build();
@@ -452,7 +463,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
   it('leaves priority-then-FIFO ordering intact among the other ready Tasks while one is context-blocked', async () => {
     const busy = freshDir();
     const occupant = await directTask(busy, 'occupant');
-    await tasks.setState(occupant.id, 'running');
+    await tasks.setState(occupant.id, 'working');
     // A high-priority Task sharing the occupied context: it must be skipped
     // despite its priority, and skipping it must not perturb the others' order.
     const blocked = await tasks.create({ prompt: 'blocked high', workingDir: busy, isolationMode: 'direct', priority: 'high' });
@@ -476,7 +487,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
   it('waitingSince (issue #125): starts a clock on the first House-Rule-blocked pass and clears it once unblocked', async () => {
     const busy = freshDir();
     const occupant = await directTask(busy, 'occupant');
-    await tasks.setState(occupant.id, 'running');
+    await tasks.setState(occupant.id, 'working');
     const blocked = await directTask(busy, 'same context');
     const free = await directTask(freshDir(), 'other context'); // barrier: proves the fill pass ran
 
@@ -496,7 +507,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
     // The occupant frees the context — a later pass admits `blocked`, and its
     // clock is cleared when the scheduler reason is gone.
-    await tasks.setState(occupant.id, 'completed');
+    await tasks.setState(occupant.id, 'done');
     ar.poke();
     await vi.waitFor(() => expect(started).toContain(blocked.id));
     expect(ar.waitingSince(blocked.id)).toBeUndefined();

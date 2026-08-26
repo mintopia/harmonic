@@ -45,7 +45,7 @@ describe('task authoring', () => {
     ]);
 
     expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1);
-    expect((await server.app.ctx.tasks.get(created.body.id)).state).toBe('running');
+    expect((await server.app.ctx.tasks.get(created.body.id)).state).toBe('working');
   });
 
   it('saves a draft, allows editing while draft, and promotes it to ready', async () => {
@@ -140,7 +140,7 @@ describe('task authoring', () => {
 
   it('refuses to delete a running task with 409, leaving it intact (issue #162)', async () => {
     const created = await server.api('POST', '/api/tasks', { prompt: 'Busy' });
-    await server.app.ctx.tasks.setState(created.body.id, 'running');
+    await server.app.ctx.tasks.setState(created.body.id, 'working');
 
     const deleted = await server.api('DELETE', `/api/tasks/${created.body.id}`);
     expect(deleted.status).toBe(409);
@@ -161,7 +161,6 @@ describe('task authoring', () => {
         prompt: 'mirrored issue',
         workflow: 'implement',
         wayfinderType: null,
-        drive: 'afk',
         mapRef: null,
         closed: false,
       },
@@ -337,7 +336,7 @@ describe('task skipReason (issue #171)', () => {
 
   it('reports the House-Rule skip reason on a ready Task blocked by an occupied direct-mode Work Context', async () => {
     const occupant = await server.api('POST', '/api/tasks', { prompt: 'occupant' });
-    await server.app.ctx.tasks.setState(occupant.body.id, 'running');
+    await server.app.ctx.tasks.setState(occupant.body.id, 'working');
 
     const blocked = await server.api('POST', '/api/tasks', {
       prompt: 'blocked, same context',

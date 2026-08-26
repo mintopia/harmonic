@@ -111,7 +111,6 @@ describe('agent critic end-to-end (issue #164)', () => {
       isolationMode: 'worktree',
       verificationCommand: null,
       verificationCritic: null,
-      verificationAutoAccept: null,
     });
   });
 
@@ -140,12 +139,12 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('escalated');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('review');
+    expect(run.phase).toBe('terminal');
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC2: a critic attempt persisted during a real Run, at the verified branch head.
@@ -170,13 +169,11 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
     expect(run.finishedAt).not.toBeNull();
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -197,18 +194,14 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('AC3: an inconclusive critic consumes the same bounded Attempt loop', async () => {
     criticResult = { verdict: 'inconclusive', summary: 'cannot tell from the diff alone' };
     await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
-    const { taskId, runId } = await createAndRun();
+    const { runId } = await createAndRun();
 
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
-
-    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -228,12 +221,10 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.phase).not.toBe('landing');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
-    expect(task.state).not.toBe('awaiting-review');
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
 
     // Both verifiers run on each attempt. The critic failure is carried into
     // attempt 2, then the cap escalates without creating another ticket.
@@ -257,12 +248,12 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('escalated');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('review');
+    expect(run.phase).toBe('terminal');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -280,7 +271,7 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? true : undefined;
+      return body.state === 'done' ? true : undefined;
     });
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
@@ -338,7 +329,6 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('review');
     expect(run.candidateOid).toBeNull();
 
     const rows = await attempts(runId);
@@ -363,9 +353,9 @@ describe('agent critic end-to-end (issue #164)', () => {
 
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('escalated');
     expect(lastCriticHarnessId).toBe('codex');
   });
 });

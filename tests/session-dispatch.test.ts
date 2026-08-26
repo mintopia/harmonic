@@ -46,9 +46,9 @@ describe('dispatching a Run persists a durable Session (issue #141)', () => {
     // shape — parked non-terminal in phase:'review' at agent-finish. ---
     const task = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
-      return body.state === 'awaiting-review' ? body : undefined;
+      return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('awaiting-review');
+    expect(task.state).toBe('escalated');
     const runApi = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(runApi).toMatchObject({ taskId, attempt: 1, state: 'running', phase: 'review', stopReason: 'end_turn' });
 

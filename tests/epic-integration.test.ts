@@ -202,7 +202,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     const tickets = epicTickets();
     await mscan(tickets);
     const m11 = (await tasks.list()).find((t) => t.trackerRef === 11)!;
-    await tasks.setState(m11.id, 'running');
+    await tasks.setState(m11.id, 'working');
     // A fresh post-mirror snapshot carries the live 'running' state, as the poll
     // passes it (upsertMirrored keeps an already-spawned member running).
     const mirrored = await tasks.list();
@@ -350,7 +350,7 @@ describe('reduceMemberState (issue #161)', () => {
   });
   it('maps everything else (and a missing Task) to pending', () => {
     expect(reduceMemberState(row({ state: 'running' }))).toBe('pending');
-    expect(reduceMemberState(row({ state: 'awaiting-review' }))).toBe('pending');
+    expect(reduceMemberState(row({ state: 'working' }))).toBe('pending');
     expect(reduceMemberState(undefined)).toBe('pending');
   });
 });
@@ -396,8 +396,8 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachLandTrigger(land);
     // Both members have landed onto the integration branch (Task state completed).
-    await tasks.setState(await memberTaskId(11), 'completed');
-    await tasks.setState(await memberTaskId(12), 'completed');
+    await tasks.setState(await memberTaskId(11), 'done');
+    await tasks.setState(await memberTaskId(12), 'done');
 
     await coord.reconcile(tickets, mirrored);
 
@@ -411,8 +411,8 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
     const land = new FakeLand();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachLandTrigger(land);
-    await tasks.setState(await memberTaskId(11), 'completed');
-    await tasks.escalate(await memberTaskId(12)); // a member that cannot land
+    await tasks.setState(await memberTaskId(11), 'done');
+    await tasks.escalate(await memberTaskId(12), 'escalated to human: attempt 2 of 2 failed'); // a member that cannot land
 
     await coord.reconcile(tickets, mirrored);
 
@@ -427,8 +427,8 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
     const land = new FakeLand();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
     coord.attachLandTrigger(land);
-    await tasks.setState(await memberTaskId(11), 'completed');
-    await tasks.setState(await memberTaskId(12), 'completed');
+    await tasks.setState(await memberTaskId(11), 'done');
+    await tasks.setState(await memberTaskId(12), 'done');
 
     await coord.reconcile(tickets, mirrored);
     expect(land.calls).toHaveLength(1); // the empty-ready early return no longer fires with a trigger attached

@@ -22,7 +22,6 @@ function run(overrides: Partial<RunRow> & Pick<RunRow, 'id' | 'taskId'>): RunRow
     attempt: 1,
     state: 'running',
     phase: 'executing',
-    reviewDeadline: null,
     reason: null,
     stopReason: null,
     sessionId: null,
@@ -39,9 +38,6 @@ function run(overrides: Partial<RunRow> & Pick<RunRow, 'id' | 'taskId'>): RunRow
     liveUsage: null,
     guardrailConfig: null,
     priceTable: null,
-    review: null,
-    reviewFeedback: null,
-    reviewedAt: null,
     startedAt: 0,
     finishedAt: null,
     ...overrides,
@@ -57,16 +53,15 @@ function task(overrides: Partial<TaskRow> & Pick<TaskRow, 'id'>): TaskRow {
     isolationMode: 'direct',
     priority: 'normal',
     baseBranch: null,
-    state: 'running',
+    state: 'working',
     workspaceId: 1,
     feedback: null,
     continuationChoice: null,
+    escalationReason: null,
     origin: 'native',
     trackerRef: null,
     workflow: null,
     wayfinderType: null,
-    drive: 'afk',
-    escalated: false,
     mapRef: null,
     trackerState: null,
     trackerParent: null,
@@ -91,7 +86,7 @@ const DIRECT_KEY = workContextKey({ isolationMode: 'direct', workingDir: '/tmp/r
  */
 describe('buildLeaseDiagnostics (issue #125)', () => {
   it('joins a held lease to its owner Run/Task and reports its waiters', () => {
-    const ownerTask = task({ id: 1, workingDir: '/tmp/repo', state: 'running' });
+    const ownerTask = task({ id: 1, workingDir: '/tmp/repo', state: 'working' });
     const ownerRun = run({ id: 10, taskId: 1 });
     const waiter = task({ id: 2, workingDir: '/tmp/repo', state: 'ready' });
     const l = lease({ key: DIRECT_KEY, ownerRunId: 10 });

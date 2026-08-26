@@ -1,0 +1,162 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
+import { RunFactStore } from '../src/domain/run-facts.js';
+import { AttemptStore } from '../src/domain/attempts.js';
+
+/**
+ * ADR-0041's one human surface, end to end over the stub harness in direct
+ * mode: a passing native Run lands to `done` with no review gate; an exhausted
+ * attempt budget escalates; an escalated ticket exposes exactly Accept /
+ * Reject with guidance / Close, and nothing else moves it.
+ */
+describe('escalation: the three actions (direct mode)', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    // One attempt: the first failure escalates, so a scripted crash is enough.
+    server = await startServer({ ...stubHarness(), maxAttempts: 1 });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  const timeline = async (taskId: number) =>
+    (await server.api('GET', `/api/tasks/${taskId}/attempts`)).body.attempts as Array<{
+      number: number;
+      state: string;
+      feedback: string | null;
+    }>;
+
+  async function runToDone(prompt = 'do the thing'): Promise<number> {
+    const created = await server.api('POST', '/api/tasks', { prompt });
+    await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done');
+    return created.body.id;
+  }
+
+  /** A native ticket whose only attempt crashes: escalated, no verified head. */
+  async function runToEscalated(scenario: Record<string, unknown> = {}): Promise<number> {
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ exit: 'crash-before-response', ...scenario }),
+    });
+    await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
+    return created.body.id;
+  }
+
+  it('a passing native run lands to done with no human gate; done is terminal', async () => {
+    const taskId = await runToDone();
+    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+    expect(task.state).toBe('done');
+    expect(task.escalationReason).toBeNull();
+
+    // Terminal: no cancel, and the escalation actions do not apply.
+    expect((await server.api('POST', `/api/tasks/${taskId}/cancel`)).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'x' })).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
+
+    // Harmonic landed it itself: the default land fact, never the operator's.
+    const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
+    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
+    const facts = await new RunFactStore(server.app.ctx.asyncDb).list(run.id);
+    expect(facts.some((f) => f.type === 'agent-finish/unresolved')).toBe(true);
+    expect(facts.some((f) => f.type === 'operator-accept')).toBe(false);
+  });
+
+  it('an exhausted attempt budget escalates with the reason recorded on the ticket and the attempt', async () => {
+    const taskId = await runToEscalated();
+    const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
+    expect(task.state).toBe('escalated');
+    expect(task.escalationReason).toMatch(/^escalated to human: attempt 1 of 1 failed/);
+
+    const attempts = await timeline(taskId);
+    expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
+    const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
+    expect(run.state).toBe('failed');
+    expect(run.reason).toContain('escalated to human');
+  });
+
+  it('Accept refuses (409) when the escalated ticket has no verified branch head to land', async () => {
+    const taskId = await runToEscalated();
+    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
+    expect(accepted.status).toBe(409);
+    expect(accepted.body.error.code).toBe('conflict');
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
+  });
+
+  it('Reject with guidance resumes the loop: the guidance is feedback, the budget resets, attempt 2 runs and lands', async () => {
+    const taskId = await runToEscalated();
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
+      guidance: 'Do not crash; write the CSV header first.',
+    });
+    expect(rejected.status).toBe(200);
+    // The loop resumed on the spot: a fresh Run is working (or, the scripted
+    // crash being instant, already exhausted the reset budget).
+    expect(['working', 'escalated']).toContain(rejected.body.state);
+
+    // The guidance is recorded on the escalated Attempt AND baked into the next
+    // prompt (a native ticket owns its prompt). Attempt 2 is the budget's fresh
+    // start: with maxAttempts 1 it would otherwise have escalated on entry.
+    const attemptsAfter = await waitFor(async () => {
+      const rows = await timeline(taskId);
+      return rows.length === 2 ? rows : undefined;
+    });
+    expect(attemptsAfter[0]).toMatchObject({ number: 1, state: 'escalated', feedback: 'Do not crash; write the CSV header first.' });
+    const run2 = await waitFor(async () => {
+      const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+      return runs.length === 2 ? runs[1] : undefined;
+    });
+    expect(run2.attempt).toBe(2);
+    expect(run2.prompt).toContain('Do not crash; write the CSV header first.');
+    expect(run2.prompt).toContain('crash-before-response'); // the original prompt is kept
+
+    // The second Run inherits the crashing scenario, so it exhausts the reset
+    // budget too — one attempt, escalated again, counted from the reset.
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).toMatch(/attempt 1 of 1 failed/);
+    expect((await timeline(taskId)).map((attempt) => attempt.state)).toEqual(['escalated', 'escalated']);
+  });
+
+  it('Reject without guidance is a validation error and changes nothing', async () => {
+    const taskId = await runToEscalated();
+    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: '   ' });
+    expect(rejected.status).toBe(400);
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
+  });
+
+  it('Close cancels the ticket and clears the escalation reason', async () => {
+    const taskId = await runToEscalated();
+    const closed = await server.api('POST', `/api/tasks/${taskId}/close`);
+    expect(closed.status).toBe(200);
+    expect(closed.body).toMatchObject({ state: 'cancelled', escalationReason: null });
+    expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
+    // Uncancel returns it to the queue as any cancelled ticket.
+    expect((await server.api('POST', `/api/tasks/${taskId}/uncancel`)).body.state).toBe('ready');
+  });
+
+  it('the three actions apply to escalated tickets only', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'p' });
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/accept`)).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/reject`, { guidance: 'x' })).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/close`)).status).toBe(409);
+    // The retired surfaces are gone, not merely gated.
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/requeue`, {})).status).toBe(404);
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/unescalate`)).status).toBe(404);
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/adopt-review`)).status).toBe(404);
+    expect((await server.api('POST', `/api/tasks/${created.body.id}/note-to-critic`, { note: 'x' })).status).toBe(404);
+  });
+
+  it("the agent's escalate_task is a failed Attempt, not an escalation; only the exhausted cap escalates", async () => {
+    // A ticket whose agent asks for a human on its one permitted attempt.
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ mcpEscalate: { reason: 'need a decision on the schema' } }),
+    });
+    await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
+    const task = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+    expect(task.escalationReason).toMatch(/attempt 1 of 1 failed: the agent stopped and asked for a human: need a decision on the schema/);
+    const attempts = await new AttemptStore(server.app.ctx.asyncDb).listForTask(created.body.id);
+    expect(attempts[0]!.feedback).toContain('need a decision on the schema');
+  });
+});

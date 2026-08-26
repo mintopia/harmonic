@@ -94,10 +94,10 @@ describe('TaskService.delete (issue #162)', () => {
 
   it('throws invalid_state for a running task and leaves it intact', async () => {
     const task = await tasksSvc.create({ prompt: 'busy' });
-    await tasksSvc.setState(task.id, 'running');
+    await tasksSvc.setState(task.id, 'working');
 
     await expect(tasksSvc.delete(task.id)).rejects.toThrow(/running/);
-    expect((await tasksSvc.get(task.id)).state).toBe('running');
+    expect((await tasksSvc.get(task.id)).state).toBe('working');
   });
 
   it('writes a tracker_dismissals row and removes the task for a mirrored delete; a second delete throws not_found', async () => {
@@ -108,7 +108,6 @@ describe('TaskService.delete (issue #162)', () => {
         prompt: 'mirrored issue',
         workflow: 'implement',
         wayfinderType: null,
-        drive: 'afk',
         mapRef: null,
         closed: false,
       },

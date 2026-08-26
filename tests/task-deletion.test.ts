@@ -40,7 +40,7 @@ describe('decideTaskDeletion (issue #162)', () => {
     });
   });
 
-  it.each(['completed', 'failed', 'cancelled', 'draft', 'blocked', 'awaiting-review'])(
+  it.each(['done', 'escalated', 'cancelled', 'draft', 'ready'])(
     'allows a %s native task with no tombstone',
     (state) => {
       const decision = decideTaskDeletion({ ...base, state });

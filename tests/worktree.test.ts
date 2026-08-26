@@ -43,7 +43,7 @@ describe('worktree isolation mode', () => {
     });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
     await waitFor(
-      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'awaiting-review',
+      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
     );
     return { taskId: created.body.id, runId: started.body.id };
   }
@@ -122,40 +122,59 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
-  it('accepting a Run whose base moved since verification refuses (stale base) and returns the task to awaiting-review with the reason surfaced', async () => {
+  it('two Runs forking the same main and touching the same file: the first lands, the conflicting second never merges a tree nobody verified', async () => {
     const repo = makeRepo();
-    // Two tasks branch off the same main and touch the same file.
-    const a = await runWorktreeTask(repo, { 'conflict.txt': 'version A\n' });
-    const b = await runWorktreeTask(repo, { 'conflict.txt': 'version B\n' });
+    // Both fork the same main before either lands.
+    const startBoth = async () => {
+      const created = await Promise.all(
+        [{ 'conflict.txt': 'version A\n' }, { 'conflict.txt': 'version B\n' }].map((files) =>
+          server.api('POST', '/api/tasks', { prompt: JSON.stringify({ writeFiles: files }), workingDir: repo, isolationMode: 'worktree' }),
+        ),
+      );
+      const ids = created.map((c) => c.body.id as number);
+      for (const id of ids) expect((await server.api('POST', `/api/tasks/${id}/run`)).status).toBe(201);
+      return ids;
+    };
+    const [a, b] = await startBoth();
+    const settled = async (id: number) =>
+      waitFor(async () => {
+        const t = (await server.api('GET', `/api/tasks/${id}`)).body;
+        return t.state === 'done' || t.state === 'escalated' ? t : undefined;
+      });
+    const [ta, tb] = [await settled(a!), await settled(b!)];
 
-    expect((await server.api('POST', `/api/tasks/${a.taskId}/accept`)).status).toBe(200);
-
-    // b was verified against the pre-a main: landing it now would merge a tree
-    // nobody verified (here a conflicting one), so the accept refuses instead
-    // of merging (ADR-0041).
-    const stale = await server.api('POST', `/api/tasks/${b.taskId}/accept`);
-    expect(stale.status).toBe(409);
-    expect(stale.body.error.message).toContain("base 'main' advanced after verification");
-
-    const task = (await server.api('GET', `/api/tasks/${b.taskId}`)).body;
-    expect(task.state).toBe('awaiting-review');
-    // The refusal detail is stored on the run for the inbox.
-    const run = (await server.api('GET', `/api/runs/${b.runId}`)).body;
-    expect(run.reviewFeedback).toContain('advanced after verification');
-    // Nothing half-merged left behind.
+    // Exactly one landed (the other's stale landing re-entered Rebase, where
+    // the conflict is agent work the stub never resolves — a failed Attempt
+    // per try, escalated at the cap). Nothing half-merged, no merge commit.
+    const states = [ta.state, tb.state].sort();
+    expect(states).toEqual(['done', 'escalated']);
+    const escalated = ta.state === 'escalated' ? ta : tb;
+    expect(escalated.escalationReason).toMatch(/rebase|advanced after verification|branch head moved/);
     expect(git(repo, 'status', '--porcelain')).toBe('');
-    expect(git(repo, 'show', 'main:conflict.txt')).toBe('version A');
+    expect(git(repo, 'log', '--merges', 'main')).toBe('');
+    expect(['version A', 'version B']).toContain(git(repo, 'show', 'main:conflict.txt'));
+    expect(git(repo, 'rev-list', '--count', 'main')).toBe('2');
   });
 
-  it('reject leaves the branch untouched and the base branch unchanged', async () => {
+  it('Close on an escalated worktree ticket removes its branch and leaves the base branch unchanged', async () => {
     const repo = makeRepo();
-    const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'unwanted\n' });
-
-    const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, { feedback: 'nope' });
-    expect(rejected.status).toBe(200);
-
-    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    const mainBefore = git(repo, 'rev-parse', 'main');
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'feature.txt': 'unwanted\n' }, exit: 'crash-before-response' }),
+      workingDir: repo,
+      isolationMode: 'worktree',
+    });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
+    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
     expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
+
+    const closed = await server.api('POST', `/api/tasks/${created.body.id}/close`);
+    expect(closed.status).toBe(200);
+    expect(closed.body.state).toBe('cancelled');
+
+    await waitFor(async () => (git(repo, 'branch', '--list', run.branch) === '' ? true : undefined));
+    expect(git(repo, 'rev-parse', 'main')).toBe(mainBefore);
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
   });
 
@@ -217,14 +236,14 @@ describe('worktree isolation mode', () => {
     // gate — it is not `completed` until Accept lands it (issue #114).
     expect(runA.state).toBe('running');
     expect(runB.state).toBe('running');
-    expect(runA.phase).toBe('review');
-    expect(runB.phase).toBe('review');
+    expect(runA.phase).toBe('terminal');
+    expect(runB.phase).toBe('terminal');
     expect(runA.branch).not.toBe(runB.branch);
 
     const taskA = (await server.api('GET', `/api/tasks/${a.taskId}`)).body;
     const taskB = (await server.api('GET', `/api/tasks/${b.taskId}`)).body;
-    expect(taskA.state).toBe('awaiting-review');
-    expect(taskB.state).toBe('awaiting-review');
+    expect(taskA.state).toBe('escalated');
+    expect(taskB.state).toBe('escalated');
   });
 
   it('escalates instead of forking off "HEAD" when the base repo is detached and no base branch is set (issue #198)', async () => {
@@ -265,7 +284,7 @@ describe('worktree isolation mode', () => {
 
     // The Task is handed back to a human (escalated), not silently failed.
     const task = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
-    expect(task.escalated).toBe(true);
+    expect(task.state).toBe('escalated');
   });
 
   it('escalates the run when the working directory is not a git repo (permanent git-prep failure, issue #199)', async () => {
@@ -277,13 +296,12 @@ describe('worktree isolation mode', () => {
     });
     await server.api('POST', `/api/tasks/${created.body.id}/run`);
     // A non-git base can never succeed on retry (issue #199): the workspace-prep
-    // git command fatally fails, so the Task is escalated to a human (→ hitl)
-    // rather than settled a bare `failed` the scheduler would keep re-touching.
-    const task = await waitFor(async () => {
+    // git command fatally fails, so the Task is escalated to a human rather than
+    // re-queued for the scheduler to keep re-touching.
+    await waitFor(async () => {
       const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
-      return t.escalated ? t : undefined;
+      return t.state === 'escalated' ? t : undefined;
     });
-    expect(task.drive).toBe('hitl');
     const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
     // The Run itself still fails with a legible reason; only one is ever created.
     expect(runs.length).toBe(1);
@@ -311,8 +329,7 @@ describe('worktree isolation mode', () => {
       const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
       return t.state === 'ready' ? t : undefined;
     });
-    expect(task.escalated).toBe(false);
-    expect(task.drive).not.toBe('hitl');
+    expect(task.state).not.toBe('escalated');
 
     const runs = (await server.api('GET', `/api/tasks/${created.body.id}/runs`)).body.runs;
     expect(runs.length).toBe(1);

@@ -18,7 +18,6 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     state: RunState;
     startedAt: number;
     finishedAt: number | null;
-    review?: string | null;
     reason?: string | null;
     agentFinishTs?: number;
     /** Terminal disposition facts to append (type only; seq auto-assigned). */
@@ -33,7 +32,6 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
           state: r.state,
           startedAt: r.startedAt,
           finishedAt: r.finishedAt,
-          review: r.review ?? null,
           reason: r.reason ?? null,
         })
         .returning()
@@ -66,30 +64,28 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     taskId = task.body.id;
 
     // Two completed runs with measurable durations:
-    //  A — agent-finish fact at 4000, finished far later (parked in review/landing):
+    //  A — agent-finish fact at 4000, finished far later (a long landing):
     //      active duration is the fact span 3000, not the wall-clock 99000.
     await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 100000, agentFinishTs: 4000 });
     //  B — no fact: falls back to wall-clock finished − started = 5000.
     await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 6000 });
     // A genuine execution failure — counts toward the failure numerator and the
     // by-reason breakdown (its winning disposition is 'failed').
-    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, review: null, reason: 'boom', dispositions: ['failed'] });
-    // A review rejection settles to state:'failed' + review:'rejected' — must be
-    // EXCLUDED from the failed-only numerator (the ADR-0028 trap) and shown as a
-    // distinct rejected slice, never in the by-reason breakdown.
-    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, review: 'rejected' });
+    await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'boom', dispositions: ['failed'] });
+    // A cancelled Run is its own slice (ADR-0028): never in the failure
+    // numerator, never in the by-reason breakdown.
+    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: 2000, dispositions: ['operator-cancel'] });
   });
   afterAll(async () => {
     await server.close();
   });
 
-  it('failedRuns is failed-only — the review rejection is excluded', async () => {
+  it('failedRuns is failed-only — the cancelled Run is excluded', async () => {
     const { status, body } = await server.api('GET', '/api/stats?from=0');
     expect(status).toBe(200);
     expect(body.runCount).toBe(4);
-    // runsByState folds the rejection into failed (state alone can't tell them apart)…
-    expect(body.runsByState.failed).toBe(2);
-    // …but the honest numerator counts only the genuine failure.
+    expect(body.runsByState.failed).toBe(1);
+    expect(body.runsByState.cancelled).toBe(1);
     expect(body.failedRuns).toBe(1);
   });
 
@@ -99,10 +95,9 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     expect(body.durationMs).toEqual({ p50: 4000, p95: 4900 });
   });
 
-  it('splits review rejections out as their own slice, kept out of the failures', async () => {
+  it('no longer reports a review-rejected slice (the review gate is gone, ADR-0041)', async () => {
     const { body } = await server.api('GET', '/api/stats?from=0');
-    expect(body.rejectedRuns).toBe(1);
-    // The failed-only run keeps failing; the rejection is not in the breakdown.
+    expect(body).not.toHaveProperty('rejectedRuns');
     expect(body.failedRuns).toBe(1);
   });
 

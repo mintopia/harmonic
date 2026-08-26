@@ -41,7 +41,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(ws.autoRunnerEnabled).toBeNull();
     expect(ws.verificationCommand).toBeNull();
     expect(ws.verificationCritic).toBeNull();
-    expect(ws.verificationAutoAccept).toBeNull();
     expect(ws.guardrailBudget).toBeNull();
     expect(ws.guardrailProgress).toBeNull();
   });
@@ -145,7 +144,6 @@ describe('WorkspaceService override persistence (issue #64)', () => {
       verify: {
         commands: [],
         review: { enabled: true, prompt: 'global review', model: 'claude-opus-5' },
-        autoAccept: false,
       },
     } as any);
     expect(resolved.review).toEqual({ enabled: false });
@@ -160,16 +158,16 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     expect(JSON.parse(renamed.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] }); // untouched
   });
 
-  it('keeps a false verificationAutoAccept override distinct from inherit (null) (issue #165)', async () => {
+  it('keeps a false guardrailProgress override distinct from inherit (null) (issue #165)', async () => {
     const ws = (await workspaces.list())[0]!;
-    const on = await workspaces.update(ws.id, { verificationAutoAccept: true });
-    expect(on.verificationAutoAccept).toBe(true);
-    const off = await workspaces.update(ws.id, { verificationAutoAccept: false });
-    expect(off.verificationAutoAccept).toBe(false); // an explicit "off", not inherit
+    const on = await workspaces.update(ws.id, { guardrailProgress: true });
+    expect(on.guardrailProgress).toBe(true);
+    const off = await workspaces.update(ws.id, { guardrailProgress: false });
+    expect(off.guardrailProgress).toBe(false); // an explicit "off", not inherit
     const untouched = await workspaces.update(ws.id, { name: ws.name });
-    expect(untouched.verificationAutoAccept).toBe(false); // omitted ⇒ left alone
-    const cleared = await workspaces.update(ws.id, { verificationAutoAccept: null });
-    expect(cleared.verificationAutoAccept).toBeNull(); // back to inherit
+    expect(untouched.guardrailProgress).toBe(false); // omitted ⇒ left alone
+    const cleared = await workspaces.update(ws.id, { guardrailProgress: null });
+    expect(cleared.guardrailProgress).toBeNull(); // back to inherit
   });
 
   it('sets explicit guardrail overrides (issue #126)', async () => {
