@@ -213,7 +213,7 @@ describe('mirrorScan upsert', () => {
     expect(child.state).toBe('ready');
   });
 
-  it('close-blocker → blocker completed → dependent unblocks to ready', async () => {
+  it('close-blocker → blocker done → dependent unblocks to ready', async () => {
     // First poll: blocker open → dependent blocked.
     await mscan([
       ticket({ number: 1 }),
@@ -224,7 +224,7 @@ describe('mirrorScan upsert', () => {
       ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' }),
       ticket({ number: 2, blockedBy: [{ number: 1, title: 'x', state: 'closed' }] }),
     ]);
-    expect(results.map((t) => t.state)).toEqual(['completed', 'ready']);
+    expect(results.map((t) => t.state)).toEqual(['done', 'ready']);
   });
 
   it('a working Task whose own ticket closes stays working — never mirror-completed (issue #139, ADR-0041)', async () => {
@@ -413,7 +413,7 @@ describe('deriveMaps (query-time rollup)', () => {
     expect(maps).toHaveLength(1);
     expect(maps[0]).toMatchObject({ ref: 19, title: 'Wayfinder' });
     expect(maps[0]!.taskRefs.sort()).toEqual([30, 31]);
-    expect(maps[0]!.counts).toEqual({ ready: 1, completed: 1 });
+    expect(maps[0]!.counts).toEqual({ ready: 1, done: 1 });
     await asyncDb.close();
     rmSync(dir, { recursive: true, force: true });
   });

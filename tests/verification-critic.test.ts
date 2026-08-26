@@ -114,9 +114,13 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
   });
 
+  // A landed run merges its file into main, so a repeated identical write would
+  // leave the next stub agent nothing to commit. A unique file per run keeps
+  // every run's commit real.
+  let implSeq = 0;
   async function createAndRun(): Promise<{ taskId: number; runId: number }> {
     const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ writeFiles: { 'critic-feature.txt': 'work\n' } }),
+      prompt: JSON.stringify({ writeFiles: { [`critic-feature-${++implSeq}.txt`]: 'work\n' } }),
       workingDir: repoDir,
       isolationMode: 'worktree',
     });
@@ -132,7 +136,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
-  it('AC1/AC2: a passing critic lets a native Run park for review; the attempt persists at the frozen candidate OID', async () => {
+  it('AC1/AC2: a passing critic lands a native Run to done; the attempt persists at the verified head OID', async () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
     await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const { taskId, runId } = await createAndRun();
@@ -141,10 +145,10 @@ describe('agent critic end-to-end (issue #164)', () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('escalated');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('terminal');
+    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
     expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
 
     // AC2: a critic attempt persisted during a real Run, at the verified branch head.
@@ -183,7 +187,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts.map((attempt: { number: number; state: string }) => ({ number: attempt.number, state: attempt.state }))).toEqual([
       { number: 1, state: 'failed' },
-      { number: 2, state: 'failed' },
+      { number: 2, state: 'escalated' },
     ]);
     expect(timeline.body.attempts[0].feedback).toContain('the change breaks the contract');
 
@@ -238,7 +242,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
   });
 
-  it('AC1: command pass + critic pass together lets the Run park for review (all verifiers passed)', async () => {
+  it('AC1: command pass + critic pass together lands the Run (all verifiers passed)', async () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
@@ -250,10 +254,10 @@ describe('agent critic end-to-end (issue #164)', () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('escalated');
+    expect(task.state).toBe('done');
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(run.phase).toBe('terminal');
+    expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -355,7 +359,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       const { body } = await server.api('GET', `/api/tasks/${taskId}`);
       return body.state === 'done' ? body : undefined;
     });
-    expect(task.state).toBe('escalated');
+    expect(task.state).toBe('done');
     expect(lastCriticHarnessId).toBe('codex');
   });
 });

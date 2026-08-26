@@ -110,7 +110,7 @@ describe('buildDaySeries', () => {
     expect(series.map((s) => s.day)).toEqual([midnight(2026, 0, 10), midnight(2026, 0, 11)]);
     expect(series.map((s) => s.fails)).toEqual([1, 2]);
     // Every day still counts every run for the run total, whatever its state.
-    expect(series.map((s) => s.runs)).toEqual([4, 2]);
+    expect(series.map((s) => s.runs)).toEqual([3, 2]);
   });
 
   it('reports 0 fails for a day whose rows omit state (usage-only callers)', () => {

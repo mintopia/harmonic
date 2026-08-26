@@ -55,7 +55,8 @@ describe('composeEpicView', () => {
       ref: 11,
       title: 'Member eleven',
       taskId: 101,
-      state: 'completed',
+      state: 'done',
+      escalated: false,
       landStatus: 'completed',
       ready: false,
     });
@@ -80,6 +81,7 @@ describe('composeEpicView', () => {
       title: '',
       taskId: null,
       state: null,
+      escalated: false,
       landStatus: 'pending',
       ready: true,
     });

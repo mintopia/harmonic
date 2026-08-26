@@ -107,7 +107,7 @@ describe('buildLeaseDiagnostics (issue #125)', () => {
       ownerRunId: 10,
       ownerTaskId: 1,
       ownerTaskTitle: ownerTask.prompt,
-      ownerTaskState: 'running',
+      ownerTaskState: 'working',
       waitingTaskCount: 1,
       longestWaitMs: 60_000,
     });

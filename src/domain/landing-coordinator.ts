@@ -110,22 +110,20 @@ export class LandingCoordinator {
     landFactType: RunFactType = LAND_FACT_TYPE,
     parent = this.opts.parentForRun?.(run.id),
   ): Promise<LandingOutcome> {
-    const operation = parent
-      ? startOperation({ type: 'land', parent, attributes: { 'task.id': task.id, 'run.id': run.id, 'landing.mechanism': 'coordinator' } })
-      : undefined;
+    // Parented from the live Run when there is one; an operator Accept on an
+    // escalated ticket (Run already settled) lands as its own root operation.
+    const operation = startOperation({ type: 'land', parent, attributes: { 'task.id': task.id, 'run.id': run.id, 'landing.mechanism': 'coordinator' } });
     try {
-      const outcome = operation
-        ? await operation.run(() => this.landUnchecked(task, run, landProjection, effects, patch, landFactType))
-        : await this.landUnchecked(task, run, landProjection, effects, patch, landFactType);
+      const outcome = await operation.run(() => this.landUnchecked(task, run, landProjection, effects, patch, landFactType));
       if (outcome.ok) {
-        operation?.end();
+        operation.end();
         await this.opts.onTerminalRun?.(run.id);
       } else {
-        operation?.fail(outcome.detail ?? 'landing failed');
+        operation.fail(outcome.detail ?? 'landing failed');
       }
       return outcome;
     } catch (error) {
-      operation?.fail(error instanceof Error ? error.message : String(error));
+      operation.fail(error instanceof Error ? error.message : String(error));
       throw error;
     }
   }

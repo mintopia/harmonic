@@ -48,7 +48,7 @@ describe('worktree isolation mode', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  it('executes on its own branch in a temp worktree RETAINED through review, removed at Session retirement (issue #148)', async () => {
+  it('executes on its own branch in a temp worktree, lands, and the worktree is removed at Session retirement (issue #148)', async () => {
     const repo = makeRepo();
     const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
 
@@ -57,30 +57,23 @@ describe('worktree isolation mode', () => {
     expect(run.baseBranch).toBe('main');
 
     // The branch exists and carries the file; the checkout was never touched.
-    expect(git(repo, 'branch', '--list', run.branch)).toContain(run.branch);
     expect(git(repo, 'show', `${run.branch}:feature.txt`)).toBe('made by agent');
-    expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
+    // The verified head landed on main by fast-forward (ADR-0041: no human gate).
+    expect(git(repo, 'show', 'main:feature.txt')).toBe('made by agent');
+    expect(git(repo, 'rev-parse', 'main')).toBe(run.candidateOid);
 
-    // Issue #148: the builder worktree is RETAINED through the human-rejection
-    // window — it survives alongside the main checkout while the task awaits
-    // review (a reject-and-continue would land in the same workspace).
-    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(2);
-
-    // Accepting lands the run + retires the Session, which is the sole owner of
-    // builder-worktree removal; the async retirement drain then reclaims it.
-    expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(200);
+    // Issue #148: landing retires the Session, which is the sole owner of
+    // builder-worktree removal; the async retirement drain reclaims it.
     await waitFor(async () => git(repo, 'worktree', 'list').split('\n').length === 1);
     // Only the main checkout remains — the retained worktree was removed at retirement.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
   });
 
-  it('accept merges the run branch into the base branch', async () => {
+  it('landing merges the run branch into the base branch and refreshes its checkout', async () => {
     const repo = makeRepo();
     const { taskId } = await runWorktreeTask(repo, { 'feature.txt': 'merged\n' });
 
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(200);
-    expect(accepted.body.state).toBe('completed');
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('done');
     expect(readFileSync(join(repo, 'feature.txt'), 'utf8')).toBe('merged\n');
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
@@ -112,10 +105,8 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'show', `${run.branch}:base-marker.txt`)).toBe('from feature-base');
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
 
-    // Accept lands the run onto feature-base — the recorded base — not main.
-    const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
-    expect(accepted.status).toBe(200);
-    expect(accepted.body.state).toBe('completed');
+    // The landing put the run onto feature-base — the recorded base — not main.
+    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('done');
     expect(git(repo, 'show', 'feature-base:feature.txt')).toBe('made on feature-base');
     // main's checkout was never touched by either the fork or the landing.
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
@@ -210,10 +201,11 @@ describe('worktree isolation mode', () => {
 
     // The base repo is intact: a clean tree, still on main — the repo-op lock
     // (issue #121) serialised the concurrent create windows without corruption.
-    // Issue #148: each Run's builder worktree is RETAINED (bound to its Session)
-    // while it awaits review, so the base repo has its main checkout plus the
-    // three retained builder worktrees — removed later at Session retirement.
-    expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1 + results.length);
+    // Every Run landed (fast-forward, serialised by the freshness gate: a Run
+    // whose base moved re-based and re-verified before landing), and each
+    // builder worktree is reclaimed at Session retirement (issue #148).
+    for (const file of ['a.txt', 'b.txt', 'c.txt']) expect(git(repo, 'ls-tree', '--name-only', 'main', file)).toBe(file);
+    await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
@@ -232,18 +224,18 @@ describe('worktree isolation mode', () => {
 
     const runA = (await server.api('GET', `/api/runs/${a.runId}`)).body;
     const runB = (await server.api('GET', `/api/runs/${b.runId}`)).body;
-    // A native Run parks non-terminal in `phase:'review'` awaiting the human
-    // gate — it is not `completed` until Accept lands it (issue #114).
-    expect(runA.state).toBe('running');
-    expect(runB.state).toBe('running');
+    // Both landed: distinct keys admitted both, and the freshness gate
+    // serialised their fast-forwards onto main.
+    expect(runA.state).toBe('completed');
+    expect(runB.state).toBe('completed');
     expect(runA.phase).toBe('terminal');
     expect(runB.phase).toBe('terminal');
     expect(runA.branch).not.toBe(runB.branch);
 
     const taskA = (await server.api('GET', `/api/tasks/${a.taskId}`)).body;
     const taskB = (await server.api('GET', `/api/tasks/${b.taskId}`)).body;
-    expect(taskA.state).toBe('escalated');
-    expect(taskB.state).toBe('escalated');
+    expect(taskA.state).toBe('done');
+    expect(taskB.state).toBe('done');
   });
 
   it('escalates instead of forking off "HEAD" when the base repo is detached and no base branch is set (issue #198)', async () => {

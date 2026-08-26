@@ -14,6 +14,18 @@ import type { MirrorInput } from '../src/domain/tasks.js';
 import type { TrackerFacts } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
 
+/** Persisted tracker facts for an opted-in ticket: the `ready-for-agent` label is what makes it agent-workable (ADR-0041). */
+const agentFacts = (ref: number): TrackerFacts => ({
+  state: 'open',
+  parent: null,
+  blockedBy: [],
+  labels: ['ready-for-agent'],
+  title: `ticket ${ref}`,
+  body: '',
+  url: `https://example.test/${ref}`,
+  createdAt: '2026-08-01T00:00:00Z',
+});
+
 const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
   trackerRef: ref,
   prompt: `ticket ${ref}`,
@@ -21,20 +33,12 @@ const mirroredAfk = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput 
   wayfinderType: null,
   mapRef: null,
   closed: false,
+  facts: agentFacts(ref),
   ...over,
 });
 
 /** Persisted tracker facts for a ticket a human must drive: no `ready-for-agent` label (ADR-0041). */
-const humanOnlyFacts = (ref: number): TrackerFacts => ({
-  state: 'open',
-  parent: null,
-  blockedBy: [],
-  labels: ['ready-for-human'],
-  title: `ticket ${ref}`,
-  body: '',
-  url: `https://example.test/${ref}`,
-  createdAt: '2026-08-01T00:00:00Z',
-});
+const humanOnlyFacts = (ref: number): TrackerFacts => ({ ...agentFacts(ref), labels: ['ready-for-human'] });
 
 describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (issue #32)', () => {
   let dir: string;
@@ -106,7 +110,7 @@ describe('AutoRunner — mirrored afk pick predicate + flip→claim ordering (is
 
     // Every recheck saw the Task already flipped to running → flip precedes claim.
     expect(claims.length).toBeGreaterThan(0);
-    for (const claim of claims) expect(claim.stateAtClaim).toBe('running');
+    for (const claim of claims) expect(claim.stateAtClaim).toBe('working');
     expect(claims.map((claim) => claim.ref).sort()).toEqual([42, 44, 45]);
   });
 });
@@ -318,7 +322,7 @@ describe('AutoRunner — skip reasons and unresolvable integration bases (issue 
     await vi.waitFor(async () => {
       expect(await tasks.get(task.id)).toMatchObject({
         state: 'escalated',
-        escalationReason: expect.stringContaining('integration branch epic/207 missing'),
+        escalationReason: expect.stringContaining('integration branch epic/208 missing'),
       });
       expect(autoRunner.skipReasonFor(task.id)).toBeUndefined();
     }, { timeout: 5000 });
@@ -415,7 +419,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
 
     expect(started).not.toContain(blocked.id);
     expect((await tasks.get(blocked.id)).state).toBe('ready'); // stays on the frontier
-    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (running)`);
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (working)`);
     expect(ar.skipReasonFor(free.id)).toBeUndefined(); // admitted → no reason
   });
 
@@ -481,7 +485,7 @@ describe('AutoRunner — Work Context House Rule pick predicate (issue #120, ADR
     // Task is simply absent, not reordering anything.
     expect(started).toEqual([high.id, normalFirst.id, normalSecond.id, low.id]);
     expect(started).not.toContain(blocked.id);
-    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (running)`);
+    expect(ar.skipReasonFor(blocked.id)).toBe(`Work Context held by task ${occupant.id} (working)`);
   });
 
   it('waitingSince (issue #125): starts a clock on the first House-Rule-blocked pass and clears it once unblocked', async () => {

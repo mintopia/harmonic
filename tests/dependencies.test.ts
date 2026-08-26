@@ -32,12 +32,9 @@ describe('dependencies', () => {
     expect(dependent.agentWorkable).toBe(false);
     expect(dependent.dependsOn).toEqual([dep.id]);
 
-    // Dependency finishes its run → it remains an open blocker until accepted.
+    // The dependency landing (done) immediately changes the derived fields,
+    // without a stored flip — there is no human gate in between (ADR-0041).
     await runToDone(dep.id);
-    expect((await getTask(dependent.id)).openBlockerCount).toBe(1);
-
-    // Accept immediately changes the derived fields, without a stored flip.
-    await server.api('POST', `/api/tasks/${dep.id}/accept`);
     expect((await getTask(dependent.id)).openBlockerCount).toBe(0);
     expect((await getTask(dependent.id)).agentWorkable).toBe(true);
   });
@@ -48,12 +45,13 @@ describe('dependencies', () => {
     const dependent = await createTask({ dependsOn: [dep1.id, dep2.id] });
 
     await runToDone(dep1.id);
-    await server.api('POST', `/api/tasks/${dep1.id}/accept`);
     expect((await getTask(dependent.id)).openBlockerCount).toBe(1);
+    expect((await getTask(dependent.id)).agentWorkable).toBe(false);
 
     await runToDone(dep2.id);
-    await server.api('POST', `/api/tasks/${dep2.id}/accept`);
     expect((await getTask(dependent.id)).state).toBe('ready');
+    expect((await getTask(dependent.id)).openBlockerCount).toBe(0);
+    expect((await getTask(dependent.id)).agentWorkable).toBe(true);
   });
 
   it('adds and removes blocker edges over REST without changing task state', async () => {
@@ -73,26 +71,34 @@ describe('dependencies', () => {
     expect(removed.body.agentWorkable).toBe(true);
   });
 
-  it('flags dependents of a failed dependency instead of cascading failure', async () => {
+  it('flags dependents of an escalated dependency instead of cascading failure', async () => {
     const dep = await createTask({ prompt: JSON.stringify({ exit: 'crash-before-response' }) });
     const dependent = await createTask({ dependsOn: [dep.id] });
 
     await server.api('POST', `/api/tasks/${dep.id}/run`);
-    await waitFor(async () => (await getTask(dep.id)).state === 'failed');
+    await waitFor(async () => (await getTask(dep.id)).state === 'escalated');
 
     const blocked = await getTask(dependent.id);
     expect(blocked.state).toBe('ready');
     expect(blocked.openBlockerCount).toBe(1);
     expect(blocked.blockedOnFailed).toBe(true);
 
-    // The hiccup is retryable: requeue the dep, run, accept — pipeline resumes.
-    await server.api('POST', `/api/tasks/${dep.id}/requeue`, { feedback: JSON.stringify({}) });
-    // requeue appended feedback, making the prompt non-JSON; run defaults to echo scenario
-    await runToDone(dep.id);
-    await server.api('POST', `/api/tasks/${dep.id}/accept`);
+    // The human resolves it: Accept has nothing to land (the agent never
+    // committed), so the escalated dependency is Closed and the dependent stays
+    // blocked on a cancelled blocker — a decision, not a cascade.
+    expect((await server.api('POST', `/api/tasks/${dep.id}/accept`)).status).toBe(409);
+    expect((await server.api('POST', `/api/tasks/${dep.id}/close`)).status).toBe(200);
     const after = await getTask(dependent.id);
-    expect(after.openBlockerCount).toBe(0);
-    expect(after.blockedOnFailed).toBe(false);
+    expect(after.state).toBe('ready');
+    expect(after.openBlockerCount).toBe(1);
+    expect(after.blockedOnFailed).toBe(true);
+    // Uncancelling the blocker and landing it unblocks the dependent.
+    await server.api('POST', `/api/tasks/${dep.id}/uncancel`);
+    await server.api('PATCH', `/api/tasks/${dep.id}`, { prompt: JSON.stringify({}) });
+    await runToDone(dep.id);
+    const unblocked = await getTask(dependent.id);
+    expect(unblocked.openBlockerCount).toBe(0);
+    expect(unblocked.blockedOnFailed).toBe(false);
   });
 
   it('rejects dependency cycles at creation time, including transitive and self cycles', async () => {

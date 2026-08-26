@@ -160,11 +160,11 @@ describe('auto-runner', () => {
       dependsOn: [dep.body.id],
     });
 
-    await waitFor(async () => (await state(dep.body.id)) === 'done');
+    // The dependent is held while its blocker works…
+    await waitFor(async () => (await state(dep.body.id)) === 'working');
     expect(await state(dependent.body.id)).toBe('ready');
-
-    await server.api('POST', `/api/tasks/${dep.body.id}/accept`);
-    // The last blocker resolves → auto-started → done, hands-free.
+    // …and the blocker landing (done) is what unblocks it: auto-started → done, hands-free.
+    await waitFor(async () => (await state(dep.body.id)) === 'done');
     await waitFor(async () => (await state(dependent.body.id)) === 'done');
   });
 });
@@ -214,7 +214,7 @@ describe('auto-runner — two-level cap + master gate (issue #60)', () => {
     const maxByWorkspace = new Map<number, number>();
     do {
       const running: Array<{ workspaceId: number }> = (
-        await server.api('GET', '/api/tasks?state=running')
+        await server.api('GET', '/api/tasks?state=working')
       ).body.tasks;
       maxTotal = Math.max(maxTotal, running.length);
       const now = new Map<number, number>();

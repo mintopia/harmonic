@@ -199,12 +199,15 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       ]);
       expect(attempts[1]!.feedback).toBe('The timeout is intentional; see the linked ticket.');
 
-      // The same ticket and the same branch — not a detached re-attempt task.
+      // The same ticket, a fresh Run for the resumed loop — not a detached
+      // re-attempt task. The new Run cuts its own branch from the base; the
+      // escalated Run's branch stays as evidence until its Session retires.
       const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
       expect(runs).toHaveLength(2);
       expect(runs[1].attempt).toBe(3);
       expect(runs[1].prompt).toContain('The timeout is intentional');
-      expect(runs[1].branch).toBe(branch);
+      expect(runs[1].branch).toBe(`harmonic/task-${taskId}-run-3`);
+      expect(runs[0].branch).toBe(branch);
     });
 
     it('400s on empty guidance and leaves the ticket escalated', async () => {
@@ -229,7 +232,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
 
       await waitFor(async () => (existsSync(session.worktreePath!) ? undefined : true));
       expect(git(repoDir, 'branch', '--list', run.branch)).toBe('');
-      expect((await server.app.ctx.sessions.get(run.sessionRowId)).status).toBe('retired');
+      await waitFor(async () => ((await server.app.ctx.sessions.get(run.sessionRowId)).status === 'retired' ? true : undefined));
       expect(git(repoDir, 'status', '--porcelain')).toBe('');
     });
   });

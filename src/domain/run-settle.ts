@@ -122,7 +122,11 @@ export class RunSettleCoordinator {
     // (settle exactly once), while a higher-precedence signal arriving late
     // overrides — even when it maps to the same Run state but a different Task
     // action (e.g. escalate after a bare failure).
-    if (before.state !== 'running' && disposition === priorDisposition) return;
+    // A terminal Run already showing the winning projection is a duplicate
+    // straggler. A terminal Run whose row does not (an escalated ticket's Run
+    // being landed by an operator Accept, whose land fact is on the log before
+    // this settle) still applies.
+    if (before.state !== 'running' && disposition === priorDisposition && before.state === winner.runState) return;
 
     // `patch` (usage/stat/stopReason) rides with the winning terminal write,
     // matching today's semantics — a losing straggler never decorates the row
@@ -203,7 +207,7 @@ export class RunSettleCoordinator {
   private async applySettleTaskAction(taskId: number, winner: SettleProjection): Promise<void> {
     if (winner.taskAction === 'none') return;
     const state = (await this.taskService.get(taskId)).state;
-    if (state !== 'working' && !(state === 'escalated' && winner.taskAction === 'done')) return;
+    if (state !== 'working' && !(state === 'escalated' && winner.taskAction !== 'ready')) return;
     switch (winner.taskAction) {
       case 'done':
         await this.taskService.setState(taskId, 'done');

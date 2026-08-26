@@ -96,7 +96,7 @@ describe('TaskService.delete (issue #162)', () => {
     const task = await tasksSvc.create({ prompt: 'busy' });
     await tasksSvc.setState(task.id, 'working');
 
-    await expect(tasksSvc.delete(task.id)).rejects.toThrow(/running/);
+    await expect(tasksSvc.delete(task.id)).rejects.toThrow(/working/);
     expect((await tasksSvc.get(task.id)).state).toBe('working');
   });
 

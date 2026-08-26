@@ -717,7 +717,9 @@ export class TaskService {
         .returning()
         .get(),
     );
-    return await this.changed(row!);
+    const task = await this.changed(row!);
+    this.onNotify('task.escalated', task);
+    return task;
   }
 
   async cancel(id: number): Promise<TaskRow> {

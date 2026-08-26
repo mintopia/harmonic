@@ -59,7 +59,9 @@ describe('unified corrective attempts', () => {
     const after = await server.api('GET', `/api/tasks/${ticket.id}`);
     expect(after.body.id).toBe(ticket.id);
     expect(after.body.baseBranch).toBe('integration/x');
-    await waitFor(async () => ((await server.api('GET', `/api/tasks/${ticket.id}`)).body.state === 'escalated' ? true : undefined));
+    // The stub replays the crash: the reset budget is exhausted again.
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${ticket.id}`)).body.state === 'escalated' && (await timeline(ticket.id)).length === 2 ? true : undefined));
+    expect((await timeline(ticket.id)).map((attempt) => attempt.state)).toEqual(['escalated', 'escalated']);
   });
 
   it('a mirrored rejection enters the identical corrective Attempt loop without a detached task', async () => {

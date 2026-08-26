@@ -35,7 +35,6 @@ describe('computeDisposition (issue #112)', () => {
       'branch-violation',
       'verify-fail',
       'guardrail-trip',
-      'review-sla-expiry',
       'agent-finish/unresolved',
       'failed',
       'process-death',
@@ -67,8 +66,8 @@ describe('computeDisposition (issue #112)', () => {
       expect(computeDisposition([fact(1, 'review-sla-expiry'), fact(2, 'failed')], 2)).toBe('failed');
       expect(computeDisposition([fact(1, 'agent-finish/unresolved'), fact(2, 'review-sla-expiry')], 2)).toBe('agent-finish/unresolved');
     });
-    it('alone in a legacy log it still resolves the Run, as the lowest possible kind', () => {
-      expect(computeDisposition([fact(1, 'review-sla-expiry')], 1)).toBe('review-sla-expiry');
+    it('alone in a legacy log it decides nothing — an unranked kind never settles a Run', () => {
+      expect(computeDisposition([fact(1, 'review-sla-expiry')], 1)).toBeNull();
     });
   });
 

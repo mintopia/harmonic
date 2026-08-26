@@ -239,9 +239,9 @@ describe('WorkContextLeaseStore (issue #118)', () => {
 
       // held, future expiry -> untouched
       await leases.acquire('direct:/tmp/future', otherRunId, 'running');
-      await leases.heartbeat('direct:/tmp/future', now + 10_000, 'review');
+      await leases.heartbeat('direct:/tmp/future', now + 10_000, 'executing');
 
-      const sweptAt = now + DEFAULT_LEASE_TTL.executionMs + 20_000; // well past the expired one's expiry, still before the future one's
+      const sweptAt = now + DEFAULT_LEASE_TTL.executionMs + 5_000; // past the expired one's expiry, still before the future one's
 
       const swept = await leases.sweepExpired(sweptAt);
 

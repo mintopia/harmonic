@@ -84,15 +84,16 @@ async function handlePrompt(msg) {
   // corrective feedback (issue #137), a bounded agent re-merge turn's "## Branch
   // consolidation required" corrective feedback (issue #155), an Attempt's
   // "## Rebase conflict" hand-off (ADR-0041), and a fresh Session's trailing
-  // "## Prior session (condensed)" seed (issue #311). These are stripped
-  // specifically (not any "## " header) so a re-attempt's "## Feedback from the
-  // previous attempt" still leaves the prompt non-JSON, preserving the
-  // echo-scenario fallback.
+  // "## Prior session (condensed)" seed (issue #311), and the operator's
+  // "## Feedback from the previous attempt" guidance (ADR-0041 Reject). These
+  // are stripped specifically (not any "## " header) so any other non-JSON
+  // prompt keeps the echo-scenario fallback.
   const jsonText = rawText
     .split('\n\n## Running unattended')[0]
     .split('\n\n## Previous attempt failed')[0]
     .split('\n\n## Branch consolidation required')[0]
     .split('\n\n## Rebase conflict')[0]
+    .split('\n\n## Feedback from the previous attempt')[0]
     .split('\n\n## Prior session (condensed)')[0];
   let scenario;
   try {

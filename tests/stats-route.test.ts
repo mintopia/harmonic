@@ -74,7 +74,7 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     await seedRun({ state: 'failed', startedAt: 1000, finishedAt: null, reason: 'boom', dispositions: ['failed'] });
     // A cancelled Run is its own slice (ADR-0028): never in the failure
     // numerator, never in the by-reason breakdown.
-    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: 2000, dispositions: ['operator-cancel'] });
+    await seedRun({ state: 'cancelled', startedAt: 1000, finishedAt: null, dispositions: ['operator-cancel'] });
   });
   afterAll(async () => {
     await server.close();

@@ -233,7 +233,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(rows.map((row) => row.verdict)).toEqual(['inconclusive', 'inconclusive']);
     expect(await ticketAttempts(taskId)).toMatchObject([
       { number: 1, state: 'failed' },
-      { number: 2, state: 'failed' },
+      { number: 2, state: 'escalated' },
     ]);
   });
 
@@ -258,7 +258,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(rows.map((r) => r.verdict)).toEqual(['fail', 'fail']);
     expect(await ticketAttempts(taskId)).toMatchObject([
       { number: 1, state: 'failed' },
-      { number: 2, state: 'failed' },
+      { number: 2, state: 'escalated' },
     ]);
   });
 
@@ -279,6 +279,6 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(task.state).toBe('escalated');
 
     expect((await attempts(runId)).map((r) => r.verdict)).toEqual(['fail']);
-    expect(await ticketAttempts(taskId)).toMatchObject([{ number: 1, state: 'failed' }]);
+    expect(await ticketAttempts(taskId)).toMatchObject([{ number: 1, state: 'escalated' }]);
   });
 });

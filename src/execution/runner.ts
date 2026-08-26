@@ -3858,6 +3858,13 @@ export class Runner {
         await this.settleEscalated(task, run, escalating, patch);
         return { kind: 'terminal' };
       }
+      // An operator cancel/force-complete already settled this Run terminal and
+      // SIGKILLed the harness: the exit we caught is that kill, not a failure —
+      // never a corrective attempt on a Run that is over.
+      if ((await this.runStore.get(run.id)).state !== 'running') {
+        await this.runStore.update(run.id, patch);
+        return { kind: 'terminal' };
+      }
       // An implementation or harness failure is a failed Attempt too. Keep it
       // inside `drive` so mirrored and native tickets share the cap.
       await this.runStore.update(run.id, patch);

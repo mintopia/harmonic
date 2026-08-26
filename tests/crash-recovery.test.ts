@@ -195,7 +195,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   it('yields while reconciling a large landing backlog', async () => {
     for (let i = 0; i < 25; i++) {
       const created = await tasks.create({ prompt: `landing ${i}`, state: 'ready', workingDir: repo });
-      await tasks.setState(created.id, 'escalated');
+      await tasks.setState(created.id, 'working');
       const run = await runStore.create(created.id);
       await runStore.update(run.id, { phase: 'landing' });
     }

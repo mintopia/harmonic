@@ -351,6 +351,6 @@ describe('task skipReason (issue #171)', () => {
 
     const res = await server.api('GET', `/api/tasks/${blocked.body.id}`);
     expect(res.status).toBe(200);
-    expect(res.body.skipReason).toBe(`Work Context held by task ${occupant.body.id} (running)`);
+    expect(res.body.skipReason).toBe(`Work Context held by task ${occupant.body.id} (working)`);
   });
 });

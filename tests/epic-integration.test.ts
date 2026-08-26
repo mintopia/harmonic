@@ -340,16 +340,14 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
 describe('reduceMemberState (issue #161)', () => {
   const row = (over: Partial<{ state: string; escalated: boolean }>) =>
     ({ state: 'ready', escalated: false, ...over }) as never;
-  it('maps a completed member Task to completed', () => {
-    expect(reduceMemberState(row({ state: 'completed' }))).toBe('completed');
+  it('maps a done member Task to completed', () => {
+    expect(reduceMemberState(row({ state: 'done' }))).toBe('completed');
   });
   it('maps an escalated / failed / cancelled member to blocked', () => {
-    expect(reduceMemberState(row({ state: 'ready', escalated: true }))).toBe('blocked');
-    expect(reduceMemberState(row({ state: 'failed' }))).toBe('blocked');
+    expect(reduceMemberState(row({ state: 'escalated' }))).toBe('blocked');
     expect(reduceMemberState(row({ state: 'cancelled' }))).toBe('blocked');
   });
   it('maps everything else (and a missing Task) to pending', () => {
-    expect(reduceMemberState(row({ state: 'running' }))).toBe('pending');
     expect(reduceMemberState(row({ state: 'working' }))).toBe('pending');
     expect(reduceMemberState(undefined)).toBe('pending');
   });

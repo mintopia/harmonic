@@ -200,10 +200,14 @@ describe('cost surfaces (API)', () => {
       { modelA: flatPrice(2) },
     );
     const { taskId } = await runToDone(workDir);
-    await server.api('POST', `/api/tasks/${taskId}/reject`);
-    await server.api('POST', `/api/tasks/${taskId}/requeue`);
+    // A second Run on the same ticket (re-queued directly: an operator Reject
+    // would bake guidance into the prompt the stub parses as its scenario).
+    await server.app.ctx.tasks.setState(taskId, 'ready');
     await server.api('POST', `/api/tasks/${taskId}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
+    await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'done' && (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs.length === 2 ? true : undefined;
+    });
 
     const agg = (await server.api('GET', `/api/tasks/${taskId}/usage`)).body;
     expect(agg.runCount).toBe(2);

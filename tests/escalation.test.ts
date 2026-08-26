@@ -85,7 +85,7 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('escalated');
   });
 
-  it('Reject with guidance resumes the loop: the guidance is feedback, the budget resets, attempt 2 runs and lands', async () => {
+  it('Reject with guidance resumes the loop: the guidance is feedback and the budget resets', async () => {
     const taskId = await runToEscalated();
     const rejected = await server.api('POST', `/api/tasks/${taskId}/reject`, {
       guidance: 'Do not crash; write the CSV header first.',
@@ -97,25 +97,25 @@ describe('escalation: the three actions (direct mode)', () => {
 
     // The guidance is recorded on the escalated Attempt AND baked into the next
     // prompt (a native ticket owns its prompt). Attempt 2 is the budget's fresh
-    // start: with maxAttempts 1 it would otherwise have escalated on entry.
-    const attemptsAfter = await waitFor(async () => {
-      const rows = await timeline(taskId);
-      return rows.length === 2 ? rows : undefined;
+    // start: with maxAttempts 1 it would otherwise have escalated on entry. The
+    // stub replays the crash, so the reset budget is exhausted again — counted
+    // from the reset, not from the ticket's history.
+    const again = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'escalated' && (await timeline(taskId)).length === 2 ? body : undefined;
     });
-    expect(attemptsAfter[0]).toMatchObject({ number: 1, state: 'escalated', feedback: 'Do not crash; write the CSV header first.' });
-    const run2 = await waitFor(async () => {
-      const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
-      return runs.length === 2 ? runs[1] : undefined;
-    });
-    expect(run2.attempt).toBe(2);
-    expect(run2.prompt).toContain('Do not crash; write the CSV header first.');
-    expect(run2.prompt).toContain('crash-before-response'); // the original prompt is kept
-
-    // The second Run inherits the crashing scenario, so it exhausts the reset
-    // budget too — one attempt, escalated again, counted from the reset.
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'escalated');
-    expect((await server.api('GET', `/api/tasks/${taskId}`)).body.escalationReason).toMatch(/attempt 1 of 1 failed/);
-    expect((await timeline(taskId)).map((attempt) => attempt.state)).toEqual(['escalated', 'escalated']);
+    expect(again.escalationReason).toMatch(/attempt 1 of 1 failed/);
+    const attemptsAfter = await timeline(taskId);
+    expect(attemptsAfter.map((attempt) => ({ number: attempt.number, state: attempt.state }))).toEqual([
+      { number: 1, state: 'escalated' },
+      { number: 2, state: 'escalated' },
+    ]);
+    expect(attemptsAfter[0]!.feedback).toBe('Do not crash; write the CSV header first.');
+    const runs = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs;
+    expect(runs).toHaveLength(2);
+    expect(runs[1].attempt).toBe(2);
+    expect(runs[1].prompt).toContain('Do not crash; write the CSV header first.');
+    expect(runs[1].prompt).toContain('crash-before-response'); // the original prompt is kept
   });
 
   it('Reject without guidance is a validation error and changes nothing', async () => {
@@ -148,15 +148,22 @@ describe('escalation: the three actions (direct mode)', () => {
   });
 
   it("the agent's escalate_task is a failed Attempt, not an escalation; only the exhausted cap escalates", async () => {
-    // A ticket whose agent asks for a human on its one permitted attempt.
-    const created = await server.api('POST', '/api/tasks', {
-      prompt: JSON.stringify({ mcpEscalate: { reason: 'need a decision on the schema' } }),
+    // A mirrored ticket (the Drive Prompt carries the taskId the stub's MCP call
+    // needs) whose agent asks for a human on its one permitted attempt.
+    await server.app.ctx.configStore.update({
+      drive: { prompt: JSON.stringify({ mcpEscalate: { reason: 'need a decision on the schema' } }) },
     });
-    await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
-    const task = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    const mirrored = await server.app.ctx.tasks.upsertMirrored(
+      { trackerRef: 31_401, prompt: 'ticket 31401', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      workspaceId,
+    );
+    expect((await server.api('POST', `/api/tasks/${mirrored.id}/run`)).status).toBe(201);
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${mirrored.id}`)).body.state === 'escalated');
+    const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
     expect(task.escalationReason).toMatch(/attempt 1 of 1 failed: the agent stopped and asked for a human: need a decision on the schema/);
-    const attempts = await new AttemptStore(server.app.ctx.asyncDb).listForTask(created.body.id);
+    const attempts = await new AttemptStore(server.app.ctx.asyncDb).listForTask(mirrored.id);
+    expect(attempts.map((attempt) => attempt.state)).toEqual(['escalated']);
     expect(attempts[0]!.feedback).toContain('need a decision on the schema');
   });
 });

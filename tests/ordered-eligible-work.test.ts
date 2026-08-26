@@ -25,7 +25,7 @@ describe('TaskService.orderedEligibleWork', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it('orders agent-workable native priority, including an unpolled mirror via drive fallback, excluding a blocked dependent', async () => {
+  it('orders agent-workable native priority, including an opted-in mirror, excluding an unlabelled mirror and a blocked dependent', async () => {
     const low = await taskService.create({ prompt: 'native low', workspaceId, priority: 'low' });
     const high = await taskService.create({ prompt: 'native high', workspaceId, priority: 'high' });
     const mirrored = await taskService.upsertMirrored({
@@ -35,7 +35,10 @@ describe('TaskService.orderedEligibleWork', () => {
       wayfinderType: null,
       mapRef: null,
       closed: false,
+      facts: { state: 'open', parent: null, blockedBy: [], labels: ['ready-for-agent'], title: 'mirrored', body: '', url: 'https://example.test/501', createdAt: '2026-08-01T00:00:00Z' },
     }, workspaceId);
+    // Never polled with facts (no label to opt it in): not agent-workable, never picked.
+    await taskService.upsertMirrored({ trackerRef: 502, prompt: 'unlabelled mirror', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false }, workspaceId);
     const blocker = await taskService.create({ prompt: 'blocker', workspaceId });
     await taskService.create({ prompt: 'dependent', workspaceId, dependsOn: [blocker.id] });
 

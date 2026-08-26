@@ -214,12 +214,9 @@ describe('mcp server & scoped keys', () => {
     const followUp = all.body.tasks.find((t: any) => t.prompt === 'follow-up work');
     expect(followUp).toBeDefined();
     expect(followUp.state).toBe('ready');
-    expect(followUp.openBlockerCount).toBe(1);
-    expect(followUp.agentWorkable).toBe(false);
     expect(followUp.dependsOn).toEqual([created.body.id]);
-
-    // Accepting the parent unblocks the agent-scheduled follow-up.
-    await server.api('POST', `/api/tasks/${created.body.id}/accept`);
-    expect((await server.api('GET', `/api/tasks/${followUp.id}`)).body.state).toBe('ready');
+    // The parent landing (done) is what unblocked the agent-scheduled follow-up.
+    expect(followUp.openBlockerCount).toBe(0);
+    expect(followUp.agentWorkable).toBe(true);
   });
 });

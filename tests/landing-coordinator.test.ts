@@ -151,7 +151,7 @@ describe('LandingCoordinator (issue #115)', () => {
     // the land fact (already at/under the frozen cutoff) as decisive — the
     // Run is landed by the time the cancel's settle call returns.
     const afterCancelRace = await runStore.get(run.id);
-    expect(afterCancelRace.state).toBe('done');
+    expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
     expect((await tasks.get(task.id)).state).toBe('done');
 
@@ -193,7 +193,7 @@ describe('LandingCoordinator (issue #115)', () => {
     await runnerSettle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
     const afterCancel = await runStore.get(run.id);
-    expect(afterCancel.state).toBe('done');
+    expect(afterCancel.state).toBe('completed');
     expect(afterCancel.phase).toBe('terminal');
     expect((await tasks.get(task.id)).state).toBe('done');
     expect((await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel')).toHaveLength(1);
@@ -316,7 +316,7 @@ describe('LandingCoordinator (issue #115)', () => {
     await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
     const afterCancelRace = await runStore.get(run.id);
-    expect(afterCancelRace.state).toBe('done');
+    expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
     expect((await tasks.get(task.id)).state).toBe('done');
 

@@ -108,7 +108,7 @@ describe('run execution over ACP (direct mode)', () => {
   });
 
   it('cancelling a working Task settles its running Run cancelled (issue #114)', async () => {
-    const { taskId, runId } = await createAndRun({ delayMs: 60_000, stopReason: 'end_turn' });
+    const { taskId, runId } = await createAndRun({ exit: 'hang' });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'working');
     await waitFor(async () => ((await server.api('GET', `/api/runs/${runId}`)).body.sessionId ? true : undefined));
     expect((await server.api('GET', `/api/runs/${runId}`)).body.state).toBe('running');
@@ -187,7 +187,7 @@ describe('run execution over ACP (direct mode)', () => {
     expect(secondStarted.status).toBe(201);
     await waitFor(async () => {
       const { body } = await server.api('GET', `/api/tasks/${secondCreated.body.id}`);
-      return body.state === 'running' ? true : undefined;
+      return body.state === 'working' ? true : undefined;
     });
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -212,7 +212,7 @@ describe('run execution over ACP (direct mode)', () => {
 
   it('cancelling a running task kills the harness process and the run', async () => {
     const { taskId, runId } = await createAndRun({ exit: 'hang' });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'running');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'working');
 
     const cancelled = await server.api('POST', `/api/tasks/${taskId}/cancel`);
     expect(cancelled.status).toBe(200);
@@ -227,15 +227,15 @@ describe('run execution over ACP (direct mode)', () => {
 
   it('force-completing a running task kills the harness and settles the run completed', async () => {
     const { taskId, runId } = await createAndRun({ exit: 'hang' });
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'running');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'working');
 
     const completed = await server.api('POST', `/api/tasks/${taskId}/complete`);
     expect(completed.status).toBe(200);
-    expect(completed.body.state).toBe('completed');
+    expect(completed.body.state).toBe('done');
 
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
-      return body.state === 'done' ? body : undefined;
+      return body.state === 'completed' ? body : undefined;
     });
     expect(run.state).toBe('completed');
 
@@ -268,7 +268,7 @@ describe('run execution over ACP (direct mode)', () => {
     try {
       const created = await codexServer.api('POST', '/api/tasks', { harness: 'codex', prompt: 'hi' });
       const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
-      await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed');
+      await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
 
       const run = (await codexServer.api('GET', `/api/runs/${started.body.id}`)).body;
       expect(run.state).toBe('failed');
@@ -290,7 +290,7 @@ describe('run execution over ACP (direct mode)', () => {
     try {
       const created = await codexServer.api('POST', '/api/tasks', { harness: 'codex', prompt: 'hi' });
       const started = await codexServer.api('POST', `/api/tasks/${created.body.id}/run`);
-      await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed');
+      await waitFor(async () => (await codexServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated');
 
       const run = (await codexServer.api('GET', `/api/runs/${started.body.id}`)).body;
       expect(run.state).toBe('failed');
@@ -377,7 +377,7 @@ describe('run execution over ACP (direct mode)', () => {
       const created = await copilotServer.api('POST', '/api/tasks', { harness: 'copilot', prompt: 'hi' });
       const started = await copilotServer.api('POST', `/api/tasks/${created.body.id}/run`);
       await waitFor(
-        async () => (await copilotServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'failed',
+        async () => (await copilotServer.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'escalated',
       );
       const run = (await copilotServer.api('GET', `/api/runs/${started.body.id}`)).body;
       expect(run.state).toBe('failed');
@@ -424,7 +424,7 @@ describe('Work Context lease (issue #119)', () => {
     const startedA = await server.api('POST', `/api/tasks/${taskAId}/run`);
     expect(startedA.status).toBe(201);
     runAId = startedA.body.id;
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskAId}`)).body.state === 'running');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${taskAId}`)).body.state === 'working');
 
     // Task B collides on the exact same workingDir (direct-mode keys ignore
     // branch, so the two are contending for the same physical occupancy).
@@ -452,7 +452,7 @@ describe('Work Context lease (issue #119)', () => {
     expect(createdC.status).toBe(201);
     const startedC = await server.api('POST', `/api/tasks/${createdC.body.id}/run`);
     expect(startedC.status).toBe(201);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${createdC.body.id}`)).body.state === 'running');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${createdC.body.id}`)).body.state === 'working');
     // Left running; the harness process dies with the server on afterAll.
   });
 
@@ -470,18 +470,19 @@ describe('Work Context lease (issue #119)', () => {
 });
 
 describe('crash recovery', () => {
-  it('marks in-flight runs failed with reason "interrupted" on restart, never re-running them', async () => {
+  it('marks in-flight runs failed with reason "interrupted" on restart and re-queues their tickets, never re-running them blind', async () => {
     const server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: scenario({ exit: 'hang' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
-    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'running');
+    await waitFor(async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'working');
 
     // Simulate a workspace reboot: close the app but keep the data dir.
     await server.app.close();
     const reopened = await startServer(stubHarness(), { dataDir: server.dataDir });
 
+    // An interruption is not a failed Attempt: the ticket is back in the queue.
     const task = await reopened.api('GET', `/api/tasks/${created.body.id}`);
-    expect(task.body.state).toBe('failed');
+    expect(task.body.state).toBe('ready');
     const run = await reopened.api('GET', `/api/runs/${started.body.id}`);
     expect(run.body.state).toBe('failed');
     expect(run.body.reason).toBe('interrupted');

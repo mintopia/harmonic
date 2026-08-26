@@ -277,6 +277,12 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
   return rest;
 }
 
+/** The ref an operator Accept would land: a direct Run's private ref, or a worktree Run's branch once it has a verified head. */
+function latestVerifiedRef(run: RunRow | undefined): string | null {
+  if (!run) return null;
+  return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
+}
+
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
   const running = runs.find((r) => r.state === 'running');
   const presentedBranch = (branch: string | null | undefined): string | null =>
@@ -298,7 +304,7 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     contextTokens: running ? (parseUsage(running.usage)?.contextTokens ?? null) : null,
     contextWindow: contextWindowOf(ctx, task.model),
     skipReason: ctx.autoRunner.skipReasonFor(task.id) ?? null,
-    candidateRef: runs.at(-1)?.candidateRef ?? null,
+    candidateRef: latestVerifiedRef(runs.at(-1)),
   };
 }
 

@@ -168,9 +168,9 @@ describe('notification channels', () => {
 
     const byPath = Object.fromEntries(sink.requests.map((r) => [r.path, JSON.parse(r.body)]));
     expect(typeof byPath['/discord'].content).toBe('string');
-    expect(byPath['/discord'].content).toContain('awaiting review');
+    expect(byPath['/discord'].content).toContain('ESCALATED');
     expect(typeof byPath['/slack'].text).toBe('string');
-    expect(byPath['/slack'].text).toContain('awaiting review');
+    expect(byPath['/slack'].text).toContain('ESCALATED');
 
     await server.api('DELETE', `/api/channels/${discord.body.id}`);
     await server.api('DELETE', `/api/channels/${slack.body.id}`);
@@ -225,17 +225,17 @@ describe('notification channels', () => {
         from: 'harmonic@example.com',
         to: 'operator@example.com',
       },
-      events: ['task.failed'],
+      events: ['task.escalated'],
     });
 
-    const taskId = await runToState(JSON.stringify({ exit: 'crash-before-response' }), 'failed');
+    const taskId = await runToState(JSON.stringify({ exit: 'crash-before-response' }), 'escalated');
 
     await waitFor(async () => sink.mails.length > 0, { timeoutMs: 15_000 });
     const mail = sink.mails[0]!;
     expect(mail.from).toBe('harmonic@example.com');
     expect(mail.to).toEqual(['operator@example.com']);
     // The body carries the documented JSON payload.
-    expect(mail.data).toContain('"event": "task.failed"');
+    expect(mail.data).toContain('"event": "task.escalated"');
     expect(mail.data).toContain(`"id": ${taskId}`);
 
     await server.api('DELETE', `/api/channels/${channel.body.id}`);
