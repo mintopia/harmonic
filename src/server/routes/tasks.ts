@@ -1000,14 +1000,17 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (req) => {
       const run = await ctx.runs.get(req.params.id);
-      if (!run.branch || !run.baseBranch) return { files: [] };
       const task = await ctx.tasks.get(run.taskId);
       try {
-        const raw = await Git.diffUnified(task.workingDir, run.baseBranch, run.branch);
+        const raw = run.diffBaseOid && run.diffHeadOid
+          ? await Git.diffRange(task.workingDir, run.diffBaseOid, run.diffHeadOid)
+          : run.branch && run.baseBranch
+            ? await Git.diffUnified(task.workingDir, run.baseBranch, run.branch)
+            : '';
         return { files: parseUnifiedDiff(raw) };
       } catch {
-        // A missing worktree/branch (retired, direct-mode leftover) is "nothing
-        // to diff", not a server error — mirror the empty-state contract.
+        // A missing revision (legacy row or pruned object) is "nothing to diff",
+        // not a server error — mirror the empty-state contract.
         return { files: [] };
       }
     },

@@ -100,6 +100,29 @@ describe('run event firehose pruning (issue #245)', () => {
   });
 });
 
+describe('run diff revision migration (issue #323)', () => {
+  it('adds nullable stored diff revision columns to existing runs', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-run-diff-migrate-'));
+    const migrationsFolder = migrationsFolderBefore('0053');
+    const client = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
+
+    await migrate(drizzle(client, { schema }), { migrationsFolder });
+    await client.execute(
+      `insert into tasks (prompt, working_dir, state, created_at, updated_at) values ('legacy', '/tmp/legacy', 'ready', 1, 1)`,
+    );
+    await client.execute(`insert into runs (task_id, attempt, state, started_at) values (1, 1, 'completed', 1)`);
+    client.close();
+
+    const db = await openAsyncDb(dataDir);
+    const [run] = await db.read((d) => d.select().from(schema.runs).all());
+    expect(run).toMatchObject({ diffBaseOid: null, diffHeadOid: null });
+
+    await db.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(migrationsFolder, { recursive: true, force: true });
+  });
+});
+
 describe('Setting Override migration (ADR-0012, issue #59)', () => {
   it('adds nullable override columns; an existing Workspace reads them as inherit (null)', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-override-migrate-'));

@@ -446,6 +446,9 @@ export const Git = {
   diffStat: (dir: string, baseBranch: string, branch: string) =>
     git(dir, 'diff', '--stat', `${baseBranch}...${branch}`),
 
+  /** The shared ancestor Git uses for a three-dot diff range. */
+  mergeBase: (dir: string, base: string, head: string) => git(dir, 'merge-base', base, head),
+
   /** Full unified diff of what the run's branch adds over the merge base — the
    * same `baseBranch...branch` range {@link diffStat} counts, so a parsed
    * per-file hunk view and the diffstat agree. */

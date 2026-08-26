@@ -329,6 +329,10 @@ export const runs = sqliteTable('runs', {
   /** Worktree mode: the run's branch and the branch it was cut from. */
   branch: text('branch'),
   baseBranch: text('base_branch'),
+  /** Immutable revisions for the settled worktree diff. They outlive the run
+   * branch, which landing or cleanup can advance or delete. */
+  diffBaseOid: text('diff_base_oid'),
+  diffHeadOid: text('diff_head_oid'),
   /** `git diff --stat` snapshot taken when the run settles; null in direct
    * mode or before settle. The card and Task detail both read this so they
    * can never disagree (issue #36). */

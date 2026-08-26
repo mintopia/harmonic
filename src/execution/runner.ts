@@ -3753,7 +3753,7 @@ export class Runner {
           // this same Attempt (no counter increment, no implementation turn)
           // before landing. The diffstat is snapshotted before the land
           // fast-forwards the base onto the branch tip (issue #36).
-          const stat = await this.diffstatFor(task, run.id);
+          const diff = await this.diffSnapshotFor(task, run.id);
           const gate = await this.freshenForLanding(task, run, workspace, attemptNumber, autoDriven, active.verifyAbort.signal, record, parent);
           if (gate.kind === 'turn') return gate.outcome;
           if (gate.kind === 'escalate') {
@@ -3767,7 +3767,7 @@ export class Runner {
             // the live branch. Nothing more to land: settle done.
             await advanceTask('landing');
             record('lifecycle', { event: 'phase', phase: 'landing' });
-            await this.settleAutoCompleted(task, run, { ...patch, stat });
+            await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             return { kind: 'terminal' };
           }
           // A mirrored Run: executing → validating → verifying → landing →
@@ -3815,7 +3815,7 @@ export class Runner {
             } else {
               await advanceTask('landing');
               record('lifecycle', { event: 'phase', phase: 'landing' });
-              await this.settleAutoCompleted(task, run, { ...patch, stat });
+              await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             }
             return { kind: 'terminal' };
           }
@@ -3839,7 +3839,7 @@ export class Runner {
               // terminal (the coordinator marks the Run `phase:'terminal'`).
               await advanceTask('landing');
               record('lifecycle', { event: 'phase', phase: 'landing' });
-              await this.settleAutoCompleted(task, run, { ...patch, stat });
+              await this.settleAutoCompleted(task, run, { ...patch, ...diff });
             }
           }
         }
@@ -4054,15 +4054,25 @@ export class Runner {
     await this.runStore.backfillCosts(resolvePrices(config.prices));
   }
 
-  /** The run's `git diff --stat` at settle time, or null (direct mode, or a
-   * git failure — the stat is decoration and must never fail the run). */
-  private async diffstatFor(task: TaskRow, runId: number): Promise<string | null> {
+  /** The settled worktree diff's exact revisions and stat. Git metadata is
+   * decorative, so a failure leaves all three fields null. */
+  private async diffSnapshotFor(
+    task: TaskRow,
+    runId: number,
+  ): Promise<Pick<RunRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>> {
     const run = await this.runStore.get(runId);
-    if (!run.branch || isDirectRef(run.branch) || !run.baseBranch) return null;
+    if (!run.branch || isDirectRef(run.branch) || !run.baseBranch) {
+      return { stat: null, diffBaseOid: null, diffHeadOid: null };
+    }
     try {
-      return await Git.diffStat(task.workingDir, run.baseBranch, run.branch);
+      const [diffBaseOid, diffHeadOid, stat] = await Promise.all([
+        Git.mergeBase(task.workingDir, run.baseBranch, run.branch),
+        Git.revParse(task.workingDir, run.branch),
+        Git.diffStat(task.workingDir, run.baseBranch, run.branch),
+      ]);
+      return { stat, diffBaseOid, diffHeadOid };
     } catch {
-      return null;
+      return { stat: null, diffBaseOid: null, diffHeadOid: null };
     }
   }
 

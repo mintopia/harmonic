@@ -179,6 +179,20 @@ describe('worktree isolation mode', () => {
     expect(diff.body.stat).toContain('feature.txt');
   });
 
+  it('serves a completed Run\'s file diff after its temporary branch is removed (issue #323)', async () => {
+    const repo = makeRepo();
+    const { runId } = await runWorktreeTask(repo, { 'feature.txt': 'diff me\n' });
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+
+    git(repo, 'branch', '-D', run.branch);
+
+    const diff = await server.api('GET', `/api/runs/${runId}/diff/files`);
+    expect(diff.status).toBe(200);
+    expect(diff.body.files).toHaveLength(1);
+    expect(diff.body.files[0]).toMatchObject({ path: 'feature.txt', status: 'A' });
+    expect(diff.body.files[0].lines).toContainEqual(expect.objectContaining({ kind: 'add', text: 'diff me' }));
+  });
+
   it('serialises concurrent worktree Runs on one base repo without corrupting it (issue #121)', async () => {
     const repo = makeRepo();
     // Launch several worktree Runs against the same base repo at once. Their

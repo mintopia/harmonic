@@ -30,6 +30,8 @@ function run(overrides: Partial<RunRow> & Pick<RunRow, 'id' | 'taskId'>): RunRow
     prompt: null,
     branch: null,
     baseBranch: null,
+    diffBaseOid: null,
+    diffHeadOid: null,
     stat: null,
     candidateOid: null,
     candidateRef: null,
