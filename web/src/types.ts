@@ -254,7 +254,10 @@ export interface BudgetGuardrail {
 
 export interface Task {
   id: number;
-  prompt: string;
+  /** The full prompt is served only on the item GET (`GET /api/tasks/:id`) and
+   * the WS `task_changed` broadcast, never on a lean list row (ADR-0045, issue
+   * #350) — hence optional. List surfaces render {@link Task.summary} instead. */
+  prompt?: string;
   /** The prompt's first line, bounded server-side (ADR-0045): the card title
    * every list surface renders, so the Board never processes the full prompt.
    * Present on both list rows and the item GET. */

@@ -1096,7 +1096,14 @@ export function TicketPage({
               </span>
             </div>
 
-            <Description prompt={detail?.prompt ?? task.prompt} />
+            {/* The full prompt lives on the item GET (`detail`) or a WS-full
+                store task, never on a lean list row (issue #350). Until one
+                arrives, render nothing rather than the truncated `summary`,
+                which would flash through the markdown "Show more" body as if it
+                were the whole description. */}
+            {(detail?.prompt ?? task.prompt) != null && (
+              <Description prompt={detail?.prompt ?? task.prompt ?? ''} />
+            )}
             <Metrics task={task} runs={runs} live={liveUsage} now={now} />
             <MetaLine task={task} allTasks={allTasks} />
 

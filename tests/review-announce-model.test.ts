@@ -8,8 +8,8 @@ import {
 const task = (
   id: number,
   state: ReviewAnnouncementTask['state'],
-  prompt = `Task ${id}`,
-): ReviewAnnouncementTask => ({ id, prompt, state });
+  summary = `Task ${id}`,
+): ReviewAnnouncementTask => ({ id, summary, state });
 
 describe('attention announcements (ADR-0041)', () => {
   it('seeds the loaded board without replaying its backlog', () => {
