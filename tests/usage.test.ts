@@ -199,6 +199,27 @@ describe('replay quarantine (issue #144)', () => {
     expect(tallyToolCalls(events, () => null)).toEqual({ Bash: 1 });
   });
 
+  it('buckets read/search/fetch kinds by tool, not their per-call title', async () => {
+    const { tallyToolCalls } = await import('../src/execution/usage.js');
+    const tc = (id: string, kind: string, title: string): PersistedRunEvent => ({
+      id: 1,
+      runId: 1,
+      seq: 1,
+      ts: 1,
+      type: 'session_update',
+      payload: { sessionUpdate: 'tool_call', toolCallId: id, title, kind },
+    });
+    const events: PersistedRunEvent[] = [
+      tc('t1', 'read', "Read file '/a/one.ts'"),
+      tc('t2', 'read', "Read file '/b/two.ts'"),
+      tc('t3', 'search', "Search for 'foo' in App.tsx"),
+      tc('t4', 'fetch', 'https://example.com/x'),
+      tc('t5', 'fetch', 'https://example.com/y'),
+    ];
+
+    expect(tallyToolCalls(events, () => null)).toEqual({ Read: 2, Grep: 1, WebFetch: 2 });
+  });
+
   it('currentTurnEvents returns only the non-replay events', () => {
     const events: PersistedRunEvent[] = [
       toolCall({ toolCallId: 't1', title: 'Edit', replay: true }),
