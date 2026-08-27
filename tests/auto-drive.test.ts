@@ -10,7 +10,7 @@ import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { workContextKey } from '../src/domain/work-context-key.js';
-import { DomainError } from '../src/domain/errors.js';
+import { logger } from '../src/logger.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive } from '../src/execution/auto-drive.js';
 import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
@@ -525,7 +525,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       expect(await leaseStore.getByOwner(predecessorId)).toBeUndefined();
     });
 
-    it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', async () => {
+    it('an unrelated (different-chain) direct predecessor no longer conflicts — the second worker attaches, lease untouched, traced at debug (ADR-0046, #369)', async () => {
       build(config());
       const otherTask = await tasks.upsertMirrored(mirroredAfk(8));
       const target = await tasks.upsertMirrored(mirroredAfk(9));
@@ -536,19 +536,22 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
       // `target` has no chained Run of its own and no reattempt ancestry, so
       // resolveForTask mints it a fresh chain (branch 3) — different from the
-      // predecessor's. sharesLineOfWork is false, so the funnel falls through
-      // to acquire, which still hits the unique-key CAS.
+      // predecessor's. sharesLineOfWork is false, so the funnel falls through to
+      // acquire, which hits the unique-key CAS. Direct isolation no longer blocks
+      // on that conflict (ADR-0046): the second worker attaching to the already-
+      // claimed direct checkout is the operator's accepted risk — the funnel
+      // proceeds and traces it at debug rather than throwing.
       await tasks.setState(target.id, 'working');
-      let caught: unknown;
-      try {
-        await runner.launchClaimed(target.id);
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(DomainError);
-      expect((caught as DomainError).code).toBe('conflict');
+      const debugSpy = vi.spyOn(logger, 'debug');
+      await expect(runner.launchClaimed(target.id)).resolves.toBeDefined();
 
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`second worker attaching to already-claimed direct Work Context "${key}"`),
+      );
+      // The predecessor still owns the lease — the attach neither transferred nor
+      // released it.
       expect(await leaseStore.getByKey(key)).toMatchObject({ ownerRunId: predecessorId });
+      debugSpy.mockRestore();
     });
   });
 });

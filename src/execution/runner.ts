@@ -743,11 +743,25 @@ export class Runner {
         (existingOwnerRunId) => existingOwnerRunId === existingLease?.ownerRunId && sharesLine,
       );
     } catch (err) {
-      // Swallow the compensating delete's own error so the original lease-CAS
-      // conflict is always what propagates (a delete failure leaves at most an
-      // orphan `running` row the boot-time markInterrupted sweep reclaims).
-      await this.runStore.delete(created.id).catch(() => {});
-      throw err;
+      // Direct isolation's single checkout serialises to one worker per context,
+      // but a second worker attaching to an already-claimed direct Work Context is
+      // the operator's accepted risk (ADR-0046), not a block: the existing lease
+      // stays with its owner and this Run proceeds in the same live checkout. Trace
+      // it at debug so it is reconstructable from logs, never surfaced to the
+      // operator. Worktree mode is unchanged — its per-Run key never collides, so a
+      // conflict there is a real error and still compensates + propagates.
+      if (task.isolationMode !== 'worktree' && err instanceof DomainError && err.code === 'conflict') {
+        logger.debug(
+          `task ${task.id} run ${created.id}: second worker attaching to already-claimed direct Work Context "${key}"` +
+            ` (held by run ${existingLease?.ownerRunId ?? 'unknown'})`,
+        );
+      } else {
+        // Swallow the compensating delete's own error so the original lease-CAS
+        // conflict is always what propagates (a delete failure leaves at most an
+        // orphan `running` row the boot-time markInterrupted sweep reclaims).
+        await this.runStore.delete(created.id).catch(() => {});
+        throw err;
+      }
     }
     const run = created;
     // Retry & reject continuation (issue #147): if this Run continues a prior
