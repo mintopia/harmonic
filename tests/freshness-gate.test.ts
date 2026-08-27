@@ -4,7 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
-import { verificationCommandSchema } from '../src/config.js';
+import { verificationCommandSchema, verificationCriticSchema } from '../src/config.js';
+import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
 import { landingJournal, sessions } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -82,14 +83,26 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
   let server: TestServer;
   let wsId: number;
   let ref = 31_300;
+  // The fake critic's verdict and its per-Run invocation count (ADR-0046): the
+  // critic must review the candidate ONCE, never per rebase re-entry.
+  let criticCalls = 0;
+  const criticDrive: CriticHarnessDrive = {
+    run: async () => {
+      criticCalls += 1;
+      return { output: JSON.stringify({ verdict: 'pass', summary: 'looks correct' }), permissionRequests: [] };
+    },
+  };
 
   beforeAll(async () => {
-    server = await startServer({
-      ...stubHarness(),
-      defaults: { isolationMode: 'worktree' },
-      maxAttempts: 2,
-      drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
-    });
+    server = await startServer(
+      {
+        ...stubHarness(),
+        defaults: { isolationMode: 'worktree' },
+        maxAttempts: 2,
+        drive: { continueAttempts: 0, mergeFate: 'auto-merge' },
+      },
+      { criticDrive },
+    );
     wsId = (await server.app.ctx.workspaces.list())[0]!.id;
   });
   afterAll(async () => {
@@ -313,5 +326,41 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing landed
+  });
+
+  // Kept last: it configures a critic on the shared workspace, so running it
+  // after the critic-free sibling tests avoids leaking that config into them.
+  it('base moved: the deterministic verifier re-runs per rebase but the AI critic reviews the candidate exactly once (ADR-0046)', async () => {
+    const repo = makeRepo();
+    const flag = join(tmpPath('harmonic-freshness-flag-'), 'advanced');
+    criticCalls = 0;
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: baseMovingVerifier(repo, flag),
+      verificationCritic: verificationCriticSchema.parse({ prompt: 'Review the diff.', model: 'stub-model' }),
+    });
+    await server.app.ctx.configStore.update({
+      drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
+    });
+
+    const { taskId, runId } = await launchAfk();
+    const task = await waitFor(async () => {
+      const t = await server.app.ctx.tasks.get(taskId);
+      if (t.state === 'escalated') throw new Error(`escalated instead of landing: ${(await server.app.ctx.runs.get(runId)).reason}`);
+      return t.state === 'done' ? t : undefined;
+    });
+    expect(task.state).toBe('done');
+    expect(existsSync(flag)).toBe(true); // the verifier really did move main, forcing a rebase re-entry
+
+    // The deterministic command verifier runs twice (initial + the re-entry at
+    // the replayed tree); the critic runs ONCE, on the candidate — never again on
+    // the rebase, whose diff it already reviewed.
+    const verifications = (await lifecycle(runId)).filter((e) => e.event === 'verification') as Array<{
+      event: string;
+      mechanism: string;
+    }>;
+    expect(verifications.filter((e) => e.mechanism === 'command')).toHaveLength(2);
+    expect(verifications.filter((e) => e.mechanism === 'critic')).toHaveLength(1);
+    expect(criticCalls).toBe(1);
   });
 });

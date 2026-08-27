@@ -66,6 +66,7 @@ import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { logger } from '../logger.js';
 import { landBranchAndRunPostLand, type PostLandHook } from './branch-landing.js';
+import { singleFlight } from '../reliability/single-flight.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
   EpicRefreshResolveDispatchOutcome,
@@ -422,6 +423,11 @@ export class Runner {
   /** The single-writer merge train an Epic member's Run lands through (issue
    * #163); undefined on a server with no parallel-Epic execution. */
   private readonly mergeTrain: MergeTrainCoordinator | undefined;
+  /** Per-Task single-flight gate over the integration-completion loop (ADR-0046):
+   * a Task runs at most one integration attempt at a time, so an overlapping
+   * completion coalesces onto the in-flight one instead of racing it. Keyed by
+   * `task.id`; the entry is dropped once the completion resolves. */
+  private readonly completionGates = new Map<number, () => Promise<LandingGate>>();
   /** Injectable agent-critic drive (issue #164); undefined → `runCritic` falls
    * back to the real `createAcpCriticDrive`. */
   private readonly criticDrive: RunnerOptions['criticDrive'];
@@ -1351,6 +1357,12 @@ export class Runner {
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
     parent: SpanContext,
+    // Whether the agent critic runs. The completion loop re-verifies a replayed
+    // rebase with the deterministic verifiers ONLY (ADR-0046): a rebase replays
+    // the same diff the critic already reviewed once on the candidate, so
+    // re-invoking it per retry buys nothing — the integration behaviour a rebase
+    // does exercise is exactly what the deterministic verifiers catch.
+    criticEnabled = true,
   ): Promise<{ decision: VerificationDecision; ran: boolean }> {
     const config = this.getConfig();
     const ws = await this.getWorkspace?.(task.workspaceId);
@@ -1408,7 +1420,7 @@ export class Runner {
       }
     }
 
-    if (review.enabled && verdicts.every((entry) => entry.verdict === 'pass')) {
+    if (criticEnabled && review.enabled && verdicts.every((entry) => entry.verdict === 'pass')) {
       // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B;
       // containment relaxed by the 2026-08 amendment): a second verdict folded
       // into the same `combineVerdicts`. It reads the frozen candidate from a
@@ -1578,22 +1590,54 @@ export class Runner {
   }
 
   /**
-   * The landing freshness gate (ADR-0041). Asserts the branch still sits at
-   * its verified tip and that tip contains the base's current tip, then lands
-   * the worktree branch inside the same fresh window: an Epic member through
-   * the merge train, any other worktree Run (native, or mirrored with the
-   * auto-merge fate) through the SHA-asserted, fast-forward-only
-   * {@link landBranch}. Both re-assert freshness at the moment of landing, so
-   * two Runs passing the check concurrently cannot both land — the second is
-   * `stale`. If the base moved, the Run re-enters Rebase → Verification on the
-   * SAME Attempt and Session — a new Rebase Task row, the candidate re-pinned,
-   * the full verifier suite re-run at the new head — then re-checks. Nothing
-   * failed, so the attempt counter is untouched and no implementation turn
-   * runs. A rebase conflict or a failing re-verification IS a failed Attempt
-   * and goes to the unified loop; a Run with no ticket branch to rebase (direct
-   * mode), a git fault, or a base that keeps advancing, Escalates.
+   * Integration completion (ADR-0046), single-flight per Task: a Task runs at
+   * most one integration attempt at a time, so an overlapping completion
+   * coalesces onto the in-flight one rather than racing it onto the base. The
+   * loop body is {@link completeIntegration}; the gate is dropped once it
+   * resolves.
    */
-  private async freshenForLanding(
+  private freshenForLanding(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Workspace,
+    attemptNumber: number,
+    autoDriven: boolean,
+    signal: AbortSignal,
+    record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
+  ): Promise<LandingGate> {
+    const inFlight = this.completionGates.get(task.id);
+    if (inFlight) return inFlight();
+    const gate = singleFlight(() =>
+      this.completeIntegration(task, run, workspace, attemptNumber, autoDriven, signal, record, parent),
+    );
+    this.completionGates.set(task.id, gate);
+    return (async () => {
+      try {
+        return await gate();
+      } finally {
+        this.completionGates.delete(task.id);
+      }
+    })();
+  }
+
+  /**
+   * The completion loop (ADR-0046). Publishes a fresh candidate — an Epic member
+   * through the merge train, any other worktree Run through {@link landBranch}'s
+   * checkout-aware CAS (`casUpdateRef` off a checked-out base, a coherent
+   * fast-forward on it), which re-asserts freshness so a concurrent publish is
+   * refused rather than overwritten. A moved base is NORMAL, not a failure: the
+   * Run re-enters Rebase → Verification on the SAME Attempt and Session and
+   * re-verifies the replayed tree with the DETERMINISTIC verifiers only (the
+   * critic reviewed this diff once on the candidate). The one skip of that
+   * re-verify is a pure no-op fast-forward (base already an ancestor of the
+   * candidate); there is no path-intersection shortcut. Bounded by the configured
+   * integration-retry limit (`task.integrationRetries`); a base that keeps
+   * advancing escalates plainly rather than tight-retrying. A rebase conflict or
+   * a failing re-verification is a failed Attempt for the unified loop; direct
+   * mode (no branch) or a git fault Escalates.
+   */
+  private async completeIntegration(
     task: TaskRow,
     run: RunRow,
     workspace: Workspace,
@@ -1604,9 +1648,9 @@ export class Runner {
     parent: SpanContext,
   ): Promise<LandingGate> {
     let current = await this.runStore.get(run.id);
-    // How many times this landing may re-enter Rebase → Verification because
-    // the base advanced meanwhile (ADR-0046). Each re-entry costs a full
-    // verification pass, so a base that keeps moving escalates rather than
+    // How many times this completion may re-enter Rebase → Verification because
+    // the base advanced meanwhile (ADR-0046). Each re-entry costs a deterministic
+    // verification pass, so a base that keeps moving escalates plainly rather than
     // spinning. Resolved per-Task (Task → Workspace → global default).
     const maxReentries = task.integrationRetries;
     for (let reentries = 0; ; reentries += 1) {
@@ -1656,7 +1700,9 @@ export class Runner {
       }
       current = await this.runStore.update(run.id, { candidateOid: rebase.tip });
       record('lifecycle', { event: 'phase', phase: 'verifying' });
-      const { decision } = await this.runVerification(task, current, rebase.tip, signal, record, parent);
+      // Deterministic verifiers only on the replayed tree (ADR-0046); see the
+      // `criticEnabled` param on runVerification.
+      const { decision } = await this.runVerification(task, current, rebase.tip, signal, record, parent, false);
       if (this.shuttingDown) return { kind: 'turn', outcome: { kind: 'terminal' } };
       if (decision.outcome !== 'proceed') {
         return { kind: 'turn', outcome: await this.verificationFailTurn(run, decision, record) };
