@@ -88,7 +88,7 @@ import {
   type BranchClassification,
 } from '../domain/branch-recovery.js';
 import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
-import { landBranchAndRunPostLand, wasSanctionedLand, type PostLandHook } from './branch-landing.js';
+import { landBranchAndRunPostLand, type PostLandHook } from './branch-landing.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
   EpicRefreshResolveDispatchOutcome,
@@ -293,14 +293,6 @@ interface Workspace {
    * reliability-design Unit D "worktree/refs retained until operator disposition".
    */
   retainForBranchViolation?: boolean;
-  /**
-   * Worktree-isolation only: the branch the canonical checkout is parked on and
-   * its tip, captured before the agent turn. A worktree Run works exclusively in
-   * its own worktree, so this ref must not move across the turn except through a
-   * Harmonic land; an un-sanctioned advance means an agent `cd`-ed to the
-   * canonical checkout and committed onto the protected branch — a hard escalate.
-   */
-  canonicalGuard?: { branch: string; tip: string };
 }
 
 interface ActiveRun {
@@ -1404,7 +1396,6 @@ export class Runner {
 
     const path = join(this.worktreesDir, `run-${run.id}`);
     mkdirSync(this.worktreesDir, { recursive: true });
-    const canonicalGuard = await this.captureCanonicalGuard(task.workingDir);
 
     if (resume) {
       // Self-heal turn (issue #137): resume the Run's prior work in the SAME
@@ -1424,7 +1415,7 @@ export class Runner {
       if (!existsSync(path)) {
         await Git.addWorktreeCheckout(task.workingDir, path, branch);
       }
-      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false, ...(canonicalGuard ? { canonicalGuard } : {}) };
+      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
     }
 
     const baseBranch = await this.resolveBaseBranch(task);
@@ -1443,20 +1434,7 @@ export class Runner {
     await this.runStore.update(run.id, { branch, baseBranch });
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.
-    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false, ...(canonicalGuard ? { canonicalGuard } : {}) };
-  }
-
-  /**
-   * The branch the canonical checkout is parked on and its tip, read before a
-   * worktree Run's agent turn. A detached canonical HEAD (a concurrent direct
-   * Run, issue #152) has no branch ref an errant commit would advance, so it
-   * yields `undefined` and the backstop simply does not apply.
-   */
-  private async captureCanonicalGuard(repoDir: string): Promise<Workspace['canonicalGuard']> {
-    const branch = await Git.symbolicBranch(repoDir).catch(() => null);
-    if (!branch) return undefined;
-    const tip = await Git.revParse(repoDir, branch).catch(() => null);
-    return tip ? { branch, tip } : undefined;
+    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
   }
 
   /**
@@ -3789,33 +3767,6 @@ export class Runner {
           Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
           workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
         ]);
-        const producedCandidate = !!(head && head !== base);
-        // A worktree Run is isolated in its own worktree, so the shared checkout's
-        // branch moving during the turn (a push, a pull, another Run's merge — any
-        // change Harmonic doesn't drive) cannot affect this Run's candidate, and
-        // the merge path already reconciles a moved target. So we let the shared
-        // branch move freely. The only worrying case is a Run that produced NO
-        // candidate of its own while that branch advanced: the tell-tale of an
-        // agent that worked in the shared checkout by mistake instead of its
-        // worktree, leaving the worktree empty. Its commit stays on the shared
-        // checkout as evidence, so the (innocent) worktree tears down normally.
-        if (workspace.canonicalGuard && !escalating && !producedCandidate) {
-          const { branch, tip } = workspace.canonicalGuard;
-          const now = await Git.revParse(task.workingDir, branch).catch(() => null);
-          if (now && now !== tip && !wasSanctionedLand(task.workingDir, branch, now)) {
-            const detail = `${branch} moved ${tip.slice(0, 12)} → ${now.slice(0, 12)} during the run, and the worktree gained no commit`;
-            await this.runFacts.append(run.id, 'branch-violation', {
-              outcome: 'canonical-mutation',
-              reason: 'worktree run produced no commit; its changes appear to be in the shared checkout',
-              detail,
-              intendedBranch: run.branch ?? null,
-              headBranch: branch,
-              headCommit: now,
-            });
-            record('lifecycle', { event: 'branch-violation', reason: 'worktree run left its work in the shared checkout', detail });
-            escalating = `This run wrote its changes to the shared ${branch} checkout instead of its own worktree, so the worktree has nothing to verify.`;
-          }
-        }
         if (head && head !== base) {
           implementationHead = head;
           if (workspace.directIsolation) {
