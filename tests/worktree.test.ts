@@ -71,6 +71,41 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
   });
 
+  it('escalates (does NOT land) when the agent commits onto the canonical checkout instead of its worktree', async () => {
+    const repo = makeRepo();
+    const mainBefore = git(repo, 'rev-parse', 'main');
+
+    // The stub does its legit work in the worktree, then — simulating the agent
+    // `cd`-ing to the canonical repo and committing onto the protected branch it
+    // is parked on — runs a commit against `repo` (main) from inside its turn.
+    // The trailing absolute `-C repo` wins over the stub's own `-C <worktree>`.
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({
+        writeFiles: { 'feature.txt': 'legit worktree work\n' },
+        gitExec: [['-C', repo, 'commit', '--allow-empty', '-m', 'stray commit straight onto canonical']],
+      }),
+      workingDir: repo,
+      isolationMode: 'worktree',
+    });
+    await server.api('POST', `/api/tasks/${created.body.id}/run`);
+
+    const task = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${created.body.id}`)).body;
+      return t.state === 'done' || t.state === 'escalated' ? t : undefined;
+    });
+
+    // The stray canonical mutation is caught and the Run Escalates rather than
+    // verifying/landing over a protected branch an agent moved by hand.
+    expect(task.state).toBe('escalated');
+    expect(task.escalationReason).toMatch(/canonical/);
+
+    // main carries ONLY the agent's stray commit (a direct child of its prior
+    // tip) — the worktree work never landed onto it.
+    expect(git(repo, 'log', '-1', '--format=%s', 'main')).toBe('stray commit straight onto canonical');
+    expect(git(repo, 'rev-parse', 'main^')).toBe(mainBefore);
+    expect(() => git(repo, 'show', 'main:feature.txt')).toThrow();
+  });
+
   it('landing merges the run branch into the base branch and refreshes its checkout', async () => {
     const repo = makeRepo();
     const { taskId } = await runWorktreeTask(repo, { 'feature.txt': 'merged\n' });

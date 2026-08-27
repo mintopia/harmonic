@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defaultBranchPostLand, landBranch, landBranchAndRunPostLand, resolveRepositoryDefaultBranch } from '../src/execution/branch-landing.js';
+import { defaultBranchPostLand, landBranch, landBranchAndRunPostLand, resolveRepositoryDefaultBranch, wasSanctionedLand } from '../src/execution/branch-landing.js';
 import { Git } from '../src/execution/git.js';
 
 /**
@@ -144,6 +144,27 @@ describe('branch landing (issue #153)', () => {
     expect(git(repo, 'show', 'HEAD:feat.txt')).toBe('work'); // working tree coherent
     expect(git(repo, 'status', '--porcelain')).toBe('');
     expect(worktreeCount(repo)).toBe(1);
+  });
+
+  it('records a successful land as sanctioned, so an un-landed stray commit onto the same branch is not', async () => {
+    const repo = makeRepo();
+    makeBranchAhead(repo, 'feat', 'feat.txt', 'work\n');
+    const base = oid(repo, 'main');
+    const featTip = oid(repo, 'feat');
+    // Nothing sanctioned yet: neither the base tip nor the branch being landed.
+    expect(wasSanctionedLand(repo, 'main', featTip)).toBe(false);
+
+    const out = await landBranch({ repoDir: repo, baseBranch: 'main', branch: 'feat', expectedOid: featTip, leaseHeld: true });
+    expect(out).toMatchObject({ ok: true });
+
+    // The oid Harmonic advanced main to is sanctioned; the pre-land tip is not.
+    expect(wasSanctionedLand(repo, 'main', oid(repo, 'main'))).toBe(true);
+    expect(wasSanctionedLand(repo, 'main', base)).toBe(false);
+
+    // A stray commit straight onto main — the signature of an agent `cd`-ing to
+    // the canonical checkout — yields an oid no land ever sanctioned.
+    git(repo, 'commit', '--allow-empty', '-m', 'stray');
+    expect(wasSanctionedLand(repo, 'main', oid(repo, 'main'))).toBe(false);
   });
 
   it('AC5 (checked out, no lease): falls back to PR/manual rather than a desyncing ref-update', async () => {

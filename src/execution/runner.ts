@@ -87,7 +87,7 @@ import {
   type BranchClassification,
 } from '../domain/branch-recovery.js';
 import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
-import { landBranchAndRunPostLand, type PostLandHook } from './branch-landing.js';
+import { landBranchAndRunPostLand, wasSanctionedLand, type PostLandHook } from './branch-landing.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
   EpicRefreshResolveDispatchOutcome,
@@ -292,6 +292,14 @@ interface Workspace {
    * reliability-design Unit D "worktree/refs retained until operator disposition".
    */
   retainForBranchViolation?: boolean;
+  /**
+   * Worktree-isolation only: the branch the canonical checkout is parked on and
+   * its tip, captured before the agent turn. A worktree Run works exclusively in
+   * its own worktree, so this ref must not move across the turn except through a
+   * Harmonic land; an un-sanctioned advance means an agent `cd`-ed to the
+   * canonical checkout and committed onto the protected branch — a hard escalate.
+   */
+  canonicalGuard?: { branch: string; tip: string };
 }
 
 interface ActiveRun {
@@ -1394,6 +1402,7 @@ export class Runner {
 
     const path = join(this.worktreesDir, `run-${run.id}`);
     mkdirSync(this.worktreesDir, { recursive: true });
+    const canonicalGuard = await this.captureCanonicalGuard(task.workingDir);
 
     if (resume) {
       // Self-heal turn (issue #137): resume the Run's prior work in the SAME
@@ -1413,7 +1422,7 @@ export class Runner {
       if (!existsSync(path)) {
         await Git.addWorktreeCheckout(task.workingDir, path, branch);
       }
-      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
+      return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false, ...(canonicalGuard ? { canonicalGuard } : {}) };
     }
 
     const baseBranch = await this.resolveBaseBranch(task);
@@ -1432,7 +1441,20 @@ export class Runner {
     await this.runStore.update(run.id, { branch, baseBranch });
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.
-    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
+    return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false, ...(canonicalGuard ? { canonicalGuard } : {}) };
+  }
+
+  /**
+   * The branch the canonical checkout is parked on and its tip, read before a
+   * worktree Run's agent turn. A detached canonical HEAD (a concurrent direct
+   * Run, issue #152) has no branch ref an errant commit would advance, so it
+   * yields `undefined` and the backstop simply does not apply.
+   */
+  private async captureCanonicalGuard(repoDir: string): Promise<Workspace['canonicalGuard']> {
+    const branch = await Git.symbolicBranch(repoDir).catch(() => null);
+    if (!branch) return undefined;
+    const tip = await Git.revParse(repoDir, branch).catch(() => null);
+    return tip ? { branch, tip } : undefined;
   }
 
   /**
@@ -3532,7 +3554,14 @@ export class Runner {
       // continue budget runs out (then the settle block below routes it to the
       // usual unresolved path). A native Run is otherwise single-turn — but
       // either kind takes a queued operator steer as an extra turn first (below).
-      let promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task, this.getConfig().taskPrompt);
+      // A worktree-isolation Run's harness is spawned in — and must operate only
+      // from — its worktree (`workspace.cwd`), never the canonical checkout the
+      // Task's `workingDir` names. Surface the worktree as the `{workingDir}` the
+      // prompt tells the agent, so a bare `cd $workingDir` lands there and cannot
+      // commit onto the protected branch the canonical checkout is parked on.
+      let promptText = autoDriven
+        ? this.autoDrive!.prompt(task)
+        : promptForTask({ ...task, workingDir: workspace.cwd }, this.getConfig().taskPrompt);
       // An operator continuation of a settled warm Session ({@link steerSettled}):
       // this Run bound the prior Session (session/load), so its first turn is just
       // the operator's follow-up message — the conversation already holds the task
@@ -3735,6 +3764,31 @@ export class Runner {
             // than re-implementing it here.
             workspace.retainForBranchViolation = true;
             escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
+          }
+        }
+        // Worktree-isolation backstop to the worktree-path prompt guard: a
+        // worktree Run works only in its own worktree, so the branch the
+        // canonical checkout is parked on must not advance across the turn except
+        // through a Harmonic land ({@link wasSanctionedLand}). An un-sanctioned
+        // advance means an agent `cd`-ed to the canonical checkout and committed
+        // onto the protected branch — refuse to verify/land it and Escalate. The
+        // stray commit itself is the operator's evidence on canonical, so the
+        // (innocent) worktree tears down normally rather than being retained.
+        if (workspace.canonicalGuard && !escalating) {
+          const { branch, tip } = workspace.canonicalGuard;
+          const now = await Git.revParse(task.workingDir, branch).catch(() => null);
+          if (now && now !== tip && !wasSanctionedLand(task.workingDir, branch, now)) {
+            const detail = `${branch} in ${task.workingDir} advanced ${tip.slice(0, 12)} → ${now.slice(0, 12)} outside any Harmonic land`;
+            await this.runFacts.append(run.id, 'branch-violation', {
+              outcome: 'canonical-mutation',
+              reason: 'worktree Run advanced the canonical protected branch',
+              detail,
+              intendedBranch: run.branch ?? null,
+              headBranch: branch,
+              headCommit: now,
+            });
+            record('lifecycle', { event: 'branch-violation', reason: 'canonical protected branch advanced outside a Harmonic land', detail });
+            escalating = `an agent committed onto the canonical checkout instead of its worktree: ${detail}`;
           }
         }
         // Verification must see the commit the agent actually left behind,

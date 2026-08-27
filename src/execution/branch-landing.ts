@@ -144,6 +144,30 @@ export async function landBranchAndRunPostLand(
   return outcome;
 }
 
+// Every advance of a target ref funnels through here (`ffOnly`/`casUpdateRef`
+// are called nowhere else for a task's protected branch), so recording each
+// landed tip gives the worktree-isolation backstop a way to tell its own
+// sanctioned lands from a stray agent commit made straight onto a checked-out
+// canonical branch. Bounded per target — lands are infrequent and only recent
+// tips matter for the across-a-turn comparison.
+const SANCTIONED_TIP_CAP = 128;
+const sanctionedTips = new Map<string, Set<string>>();
+const sanctionKey = (repoDir: string, baseBranch: string) => `${repoDir}\0${baseBranch}`;
+
+function recordSanctionedLand(repoDir: string, baseBranch: string, oid: string): void {
+  const key = sanctionKey(repoDir, baseBranch);
+  let set = sanctionedTips.get(key);
+  if (!set) sanctionedTips.set(key, (set = new Set()));
+  set.add(oid);
+  if (set.size > SANCTIONED_TIP_CAP) set.delete(set.values().next().value as string);
+}
+
+/** Whether Harmonic itself advanced `baseBranch` in `repoDir` to `oid` — the
+ * negative is the signal a worktree Run committed onto canonical directly. */
+export function wasSanctionedLand(repoDir: string, baseBranch: string, oid: string): boolean {
+  return sanctionedTips.get(sanctionKey(repoDir, baseBranch))?.has(oid) ?? false;
+}
+
 /**
  * Land `branch` into `baseBranch` per the module contract. Never throws for an
  * expected landing failure (conflict, a moved target, a missing lease) — those
@@ -156,8 +180,10 @@ export async function landBranch(args: LandBranchArgs): Promise<LandBranchOutcom
     : undefined;
   try {
     const outcome = operation ? await operation.run(() => landBranchUnchecked(args)) : await landBranchUnchecked(args);
-    if (outcome.ok) operation?.end();
-    else operation?.fail(outcome.detail);
+    if (outcome.ok) {
+      recordSanctionedLand(args.repoDir, args.baseBranch, outcome.oid);
+      operation?.end();
+    } else operation?.fail(outcome.detail);
     return outcome;
   } catch (error) {
     operation?.fail(error instanceof Error ? error.message : String(error));
