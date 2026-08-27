@@ -83,7 +83,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       .map((e: any) => e.payload);
 
   it('AC1/AC3/AC4/AC5: a passing command merges a native Run to done; the attempt records the verified head OID', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(0) });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(0)] });
     const { taskId, runId } = await createAndRun();
 
     const task = await waitFor(async () => {
@@ -110,7 +110,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch (ADR-0046)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     const baseBefore = git(repoDir, 'rev-parse', 'main');
     const { taskId, runId } = await createAndRun();
@@ -137,7 +137,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit (ADR-0046)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     // Uncommitted changes the agent did not make, present before the Run starts.
     writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
@@ -155,7 +155,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   });
 
   it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [exitCommand(1)] });
     const { taskId, runId } = await createAndRun();
 
     // The Run terminates failed rather than parking for review or merging.
@@ -189,11 +189,13 @@ describe('command verifier end-to-end (issue #135)', () => {
 
   it('AC2/AC4: an inconclusive command consumes the same bounded Attempt loop', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: verificationCommandSchema.parse({
-        command: 'definitely-not-a-real-command-xyzzy',
-        args: [],
-        timeoutSeconds: 30,
-      }),
+      verificationCommand: [
+        verificationCommandSchema.parse({
+          command: 'definitely-not-a-real-command-xyzzy',
+          args: [],
+          timeoutSeconds: 30,
+        }),
+      ],
     });
     const { taskId, runId } = await createAndRun();
 
@@ -216,7 +218,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   it('a configured command with no committed implementation fails closed', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'direct',
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     writeFileSync(join(repoDir, 'uncommitted.txt'), 'dirty\n');
 
@@ -268,7 +270,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   it('a pass records a verified-head fact at the exact SHA, and the gate refuses a moved tip', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     const { taskId, runId } = await createAndRun();
     await waitFor(async () => {
@@ -304,7 +306,7 @@ describe('command verifier end-to-end (issue #135)', () => {
   it('opens every Attempt with a recorded Rebase Task, including a clean no-op rebase', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       isolationMode: 'worktree',
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     const { taskId } = await createAndRun();
     await waitFor(async () => {
@@ -392,7 +394,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
   it('a passing verification merges directly — there is no review gate to park at (ADR-0041)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     const { taskId, runId } = await createAndRun();
 
@@ -409,7 +411,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
   it('a pass merges under Harmonic\'s own merge fact, never the operator disposition', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     const { taskId, runId } = await createAndRun();
 
@@ -439,7 +441,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
   it('safety: a fail on every attempt Escalates — merging never rescues a red verdict', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(1),
+      verificationCommand: [exitCommand(1)],
     });
     const { taskId, runId } = await createAndRun();
 
@@ -479,7 +481,7 @@ describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
 
   it('a worktree run merges the merge into the base branch (no human gate)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
     });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 

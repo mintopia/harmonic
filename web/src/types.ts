@@ -214,12 +214,16 @@ export interface Workspace {
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
   contextReuseTokenLimit: number | null;
-  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
-   * the command and critic: `null` inherits the global `config.verify` default,
-   * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
-   * configured object overrides it. Both read back as the shape they were PATCHed
-   * as. */
-  verificationCommand: VerificationCommand | VerifierOff | null;
+  /** Verification overrides (ADR-0021, issues #132/#138/#165/#174/#338). The
+   * command verifier is list-grain, exactly mirroring the global editor: `null`
+   * inherits the global `config.verify.commands` list, an empty array turns
+   * verification off for this Workspace (no commands run here), and a
+   * non-empty array overrides the whole ordered list. The critic stays
+   * tri-state: `null` inherits the global `config.verify` default,
+   * {@link VerifierOff} explicitly disables it for this Workspace, and a
+   * configured object overrides it. Both read back as the shape they were
+   * PATCHed as. */
+  verificationCommand: VerificationCommand[] | null;
   verificationCritic: VerificationCritic | VerifierOff | null;
   /** Guardrail overrides (ADR-0019, issue #166); `null` inherits
    * `config.guardrails.{budget,progress}`. The budget reads back as the parsed

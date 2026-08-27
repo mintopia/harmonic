@@ -59,11 +59,12 @@ const workspaceSchema = z
     /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
     maxAttempts: z.number().nullable().meta({ example: null }),
     contextReuseTokenLimit: z.number().nullable().meta({ example: null }),
-    // Verification verifier overrides (issue #132), tri-state (issue #174): the
-    // raw JSON columns parsed back into their object shape, so a client reads a
-    // set override the same shape it PATCHes. null ⇒ inherit
-    // `config.verification.{command,critic}`; `{ off: true }` ⇒ explicitly
-    // disabled for this Workspace.
+    // Verification verifier overrides: the raw JSON columns parsed back into their
+    // shape, so a client reads a set override the same shape it PATCHes. The
+    // command is list-grain (ADR-0044 §D, issue #338): null ⇒ inherit
+    // `config.verify.commands`, a non-empty array overrides the whole list, `[]` ⇒
+    // off (run no commands here). The critic stays tri-state (issue #174): null ⇒
+    // inherit, an object overrides, `{ off: true }` ⇒ explicitly disabled.
     verificationCommand: verificationCommandOverrideSchema.nullable().meta({ example: null }),
     verificationCritic: verificationCriticOverrideSchema.nullable().meta({ example: null }),
     guardrailBudget: budgetGuardrailSchema.nullable().meta({ example: null }),

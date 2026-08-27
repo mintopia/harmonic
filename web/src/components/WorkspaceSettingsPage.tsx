@@ -16,7 +16,7 @@ import {
   isVerifierOff,
   setCommandField,
   setCriticField,
-  summarizeCommand,
+  summarizeCommands,
   summarizeCritic,
 } from './verification-override-model';
 import { Switch } from './Switch';
@@ -548,67 +548,88 @@ export function WorkspaceSettingsPage({
               <InheritField
                 label="Command verifier"
                 value={local.verificationCommand}
-                inherited={config.verify.commands[0] ?? EMPTY_COMMAND}
-                format={summarizeCommand}
+                inherited={config.verify.commands}
+                format={summarizeCommands}
                 onChange={(verificationCommand) => set('verificationCommand', verificationCommand)}
               >
-                {({ value, onChange }) => {
-                  // The render prop's value can be the off sentinel, since
-                  // overriding-and-off both count as "overridden" to InheritField.
-                  if (isVerifierOff(value)) {
-                    return (
-                      <div className="flex flex-col gap-3">
-                        <Switch checked={false} onChange={() => onChange(config.verify.commands[0] ?? EMPTY_COMMAND)}>
-                          Enabled
-                        </Switch>
-                        <p className="text-small text-muted">
-                          Disabled for this workspace — this verifier will not run here.
-                        </p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="flex flex-col gap-3">
-                      <Switch checked={true} onChange={() => onChange(VERIFIER_OFF)}>
-                        Enabled
-                      </Switch>
-                      <div>
-                        <label className={fieldLabel} htmlFor="workspace-verify-command">Command</label>
-                        <input
-                          id="workspace-verify-command"
-                          className={`${field} font-data`}
-                          placeholder="npm"
-                          value={value.command}
-                          onChange={(e) => onChange(setCommandField(value, 'command', e.target.value))}
-                        />
-                        <FieldError message={fieldErrors['verificationCommand.command']} />
-                      </div>
-                      <div>
-                        <label className={fieldLabel} htmlFor="workspace-verify-args">
-                          Arguments <span className="normal-case text-muted">(space-separated)</span>
-                        </label>
-                        <input
-                          id="workspace-verify-args"
-                          className={`${field} font-data`}
-                          placeholder="test"
-                          value={argsText(value)}
-                          onChange={(e) => onChange(setCommandField(value, 'args', e.target.value))}
-                        />
-                      </div>
-                      <div>
-                        <label className={fieldLabel} htmlFor="workspace-verify-timeout">Timeout (seconds)</label>
-                        <input
-                          id="workspace-verify-timeout"
-                          type="number"
-                          min={1}
-                          className={`${field} w-40 tabular-nums`}
-                          value={value.timeoutSeconds}
-                          onChange={(e) => onChange(setCommandField(value, 'timeoutSeconds', e.target.value))}
-                        />
-                      </div>
+                {({ value, onChange }) => (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className={fieldLabel}>Commands</span>
+                      <button
+                        type="button"
+                        className="text-small text-accent"
+                        onClick={() => onChange([...value, EMPTY_COMMAND])}
+                      >
+                        Add command
+                      </button>
                     </div>
-                  );
-                }}
+                    {value.length === 0 ? (
+                      <p className="text-small text-muted">
+                        No commands — verification runs nothing in this workspace.
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-5">
+                        {value.map((command, index) => (
+                          <div key={index} className="flex flex-col gap-3 border-l-2 border-edge pl-3">
+                            <div className="flex items-center justify-between">
+                              <span className={fieldLabel}>Command {index + 1}</span>
+                              <button
+                                type="button"
+                                className="text-small text-failed"
+                                onClick={() => onChange(value.filter((_, commandIndex) => commandIndex !== index))}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <div>
+                              <label className={fieldLabel} htmlFor={`workspace-verify-command-${index}`}>Command</label>
+                              <input
+                                id={`workspace-verify-command-${index}`}
+                                className={`${field} font-data`}
+                                placeholder="npm"
+                                value={command.command}
+                                onChange={(e) =>
+                                  onChange(value.map((c, i) => (i === index ? setCommandField(c, 'command', e.target.value) : c)))
+                                }
+                              />
+                              <FieldError message={fieldErrors[`verificationCommand.${index}.command`]} />
+                            </div>
+                            <div>
+                              <label className={fieldLabel} htmlFor={`workspace-verify-args-${index}`}>
+                                Arguments <span className="normal-case text-muted">(space-separated)</span>
+                              </label>
+                              <input
+                                id={`workspace-verify-args-${index}`}
+                                className={`${field} font-data`}
+                                placeholder="test"
+                                value={argsText(command)}
+                                onChange={(e) =>
+                                  onChange(value.map((c, i) => (i === index ? setCommandField(c, 'args', e.target.value) : c)))
+                                }
+                              />
+                            </div>
+                            <div>
+                              <label className={fieldLabel} htmlFor={`workspace-verify-timeout-${index}`}>Timeout (seconds)</label>
+                              <input
+                                id={`workspace-verify-timeout-${index}`}
+                                type="number"
+                                min={1}
+                                className={`${field} w-40 tabular-nums`}
+                                value={command.timeoutSeconds}
+                                onChange={(e) =>
+                                  onChange(
+                                    value.map((c, i) => (i === index ? setCommandField(c, 'timeoutSeconds', e.target.value) : c)),
+                                  )
+                                }
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </InheritField>
             </div>
             <div>
@@ -622,7 +643,9 @@ export function WorkspaceSettingsPage({
                 onChange={(verificationCritic) => set('verificationCritic', verificationCritic)}
               >
                 {({ value, onChange }) => {
-                  // Same off-sentinel narrowing as the command verifier above.
+                  // The critic keeps its tri-state off sentinel (issue #174): an
+                  // overridden value can be the { off: true } sentinel, which reads
+                  // as "overridden" to InheritField, so narrow it here.
                   if (isVerifierOff(value)) {
                     return (
                       <div className="flex flex-col gap-3">

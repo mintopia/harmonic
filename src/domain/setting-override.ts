@@ -63,24 +63,33 @@ export type ResolvedVerifiers = {
 };
 
 /**
- * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021),
- * tri-state per verifier (issue #174). Each verifier is its own key: an unset
- * column inherits the global default, a stored verifier object overrides it, and
- * a stored `{ off: true }` sentinel forces the verifier off for this Workspace
- * regardless of the global default. With nothing configured (global default null
- * and no Workspace override) both resolve to null: an empty verifier set, so a
- * Run behaves exactly as it does today. No verifier executes here — this only
- * resolves the config.
+ * Resolve a Workspace's effective Verification verifiers (issue #132, ADR-0021).
+ *
+ * The **command list** overrides at the list grain (ADR-0044 §D, issue #338): an
+ * unset column (`null`) inherits the global list, an explicit array overrides it
+ * whole — a non-empty array is that ordered list, an empty array is *off* (run no
+ * commands here). There is no per-command inheritance. It routes through
+ * {@link resolveScoped}, so the registry decides overridability and the plain
+ * `workspace ?? global` rule applies: only `null` inherits, an empty array is a
+ * real override.
+ *
+ * The **critic** is still tri-state per issue #174: an unset column inherits, a
+ * stored critic object overrides, and a stored `{ off: true }` sentinel forces it
+ * off. With nothing configured anywhere, commands resolve to `[]` and the review
+ * to disabled — an empty verifier set, so a Run behaves exactly as today. No
+ * verifier executes here — this only resolves the config.
  */
 export function resolveVerifiers(
   ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
-  // Route each verifier column through the registry: a column only overrides the
-  // global default when the registry declares its setting overridable.
-  const commandStored = isOverridable('verificationCommand') ? ws.verificationCommand : null;
+  // The command column stores the whole list as JSON (or null to inherit). Parse
+  // then hand to resolveScoped, which applies the registry's scope and the
+  // `workspace ?? global` rule — an empty array survives as a real override.
+  const commandStored = ws.verificationCommand == null ? null : (JSON.parse(ws.verificationCommand) as VerificationCommand[]);
+  const commands = resolveScoped('verificationCommand', commandStored, config.verify.commands);
+  // The critic keeps its bespoke tri-state; route its column through the registry.
   const criticStored = isOverridable('verificationCritic') ? ws.verificationCritic : null;
-  const commands = resolveCommands(commandStored, config.verify.commands);
   const review = resolveReview(criticStored, config.verify.review);
   return {
     commands,
@@ -90,21 +99,9 @@ export function resolveVerifiers(
   };
 }
 
-/** True when a parsed verifier override column is the explicit off sentinel (issue #174). */
+/** True when a parsed critic override column is the explicit off sentinel (issue #174). */
 function isVerifierOff(v: unknown): boolean {
   return typeof v === 'object' && v !== null && (v as { off?: unknown }).off === true;
-}
-
-/**
- * Resolve a single verifier column, tri-state: an unset/empty column inherits
- * the global default, a stored `{ off: true }` sentinel resolves to null (off)
- * regardless of the global default, and any other stored object overrides it.
- */
-function resolveCommands(stored: string | null | undefined, globalDefault: VerificationCommand[]): VerificationCommand[] {
-  if (!stored) return globalDefault;
-  const parsed = JSON.parse(stored) as unknown;
-  if (isVerifierOff(parsed)) return [];
-  return Array.isArray(parsed) ? parsed as VerificationCommand[] : [parsed as VerificationCommand];
 }
 
 function resolveReview(stored: string | null | undefined, globalDefault: VerificationReview): VerificationReview {

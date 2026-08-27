@@ -57,9 +57,10 @@ export const workspaceOverridesSchema = z.object({
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
   /**
-   * Command-verifier override (issue #132), tri-state (issue #174): null/absent
-   * inherits `config.verification.command`, a verifier object overrides it, and
-   * `{ off: true }` explicitly disables the verifier for this Workspace.
+   * Command-verifier override (issue #132), list-grain (ADR-0044 §D, issue #338):
+   * null/absent inherits `config.verify.commands`, a non-empty array overrides the
+   * whole list, and an explicit empty array `[]` runs no commands here (off). No
+   * per-command inheritance, no `{ off: true }` sentinel.
    */
   verificationCommand: verificationCommandOverrideSchema.nullable().optional(),
   /**

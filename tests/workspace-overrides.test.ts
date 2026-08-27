@@ -115,18 +115,18 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     // .parse fills in the schema's own defaults (env: {}, timeoutSeconds: 600) —
     // the same shape the PATCH route hands the service after body validation.
     const updated = await workspaces.update(ws.id, {
-      verificationCommand: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }),
+      verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
       verificationCritic: { prompt: 'review', model: 'claude-opus-5' },
     });
     // The stored JSON is a superset of what was sent — toMatchObject, not toEqual.
-    expect(JSON.parse(updated.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] });
+    expect(JSON.parse(updated.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]);
     expect(JSON.parse(updated.verificationCritic!)).toMatchObject({ prompt: 'review', model: 'claude-opus-5' });
   });
 
   it('clears verifier overrides back to inherit with null (issue #132)', async () => {
     const ws = (await workspaces.list())[0]!;
     await workspaces.update(ws.id, {
-      verificationCommand: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }),
+      verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })],
       verificationCritic: { prompt: 'review', model: 'claude-opus-5' },
     });
     const cleared = await workspaces.update(ws.id, { verificationCommand: null, verificationCritic: null });
@@ -152,10 +152,10 @@ describe('WorkspaceService override persistence (issue #64)', () => {
 
   it('leaves an omitted verifier override untouched (issue #132)', async () => {
     const ws = (await workspaces.list())[0]!;
-    await workspaces.update(ws.id, { verificationCommand: verificationCommandSchema.parse({ command: 'npm', args: ['test'] }) });
+    await workspaces.update(ws.id, { verificationCommand: [verificationCommandSchema.parse({ command: 'npm', args: ['test'] })] });
     const renamed = await workspaces.update(ws.id, { name: 'Renamed' });
     expect(renamed.name).toBe('Renamed');
-    expect(JSON.parse(renamed.verificationCommand!)).toMatchObject({ command: 'npm', args: ['test'] }); // untouched
+    expect(JSON.parse(renamed.verificationCommand!)).toMatchObject([{ command: 'npm', args: ['test'] }]); // untouched
   });
 
   it('keeps a false guardrailProgress override distinct from inherit (null) (issue #165)', async () => {

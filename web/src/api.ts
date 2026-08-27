@@ -129,7 +129,7 @@ export const api = {
       maxConcurrentRuns?: number | null;
       autoRunnerEnabled?: boolean | null;
       contextReuseTokenLimit?: number | null;
-      verificationCommand?: VerificationCommand | VerifierOff | null;
+      verificationCommand?: VerificationCommand[] | null;
       verificationCritic?: VerificationCritic | VerifierOff | null;
       guardrailBudget?: BudgetGuardrail | null;
       guardrailProgress?: boolean | null;

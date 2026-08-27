@@ -103,11 +103,13 @@ export const workspaces = sqliteTable('workspaces', {
   /** Per-Workspace Auto-Runner enable; null inherits the global default. Gated
    * by the global master switch — a Task runs only if `master ∧ resolved`. */
   autoRunnerEnabled: integer('auto_runner_enabled', { mode: 'boolean' }),
-  /** Per-Workspace command-verifier override (issue #132, ADR-0021), tri-state
-   * (issue #174): JSON of `verificationCommandSchema` to override, the sentinel
-   * `{"off":true}` to explicitly disable the verifier for this Workspace, or
-   * null to inherit `config.verification.command`. Resolved per-key at read
-   * time by `resolveVerifiers` (setting-override.ts). */
+  /** Per-Workspace command-verifier override (issue #132, ADR-0021), list-grain
+   * (ADR-0044 §D, issue #338): a JSON array of `verificationCommandSchema` that
+   * overrides the whole global list — a non-empty array is that ordered list, an
+   * empty array `[]` is *off* (run no commands here) — or null to inherit
+   * `config.verify.commands`. No per-command inheritance and no `{"off":true}`
+   * sentinel (migrated away in 0057). Resolved at read time by `resolveVerifiers`
+   * (setting-override.ts). */
   verificationCommand: text('verification_command'),
   /** Per-Workspace critic-verifier override (issue #132), tri-state (issue #174):
    * JSON of `verificationCriticSchema` to override, the sentinel `{"off":true}`

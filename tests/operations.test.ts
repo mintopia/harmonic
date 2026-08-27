@@ -279,7 +279,7 @@ describe('Run operations (issue #290)', () => {
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
       await server.app.ctx.workspaces.update(wsId, {
         workingDir: repo,
-        verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
+        verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
       });
       const task = await server.api('POST', '/api/tasks', {
         prompt: JSON.stringify({ writeFiles: { 'ops.txt': 'work\n' } }),

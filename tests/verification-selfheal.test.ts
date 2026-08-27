@@ -95,7 +95,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
   it('AC1/AC2: an actionable fail creates Attempt N+1 with feedback and re-verifies', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: markerCommand('ok'),
+      verificationCommand: [markerCommand('ok')],
     });
     const baseOidBefore = git(repoDir, 'rev-parse', 'main');
 
@@ -164,7 +164,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
    * 20-token reuse limit) decides Attempt 2's Session from that. */
   async function runContinuationScenario(inputTokens: number) {
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: markerCommand('ok'),
+      verificationCommand: [markerCommand('ok')],
       contextReuseTokenLimit: 20,
     });
     const { taskId, runId } = await runWorktreeTask({
@@ -213,7 +213,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   });
 
   it('AC4: an inconclusive verdict consumes an attempt and escalates only at the cap', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: inconclusiveCommand() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [inconclusiveCommand()] });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'anything\n' } });
 
@@ -237,7 +237,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   });
 
   it('AC3: an actionable fail exhausts maxAttempts and escalates', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
     await server.app.ctx.configStore.update({ maxAttempts: 2 });
 
     const { taskId, runId } = await runWorktreeTask({ writeFiles: { 'marker.txt': 'bad\n' } });
@@ -262,7 +262,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
   });
 
   it('a workspace maxAttempts override escalates after its first failed attempt', async () => {
-    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: alwaysFail() });
+    await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: [alwaysFail()] });
     await server.app.ctx.configStore.update({ maxAttempts: 3 });
     await server.app.ctx.workspaces.update(workspaceId, { maxAttempts: 1 });
 

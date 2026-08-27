@@ -68,13 +68,13 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved.critic).toBeNull();
     });
 
-    it('uses a Workspace command override over the global default, independent of review', () => {
+    it('uses a Workspace command-list override over the global default, independent of review', () => {
       const globalReview = { enabled: true, prompt: 'global review', model: 'claude-opus-5' };
       const config = { verify: { commands: [], review: globalReview } };
       const override = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
       const resolved = resolveVerifiers(
         {
-          verificationCommand: JSON.stringify(override),
+          verificationCommand: JSON.stringify([override]),
           verificationCritic: null,
         },
         config as any,
@@ -107,13 +107,13 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved).not.toHaveProperty('autoAccept');
     });
 
-    describe('the off sentinel (issue #174)', () => {
-      it('resolves commands to empty when the Workspace column holds the off sentinel, even with a configured global default', () => {
+    describe('list-grain command override (issue #338) + critic off sentinel (issue #174), ADR-0044 §D', () => {
+      it('resolves commands to empty when the Workspace column holds an explicit empty array (off), even with a configured global default', () => {
         const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
         const config = { verify: { commands: [globalCommand], review: { enabled: false } } };
         const resolved = resolveVerifiers(
           {
-            verificationCommand: JSON.stringify({ off: true }),
+            verificationCommand: JSON.stringify([]),
             verificationCritic: null,
           },
           config as any,
@@ -150,13 +150,13 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
         expect(resolved.critic).toEqual({ prompt: 'global review', model: 'claude-opus-5' });
       });
 
-      it('still overrides with a stored verifier object, distinct from the off sentinel', () => {
+      it('still overrides commands with a stored list, and the critic distinct from its off sentinel', () => {
         const config = { verify: { commands: [], review: { enabled: false } } };
         const commandOverride = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
         const criticOverride = { prompt: 'review the diff', model: 'claude-opus-5' };
         const resolved = resolveVerifiers(
           {
-            verificationCommand: JSON.stringify(commandOverride),
+            verificationCommand: JSON.stringify([commandOverride]),
             verificationCritic: JSON.stringify(criticOverride),
           },
           config as any,

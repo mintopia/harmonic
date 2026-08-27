@@ -215,7 +215,7 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('AC1: the critic verdict combines with the command verdict — command pass + critic fail still Escalates', async () => {
     criticResult = { verdict: 'fail', summary: 'logic is wrong despite green tests' };
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
       verificationCritic: critic(),
     });
     const { taskId, runId } = await createAndRun();
@@ -245,7 +245,7 @@ describe('agent critic end-to-end (issue #164)', () => {
   it('AC1: command pass + critic pass together merges the Run (all verifiers passed)', async () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: exitCommand(0),
+      verificationCommand: [exitCommand(0)],
       verificationCritic: critic(),
     });
     const { taskId, runId } = await createAndRun();
@@ -268,7 +268,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
     const command = exitCommand(0);
     await server.app.ctx.workspaces.update(workspaceId, {
-      verificationCommand: command,
+      verificationCommand: [command],
       verificationCritic: critic(),
     });
     const { taskId, runId } = await createAndRun();

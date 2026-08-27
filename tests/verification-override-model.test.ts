@@ -8,6 +8,7 @@ import {
   setCommandField,
   setCriticField,
   summarizeCommand,
+  summarizeCommands,
   summarizeCritic,
 } from '../web/src/components/verification-override-model.js';
 import type { VerificationCommand, VerificationCritic } from '../web/src/types.js';
@@ -53,6 +54,23 @@ describe('summarizeCommand (issue #165)', () => {
 
   it('reads the empty seed back as "Not configured"', () => {
     expect(summarizeCommand(EMPTY_COMMAND)).toBe('Not configured');
+  });
+});
+
+describe('summarizeCommands (issue #338)', () => {
+  it('reads an empty list as "No commands"', () => {
+    expect(summarizeCommands([])).toBe('No commands');
+  });
+
+  it('joins each command summary for a non-empty list', () => {
+    const lint: VerificationCommand = { command: 'npm', args: ['run', 'lint'], env: {}, timeoutSeconds: 120 };
+    expect(summarizeCommands([baseCommand, lint])).toBe(
+      'npm test · 600s timeout · npm run lint · 120s timeout',
+    );
+  });
+
+  it('summarizes a single-command list the same as summarizeCommand', () => {
+    expect(summarizeCommands([baseCommand])).toBe(summarizeCommand(baseCommand));
   });
 });
 

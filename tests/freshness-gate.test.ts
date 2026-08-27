@@ -179,7 +179,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
   it('base moved between verify and merge: rebase + re-verify on the same Attempt and Session, then merge asserting the new SHA', async () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-freshness-flag-'), 'advanced');
-    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: baseMovingVerifier(repo, flag) });
+    await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: [baseMovingVerifier(repo, flag)] });
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
     });
@@ -242,7 +242,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 }),
+      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(0)'], timeoutSeconds: 30 })],
     });
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true }) },
@@ -293,7 +293,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     // real commit as its verified head — Accept has work to merge.
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
+      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
     });
 
     // A native worktree Run: its prompt IS the stub scenario.
@@ -336,7 +336,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
+      verificationCommand: [verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 })],
     });
 
     const created = await server.api('POST', '/api/tasks', {
@@ -366,7 +366,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     const flag = join(tmpPath('harmonic-conflict-flag-'), 'advanced');
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: conflictingVerifier(repo, flag),
+      verificationCommand: [conflictingVerifier(repo, flag)],
       conflictResolveTurns: 2,
       maxAttempts: 6,
     });
@@ -414,7 +414,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     const flag = join(tmpPath('harmonic-conflict-flag-'), 'advanced');
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: conflictingVerifier(repo, flag),
+      verificationCommand: [conflictingVerifier(repo, flag)],
       conflictResolveTurns: 2,
       maxAttempts: 6,
     });
@@ -464,7 +464,7 @@ describe('merging freshness gate (issue #313, ADR-0041)', () => {
     criticCalls = 0;
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
-      verificationCommand: baseMovingVerifier(repo, flag),
+      verificationCommand: [baseMovingVerifier(repo, flag)],
       verificationCritic: verificationCriticSchema.parse({ prompt: 'Review the diff.', model: 'stub-model' }),
     });
     await server.app.ctx.configStore.update({

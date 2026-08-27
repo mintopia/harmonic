@@ -1,26 +1,33 @@
 import type { VerificationCommand, VerificationCritic, VerifierOff } from '../types.js';
 
 /**
- * Verification-override editing (ADR-0021, issue #165). The Workspace command
- * verifier and agent critic are whole objects behind one inheritance toggle each
- * (like the budget override, #166), so these pure helpers fold a text-input edit
- * into the object and summarise it for the inheriting read-only line — kept here
- * so the shaping is testable without a DOM.
+ * Verification-override editing (ADR-0021, issues #165/#338). The Workspace
+ * agent critic is a whole object behind one inheritance toggle (like the
+ * budget override, #166); the command verifier is list-grain (ADR-0044 §D),
+ * exactly mirroring the global editor: `null` inherits `config.verify.commands`,
+ * an empty array is off (no commands run in this Workspace), and a non-empty
+ * array overrides the whole ordered list — there is no per-command inheritance.
+ * These pure helpers fold a text-input edit into a command/critic object, or
+ * summarise one (or a whole command list) for the inheriting read-only line —
+ * kept here so the shaping is testable without a DOM.
  *
  * Unlike the budget, the global-default command/critic are *nullable* (unset by
  * default). InheritField needs a non-null value to seed a freshly toggled-on
  * override and to render the inheriting line, so these empty seeds stand in when
- * the global default is null. An empty `command`/`prompt`/`model` fails the
- * server's `min(1)` on save (surfaced as a field error), nudging the operator to
- * fill it in; {@link summarizeCommand}/{@link summarizeCritic} read an empty seed
- * back as "not configured" so an inheriting Workspace with no global default
- * reads honestly rather than as a blank verifier.
+ * the global default is null (for the command list, an empty array `[]` is
+ * itself that non-null seed — it needs no separate constant). An empty
+ * `command`/`prompt`/`model` fails the server's `min(1)` on save (surfaced as a
+ * field error), nudging the operator to fill it in; {@link summarizeCommand}/
+ * {@link summarizeCritic} read an empty seed back as "not configured" so an
+ * inheriting Workspace with no global default reads honestly rather than as a
+ * blank verifier.
  *
- * A workspace can also turn an inherited (or overridden) verifier fully off for
- * itself (issue #174) — the tri-state is inherit / off / override, layered on
- * top of InheritField's own inherit/override axis: {@link VERIFIER_OFF} is the
- * sentinel value an "Enabled" switch writes into the override when switched off,
- * and {@link isVerifierOff} narrows an override value to that sentinel.
+ * The critic can also be turned fully off for a Workspace (issue #174) — the
+ * tri-state is inherit / off / override, layered on top of InheritField's own
+ * inherit/override axis: {@link VERIFIER_OFF} is the sentinel value an
+ * "Enabled" switch writes into the override when switched off, and
+ * {@link isVerifierOff} narrows an override value to that sentinel. The
+ * command verifier has no such sentinel — its "off" is simply the empty array.
  */
 
 /** Seed for a freshly enabled command override when no global default exists. */
@@ -72,6 +79,17 @@ export function summarizeCommand(cmd: VerificationCommand): string {
   if (cmd.command.trim() === '') return 'Not configured';
   const argv = [cmd.command, ...cmd.args].join(' ');
   return `${argv} · ${cmd.timeoutSeconds}s timeout`;
+}
+
+/**
+ * One-line summary of a whole command list for the inheriting read-only
+ * display (issue #338, ADR-0044 §D): an empty list reads as "No commands"
+ * (this Workspace would run nothing were it inheriting), otherwise each
+ * command's {@link summarizeCommand} is joined for a compact overview.
+ */
+export function summarizeCommands(commands: VerificationCommand[]): string {
+  if (commands.length === 0) return 'No commands';
+  return commands.map(summarizeCommand).join(' · ');
 }
 
 /** An editable dimension of the agent critic. `harness` is a select, not free text (issue #174). */

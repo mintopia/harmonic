@@ -188,7 +188,7 @@ describe('scope changes control live resolution (registry is the single authorit
     const globalCommand = { command: 'npm', args: ['test'], env: {}, timeoutSeconds: 600 };
     const wsCommand = { command: 'pnpm', args: ['lint'], env: {}, timeoutSeconds: 300 };
     const config = { verify: { commands: [globalCommand], review: { enabled: false } } } as never;
-    const ws = { verificationCommand: JSON.stringify(wsCommand), verificationCritic: null };
+    const ws = { verificationCommand: JSON.stringify([wsCommand]), verificationCritic: null };
 
     expect(resolveVerifiers(ws, config).commands).toEqual([wsCommand]); // overridable
     withScope('verificationCommand', 'global-only', () => {
