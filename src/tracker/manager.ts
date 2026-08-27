@@ -164,15 +164,15 @@ export class TrackerPollerManager {
       epics.attachIntegrateTrigger(epicIntegrate);
     }
     if (this.mergeTrain) {
-      const escalateRefresh = (ref: number, reason: string): void => {
-        if (epicIntegrate) epicIntegrate.escalateRefresh(ref, reason);
-        else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
+      const noteRefreshBehind = (ref: number, reason: string): void => {
+        if (epicIntegrate) epicIntegrate.recordRefreshBehind(ref, reason);
+        else logger.debug(`epic ${ref} integration refresh behind develop (retrying): ${reason}`);
       };
       const refresh: EpicRefreshCoordinator = new EpicRefreshCoordinator({
         train: this.mergeTrain,
         dispatchResolve: (target, detail) =>
-          this.dispatchEpicRefreshResolution(target, detail, escalateRefresh, () => refresh.refresh(target)),
-        escalate: escalateRefresh,
+          this.dispatchEpicRefreshResolution(target, detail, noteRefreshBehind, () => refresh.refresh(target)),
+        escalate: noteRefreshBehind,
       });
       epics.attachRefreshTrigger(refresh);
     }
