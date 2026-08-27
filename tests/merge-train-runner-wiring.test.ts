@@ -288,6 +288,10 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     const epic = 'epic/1631';
     git(repo, 'branch', epic, 'main');
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
+    // conflictResolveTurns generous (5) so the global maxAttempts cap (2) is the
+    // unambiguous binding constraint here — the N-bound itself is covered in
+    // freshness-gate.test.ts (ADR-0046, #367).
+    await server.app.ctx.workspaces.update(wsId, { conflictResolveTurns: 5 });
     // Both turns touch the SAME file the test independently advances on the
     // integration branch below, so the landing rebase conflicts and the
     // corrective turn (which does not resolve the conflict) conflicts again.
@@ -309,11 +313,11 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
       const t = await server.app.ctx.tasks.get(taskId);
       return t.state === 'escalated' ? t : undefined;
     });
-    expect(settledTask.escalationReason).toMatch(/attempt 2 of 2 failed: rebase conflict/);
+    expect(settledTask.escalationReason).toMatch(/attempt 2 of 2 failed: rebase onto 'epic\/1631' hit a content conflict/);
 
     const settledRun = await server.app.ctx.runs.get(runId);
     expect(settledRun.state).toBe('failed');
-    expect(settledRun.reason).toMatch(/attempt 2 of 2 failed: rebase conflict/);
+    expect(settledRun.reason).toMatch(/attempt 2 of 2 failed: rebase onto 'epic\/1631' hit a content conflict/);
 
     // Attempt 1: rebase (fresh fork, no-op) → implementation → the landing
     // rebase conflicts → that Rebase Task fails, and the Attempt fails with the
@@ -323,8 +327,10 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     expect(timeline.map((a) => a.number)).toEqual([1, 2]);
     const first = timeline[0]!;
     expect(first.state).toBe('failed');
-    expect(first.feedback).toMatch(/rebase conflict/);
-    expect(first.feedback).toMatch(/CONFLICT/);
+    // The Attempt feedback is plain language (ADR-0046, #367): it names the
+    // content conflict but never leaks the raw git conflict dump to the operator.
+    expect(first.feedback).toMatch(/content conflict/);
+    expect(first.feedback).not.toMatch(/CONFLICT \(content\)|<<<<<<<|git rebase/);
     expect(first.tasks.map((t) => `${t.type}:${t.state}`)).toEqual([
       'rebase:passed',
       'implementation:passed',

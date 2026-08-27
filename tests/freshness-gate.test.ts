@@ -75,6 +75,29 @@ function baseMovingVerifier(repo: string, flag: string) {
   });
 }
 
+/**
+ * A verifier that PASSES and, on its first run only, advances main with a
+ * change to `conflict.txt` that COLLIDES with the candidate's own — so the
+ * completion rebase of the verified candidate onto the moved base hits a real
+ * content conflict (ADR-0046). The flag file makes re-runs leave main alone.
+ */
+function conflictingVerifier(repo: string, flag: string) {
+  const conflictFile = join(repo, 'conflict.txt');
+  return verificationCommandSchema.parse({
+    command: process.execPath,
+    args: [
+      '-e',
+      `const fs=require('fs');const cp=require('child_process');` +
+        `if(!fs.existsSync(${JSON.stringify(flag)})){` +
+        `fs.writeFileSync(${JSON.stringify(flag)},'1');` +
+        `fs.writeFileSync(${JSON.stringify(conflictFile)},'main version\\n');` +
+        `cp.execFileSync('git',['-C',${JSON.stringify(repo)},'add','-A']);` +
+        `cp.execFileSync('git',['-C',${JSON.stringify(repo)},'commit','-m','main changes conflict.txt']);}`,
+    ],
+    timeoutSeconds: 30,
+  });
+}
+
 afterAll(() => {
   for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
 });
@@ -326,6 +349,101 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
     expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing landed
+  });
+
+  it('completion rebase content conflict: N bounded resolve-turns then a plain escalation that links to the diff, never a raw git dump (ADR-0046, #367)', async () => {
+    const repo = makeRepo();
+    const flag = join(tmpPath('harmonic-conflict-flag-'), 'advanced');
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: conflictingVerifier(repo, flag),
+      conflictResolveTurns: 2,
+      maxAttempts: 6,
+    });
+    // Turn 0 writes the candidate (which touches conflict.txt); every corrective
+    // resolve-turn (self-heal N) just finishes without resolving, so the conflict
+    // persists through the whole budget and the Run escalates.
+    await server.app.ctx.configStore.update({
+      drive: {
+        prompt: JSON.stringify({
+          turns: [
+            { writeFiles: { 'conflict.txt': 'agent version\n', 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true },
+            { gitExec: [['rebase', '--abort']], mcpFinish: true },
+          ],
+        }),
+      },
+    });
+
+    const { taskId, runId } = await launchAfk();
+    const escalated = await waitFor(async () => {
+      const t = await server.app.ctx.tasks.get(taskId);
+      return t.state === 'escalated' ? t : undefined;
+    });
+    expect(existsSync(flag)).toBe(true); // the verifier really moved main conflictingly
+
+    // Exactly N=2 resolve-turns were dispatched — one per detected conflict, never
+    // re-attempted twice on the same poll — then it escalated.
+    const events = await lifecycle(runId);
+    expect(events.filter((e) => e.event === 'conflict-resolve-turn')).toHaveLength(2);
+    expect(events.map((e) => e.event)).toContain('escalated');
+
+    // Plain-language escalation that points at the diff, with NO raw git output:
+    // no conflict markers, no `git ...` command echo, no `CONFLICT (content)` dump.
+    const reason = escalated.escalationReason ?? '';
+    expect(reason).toMatch(/content conflict rebasing/);
+    expect(reason).toMatch(/main/);
+    expect(reason).toMatch(/diff/);
+    expect(reason).not.toMatch(/<<<<<<<|CONFLICT \(content\)|git rebase|rebase .* failed/);
+    // Nothing merged: main is still the verifier's own tip, no agent work integrated.
+    expect(git(repo, 'show', 'main:conflict.txt')).toBe('main version');
+    expect(git(repo, 'log', '--merges', 'main')).toBe('');
+  });
+
+  it('completion rebase content conflict resolved within the budget merges the replayed candidate (ADR-0046, #367)', async () => {
+    const repo = makeRepo();
+    const flag = join(tmpPath('harmonic-conflict-flag-'), 'advanced');
+    await server.app.ctx.workspaces.update(wsId, {
+      workingDir: repo,
+      verificationCommand: conflictingVerifier(repo, flag),
+      conflictResolveTurns: 2,
+      maxAttempts: 6,
+    });
+    // Turn 0 writes the candidate; the first resolve-turn takes the base's side of
+    // conflict.txt and completes the in-progress rebase, so the completion rebase
+    // then replays cleanly and the candidate merges.
+    await server.app.ctx.configStore.update({
+      drive: {
+        prompt: JSON.stringify({
+          turns: [
+            { writeFiles: { 'conflict.txt': 'agent version\n', 'impl-{ref}.txt': 'implementation {ref}\n' }, mcpFinish: true },
+            {
+              gitExec: [
+                ['config', 'core.editor', 'true'],
+                ['checkout', '--ours', 'conflict.txt'],
+                ['add', 'conflict.txt'],
+                ['rebase', '--continue'],
+              ],
+              mcpFinish: true,
+            },
+          ],
+        }),
+      },
+    });
+
+    const { taskId, runId } = await launchAfk();
+    const task = await waitFor(async () => {
+      const t = await server.app.ctx.tasks.get(taskId);
+      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(runId)).reason}`);
+      return t.state === 'done' ? t : undefined;
+    });
+    expect(task.state).toBe('done');
+
+    // One resolve-turn was enough; the replayed candidate merged as a fast-forward.
+    const events = await lifecycle(runId);
+    expect(events.filter((e) => e.event === 'conflict-resolve-turn')).toHaveLength(1);
+    expect(events.map((e) => e.event)).not.toContain('escalated');
+    expect(git(repo, 'show', 'main:conflict.txt')).toBe('main version');
+    expect(git(repo, 'log', '--merges', 'main')).toBe('');
   });
 
   // Kept last: it configures a critic on the shared workspace, so running it

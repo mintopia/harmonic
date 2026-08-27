@@ -1695,8 +1695,12 @@ export class Runner {
       }
       const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, current.baseBranch);
       if (!rebase.ok) {
-        if (!rebase.conflict) return { kind: 'escalate', reason: `rebase onto ${current.baseBranch} failed: ${rebase.detail}` };
-        return { kind: 'turn', outcome: { kind: 'actionable-fail', reason: 'rebase conflict', output: rebase.detail } };
+        // A raw GitError never reaches the operator (git.ts): the rebase Task row
+        // keeps the git detail for diagnosis. A git fault is infra doubt.
+        if (!rebase.conflict) {
+          return { kind: 'escalate', reason: `could not rebase onto '${current.baseBranch}' (git error); see the rebase step` };
+        }
+        return this.resolveConflictOrEscalate(task, run, current.branch, current.baseBranch, record);
       }
       current = await this.runStore.update(run.id, { candidateOid: rebase.tip });
       record('lifecycle', { event: 'phase', phase: 'verifying' });
@@ -1708,6 +1712,44 @@ export class Runner {
         return { kind: 'turn', outcome: await this.verificationFailTurn(run, decision, record) };
       }
     }
+  }
+
+  /**
+   * A completion-rebase content conflict (ADR-0046): up to `N`
+   * (`task.conflictResolveTurns`) agentic resolve-turns, then escalate plainly.
+   * The count is the `conflict-resolve-turn` event tally rather than an in-memory
+   * counter so the bound survives the corrective turn, re-entries, and a
+   * crash-resume; messaging never carries the raw git conflict dump. `N === 0`
+   * escalates on the first conflict.
+   */
+  private async resolveConflictOrEscalate(
+    task: TaskRow,
+    run: RunRow,
+    branch: string | null,
+    baseBranch: string,
+    record: (type: 'lifecycle', payload: unknown) => void,
+  ): Promise<LandingGate> {
+    const budget = task.conflictResolveTurns;
+    const spent = (await this.runStore.listEvents(run.id)).filter(
+      (event) => event.type === 'lifecycle' && (event.payload as { event?: string }).event === 'conflict-resolve-turn',
+    ).length;
+    if (spent >= budget) {
+      const where = branch ? `branch '${branch}' onto '${baseBranch}'` : `onto '${baseBranch}'`;
+      const after = budget === 0 ? '' : ` after ${budget} resolve ${budget === 1 ? 'turn' : 'turns'}`;
+      return {
+        kind: 'escalate',
+        reason: `content conflict rebasing ${where}${after}; review this run's diff and resolve it`,
+      };
+    }
+    record('lifecycle', { event: 'conflict-resolve-turn', baseBranch, turn: spent + 1, of: budget });
+    return {
+      kind: 'turn',
+      outcome: {
+        kind: 'actionable-fail',
+        reason: `rebase onto '${baseBranch}' hit a content conflict — resolve the conflicts in the checkout, then finish`,
+        output: '',
+      },
+    };
   }
 
   /**
@@ -2162,7 +2204,7 @@ export class Runner {
     // Every Attempt on a ticket branch opens with its Rebase Task (ADR-0041).
     // A conflict is the agent's work: it stays in progress in the worktree and
     // the implementation turn is told to resolve it — the Attempt continues.
-    let rebaseConflict: string | null = null;
+    let rebaseConflict = false;
     try {
       workspace = await this.prepareWorkspace(task, run, healCtx !== undefined);
       if (opensAttempt && workspace.worktree) {
@@ -2170,8 +2212,8 @@ export class Runner {
         const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
         if (!rebase.ok) {
           if (!rebase.conflict) throw new Error(`rebase onto ${baseBranch} failed: ${rebase.detail}`);
-          rebaseConflict = rebase.detail;
-          record('lifecycle', { event: 'rebase-conflict', baseBranch, detail: rebase.detail });
+          rebaseConflict = true;
+          record('lifecycle', { event: 'rebase-conflict', baseBranch });
         }
       }
       const attemptTasks = await this.attempts.listTasks(attemptAtStart.id);
@@ -3009,11 +3051,11 @@ export class Runner {
         const src = await this.resolveContinuationSource(task);
         condensed = src ? await this.condensedContext(src.prior) : null;
       }
-      if (rebaseConflict !== null) {
+      if (rebaseConflict) {
         promptText =
           `${promptText}\n\n## Rebase conflict — resolve first\n` +
-          `Harmonic rebased your branch onto its base and the rebase stopped with conflicts, left in progress in this checkout:\n${rebaseConflict}\n\n` +
-          `Resolve the conflicted files, stage them, and run \`git rebase --continue\` before doing anything else.`;
+          `Harmonic rebased your branch onto its base and the rebase stopped with conflicts left in progress in this checkout. ` +
+          `Inspect the conflicted files (\`git status\`), resolve them, stage them, and run \`git rebase --continue\` before doing anything else.`;
       }
       if (condensed) promptText = `${promptText}\n\n${condensed}`;
       // Tell the agent to query the worktree's own jCodeMunch repo (indexed above,
