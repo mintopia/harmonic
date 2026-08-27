@@ -14,7 +14,7 @@ import {
   rematerializeCandidate,
 } from './execution-isolation.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
-import { collectUsage, collectUsageWithRetry, contextInputTokens, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
+import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { driveFields, promptForTask } from './prompt-template.js';
 import type { AutoDrive } from './auto-drive.js';
@@ -27,6 +27,7 @@ import {
   planSessionContinuation,
   sessionWarmthFacts,
   decideAttemptContinuation,
+  HARNESS_SESSION_WARM_WINDOWS_MS,
   type ContinuationTrigger,
   type DeterministicContinuation,
 } from '../domain/session-continuation.js';
@@ -68,7 +69,7 @@ import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { runCommandVerifier, commandAttemptToInput } from '../verification/command-verifier.js';
 import { createAcpCriticDrive, runCritic, criticAttemptToInput, type CriticHarnessDrive } from '../verification/critic.js';
 import { combineVerdicts, type VerificationDecision, type VerifierVerdict } from '../verification/combine.js';
-import { resolveContextWindow, resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
+import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { logger } from '../logger.js';
@@ -224,7 +225,7 @@ export interface RunnerOptions {
         | 'verificationCommand'
         | 'verificationCritic'
         | 'maxAttempts'
-        | 'contextReuseThreshold'
+        | 'contextReuseTokenLimit'
       > &
         Partial<Pick<WorkspaceRow, 'workingDir'>>)
     | undefined
@@ -534,6 +535,10 @@ export class Runner {
   /** The latest turn's ACP-reported input footprint per run — the context-usage
    * source for harnesses whose session log the tailer cannot read (stub, codex). */
   private readonly lastTurnContextTokens = new Map<number, number>();
+  /** Keyed by taskId: an operator message that should seed the FIRST turn of the
+   * next Run spawned for the task (the settled-Session steer continuation). Set by
+   * {@link steerSettled}, consumed once by the run's first {@link driveOnce}. */
+  private readonly pendingOperatorSeed = new Map<number, string>();
   /** Reduced, bounded progress traces. Raw ACP payloads are discarded at
    * ingest, so neither memory nor detector work grows with a Run. */
   private readonly progressEvents = new Map<number, ProgressEvent[]>();
@@ -1138,6 +1143,50 @@ export class Runner {
     active.steerQueue.push(text);
     const event = await this.runStore.appendEvent(active.runId, { type: 'lifecycle', payload: { event: 'steer_queued', text } });
     this.events.onRunEvent?.(event);
+    return true;
+  }
+
+  /**
+   * Continue a settled Task's warm Session with an operator message. When no Run
+   * is active (so {@link steer} declined) but the Task's last Session-bound Run
+   * left a Session that is BOTH resumable into this environment and still inside
+   * its harness warm window, spawn a fresh Run bound to that Session whose FIRST
+   * turn is the operator's message — a follow-up in the same conversation rather
+   * than a cold restart. Returns false (→ the route 409s) when there is nothing
+   * warm to continue, so the operator is never silently dropped onto a fresh,
+   * context-less Session. Scoped to escalated Tasks (the "ended without closure"
+   * case): a done/landed Task has finished, not parked awaiting a nudge.
+   */
+  async steerSettled(taskId: number, text: string): Promise<boolean> {
+    if ([...this.active.values()].some((a) => a.taskId === taskId)) return false; // a Run is active — steer() owns it
+    const task = await this.taskService.get(taskId);
+    if (task.state !== 'escalated') return false;
+    const src = await this.resolveContinuationSource(task);
+    if (!src) return false;
+    // The Session must be resumable into this environment AND still warm; else the
+    // operator message would land on a cold/fresh Session with no conversation
+    // context, which is not a continuation.
+    const env: ResumeEnvironment = {
+      harness: src.session.harness,
+      adapterVersion: adapterVersion(task.harness),
+      model: task.model,
+      availablePermissionModes: src.session.permissionMode ? [src.session.permissionMode] : [],
+      cwd: repoKey(task.workingDir),
+    };
+    const stored = { ...sessionFacts(src.session), cwd: repoKey(src.session.cwd) };
+    if (!assessResumeEligibility(stored, env).eligible) return false;
+    const warmWindowMs = HARNESS_SESSION_WARM_WINDOWS_MS[src.session.harness];
+    if (warmWindowMs === undefined || Date.now() - src.session.lastActiveAt >= warmWindowMs) return false;
+    // Continue full on the warm Session (`requeue(...'full')` → bindContinuation
+    // reloads it); the operator message seeds the new Run's first turn.
+    this.pendingOperatorSeed.set(taskId, text);
+    try {
+      await this.taskService.requeue(taskId, undefined, 'full');
+      await this.start(taskId);
+    } catch (err) {
+      this.pendingOperatorSeed.delete(taskId);
+      throw err;
+    }
     return true;
   }
 
@@ -2303,17 +2352,17 @@ export class Runner {
   ): Promise<DeterministicContinuation> {
     const now = Date.now();
     const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
-    const contextWindow = resolveContextWindow(task.model, this.getConfig().modelInfo);
     // Live tailer snapshot → the in-flight turn's ACP usage (self-heal, before the
-    // Run persists usage) → the settled Run's persisted usage (review reject).
+    // Run persists usage) → the settled Run's persisted usage (review reject). All
+    // three are the last turn's raw context footprint; the reuse gate compares it
+    // against a raw token limit, so no context-window fraction is involved.
     const persisted = run.usage ? (JSON.parse(run.usage) as RunUsage).contextTokens ?? null : null;
     const contextTokens = (await this.latestSnapshot(run.id))?.contextTokens ?? this.lastTurnContextTokens.get(run.id) ?? persisted;
-    const contextUsage = contextWindow !== null && contextTokens !== null ? contextTokens / contextWindow : null;
     return decideAttemptContinuation({
       harness: task.harness,
-      contextUsage,
+      contextTokens,
       lastActiveAt: session?.lastActiveAt ?? now,
-      contextReuseThreshold: workspace?.contextReuseThreshold ?? this.getConfig().contextReuseThreshold,
+      contextReuseTokenLimit: workspace?.contextReuseTokenLimit ?? this.getConfig().contextReuseTokenLimit,
       now,
     });
   }
@@ -3484,12 +3533,20 @@ export class Runner {
       // usual unresolved path). A native Run is otherwise single-turn — but
       // either kind takes a queued operator steer as an extra turn first (below).
       let promptText = autoDriven ? this.autoDrive!.prompt(task) : promptForTask(task, this.getConfig().taskPrompt);
+      // An operator continuation of a settled warm Session ({@link steerSettled}):
+      // this Run bound the prior Session (session/load), so its first turn is just
+      // the operator's follow-up message — the conversation already holds the task
+      // context. Consumed once; corrective turns fall back to the normal feedback.
+      const operatorSeed = this.pendingOperatorSeed.get(task.id);
+      if (operatorSeed !== undefined) this.pendingOperatorSeed.delete(task.id);
       // A self-heal turn (issue #137) re-drives the same builder on its resumed
       // work, so append the verification failure as corrective feedback: fix the
       // cause, then finish, and the full suite reruns against the new candidate.
       // The condensed prior-Session seed (#311) is always the trailing section.
       let condensed: string | null = null;
-      if (healCtx) {
+      if (operatorSeed !== undefined && !healCtx && !remergeCtx) {
+        promptText = `## Operator message\n\n${operatorSeed}`;
+      } else if (healCtx) {
         promptText =
           `${promptText}\n\n## Previous attempt failed — fix required (self-heal ${healCtx.attempt})\n` +
           `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
@@ -3595,16 +3652,19 @@ export class Runner {
 
       record('lifecycle', { event: 'finished', stopReason: result.stopReason ?? null });
       // A mirrored Run that ended without the `finish_task` signal — its continue
-      // budget spent, or a single turn that never finished — has no
-      // execution-complete signal (#139), so there is nothing to verify or land:
-      // route it to the unified Attempt loop (corrective turn, then Escalate at
-      // the cap) without verifying or closing the ticket. A native Run always
-      // verifies its single ended turn.
+      // budget spent, or a single turn that never finished (a run "finished early
+      // with no closure"). It is still put through the SAME verification gate as a
+      // finished Run: the agent may have completed the work and simply not signalled
+      // it, so we verify what it left rather than spending a corrective turn on a
+      // possibly-good candidate. A candidate that verifies clean lands; one that
+      // fails (or a run that left no new commit) fails closed through the normal
+      // verify path below, exactly as a finished Run would.
       const afkUnresolved = autoDriven && !escalating && !stoppedShort && !active.agentFinished;
+      if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
       // The `validating` branch-contract classification (issue #151), hoisted so
       // the afk landing block below can reach it for deterministic recovery
       // landing (issue #154). Null when the check does not apply (worktree mode,
-      // native direct, a pre-#151 Run) or was skipped (escalating/afkUnresolved).
+      // native direct, a pre-#151 Run) or was skipped (escalating/stoppedShort).
       let branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null = null;
       // Set when a first-turn ambiguous outcome is eligible for a bounded agent
       // re-merge (issue #155): instead of Escalating in place (#151), hand the
@@ -3613,8 +3673,10 @@ export class Runner {
       let remergeNeeded: { reason: string; detail: string } | null = null;
       let implementationHead: string | null = null;
       // The branch contract is checked at implementation end. It is a fact and
-      // escalation trigger, never a user-facing validation stage.
-      if (!escalating && !stoppedShort && !afkUnresolved) {
+      // escalation trigger, never a user-facing validation stage. An afk run that
+      // ended without finish_task runs it too — its candidate is verified like any
+      // other, so its head must be captured and its outcome classified here.
+      if (!escalating && !stoppedShort) {
         // A dirty implementation result gets one same-session reminder to
         // commit. This is corrective guidance within the current Attempt, not
         // a new Attempt or a retry budget charge.
@@ -3693,9 +3755,13 @@ export class Runner {
         }
       }
       await finalize();
-      const turnContextTokens = contextInputTokens(result.usage);
-      if (turnContextTokens !== null) this.lastTurnContextTokens.set(run.id, turnContextTokens);
       const usage = await this.collectUsageSafe(task, run, harness, workspace, result);
+      // The continuation gate's context-fill fallback (decideContinuation) reads
+      // this once the run has settled and its live tailer is gone. Seed it from
+      // the parsed tree's last-turn footprint (usage.contextTokens), NOT the ACP
+      // aggregate — the aggregate over-counts multi-round-trip turns and made the
+      // gate see impossible >100% fill, refusing to reuse a warm session (#…).
+      if (usage?.contextTokens != null) this.lastTurnContextTokens.set(run.id, usage.contextTokens);
       this.noteModelMismatch(task, usage, record);
       const patch = { stopReason: result.stopReason ?? null, usage: usage ? JSON.stringify(usage) : null };
       if (escalating) {
@@ -3704,12 +3770,6 @@ export class Runner {
       } else if (stoppedShort) {
         record('lifecycle', { event: 'stopped-short', reason: stoppedShort });
         return { kind: 'actionable-fail', reason: stoppedShort, output: '' };
-      } else if (afkUnresolved) {
-        // Clean turn(s) ended but the agent never signalled `finish_task` — not
-        // success. It is a failed Attempt, so the shared loop records feedback,
-        // drives the next implementation turn, and applies maxAttempts.
-        record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal' });
-        return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
       } else if (remergeNeeded) {
         // First-turn ambiguous outcome eligible for a bounded agent re-merge
         // (issue #155): do NOT settle. finalize() has already restored the direct
@@ -3732,7 +3792,7 @@ export class Runner {
         // Escalates in place with its cause — so broken work never lands.
         await advanceTask('verifying');
         record('lifecycle', { event: 'phase', phase: 'verifying' });
-        const { decision } = await this.runVerification(
+        const { decision, ran: verifierRan } = await this.runVerification(
           task,
           run,
           implementationHead,
@@ -3777,6 +3837,20 @@ export class Runner {
           }
           return await this.verificationFailTurn(run, decision, record);
         } else {
+          // An afk Run that ended WITHOUT finish_task lands only on an AFFIRMATIVE
+          // verifier pass — a real verifier ran and passed against a real candidate.
+          // A vacuous `proceed` (no verifiers configured, so nothing actually
+          // affirmed the work) or a missing candidate is NOT enough to complete an
+          // unsignalled Run: hand it up to the unified Attempt loop as an actionable
+          // fail so it takes another bounded Attempt and Escalates at the cap —
+          // preserving #139's guarantee that unsignalled work never silently lands
+          // unless a verifier vouched for it. A finished Run (finish_task) lands on
+          // `proceed` as before; and an early-finished Run WHOSE verifiers pass now
+          // lands too — the point of verifying an early-finished Run's work.
+          if (afkUnresolved && (!verifierRan || (await this.runStore.get(run.id)).candidateOid == null)) {
+            record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal and no verifier vouched for the work' });
+            return { kind: 'actionable-fail', reason: 'run ended without an execution-complete (finish_task) signal', output: '' };
+          }
           // Harmonic lands every passing Run itself — there is no human gate
           // (ADR-0041) — so the landing freshness gate runs first: the branch
           // must still sit at its verified tip and that tip must contain the
@@ -4045,10 +4119,11 @@ export class Runner {
         promptResult,
       });
       if (!usage) return null;
-      const contextTokens = contextInputTokens(promptResult?.usage);
+      // `usage.contextTokens` is the parsed tree's last-turn footprint (see
+      // collectUsage) — the true window fill; never re-derive it from the ACP
+      // aggregate here (that sums every round-trip and reads past the window).
       return {
         ...usage,
-        ...(contextTokens !== null ? { contextTokens } : {}),
         toolCalls: Object.fromEntries(this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id))),
       };
     } catch {

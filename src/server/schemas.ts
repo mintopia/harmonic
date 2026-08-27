@@ -91,9 +91,9 @@ export const attemptSchema = z
     escalationReason: z.string().nullable().meta({ example: 'escalated to human: verification failed after 3 attempt(s)' }),
     continuation: z.object({
       path: z.enum(['continued-session', 'new-session-condensed']),
-      reason: z.enum(['continued-within-limits', 'context-usage', 'session-cold', 'missing-context-usage', 'missing-warm-window']),
-      contextUsage: z.number().nullable(),
-      contextReuseThreshold: z.number(),
+      reason: z.enum(['continued-within-limits', 'context-tokens', 'session-cold', 'missing-context-tokens', 'missing-warm-window']),
+      contextTokens: z.number().nullable(),
+      contextReuseTokenLimit: z.number(),
       lastActiveAt: z.number(),
       lastActiveAgeMs: z.number(),
       warmWindowMs: z.number().nullable(),

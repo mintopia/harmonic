@@ -741,12 +741,14 @@ export function TicketPage({
   onChanged,
   onClose,
   onOpenTask,
+  error,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
   onChanged: () => void;
   onClose: () => void;
   onOpenTask: (taskId: number) => void;
+  error?: string | null;
 }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
@@ -1073,6 +1075,12 @@ export function TicketPage({
           { node: <span>{ticketIdentity(task.id, task.trackerRef)}</span> },
         ]}
       />
+
+      {error && (
+        <div role="alert" className="mx-6 mt-4 shrink-0 rounded-lg bg-fail-tint px-4 py-2 text-fail">
+          {error}
+        </div>
+      )}
 
       {/* two-pane shell */}
       <div className="flex min-h-0 flex-1 overflow-hidden max-rail:flex-col max-rail:overflow-visible">

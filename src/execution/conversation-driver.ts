@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from './harness/adapter.js';
-import { accumulateUsage, collectUsageWithRetry, contextInputTokens, type RunUsage } from './usage.js';
+import { accumulateUsage, collectUsageWithRetry, type RunUsage } from './usage.js';
 import { resolvePrices } from './pricing.js';
 import { DomainError } from '../domain/errors.js';
 import type { AppConfig } from '../config.js';
@@ -441,7 +441,10 @@ export class ConversationDriver {
     const convo = await this.store.get(conversationId);
     const stored = convo.usage ? (JSON.parse(convo.usage) as RunUsage) : null;
     const accumulated = accumulateUsage(stored, turnUsage);
-    const contextTokens = contextInputTokens(result.usage);
+    // Window fill is the parsed tree's last-turn footprint (collectUsage), not the
+    // ACP prompt-result aggregate — the aggregate sums every round-trip of the
+    // turn and reads far past the window on multi-tool turns.
+    const contextTokens = turnUsage?.contextTokens ?? null;
     await this.store.update(conversationId, {
       ...(accumulated ? { usage: JSON.stringify(accumulated) } : {}),
       ...(contextTokens !== null ? { contextTokens } : {}),

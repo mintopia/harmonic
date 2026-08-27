@@ -322,11 +322,11 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     expect(scoped.body.runCount).toBe(0);
   });
 
-  it('round-trips a context reuse threshold override through PATCH and GET', async () => {
-    const patched = await server.api('PATCH', `/api/workspaces/${workspaceA}`, { contextReuseThreshold: 0.35 });
+  it('round-trips a context reuse token-limit override through PATCH and GET', async () => {
+    const patched = await server.api('PATCH', `/api/workspaces/${workspaceA}`, { contextReuseTokenLimit: 150_000 });
     expect(patched.status).toBe(200);
-    expect(patched.body.contextReuseThreshold).toBe(0.35);
+    expect(patched.body.contextReuseTokenLimit).toBe(150_000);
     const fetched = await server.api('GET', `/api/workspaces/${workspaceA}`);
-    expect(fetched.body.contextReuseThreshold).toBe(0.35);
+    expect(fetched.body.contextReuseTokenLimit).toBe(150_000);
   });
 });

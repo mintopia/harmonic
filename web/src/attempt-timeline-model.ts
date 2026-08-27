@@ -46,12 +46,16 @@ export function continuationLabel(continuation: Attempt['continuation']): string
   return continuation.path === 'continued-session' ? 'continued session' : 'new session, condensed';
 }
 
-/** The recorded inputs the continuation rule decided on: context occupancy
- * against its reuse threshold, and session idle age against the warm window. */
+const fmtTokens = (n: number): string => (n >= 1000 ? `${+(n / 1000).toFixed(1)}k` : String(n));
+
+/** The recorded inputs the continuation rule decided on: context occupancy in
+ * tokens against its reuse token limit, and session idle age against the warm
+ * window. */
 export function continuationDetail(continuation: Attempt['continuation']): string | null {
   if (!continuation) return null;
+  const tokens = continuation.contextTokens === null ? 'unknown' : fmtTokens(continuation.contextTokens);
   return [
-    `context ${continuation.contextUsage ?? 'unknown'}/${continuation.contextReuseThreshold}`,
+    `context ${tokens}/${fmtTokens(continuation.contextReuseTokenLimit)}`,
     `active ${formatScheduledJobDuration(continuation.lastActiveAgeMs)}/${formatScheduledJobDuration(continuation.warmWindowMs) ?? 'unknown'}`,
   ].join(' · ');
 }

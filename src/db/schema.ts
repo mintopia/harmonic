@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, integer, real, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, integer, text, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 // Type-only import (erased at compile) so the db layer can brand `runs.phase`
 // with the phase-machine enum without a runtime db→domain import cycle
 // (domain/run-facts.ts already imports this schema).
@@ -119,8 +119,8 @@ export const workspaces = sqliteTable('workspaces', {
   guardrailProgress: integer('guardrail_progress', { mode: 'boolean' }),
   /** Per-Workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: integer('max_attempts'),
-  /** Per-Workspace continuation threshold; null inherits the global default. */
-  contextReuseThreshold: real('context_reuse_threshold'),
+  /** Per-Workspace context-reuse token limit; null inherits the global default. */
+  contextReuseTokenLimit: integer('context_reuse_token_limit'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [

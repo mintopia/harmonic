@@ -73,11 +73,11 @@ describe('attempt timeline model', () => {
 
   it('reads the continuation decision only from recorded data', () => {
     expect(continuationLabel(null)).toBeNull();
-    const base = { reason: 'context-usage' as const, contextUsage: 0.9, contextReuseThreshold: 0.7, lastActiveAt: 1, lastActiveAgeMs: 2, warmWindowMs: 3 };
+    const base = { reason: 'context-tokens' as const, contextTokens: 180_000, contextReuseTokenLimit: 200_000, lastActiveAt: 1, lastActiveAgeMs: 2, warmWindowMs: 3 };
     expect(continuationLabel({ path: 'new-session-condensed', ...base })).toBe('new session, condensed');
     expect(continuationLabel({ path: 'continued-session', ...base })).toBe('continued session');
-    expect(continuationDetail({ path: 'continued-session', ...base, lastActiveAgeMs: 2_500, warmWindowMs: 30_000 })).toBe('context 0.9/0.7 · active 2.5s/30s');
-    expect(continuationDetail({ path: 'continued-session', ...base, contextUsage: null, warmWindowMs: null })).toBe('context unknown/0.7 · active 2ms/unknown');
+    expect(continuationDetail({ path: 'continued-session', ...base, lastActiveAgeMs: 2_500, warmWindowMs: 30_000 })).toBe('context 180k/200k · active 2.5s/30s');
+    expect(continuationDetail({ path: 'continued-session', ...base, contextTokens: null, warmWindowMs: null })).toBe('context unknown/200k · active 2ms/unknown');
     expect(continuationDetail(null)).toBeNull();
   });
 
@@ -93,8 +93,8 @@ describe('attempt timeline model', () => {
     const continued = {
       path: 'continued-session' as const,
       reason: 'continued-within-limits' as const,
-      contextUsage: 0.2,
-      contextReuseThreshold: 0.7,
+      contextTokens: 40_000,
+      contextReuseTokenLimit: 200_000,
       lastActiveAt: 1,
       lastActiveAgeMs: 2_000,
       warmWindowMs: 30_000,

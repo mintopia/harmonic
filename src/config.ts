@@ -290,8 +290,10 @@ export const appConfigSchema = z.object({
   }),
   /** Maximum failed implementation attempts before the ticket is escalated. */
   maxAttempts: z.number().int().min(1).default(2).meta({ example: 2 }),
-  /** Maximum context-window fraction that may continue into Attempt N+1. */
-  contextReuseThreshold: z.number().min(0).max(1).default(0.2).meta({ example: 0.2 }),
+  /** Reuse a warm Session into Attempt N+1 while its context occupancy stays
+   * below this many tokens; at or above it, start a condensed new Session. A raw
+   * token count (not a fraction), so it is independent of the model's window. */
+  contextReuseTokenLimit: z.number().int().min(0).default(200_000).meta({ example: 200_000 }),
   /**
    * Auto-drive settings for afk mirrored Tasks (issue #33). `prompt` is the
    * global Drive Prompt template; `unattendedReminder` is appended to every
@@ -492,7 +494,7 @@ export function defaultConfig(): AppConfig {
       maxConcurrentRuns: 1,
     },
     maxAttempts: 2,
-    contextReuseThreshold: 0.2,
+    contextReuseTokenLimit: 200_000,
     drive: {
       prompt: DEFAULT_DRIVE_PROMPT,
       unattendedReminder: UNATTENDED_REMINDER,
@@ -531,6 +533,10 @@ export function mergeConfig(base: AppConfig, overrides?: DeepPartial<AppConfig>)
 export type LegacyConfig = DeepPartial<AppConfig> & {
   agentReview?: boolean;
   verification?: { command?: VerificationCommand | null; critic?: VerificationCritic | null; autoAccept?: boolean; maxSelfHeals?: number };
+  /** The retired context-reuse *fraction* (0–1), replaced by the raw-token
+   * `contextReuseTokenLimit`. A fraction cannot map to a token count without a
+   * model window, so it is dropped (falling to the new default), not converted. */
+  contextReuseThreshold?: number;
 };
 
 /**
@@ -539,7 +545,7 @@ export type LegacyConfig = DeepPartial<AppConfig> & {
  * always wins, including an empty command list or a disabled review.
  */
 export function migrateLegacyConfig(raw: LegacyConfig): DeepPartial<AppConfig> {
-  const { agentReview, verification: legacyVerification, ...rest } = raw;
+  const { agentReview, verification: legacyVerification, contextReuseThreshold: _retiredReuseFraction, ...rest } = raw;
   const verify: DeepPartial<AppConfig['verify']> = { ...rest.verify };
   if (legacyVerification) {
     if (verify.commands === undefined && 'command' in legacyVerification) {

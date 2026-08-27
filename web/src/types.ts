@@ -43,9 +43,9 @@ export interface Attempt {
   verifierStatuses: VerifierStatus[];
   continuation: {
     path: 'continued-session' | 'new-session-condensed';
-    reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
-    contextUsage: number | null;
-    contextReuseThreshold: number;
+    reason: 'continued-within-limits' | 'context-tokens' | 'session-cold' | 'missing-context-tokens' | 'missing-warm-window';
+    contextTokens: number | null;
+    contextReuseTokenLimit: number;
     lastActiveAt: number;
     lastActiveAgeMs: number;
     warmWindowMs: number | null;
@@ -210,7 +210,7 @@ export interface Workspace {
   autoRunnerEnabled: boolean | null;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
   maxAttempts: number | null;
-  contextReuseThreshold: number | null;
+  contextReuseTokenLimit: number | null;
   /** Verification overrides (ADR-0021, issues #132/#138/#165/#174), tri-state for
    * the command and critic: `null` inherits the global `config.verify` default,
    * {@link VerifierOff} explicitly disables the verifier for this Workspace, and a
@@ -737,6 +737,9 @@ export interface AppConfig {
   };
   /** Maximum implementation attempts before the ticket is escalated. */
   maxAttempts: number;
+  /** Reuse a warm Session into the next attempt while its context occupancy stays
+   * below this many tokens; at or above it, start a condensed new Session. */
+  contextReuseTokenLimit: number;
   /** The Task Prompt template for native Runs, with {prompt}/{id}/{workingDir}/{harness}/{model} placeholders. */
   taskPrompt: string;
 }

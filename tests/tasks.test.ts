@@ -180,6 +180,38 @@ describe('task authoring', () => {
     expect(tombstones[0]!.workspaceId).toBe(seededTask.workspaceId);
   });
 
+  it('a no-op re-poll of an unchanged mirrored issue neither emits task_changed nor bumps updatedAt', async () => {
+    const seeded = await server.api('POST', '/api/tasks', { prompt: 'seed ws for no-op mirror' });
+    const ws = (await server.app.ctx.tasks.get(seeded.body.id)).workspaceId ?? undefined;
+    const input = {
+      trackerRef: 90777,
+      prompt: 'stable mirrored issue',
+      workflow: 'implement' as const,
+      wayfinderType: null,
+      mapRef: null,
+      closed: false,
+    };
+    const first = await server.app.ctx.tasks.upsertMirrored(input, ws);
+    const before = await server.app.ctx.tasks.get(first.id);
+
+    const emitted: number[] = [];
+    const off = server.app.ctx.bus.on('task_changed', (t) => emitted.push(t.id));
+
+    // Same issue, same fields: a re-poll that mirrors nothing new must be a true
+    // no-op — no write, no task_changed. A large mirrored backlog otherwise fires
+    // one frame per issue every poll, a firehose that hammers the board and Stats.
+    await server.app.ctx.tasks.upsertMirrored(input, ws);
+    expect(emitted).not.toContain(first.id);
+    expect((await server.app.ctx.tasks.get(first.id)).updatedAt).toBe(before.updatedAt);
+
+    // A material change still writes, emits, and bumps updatedAt.
+    await server.app.ctx.tasks.upsertMirrored({ ...input, prompt: 'reworded body' }, ws);
+    expect(emitted).toContain(first.id);
+    expect((await server.app.ctx.tasks.get(first.id)).updatedAt).toBeGreaterThan(before.updatedAt);
+
+    off();
+  });
+
   it('rejects invalid input: empty prompt, unknown harness, unknown task', async () => {
     expect((await server.api('POST', '/api/tasks', { prompt: '' })).status).toBe(400);
     expect((await server.api('POST', '/api/tasks', { prompt: 'p', harness: 'gemini' })).status).toBe(400);

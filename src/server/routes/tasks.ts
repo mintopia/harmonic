@@ -579,19 +579,19 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. Use it to redirect an agent that has gone off-track, or to nudge one that ended its turn and parked. Operator only.",
+          "Steer a running task: send an operator message to its active run. When the harness supports ACP mid-turn steering, the message is injected into the running turn immediately — pre-empting the current generation without cancelling it. Otherwise, or when the agent is parked between turns, the message is queued and delivered as a fresh prompt turn at the next turn boundary. When no run is active but the task's last run left a still-warm, resumable session (an escalated task that ended without closure), the message continues that session in a fresh run — a follow-up in the same conversation. Use it to redirect an agent that has gone off-track, nudge one that ended its turn and parked, or continue one whose run just ended while its session is still warm. Operator only.",
         params: idParamsSchema,
         body: steerInputSchema,
         response: {
-          200: okResponseSchema.describe('The message was injected into the running turn, or queued for the next turn boundary, of the task\'s active run.'),
-          409: errorResponse('The task has no active run to steer (it is not running here).'),
+          200: okResponseSchema.describe("The message was injected into the running turn or queued at the next boundary of the task's active run, or continued its last run's still-warm session in a fresh run."),
+          409: errorResponse('The task has no active run to steer and no warm, resumable session to continue.'),
         },
       },
     },
     async (req) => {
       await ctx.tasks.assertExists(req.params.id);
-      if (!(await ctx.runner.steer(req.params.id, req.body.text))) {
-        throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer`);
+      if (!(await ctx.runner.steer(req.params.id, req.body.text)) && !(await ctx.runner.steerSettled(req.params.id, req.body.text))) {
+        throw new DomainError('invalid_state', `task ${req.params.id} has no active run to steer and no warm session to continue`);
       }
       return { ok: true } as const;
     },

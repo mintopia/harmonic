@@ -153,3 +153,65 @@ describe('steering a running task', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// Steering a task whose run has settled but whose Session is still warm: the
+// message continues that Session in a fresh Run — a follow-up in the same
+// conversation — instead of 409ing. Scoped to escalated tasks (the "ended
+// without closure" case).
+describe('steering a settled task continues its warm session', () => {
+  let server: TestServer;
+
+  beforeAll(async () => {
+    // A mirrored (auto-driven) Run that runs one turn and ends WITHOUT finish_task
+    // and with no candidate escalates (no verifier vouched for empty work) — while
+    // leaving a warm, resumable Session bound to the run. The scenario rides the
+    // drive prompt (a mirrored task's own prompt is wrapped where the stub can't
+    // parse it).
+    const scenarioPrompt = scenario({
+      updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'thinking' } }],
+      stopReason: 'end_turn',
+    });
+    server = await startServer({ ...stubHarness(), maxAttempts: 1, drive: { prompt: scenarioPrompt } });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('continues the warm session as a fresh run seeded with the operator message', async () => {
+    const seed = (await server.api('POST', '/api/tasks', { prompt: 'workspace seed' })).body;
+    const workspaceId = (await server.app.ctx.tasks.get(seed.id)).workspaceId ?? undefined;
+    const mirrored = await server.app.ctx.tasks.upsertMirrored(
+      { trackerRef: 90210, prompt: 'ticket 90210\n\nbody', workflow: 'implement', wayfinderType: null, mapRef: null, closed: false },
+      workspaceId,
+    );
+    await server.api('POST', `/api/tasks/${mirrored.id}/run`);
+    await waitFor(async () => {
+      const task = (await server.api('GET', `/api/tasks/${mirrored.id}`)).body;
+      return task.state === 'escalated' ? task : undefined;
+    });
+    const runsBefore = (await server.app.ctx.runs.listForTask(mirrored.id)).length;
+
+    const steered = await server.api('POST', `/api/tasks/${mirrored.id}/steer`, { text: 'actually, focus on the parser' });
+    expect(steered.status).toBe(200);
+    expect(steered.body).toEqual({ ok: true });
+
+    // A fresh Run spawned, and its persisted first-turn prompt IS the operator
+    // message (a continuation of the warm Session, not the task prompt re-sent).
+    const latest = await waitFor(async () => {
+      const all = await server.app.ctx.runs.listForTask(mirrored.id);
+      const last = all.at(-1);
+      return all.length > runsBefore && last?.prompt?.includes('actually, focus on the parser') ? last : undefined;
+    });
+    expect(latest.prompt).toContain('## Operator message');
+    expect(latest.prompt).not.toContain('ticket 90210');
+  });
+
+  it('409s when the settled task has no warm session (e.g. a plain done native task)', async () => {
+    const created = await server.api('POST', '/api/tasks', { prompt: 'quick native task' });
+    const taskId = created.body.id;
+    await server.api('POST', `/api/tasks/${taskId}/run`);
+    await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
+    const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'too late' });
+    expect(res.status).toBe(409);
+  });
+});

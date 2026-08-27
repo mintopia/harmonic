@@ -353,7 +353,7 @@ export class TaskService {
     const workspace = await this.resolveWorkspace(workspaceId);
     // The (workspaceId, trackerRef) read and the update-or-insert branch run as
     // one write-queue unit so the upsert stays atomic under the async driver.
-    const row = await this.db.write(async (db) => {
+    const { row, dirty } = await this.db.write(async (db) => {
       const existing = await db
         .select()
         .from(tasks)
@@ -375,9 +375,24 @@ export class TaskService {
                 existing.state === 'done' && input.trackerCanClose !== false
                 ? 'ready'
               : existing.state;
+        const factCols = input.facts ? trackerFactColumns(input.facts) : {};
+        // A re-poll that mirrors an unchanged issue must not write or emit. With
+        // a large mirrored backlog every poll would otherwise fire one
+        // task_changed per issue — a firehose that re-renders the whole board
+        // and, because each frame flips the status strip's period-cost shape,
+        // spams the heavy /api/stats aggregate. Skip when nothing the update
+        // would set has actually moved (updatedAt is bookkeeping, not a change).
+        const unchanged =
+          existing.state === state &&
+          existing.prompt === input.prompt &&
+          existing.workflow === input.workflow &&
+          existing.wayfinderType === input.wayfinderType &&
+          existing.mapRef === input.mapRef &&
+          Object.entries(factCols).every(([col, value]) => existing[col as keyof typeof existing] === value);
+        if (unchanged) return { row: existing, dirty: false };
         // Re-poll never touches the four operator picks (harness/model/isolation/
         // priority), so an operator's pin on a mirrored Task survives every scan.
-        return db
+        const updated = await db
           .update(tasks)
           .set({
             prompt: input.prompt,
@@ -387,17 +402,18 @@ export class TaskService {
             mapRef: input.mapRef,
             // Refresh the durable facts each poll; omitting them leaves the last
             // known-good facts in place (issue #233).
-            ...(input.facts ? trackerFactColumns(input.facts) : {}),
+            ...factCols,
             updatedAt: now,
           })
           .where(eq(tasks.id, existing.id))
           .returning()
           .get();
+        return { row: updated, dirty: true };
       }
       // Each Workspace's poll loop mirrors into its own board (issue #45): the
       // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
       // the upsert so overlapping issue numbers across repos stay distinct.
-      return db
+      const inserted = await db
         .insert(tasks)
         .values({
           prompt: input.prompt,
@@ -423,10 +439,12 @@ export class TaskService {
         })
         .returning()
         .get();
+      return { row: inserted, dirty: true };
     });
     // No task.created notify: a mirrored Task is a projection, not an authored
     // Task, and a first poll would otherwise storm one notification per issue.
-    return await this.changed(row);
+    // An unchanged re-poll resolves without emitting task_changed (see above).
+    return dirty ? await this.changed(row) : await this.resolve(row);
   }
 
   /**
