@@ -390,12 +390,16 @@ export class EpicIntegrateCoordinator {
     return this.lastVerification.get(epicRef) ?? null;
   }
 
-  /** Put a refresh failure on the same Epic attention/hold surface as a failed
-   * whole-Epic verification. */
-  escalateRefresh(epicRef: number, reason: string): void {
-    this.settledEscalated.set(epicRef, 'refresh');
-    this.escalateFn(epicRef, reason);
-    this.operations.fail({ repoDir: this.repoDir, epicRef, reason });
+  /** Record that `epicRef`'s integration branch has fallen behind develop and a
+   * refresh could not fast-forward it — a moving base, or no member free to host
+   * the one corrective turn. Per ADR-0046 a moving base is normal, never a failure:
+   * this is logged quietly and retried on the next trigger, never raised as an
+   * operator hold. The epic-level escalation is reserved for the integrate gate
+   * (every member merged + whole-Epic verify/ff-only merge), which is member-gated —
+   * so an in-flight Epic whose members are still in progress is never escalated for
+   * a base that moved under it. */
+  recordRefreshBehind(epicRef: number, reason: string): void {
+    logger.debug(`epic ${epicRef} integration refresh behind develop (retrying): ${reason}`);
   }
 
   /**

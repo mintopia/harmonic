@@ -111,6 +111,29 @@ refresh, members based on `epic/<ref>`, epic integrated into develop fast-forwar
 - Verification always inspects exactly the tree that gets published (`M`), closing
   the general rebase-without-re-verify gap on the autonomous path.
 
+## Amendment (2026-08-27): the epic refresh is a moving base too
+
+The original decision (above, "The epic integration side is already correct and
+is reused unchanged") left the `develop → epic/<ref>` refresh escalating to an
+operator hold after its one bounded corrective turn could not reconcile — or when
+no member was free to host that turn. In practice this fired constantly on any
+in-flight Epic whose base moved under it: an Epic with most members still
+unstarted would surface a red "Merge escalated — awaiting you" the moment develop
+advanced into a file the Epic also touched, and, because the hold cleared only on
+a completed integrate or branch deletion, it never released even after the drift
+was reconciled.
+
+That contradicts this ADR's guiding principle. A `develop` advance under an
+integration branch **is** a moving base, and a moving base is normal, never a
+failure. So the principle now extends to the epic refresh: a refresh that cannot
+fast-forward (a conflict, or no member free to host the corrective turn) is
+**recorded quietly and retried on the next trigger, never raised as an operator
+hold**. The epic-level escalation is reserved for the **integrate gate** — every
+member merged, then whole-Epic verify and the `--ff-only` integrate into develop —
+which is member-gated and where an irreconcilable drift genuinely surfaces. The
+one bounded corrective turn (issue #315) still runs; only its loud, sticky,
+never-releasing escalation is removed.
+
 ## Supersedes
 
 None. Refines ADR-0041's landing-freshness gate and preserves ADR-0043
