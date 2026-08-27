@@ -141,9 +141,11 @@ export function resolveGuardrails(
   return {
     budget: resolveScoped('guardrailBudget', parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
     progress: resolveScoped('guardrailProgress', ws.guardrailProgress, config.guardrails.progress),
-    // `toolTimeoutMinutes` is `global-only` in the registry: instance-wide, never
-    // resolved from a per-Workspace value.
-    toolTimeoutMinutes: config.guardrails.toolTimeoutMinutes,
+    // `toolTimeoutMinutes` is `global-only` in the registry: instance-wide. It has
+    // no Workspace column, so it still routes through the scoped resolver (which
+    // returns the global default for a global-only key) — the registry, not this
+    // line, is the authority for its scope.
+    toolTimeoutMinutes: resolveScoped('toolTimeoutMinutes', undefined, config.guardrails.toolTimeoutMinutes),
   };
 }
 

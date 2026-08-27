@@ -132,3 +132,15 @@ export function settingSpec(key: SettingKey): SettingSpec {
 export function isOverridable(key: SettingKey): boolean {
   return settingsRegistry[key].scope === 'overridable';
 }
+
+/**
+ * True when a Workspace actually overrides this setting: the registry declares
+ * it overridable AND the Workspace column holds a value. This is the registry-
+ * driven test for *override presence* (e.g. attributing a config's provenance to
+ * 'workspace' vs 'default'), so provenance decisions honour the same single
+ * authority as value resolution — flip a setting to `global-only` and no column
+ * value counts as an override anywhere.
+ */
+export function hasWorkspaceOverride(key: SettingKey, columnValue: unknown): boolean {
+  return isOverridable(key) && Boolean(columnValue);
+}

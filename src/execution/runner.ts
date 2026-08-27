@@ -44,6 +44,7 @@ import type { RunPhase } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { resolveGuardrails, resolveVerifiers, resolveScoped, type ResolvedGuardrails } from '../domain/setting-override.js';
+import { hasWorkspaceOverride } from '../domain/settings-registry.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import {
@@ -2999,7 +3000,7 @@ export class Runner {
       // (issue #126); a live workspace lookup at fire time (possibly long after)
       // could attribute the snapshotted limit to a since-changed override.
       const ws = await this.getWorkspace?.(task.workspaceId);
-      const configSource = ws?.guardrailBudget ? 'workspace' : 'default';
+      const configSource = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
       const remaining = Math.max(0, wallClockBudgetMs(budget) - (Date.now() - started.startedAt));
       guardrailTimer = setTimeout(async () => {
         guardrailTimer = null;
@@ -3089,7 +3090,7 @@ export class Runner {
       const priceTable: PriceTable = started.priceTable ? (JSON.parse(started.priceTable) as PriceTable) : {};
       // Resolved at arm time, not fire time — same provenance rule as `armGuardrail`.
       const ws = await this.getWorkspace?.(task.workspaceId);
-      const configSource: 'default' | 'workspace' = ws?.guardrailBudget ? 'workspace' : 'default';
+      const configSource: 'default' | 'workspace' = hasWorkspaceOverride('guardrailBudget', ws?.guardrailBudget) ? 'workspace' : 'default';
       // Prior cumulative spend of this Run's Execution Chain (issue #129): the
       // token/cost already charged by the sibling Runs that continued the same
       // line of work before this one (retry / crash-resume).
@@ -3252,8 +3253,10 @@ export class Runner {
       ? (JSON.parse(progressStart.guardrailConfig) as ResolvedGuardrails)
       : null;
     const progressEnabled = progressSnapshot?.progress === true;
-    const progressConfigSource: 'default' | 'workspace' = (await this.getWorkspace?.(task.workspaceId))
-      ?.guardrailProgress
+    const progressConfigSource: 'default' | 'workspace' = hasWorkspaceOverride(
+      'guardrailProgress',
+      (await this.getWorkspace?.(task.workspaceId))?.guardrailProgress,
+    )
       ? 'workspace'
       : 'default';
     const toolTimeoutMs =
