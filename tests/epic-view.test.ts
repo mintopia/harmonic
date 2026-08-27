@@ -41,11 +41,11 @@ const task = (over: Partial<TaskRow>): TaskRow =>
 const noFacts: EpicFacts = {
   integration: { branch: 'epic/10', exists: false, tip: null },
   verification: { status: null },
-  land: { inFlight: false, held: null },
+  integrate: { inFlight: false, held: null },
 };
 
 describe('composeEpicView', () => {
-  it('maps a done member Task to landStatus completed, folds it in, and preserves its raw state', () => {
+  it('maps a done member Task to mergeStatus completed, folds it in, and preserves its raw state', () => {
     const memberTasks = new Map<number, TaskRow>([[11, task({ id: 101, trackerRef: 11, state: 'done' })]]);
     const titleByRef = new Map([[11, 'Member eleven']]);
     const epic = composeEpicView(derived(), memberTasks, titleByRef, noFacts);
@@ -57,18 +57,18 @@ describe('composeEpicView', () => {
       taskId: 101,
       state: 'done',
       escalated: false,
-      landStatus: 'completed',
+      mergeStatus: 'completed',
       ready: false,
     });
     expect(epic.foldedCount).toBe(1);
   });
 
-  it('maps an escalated member to landStatus blocked', () => {
+  it('maps an escalated member to mergeStatus blocked', () => {
     const memberTasks = new Map<number, TaskRow>([[12, task({ id: 102, trackerRef: 12, state: 'escalated', escalationReason: 'escalated to human: attempt 3 of 3 failed' })]]);
     const epic = composeEpicView(derived(), memberTasks, new Map(), noFacts);
 
     const m12 = epic.members.find((m) => m.ref === 12);
-    expect(m12?.landStatus).toBe('blocked');
+    expect(m12?.mergeStatus).toBe('blocked');
     expect(m12?.escalated).toBe(true);
     expect(epic.foldedCount).toBe(0);
   });
@@ -82,7 +82,7 @@ describe('composeEpicView', () => {
       taskId: null,
       state: null,
       escalated: false,
-      landStatus: 'pending',
+      mergeStatus: 'pending',
       ready: true,
     });
   });
@@ -108,30 +108,30 @@ describe('composeEpicView', () => {
     expect(epic.memberCount).toBe(3);
   });
 
-  it('passes integration/verification/land facts through unchanged, including branch absent (exists:false, tip:null)', () => {
+  it('passes integration/verification/integrate facts through unchanged, including branch absent (exists:false, tip:null)', () => {
     const facts: EpicFacts = {
       integration: { branch: 'epic/10', exists: false, tip: null },
       verification: { status: null },
-      land: { inFlight: false, held: null },
+      integrate: { inFlight: false, held: null },
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: false, tip: null });
     expect(epic.verification).toEqual({ status: null });
-    expect(epic.land).toEqual({ inFlight: false, held: null });
+    expect(epic.integrate).toEqual({ inFlight: false, held: null });
     expect(epic.memberCount).toBe(0);
     expect(epic.foldedCount).toBe(0);
   });
 
-  it('passes a present branch (exists:true, non-null tip), in-flight land, and a hold reason through unchanged', () => {
+  it('passes a present branch (exists:true, non-null tip), in-flight integrate, and a hold reason through unchanged', () => {
     const facts: EpicFacts = {
       integration: { branch: 'epic/10', exists: true, tip: 'a1b2c3d' },
       verification: { status: 'pass' },
-      land: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change' },
+      integrate: { inFlight: true, held: 'already escalated for this member state; awaiting operator or a state change' },
     };
     const epic = composeEpicView(derived({ members: [], ready: [] }), new Map(), new Map(), facts);
     expect(epic.integration).toEqual({ branch: 'epic/10', exists: true, tip: 'a1b2c3d' });
     expect(epic.verification).toEqual({ status: 'pass' });
-    expect(epic.land).toEqual({ inFlight: true, held: expect.stringContaining('escalated') });
+    expect(epic.integrate).toEqual({ inFlight: true, held: expect.stringContaining('escalated') });
   });
 
   it('carries ref/title/kind straight from the DerivedEpic', () => {

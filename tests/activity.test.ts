@@ -89,7 +89,7 @@ describe('GET /api/activity snapshot (issue #51)', () => {
   });
 
   it('lists a persisted running Run whose completed Task no longer has a live Runner', async () => {
-    const task = (await server.api('POST', '/api/tasks', { prompt: 'wedged landing', workingDir: workDir })).body;
+    const task = (await server.api('POST', '/api/tasks', { prompt: 'wedged merging', workingDir: workDir })).body;
     const run = await server.app.ctx.runs.create(task.id);
     await server.app.ctx.tasks.setState(task.id, 'done');
 

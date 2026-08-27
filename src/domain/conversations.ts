@@ -103,7 +103,7 @@ export class ConversationStore {
     return row!;
   }
 
-  /** Bump updatedAt (a Turn landed) and broadcast the change. */
+  /** Bump updatedAt (a Turn merged) and broadcast the change. */
   async touch(id: number): Promise<ConversationRow> {
     return this.update(id, {});
   }

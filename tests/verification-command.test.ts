@@ -35,7 +35,7 @@ const exitCommand = (code: number): VerificationCommand =>
  * End-to-end verification gate at the Runner drive-loop seam (issue #135 AC5):
  * a native Run over the stub harness against a real git Workspace, with a
  * command verifier configured. A pass lets the Run park for review; a fail
- * Escalates and never lands. The driven path freezes a candidate OID in
+ * Escalates and never merges. The driven path freezes a candidate OID in
  * `validating` and the persisted attempt records exactly that OID.
  */
 describe('command verifier end-to-end (issue #135)', () => {
@@ -82,7 +82,7 @@ describe('command verifier end-to-end (issue #135)', () => {
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
-  it('AC1/AC3/AC4/AC5: a passing command lands a native Run to done; the attempt records the verified head OID', async () => {
+  it('AC1/AC3/AC4/AC5: a passing command merges a native Run to done; the attempt records the verified head OID', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(0) });
     const { taskId, runId } = await createAndRun();
 
@@ -158,16 +158,16 @@ describe('command verifier end-to-end (issue #135)', () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
     const { taskId, runId } = await createAndRun();
 
-    // The Run terminates failed rather than parking for review or landing.
+    // The Run terminates failed rather than parking for review or merging.
     const run = await waitFor(async () => {
       const { body } = await server.api('GET', `/api/runs/${runId}`);
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('merging');
     expect(run.finishedAt).not.toBeNull();
 
-    // The Task never landed; it was handed back to a human.
+    // The Task never merged; it was handed back to a human.
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
 
@@ -261,7 +261,7 @@ describe('command verifier end-to-end (issue #135)', () => {
     const timeline = await server.api('GET', `/api/tasks/${taskId}/attempts`);
     expect(timeline.body.attempts).toHaveLength(1);
     expect(timeline.body.attempts[0]).toMatchObject({ number: 1 });
-    // Leave the shared repo clean for the landings that follow (the stub never committed).
+    // Leave the shared repo clean for the merges that follow (the stub never committed).
     rmSync(join(repoDir, 'nudge-me.txt'), { force: true });
   });
 
@@ -285,16 +285,16 @@ describe('command verifier end-to-end (issue #135)', () => {
     expect(payload.sha).toBe(run.candidateOid);
     expect(payload.branch).toBe(run.branch);
 
-    // The landing gate accepts the tip verification recorded…
+    // The merging gate accepts the tip verification recorded…
     const runner = server.app.ctx.runner as unknown as {
-      landingFreshness(task: unknown, run: unknown): Promise<{ fresh: boolean; oid: string; reason?: string }>;
+      mergeFreshness(task: unknown, run: unknown): Promise<{ fresh: boolean; oid: string; reason?: string }>;
     };
     const taskRow = await server.app.ctx.tasks.get(taskId);
     const runRow = await server.app.ctx.runs.get(runId);
-    await expect(runner.landingFreshness(taskRow, runRow)).resolves.toEqual({ fresh: true, oid: payload.sha });
+    await expect(runner.mergeFreshness(taskRow, runRow)).resolves.toEqual({ fresh: true, oid: payload.sha });
     // …and refuses once the branch tip moved after verification.
     git(repoDir, 'update-ref', `refs/heads/${payload.branch}`, git(repoDir, 'rev-parse', 'main~1'));
-    await expect(runner.landingFreshness(taskRow, runRow)).resolves.toEqual({
+    await expect(runner.mergeFreshness(taskRow, runRow)).resolves.toEqual({
       fresh: false,
       oid: payload.sha,
       reason: 'branch head moved after verification',
@@ -351,16 +351,16 @@ describe('command verifier end-to-end (issue #135)', () => {
 });
 
 /**
- * Native landing (issue #138,
+ * Native merging (issue #138,
  * ADR-0021). The single new row: native + a verifier that actually RAN and
- * PASSED + auto-accept ON → land with no human gate. Every other cell of the
+ * PASSED + auto-accept ON → merge with no human gate. Every other cell of the
  * table (no verifier, auto-accept off, a fail/inconclusive verdict) still
  * routes to review/Escalate exactly as #135 left it — auto-accept only ever
  * *skips* the human gate on a genuine pass, it never rescues a red verdict
  * and never fires with nothing verified. A dedicated server + repo (rather
  * than the shared one above) keeps each transition's Workspace state isolated.
  */
-describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
+describe('native merging (issue #138, ADR-0021, ADR-0041)', () => {
   let server: TestServer;
   let repoDir: string;
   let workspaceId: number;
@@ -390,7 +390,7 @@ describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
 
   const attempts = (runId: number) => new VerificationAttemptStore(server.app.ctx.asyncDb).list(runId);
 
-  it('a passing verification lands directly — there is no review gate to park at (ADR-0041)', async () => {
+  it('a passing verification merges directly — there is no review gate to park at (ADR-0041)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
     });
@@ -407,7 +407,7 @@ describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
     expect(run.phase).toBe('terminal');
   });
 
-  it('a pass lands under Harmonic\'s own land fact, never the operator disposition', async () => {
+  it('a pass merges under Harmonic\'s own merge fact, never the operator disposition', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
     });
@@ -428,8 +428,8 @@ describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!).toMatchObject({ mechanism: 'command', verdict: 'pass' });
 
-    // Harmonic landing the Run is not an operator — it appends the default
-    // `agent-finish/unresolved` land fact, never the operator-only
+    // Harmonic merging the Run is not an operator — it appends the default
+    // `agent-finish/unresolved` merge fact, never the operator-only
     // `operator-accept` disposition, so the audit log stays honest about who
     // actually accepted the work.
     const factTypes = (await new RunFactStore(server.app.ctx.asyncDb).list(runId)).map((f) => f.type);
@@ -437,7 +437,7 @@ describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
     expect(factTypes).not.toContain('operator-accept');
   });
 
-  it('safety: a fail on every attempt Escalates — landing never rescues a red verdict', async () => {
+  it('safety: a fail on every attempt Escalates — merging never rescues a red verdict', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(1),
     });
@@ -457,7 +457,7 @@ describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
     expect(task.escalationReason).toMatch(/failed/);
   });
 
-  it('with NO verifier configured a run still lands — nothing to verify means nothing blocks (ADR-0041)', async () => {
+  it('with NO verifier configured a run still merges — nothing to verify means nothing blocks (ADR-0041)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: null,
     });
@@ -477,7 +477,7 @@ describe('native landing (issue #138, ADR-0021, ADR-0041)', () => {
     expect(await attempts(runId)).toHaveLength(0);
   });
 
-  it('a worktree run lands the merge into the base branch (no human gate)', async () => {
+  it('a worktree run merges the merge into the base branch (no human gate)', async () => {
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),
     });

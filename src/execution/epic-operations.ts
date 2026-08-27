@@ -1,7 +1,7 @@
 import type { Attributes } from '@opentelemetry/api';
 import { startOperation, type Operation } from '../telemetry/operations.js';
 
-export type EpicOperationType = 'cut' | 'member-land' | 'git.rebase' | 'git.fast-forward' | 'heal' | 'verify' | 'land' | 'merge' | 'retire';
+export type EpicOperationType = 'cut' | 'member-merge' | 'git.rebase' | 'git.fast-forward' | 'heal' | 'verify' | 'integrate' | 'merge' | 'retire';
 
 /** Keeps one live trace root for an Epic while its work moves between poll ticks. */
 export class EpicOperations {

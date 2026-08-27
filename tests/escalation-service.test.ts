@@ -8,9 +8,9 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
-import { LandingJournalStore } from '../src/domain/landing-journal.js';
+import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
-import { LandingCoordinator, type LandingEffectExec } from '../src/domain/landing-coordinator.js';
+import { MergeCoordinator, type MergeEffectExec } from '../src/domain/merge-coordinator.js';
 import { EscalationService } from '../src/domain/escalation.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { RunRow, TaskRow } from '../src/db/schema.js';
@@ -19,7 +19,7 @@ import { allWorkspaces } from './helpers.js';
 /**
  * `EscalationService` against the real stores (ADR-0041): exactly three
  * actions, each gated to `escalated`, each with the behaviour the ADR
- * specifies — Accept lands the verified head and continues the success path,
+ * specifies — Accept merges the verified head and continues the success path,
  * Reject with guidance hands the guidance to the loop, Close cancels and
  * cleans up.
  */
@@ -29,10 +29,10 @@ describe('EscalationService', () => {
   let tasks: TaskService;
   let runStore: RunStore;
   let settle: RunSettleCoordinator;
-  let landing: LandingCoordinator;
+  let merging: MergeCoordinator;
   let resumed: Array<{ taskId: number; guidance: string }>;
   let cleaned: Array<{ taskId: number; runId: number | undefined }>;
-  let effects: LandingEffectExec[];
+  let effects: MergeEffectExec[];
   let service: EscalationService;
 
   beforeEach(async () => {
@@ -40,13 +40,13 @@ describe('EscalationService', () => {
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
-    const journal = new LandingJournalStore(asyncDb);
+    const journal = new MergeJournalStore(asyncDb);
     settle = new RunSettleCoordinator(runStore, tasks, new WorkContextLeaseStore(asyncDb), new RunFactStore(asyncDb), undefined, journal);
-    landing = new LandingCoordinator(runStore, asyncDb, journal, settle);
+    merging = new MergeCoordinator(runStore, asyncDb, journal, settle);
     resumed = [];
     cleaned = [];
     effects = [];
-    service = new EscalationService(runStore, tasks, landing, () => effects, {
+    service = new EscalationService(runStore, tasks, merging, () => effects, {
       resume: async (task, guidance) => {
         resumed.push({ taskId: task.id, guidance });
       },
@@ -89,7 +89,7 @@ describe('EscalationService', () => {
   });
 
   describe('accept', () => {
-    it('lands the verified head under the operator-accept disposition and moves the ticket to done', async () => {
+    it('merges the verified head under the operator-accept disposition and moves the ticket to done', async () => {
       const { task, run } = await escalated();
       expect(task.state).toBe('escalated');
       expect(run).toMatchObject({ state: 'failed', phase: 'terminal' });
@@ -107,7 +107,7 @@ describe('EscalationService', () => {
       expect(types).toContain('operator-accept');
     });
 
-    it('409s conflict when there is no verified head to land, leaving the ticket escalated', async () => {
+    it('409s conflict when there is no verified head to merge, leaving the ticket escalated', async () => {
       const { task } = await escalated(false);
       const err = await service.accept(task.id).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(DomainError);
@@ -115,7 +115,7 @@ describe('EscalationService', () => {
       expect((await tasks.get(task.id)).state).toBe('escalated');
     });
 
-    it('a failed landing effect surfaces its detail and leaves the ticket escalated with the landing abandoned', async () => {
+    it('a failed merging effect surfaces its detail and leaves the ticket escalated with the merging abandoned', async () => {
       const { task, run } = await escalated();
       effects = [{ effect: 'target-ref', idempotencyKey: 'main<-branch', expected: {}, apply: async () => ({ ok: false, detail: 'merge conflict in src/a.ts' }) }];
 
@@ -123,7 +123,7 @@ describe('EscalationService', () => {
 
       expect((await tasks.get(task.id)).state).toBe('escalated');
       expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
-      expect((await new LandingJournalStore(asyncDb).views(run.id)).map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
+      expect((await new MergeJournalStore(asyncDb).views(run.id)).map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
     });
   });
 

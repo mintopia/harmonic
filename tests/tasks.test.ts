@@ -229,7 +229,7 @@ describe('task authoring', () => {
 
 /**
  * Per-Task explicit base branch (issue #157, ADR-0024): the branch a worktree
- * Run is cut from and lands back onto. Plain and per-Task, unlike the four
+ * Run is cut from and merges back onto. Plain and per-Task, unlike the four
  * inheritable defaults — it never resolves against a Workspace/global value.
  */
 describe('task baseBranch (issue #157)', () => {

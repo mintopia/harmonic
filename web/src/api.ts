@@ -24,7 +24,7 @@ import type {
   VerifierOff,
   Workspace,
 } from './types.js';
-import type { Epic, EpicLandOutcome } from './epic-model.js';
+import type { Epic, EpicIntegrateOutcome } from './epic-model.js';
 
 class ApiError extends Error {
   constructor(
@@ -281,8 +281,8 @@ export const api = {
   /** Force-release a held/suspect lease with no successor. */
   unlockLease: (key: string) => request<{ ok: true }>('POST', '/api/leases/unlock', { key }),
 
-  // Parallel-Epic read model + force-land (issue #167, ADR-0026): operator-scope
-  // only, mirroring the force-land allowlist. See epic-model.ts for the DTO shape.
+  // Parallel-Epic read model + force-integrate (issue #167, ADR-0026): operator-scope
+  // only, mirroring the force-integrate allowlist. See epic-model.ts for the DTO shape.
   // Paginated on the shared envelope (ADR-0045, issue #351): pass `limit`/`offset`
   // to page, `q` to substring-search the Epic title; omit `limit` for the whole list.
   epics: (workspaceId: number, { limit, offset, q }: { limit?: number; offset?: number; q?: string } = {}) => {
@@ -296,8 +296,8 @@ export const api = {
   },
   epic: (workspaceId: number, epicRef: number) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
-  forceLandEpic: (workspaceId: number, epicRef: number) =>
-    request<EpicLandOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-land`),
+  forceIntegrateEpic: (workspaceId: number, epicRef: number) =>
+    request<EpicIntegrateOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-integrate`),
 
   // Derived Map rollup (D7, issue #35), paginated on the shared envelope
   // (ADR-0045, issue #351): `workspaceId` scopes to one board, `limit`/`offset`

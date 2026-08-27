@@ -20,7 +20,7 @@ import type { SessionRow } from '../db/schema.js';
  * persisted reason string that later forces a new Session rather than a reload.
  *
  * The wiring (mint credentials, `session/load`, re-establish mode, re-verify a
- * changed model) lands in later tickets of the unit; this file only decides.
+ * changed model) merges in later tickets of the unit; this file only decides.
  */
 
 /**

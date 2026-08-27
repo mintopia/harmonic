@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { activeExecutionDurationMs, durationPercentiles, percentile } from '../src/domain/run-duration.js';
 
 describe('activeExecutionDurationMs', () => {
-  it('measures agent-finish ts minus run start, excluding review-park + landing wait', () => {
-    // finished long after agent-finish (parked in review, then landing) — the
+  it('measures agent-finish ts minus run start, excluding review-park + merging wait', () => {
+    // finished long after agent-finish (parked in review, then merging) — the
     // duration is the agent-finish span, not the wall-clock.
     expect(activeExecutionDurationMs({ startedAt: 1000, finishedAt: 9000, agentFinishTs: 4000 })).toBe(3000);
   });

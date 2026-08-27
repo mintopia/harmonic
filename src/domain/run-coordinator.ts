@@ -3,11 +3,11 @@ import { computeDisposition, type Disposition, type DispositionFact } from './ru
 /**
  * The settle coordinator's projection contract (issue #113, reliability-design
  * §0.3). `computeDisposition` decides *which* ending signal wins by precedence;
- * this module decides *what terminal state that winner lands*.
+ * this module decides *what terminal state that winner merges*.
  *
  * The terminal state is **not** a fixed function of the winning disposition
- * kind. A single `agent-finish/unresolved` can land the Task in
- * `done` (a landed ticket), leave it untouched (operator force-complete), or
+ * kind. A single `agent-finish/unresolved` can merge the Task in
+ * `done` (a merged ticket), leave it untouched (operator force-complete), or
  * re-queue it, depending on the Merge Fate and attempt budget resolved at
  * signal time.
  * So each ending signal records the concrete projection it intends in its
@@ -24,10 +24,10 @@ export type RunTerminalState = 'completed' | 'failed' | 'cancelled';
  * What the coordinator does to the owning Task when the Run settles. `none`
  * leaves the Task untouched — the operator cancel/force-complete flow already
  * transitioned it through the Task service, so the coordinator must not fight
- * that. `done` lands the ticket, `ready` re-queues it (a transient fault the
+ * that. `done` merges the ticket, `ready` re-queues it (a transient fault the
  * next pick retries), `escalate` hands it to a human with the fact's reason.
  * Applied only while the Task is still `working` (or `escalated`, for the
- * operator Accept that lands from there); a racing cancel that already moved
+ * operator Accept that merges from there); a racing cancel that already moved
  * it wins.
  */
 export type SettleTaskAction = 'done' | 'escalate' | 'ready' | 'none';

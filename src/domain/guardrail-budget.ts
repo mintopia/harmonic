@@ -23,7 +23,7 @@ import type { BudgetGuardrail } from '../config.js';
  *
  * A Run's total wall-clock time includes phases the budget deliberately does
  * NOT bound: `review` is a human-paced wait gated by its own review SLA
- * (issue #114's `review-sla-expiry`), and `landing` is a short mechanical
+ * (issue #114's `review-sla-expiry`), and `merging` is a short mechanical
  * step with its own timeout. Counting either against the execution budget
  * would either trip a Run that is legitimately waiting on a human, or double
  * -govern a step that already has its own guard. So only the phases where an
@@ -77,7 +77,7 @@ export interface WallClockTrip {
  * This is THE phase-scoping decision (issue #127 acceptance: the clock
  * advances only during `executing`/`validating`/`verifying`) expressed as a
  * pure, exhaustively unit-testable function. A Run parked in `review` or
- * mid-`landing` can be arbitrarily far past `wallClockBudgetMs(budget)` in
+ * mid-`merging` can be arbitrarily far past `wallClockBudgetMs(budget)` in
  * raw elapsed time and this must still return `null` — the elapsed clock
  * itself is scoped to the execution phases by `countsTowardExecutionBudget`,
  * not by the caller pre-filtering what it measures, so this function is the

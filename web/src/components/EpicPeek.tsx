@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import type { Epic, EpicMember, LandOutcomeBanner, LandOutcomeBannerTone } from '../epic-model';
+import type { Epic, EpicMember, IntegrateOutcomeBanner, IntegrateOutcomeBannerTone } from '../epic-model';
 import {
-  FORCE_LAND_CONSEQUENCE,
+  FORCE_INTEGRATE_CONSEQUENCE,
   ROSTER_LANES,
   ROSTER_LANE_LABELS,
-  landOutcomeBanner,
+  integrateOutcomeBanner,
   memberRailStatus,
   rosterLanes,
   statusLineParts,
@@ -15,7 +15,7 @@ import { btnQuiet, btnQuietDestructive, chip, labelType, panelTitle, stateChip }
 import { ArmedButton } from './ArmedButton';
 import { Modal } from './Modal';
 
-const BANNER_TONE: Record<LandOutcomeBannerTone, string> = {
+const BANNER_TONE: Record<IntegrateOutcomeBannerTone, string> = {
   ok: 'bg-merged-tint text-merged',
   warn: 'bg-running-tint text-running',
   bad: 'bg-fail-tint text-fail',
@@ -26,7 +26,7 @@ const BANNER_TIMEOUT_MS = 6000;
 
 function memberStatusLabel(status: ReturnType<typeof memberRailStatus>): string {
   switch (status) {
-    case 'landed': return 'merged';
+    case 'merged': return 'merged';
     case 'running': return 'running';
     case 'healing': return 'healing';
     case 'waiting': return 'waiting';
@@ -36,7 +36,7 @@ function memberStatusLabel(status: ReturnType<typeof memberRailStatus>): string 
 
 function memberStatusTone(status: ReturnType<typeof memberRailStatus>): string {
   switch (status) {
-    case 'landed': return 'bg-merged-tint text-merged';
+    case 'merged': return 'bg-merged-tint text-merged';
     case 'running':
     case 'healing': return 'bg-running-tint text-running';
     case 'waiting': return 'bg-raised text-muted';
@@ -95,10 +95,10 @@ export function EpicPeek({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const [banner, setBanner] = useState<LandOutcomeBanner | null>(null);
+  const [banner, setBanner] = useState<IntegrateOutcomeBanner | null>(null);
 
   // The peek can stay open across an Epic refetch (onChanged upstream); a
-  // stale banner from a *previous* force-land attempt shouldn't linger once
+  // stale banner from a *previous* force-integrate attempt shouldn't linger once
   // the operator has moved on to inspecting a different Epic.
   useEffect(() => {
     setBanner(null);
@@ -110,9 +110,9 @@ export function EpicPeek({
     return () => clearTimeout(timer);
   }, [banner]);
 
-  const handleForceLand = () => {
-    api.forceLandEpic(workspaceId, epic.ref).then((outcome) => {
-      setBanner(landOutcomeBanner(outcome));
+  const handleForceIntegrate = () => {
+    api.forceIntegrateEpic(workspaceId, epic.ref).then((outcome) => {
+      setBanner(integrateOutcomeBanner(outcome));
       onChanged();
     }, toastError);
   };
@@ -137,14 +137,14 @@ export function EpicPeek({
                 armedLabel="Confirm force-merge"
                 ariaLabel={`Force-merge Epic #${epic.ref}`}
                 className={btnQuietDestructive}
-                onConfirm={handleForceLand}
+                onConfirm={handleForceIntegrate}
               />
-              <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
+              <p className="max-w-[220px] text-right text-label text-faint">{FORCE_INTEGRATE_CONSEQUENCE}.</p>
             </div>
           </div>
-          {epic.land.held != null && (
+          {epic.integrate.held != null && (
             <div className="mt-3 rounded-md bg-running-tint px-3 py-2 text-small text-running">
-              <span className="font-semibold">Merge escalated — awaiting you.</span> {epic.land.held}
+              <span className="font-semibold">Merge escalated — awaiting you.</span> {epic.integrate.held}
             </div>
           )}
           <button type="button" className={`${btnQuiet} mt-3`} onClick={() => onFocus(epic.ref)}>

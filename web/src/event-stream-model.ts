@@ -51,7 +51,7 @@ const TEXT_VARIANT: Record<string, 'message' | 'thought' | 'operator'> = {
 };
 
 /**
- * A Stop/Interrupt lands as a `finished` lifecycle event carrying a
+ * A Stop/Interrupt merges as a `finished` lifecycle event carrying a
  * `cancelled` stop reason — the one turn-end worth surfacing specially (as
  * EventStream's "Interrupted" transcript line, and as the announcer's "Turn
  * interrupted"). Shared so that rule lives in exactly one place.

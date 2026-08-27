@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EpicRefreshCoordinator, type EpicRefreshOutcome } from '../src/execution/epic-refresh-coordinator.js';
 import { MergeTrainCoordinator } from '../src/execution/merge-train-coordinator.js';
-import type { LandBranchOutcome } from '../src/execution/branch-landing.js';
+import type { MergeIntoBaseOutcome } from '../src/execution/branch-merge.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
@@ -19,10 +19,10 @@ const train = () => new MergeTrainCoordinator({
   escalate: async () => {},
 });
 
-/** The unit cases fake the land, so the default-branch tip the refresh pins is faked too. */
+/** The unit cases fake the merge, so the default-branch tip the refresh pins is faked too. */
 const fakeGit = { revParse: async () => 'develop-tip' };
 
-const conflict = (detail = 'both changed package.json'): LandBranchOutcome => ({
+const conflict = (detail = 'both changed package.json'): MergeIntoBaseOutcome => ({
   ok: false,
   reason: 'conflict',
   detail,
@@ -34,7 +34,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       git: fakeGit,
-      land: async ({ baseBranch, branch }) => {
+      merge: async ({ baseBranch, branch }) => {
         calls.push(`${baseBranch}<-${branch}`);
         return { ok: true, mode: 'cas', oid: 'merge-oid', baseBranch, branch, rebased: false };
       },
@@ -55,7 +55,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       git: fakeGit,
-      land: async () => outcomes.shift()!,
+      merge: async () => outcomes.shift()!,
       dispatchResolve: async (_target, detail) => {
         resolutions.push(detail);
         return { status: 'dispatched' };
@@ -80,7 +80,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       git: fakeGit,
-      land: async () => {
+      merge: async () => {
         starts.push(starts.length + 1);
         if (starts.length === 1) await first;
         return { ok: true, mode: 'cas', oid: `oid-${starts.length}`, baseBranch: 'epic/9', branch: 'develop', rebased: false };
@@ -103,7 +103,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       git: fakeGit,
-      land: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
+      merge: async () => ({ ok: false, reason: 'fallback-pr-manual', detail: 'branch is checked out' }),
       dispatchResolve: async () => ({ status: 'dispatched' }),
       escalate: (_ref, reason) => { escalations.push(reason); },
     });
@@ -120,7 +120,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       git: fakeGit,
-      land: async () => conflict('refresh conflict'),
+      merge: async () => conflict('refresh conflict'),
       dispatchResolve: async (_target, detail) => {
         dispatches.push(detail);
         if (dispatches.length === 1) throw new Error('no corrective turn was dispatched');
@@ -142,7 +142,7 @@ describe('EpicRefreshCoordinator', () => {
     const coordinator = new EpicRefreshCoordinator({
       train: train(),
       git: fakeGit,
-      land: async () => conflict('refresh conflict'),
+      merge: async () => conflict('refresh conflict'),
       dispatchResolve: async () => ({
         status: 'escalated',
         reason: 'no active Epic member is available to resolve refresh conflict for epic/14',
@@ -168,9 +168,9 @@ describe('EpicRefreshCoordinator', () => {
  * Issue #315 — the corrective turn operates on the Epic integration branch
  * itself: `epic/<ref>` is checked out into a dedicated worktree, the
  * conflicted default-branch merge is reproduced there (markers in place), and
- * one bounded agent turn resolves and commits it; the refresh then re-lands to
+ * one bounded agent turn resolves and commits it; the refresh then re-merges to
  * completion. Exercised through the REAL `Runner.enqueueEpicRefreshResolution`
- * and the real `landBranch` against a throwaway git repo — only the agent
+ * and the real `mergeIntoBase` against a throwaway git repo — only the agent
  * drive is faked.
  */
 describe('epic refresh corrective turn (issue #315)', () => {
@@ -246,7 +246,7 @@ describe('epic refresh corrective turn (issue #315)', () => {
       git(req.cwd, 'commit', '--no-edit');
     }, sharedTrain);
     await runningMember('epic/5');
-    // Nobody has develop checked out, so the refresh land takes the CAS path.
+    // Nobody has develop checked out, so the refresh merge takes the CAS path.
     git(repo, 'checkout', '--detach');
 
     const target = { ref: 5, repoDir: repo, defaultBranch: 'develop' };

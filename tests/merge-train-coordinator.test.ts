@@ -101,7 +101,7 @@ function freshMember(git: FakeGit, branch: string, tip: string, integrationTip: 
 }
 
 describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
-  it('records the fast-forward as a child of the member land operation', async () => {
+  it('records the fast-forward as a child of the member merge operation', async () => {
     const exporter = installOperations();
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
@@ -111,14 +111,14 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
     await coordinator.submit(freshMember(git, 'harmonic/task-1-run-1', 'mem-a', 'int-a'));
 
     const spans = exporter.getFinishedSpans();
-    const memberLand = spans.find((span) => span.name === 'harmonic.epic.member-land');
-    if (!memberLand) throw new Error('Expected member land operation');
+    const memberMerge = spans.find((span) => span.name === 'harmonic.epic.member-merge');
+    if (!memberMerge) throw new Error('Expected member merge operation');
     const ff = spans.find((candidate) => candidate.name === 'harmonic.epic.git.fast-forward');
     if (!ff) throw new Error('Expected fast-forward operation');
-    expect(ff.parentSpanContext?.spanId).toBe(memberLand.spanContext().spanId);
+    expect(ff.parentSpanContext?.spanId).toBe(memberMerge.spanContext().spanId);
   });
 
-  it('1. a fresh member lands via CAS to exactly its verified tip', async () => {
+  it('1. a fresh member merges via CAS to exactly its verified tip', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
     const escalate = vi.fn();
@@ -126,12 +126,12 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
 
     const outcome = await coordinator.submit(freshMember(git, 'harmonic/task-1-run-1', 'mem-a', 'int-a'));
 
-    expect(outcome).toEqual({ status: 'landed', oid: 'mem-a' });
+    expect(outcome).toEqual({ status: 'merged', oid: 'mem-a' });
     expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-a', expectedOld: 'int-a' }]);
     expect(escalate).not.toHaveBeenCalled();
   });
 
-  it('2. two members verified against the SAME tip land strictly serialised: the first lands, the second is stale', async () => {
+  it('2. two members verified against the SAME tip merge strictly serialised: the first merges, the second is stale', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-0');
     const escalate = vi.fn();
@@ -144,15 +144,15 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
     // must impose the order.
     const [o1, o2] = await Promise.all([coordinator.submit(m1), coordinator.submit(m2)]);
 
-    expect(o1).toEqual({ status: 'landed', oid: 'mem-1' });
-    // mem-2 was verified against int-0, which mem-1's land has moved past: it
-    // must re-enter rebase+verify rather than land a tree nobody verified.
+    expect(o1).toEqual({ status: 'merged', oid: 'mem-1' });
+    // mem-2 was verified against int-0, which mem-1's merge has moved past: it
+    // must re-enter rebase+verify rather than merge a tree nobody verified.
     expect(o2).toEqual({ status: 'stale', reason: 'integration branch advanced after verification' });
     expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-1', expectedOld: 'int-0' }]);
 
-    // Rebased onto mem-1 and re-verified there, the resubmission lands.
+    // Rebased onto mem-1 and re-verified there, the resubmission merges.
     const m2b = freshMember(git, 'harmonic/task-2-run-1', 'mem-2-rebased', 'mem-1', { runId: 2 });
-    expect(await coordinator.submit(m2b)).toEqual({ status: 'landed', oid: 'mem-2-rebased' });
+    expect(await coordinator.submit(m2b)).toEqual({ status: 'merged', oid: 'mem-2-rebased' });
     expect(git.refs.get('epic/1')).toBe('mem-2-rebased');
   });
 
@@ -178,10 +178,10 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
     const p1 = coordinator.submit(m1); // blocked mid-flight on epic/1's gate
     const p2 = coordinator.submit(m2); // must complete independently
 
-    expect(await p2).toEqual({ status: 'landed', oid: 'mem2' });
+    expect(await p2).toEqual({ status: 'merged', oid: 'mem2' });
 
     releaseGate();
-    expect(await p1).toEqual({ status: 'landed', oid: 'mem1' });
+    expect(await p1).toEqual({ status: 'merged', oid: 'mem1' });
   });
 
   it('4. a member whose branch moved off its verified tip is stale, with no CAS and no escalate', async () => {
@@ -197,7 +197,7 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
     expect(escalate).not.toHaveBeenCalled();
   });
 
-  it('5. a stale member releases the chain slot: a fresh member behind it on the same branch still lands', async () => {
+  it('5. a stale member releases the chain slot: a fresh member behind it on the same branch still merges', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
     const stale = member({ runId: 1, memberBranch: 'harmonic/task-1-run-1', verifiedTip: 'mem-a' });
@@ -208,11 +208,11 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
 
     const [oA, oB] = await Promise.all([coordinator.submit(stale), coordinator.submit(fresh)]);
     expect(oA).toEqual({ status: 'stale', reason: 'integration branch advanced after verification' });
-    expect(oB).toEqual({ status: 'landed', oid: 'mem-b' });
+    expect(oB).toEqual({ status: 'merged', oid: 'mem-b' });
     expect(git.casCalls).toEqual([{ branch: 'epic/1', newOid: 'mem-b', expectedOld: 'int-a' }]);
   });
 
-  it('6. already-landed re-submit (idempotency/crash): no CAS', async () => {
+  it('6. already-merged re-submit (idempotency/crash): no CAS', async () => {
     const git = new FakeGit();
     git.refs.set('epic/1', 'int-a');
     git.memberTips.set('harmonic/task-1-run-1', 'mem-a');
@@ -220,7 +220,7 @@ describe('MergeTrainCoordinator (issue #160, ADR-0041 freshness gate)', () => {
     const escalate = vi.fn();
     const coordinator = new MergeTrainCoordinator({ git, escalate });
 
-    expect(await coordinator.submit(member())).toEqual({ status: 'already-landed' });
+    expect(await coordinator.submit(member())).toEqual({ status: 'already-merged' });
     expect(git.casCalls).toEqual([]);
     expect(escalate).not.toHaveBeenCalled();
   });

@@ -5,7 +5,7 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  *
  * **Session retirement is the sole owner of builder-worktree removal.** A
  * worktree Session's checkout is retained through the human-rejection window (so
- * a reject-and-continue lands in the same workspace) and its builder worktree is
+ * a reject-and-continue merges in the same workspace) and its builder worktree is
  * removed **only** at retirement — never at `finalizeWorkspace` / reaching
  * `terminal` (reliability-design §0.2). This module is the pure decision half of
  * that policy: given the cause of a Run's terminal settle it says whether the
@@ -29,7 +29,7 @@ import type { SessionStatus, SessionRetireReason } from '../db/schema.js';
  * the sweep reclaims it, and are deliberately generous.
  */
 export interface RetentionConfig {
-  /** Backstop retention for any other non-landing ending (a failed/escalated
+  /** Backstop retention for any other non-merge ending (a failed/escalated
    * Run whose git state is evidence): retained this long for diagnosis, then
    * swept (`retention-ttl`) so no idle Session keeps its worktree forever. An
    * operator disposition can retire it sooner. */
@@ -44,14 +44,14 @@ export const DEFAULT_RETENTION: RetentionConfig = {
 /**
  * The cause of a Run's terminal settle, distilled to exactly what retirement
  * needs from the winning `run_fact`:
- * - `landed` — a successful land + terminal success (Harmonic's own landing or
+ * - `merged` — a successful merge + terminal success (Harmonic's own merge or
  *   an operator Accept): the work is banked, retire immediately.
  * - `operator-cancel` — an operator disposition (cancel / Close): retire.
- * - `other` — any other non-landing ending (generic fail, escalate,
+ * - `other` — any other non-merge ending (generic fail, escalate,
  *   guardrail-trip, process-death): retain as evidence under
  *   the retention-TTL backstop.
  */
-export type RetirementCause = 'landed' | 'operator-cancel' | 'other';
+export type RetirementCause = 'merged' | 'operator-cancel' | 'other';
 
 /**
  * What the settle-hook should do to the settling Run's Session. `retire` removes
@@ -64,7 +64,7 @@ export type RetirementAction =
 
 /**
  * Decide what a Run's Session should do when the Run settles terminal, from the
- * settle `cause`. Pure and total: a landing or cancel retires now; any other
+ * settle `cause`. Pure and total: a merge or cancel retires now; any other
  * ending goes idle under the retention deadline computed from `now`. Recomputing over the same inputs always yields the same
  * action.
  */
@@ -74,8 +74,8 @@ export function decideRetirement(
   config: RetentionConfig = DEFAULT_RETENTION,
 ): RetirementAction {
   switch (cause) {
-    case 'landed':
-      return { kind: 'retire', reason: 'landed' };
+    case 'merged':
+      return { kind: 'retire', reason: 'merged' };
     case 'operator-cancel':
       return { kind: 'retire', reason: 'operator-disposition' };
     case 'other':

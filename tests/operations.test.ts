@@ -68,7 +68,7 @@ describe('operations (issue #284)', () => {
       await Promise.resolve();
       return startOperation({ type: 'verify', attributes: {} });
     });
-    const asyncChild = startOperation({ type: 'land', attributes: {}, parent: parent.spanContext });
+    const asyncChild = startOperation({ type: 'merge', attributes: {}, parent: parent.spanContext });
     syncChild.end();
     asyncChild.end();
     parent.fail('verification failed');
@@ -76,7 +76,7 @@ describe('operations (issue #284)', () => {
     const spans = exporter.getFinishedSpans();
     const parentSpan = spans.find((span) => span.name === 'harmonic.run');
     if (!parentSpan) throw new Error('Expected exported parent span');
-    for (const name of ['harmonic.verify', 'harmonic.land']) {
+    for (const name of ['harmonic.verify', 'harmonic.merge']) {
       expect(spans.find((span) => span.name === name)?.parentSpanContext?.spanId).toBe(parentSpan.spanContext().spanId);
     }
     expect(parentSpan.status).toEqual({ code: 2, message: 'verification failed' });
@@ -267,13 +267,13 @@ describe('Auto-Runner operations (issue #289)', () => {
 });
 
 describe('Run operations (issue #290)', () => {
-  it('closes the Run operation at escalation and lands the operator Accept as its own operation on that Run', async () => {
+  it('closes the Run operation at escalation and merges the operator Accept as its own operation on that Run', async () => {
     const { exporter, registry } = installOperations();
     // One attempt with a failing verifier: the ticket escalates with a real
-    // verified head, so the operator Accept lands it.
+    // verified head, so the operator Accept merges it.
     const server = await startServer({ ...stubHarness(), maxAttempts: 1 });
     try {
-      const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-land-'));
+      const repo = mkdtempSync(join(tmpdir(), 'harmonic-ops-merge-'));
       execFileSync('git', ['init', '-b', 'main', repo]);
       execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '--allow-empty', '-m', 'init']);
       const wsId = (await server.app.ctx.workspaces.list())[0]!.id;
@@ -300,12 +300,12 @@ describe('Run operations (issue #290)', () => {
       });
       expect(registry.list().find((operation) => operation.name === 'harmonic.run' && operation.attributes['run.id'] === runId)).toBeUndefined();
 
-      // The operator Accept lands as its own operation, keyed to the same Run.
+      // The operator Accept merges as its own operation, keyed to the same Run.
       expect((await server.api('POST', `/api/tasks/${task.body.id}/accept`)).status).toBe(200);
       await vi.waitFor(() => {
-        const land = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.land' && span.attributes['run.id'] === runId);
-        expect(land).toBeDefined();
-        expect(land?.attributes['landing.mechanism']).toBe('coordinator');
+        const merge = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.merge' && span.attributes['run.id'] === runId);
+        expect(merge).toBeDefined();
+        expect(merge?.attributes['merge.mechanism']).toBe('coordinator');
       });
     } finally {
       await server.close();

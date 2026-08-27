@@ -9,7 +9,7 @@ import type { AppConfig } from '../src/config.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
-/** A first turn that streams for a while, so a steer lands while it runs. */
+/** A first turn that streams for a while, so a steer merges while it runs. */
 const slowFirstTurn = (n = 6, delayMs = 80) =>
   scenario({
     updates: Array.from({ length: n }, (_, i) => ({
@@ -53,7 +53,7 @@ describe('steering a running task', () => {
       const runId = started.body.id;
 
       // Queue the steer once the run is active (the task flips running before the
-      // ActiveRun registers, so a steer can 409 briefly — retry until it lands).
+      // ActiveRun registers, so a steer can 409 briefly — retry until it merges).
       const steered = await waitFor(async () => {
         const res = await noSteerServer.api('POST', `/api/tasks/${taskId}/steer`, { text: 'reread the tests first' });
         return res.status === 200 ? res : undefined;
@@ -78,11 +78,11 @@ describe('steering a running task', () => {
   });
 
   it('injects a steer into the running turn when the harness supports it', async () => {
-    // The steer must land while the turn is in flight, and no fixed sleep can
+    // The steer must merge while the turn is in flight, and no fixed sleep can
     // guarantee that under parallel-suite CPU contention. Instead the stub (a)
     // writes a marker file at turn start — the test's proof that session/prompt
     // has been received — and (b) holds the turn open via `waitForSteer` until
-    // the injection lands, so the turn boundary can never race the steer.
+    // the injection merges, so the turn boundary can never race the steer.
     const turnStartedFile = join(mkdtempSync(join(tmpdir(), 'harmonic-steer-')), 'turn-started');
     const created = await server.api('POST', '/api/tasks', {
       prompt: scenario({

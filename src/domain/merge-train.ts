@@ -1,14 +1,14 @@
 /**
- * Merge-train land decision (issue #160, ADR-0024; freshness gate ADR-0041).
+ * Merge-train merge decision (issue #160, ADR-0024; freshness gate ADR-0041).
  * Each Epic's integration branch (`epic/<ref>`) is a **single-writer merge
- * train**: ready Task members land onto it one at a time. Rebasing is the
+ * train**: ready Task members merge onto it one at a time. Rebasing is the
  * Attempt's Rebase Task, run and verified by the Runner *before* the member
  * is submitted; the train itself only asserts freshness and fast-forwards, so
- * what lands is exactly the tip verification inspected. This module is the
- * **pure** half of that land step — no git I/O, no database, no clock.
+ * what merges is exactly the tip verification inspected. This module is the
+ * **pure** half of that merge step — no git I/O, no database, no clock.
  *
- * Idempotency matters here more than in a single-Task land: a crash or
- * re-submit mid-train must not re-land or fail loudly on a member that is
+ * Idempotency matters here more than in a single-Task merge: a crash or
+ * re-submit mid-train must not re-merge or fail loudly on a member that is
  * already folded into the integration branch, so `alreadyMerged` is checked
  * — and wins — before any freshness check.
  */
@@ -16,7 +16,7 @@
 export interface MergeTrainGitFacts {
   /** Does the Epic's integration branch (`epic/<ref>`) exist? */
   integrationExists: boolean;
-  /** memberTip is an ancestor-or-equal of integrationTip (already landed). */
+  /** memberTip is an ancestor-or-equal of integrationTip (already merged). */
   alreadyMerged: boolean;
   /** The member branch's current tip. */
   memberTip: string;
@@ -29,8 +29,8 @@ export interface MergeTrainGitFacts {
 
 export type MergeTrainDecision =
   | { action: 'ff'; toOid: string }
-  | { action: 'already-landed' }
-  /** The member must re-enter Rebase → Verification before it can land. */
+  | { action: 'already-merged' }
+  /** The member must re-enter Rebase → Verification before it can merge. */
   | { action: 'stale'; reason: string }
   | { action: 'escalate'; reason: string };
 
@@ -41,12 +41,12 @@ export type MergeTrainDecision =
  * whose verified tip is not based on the current integration tip, is stale;
  * otherwise the integration branch fast-forwards to the verified tip.
  */
-export function decideMergeTrainLand(facts: MergeTrainGitFacts): MergeTrainDecision {
+export function decideMergeTrainMerge(facts: MergeTrainGitFacts): MergeTrainDecision {
   if (!facts.integrationExists) {
     return { action: 'escalate', reason: 'integration branch missing' };
   }
   if (facts.alreadyMerged) {
-    return { action: 'already-landed' };
+    return { action: 'already-merged' };
   }
   if (facts.memberTip !== facts.verifiedTip) {
     return { action: 'stale', reason: 'member branch moved after verification' };

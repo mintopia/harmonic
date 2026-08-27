@@ -58,7 +58,7 @@ export interface UsageCollector {
    * Parse a session's native logs into rolled-up Usage plus its Process
    * Tree (ADR 0009) — the source that replaces the ACP-result/OTel reads
    * below. Optional here so the existing collectors compile unchanged;
-   * the per-Harness parsers land in #48 (claude) / #49 (codex, copilot),
+   * the per-Harness parsers merge in #48 (claude) / #49 (codex, copilot),
    * which then make this the sole path and retire the methods below.
    * Returns null when no log exists yet.
    */
@@ -172,7 +172,7 @@ export function wholeFileReader(
  * resume. Recorded on every Session (issue #141) as the adapter half of the
  * resume compatibility key; a Session whose stored `adapterVersion` differs
  * from the current one is forced to a fresh Session rather than a `session/load`
- * when resume lands. One global counter (a claude-only change conservatively
+ * when resume merges. One global counter (a claude-only change conservatively
  * invalidates all harnesses) — deliberately over-cautious for the foundation.
  */
 export const ADAPTER_VERSION = 1;

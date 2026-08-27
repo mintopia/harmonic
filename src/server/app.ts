@@ -12,7 +12,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { existsSync } from 'node:fs';
 import { join, dirname, sep } from 'node:path';
-import { defaultBranchPostLand, landBranchAndRunPostLand, type PostLandHook } from '../execution/branch-landing.js';
+import { defaultBranchPostMerge, mergeIntoBaseAndRunPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
 import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
@@ -36,8 +36,8 @@ import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
-import { LandingJournalStore } from '../domain/landing-journal.js';
-import { LandingCoordinator, type LandingEffectExec } from '../domain/landing-coordinator.js';
+import { MergeJournalStore } from '../domain/merge-journal.js';
+import { MergeCoordinator, type MergeEffectExec } from '../domain/merge-coordinator.js';
 import type { TaskRow, RunRow } from '../db/schema.js';
 import { TurnQueueStore } from '../domain/turn-queue-store.js';
 import { CrashRecoveryCoordinator } from '../domain/crash-recovery.js';
@@ -137,16 +137,16 @@ function scopedKeyAllowed(path: string): boolean {
   // and falls through to the default `false`, same as an unrecognized path; this
   // early return exists only to document the decision alongside its siblings.
   if (path === '/api/leases' || path.startsWith('/api/leases/')) return false;
-  // The whole-Epic force-land (issue #161) is a manual operator override, same
-  // footing as lease supersede/unlock — an agent never force-lands an Epic on
+  // The whole-Epic force-integrate (issue #161) is a manual operator override, same
+  // footing as lease supersede/unlock — an agent never force-integrates an Epic on
   // its own initiative. This path matches no rule below and falls through to
   // the default `false`; this early return exists only to document the
   // decision alongside its siblings.
-  if (/^\/api\/workspaces\/\d+\/epics\/\d+\/force-land$/.test(path)) return false;
+  if (/^\/api\/workspaces\/\d+\/epics\/\d+\/force-integrate$/.test(path)) return false;
   // The Epic read model (issue #167, ADR-0026) surfaces server-only
-  // integration-branch/land-coordinator state alongside board data an agent
+  // integration-branch/integrate-coordinator state alongside board data an agent
   // could otherwise infer from its own Task/dependency surface — kept on the
-  // same operator-only footing as force-land. This path matches no rule below
+  // same operator-only footing as force-integrate. This path matches no rule below
   // and falls through to the default `false`; this early return exists only
   // to document the decision alongside its siblings.
   if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
@@ -171,7 +171,7 @@ function readScopeAllowed(path: string, method: string): boolean {
   if (method !== 'GET') return false;
   if (path === '/api/ws') return true;
   // The Epic read model (issue #167, ADR-0026) is operator-only, same footing
-  // as force-land — not the viz client's read-only board surface. This path
+  // as force-integrate — not the viz client's read-only board surface. This path
   // matches no rule below and falls through to the default `false`; this
   // early return exists only to document the decision alongside its siblings.
   if (/^\/api\/workspaces\/\d+\/epics(\/\d+)?$/.test(path)) return false;
@@ -300,14 +300,14 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   // Accepting an escalated worktree-mode task merges the run's branch (ADR-0002,
   // ADR-0041) through the shared settle coordinator, so Accept is race-safe
-  // against a concurrent operator cancel. The `LandingJournalStore` is fed into
-  // both `operatorSettle` (its optional PONC-clamp dependency) and `landing`
-  // (issue #115): once Accept's journaled landing freezes its PONC, a
+  // against a concurrent operator cancel. The `MergeJournalStore` is fed into
+  // both `operatorSettle` (its optional PONC-clamp dependency) and `merging`
+  // (issue #115): once Accept's journaled merging freezes its PONC, a
   // cancel/guardrail signal racing in through this same `operatorSettle`
   // instance can no longer win.
   // Built here, ahead of the crash-recovery sweep below (issue #117):
-  // `CrashRecoveryCoordinator` needs this same `landing`/`landingJournal` pair
-  // to reconcile a Run that died mid-landing.
+  // `CrashRecoveryCoordinator` needs this same `merging`/`mergeJournal` pair
+  // to reconcile a Run that died mid-merging.
   // Session retirement (issue #148, reliability-design Unit C): the sole owner of
   // builder-worktree removal. Its sync settle-hook is injected into every settle
   // coordinator (the operator-side one below and the Runner's own, via options) so
@@ -341,20 +341,20 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // event loop. Coalescing collapses the burst into one pass plus a trailing
   // rerun that sweeps anything that settled mid-pass.
   const drainRetirement = singleFlight(() => sessionRetirement.drain());
-  const landingJournal = new LandingJournalStore(asyncDb);
+  const mergeJournal = new MergeJournalStore(asyncDb);
   let runnerRef: Runner | undefined;
   let trackerManagerRef: TrackerPollerManager | undefined;
-  const pendingPostLand: Parameters<PostLandHook>[0][] = [];
-  const postLand: PostLandHook = defaultBranchPostLand(
+  const pendingPostMerge: Parameters<PostMergeHook>[0][] = [];
+  const postMerge: PostMergeHook = defaultBranchPostMerge(
     async (repoDir, defaultBranch) => {
       try {
       if (!trackerManagerRef) {
-        pendingPostLand.push({ repoDir, baseBranch: defaultBranch });
+        pendingPostMerge.push({ repoDir, baseBranch: defaultBranch });
         return;
       }
       await trackerManagerRef.refreshAfterDefaultBranchAdvance(repoDir, defaultBranch);
       } catch (err) {
-        logger.error(`post-land Epic refresh failed: ${String(err)}`);
+        logger.error(`post-merge Epic refresh failed: ${String(err)}`);
       }
     },
   );
@@ -367,18 +367,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
       void runnerRef?.finishRunOperation(run.id);
       bus.emit('run_changed', run);
     },
-    landingJournal,
+    mergeJournal,
     sessionRetirement,
   );
-  const landing = new LandingCoordinator(runs, asyncDb, landingJournal, operatorSettle, {
+  const merging = new MergeCoordinator(runs, asyncDb, mergeJournal, operatorSettle, {
     parentForRun: (runId) => runnerRef?.operationParent(runId),
     onTerminalRun: (runId) => runnerRef?.finishRunOperation(runId) ?? Promise.resolve(),
   });
   // Crash recovery before anything can execute (issue #117): one sweep
-  // reconciles `run_facts`, `landing_journal`, and `turn_queue` together, so a
+  // reconciles `run_facts`, `merge_journal`, and `turn_queue` together, so a
   // restart reconstructs one consistent picture instead of several independent
   // sweeps that could each draw a different conclusion about the same Run. A
-  // Run mid-landing is resolved against its journal (never blindly failed — it
+  // Run mid-merging is resolved against its journal (never blindly failed — it
   // may already have applied an irreversible effect), the turn queue's
   // pending/in-flight rows are cancelled/resolved, and only then does the
   // generic orphan sweep fail whatever is still `running` — "interrupted",
@@ -390,10 +390,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     tasks,
     leases,
     operatorSettle,
-    landing,
-    landingJournal,
+    merging,
+    mergeJournal,
     new TurnQueueStore(asyncDb),
-    { postLand, closeTicket: (task) => autoDrive.closeCompleted(task) },
+    { postMerge, closeTicket: (task) => autoDrive.closeCompleted(task) },
   );
   await crashRecovery.reconcile();
   // A fresh process is executing nothing, so any Task still `working` was
@@ -447,15 +447,15 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => configStore.get(),
     (task) => trackerManagerRef?.urlFor(task.workspaceId, task.trackerRef) ?? null,
   );
-  // The landing effects an operator Accept applies (issue #115, ADR-0041): a
+  // The merging effects an operator Accept applies (issue #115, ADR-0041): a
   // worktree Task's merge, journaled as `target-ref` (idempotency identity is
   // the base/run branch pair — stable for the Run's whole lifetime and known
   // before the merge ever runs, so `recordIntent` doesn't need to wait on a Git
   // call), then a mirrored Task's ticket close (`ticket-close`, idempotent via
   // the closed-state read). Empty for a direct-mode native Task — "no effects
-  // -> straight land". Crash recovery re-applies the same effects.
-  const landingEffectsFor = (task: TaskRow, run: RunRow): LandingEffectExec[] => {
-    const effects: LandingEffectExec[] = [];
+  // -> straight merge". Crash recovery re-applies the same effects.
+  const mergeEffectsFor = (task: TaskRow, run: RunRow): MergeEffectExec[] => {
+    const effects: MergeEffectExec[] = [];
     if (task.trackerRef != null) {
       effects.push({
         effect: 'ticket-close',
@@ -476,18 +476,18 @@ export async function buildApp(opts: AppOptions): Promise<App> {
         effect: 'target-ref',
         idempotencyKey: `${baseBranch}<-${branch}`,
         expected: { baseBranch, branch },
-        // Land through the admin-worktree + CAS operation (issue #153), never a
+        // Merge through the admin-worktree + CAS operation (issue #153), never a
         // base-repo in-place `git merge` that desyncs a live checkout. Harmonic
         // owns the base repo and `Git.ffOnly` serialises via the in-process
         // repo lock (#121), so an exclusive clean lease over the target is held
-        // for the checked-out (worktree-mode base) path — `landBranch` still
+        // for the checked-out (worktree-mode base) path — `mergeIntoBase` still
         // falls back to PR/manual if that checkout has uncommitted operator work.
         apply: async () => {
           // Operator Accept auto-rebases onto an advanced base rather than
           // dead-ending as `stale-base` (ADR-0043): the human delay before a
           // manual Accept means the base has very likely moved on, and an
-          // unrelated advance should just land, not force a re-verify.
-          const outcome = await landBranchAndRunPostLand({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true, rebaseOnAdvance: true }, postLand);
+          // unrelated advance should just merge, not force a re-verify.
+          const outcome = await mergeIntoBaseAndRunPostMerge({ repoDir: task.workingDir, baseBranch, branch, expectedOid, leaseHeld: true, rebaseOnAdvance: true }, postMerge);
           if (!outcome.ok) return { ok: false, detail: outcome.detail };
           return { ok: true, observed: { baseBranch, branch, oid: outcome.oid, mode: outcome.mode, rebased: outcome.rebased } };
         },
@@ -496,7 +496,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     ];
   };
   // The single-writer merge train (issue #163): the ONE process-global
-  // coordinator every Epic member's Run lands through, so its in-memory per-Epic
+  // coordinator every Epic member's Run merges through, so its in-memory per-Epic
   // integration-branch FIFO chains are shared across all members and all
   // Workspaces. Its escalate effect is a Runner method, so it is bound to the
   // Runner via the same late-holder idiom `trackerManagerRef` uses below — the
@@ -528,13 +528,13 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     // ref (like the Auto-Runner gate), so a hand-started member is blocked
     // identically to an auto-picked one.
     epicBaseNotReady: (task) => trackerManagerRef?.epicBaseNotReady(task) ?? false,
-    postLand,
+    postMerge,
     worktreesDir,
     spendGuardrail: opts.runnerTuning?.spendGuardrail,
     leaseHeartbeat: opts.leaseTuning?.heartbeatMs != null ? { intervalMs: opts.leaseTuning.heartbeatMs } : undefined,
     criticDrive: opts.criticDrive,
     // The Runner's own settle coordinator drives most terminal dispositions
-    // (drive-loop, operator-cancel, auto-accept land); feed it the same
+    // (drive-loop, operator-cancel, auto-accept merge); feed it the same
     // retirement hook so those Sessions retire too (issue #148).
     sessionRetirement,
     keys: {
@@ -560,7 +560,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   // Heal runs whose usage collection raced the harness's log flush —
   // their session logs are settled on disk by now.
   await runner.backfillUsage();
-  const escalation = new EscalationService(runs, tasks, landing, landingEffectsFor, {
+  const escalation = new EscalationService(runs, tasks, merging, mergeEffectsFor, {
     resume: (task, guidance) => runner.resumeWithGuidance(task, guidance),
     cleanup: (task, run) => runner.cleanupClosed(task, run),
   });
@@ -628,7 +628,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     undefined,
     undefined,
-    // Resolve each Workspace's Verification verifiers for the whole-Epic land
+    // Resolve each Workspace's Verification verifiers for the whole-Epic merge
     // (issue #161): read per poll so a config change follows without a rebuild.
     () => configStore.get(),
     epicOperations,
@@ -636,10 +636,10 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     undefined,
     mergeTrain,
     (target, detail, escalate, retry) => runnerRef!.enqueueEpicRefreshResolution(target, detail, escalate, retry),
-    postLand,
+    postMerge,
   );
   trackerManagerRef = trackerManager; // late-bind for AutoDrive's {url} resolver + the pick router above
-  for (const landed of pendingPostLand.splice(0)) await postLand(landed);
+  for (const merged of pendingPostMerge.splice(0)) await postMerge(merged);
   scheduler.register({
     name: 'Epic reconcile',
     intervalMs: 60_000,

@@ -75,7 +75,7 @@ const statsResponseSchema = z.object({
   failuresByReason: z.record(z.string(), z.number()).meta({ example: { failed: 4, escalate: 1, 'process-death': 1 } }),
   /**
    * p50 / p95 active-execution duration (ms) over the range's Runs — `agent-finish`
-   * run_fact ts minus Run start, excluding review-park + landing wait, with a
+   * run_fact ts minus Run start, excluding review-park + merging wait, with a
    * wall-clock `finished − started` fallback (ADR-0028). Null when no Run in the
    * range has a measurable duration (honest numbers: never a fabricated 0).
    */

@@ -26,7 +26,7 @@ const NODE_W = 196;
 const NODE_H = 60;
 
 // Below this zoom node labels stop being readable, so fit-to-all on a large
-// graph lands on an illegible thumbnail. The default view clamps to the floor
+// graph merges on an illegible thumbnail. The default view clamps to the floor
 // and parks on the frontier (layout flows RIGHT → the frontier is the left
 // edge) instead; explicit Fit still fits the whole graph.
 const FIT_FLOOR = 0.8;

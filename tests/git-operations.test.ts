@@ -91,7 +91,7 @@ describe('Git operation instrumentation (issue #287)', () => {
     git(featurePath, 'commit', '-m', 'feature conflict');
     writeFileSync(join(repo, 'base.txt'), 'main version\n');
     git(repo, 'commit', '-am', 'main conflict');
-    const parent = startOperation({ type: 'land', attributes: {} });
+    const parent = startOperation({ type: 'merge', attributes: {} });
 
     const result = await parent.run(() => Git.rebaseOnto(featurePath, git(repo, 'rev-parse', 'main')));
     parent.end();

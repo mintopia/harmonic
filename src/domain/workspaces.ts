@@ -195,7 +195,7 @@ export class WorkspaceService {
    * Delete a Workspace and everything on its board (issue #45 needs deletion to
    * tear down its poll loop). Refuses any Workspace with a running Task (the
    * mid-run guard #42 deferred deletion for). Deleting the last Workspace is
-   * allowed (issue #61): the app lands in the empty state (#68), and the
+   * allowed (issue #61): the app merges in the empty state (#68), and the
    * default-Workspace fallback (ADR-0008) resolves the next one created.
    * Cascades in a transaction: its Tasks (+ their Runs, Run events, Dependency
    * edges, Channel links) and Conversations (+ their events) go first, since no

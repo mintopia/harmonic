@@ -249,7 +249,7 @@ describe('mirrorScan upsert', () => {
 
   it('a working Task whose own ticket closes stays working — never mirror-completed (issue #139, ADR-0041)', async () => {
     // Tracker state is an input, never a control path: nothing interrupts a
-    // live Run, and the landing's own close is idempotent, so mirrorScan must
+    // live Run, and the merging's own close is idempotent, so mirrorScan must
     // NOT settle it done.
     const [task] = await mscan([ticket({ number: 8, labels: ['ready-for-agent'] })]);
     await tasks.setState(task!.id, 'working');
@@ -262,7 +262,7 @@ describe('mirrorScan upsert', () => {
     await tasks.setState(task!.id, 'done');
 
     // The ticket still reads open (an inbound-only adapter never owns the close),
-    // so a naive done→ready flip would re-run it, land, no-op the close,
+    // so a naive done→ready flip would re-run it, merge, no-op the close,
     // and re-ready forever. Gated on trackerCanClose=false → the flip is suppressed.
     const held = await tasks.upsertMirrored(
       toMirrorInput(ticket({ number: 237, labels: ['ready-for-agent'] }), false),

@@ -21,7 +21,7 @@ describe('countsTowardExecutionBudget (issue #127)', () => {
     executing: true,
     validating: true,
     verifying: true,
-    landing: false,
+    merging: false,
     terminal: false,
   };
 
@@ -62,8 +62,8 @@ describe('wallClockTrip (issue #127, the phase-scoping decision)', () => {
     expect(wallClockTrip({ elapsedMs: 100_000_000, phase: 'terminal', budget })).toBeNull();
   });
 
-  it('does NOT trip when elapsed >= budget but the phase is landing (core acceptance)', () => {
-    expect(wallClockTrip({ elapsedMs: 100_000_000, phase: 'landing', budget })).toBeNull();
+  it('does NOT trip when elapsed >= budget but the phase is merging (core acceptance)', () => {
+    expect(wallClockTrip({ elapsedMs: 100_000_000, phase: 'merging', budget })).toBeNull();
   });
 
   it('does NOT trip when the phase is terminal, even massively over budget', () => {
@@ -150,7 +150,7 @@ describe('formatUnmeasurableReason (issue #128)', () => {
 
 describe('spendTrip (issue #128, the token/cost spend decision)', () => {
   const executionPhases = ['executing', 'validating', 'verifying'] as const;
-  const nonExecutionPhases = ['landing', 'terminal'] as const;
+  const nonExecutionPhases = ['merging', 'terminal'] as const;
 
   describe('token cap only', () => {
     const budget = { tokens: 1_000, costUsd: null };

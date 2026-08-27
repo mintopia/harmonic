@@ -137,7 +137,7 @@ structure the tracker holds (native sub-issues, or a body task-list / `Part of
 #<n>` line) and copes; setting the tickets up is the operator's or an agent's
 job. Not a Task and not a stored entity — a query-time roll-up over the polled
 tracker. The **leaf-most** Epic — the immediate parent of implementation Tasks —
-is the unit its children are scheduled and landed as a group by. An Epic is a
+is the unit its children are scheduled and merged as a group by. An Epic is a
 **container**: it neither **blocks** its children (a `Blocked by: #<epic>` edge
 is never projected — an Epic contains, it does not gate) nor **runs** (it is
 never agent-workable, so the Auto-Runner never executes the container itself).
@@ -185,7 +185,7 @@ but takes no actions and is updated only by mirroring until the tracker
 closes it. Assignment is never consulted. Ticket closure is a tracker act,
 mirrored in as an **output side-effect, never a control path** (ADR-0041,
 superseding ADR-0011's closure-as-success): success is the verification
-verdict plus landing.
+verdict plus merge.
 _Avoid_: drive, afk, hitl (as stored modes — all deleted), mode, assignee
 
 **Escalation**:
@@ -195,7 +195,7 @@ worked outside its branch/worktree — should never happen; escalate when it
 does), (3) permanent infrastructure failure (git circuit-breaker class).
 Exactly three actions there: **Reject with guidance** (guidance becomes
 feedback, counter resets, the loop resumes), **Accept** (counts as success;
-the normal land/close/cleanup path continues), **Close** (closes the Ticket
+the normal merge/close/cleanup path continues), **Close** (closes the Ticket
 and cleans up: branch, worktree, tracker issue). Escalated Epics surface in
 the same attention section.
 _Avoid_: downgrade, fallback, handoff, adopt / note-to-critic / un-escalate
@@ -214,7 +214,7 @@ _Avoid_: injected command, auto-prompt
 
 **Merge Fate**:
 What becomes of a worktree Run's branch when a mirrored Ticket's Attempt
-passes verification — **auto-merge** (default: land onto the base at the
+passes verification — **auto-merge** (default: merge onto the base at the
 verified SHA; a stale base re-enters Rebase → Verification, a conflict is a
 failed Attempt),
 **open-PR** (branch → GitHub PR, review off-Harmonic), or **artifact** (leave
@@ -234,7 +234,7 @@ _Avoid_: auto-retry, retry cap
 
 **Integration branch**:
 The per-Epic branch (`epic/<ref>`) Harmonic cuts off the default branch and
-owns: every Member's worktree forks from it, every finished Member lands back
+owns: every Member's worktree forks from it, every finished Member merges back
 onto it, and it merges to the default branch in one atomic go once the whole
 Epic is green — then Harmonic **retires** (deletes) it. Its mere existence is
 the Epic's only persisted execution state.
@@ -246,7 +246,7 @@ merge it **into** each live Integration branch (merge, never rebase — Member
 worktrees fork off it and a rebase would rewrite history under them),
 serialized through the merge train. A refresh conflict gets one bounded agent
 merge-resolution turn; failure escalates the **Epic**. Refresh is why the
-Whole-Epic land is clean by construction. "Rebase" is reserved for ticket
+Whole-Epic integrate is clean by construction. "Rebase" is reserved for ticket
 branches (single-writer, safe).
 _Avoid_: sync, catch-up merge
 
@@ -264,11 +264,11 @@ the frontier re-derived after blockers clear. Never a stored or numbered entity.
 _Avoid_: wave (as a stored/numbered thing), batch
 
 **Merge train**:
-The single-writer, strict-FIFO mechanism that lands finished Members onto one
+The single-writer, strict-FIFO mechanism that merges finished Members onto one
 Integration branch one at a time — rebase onto the current tip, then
 fast-forward — so landings never interleave and history stays linear. Different
-Epics' branches land in parallel; only same-branch Members queue.
-_Avoid_: merge queue, landing pipeline
+Epics' branches merge in parallel; only same-branch Members queue.
+_Avoid_: merge queue, integration pipeline
 
 **Heal (merge)**:
 The one bounded corrective turn handed back to a conflicting Member's own warm
@@ -276,38 +276,38 @@ Session to resolve a rebase conflict, dispatched out-of-band so siblings aren't
 stalled. A second conflict Escalates — there is no second Heal.
 _Avoid_: retry, auto-resolve
 
-**Member land status**:
+**Member merge status**:
 Where a Member sits from the Epic's view — **pending** (working / not started),
 **completed** (its work is folded into the Integration branch), or **blocked**
 (escalated / cancelled — a Blocking Member that
-holds the whole Epic back). Mid-landing a Member may also read **healing** (a
+holds the whole Epic back). Mid-merge a Member may also read **healing** (a
 corrective turn) or **escalated**.
 _Avoid_: merge status
 
 **Blocking member**:
-A Member whose land status is *blocked* that stalls the whole Epic on the
-automatic path until it clears or the operator Force-lands.
+A Member whose merge status is *blocked* that stalls the whole Epic on the
+automatic path until it clears or the operator Force-integrates.
 _Avoid_: stuck task
 
 **Whole-Epic Verification**:
-The Verification run against the Integration branch tip once the land gate
+The Verification run against the Integration branch tip once the integrate gate
 opens — the same command primitive as per-Run Verification — catching breakage
 in the union of Members that each passed alone. A non-pass fail-safe Escalates;
 Verification never self-heals at Epic scope.
 _Avoid_: final check
 
-**Whole-Epic land**:
+**Whole-Epic integrate**:
 Merging the Integration branch into the default branch in one atomic go and
-retiring the branch — only when the land gate is open and Whole-Epic
+retiring the branch — only when the integrate gate is open and Whole-Epic
 Verification passes.
 _Avoid_: final merge
 
-**Force-land the ready subset**:
-The operator-only override that opens an Epic's land gate unconditionally —
-landing whatever Members are already folded into the Integration branch even
+**Force-integrate the ready subset**:
+The operator-only override that opens an Epic's integrate gate unconditionally —
+integrating whatever Members are already folded into the Integration branch even
 while a sibling is stuck — without bypassing Whole-Epic Verification. The one
 escape hatch when a Blocking Member stalls the Epic.
-_Avoid_: force merge, partial land
+_Avoid_: force merge, partial integrate
 
 ### Conversations
 
@@ -315,7 +315,7 @@ _Avoid_: force merge, partial land
 An interactive, multi-turn exchange the operator drives with a Harness in a
 Working Directory over ACP — a sibling to Task, not a variant of it. Unlike
 a Task it is never queued, never picked by the Auto-Runner, and never verified
-or landed; the human is in the loop for every turn. "Chat" is the
+or merged; the human is in the loop for every turn. "Chat" is the
 informal UI verb ("open a chat"); the domain noun is Conversation.
 It is **active** while its harness process is warm (spawned on the first
 turn, kept alive across widget/socket close) and **ended** once explicitly
@@ -352,24 +352,24 @@ a human closes it) and no *awaiting-review* (the human gate is deleted).
 Auto-Runner.
 
 **working**: The Attempt loop is executing — some Task of the current Attempt
-is in flight, or the Ticket is landing.
+is in flight, or the Ticket is merging.
 
 **escalated**: Waiting on a human; see Escalation for the triggers and the
 three actions.
 
-**done**: Terminal. Verified, landed, and cleaned up; only this state
+**done**: Terminal. Verified, merged, and cleaned up; only this state
 satisfies dependent Tickets.
 
 **cancelled**: Terminal. Abandoned deliberately.
 
-**Landing**:
+**Merge**:
 The Ticket-level step after a passing verdict: assert the ticket branch still
 points at the verified SHA, then merge — onto the Integration branch for an
 Epic Member (via the merge train), onto develop otherwise. If the base moved
 since the verdict, the Ticket re-enters Rebase → Verification without
 re-implementing and without touching the counter; with the freshness gate a
-landing conflict cannot otherwise occur. There is no synthetic candidate
-commit: the verified-tree-is-landed-tree guarantee is the SHA assertion.
+merge conflict cannot otherwise occur. There is no synthetic candidate
+commit: the verified-tree-is-merged-tree guarantee is the SHA assertion.
 _Avoid_: accept, merge gate, candidate (deleted machinery)
 
 ### Execution
@@ -394,8 +394,8 @@ records `lastActiveAt` and an estimated warm-until, and frames reuse as
 full-context vs a condensed new Session by cost, not a hard TTL cutoff.
 A Session moves `active → idle → retiring → retired`, and **Session retirement
 is the sole owner of builder-worktree removal**: a worktree Session's checkout is
-retained through the human-rejection window (so a reject-and-continue lands in the
-same workspace) and removed only when the Session retires — on a successful land,
+retained through the human-rejection window (so a reject-and-continue merges in the
+same workspace) and removed only when the Session retires — on a successful merge,
 a reject-continuation timeout, a review-abandonment SLA, an operator disposition,
 or a retention-TTL backstop — coordinated with the Work Context lease.
 _Avoid_: thread, chat (the interactive sibling is a Conversation)
@@ -447,7 +447,7 @@ stacked on top of. Enforced by the Auto-Runner as a pick predicate.
 _Avoid_: workspace (that is the board container), sandbox
 
 **Verification**:
-The automated gate between implementation and Landing, run inside each
+The automated gate between implementation and Merge, run inside each
 Attempt: `verify.commands[]` (ordered, fail-fast, one Verification Task each)
 then the optional **Review Task** — a single critic Harness with configurable
 harness, model, and prompt, run only after the commands pass. Resolved global
@@ -455,7 +455,7 @@ default with per-Workspace override; zero verifiers configured = the gate
 passes. Any command fail, review reject, or review *inconclusive* is a
 **failed Attempt** — feedback into the next Attempt, counter +1 (ADR-0041,
 revising ADR-0021's inconclusive-escalates). Runs against the branch head SHA,
-which Landing then asserts.
+which Merge then asserts.
 _Avoid_: review gate (deleted), validation (deleted phase), lint, test (it is
 more than either)
 
@@ -531,7 +531,7 @@ wall-clock budget via `forEachYielding` / `yieldToEventLoop`
 (`src/reliability/yield.ts`) rather than running to completion in one block; and
 a `busy_timeout` bound on lock waits. The durable cure — making DB access itself
 async so a query never blocks the loop — is the ADR-0029 libsql migration; until
-that lands these bound the blast radius on the synchronous engine. The monitor
+that merge these bound the blast radius on the synchronous engine. The monitor
 observes, it cannot pre-empt: it turns a silent freeze into a logged one.
 _Avoid_: watchdog (reserved for Guardrail), throttle
 
@@ -552,7 +552,7 @@ _Avoid_: cache efficiency, hit ratio
 
 **Active-execution duration**:
 How long a Run's agent actually worked: the `agent-finish` run_fact's timestamp
-minus the Run's start. It **excludes the review-park and landing wait** that
+minus the Run's start. It **excludes the review-park and merge wait** that
 follow agent-finish, so it is the agent's working time, not calendar time through
 the Phase pipeline. Falls back to wall-clock (finish − start) only when a Run has
 no agent-finish fact; reported as **p50 / p95** across the set (ADR-0028).
@@ -589,9 +589,9 @@ _Avoid_: tool cost, per-tool spend
 
 **Operation**:
 A discrete, atomic action Harmonic's own runtime performs — polling a Tracker,
-picking and starting a Task, driving a Run, verifying, landing a worktree,
+picking and starting a Task, driving a Run, verifying, merging a worktree,
 merging an Epic, retiring a Session. Modelled as an OpenTelemetry **span**: it
-has a start, an end, a duration, a pass/fail status, and **nests** (a member-land
+has a start, an end, a duration, a pass/fail status, and **nests** (a member-merge
 Operation contains its `rebase`/`ff` git children; an Epic contains its Members).
 Ephemeral and **in-memory only** — never persisted to the DB. The set of
 currently-open spans *is* the live "what is Harmonic doing right now" view;

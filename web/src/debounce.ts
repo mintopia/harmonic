@@ -6,7 +6,7 @@
  */
 export interface Debounced<A extends unknown[]> {
   (...args: A): void;
-  /** Drop any pending trailing call — for effect cleanup, so a fire can't land
+  /** Drop any pending trailing call — for effect cleanup, so a fire can't merge
    * after unsubscribe. */
   cancel(): void;
 }

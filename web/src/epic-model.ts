@@ -12,7 +12,7 @@
  */
 
 /** Mirrors `reduceMemberState` server-side. */
-export type MemberLandStatus = 'completed' | 'blocked' | 'pending';
+export type MemberMergeStatus = 'completed' | 'blocked' | 'pending';
 
 export interface EpicMember {
   /** Member ticket ref. */
@@ -24,7 +24,7 @@ export interface EpicMember {
   /** Raw TaskState (running|completed|failed|cancelled|...), or null if unmirrored. */
   state: string | null;
   escalated: boolean;
-  landStatus: MemberLandStatus;
+  mergeStatus: MemberMergeStatus;
   /** Member is in the ready frontier. */
   ready: boolean;
 }
@@ -42,8 +42,8 @@ export interface EpicVerification {
   status: 'pass' | 'fail' | 'pending' | null;
 }
 
-export interface EpicLandState {
-  /** A whole-Epic land attempt is running right now. */
+export interface EpicIntegrateState {
+  /** A whole-Epic integrate attempt is running right now. */
   inFlight: boolean;
   /** Escalation/hold reason if the coordinator is holding; else null. */
   held: string | null;
@@ -59,20 +59,20 @@ export interface Epic {
   ready: number[];
   integration: EpicIntegration;
   verification: EpicVerification;
-  land: EpicLandState;
-  /** members with landStatus === 'completed' */
+  integrate: EpicIntegrateState;
+  /** members with mergeStatus === 'completed' */
   foldedCount: number;
   /** members.length */
   memberCount: number;
 }
 
 /**
- * Force-land's six-state discriminated union (already exists server-side;
- * `POST …/epics/:ref/force-land`). See `.scratch/epic-force-land-explainer.html`
- * for the plain-language framing each variant maps to in `landOutcomeBanner`.
+ * Force-integrate's six-state discriminated union (already exists server-side;
+ * `POST …/epics/:ref/force-integrate`). See `.scratch/epic-force-integrate-explainer.html`
+ * for the plain-language framing each variant maps to in `integrateOutcomeBanner`.
  */
-export type EpicLandOutcome =
-  | { status: 'landed'; oid: string }
+export type EpicIntegrateOutcome =
+  | { status: 'integrated'; oid: string }
   | { status: 'blocked'; reason: string }
   | { status: 'waiting'; reason: string }
   | { status: 'escalated'; reason: string }
@@ -80,29 +80,29 @@ export type EpicLandOutcome =
   | { status: 'busy' };
 
 /**
- * Landing-rail segment coloring (ADR-0026's peek IA hero): members render as
- * segments coloured by land status. `healing` is a best-effort inference —
+ * Merge-rail segment coloring (ADR-0026's peek IA hero): members render as
+ * segments coloured by merge status. `healing` is a best-effort inference —
  * the DTO does not carry a per-member "currently in a merge-train heal turn"
  * flag, so a running member is upgraded from `running` to `healing` only
- * when the Epic as a whole has a land attempt `inFlight`. That over-paints
- * every concurrently-running member as "healing" while a land is in flight,
+ * when the Epic as a whole has an integrate attempt `inFlight`. That over-paints
+ * every concurrently-running member as "healing" while an integrate is in flight,
  * even ones that are just doing their normal Run and never touched the
  * merge train — an acceptable approximation until a dedicated per-member
  * signal exists, but not a precise one.
  */
-export type RailSegmentStatus = 'landed' | 'running' | 'healing' | 'waiting' | 'blocking';
+export type RailSegmentStatus = 'merged' | 'running' | 'healing' | 'waiting' | 'blocking';
 
 export function memberRailStatus(m: EpicMember, epic: Epic): RailSegmentStatus {
-  if (m.landStatus === 'completed') return 'landed';
-  if (m.landStatus === 'blocked') return 'blocking';
-  // m.landStatus === 'pending'
+  if (m.mergeStatus === 'completed') return 'merged';
+  if (m.mergeStatus === 'blocked') return 'blocking';
+  // m.mergeStatus === 'pending'
   if (m.state === 'running') {
-    return epic.land.inFlight ? 'healing' : 'running';
+    return epic.integrate.inFlight ? 'healing' : 'running';
   }
   return 'waiting';
 }
 
-/** Landing rail segments in member order (ascending by ref, per the DTO). */
+/** Merge rail segments in member order (ascending by ref, per the DTO). */
 export function railSegments(epic: Epic): { ref: number; status: RailSegmentStatus }[] {
   return epic.members.map((m) => ({ ref: m.ref, status: memberRailStatus(m, epic) }));
 }
@@ -117,18 +117,18 @@ export function hasLiveHeal(epic: Epic): boolean {
 }
 
 /** Member roster lanes (ADR-0026: "lane-grouped stuck-first (Stuck → In
- * flight → Waiting → Landed) so what-needs-you sits next to the force-land
+ * flight → Waiting → Merged) so what-needs-you sits next to the force-integrate
  * control"). */
-export type RosterLane = 'stuck' | 'inflight' | 'waiting' | 'landed';
+export type RosterLane = 'stuck' | 'inflight' | 'waiting' | 'merged';
 
 /** Display order: stuck-first, as ADR-0026 specifies. */
-export const ROSTER_LANES: readonly RosterLane[] = ['stuck', 'inflight', 'waiting', 'landed'];
+export const ROSTER_LANES: readonly RosterLane[] = ['stuck', 'inflight', 'waiting', 'merged'];
 
 export const ROSTER_LANE_LABELS: Record<RosterLane, string> = {
   stuck: 'Stuck',
   inflight: 'In flight',
   waiting: 'Waiting',
-  landed: 'Merged',
+  merged: 'Merged',
 };
 
 const RAIL_TO_LANE: Record<RailSegmentStatus, RosterLane> = {
@@ -136,17 +136,17 @@ const RAIL_TO_LANE: Record<RailSegmentStatus, RosterLane> = {
   running: 'inflight',
   healing: 'inflight',
   waiting: 'waiting',
-  landed: 'landed',
+  merged: 'merged',
 };
 
 /**
- * Groups an Epic's members into roster lanes (stuck/inflight/waiting/landed),
+ * Groups an Epic's members into roster lanes (stuck/inflight/waiting/merged),
  * each preserving the members' original (ascending-by-ref) order. Every lane
  * key is always present, even when empty, so callers can render all four
  * sections without an existence check.
  */
 export function rosterLanes(epic: Epic): Record<RosterLane, EpicMember[]> {
-  const lanes: Record<RosterLane, EpicMember[]> = { stuck: [], inflight: [], waiting: [], landed: [] };
+  const lanes: Record<RosterLane, EpicMember[]> = { stuck: [], inflight: [], waiting: [], merged: [] };
   for (const m of epic.members) {
     lanes[RAIL_TO_LANE[memberRailStatus(m, epic)]].push(m);
   }
@@ -185,22 +185,22 @@ export function statusLineParts(epic: Epic): StatusLineParts {
 }
 
 /** Transient banner tone (ADR-0026: "surfaced as a transient banner mapping
- * the six EpicLandOutcome states to a plain sentence and a state tone"). */
-export type LandOutcomeBannerTone = 'ok' | 'warn' | 'bad' | 'info';
+ * the six EpicIntegrateOutcome states to a plain sentence and a state tone"). */
+export type IntegrateOutcomeBannerTone = 'ok' | 'warn' | 'bad' | 'info';
 
-export interface LandOutcomeBanner {
-  tone: LandOutcomeBannerTone;
+export interface IntegrateOutcomeBanner {
+  tone: IntegrateOutcomeBannerTone;
   text: string;
 }
 
 /**
- * The force-land consequence sentence (ADR-0026): shown as small muted
- * helper text next to every armed force-land control — the Table band
+ * The force-integrate consequence sentence (ADR-0026): shown as small muted
+ * helper text next to every armed force-integrate control — the Table band
  * header, the Board focus header, and the Epic peek header — so the
  * operator sees the same consequence framing regardless of which surface
  * they arm the control from.
  */
-export const FORCE_LAND_CONSEQUENCE =
+export const FORCE_INTEGRATE_CONSEQUENCE =
   'merges the members already on the integration branch; a stuck sibling stays behind; Verification still gates';
 
 /**
@@ -220,34 +220,34 @@ export function epicByTaskId(epics: Epic[]): Map<number, Epic> {
 }
 
 /**
- * Maps a force-land result to a plain sentence and a tone for the transient
+ * Maps a force-integrate result to a plain sentence and a tone for the transient
  * banner (ADR-0026). Wording follows the plain-language framing in
- * `.scratch/epic-force-land-explainer.html`'s six-outcome table.
+ * `.scratch/epic-force-integrate-explainer.html`'s six-outcome table.
  *
- * - `landed` → ok: it reached the default branch.
+ * - `integrated` → ok: it reached the default branch.
  * - `noop` → info: nothing to do, not a problem (no integration branch).
  * - `waiting` → warn: a transient condition (default branch busy/detached);
  *   the operator should retry shortly, same as `busy`.
- * - `blocked` → bad: the land gate wouldn't open — "shouldn't normally
+ * - `blocked` → bad: the integrate gate wouldn't open — "shouldn't normally
  *   happen under force", so it reads as a real problem, not a retry hint.
- * - `escalated` → bad: whole-Epic verification failed — nothing landed,
+ * - `escalated` → bad: whole-Epic verification failed — nothing integrated,
  *   it's the operator's now.
- * - `busy` → warn: a land is already in flight; retry later. No `reason`
+ * - `busy` → warn: an integrate is already in flight; retry later. No `reason`
  *   field on this variant (frozen contract), so the sentence is fixed.
  */
-export function landOutcomeBanner(o: EpicLandOutcome): LandOutcomeBanner {
+export function integrateOutcomeBanner(o: EpicIntegrateOutcome): IntegrateOutcomeBanner {
   switch (o.status) {
-    case 'landed':
-      return { tone: 'ok', text: `Merged — the merged subset reached the default branch at ${o.oid}.` };
+    case 'integrated':
+      return { tone: 'ok', text: `Integrated — the ready subset reached the default branch at ${o.oid}.` };
     case 'noop':
-      return { tone: 'info', text: `Nothing to merge — ${o.reason}.` };
+      return { tone: 'info', text: `Nothing to integrate — ${o.reason}.` };
     case 'waiting':
       return { tone: 'warn', text: `Waiting — ${o.reason}. Try again shortly.` };
     case 'blocked':
-      return { tone: 'bad', text: `Blocked — the merge gate wouldn't open: ${o.reason}.` };
+      return { tone: 'bad', text: `Blocked — the integrate gate wouldn't open: ${o.reason}.` };
     case 'escalated':
       return { tone: 'bad', text: `Escalated — whole-Epic verification failed: ${o.reason}. It's yours now.` };
     case 'busy':
-      return { tone: 'warn', text: 'A merge for this Epic is already in flight — retry in a moment.' };
+      return { tone: 'warn', text: 'An integration for this Epic is already in flight — retry in a moment.' };
   }
 }

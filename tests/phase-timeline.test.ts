@@ -8,8 +8,8 @@ const SOURCE = readFileSync(
 );
 
 describe('PhaseTimeline', () => {
-  it('labels landing as merging and never speaks a review phase (ADR-0041 deleted the gate)', () => {
-    expect(SOURCE).toContain("landing: 'Merging'");
+  it('labels merging as merging and never speaks a review phase (ADR-0041 deleted the gate)', () => {
+    expect(SOURCE).toContain("merging: 'Merging'");
     expect(SOURCE).not.toContain("'review'");
     expect(SOURCE).not.toContain('bg-await-dot');
   });

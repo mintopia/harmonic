@@ -5,7 +5,7 @@ const PHASE_LABELS: Record<PhaseStep['phase'], string> = {
   executing: 'Executing',
   validating: 'Validating',
   verifying: 'Verifying',
-  landing: 'Merging',
+  merging: 'Merging',
   terminal: 'Done',
 };
 

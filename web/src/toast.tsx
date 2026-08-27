@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { Icon } from './components/Icon';
-import { landOutcomeBanner, type EpicLandOutcome } from './epic-model';
+import { integrateOutcomeBanner, type EpicIntegrateOutcome } from './epic-model';
 
 /**
  * The designed notice surface: operations announce in a top-right stack of
@@ -58,18 +58,18 @@ export function toastError(e: unknown) {
 
 /** Acknowledge a completed gate action (accept/reject/cancel — issue #98):
  * a short, neutral notice naming what happened, so a successful destructive
- * or irreversible action never lands silently. Auto-dismisses after 6s. */
+ * or irreversible action never merges silently. Auto-dismisses after 6s. */
 export function toastSuccess(message: string) {
   push(message, 'success');
 }
 
-/** Surface a force-land outcome (issue #167, ADR-0026): maps the outcome's
+/** Surface a force-merge outcome (issue #167, ADR-0026): maps the outcome's
  * banner tone to a toast kind — `ok` acknowledges success, everything else
  * (`warn`/`bad`/`info`) reads as a rejection so the operator notices it.
  * Shared by Board's focus-mode header and the Table's band headers, which
  * otherwise repeated this mapping verbatim. */
-export function toastLandOutcome(outcome: EpicLandOutcome): void {
-  const banner = landOutcomeBanner(outcome);
+export function toastIntegrateOutcome(outcome: EpicIntegrateOutcome): void {
+  const banner = integrateOutcomeBanner(outcome);
   if (banner.tone === 'ok') toastSuccess(banner.text);
   else toastError(banner.text);
 }
@@ -86,7 +86,7 @@ export function Toaster() {
   if (items.length === 0) return null;
   return (
     <div aria-label="Notifications" aria-live="assertive" className="pointer-events-none relative z-50 h-0">
-      {/* The stack dodges an open Conversation dock rather than land on its
+      {/* The stack dodges an open Conversation dock rather than merge on its
           title row and its one primary action. `27.5rem` clears the dock
           (1rem inset + 26rem wide) with a 0.5rem gap. Gated at 1080px because
           below that there is nowhere to dodge *to*: the stack is 24rem, so it

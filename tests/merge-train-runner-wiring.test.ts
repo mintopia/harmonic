@@ -17,19 +17,19 @@ import { startServer, stubHarness, waitFor, allWorkspaces, seedLocalMarkdownTick
 
 /**
  * Issue #163 / #313 — the single-writer merge train wired into the Epic
- * member-finish landing path, behind the ADR-0041 freshness gate:
+ * member-finish merging path, behind the ADR-0041 freshness gate:
  *
  *  - `Runner.settleEscalatedForMember`: the adapter the coordinator's
  *    `escalate` is bound to (unit, no server).
- *  - AC2: two Epic members finishing near-simultaneously land serially onto ONE
+ *  - AC2: two Epic members finishing near-simultaneously merge serially onto ONE
  *    integration branch, each asserting its own verified SHA, through the REAL
  *    wired Runner (a real server via `startServer`, so the process-global
  *    `MergeTrainCoordinator` built in `app.ts` is the one under test). The
- *    second member's verdict is stale once the first lands, so it re-enters
- *    Rebase → Verification on the SAME Attempt before landing.
+ *    second member's verdict is stale once the first merges, so it re-enters
+ *    Rebase → Verification on the SAME Attempt before merging.
  *  - AC3: a rebase conflict on that re-entry is a failed Rebase Task, fed to
  *    the unified Attempt loop's corrective turn as feedback (one attempt
- *    consumed), and escalates at maxAttempts — never a landed conflict.
+ *    consumed), and escalates at maxAttempts — never a merged conflict.
  */
 
 const git = (dir: string, ...args: string[]) =>
@@ -45,7 +45,7 @@ const tmpPath = (prefix: string) => {
 /**
  * A throwaway git repo on branch main with a committed README and a
  * local-markdown tracker declaration, so `AutoDrive.closeCompleted` (#139,
- * the merge-train land path's ticket close) resolves a real no-op-close
+ * the merge-train merge path's ticket close) resolves a real no-op-close
  * adapter instead of escalating on a missing tracker.
  */
 function makeRepo(): string {
@@ -219,14 +219,14 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
       tasks: Array<{ type: string; state: string; verdict: string | null }>;
     }>;
 
-  it('AC2: two Epic members finishing near-simultaneously land serially, each asserting its own verified SHA; the second re-enters rebase+verify on the same Attempt', async () => {
+  it('AC2: two Epic members finishing near-simultaneously merge serially, each asserting its own verified SHA; the second re-enters rebase+verify on the same Attempt', async () => {
     const repo = makeRepo();
     const epic = 'epic/1630';
     git(repo, 'branch', epic, 'main');
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo });
     // `{ref}` is substituted per-Task (AutoDrive.prompt's buildDrivePrompt), so
-    // one global template still gives each concurrently-landing member its own
-    // distinct file — proving the two lands are genuinely independent work.
+    // one global template still gives each concurrently-merging member its own
+    // distinct file — proving the two merges are genuinely independent work.
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'member-{ref}.txt': 'member {ref}\n' }, mcpFinish: true }) },
     });
@@ -242,7 +242,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     const completed = (taskId: number) =>
       waitFor(async () => {
         const t = await server.app.ctx.tasks.get(taskId);
-        if (t.state === 'escalated') throw new Error(`member ${taskId} escalated instead of landing`);
+        if (t.state === 'escalated') throw new Error(`member ${taskId} escalated instead of merging`);
         return t.state === 'done' ? t : undefined;
       });
     const t1 = await completed(m1.taskId);
@@ -251,7 +251,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     expect(t2.state).not.toBe('escalated');
 
     // The integration tip advanced exactly once per member (two new commits) —
-    // never merge commits, so each land was a fast-forward of a verified tip.
+    // never merge commits, so each merge was a fast-forward of a verified tip.
     const countAfter = Number(git(repo, 'rev-list', '--count', epic));
     expect(countAfter - countBefore).toBe(2);
     expect(git(repo, 'log', '--merges', epic)).toBe('');
@@ -265,7 +265,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     expect([r1.candidateOid, r2.candidateOid]).toContain(tip);
     expect([r1.candidateOid, r2.candidateOid]).toContain(git(repo, 'rev-parse', `${epic}~1`));
 
-    // Clean lands: no corrective turn, and both Runs stayed on Attempt 1. One of
+    // Clean merges: no corrective turn, and both Runs stayed on Attempt 1. One of
     // the two was stale when its turn on the train came and re-entered
     // Rebase → Verification on that same Attempt: a second passed Rebase Task
     // row, no second implementation.
@@ -283,7 +283,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     expect(rebaseCounts).toEqual([1, 2]);
   });
 
-  it('AC3: a rebase conflict at landing is a failed Rebase Task fed to a corrective turn as feedback, then escalates at maxAttempts — the conflict never lands', async () => {
+  it('AC3: a rebase conflict at merging is a failed Rebase Task fed to a corrective turn as feedback, then escalates at maxAttempts — the conflict never merges', async () => {
     const repo = makeRepo();
     const epic = 'epic/1631';
     git(repo, 'branch', epic, 'main');
@@ -293,7 +293,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     // freshness-gate.test.ts (ADR-0046, #367).
     await server.app.ctx.workspaces.update(wsId, { conflictResolveTurns: 5 });
     // Both turns touch the SAME file the test independently advances on the
-    // integration branch below, so the landing rebase conflicts and the
+    // integration branch below, so the merging rebase conflicts and the
     // corrective turn (which does not resolve the conflict) conflicts again.
     await server.app.ctx.configStore.update({
       drive: { prompt: JSON.stringify({ writeFiles: { 'README.md': 'member turn\n' }, mcpFinish: true }) },
@@ -319,7 +319,7 @@ describe('MergeTrainCoordinator wired into the Runner (issue #163, ADR-0041 fres
     expect(settledRun.state).toBe('failed');
     expect(settledRun.reason).toMatch(/attempt 2 of 2 failed: rebase onto 'epic\/1631' hit a content conflict/);
 
-    // Attempt 1: rebase (fresh fork, no-op) → implementation → the landing
+    // Attempt 1: rebase (fresh fork, no-op) → implementation → the merging
     // rebase conflicts → that Rebase Task fails, and the Attempt fails with the
     // conflict as its feedback. Attempt 2 opens with its own Rebase Task, which
     // conflicts again (left in progress for the agent, who did not resolve it).

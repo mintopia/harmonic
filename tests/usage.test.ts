@@ -24,14 +24,14 @@ describe('usage collection retry (log-flush race)', () => {
     message: { id: 'm1', model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: 20 } },
   });
 
-  it('re-reads an existing session log until the per-model lines land', async () => {
+  it('re-reads an existing session log until the per-model lines merge', async () => {
     const { collectUsageWithRetry } = await import('../src/execution/usage.js');
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-race-logs-'));
     const cwd = mkdtempSync(join(tmpdir(), 'harmonic-race-work-'));
     const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
     const file = join(logRoot, slug, 'race-session.jsonl');
     mkdirSync(join(logRoot, slug), { recursive: true });
-    // The file exists (session started) but the usage lines land late.
+    // The file exists (session started) but the usage lines merge late.
     writeFileSync(file, JSON.stringify({ type: 'user', text: 'hi' }));
     setTimeout(() => writeFileSync(file, assistantLine), 50);
 

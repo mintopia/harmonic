@@ -6,7 +6,7 @@ export type TaskState = (typeof TASK_STATES)[number];
 
 /** The Run phase machine (ADR reliability-design §0.2, issue #114/#171), in
  * traversal order; mirrors the server's `RUN_PHASES` (`domain/run-phases.ts`). */
-export const RUN_PHASES = ['executing', 'validating', 'verifying', 'landing', 'terminal'] as const;
+export const RUN_PHASES = ['executing', 'validating', 'verifying', 'merging', 'terminal'] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
 
 export type AttemptState = 'running' | 'passed' | 'failed' | 'escalated' | 'cancelled';
@@ -124,7 +124,7 @@ export type TicketTimelineKind =
   | 'escalation'
   | 'operator-accept'
   | 'operator-reject'
-  | 'landing'
+  | 'merging'
   | 'fact';
 
 /** One chronological audit record from the ticket-wide lifecycle projection. */
@@ -290,7 +290,7 @@ export interface Task {
   model: string;
   workingDir: string;
   isolationMode: 'direct' | 'worktree';
-  /** Explicit base branch a worktree Run is cut from and lands back onto
+  /** Explicit base branch a worktree Run is cut from and merges back onto
    * (issue #157, ADR-0024); null resolves at spawn to the working dir's
    * current branch. */
   baseBranch: string | null;
@@ -344,7 +344,7 @@ export interface Task {
   mapTitle: string | null;
   /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
   branch: string | null;
-  /** The latest run's `git diff --stat`, snapshotted at landing; null until then or in direct mode. */
+  /** The latest run's `git diff --stat`, snapshotted at merging; null until then or in direct mode. */
   stat: string | null;
   /** The running run's `startedAt`; null unless the Task is working (issue #100). */
   runStartedAt: number | null;
@@ -359,7 +359,7 @@ export interface Task {
   /** The model's effective context window; null when unknown. The board card shows `ctx %` = contextTokens/contextWindow (issue #52). */
   contextWindow: number | null;
   /** The latest run's verified branch head ref (issue #134's Run `candidateRef`),
-   * surfaced so an escalated Task shows whether Accept has work to land; null
+   * surfaced so an escalated Task shows whether Accept has work to merge; null
    * when no run has produced a candidate yet. */
   candidateRef: string | null;
   /** Transient House-Rule reason a `ready` Task is being skipped for a held
@@ -504,7 +504,7 @@ export interface Conversation {
   updatedAt: number;
   endedAt: number | null;
   /** Running usage accumulated across this Conversation's Turns (issue #12);
-   * null before any usage has landed. */
+   * null before any usage has merged. */
   usage: {
     totals: {
       inputTokens: number;

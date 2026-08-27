@@ -80,7 +80,7 @@ export type CriticField = 'prompt' | 'model' | 'harness';
 /**
  * Fold a raw text-input value into the critic object. `prompt`/`model` are free
  * text. `harness` comes from a select whose first option, "Same as task", is
- * the empty string — that must land as an *absent* `harness` key (the schema's
+ * the empty string — that must merge as an *absent* `harness` key (the schema's
  * `harness` is optional, and `z.enum` rejects `''`), not `harness: ''`, so a
  * blank selection strips the key instead of setting it.
  */

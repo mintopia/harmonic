@@ -62,35 +62,35 @@ export class AutoDrive {
 
   /**
    * The Merge Fate for a Task, exposed so the Runner can gate deterministic
-   * recovery landing (issue #154) on the **same** fate this class applies — a
-   * direct-mode Run only lands its reconstructed candidate onto the intended
+   * recovery merging (issue #154) on the **same** fate this class applies — a
+   * direct-mode Run only merges its reconstructed candidate onto the intended
    * branch when the fate is `auto-merge`; `open-PR`/`artifact` leave the branch
    * untouched (the work stays on the candidate/private ref). Single source of
-   * truth so recovery landing never diverges from `onCompleted`'s fate.
+   * truth so recovery merging never diverges from `onCompleted`'s fate.
    */
   mergeFateFor(task: TaskRow): MergeFate {
     return this.mergeFate(task);
   }
 
   /**
-   * Land a passing afk Run's work per its Merge Fate — the close-after-verify
+   * Merge a passing afk Run's work per its Merge Fate — the close-after-verify
    * model (issue #139, ADR-0021, reliability-design Unit B). The
    * execution-complete signal is the agent's `finish_task` (the Runner's
    * `agentFinished` gate), **not** the agent closing the ticket: under this
-   * model Harmonic itself owns the close, and only after verify + land. So this
+   * model Harmonic itself owns the close, and only after verify + merge. So this
    * never gates on the ticket state — it closes where the fate says:
    *
-   * - **auto-merge** — the Runner has already landed the verified tip (its
-   *   landing freshness gate, ADR-0041; the merge train for Epic members), so
+   * - **auto-merge** — the Runner has already merged the verified tip (its
+   *   merging freshness gate, ADR-0041; the merge train for Epic members), so
    *   Harmonic closes the ticket. A close that fails Escalates (a human finishes
    *   the close, the work is safe).
    * - **open-PR** — open a PR and leave the ticket **open**: creating a PR is not
-   *   landing, so the PR's own merge closes the issue later. A PR that can't be
+   *   merging, so the PR's own merge closes the issue later. A PR that can't be
    *   created Escalates. A tracker with no PR support degrades to artifact.
    * - **artifact** (incl. research) — leave the branch and the ticket untouched;
    *   no merge, no close.
    *
-   * Returns `'completed'` once the fate has landed, or `'escalate'` when it
+   * Returns `'completed'` once the fate has merged, or `'escalate'` when it
    * could not be applied. Unlike the pre-#139 model there is no `'unresolved'`
    * outcome here — a Run with no `finish_task` signal never reaches this method
    * (the Runner routes it to the failure path before verification).
@@ -123,7 +123,7 @@ export class AutoDrive {
     }
 
     if (fate === 'auto-merge') {
-      // The Runner has already landed the verified tip (SHA-asserted, ADR-0041);
+      // The Runner has already merged the verified tip (SHA-asserted, ADR-0041);
       // Harmonic owns the close (issue #139).
       return (await this.closeTicket(task)) ? 'completed' : 'escalate';
     }
@@ -133,25 +133,25 @@ export class AutoDrive {
   }
 
   /**
-   * The auto-merge close step, split out so the merge-train landing path (issue
-   * #163) can reuse it: an Epic member's Run lands its branch onto the Epic
+   * The auto-merge close step, split out so the merge-train merging path (issue
+   * #163) can reuse it: an Epic member's Run merges its branch onto the Epic
    * integration branch through the {@link MergeTrainCoordinator} (fast-forward of the verified tip)
-   * rather than {@link onCompleted}'s plain `git.merge`, but the close-after-land
+   * rather than {@link onCompleted}'s plain `git.merge`, but the close-after-merge
    * half is identical — Harmonic owns the close (#139), only after a successful
-   * land. Returns whether the close was issued (false ⇒ the caller Escalates).
+   * merge. Returns whether the close was issued (false ⇒ the caller Escalates).
    */
   async closeCompleted(task: TaskRow): Promise<boolean> {
     return this.closeTicket(task);
   }
 
   /**
-   * Close the Task's ticket — the final landing step (issue #139; Harmonic, not
+   * Close the Task's ticket — the final merging step (issue #139; Harmonic, not
    * the agent, owns the close), or an operator Close. A pure output side-effect
    * (ADR-0041): returns whether the close was issued; a read/write failure
    * returns false so the caller can record the infrastructure failure. No
    * tracker ref means nothing to close.
    */
-  async closeTicket(task: TaskRow, comment = `Completed and landed by Harmonic (task ${task.id}).`): Promise<boolean> {
+  async closeTicket(task: TaskRow, comment = `Completed and merged by Harmonic (task ${task.id}).`): Promise<boolean> {
     if (task.trackerRef == null) return true; // native/direct with no ticket — nothing to close
     try {
       const adapter = await this.resolveAdapter(task.workingDir);
@@ -161,10 +161,10 @@ export class AutoDrive {
       if (!adapter.close) return true;
       const { title } = splitTitleBody(task.prompt);
       const ref = { number: task.trackerRef, title, state: 'open' as const };
-      // Idempotent close: a ticket already closed (a replayed landing effect, or
+      // Idempotent close: a ticket already closed (a replayed merging effect, or
       // a re-accept after a prior close) needs no second close — and closing an
       // already-closed issue errors on some trackers (`gh issue close`), which
-      // would otherwise report a failure for work that did land.
+      // would otherwise report a failure for work that did merge.
       if ((await adapter.readTicket(ref)).state === 'closed') return true;
       await adapter.close(ref, comment);
       return true;

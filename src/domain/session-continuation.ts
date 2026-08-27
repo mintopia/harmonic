@@ -10,7 +10,7 @@
  *
  * - An **automated** trigger — an automatic retry, or the verify-agent (the #109
  *   critic) rejecting within seconds — reuses the warm Session **silently**: no
- *   operator dialog, the follow-up turn just lands on the same Session.
+ *   operator dialog, the follow-up turn just merges on the same Session.
  * - A **human** rejection surfaces a **choice**: "continue the full conversation
  *   (with an estimated cost)" vs "start a condensed new Session". The choice is
  *   gated on **cost**, never on an elapsed-time clock.

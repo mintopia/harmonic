@@ -72,7 +72,7 @@ export function deriveEpics(
     if (!epic) continue; // dangling parent ref: not resolvable in this scan
 
     // A closed Epic is done: deriving it would re-probe/re-attempt a finished
-    // Epic every poll (recurring epic-land noise). Keep it in `epicRefs` above
+    // Epic every poll (recurring epic-integrate noise). Keep it in `epicRefs` above
     // so it still counts as containment for `isReady`, but do not surface it.
     if (epic.state !== 'open') continue;
 

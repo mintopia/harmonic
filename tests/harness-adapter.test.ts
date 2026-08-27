@@ -514,7 +514,7 @@ describe("claude's incremental session-log tail reader (#217)", () => {
     const partial = await reader.sample();
     expect(partial!.usage.models).toEqual({});
 
-    // The rest (and its newline) lands: the now-complete line folds in exactly once.
+    // The rest (and its newline) merges: the now-complete line folds in exactly once.
     appendFileSync(rootFile, line.slice(half));
     const complete = await reader.sample();
     expect(complete!.usage.models['claude-opus-4-8']).toMatchObject({ inputTokens: 50, outputTokens: 5 });
@@ -553,7 +553,7 @@ describe("claude's incremental session-log tail reader (#217)", () => {
     const s1 = await reader.sample();
     expect(s1!.tree.children).toHaveLength(0);
 
-    // A Subagent's transcript + meta land on a later tick.
+    // A Subagent's transcript + meta merge on a later tick.
     const subs = join(dir, 'inc3', 'subagents');
     mkdirSync(subs, { recursive: true });
     writeFileSync(join(subs, 'agent-a1.jsonl'), assistant('claude-haiku-4-5', { input_tokens: 20, output_tokens: 2 }, 's1'));
@@ -624,7 +624,7 @@ describe("codex's incremental rollout tail reader (#217)", () => {
     const s1 = await reader.sample();
     expect(s1!.usage.models['gpt-5.6-sol']).toEqual({ inputTokens: 6189, outputTokens: 5, cacheReadTokens: 9984, cacheWriteTokens: 0 });
 
-    // The newline lands on a later tick; the cumulative-delta baseline makes the
+    // The newline merges on a later tick; the cumulative-delta baseline makes the
     // re-fold a zero delta — no double count.
     appendFileSync(file, '\n');
     const s2 = await reader.sample();

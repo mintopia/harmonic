@@ -7,19 +7,19 @@ import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestSe
 import { verificationCommandSchema, verificationCriticSchema } from '../src/config.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
-import { landingJournal, runFacts, sessions } from '../src/db/schema.js';
+import { mergeJournal, runFacts, sessions } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 
 /**
- * Issue #313 — the landing freshness gate (ADR-0041), end to end through the
+ * Issue #313 — the merging freshness gate (ADR-0041), end to end through the
  * real Runner over the stub harness against a real git Workspace:
  *
- *  - the base advances between verification and landing → landing refuses the
+ *  - the base advances between verification and merging → merging refuses the
  *    stale verdict, a Rebase Task re-bases the ticket branch, verification
- *    re-runs at the new head, and the land asserts the NEW SHA — all on the
+ *    re-runs at the new head, and the merge asserts the NEW SHA — all on the
  *    same Attempt and the same Session, no counter increment;
  *  - an operator Accept on an escalated ticket whose base moved since
- *    verification refuses (409, landing abandoned) rather than landing what
+ *    verification refuses (409, merging abandoned) rather than merging what
  *    nobody verified.
  */
 
@@ -57,7 +57,7 @@ function advanceMain(repo: string, file: string, content: string): string {
 
 /**
  * A verification command that PASSES, and on its first run only advances main
- * behind verification's back — the exact verify→land window the gate exists
+ * behind verification's back — the exact verify→merge window the gate exists
  * for. The flag file makes the re-verification leave main alone, so the
  * re-entry converges.
  */
@@ -102,7 +102,7 @@ afterAll(() => {
   for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
 });
 
-describe('landing freshness gate (issue #313, ADR-0041)', () => {
+describe('merging freshness gate (issue #313, ADR-0041)', () => {
   let server: TestServer;
   let wsId: number;
   let ref = 31_300;
@@ -143,9 +143,9 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
 
   /** Mirror an afk Task (auto-merge onto main) with its local-markdown ticket
    * committed on main: the ticket file lives in the base repo's checkout, and an
-   * in-place land requires that checkout clean. Seeded already `closed` so the
-   * post-land close rewrites it byte-identically (the helper's fixed point) and
-   * a second Run's land still finds main clean. */
+   * in-place merge requires that checkout clean. Seeded already `closed` so the
+   * post-merge close rewrites it byte-identically (the helper's fixed point) and
+   * a second Run's merge still finds main clean. */
   async function seedAfk(): Promise<{ taskId: number; trackerRef: number }> {
     const trackerRef = ref++;
     const task = await server.app.ctx.tasks.upsertMirrored(mirroredAfk(trackerRef));
@@ -176,7 +176,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
       .filter((e: { type: string }) => e.type === 'lifecycle')
       .map((e: { payload: { event: string; reason?: string } }) => e.payload);
 
-  it('base moved between verify and land: rebase + re-verify on the same Attempt and Session, then land asserting the new SHA', async () => {
+  it('base moved between verify and merge: rebase + re-verify on the same Attempt and Session, then merge asserting the new SHA', async () => {
     const repo = makeRepo();
     const flag = join(tmpPath('harmonic-freshness-flag-'), 'advanced');
     await server.app.ctx.workspaces.update(wsId, { workingDir: repo, verificationCommand: baseMovingVerifier(repo, flag) });
@@ -188,21 +188,21 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const { taskId, runId, trackerRef } = await launchAfk();
     const task = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      if (t.state === 'escalated') throw new Error(`escalated instead of landing: ${(await server.app.ctx.runs.get(runId)).reason}`);
+      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(runId)).reason}`);
       return t.state === 'done' ? t : undefined;
     });
     expect(task.state).not.toBe('escalated');
     expect(existsSync(flag)).toBe(true); // the verifier really did move main
 
     // main = the rebased implementation, fast-forwarded on top of the commit
-    // that landed mid-verification — no merge commit.
+    // that merged mid-verification — no merge commit.
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
     expect(git(repo, 'log', '--format=%s', '-2', 'main')).toBe(
       ['stub implementation', 'main advances during verification'].join('\n'),
     );
     expect(git(repo, 'show', `main:impl-${trackerRef}.txt`)).toBe(`implementation ${trackerRef}`);
     const run = await server.app.ctx.runs.get(runId);
-    expect(run.candidateOid).toBe(git(repo, 'rev-parse', 'main')); // the land asserted the NEW SHA
+    expect(run.candidateOid).toBe(git(repo, 'rev-parse', 'main')); // the merge asserted the NEW SHA
 
     // Same Attempt, same Session: the counter stayed at 1, no corrective turn
     // ran, and no new harness Session was spawned for the re-entry.
@@ -221,8 +221,8 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     ]);
 
     const events = await lifecycle(runId);
-    expect(events.filter((e) => e.event === 'freshness-rebase-required')).toEqual([
-      { event: 'freshness-rebase-required', reason: "base 'main' advanced after verification" },
+    expect(events.filter((e) => e.event === 'rebase-required')).toEqual([
+      { event: 'rebase-required', reason: "base 'main' advanced after verification" },
     ]);
     expect(events.filter((e) => e.event === 'verification')).toHaveLength(2);
     expect(events.map((e) => e.event)).not.toContain('escalated');
@@ -238,7 +238,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     expect(JSON.parse(movingBaseFacts[0]!.payload)).toEqual({ retries: 1 });
   });
 
-  it('two afk worktree Runs landing concurrently on one base: the second is refused stale at the land, rebases + re-verifies, then lands its own SHA — no unverified merge commit', async () => {
+  it('two afk worktree Runs merging concurrently on one base: the second is refused stale at the merge, rebases + re-verifies, then merges its own SHA — no unverified merge commit', async () => {
     const repo = makeRepo();
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
@@ -259,7 +259,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
         const t = await server.app.ctx.tasks.get(taskId);
         if (t.state === 'escalated') {
           const runs = await server.app.ctx.runs.listForTask(taskId);
-          throw new Error(`task ${taskId} escalated instead of landing: ${runs.map((r) => r.reason).join(' | ')}`);
+          throw new Error(`task ${taskId} escalated instead of merging: ${runs.map((r) => r.reason).join(' | ')}`);
         }
         return t.state === 'done' ? t : undefined;
       });
@@ -287,10 +287,10 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     ]);
   });
 
-  it('operator Accept on an escalated ticket whose base moved non-conflictingly auto-rebases and lands, without re-verifying (ADR-0043)', async () => {
+  it('operator Accept on an escalated ticket whose base moved non-conflictingly auto-rebases and merges, without re-verifying (ADR-0043)', async () => {
     const repo = makeRepo();
     // A verifier that fails: both attempts fail, so the ticket escalates with a
-    // real commit as its verified head — Accept has work to land.
+    // real commit as its verified head — Accept has work to merge.
     await server.app.ctx.workspaces.update(wsId, {
       workingDir: repo,
       verificationCommand: verificationCommandSchema.parse({ command: process.execPath, args: ['-e', 'process.exit(1)'], timeoutSeconds: 30 }),
@@ -315,21 +315,21 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
 
     // The base moves non-conflictingly while the ticket sits escalated — the
     // common case during the operator's review delay.
-    const mainTip = advanceMain(repo, 'other.txt', 'someone else landed\n');
+    const mainTip = advanceMain(repo, 'other.txt', 'someone else merged\n');
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(200);
     expect(accepted.body).toMatchObject({ state: 'done', escalationReason: null });
 
     // main now carries BOTH the independent advance and the replayed
-    // implementation, landed as a fast-forward (no merge commit).
+    // implementation, merged as a fast-forward (no merge commit).
     expect(git(repo, 'rev-parse', 'main')).not.toBe(mainTip);
-    expect(git(repo, 'show', 'main:other.txt')).toBe('someone else landed');
+    expect(git(repo, 'show', 'main:other.txt')).toBe('someone else merged');
     expect(git(repo, 'show', 'main:impl-native.txt')).toBe('implementation');
     expect(git(repo, 'log', '--merges', 'main')).toBe('');
-    const journal = (await server.app.ctx.asyncDb.read((d) => d.select().from(landingJournal).where(eq(landingJournal.runId, runId)).all()));
+    const journal = (await server.app.ctx.asyncDb.read((d) => d.select().from(mergeJournal).where(eq(mergeJournal.runId, runId)).all()));
     expect(journal.map((row) => row.kind)).toContain('result');
-    expect(journal.map((row) => row.kind)).not.toContain('abandoned'); // it landed, not abandoned
+    expect(journal.map((row) => row.kind)).not.toContain('abandoned'); // it merged, not abandoned
   });
 
   it('operator Accept still refuses (409) when the base advance conflicts with the candidate, leaving the ticket escalated', async () => {
@@ -352,13 +352,13 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     });
 
     // The base advance touches the SAME file the candidate wrote, so the replay
-    // conflicts and there is nothing safe to land without the operator's help.
+    // conflicts and there is nothing safe to merge without the operator's help.
     const mainTip = advanceMain(repo, 'impl-native.txt', 'someone else changed this\n');
 
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(409);
     expect((await server.app.ctx.tasks.get(taskId)).state).toBe('escalated');
-    expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing landed
+    expect(git(repo, 'rev-parse', 'main')).toBe(mainTip); // nothing merged
   });
 
   it('completion rebase content conflict: N bounded resolve-turns then a plain escalation that links to the diff, never a raw git dump (ADR-0046, #367)', async () => {
@@ -474,7 +474,7 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     const { taskId, runId } = await launchAfk();
     const task = await waitFor(async () => {
       const t = await server.app.ctx.tasks.get(taskId);
-      if (t.state === 'escalated') throw new Error(`escalated instead of landing: ${(await server.app.ctx.runs.get(runId)).reason}`);
+      if (t.state === 'escalated') throw new Error(`escalated instead of merging: ${(await server.app.ctx.runs.get(runId)).reason}`);
       return t.state === 'done' ? t : undefined;
     });
     expect(task.state).toBe('done');

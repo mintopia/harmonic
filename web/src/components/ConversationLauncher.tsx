@@ -157,7 +157,7 @@ function StreamAnnouncer({
     const items = coalesceEvents(events);
     // First render for a Conversation: swallow its backlog. Opening a
     // conversation with history must not read every past tool call aloud —
-    // only transitions that land *while the operator is here* get spoken.
+    // only transitions that merge *while the operator is here* get spoken.
     if (seededFor.current !== resetKey) {
       cursor.current = announceTransitions(items, EMPTY_ANNOUNCE_CURSOR).cursor;
       seededFor.current = resetKey;

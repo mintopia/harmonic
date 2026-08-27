@@ -1,8 +1,8 @@
 /**
  * The pure Epic read-model composer (issue #167, ADR-0026). The operator UI's
  * `GET …/epics` / `GET …/epics/:ref` surface a derived Epic (`deriveEpics`,
- * issue #158) enriched with per-member land state (`reduceMemberState`, issue
- * #161) and server-only integration/verification/land-coordinator facts. This
+ * issue #158) enriched with per-member merge state (`reduceMemberState`, issue
+ * #161) and server-only integration/verification/integrate-coordinator facts. This
  * module is the composition seam: it takes a {@link DerivedEpic} plus the
  * already-gathered member Task rows, member titles, and facts, and folds them
  * into the frozen `Epic` DTO (`.notes/issue-167-dto-contract.md`) — no
@@ -12,11 +12,11 @@
  */
 import type { TaskRow } from '../db/schema.js';
 import type { DerivedEpic, EpicKind } from './epic-derivation.js';
-import type { MemberLandState } from './epic-land.js';
+import type { MemberMergeState } from './epic-integrate.js';
 import { reduceMemberState } from '../execution/epic-integration.js';
 
-/** A member's land status in the Epic DTO — the same enum `reduceMemberState` returns. */
-export type MemberLandStatus = MemberLandState;
+/** A member's merge status in the Epic DTO — the same enum `reduceMemberState` returns. */
+export type MemberMergeStatus = MemberMergeState;
 
 export interface EpicMember {
   /** Member ticket ref. */
@@ -28,7 +28,7 @@ export interface EpicMember {
   /** Raw `TaskState` (working|escalated|done|cancelled|...), or `null` if unmirrored. */
   state: string | null;
   escalated: boolean;
-  landStatus: MemberLandStatus;
+  mergeStatus: MemberMergeStatus;
   /** Whether this member is in the ready frontier. */
   ready: boolean;
 }
@@ -46,8 +46,8 @@ export interface EpicVerification {
   status: 'pass' | 'fail' | 'pending' | null;
 }
 
-export interface EpicLandState {
-  /** Whether a whole-Epic land attempt is running right now. */
+export interface EpicIntegrateState {
+  /** Whether a whole-Epic integrate attempt is running right now. */
   inFlight: boolean;
   /** The escalation/hold reason if the coordinator is holding; else `null`. */
   held: string | null;
@@ -63,8 +63,8 @@ export interface Epic {
   ready: number[];
   integration: EpicIntegration;
   verification: EpicVerification;
-  land: EpicLandState;
-  /** Members with `landStatus === 'completed'`. */
+  integrate: EpicIntegrateState;
+  /** Members with `mergeStatus === 'completed'`. */
   foldedCount: number;
   memberCount: number;
 }
@@ -74,14 +74,14 @@ export interface Epic {
 export interface EpicFacts {
   integration: EpicIntegration;
   verification: EpicVerification;
-  land: EpicLandState;
+  integrate: EpicIntegrateState;
 }
 
 /**
  * Compose the `Epic` DTO for one derived Epic (issue #167). Pure and total:
  * every member ref in `derived.members` gets an `EpicMember` even when no
  * matching Task row exists (an unmirrored/never-picked-up member) — `taskId`/
- * `state` fall to `null`, `landStatus` to `reduceMemberState(undefined)` ⇒
+ * `state` fall to `null`, `mergeStatus` to `reduceMemberState(undefined)` ⇒
  * `'pending'`, and `title` falls to `''` when `titleByRef` has no entry.
  */
 export function composeEpicView(
@@ -99,7 +99,7 @@ export function composeEpicView(
       taskId: task?.id ?? null,
       state: task?.state ?? null,
       escalated: task?.state === 'escalated',
-      landStatus: reduceMemberState(task),
+      mergeStatus: reduceMemberState(task),
       ready: readySet.has(ref),
     };
   });
@@ -112,8 +112,8 @@ export function composeEpicView(
     ready: derived.ready,
     integration: facts.integration,
     verification: facts.verification,
-    land: facts.land,
-    foldedCount: members.filter((m) => m.landStatus === 'completed').length,
+    integrate: facts.integrate,
+    foldedCount: members.filter((m) => m.mergeStatus === 'completed').length,
     memberCount: members.length,
   };
 }

@@ -203,7 +203,7 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
       description:
         'Signal that this Task is finished (the execution-complete signal) so Harmonic stops re-prompting ' +
         'you to continue. Call only when the work is genuinely complete. Do NOT close the tracker ticket ' +
-        'yourself — Harmonic verifies the work, lands it, and then closes the ticket itself. Ending your ' +
+        'yourself — Harmonic verifies the work, merges it, and then closes the ticket itself. Ending your ' +
         'turn without this leaves the run looking parked, and Harmonic will prompt you to continue.',
       inputSchema: { ...taskId, summary: z.string().optional().describe('Optional note on what was finished') },
     },
@@ -279,13 +279,13 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
   );
 
   server.registerTool(
-    'force_land_epic',
+    'force_integrate_epic',
     {
       description:
-        "Operator only. Force-land an Epic's ready subset: merge whatever is folded into its integration branch " +
+        "Operator only. Force-integrate an Epic's ready subset: merge whatever is folded into its integration branch " +
         'into the default branch now, bypassing the all-members-completed gate — but not Verification, which ' +
-        'still gates the merge (a failing whole-Epic Verification still escalates rather than landing). Returns ' +
-        'the land attempt outcome, or a forbidden/not-found domain error when tracking is off for the Workspace.',
+        'still gates the merge (a failing whole-Epic Verification still escalates rather than merging). Returns ' +
+        'the merge attempt outcome, or a forbidden/not-found domain error when tracking is off for the Workspace.',
       inputSchema: {
         workspaceId: z.number().int().positive().describe('The owning Workspace id'),
         epicRef: z.number().int().positive().describe("The Epic's tracker ref"),
@@ -294,11 +294,11 @@ export function buildMcpServer(ctx: AppContext, opts: { operator?: boolean } = {
     wrapAsync(async ({ workspaceId, epicRef }) => {
       requireOperator();
       await ctx.workspaces.get(workspaceId); // 404s an unknown Workspace before touching the tracker
-      const outcome = await ctx.trackerManager.forceLandEpic(workspaceId, epicRef);
+      const outcome = await ctx.trackerManager.forceIntegrateEpic(workspaceId, epicRef);
       if (!outcome) {
         throw new DomainError(
           'conflict',
-          `no active whole-Epic land coordinator for workspace ${workspaceId} (tracking is off or the loop has not started)`,
+          `no active whole-Epic integrate coordinator for workspace ${workspaceId} (tracking is off or the loop has not started)`,
         );
       }
       return outcome;

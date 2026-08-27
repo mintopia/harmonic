@@ -158,7 +158,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('closeTicket is idempotent and carries the caller\'s comment (the operator Close)', async () => {
     const open = fakeAdapter('open');
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => open.adapter);
-    expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without landing (task 1).')).toBe(true);
+    expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without merging (task 1).')).toBe(true);
     expect(open.calls.close).toEqual([7]); // worktreeTask trackerRef
 
     // An already-closed ticket needs no second close (some trackers error on it).
@@ -171,7 +171,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.closeTicket(worktreeTask({ trackerRef: null }))).toBe(true);
   });
 
-  it('completes after a verified landing when the adapter only supports inbound status', async () => {
+  it('completes after a verified merging when the adapter only supports inbound status', async () => {
     const inboundOnly: TrackerAdapter = {
       name: 'other',
       scan: async () => [],
@@ -222,7 +222,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
   // ticket, is the signal that gets a Run here — so every fixture leaves the
   // ticket OPEN and asserts what Harmonic itself does about the close.
 
-  it('auto-merge: the Runner has landed the verified tip, so Harmonic closes the ticket', async () => {
+  it('auto-merge: the Runner has merged the verified tip, so Harmonic closes the ticket', async () => {
     const { adapter, calls } = fakeAdapter('open');
     const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
@@ -463,7 +463,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // Pre-#139 a ticket the agent closed was the completion signal. Now
     // finish_task is: a Run whose ticket is already closed but which never signals
     // finish is NOT completed — it runs the continue budget and then Escalates as
-    // unresolved. (The finish→verify→land→close happy path needs the MCP endpoint
+    // unresolved. (The finish→verify→merge→close happy path needs the MCP endpoint
     // and is covered at the execution seam.)
     build(config({ continueAttempts: 0 }, 1), 'closed');
     const task = await tasks.upsertMirrored(mirroredAfk(7));

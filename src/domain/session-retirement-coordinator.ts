@@ -31,7 +31,7 @@ export interface SessionRetirementHook {
  * of builder-worktree removal.**
  *
  * A worktree Session's checkout is retained through the human-rejection window
- * so a reject-and-continue lands in the same workspace, and its builder worktree
+ * so a reject-and-continue merges in the same workspace, and its builder worktree
  * is removed **only** when the Session retires — never at `finalizeWorkspace` /
  * reaching `terminal`. This coordinator is what closes that loop, in two halves:
  *
@@ -66,7 +66,7 @@ export class SessionRetirementCoordinator {
   /**
    * Awaited settle-hook, still best-effort: record the retirement intent for
    * `run`'s Session from the settle `cause`, right after its lease released. A
-   * landing / abandon / operator-cancel marks the Session `retiring` (its
+   * merging / abandon / operator-cancel marks the Session `retiring` (its
    * worktree removal is now owed); a reject / other ending marks it `idle`
    * under the matching retention deadline. A no-op when the Run has no
    * Session, its Session is already retiring/retired, or the Session row has

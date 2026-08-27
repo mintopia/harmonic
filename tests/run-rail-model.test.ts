@@ -25,7 +25,7 @@ function run(over: Partial<Run> = {}): Run {
 
 describe('runDisplay', () => {
   it('reads a settled terminal state before the phase the machine ended in', () => {
-    expect(runDisplay(run({ state: 'completed', phase: 'landing' }))).toEqual({
+    expect(runDisplay(run({ state: 'completed', phase: 'merging' }))).toEqual({
       word: 'merged',
       dot: 'merged',
       pulse: false,
@@ -51,7 +51,7 @@ describe('runDisplay', () => {
   });
 
   it('never reads a running run as anything but live work — there is no parked human gate (ADR-0041)', () => {
-    for (const phase of ['executing', 'validating', 'verifying', 'landing'] as const) {
+    for (const phase of ['executing', 'validating', 'verifying', 'merging'] as const) {
       expect(runDisplay(run({ state: 'running', phase })).pulse).toBe(true);
       expect(runDisplay(run({ state: 'running', phase })).dot).toBe('running');
     }
@@ -63,7 +63,7 @@ describe('runDisplay', () => {
       dot: 'running',
       pulse: true,
     });
-    expect(runDisplay(run({ state: 'running', phase: 'landing' }))).toEqual({
+    expect(runDisplay(run({ state: 'running', phase: 'merging' }))).toEqual({
       word: 'merging',
       dot: 'running',
       pulse: true,

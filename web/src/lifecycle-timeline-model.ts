@@ -51,7 +51,7 @@ export function lifecycleTimelineRows(events: TicketTimelineEvent[]): LifecycleT
         case 'escalation': return { ...base, label: 'Escalated for operator review', detail: null, tone: 'awaiting' };
         case 'operator-accept': return { ...base, label: 'Operator accepted', detail: null, tone: 'passed' };
         case 'operator-reject': return { ...base, label: 'Operator rejected with guidance', detail: text(data?.feedback) ?? attempt(data), tone: 'awaiting' };
-        case 'landing': {
+        case 'merging': {
           const payload = record(data?.payload);
           if (payload?.ok === true) return { ...base, label: 'Merged', detail: text(data?.effect), tone: 'passed' };
           if (payload?.ok === false) return { ...base, label: 'Merge failed', detail: text(data?.effect), tone: 'failed' };

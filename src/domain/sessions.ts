@@ -138,7 +138,7 @@ export interface DispatchSessionInput {
  * (previously discarded) and the dispatch identity, keyed uniquely on
  * `(harness, harnessSessionId)`. Written *alongside* Run/Task state, never in
  * place of it. No resume behaviour yet: this is the substrate the rest of Unit
- * C builds on, so the store only records and reads — retirement/load land later.
+ * C builds on, so the store only records and reads — retirement/load merge later.
  */
 export class SessionStore {
   constructor(private readonly db: AsyncDbHandle) {}
@@ -146,7 +146,7 @@ export class SessionStore {
   /**
    * Persist the Session for a dispatch, upserting on `(harness,
    * harnessSessionId)`. A fresh dispatch inserts; a reused harness session
-   * (when resume lands) refreshes the capability snapshot, model/cwd, templates
+   * (when resume merges) refreshes the capability snapshot, model/cwd, templates
    * and `lastActiveAt` and re-marks it `active`. A transiently absent transcript
    * never replaces a path discovered on an earlier dispatch. Credentials are stripped from
    * `mcpTemplates` and never stored; `capabilitySnapshot` holds the whole
@@ -359,7 +359,7 @@ export class SessionStore {
   /** Reactivate an `idle` Session for a continuation Run reusing its retained
    * worktree (issue #148), clearing the retention deadline. No-op if not idle.
    * Substrate only: no production caller re-enters a retained workspace yet (the
-   * reject-continuation Run is a later ticket); the retention half of "lands in
+   * reject-continuation Run is a later ticket); the retention half of "merges in
    * the same workspace" — the worktree surviving, bound to the Session — is what
    * #148 delivers, and this is the transition that half will resume through. */
   async reactivate(id: number, now: number): Promise<SessionRow> {

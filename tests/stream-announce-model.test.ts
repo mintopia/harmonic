@@ -113,7 +113,7 @@ describe('announceTransitions — transcript transitions for a polite live regio
     expect(r2.announcements).toEqual(['Read src/x.ts completed']);
   });
 
-  it('seeding a backlog marks it seen without announcing, then speaks only what lands after', () => {
+  it('seeding a backlog marks it seen without announcing, then speaks only what merges after', () => {
     const backlog = [chunk(1, 'old reply'), tool(2, 'a', 'completed'), lifecycle(3, { event: 'finished' })];
     // Seed: discard announcements, keep the cursor (what the component does on
     // opening a conversation with history).

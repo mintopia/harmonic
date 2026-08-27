@@ -84,7 +84,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     ready: [],
     integration: { branch: `epic/${ref}`, exists: true, tip: null },
     verification: { status: null },
-    land: { inFlight: false, held: null },
+    integrate: { inFlight: false, held: null },
     foldedCount: 0,
     memberCount: 0,
   });
@@ -122,7 +122,7 @@ describe('derived-rollup pagination (epics, maps)', () => {
     vi.spyOn(server.app.ctx.trackerManager, 'listEpics').mockResolvedValue([
       epic(1, 'Parallel operator UI'),
       epic(2, 'Async DB migration'),
-      epic(3, 'Operator force-land'),
+      epic(3, 'Operator force-integrate'),
     ]);
 
     const res = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=operator`);

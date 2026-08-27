@@ -451,7 +451,7 @@ export function totalTokensOf(usage: RunUsage): number | null {
 /**
  * Run-end collection races the harness's final session-log flush: the
  * log file exists from session start, but the last assistant usage
- * lines can land milliseconds after the prompt result. When the file
+ * lines can merge milliseconds after the prompt result. When the file
  * exists and yields no per-model split yet, re-read briefly before
  * settling for aggregate totals. No file at all means no log is coming
  * (stub harnesses) — return immediately.

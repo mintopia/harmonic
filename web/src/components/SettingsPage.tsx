@@ -144,7 +144,7 @@ function ChatDefaultsFields({
   const models = harness?.models ?? [];
 
   // Repointing the Harness moves the model to that harness's default, so the
-  // pair never lands on a model the new Harness doesn't serve (the config
+  // pair never merges on a model the new Harness doesn't serve (the config
   // schema enforces chat.model ∈ the harness's models on save).
   const pickHarness = (h: string) =>
     onChange({ harness: h, model: config.harnesses[h]?.defaultModel ?? config.chat.model });
@@ -645,7 +645,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
 
         <SettingsSection
           title="Drive prompt"
-          description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs how completed work lands."
+          description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs how completed work merges."
         >
           <DriveFields
             config={local}

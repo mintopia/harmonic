@@ -310,11 +310,11 @@ export class RunStore {
    * caller can fail its task (and notify) — never silently re-run on a
    * possibly dirty working directory.
    *
-   * A Run mid-landing (`phase:'landing'`) is excluded (issue #117): a crash
-   * there really did orphan it, but it's excluded from this blind fail because a landing may
+   * A Run mid-merging (`phase:'merging'`) is excluded (issue #117): a crash
+   * there really did orphan it, but it's excluded from this blind fail because a merging may
    * already have applied an irreversible effect (a merge, say) before it died,
    * and this sweep has no way to tell — `CrashRecoveryCoordinator`
-   * (domain/crash-recovery.ts) reconciles it against its landing journal
+   * (domain/crash-recovery.ts) reconciles it against its merging journal
    * instead, ahead of this sweep running.
    */
   async markInterrupted(): Promise<RunRow[]> {
@@ -340,7 +340,7 @@ export class RunStore {
         )
       ).map((r) => r.runId),
     );
-    const orphans = running.filter((run) => run.phase !== 'landing' && !resumeEntries.has(run.id));
+    const orphans = running.filter((run) => run.phase !== 'merging' && !resumeEntries.has(run.id));
     for (const run of orphans) {
       // process-death is a `run_fact` too (issue #113, §0.3): the orphan's
       // failed/interrupted terminal stays reconstructable from the log alone. The
@@ -380,16 +380,16 @@ export class RunStore {
   }
 
   /**
-   * Runs mid-landing when a crash interrupted the process (issue #117):
-   * `state:'running', phase:'landing'` — excluded from {@link markInterrupted}'s
-   * blind orphan-fail because a landing may already have applied an
+   * Runs mid-merging when a crash interrupted the process (issue #117):
+   * `state:'running', phase:'merging'` — excluded from {@link markInterrupted}'s
+   * blind orphan-fail because a merging may already have applied an
    * irreversible effect (see that method's doc comment). The boot-time
    * `CrashRecoveryCoordinator` (domain/crash-recovery.ts) is the sole caller:
-   * it reconciles each of these against its landing journal instead.
+   * it reconciles each of these against its merging journal instead.
    */
-  listLandingOrphans(): Promise<RunRow[]> {
+  listMergeOrphans(): Promise<RunRow[]> {
     return this.db.read((db) =>
-      db.select().from(runs).where(and(eq(runs.state, 'running'), eq(runs.phase, 'landing'))).all(),
+      db.select().from(runs).where(and(eq(runs.state, 'running'), eq(runs.phase, 'merging'))).all(),
     );
   }
 

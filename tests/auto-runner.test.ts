@@ -33,7 +33,7 @@ describe('auto-runner', () => {
   });
 
   it('starts ready tasks in priority-then-FIFO order, one at a time by default', async () => {
-    // Distinct workingDirs: these Tasks each land to done and sit
+    // Distinct workingDirs: these Tasks each merge to done and sit
     // there unaccepted, so a shared direct-mode Work Context would keep the
     // House Rule (issue #120) holding the context and block every Task after the
     // first — this test exercises priority/FIFO *ordering*, not context contention.
@@ -123,12 +123,12 @@ describe('auto-runner', () => {
     await waitFor(async () => (await state(task.body.id)) === 'done');
   });
 
-  it('holds the Work Context House Rule: a second Task waits on a busy direct context while it is working, then starts once it lands (issue #120)', async () => {
+  it('holds the Work Context House Rule: a second Task waits on a busy direct context while it is working, then starts once it merges (issue #120)', async () => {
     // Ceiling 2 so the slot cap has room — what holds the second Task back is the
     // House Rule, not the Machine Ceiling.
     await server.api('PATCH', '/api/config', { autoRunner: { maxConcurrentRuns: 2 } });
     // Both omit workingDir ⇒ they share the default Workspace checkout, i.e. one
-    // direct-mode Work Context (and a real git repo, so accept can land).
+    // direct-mode Work Context (and a real git repo, so accept can merge).
     const first = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
     const second = await server.api('POST', '/api/tasks', { prompt: slowScenario(120) });
 
@@ -146,8 +146,8 @@ describe('auto-runner', () => {
     );
     expect(await state(second.body.id)).toBe('ready');
 
-    // The first lands → done, its Work Context frees, and the settle's
-    // run_changed pokes the scheduler: the second is admitted and lands too.
+    // The first merges → done, its Work Context frees, and the settle's
+    // run_changed pokes the scheduler: the second is admitted and merges too.
     await waitFor(async () => (await state(first.body.id)) === 'done');
     await waitFor(async () => (await state(second.body.id)) === 'done');
   });
@@ -163,7 +163,7 @@ describe('auto-runner', () => {
     // The dependent is held while its blocker works…
     await waitFor(async () => (await state(dep.body.id)) === 'working');
     expect(await state(dependent.body.id)).toBe('ready');
-    // …and the blocker landing (done) is what unblocks it: auto-started → done, hands-free.
+    // …and the blocker merging (done) is what unblocks it: auto-started → done, hands-free.
     await waitFor(async () => (await state(dep.body.id)) === 'done');
     await waitFor(async () => (await state(dependent.body.id)) === 'done');
   });

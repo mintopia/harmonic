@@ -8,7 +8,7 @@ import type { ConversationEvent } from './types.js';
  * true when the most recent `user_turn` has no subsequent `lifecycle` event
  * whose `payload.event` is `'finished'` or `'error'` — those are the two
  * ways a Turn concludes. Turns are strictly sequential (the server only
- * starts the next one once the current one lands one of those lifecycle
+ * starts the next one once the current one merges one of those lifecycle
  * events, queuing anything sent meanwhile), so "the latest user_turn is
  * unterminated" is an unambiguous definition of "a Turn is running" with no
  * need to track Turn boundaries any more explicitly than

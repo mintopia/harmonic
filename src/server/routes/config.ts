@@ -107,7 +107,7 @@ const configPatchBodySchema = z
       .optional()
       .meta({ example: false })
       .describe(
-        'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.',
+        'Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still merges non-exposing behaviour.',
       ),
     /** Migration-only input for clients saved before #312. It is converted to
      * `verify` before storage and never appears in the response. */

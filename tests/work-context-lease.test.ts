@@ -207,14 +207,14 @@ describe('WorkContextLeaseStore (issue #118)', () => {
       expect(updated!.expiry).toBe(now + DEFAULT_LEASE_TTL.executionMs);
     });
 
-    it('heartbeat(key, now, "landing") records the phase and keeps the execution-budget expiry (no phase parks a lease)', async () => {
+    it('heartbeat(key, now, "merging") records the phase and keeps the execution-budget expiry (no phase parks a lease)', async () => {
       await leases.acquire('direct:/tmp/repo', ownerRunId, 'running');
       const now = Date.now();
 
-      await leases.heartbeat('direct:/tmp/repo', now, 'landing');
+      await leases.heartbeat('direct:/tmp/repo', now, 'merging');
 
       const updated = await leases.getByKey('direct:/tmp/repo');
-      expect(updated!.phase).toBe('landing');
+      expect(updated!.phase).toBe('merging');
       expect(updated!.expiry).toBe(now + DEFAULT_LEASE_TTL.executionMs);
     });
 

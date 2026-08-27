@@ -41,7 +41,7 @@ export async function cancelRunningTasks(server: TestServer): Promise<void> {
 }
 
 /**
- * Seed a local-markdown ticket file so the mirrored close-after-land step can
+ * Seed a local-markdown ticket file so the mirrored close-after-merge step can
  * find it. A repo whose `docs/agents/issue-tracker.md` names `Path: tickets`
  * resolves a single unnamed scope (base id 0), so `<repo>/tickets/<ref>.md`
  * parses to ticket id `<ref>` (`local-markdown.ts`). Since f705011 made

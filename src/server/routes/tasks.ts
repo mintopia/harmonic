@@ -80,7 +80,7 @@ const taskWithDepsSchema = z
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     /** 'direct' | 'worktree' (config.ts ISOLATION_MODES); stored as plain text. */
     isolationMode: z.string().meta({ example: 'worktree' }),
-    /** Explicit base branch a worktree Run is cut from and lands back onto
+    /** Explicit base branch a worktree Run is cut from and merges back onto
      * (issue #157, ADR-0024); null resolves at spawn to the working dir's
      * current branch. */
     baseBranch: z.string().nullable().meta({ example: 'integration/epic-42' }),
@@ -151,7 +151,7 @@ const taskSchema = taskWithDepsSchema
     mapTitle: z.string().nullable().meta({ example: 'Wayfinder' }),
     /** The latest run's branch (worktree mode only); null in direct mode or before any run. */
     branch: z.string().nullable().meta({ example: 'agent/4821-rate-limiting' }),
-    /** The latest run's diffstat, snapshotted at landing; null before then or in direct mode. */
+    /** The latest run's diffstat, snapshotted at merging; null before then or in direct mode. */
     stat: z.string().nullable().meta({ example: ' src/server/rate-limit.ts | 96 ++++++++++++++\n 1 file changed, 96 insertions(+)' }),
     /** The running run's `startedAt`; null unless the Task is running (issue #100). */
     runStartedAt: z.number().nullable().meta({ example: 1784032020000 }),
@@ -159,7 +159,7 @@ const taskSchema = taskWithDepsSchema
     toolCount: z.number().nullable().meta({ example: 12 }),
     /** The running run's id, so the board can match the run_usage firehose to this card; null unless running (issue #100). */
     runId: z.number().nullable().meta({ example: 41 }),
-    /** The running run's phase (executing → validating → verifying → landing →
+    /** The running run's phase (executing → validating → verifying → merging →
      * terminal), so the Board's Active card can badge it; null unless the Task
      * is working (or a pre-phase-machine run). */
     phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
@@ -175,7 +175,7 @@ const taskSchema = taskWithDepsSchema
      * null when it is not waiting (issue #238). */
     skipReason: z.string().nullable().meta({ example: 'blocked-by #12' }),
     /** The latest run's verified branch head ref (issue #134's Run `candidateRef`),
-     * surfaced so an escalated Task shows whether Accept has work to land; null
+     * surfaced so an escalated Task shows whether Accept has work to merge; null
      * when no run has produced a candidate yet. */
     candidateRef: z.string().nullable().meta({ example: 'refs/harmonic/candidate/run-9137' }),
   })
@@ -196,7 +196,7 @@ const runSchema = z
     attempt: z.number().meta({ example: 1 }),
     state: z.enum(RUN_STATES).meta({ example: 'completed' }),
     /** The Run's position in the phase machine (issue #114): executing →
-     * validating → verifying → landing → terminal. Null on pre-feature Runs. */
+     * validating → verifying → merging → terminal. Null on pre-feature Runs. */
     phase: z.enum(RUN_PHASES).nullable().meta({ example: 'verifying' }),
     /** Failure reason: 'interrupted', an error message, or null. */
     reason: z.string().nullable().meta({ example: null }),
@@ -246,7 +246,7 @@ const eventsListResponseSchema = listResponse('events', runEventSchema);
 const ticketTimelineEventSchema = z.object({
   runId: z.number().nullable(),
   ts: z.number(),
-  kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'escalation', 'operator-accept', 'operator-reject', 'landing', 'fact']),
+  kind: z.enum(['attempt-started', 'attempt-finished', 'run-started', 'run-finished', 'lifecycle', 'verification', 'guardrail', 'escalation', 'operator-accept', 'operator-reject', 'merge', 'fact']),
   data: z.unknown(),
 });
 const ticketTimelineResponseSchema = listResponse('events', ticketTimelineEventSchema);
@@ -564,7 +564,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          'Force a working task to done (operator override): stop the agent and settle it done, skipping verification and landing. Operator only.',
+          'Force a working task to done (operator override): stop the agent and settle it done, skipping verification and merging. Operator only.',
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task in its new state.'),
@@ -662,11 +662,11 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Tasks'],
         description:
-          "Accept an escalated ticket (ADR-0041): land its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
+          "Accept an escalated ticket (ADR-0041): merge its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
         params: idParamsSchema,
         response: {
           200: taskSchema.describe('The task, done.'),
-          409: errorResponse('The task is not escalated, has no verified branch head to land, or the landing failed (the detail says why); it stays escalated.'),
+          409: errorResponse('The task is not escalated, has no verified branch head to merge, or the merging failed (the detail says why); it stays escalated.'),
         },
       },
     },
@@ -789,7 +789,7 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ['Tasks'],
-        description: 'A chronological projection of the ticket lifecycle, verification, guardrail, operator, and landing event logs.',
+        description: 'A chronological projection of the ticket lifecycle, verification, guardrail, operator, and merging event logs.',
         params: idParamsSchema,
         querystring: paginationQuerySchema,
         response: { 200: ticketTimelineResponseSchema.describe('Chronological lifecycle events for this task.'), 404: errorResponse('No task has that id.') },

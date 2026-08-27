@@ -68,7 +68,7 @@ function CloseButton({ onConfirm }: { onConfirm: () => void }) {
 }
 
 /** ADR-0041's one escalation surface: the trigger and exactly three actions,
- * on the attempt that escalated. Accept lands the verified branch head as-is,
+ * on the attempt that escalated. Accept merges the verified branch head as-is,
  * Reject with guidance resumes the loop, Close cancels the ticket and cleans up. */
 function Escalation({ attempt, task, onChanged, compact = false }: { attempt: Attempt | null; task: Task; onChanged: () => void; compact?: boolean }) {
   const [rejecting, setRejecting] = useState(false);
@@ -93,7 +93,7 @@ function Escalation({ attempt, task, onChanged, compact = false }: { attempt: At
       {reason && <p className="mt-1 whitespace-pre-wrap break-words text-ink">{reason}</p>}
       {actions && (
         <div className={compact ? 'mt-2 flex flex-wrap items-center gap-2' : 'mt-2.5 flex flex-col gap-1.5 [&>button]:w-full [&>button]:justify-center'}>
-          <button type="button" className={btnAccept} disabled={!actions.accept} title={actions.accept ? undefined : 'No verified branch head to land'} onClick={accept}>
+          <button type="button" className={btnAccept} disabled={!actions.accept} title={actions.accept ? undefined : 'No verified branch head to merge'} onClick={accept}>
             Accept
           </button>
           <button type="button" className={btnGhost} onClick={() => setRejecting(true)}>

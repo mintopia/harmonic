@@ -5,7 +5,7 @@ import { AttemptStore } from '../src/domain/attempts.js';
 
 /**
  * ADR-0041's one human surface, end to end over the stub harness in direct
- * mode: a passing native Run lands to `done` with no review gate; an exhausted
+ * mode: a passing native Run merges to `done` with no review gate; an exhausted
  * attempt budget escalates; an escalated ticket exposes exactly Accept /
  * Reject with guidance / Close, and nothing else moves it.
  */
@@ -44,7 +44,7 @@ describe('escalation: the three actions (direct mode)', () => {
     return created.body.id;
   }
 
-  it('a passing native run lands to done with no human gate; done is terminal', async () => {
+  it('a passing native run merges to done with no human gate; done is terminal', async () => {
     const taskId = await runToDone();
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('done');
@@ -56,7 +56,7 @@ describe('escalation: the three actions (direct mode)', () => {
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'x' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
 
-    // Harmonic landed it itself: the default land fact, never the operator's.
+    // Harmonic merged it itself: the default merge fact, never the operator's.
     const run = (await server.api('GET', `/api/tasks/${taskId}/runs`)).body.runs[0];
     expect(run).toMatchObject({ state: 'completed', phase: 'terminal' });
     const facts = await new RunFactStore(server.app.ctx.asyncDb).list(run.id);
@@ -77,7 +77,7 @@ describe('escalation: the three actions (direct mode)', () => {
     expect(run.reason).toContain('escalated to human');
   });
 
-  it('Accept refuses (409) when the escalated ticket has no verified branch head to land', async () => {
+  it('Accept refuses (409) when the escalated ticket has no verified branch head to merge', async () => {
     const taskId = await runToEscalated();
     const accepted = await server.api('POST', `/api/tasks/${taskId}/accept`);
     expect(accepted.status).toBe(409);

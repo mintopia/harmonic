@@ -311,7 +311,7 @@ export const appConfigSchema = z.object({
    * Run that ended its turn without an explicit finish/escalate signal is
    * re-prompted to continue before the Run is treated as unresolved — 0 keeps
    * the old single-turn behaviour. `finish_task` (not the agent closing the
-   * ticket) is the execution-complete signal: Harmonic verifies, lands per
+   * ticket) is the execution-complete signal: Harmonic verifies, merges per
    * `mergeFate`, and closes the ticket itself (issue #139).
    */
   drive: z
@@ -343,7 +343,7 @@ export const appConfigSchema = z.object({
    * as it does today. Per-Workspace overrides resolve per-key over these defaults
    * (`resolveVerifiers`, domain/setting-override.ts). Once configured, both the
    * command verifier and the agent critic execute live in the runner's
-   * `validating`/`verifying` phases (`execution/runner.ts`) and gate landing
+   * `validating`/`verifying` phases (`execution/runner.ts`) and gate merging
    * (#135/#164) — their verdicts feed `combineVerdicts` and drive settle.
    */
   /** Ordered verification contract. Commands fail fast; review runs last. */

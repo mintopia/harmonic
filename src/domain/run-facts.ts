@@ -8,8 +8,8 @@ import { attempts, runFacts, runs, type RunFactRow, type RunFactType } from '../
  * `.write()` unit) or an already-open {@link AsyncTx}. Extracted from
  * {@link RunFactStore.append} so a caller that must append a fact **atomically
  * with a second write** shares this one source of seq assignment instead of
- * re-deriving it: the landing PONC freeze (landing-coordinator.ts) appends the
- * land fact and its `landing_journal` PONC row inside a single
+ * re-deriving it: the merging PONC freeze (merge-coordinator.ts) appends the
+ * merge fact and its `merge_journal` PONC row inside a single
  * `AsyncDbHandle.transaction`, so no racing settle append can interleave
  * between them and read a not-yet-frozen PONC (ADR-0029; run-settle.ts's PONC
  * clamp relies on this). The `(run_id, seq)` unique index stays the

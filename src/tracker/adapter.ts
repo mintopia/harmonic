@@ -86,8 +86,8 @@ export interface TrackerAdapter {
   /** Remove the advisory assignment when Harmonic hands the Task back. */
   release(ticket: TicketRef): Promise<void>;
   /**
-   * Close the ticket with a comment — the landing step Harmonic runs itself
-   * after verify + land (issue #139). Only the ticket's portable identity
+   * Close the ticket with a comment — the merging step Harmonic runs itself
+   * after verify + merge (issue #139). Only the ticket's portable identity
    * ({@link TicketRef}) is needed, so a caller that has just a Task's ref
    * (never a full scanned {@link Ticket}) can close without a round-trip read.
    */

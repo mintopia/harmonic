@@ -10,7 +10,7 @@ import { openAsyncDb } from '../src/db/async.js';
 import * as schema from '../src/db/schema.js';
 
 const REPO_MIGRATIONS = join(import.meta.dirname, '..', 'drizzle');
-/** ADR-0008 (Workspaces) landed as migration 0014 — everything before it is "pre-Workspace". */
+/** ADR-0008 (Workspaces) merged as migration 0014 — everything before it is "pre-Workspace". */
 const WORKSPACES_MIGRATION = '0014';
 
 /** A migrations folder frozen at the last pre-Workspace migration, built by
@@ -399,9 +399,9 @@ describe('run_facts table (issue #112)', () => {
   });
 });
 
-describe('landing_journal table (issue #115)', () => {
+describe('merge_journal table (issue #115)', () => {
   it('exists at head with a (run_id, seq) unique index that rejects a duplicate seq for the same Run', async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-landing-journal-migrate-'));
+    const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-merge-journal-migrate-'));
     const db = await openAsyncDb(dataDir);
 
     const task = await db.write((d) => d.insert(schema.tasks).values({
@@ -416,7 +416,7 @@ describe('landing_journal table (issue #115)', () => {
     // Raw libsql connection against the same file, exercising the migrated unique
     // index directly rather than through the store.
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    const insertSql = `insert into landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, ?, ?, 'intent', 'target-ref', 'k1', '{}')`;
+    const insertSql = `insert into merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, ?, ?, 'intent', 'target-ref', 'k1', '{}')`;
     const now = Date.now();
     await sqlite.execute({ sql: insertSql, args: [run.id, 1, now] });
     // A second row at seq 1 for the same Run is rejected; a different seq is fine.

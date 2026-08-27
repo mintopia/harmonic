@@ -106,7 +106,7 @@ describe('computeDisposition (issue #112)', () => {
       const cutoff = 1;
       const before = [fact(1, 'agent-finish/unresolved')];
       expect(computeDisposition(before, cutoff)).toBe('agent-finish/unresolved');
-      // operator-cancel outranks everything, but it lands after the cutoff.
+      // operator-cancel outranks everything, but it merges after the cutoff.
       const withLate = [...before, fact(2, 'operator-cancel')];
       expect(computeDisposition(withLate, cutoff)).toBe('agent-finish/unresolved');
     });

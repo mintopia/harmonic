@@ -12,12 +12,12 @@ import type { Verdict } from '../verification/critic-schema.js';
 // cancel-reason columns without a runtime db→domain import cycle
 // (domain/turn-queue-store.ts already imports this schema).
 import type { TurnStatus, TurnPurpose, TurnCancelReason } from '../domain/turn-queue.js';
-// Type-only import, same reasoning: brands `landing_journal`'s kind/effect
-// columns without a runtime db→domain import cycle (domain/landing.ts already
+// Type-only import, same reasoning: brands `merge_journal`'s kind/effect
+// columns without a runtime db→domain import cycle (domain/merge.ts already
 // imports nothing from this schema — it is deliberately DB-free — but the
-// canonical `LandingEffect`/`LandingJournalKind` enums still live there so
+// canonical `MergeEffect`/`MergeJournalKind` enums still live there so
 // the pure module stays the single source of truth for them).
-import type { LandingEffect, LandingJournalKind } from '../domain/landing.js';
+import type { MergeEffect, MergeJournalKind } from '../domain/merge.js';
 // Type-only import (erased at compile): brands the durable tracker-fact columns
 // on `tasks` with the tracker's own normalised shapes, so the persisted facts
 // stay literally the `Ticket` fields — no redefinition to drift against. The
@@ -199,7 +199,7 @@ export const tasks = sqliteTable('tasks', {
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
   mapRef: integer('map_ref'),
   /**
-   * Explicit base branch a worktree Run is cut from and lands back onto
+   * Explicit base branch a worktree Run is cut from and merges back onto
    * (issue #157, ADR-0024). Null ⇒ resolves at spawn to the working dir's
    * current branch — today's behaviour, unchanged. This is the *expand* half
    * of an expand/contract that later lets an Epic point its members at a
@@ -299,7 +299,7 @@ export const runs = sqliteTable('runs', {
   state: text('state').$type<RunState>().notNull(),
   /**
    * The Run's position in the phase machine (issue #114, reliability-design
-   * §0.2): `executing → validating → verifying → landing → terminal`. Persisted
+   * §0.2): `executing → validating → verifying → merging → terminal`. Persisted
    * so the phase survives a restart and is reconstructable from the Run row
    * alone (never inferred from Task columns); surfaced on the Run API + card.
    * Null on pre-feature Runs. Distinct from `state`: `state` is the
@@ -338,7 +338,7 @@ export const runs = sqliteTable('runs', {
   branch: text('branch'),
   baseBranch: text('base_branch'),
   /** Immutable revisions for the settled worktree diff. They outlive the run
-   * branch, which landing or cleanup can advance or delete. */
+   * branch, which merging or cleanup can advance or delete. */
   diffBaseOid: text('diff_base_oid'),
   diffHeadOid: text('diff_head_oid'),
   /** `git diff --stat` snapshot taken when the run settles; null in direct
@@ -769,18 +769,18 @@ export const runFacts = sqliteTable('run_facts', {
 export type RunFactRow = typeof runFacts.$inferSelect;
 
 /**
- * The journaled non-interruptible landing log (issue #115, reliability-design
- * §0.3, Unit D). Landing is the set of irreversible side effects a Run's
+ * The journaled non-interruptible merge log (issue #115, reliability-design
+ * §0.3, Unit D). Merging is the set of irreversible side effects a Run's
  * completion triggers once accepted — merging a worktree branch, opening a
- * PR, closing a tracker ticket (`LandingEffect`, domain/landing.ts) — and
+ * PR, closing a tracker ticket (`MergeEffect`, domain/merge.ts) — and
  * this table is the append-only record of that process, mirroring
  * `run_facts`'s discipline exactly (same `(run_id, seq)` unique index, same
- * "only ever appended, never updated" rule) so a landing can be replayed and
+ * "only ever appended, never updated" rule) so a merge can be replayed and
  * reconciled from the log alone after a crash.
  *
- * Three row kinds (`kind`), written in this order per landing:
+ * Three row kinds (`kind`), written in this order per merge:
  *   - `ponc` — written once, before the first irreversible effect: freezes
- *     `run_facts`'s cutoff at the seq the land disposition fact just took
+ *     `run_facts`'s cutoff at the seq the merge disposition fact just took
  *     (`payload.cutoffSeq`), so `RunSettleCoordinator.settle` (run-settle.ts)
  *     can exclude any cancel/guardrail fact that races in after this point
  *     from ever winning. `effect`/`idempotency_key` are null for this kind —
@@ -791,7 +791,7 @@ export type RunFactRow = typeof runFacts.$inferSelect;
  *   - `result` — the outcome of that attempt, `payload.ok`
  *     (+ `payload.observed`/`payload.detail`). An effect counts as **applied**
  *     iff a `result` row with `ok:true` exists for its key
- *     (`foldJournal`/`reconcile`, domain/landing.ts).
+ *     (`foldJournal`/`reconcile`, domain/merge.ts).
  *
  * `idempotency_key` is what makes reconciliation crash-safe: a process that
  * dies between `intent` and `result` leaves the effect ambiguous, and
@@ -799,7 +799,7 @@ export type RunFactRow = typeof runFacts.$inferSelect;
  * key applied (`'adopt'`, no re-apply) rather than blindly retrying
  * (`'apply'`) and risking a duplicate merge/PR/ticket-close.
  */
-export const landingJournal = sqliteTable('landing_journal', {
+export const mergeJournal = sqliteTable('merge_journal', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   runId: integer('run_id')
     .notNull()
@@ -808,18 +808,18 @@ export const landingJournal = sqliteTable('landing_journal', {
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** 'ponc' | 'intent' | 'result'. */
-  kind: text('kind').$type<LandingJournalKind>().notNull(),
+  kind: text('kind').$type<MergeJournalKind>().notNull(),
   /** 'target-ref' | 'open-pr' | 'ticket-close'; null for 'ponc'. */
-  effect: text('effect').$type<LandingEffect>(),
+  effect: text('effect').$type<MergeEffect>(),
   /** The effect's identity for idempotency/reconciliation; null for 'ponc'. */
   idempotencyKey: text('idempotency_key'),
   /** JSON payload — kind-specific detail (cutoffSeq / expected / ok+observed+detail). */
   payload: text('payload').notNull().default('{}'),
 }, (t) => [
-  uniqueIndex('landing_journal_run_seq_unique').on(t.runId, t.seq),
+  uniqueIndex('merge_journal_run_seq_unique').on(t.runId, t.seq),
 ]);
 
-export type LandingJournalRow = typeof landingJournal.$inferSelect;
+export type MergeJournalRow = typeof mergeJournal.$inferSelect;
 
 /**
  * The Session turn queue's persisted substrate (issue #116, reliability-design
@@ -910,7 +910,7 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * Written for real during a live Run: the command verifier (#135) and the
  * agent critic (#136, wired in #164) both append their per-attempt record here
  * from the `verifying` phase (`execution/runner.ts` `runVerification`), and
- * `combineVerdicts` folds the verdicts into the block/escalate/land decision.
+ * `combineVerdicts` folds the verdicts into the block/escalate/merge decision.
  * `domain/verification-attempts.ts`'s `VerificationAttemptStore` stays
  * append+list only — this is its durable audit log.
  */
@@ -1036,7 +1036,7 @@ export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
  * A Session's lifecycle status (reliability-design Unit C): `active → idle →
  * retiring → retired`. **Session retirement is the sole owner of builder-worktree
  * removal** (issue #148): a worktree Session's checkout is retained through the
- * human-rejection window (so a reject-and-continue lands in the same workspace)
+ * human-rejection window (so a reject-and-continue merges in the same workspace)
  * and its builder worktree is removed **only** at retirement, coordinated with
  * the Work Context lease. `active` — a live Run owns it; `idle`
  * — no live Run, retained under a `retireDeadline` (reject-continuation / warm
@@ -1047,11 +1047,11 @@ export const SESSION_STATUSES = ['active', 'idle', 'retiring', 'retired'] as con
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**
- * Why a Session retired (issue #148), for the operator-legible record: `landed`
- * (a successful land + terminal success), `operator-disposition` (cancel / Close),
+ * Why a Session retired (issue #148), for the operator-legible record: `merged`
+ * (a successful merge + terminal success), `operator-disposition` (cancel / Close),
  * `retention-ttl` (the backstop so no idle Session retains its worktree forever).
  */
-export const SESSION_RETIRE_REASONS = ['landed', 'operator-disposition', 'retention-ttl'] as const;
+export const SESSION_RETIRE_REASONS = ['merged', 'operator-disposition', 'retention-ttl'] as const;
 export type SessionRetireReason = (typeof SESSION_RETIRE_REASONS)[number];
 
 /**

@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useS
 import { api } from './api';
 import { formatCost } from './cost';
 import type { AppConfig, Cost, Task, Workspace } from './types';
-import type { Epic, EpicLandOutcome } from './epic-model';
+import type { Epic, EpicIntegrateOutcome } from './epic-model';
 import { Board } from './components/Board';
 import { boardSections } from './board-sections-model';
 import { TaskForm } from './components/TaskForm';
@@ -105,7 +105,7 @@ function useRoute(): [Route, (next: Route, opts?: { replace?: boolean }) => void
   }, []);
   const navigate = useCallback((next: Route, opts?: { replace?: boolean }) => {
     const url = serializeRoute(next);
-    // Re-selecting the active view (or otherwise landing on the URL we're
+    // Re-selecting the active view (or otherwise settling on the URL we're
     // already at) must not push a duplicate entry — that leaves a dead Back
     // press. Sync state without touching history when nothing moved.
     if (url === `${window.location.pathname}${window.location.search}`) {
@@ -165,7 +165,7 @@ function usePeriodCost(authed: boolean, tasks: Task[] | null, workspaceId: numbe
   const shape = tasks ? `${tasks.length}:${tasks.filter((t) => t.state === 'working').length}` : '';
   // The shape-driven refresh goes through this debounced loader (rebuilt per
   // Workspace below). /api/stats is a heavy, event-loop-blocking aggregate, so a
-  // task_changed burst — an epic landing fires one per member — must fold into a
+  // task_changed burst — an epic integrating fires one per member — must fold into a
   // single trailing fetch, not one aggregate per frame. Held in a ref so the
   // debounce instance survives shape changes and can actually coalesce them.
   const refresh = useRef<(() => void) | null>(null);
@@ -318,7 +318,7 @@ export function App() {
   // Task-list failure is, so failures are swallowed rather than tracked in
   // failStreak. Keeps an open peek/focus-mode fresh by re-resolving them out
   // of the freshly-fetched list; either falls back to null if the Epic no
-  // longer derives (e.g. it fully landed and dropped off the list).
+  // longer derives (e.g. it fully integrated and dropped off the list).
   const refreshEpics = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
@@ -331,14 +331,14 @@ export function App() {
     }
   }, [activeWorkspaceId]);
 
-  // Force-land an Epic (issue #167, ADR-0026), used by the Board's focus-mode
+  // Force-integrate an Epic (issue #167, ADR-0026), used by the Board's focus-mode
   // header and the Table's group-by-Epic band headers; EpicPeek calls the API
   // directly since it already carries `workspaceId`. Refetches epics on any
   // outcome so the caller's toast/banner and the next render agree.
-  const forceLandEpic = useCallback(
-    async (epicRef: number): Promise<EpicLandOutcome> => {
+  const forceIntegrateEpic = useCallback(
+    async (epicRef: number): Promise<EpicIntegrateOutcome> => {
       if (activeWorkspaceId === null) throw new Error('No active workspace');
-      const outcome = await api.forceLandEpic(activeWorkspaceId, epicRef);
+      const outcome = await api.forceIntegrateEpic(activeWorkspaceId, epicRef);
       refreshEpics();
       return outcome;
     },
@@ -360,7 +360,7 @@ export function App() {
     if (!authed || activeWorkspaceId === null) return;
     refresh();
     refreshEpics();
-    // A member land fires a burst of task_changed in quick succession, and each
+    // A member merge fires a burst of task_changed in quick succession, and each
     // one used to trigger its own api.epics() round trip. Debounce them into a
     // single trailing refetch so the firehose folds to one request per burst;
     // the Task-list updates below still apply immediately, per event.
@@ -383,8 +383,8 @@ export function App() {
         setFetchedTask((current) =>
           current?.id === msg.task.id || routeRef.current.task === msg.task.id ? msg.task : current,
         );
-        // Keep the Epic peek + landing rail live (ADR-0026): a member's
-        // task_changed is exactly the signal an Epic's fold/land/verification
+        // Keep the Epic peek + merge rail live (ADR-0026): a member's
+        // task_changed is exactly the signal an Epic's fold/integrate/verification
         // state may have moved, so refetch alongside the Task-list update.
         debouncedRefreshEpics();
       }
@@ -556,7 +556,7 @@ export function App() {
   };
 
   // Force a tracker re-poll now (rescan the repo + mirror), then re-fetch the
-  // board so mirrored changes land immediately instead of on the next interval.
+  // board so mirrored changes appear immediately instead of on the next interval.
   const refreshTracker = () => {
     if (activeWorkspaceId === null || refreshingTracker) return;
     setRefreshingTracker(true);
@@ -596,7 +596,7 @@ export function App() {
     refresh();
   };
 
-  // Deleting from the Workspace page (#64): drop it, then land on the board of
+  // Deleting from the Workspace page (#64): drop it, then return to the board of
   // the next Workspace — or, if it was the last, on the empty state (#68).
   const handleWorkspaceDeleted = (id: number) => {
     const remaining = workspaces.filter((w) => w.id !== id);
@@ -968,7 +968,7 @@ export function App() {
                         onChanged={refresh}
                         onNewTask={() => setEditing('new')}
                         onOpenEpic={setOpenEpic}
-                        onForceLandEpic={forceLandEpic}
+                        onForceIntegrateEpic={forceIntegrateEpic}
                         focusEpic={focusEpic}
                         onClearFocus={() => setFocusEpic(null)}
                       />
@@ -981,7 +981,7 @@ export function App() {
                       filters={route.table}
                       onFiltersChange={setTableFilters}
                       epics={epics}
-                      onForceLandEpic={forceLandEpic}
+                      onForceIntegrateEpic={forceIntegrateEpic}
                     />
                   )}
                   {view === 'graph' && (

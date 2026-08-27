@@ -36,13 +36,13 @@ export function runDisplay(run: Run): RunDisplay {
     case 'cancelled':
       return { word: 'cancelled', dot: 'neutral', pulse: false };
     case 'completed':
-      // Landed (or an operator Complete) — reads as done, not amber.
+      // Merged (or an operator Complete) — reads as done, not amber.
       return { word: 'merged', dot: 'merged', pulse: false };
     case 'running':
-      // executing | validating | verifying carry their phase word; `landing`
+      // executing | validating | verifying carry their phase word; `merging`
       // displays as the operator-facing "merging" label.
       // a pre-feature run with no phase reads the generic 'running'.
-      const word = run.phase === 'landing' ? 'merging' : run.phase && run.phase !== 'terminal' ? run.phase : 'running';
+      const word = run.phase === 'merging' ? 'merging' : run.phase && run.phase !== 'terminal' ? run.phase : 'running';
       return { word, dot: 'running', pulse: true };
   }
 }

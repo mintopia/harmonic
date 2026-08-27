@@ -47,7 +47,7 @@ export const createTaskInputSchema = z.object({
   conflictResolveTurns: z.number().int().min(0).optional().meta({ example: 2 }),
   state: z.enum(['draft', 'ready']).optional().meta({ example: 'ready' }),
   dependsOn: z.array(z.number().int().positive()).optional().meta({ example: [4818] }),
-  /** Explicit base branch a worktree Run is cut from and lands back onto
+  /** Explicit base branch a worktree Run is cut from and merges back onto
    * (issue #157, ADR-0024). Omitted ⇒ resolves at spawn to the working dir's
    * current branch (today's behaviour). Not an inheritable default — it is a
    * plain per-Task target, so unlike the inheritable overrides it never resolves
@@ -382,7 +382,7 @@ export class TaskService {
                 // only on a tracker Harmonic can close (a genuine external
                 // reopen). An inbound-only adapter that can't close leaves the
                 // ticket open by design, so suppress the flip — otherwise the
-                // Task re-runs, lands, the close no-ops, and it re-readies
+                // Task re-runs, merges, the close no-ops, and it re-readies
                 // forever (issue #237).
                 existing.state === 'done' && input.trackerCanClose !== false
                 ? 'ready'
@@ -423,7 +423,7 @@ export class TaskService {
         return { row: updated, dirty: true };
       }
       // Each Workspace's poll loop mirrors into its own board (issue #45): the
-      // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
+      // Task merges in the polling Workspace, and (workspaceId, trackerRef) keys
       // the upsert so overlapping issue numbers across repos stay distinct.
       const inserted = await db
         .insert(tasks)
@@ -833,7 +833,7 @@ export class TaskService {
    * Point a not-yet-spawned Task at a base branch (issue #159). The
    * Epic-integration coordinator calls this to retarget a ready member's
    * `baseBranch` onto its Epic's integration branch before the Auto-Runner
-   * spawns the worktree Run, so the Run forks from — and later lands onto — the
+   * spawns the worktree Run, so the Run forks from — and later merges onto — the
    * integration branch (`resolveBaseBranch` reads this column, issue #157).
    * Idempotent: a no-op that returns the current row when the value is unchanged,
    * so a re-poll never churns `updatedAt` or fires a spurious change. Unlike

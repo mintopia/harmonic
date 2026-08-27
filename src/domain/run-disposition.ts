@@ -13,7 +13,7 @@
  */
 
 /**
- * Every terminal disposition the coordinator can land, **highest precedence
+ * Every terminal disposition the coordinator can merge, **highest precedence
  * first**. The reliability-design §0.3 locked ordering is:
  *
  *   operator-cancel > escalate > verify-fail >
@@ -23,13 +23,13 @@
  * just above `escalate`: an operator's explicit Accept of an escalated-then-
  * adopted-for-review Run is a deliberate human disposition that must outrank
  * the automatic `escalate` fact already sitting on that Run's log (otherwise
- * the accept's irreversible land runs, but the disposition still collapses
+ * the accept's irreversible merge runs, but the disposition still collapses
  * back to the earlier escalate — a split-brain between the merge that
  * happened and the bookkeeping that says it didn't). An operator cancel still
  * wins over an accept, though: cancel-vs-accept is resolved the same way every
- * other cancel race is (`landing-coordinator.ts`'s PONC) — safety wins, but
- * only up to the point of no return; a cancel fact appended *after* the land's
- * PONC cutoff is late and cannot un-land a Run the accept has already
+ * other cancel race is (`merge-coordinator.ts`'s PONC) — safety wins, but
+ * only up to the point of no return; a cancel fact appended *after* the merge's
+ * PONC cutoff is late and cannot un-merge a Run the accept has already
  * committed.
  */
 export const DISPOSITION_PRECEDENCE = [

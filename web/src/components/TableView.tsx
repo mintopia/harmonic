@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { formatCost } from '../cost';
 import type { Task } from '../types';
 import { TASK_STATES } from '../types';
-import type { Epic, EpicLandOutcome } from '../epic-model';
-import { FORCE_LAND_CONSEQUENCE, epicByTaskId } from '../epic-model';
+import type { Epic, EpicIntegrateOutcome } from '../epic-model';
+import { FORCE_INTEGRATE_CONSEQUENCE, epicByTaskId } from '../epic-model';
 import { TABLE_HARNESSES, TABLE_PRIORITIES, type TableFilters, type SortKey } from '../router-model';
 import {
   btnGhost,
@@ -21,7 +21,7 @@ import {
   touchOverlay,
   touchTargetInline,
 } from '../ui';
-import { toastError, toastLandOutcome } from '../toast';
+import { toastError, toastIntegrateOutcome } from '../toast';
 import { fetchTasks, TABLE_PAGE_SIZE } from '../table-model';
 import { taskKey } from '../id-format.js';
 import { EmptyState } from './EmptyState';
@@ -39,12 +39,12 @@ function EpicBandHeader({
   epic,
   collapsed,
   onToggle,
-  onForceLandEpic,
+  onForceIntegrateEpic,
 }: {
   epic: Epic;
   collapsed: boolean;
   onToggle: () => void;
-  onForceLandEpic?: (epicRef: number) => Promise<EpicLandOutcome>;
+  onForceIntegrateEpic?: (epicRef: number) => Promise<EpicIntegrateOutcome>;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2.5 bg-raised/40 px-4 py-1.5">
@@ -64,7 +64,7 @@ function EpicBandHeader({
         {epic.foldedCount}/{epic.memberCount} merged
       </span>
       <div className="flex-1" />
-      {onForceLandEpic && (
+      {onForceIntegrateEpic && (
         <div className="flex shrink-0 flex-col items-end gap-1">
           <ArmedButton
             label="Force-merge"
@@ -72,10 +72,10 @@ function EpicBandHeader({
             ariaLabel={`Force-merge Epic #${epic.ref}`}
             className={btnQuietDestructive}
             onConfirm={() => {
-              onForceLandEpic(epic.ref).then(toastLandOutcome, toastError);
+              onForceIntegrateEpic(epic.ref).then(toastIntegrateOutcome, toastError);
             }}
           />
-          <p className="max-w-[220px] text-right text-label text-faint">{FORCE_LAND_CONSEQUENCE}.</p>
+          <p className="max-w-[220px] text-right text-label text-faint">{FORCE_INTEGRATE_CONSEQUENCE}.</p>
         </div>
       )}
     </div>
@@ -88,7 +88,7 @@ export function TableView({
   filters,
   onFiltersChange,
   epics = [],
-  onForceLandEpic,
+  onForceIntegrateEpic,
 }: {
   /** Scopes the table to the active Workspace (ADR-0008); no fetch until resolved. */
   workspaceId: number | null;
@@ -99,7 +99,7 @@ export function TableView({
   /** The active Workspace's Epics (issue #167, ADR-0026): groups member rows
    * into collapsible bands; empty means the table stays a flat list. */
   epics?: Epic[];
-  onForceLandEpic?: (epicRef: number) => Promise<EpicLandOutcome>;
+  onForceIntegrateEpic?: (epicRef: number) => Promise<EpicIntegrateOutcome>;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
@@ -347,7 +347,7 @@ export function TableView({
                   epic={epic}
                   collapsed={collapsedBands.has(epic.ref)}
                   onToggle={() => toggleBand(epic.ref)}
-                  onForceLandEpic={onForceLandEpic}
+                  onForceIntegrateEpic={onForceIntegrateEpic}
                 />
                 {!collapsedBands.has(epic.ref) && (
                   <div className="divide-y divide-hairline border-t border-hairline">

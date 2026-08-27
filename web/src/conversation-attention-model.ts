@@ -1,7 +1,7 @@
 /**
  * Which Conversations currently need the operator's attention (issue #15):
  * a permission request the Harness is blocked on, or a finished Turn, that
- * landed for a Conversation the operator wasn't looking at when it did. The
+ * merged for a Conversation the operator wasn't looking at when it did. The
  * collapsed launcher button shows one honest dot when this set is non-empty
  * — a small accent dot, the same "something's worth a look" register
  * TaskDetail's Details-tab flag already uses (`bg-accent`), not a state

@@ -60,12 +60,12 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.status).toBe(200);
     expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', phase: 'terminal', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeGreaterThan(0);
-    // Agent-finish took it executing → verifying → landing, never jumping
+    // Agent-finish took it executing → verifying → merging, never jumping
     // straight to a terminal phase (`validating` retired by the reshape).
     const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phaseEvents).toEqual(['verifying', 'landing']);
+    expect(phaseEvents).toEqual(['verifying', 'merging']);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -80,27 +80,27 @@ describe('run execution over ACP (direct mode)', () => {
     );
   });
 
-  it('a native Run lands terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
+  it('a native Run merges terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
     const { taskId, runId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],
       stopReason: 'end_turn',
     });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
-    const landed = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(landed.state).toBe('completed');
-    expect(landed.phase).toBe('terminal');
-    expect(landed.finishedAt).toBeGreaterThan(0);
+    const merged = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(merged.state).toBe('completed');
+    expect(merged.phase).toBe('terminal');
+    expect(merged.finishedAt).toBeGreaterThan(0);
 
     // The full phase path is reconstructable from the persisted event log:
-    // executing → verifying → landing (the drive loop lands itself; `validating`
+    // executing → verifying → merging (the drive loop merges itself; `validating`
     // retired by the reshape). `terminal` is the coordinator's row write, not a
     // drive-loop phase event.
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['verifying', 'landing']);
-    // Done is terminal: the human surface does not apply, and nothing re-lands.
+    expect(phases).toEqual(['verifying', 'merging']);
+    // Done is terminal: the human surface does not apply, and nothing re-merges.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
@@ -539,7 +539,7 @@ describe('wall-clock guardrail (issue #127)', () => {
     }
   });
 
-  it('does not kill an over-budget run after its attempt tasks enter landing', async () => {
+  it('does not kill an over-budget run after its attempt tasks enter merging', async () => {
     const server = await startServer({
       ...stubHarness(),
       // 600ms budget: enough headroom for the stub spawn + attempt waitFors

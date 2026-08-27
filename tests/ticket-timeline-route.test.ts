@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RunFactStore } from '../src/domain/run-facts.js';
-import { LandingJournalStore } from '../src/domain/landing-journal.js';
+import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { startServer, stubHarness, type TestServer } from './helpers.js';
 
 describe('GET /api/tasks/:id/timeline (issue #328)', () => {
@@ -33,7 +33,7 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
     await server.app.ctx.guardrailEvents.append(run.id, {
       dimension: 'wall-clock', phase: 'executing', limitValue: 60_000, observedValue: 60_001, configSource: 'default',
     }, 250);
-    await new LandingJournalStore(server.app.ctx.asyncDb).recordResult(run.id, {
+    await new MergeJournalStore(server.app.ctx.asyncDb).recordResult(run.id, {
       effect: 'target-ref', idempotencyKey: 'merge', ok: true, observed: { oid: 'def456' },
     }, 800);
     const otherTask = await server.api('POST', '/api/tasks', { prompt: 'another timeline' });
@@ -44,14 +44,14 @@ describe('GET /api/tasks/:id/timeline (issue #328)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.events.map((event: { kind: string }) => event.kind)).toEqual([
-      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'landing', 'attempt-finished', 'verification', 'run-finished', 'lifecycle',
+      'attempt-started', 'run-started', 'verification', 'guardrail', 'escalation', 'verification', 'operator-accept', 'merge', 'attempt-finished', 'verification', 'run-finished', 'lifecycle',
     ]);
     expect(response.body.events.map((event: { ts: number }) => event.ts)).toEqual([50, 100, 200, 250, 300, 400, 700, 800, 850, 900, 900, expect.any(Number)]);
     expect(response.body.events.every((event: { runId: number | null }) => event.runId === null || event.runId === run.id)).toBe(true);
     expect(response.body.events.find((event: { kind: string }) => event.kind === 'verification')).toMatchObject({ data: {
       verdict: 'pass', summary: 'checks passed', mechanism: 'command',
     } });
-    expect(response.body.events.find((event: { kind: string }) => event.kind === 'landing')).toMatchObject({ data: {
+    expect(response.body.events.find((event: { kind: string }) => event.kind === 'merge')).toMatchObject({ data: {
       effect: 'target-ref', payload: { ok: true },
     } });
     expect(response.body.events.find((event: { data: { outcome?: string } }) => event.data.outcome === 'skipped')).toMatchObject({ data: { outcome: 'skipped' } });

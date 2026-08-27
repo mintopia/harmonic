@@ -7,30 +7,30 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
-import { LandingJournalStore } from '../src/domain/landing-journal.js';
-import { poncCutoff } from '../src/domain/landing.js';
+import { MergeJournalStore } from '../src/domain/merge-journal.js';
+import { poncCutoff } from '../src/domain/merge.js';
 import { allWorkspaces } from './helpers.js';
 
 /**
- * The append-only landing journal store (issue #115, reliability-design
+ * The append-only merging journal store (issue #115, reliability-design
  * §0.3) — mirrors tests/run-facts.test.ts, same guarantees for the sibling
  * table.
  */
-describe('LandingJournalStore (issue #115)', () => {
+describe('MergeJournalStore (issue #115)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
-  let journal: LandingJournalStore;
+  let journal: MergeJournalStore;
   let runId: number;
   let otherRunId: number;
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-journal-'));
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-merge-journal-'));
     asyncDb = await openAsyncDb(dir);
     const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     const runStore = new RunStore(asyncDb);
-    journal = new LandingJournalStore(asyncDb);
+    journal = new MergeJournalStore(asyncDb);
 
-    const task = await tasks.create({ prompt: 'land it', state: 'ready' });
+    const task = await tasks.create({ prompt: 'merge it', state: 'ready' });
     runId = (await runStore.create(task.id)).id;
     const otherTask = await tasks.create({ prompt: 'separate log', state: 'ready' });
     otherRunId = (await runStore.create(otherTask.id)).id;
@@ -71,7 +71,7 @@ describe('LandingJournalStore (issue #115)', () => {
     const raw = createClient({ url: `file:${join(dir, 'harmonic.db')}` });
     await expect(
       raw.execute({
-        sql: `insert into landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, 1, ?, 'intent', 'target-ref', 'k', '{}')`,
+        sql: `insert into merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) values (?, 1, ?, 'intent', 'target-ref', 'k', '{}')`,
         args: [runId, Date.now()],
       }),
     ).rejects.toThrow(/UNIQUE constraint failed/);
