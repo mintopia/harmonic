@@ -94,6 +94,33 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
     });
   });
 
+  describe('codeIndexRepoId (Runner-indexed worktree, so the critic reads the candidate tree)', () => {
+    it('renders nothing when no repo id is supplied (CLI absent / indexing failed)', () => {
+      const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+      expect(prompt).not.toMatch(/CODE INDEX/);
+    });
+
+    it('names the repo id and forbids resolving the repo by `.`', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        codeIndexRepoId: 'local/critic-42-deadbeef',
+      });
+      expect(prompt).toMatch(/CODE INDEX/);
+      expect(prompt).toContain('local/critic-42-deadbeef');
+      expect(prompt).toMatch(/do not resolve the repo by `\.`/i);
+    });
+
+    it('keeps the reply schema intact with the repo id present', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        codeIndexRepoId: 'local/critic-42-deadbeef',
+      });
+      expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
+    });
+  });
+
   describe('mergeCleanliness (Runner-injected trusted fact — critic never runs git)', () => {
     it('renders nothing when the merge fact is absent (backward compatible)', () => {
       const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });

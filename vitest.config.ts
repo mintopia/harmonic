@@ -12,6 +12,9 @@ const shared = {
   testTimeout: 20_000,
   hookTimeout: 20_000,
   pool: 'forks',
+  // Keep the suite hermetic: never shell out to the real jCodeMunch code-index
+  // CLI (`code-index.ts`). Tests that exercise it override the env themselves.
+  setupFiles: ['./tests/setup-env.ts'],
 } as const;
 
 export default defineConfig({

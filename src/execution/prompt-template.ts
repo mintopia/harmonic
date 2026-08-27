@@ -26,6 +26,19 @@ export function fillTemplate(template: string, fields: Record<string, string | n
   return template.replace(/\{([^{}]+)\}/g, (match, key: string) => (key in fields ? String(fields[key]) : match));
 }
 
+/**
+ * Guidance appended to an agent turn whose worktree Harmonic has indexed as its
+ * own jCodeMunch repo (`code-index.ts`). Without it the harness's code-index MCP
+ * resolves `.` to the canonical checkout on another branch and reads stale code;
+ * with the explicit repo id it queries THIS worktree. Pure and dependency-free so
+ * the web settings preview compiles the same text. Empty id ⇒ nothing rendered
+ * (CLI absent or indexing failed — the agent falls back to reading files).
+ */
+export function codeIndexRepoGuidance(repoId: string): string {
+  if (!repoId) return '';
+  return `\n\nCODE INDEX: this worktree is indexed as jCodeMunch repo \`${repoId}\`. If you use a code-index / jCodeMunch tool, pass \`${repoId}\` as the repo for every query. Do NOT resolve the repo by \`.\` or index path — that points at a different checkout of this repository, on another branch, WITHOUT the changes in this worktree, so it would show you stale code.`;
+}
+
 /** research→`research`, everything else→`implement` (issue #33). */
 export function skillFor(task: Pick<DriveTask, 'wayfinderType' | 'harness'>): string {
   const prefix = task.harness === 'codex' ? '$' : '/';

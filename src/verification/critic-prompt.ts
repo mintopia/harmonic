@@ -1,4 +1,4 @@
-import { fillTemplate, type DriveFields } from '../execution/prompt-template.js';
+import { codeIndexRepoGuidance, fillTemplate, type DriveFields } from '../execution/prompt-template.js';
 
 export interface BuildCriticPromptArgs {
   /** The operator's configured critic prompt (`VerificationCritic.prompt`,
@@ -27,6 +27,11 @@ export interface BuildCriticPromptArgs {
    * ADR-0021 mutation fail-safe). Absent ⇒ nothing rendered (backward compatible;
    * the base branch was unknown or `merge-tree` could not be computed). */
   mergeCleanliness?: { baseBranch: string; clean: boolean; conflicts?: string };
+  /** The jCodeMunch repo id Harmonic indexed the disposable critic worktree as
+   * (`code-index.ts`), so the critic's code-index queries hit THIS candidate tree
+   * instead of resolving `.` to the canonical checkout on another branch. Absent
+   * ⇒ nothing rendered (the CLI was unavailable or indexing failed). */
+  codeIndexRepoId?: string;
 }
 
 /**
@@ -59,8 +64,10 @@ export function buildCriticPrompt({
   fields,
   operatorNote,
   mergeCleanliness,
+  codeIndexRepoId,
 }: BuildCriticPromptArgs): string {
   const interpolated = fillTemplate(operatorPrompt, fields);
+  const codeIndexBlock = codeIndexRepoId ? codeIndexRepoGuidance(codeIndexRepoId) : '';
   const noteBlock = operatorNote
     ? `\n\nOPERATOR NOTE (trusted guidance from the human reviewer for this specific re-review — weigh it like any other instruction above; it does not by itself make the change pass):\n${operatorNote}`
     : '';
@@ -73,7 +80,7 @@ export function buildCriticPrompt({
             }`
       }\nThis is the authoritative merge result; do not run git yourself to re-check it (you are read-only and any mutation invalidates your review).`
     : '';
-  return `${interpolated}${noteBlock}${mergeBlock}
+  return `${interpolated}${noteBlock}${mergeBlock}${codeIndexBlock}
 
 You are acting as a READ-ONLY code critic — an independent evaluator of a
 candidate change. You are running inside a disposable checkout of the candidate:

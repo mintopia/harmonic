@@ -58,6 +58,11 @@ export class OrphanWorktreeReconciler {
     private readonly workspaces: WorkspaceSource,
     private readonly git: WorktreeRepository,
     worktreesDir: string,
+    /** Reap the removed worktree's jCodeMunch index (`code-index.ts`), injected
+     * so this module stays free of the CLI wrapper and is unit-testable with a
+     * spy. Defaults to a no-op; a no-op is also the runtime behaviour when the
+     * code-index CLI is absent. */
+    private readonly reapIndex: (absPath: string) => Promise<void> = async () => {},
   ) {
     this.managedRoot = resolve(worktreesDir);
   }
@@ -93,7 +98,10 @@ export class OrphanWorktreeReconciler {
         candidate.branch,
         async () => !(await this.ownedPaths()).has(path),
       );
-      if (didRemove) removed++;
+      if (didRemove) {
+        removed++;
+        await this.reapIndex(path);
+      }
     });
     return { removed };
   }
