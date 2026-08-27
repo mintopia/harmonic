@@ -317,11 +317,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     asyncDb = await openAsyncDb(dir);
     // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
-    // Harmonic repo during a test run. The afk-direct admission gate (issue
-    // #149) rejects a dirty git context, which is irrelevant to these
-    // settle-logic tests. Point the workspace at an isolated non-git directory
-    // where the branch contract does not apply, so the gate skips and each Run
-    // exercises its intended settle path.
+    // Harmonic repo during a test run, which these settle-logic tests must not
+    // touch. Point the workspace at an isolated non-git directory so each Run
+    // exercises its intended settle path (a non-git context yields no candidate).
     workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
     await asyncDb.write((d) => d.update(workspaces).set({ workingDir: workDir }).run());
   });

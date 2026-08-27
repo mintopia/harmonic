@@ -696,33 +696,20 @@ export type WorkContextLeaseDispositionRow = typeof workContextLeaseDispositions
  * The ending-signal fact types the coordinator understands **today** (issue
  * #112, reliability-design §0.3). Every way a Run can end is recorded as a
  * `run_fact`; this is the set that has an emitter now. Later spine units append
- * their own kinds (branch-violation, verify-fail) without touching the
- * coordinator contract — the column is free `text`, and the single place a new
- * kind is *ranked* is `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So
- * this list is a convenience type, not a closed constraint: the store never
- * rejects an unknown `type`. `guardrail-trip` now has an emitter (issue #127,
- * the phase-scoped wall-clock Guardrail) — its structured evidence lives in
- * the separate `guardrail_events` log (see below); this fact type is the
- * disposition-facing signal that a trip happened.
- *
- * `branch-violation` (issue #151, reliability-design Unit D) now has an emitter
- * too: the `validating`-phase branch-contract check (`classifyBranchOutcome`,
- * issue #150). On an ambiguous git outcome the Runner appends this fact carrying
- * the structured branch-violation report and Escalates. It holds the precedence
- * slot already reserved in `DISPOSITION_PRECEDENCE` (just below `escalate`).
- *
- * `run-start-state` (issue #149, reliability-design Unit D) is the one **non-
- * ending** fact in this set: it records an afk direct Run's admitted start-state
- * (repo identity, start branch, start commit OID, worktree path, dirty
- * fingerprint) for the later branch-contract check. It is deliberately absent
- * from `DISPOSITION_PRECEDENCE`, so `computeDisposition` sinks it to the bottom
- * (rank ∞) — a start-state fact can never be mistaken for a terminal
- * disposition, and a Run that has only recorded its start is still "not ended".
+ * their own kinds (e.g. verify-fail) without touching the coordinator contract —
+ * the column is free `text`, and the single place a new kind is *ranked* is
+ * `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So this list is a
+ * convenience type, not a closed constraint: the store never rejects an unknown
+ * `type`, so historical rows carrying a since-removed kind still read back.
+ * `guardrail-trip` now has an emitter (issue #127, the phase-scoped wall-clock
+ * Guardrail) — its structured evidence lives in the separate `guardrail_events`
+ * log (see below); this fact type is the disposition-facing signal that a trip
+ * happened.
  *
  * `session-resumed` and `resume-entry` (issue #146, reliability-design Unit C)
- * are the two boot-time crash-resume markers, both **non-ending** like
- * `run-start-state` (absent from `DISPOSITION_PRECEDENCE`, so they never read as a
- * terminal disposition). `session-resumed` is stamped on the interrupted Run that
+ * are the two boot-time crash-resume markers, both **non-ending** (absent from
+ * `DISPOSITION_PRECEDENCE`, so they never read as a terminal
+ * disposition). `session-resumed` is stamped on the interrupted Run that
  * was resumed (recording the new Run it resumed into); `resume-entry` is stamped
  * on that **new** Run (recording the interrupted Run it continues). Together they
  * make the boot resume sweep idempotent: a Run carrying either marker is never
@@ -732,13 +719,10 @@ export const RUN_FACT_TYPES = [
   'operator-cancel',
   'operator-accept',
   'escalate',
-  'branch-violation',
-  'branch-recovery',
   'agent-finish/unresolved',
   'failed',
   'process-death',
   'guardrail-trip',
-  'run-start-state',
   'session-resumed',
   'resume-entry',
   'session-continuation',

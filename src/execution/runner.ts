@@ -4,15 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Git, GitError } from './git.js';
 import { classifyGitFailure, type GitCircuitBreaker } from './git-failure.js';
-import {
-  detachForDirectRun,
-  captureDirectHead,
-  directRefFor,
-  isDirectRef,
-  restoreLiveCheckout,
-  reattachBareDetachedHead,
-  rematerializeCandidate,
-} from './execution-isolation.js';
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
@@ -74,20 +65,6 @@ import { resolvePrices, costOfUsages, type PriceTable } from './pricing.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { isForeignKeyViolation, type WorkContextLeaseStore } from '../domain/work-context-leases.js';
 import { logger } from '../logger.js';
-import {
-  evaluateAdmission,
-  AdmissionRejected,
-  type StartStateProbe,
-  type RunStartState,
-} from '../domain/run-start-state.js';
-import {
-  classifyBranchOutcome,
-  planDeterministicRecovery,
-  evaluateReMergeResult,
-  type BranchContractObservation,
-  type BranchClassification,
-} from '../domain/branch-recovery.js';
-import { parseRefLines, diffRefs } from '../domain/branch-observation.js';
 import { landBranchAndRunPostLand, type PostLandHook } from './branch-landing.js';
 import { integrationBranchName, parseIntegrationBranch } from './epic-integration.js';
 import type {
@@ -277,22 +254,6 @@ interface Workspace {
    * before the agent touches it, so a dirty/concurrently-editable context is
    * not snapshotted (its pre-existing edits would otherwise be swept in). */
   startDirty?: boolean;
-  /**
-   * Set for an afk **direct** Run whose HEAD was detached onto a private
-   * Harmonic ref at start (issue #152): the branch it was parked on and the
-   * start commit. Its presence tells `finalizeWorkspace` to restore the live
-   * target checkout coherently at settle (re-attach HEAD to `startBranch`,
-   * sweep the agent's changes — already frozen in the candidate). Unset for
-   * worktree mode, native direct Runs, and non-git contexts. */
-  directIsolation?: { startBranch: string; startCommit: string };
-  /**
-   * Set when the `validating` branch-contract check (issue #151) found an
-   * ambiguous git outcome and Escalated. Tells `finalizeWorkspace` to **retain**
-   * the worktree/refs as-is (skip the direct-mode checkout restore / worktree
-   * teardown) so the operator has the evidence to disposition the violation —
-   * reliability-design Unit D "worktree/refs retained until operator disposition".
-   */
-  retainForBranchViolation?: boolean;
 }
 
 interface ActiveRun {
@@ -378,35 +339,15 @@ interface HealContext {
 }
 
 /**
- * The corrective context threaded into a bounded agent re-merge turn (issue #155,
- * reliability-design Unit D). When a Run's git outcome is *ambiguous* and
- * deterministic recovery (#154) cannot safely land, Harmonic asks the agent — in
- * exactly ONE corrective turn — to re-home its work cleanly; `reason`/`detail`
- * surface the branch-contract violation as feedback. `allowedTree` is the tree of
- * the pre-re-merge frozen candidate — the recorded artifact the corrective
- * result must reproduce to be within the allowed set (judged by
- * {@link evaluateReMergeResult}). Distinct from {@link HealContext}: a re-merge
- * turn is bounded to one, never self-heals afterward, and lands only on an
- * allowed-set match, else Escalates with no second mutating turn.
- */
-interface ReMergeContext {
-  reason: string;
-  detail: string;
-  /** The recorded-artifact tree the #155 allowed-set gate ({@link landReMerge})
-   * checks the corrective result against. */
-  allowedTree: string;
-}
-
-/**
  * Thrown by {@link Runner.resolveBaseBranch} when a worktree Run's base branch
  * cannot be resolved to a real branch name (issue #198): the base repo is on a
  * detached HEAD (no current branch) and the Task carries no explicit
  * `baseBranch`. Rather than record the literal `base_branch: "HEAD"` and fork /
  * land against nothing — silently defeating worktree isolation once a landing
  * has left the base repo detached — the Runner catches this around
- * `prepareWorkspace` and routes it to `settleEscalated` (operator-legible), the
- * same disposition as {@link AdmissionRejected}. The `reason` tells the operator
- * how to fix it: reattach the base repo to a branch, or set the Task's base.
+ * `prepareWorkspace` and routes it to `settleEscalated` (operator-legible). The
+ * `reason` tells the operator how to fix it: reattach the base repo to a branch,
+ * or set the Task's base.
  */
 export class BaseBranchUnresolved extends Error {
   constructor(public readonly reason: string) {
@@ -446,12 +387,7 @@ export class EpicBaseNotReady extends Error {
  */
 type TurnOutcome =
   | { kind: 'terminal' }
-  | { kind: 'actionable-fail'; reason: string; output: string }
-  // A first-turn ambiguous branch outcome that is eligible for a bounded agent
-  // re-merge (issue #155): the turn deliberately did not settle, handing the
-  // decision up to the {@link Runner.drive} loop to dispatch exactly ONE
-  // corrective re-merge turn. `reason`/`detail` are the branch-contract violation.
-  | { kind: 'remerge-needed'; reason: string; detail: string };
+  | { kind: 'actionable-fail'; reason: string; output: string };
 
 /** The landing freshness gate's verdict (ADR-0041): land at `oid`, hand a
  * failed re-entry (rebase conflict / verification fail) up to the unified
@@ -713,7 +649,7 @@ export class Runner {
           .then(() => dropIndexForPath(removedPath))
           .catch((err) => logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`));
       }
-      if (run.branch && !isDirectRef(run.branch) && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
+      if (run.branch && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
         await Git.deleteBranch(task.workingDir, run.branch).catch((err) =>
           logger.error(`task ${task.id} close: branch '${run.branch}' removal failed: ${String(err)}`),
         );
@@ -1281,104 +1217,20 @@ export class Runner {
    */
   private async prepareWorkspace(task: TaskRow, run: RunRow, resume = false): Promise<Workspace> {
     if (task.isolationMode !== 'worktree') {
+      // Direct isolation works in place (ADR-0046): the agent commits directly
+      // on the live base branch, so its commits only ever move the branch
+      // forward and a passing verification means the work is already where it
+      // belongs. There is no detach, no private ref, and no admission gate — a
+      // pre-existing dirty tree (changes the agent did not make) is tolerated
+      // and never fails the run. Capture the base commit + dirty-state now,
+      // before the agent edits anything, so the candidate is the commits the
+      // agent adds on top and a pre-existing dirty tree is not swept in.
       const workspace: Workspace = { cwd: task.workingDir, env: {} };
-
-      // Harmonic owns branching (issue #149, reliability-design Unit D, ADR-0023).
-      // For an afk **direct** Run, admission records the exact start-state as a
-      // `run-start-state` fact and rejects a context Harmonic cannot safely
-      // track — dirty, submodules/nested repos, or a detached HEAD. A native
-      // (operator-driven) Run keeps the pre-existing best-effort capture below;
-      // a self-heal turn (`resume`) re-enters an already-admitted context that
-      // is dirty with the Run's own prior work, so it is never re-gated.
-      const afk = this.autoDrive?.handles(task) ?? false;
-      if (afk && !resume) {
-        let probe: StartStateProbe | null;
-        try {
-          probe = await this.probeStartState(task.workingDir);
-        } catch {
-          // Not a git repo (or no commits): the branch contract does not apply,
-          // so there is no start-state to record and nothing to reject.
-          probe = null;
-        }
-        if (probe) {
-          // No operator landing-branch surface exists yet, so a detached HEAD is
-          // always rejected here; `evaluateAdmission`'s landing-branch arm is the
-          // forward seam a later operator-input unit wires (reliability-design
-          // Unit D — "detached HEAD is rejected or requires an operator-selected
-          // landing branch").
-          const gate = evaluateAdmission(probe);
-          if (!gate.ok) {
-            // Routed to `settleEscalated` (operator-legible) by driveOnce's
-            // catch, not a generic execution `failed`.
-            throw new AdmissionRejected(gate.reason);
-          }
-          // Snapshot the contract-relevant refs now (issue #151) — the "before"
-          // side of the `validating` branch-contract diff. Best-effort: a repo
-          // with no refs yet yields `{}`, and a read failure just omits the
-          // snapshot, leaving the later check to skip rather than false-fire.
-          const refsAtStart = await Git.forEachRef(task.workingDir)
-            .then(parseRefLines)
-            .catch(() => undefined);
-          await this.runFacts.append(
-            run.id,
-            'run-start-state',
-            // Spread into a fresh object literal to satisfy the store's
-            // `Record<string, unknown>` payload — the same idiom as run-settle.ts.
-            { ...gate.startState, ...(refsAtStart ? { refsAtStart } : {}) },
-          );
-          workspace.baseRev = probe.headOid;
-          workspace.startDirty = false; // admission guarantees a clean context
-
-          // Direct-mode execution isolation (issue #152, reliability-design
-          // Unit D): detach HEAD at the recorded start commit before the agent
-          // is spawned, so its commits/reset land on a private line and can
-          // never advance the live target branch. `finalizeWorkspace` restores
-          // the live checkout coherently at settle. A native (operator-driven)
-          // direct Run keeps its live branch attached — only afk Runs, where no
-          // human is watching the checkout, are isolated this way.
-          await detachForDirectRun(task.workingDir, gate.startState.startCommit);
-          workspace.directIsolation = {
-            startBranch: gate.startState.startBranch,
-            startCommit: gate.startState.startCommit,
-          };
-        }
-        return workspace;
-      }
-
-      // Self-heal continuation (issue #137) of an afk-direct Run: turn 1's
-      // `finalizeWorkspace` restored the live checkout, sweeping the leased
-      // work off the tree (it lives in the frozen candidate). Rematerialise that
-      // candidate and re-detach, so the continuation resumes its prior work AND
-      // stays isolated — symmetric to worktree mode re-checking out the run
-      // branch (below). The candidate is re-parented on the SAME validated base
-      // the first turn recorded, so the re-verify judges the full diff. Missing
-      // start-state or candidate (the snapshot was skipped/failed) leaves the
-      // turn to the best-effort capture below — nothing to rematerialise.
-      if (afk && resume) {
-        const start = await this.startStateOf(run.id);
-        const candidateOid = (await this.runStore.get(run.id)).candidateOid;
-        if (start && candidateOid) {
-          await rematerializeCandidate(task.workingDir, candidateOid);
-          workspace.baseRev = start.startCommit;
-          workspace.startDirty = false;
-          workspace.directIsolation = {
-            startBranch: start.startBranch,
-            startCommit: start.startCommit,
-          };
-          return workspace;
-        }
-      }
-
-      // Capture the validated base + dirty-state now, before the agent edits
-      // anything, so the candidate snapshot (issue #134) can parent on the
-      // start commit and skip a context that was already dirty. Best-effort:
-      // a non-git working dir simply yields no candidate.
       try {
         workspace.baseRev = await Git.revParse(task.workingDir, 'HEAD');
-        // On a self-heal turn (issue #137) the direct context is already dirty
-        // with THIS Run's own prior work — the Run owns the context for its
-        // duration, so treat it as clean rather than skipping the candidate as
-        // an operator's stray edits. A fresh Run keeps the real dirty check.
+        // A self-heal turn (issue #137) resumes the Run's own prior work in the
+        // same live checkout — which the Run owns for its duration — so it is
+        // treated as clean rather than skipped as an operator's stray edits.
         workspace.startDirty = resume ? false : await Git.isDirty(task.workingDir);
       } catch {
         // Not a git repo (or no commits) — leave baseRev unset; no candidate.
@@ -1427,47 +1279,6 @@ export class Runner {
     // A fresh worktree is clean by construction; the base branch is the
     // validated base the candidate is parented on.
     return { cwd: path, env: {}, worktree: { repoDir: task.workingDir, path }, baseRev: baseBranch, startDirty: false };
-  }
-
-  /**
-   * Gather the git facts the admission gate (issue #149) needs, before the
-   * agent touches anything — the Runner's git-I/O half of the otherwise-pure
-   * {@link evaluateAdmission}. `branch` comes from `symbolic-ref` (null on a
-   * detached HEAD, never the literal `HEAD`). Throws (via `Git.toplevel` /
-   * `revParse`) when `dir` is not a git repo, so the caller treats a non-git
-   * context as having no start-state to record or reject.
-   */
-  /**
-   * Read back the `run-start-state` fact (issue #149) a Run recorded at
-   * admission — the start branch + commit a later turn detaches from and
-   * restores to (issue #152). Returns null when no fact was recorded (a native
-   * Run, or a non-git context), so the caller falls back to best-effort capture.
-   */
-  private async startStateOf(runId: number): Promise<RunStartState | null> {
-    const fact = (await this.runFacts.list(runId)).find((f) => f.type === 'run-start-state');
-    return fact ? (JSON.parse(fact.payload) as RunStartState) : null;
-  }
-
-  private async probeStartState(dir: string): Promise<StartStateProbe> {
-    const [root, remote] = await Promise.all([Git.toplevel(dir), Git.originUrl(dir)]);
-    const [headOid, branch, dirty, dirtyFingerprint, submodules, nestedRepos] = await Promise.all([
-      Git.revParse(dir, 'HEAD'),
-      Git.symbolicBranch(dir),
-      Git.isDirty(dir),
-      Git.statusFingerprint(dir),
-      Git.hasSubmodules(dir),
-      Git.hasNestedRepos(dir),
-    ]);
-    return {
-      repoIdentity: { root, remote },
-      headOid,
-      branch,
-      dirty,
-      dirtyFingerprint,
-      submodules,
-      nestedRepos,
-      worktreePath: dir,
-    };
   }
 
   /**
@@ -1667,8 +1478,8 @@ export class Runner {
     }
 
     if (oid && verdicts.length > 0 && verdicts.every((entry) => entry.verdict === 'pass')) {
-      // The in-memory row predates the head-capture write (a direct Run gains
-      // its owned ref there), so the recorded branch must come from the store.
+      // The recorded branch comes from the store (null for a direct Run, which
+      // has no branch), so the freshness gate reads it back off the fact.
       const { branch } = await this.runStore.get(run.id);
       await this.runFacts.append(run.id, 'verified-head', { sha: oid, branch: branch ?? null });
     }
@@ -1697,8 +1508,8 @@ export class Runner {
         // Unparseable fact: fall back to the candidate below rather than land blind.
       }
     }
-    // A direct Run's live HEAD is restored by finalize; its verified tip lives
-    // on the owned ref the fact recorded, never the restored checkout.
+    // A direct Run has no branch — its verified tip is HEAD on the live base
+    // branch (ADR-0046); a worktree Run's tip is on the recorded run branch.
     const rev = typeof verified.branch === 'string' && verified.branch ? verified.branch : (run.branch ?? 'HEAD');
     const head = await Git.revParse(task.workingDir, rev).catch(() => null);
     const expected = (typeof verified.sha === 'string' ? verified.sha : run.candidateOid) ?? head;
@@ -1854,35 +1665,15 @@ export class Runner {
   }
 
   /**
-   * Tear the leased workspace down before the task settles, per isolation mode:
-   * a **direct** Run whose HEAD was detached (issue #152) has its live checkout
-   * restored coherently; a **worktree** Run has its work snapshotted onto its
-   * branch and — since issue #148 — the worktree **retained** (bound to the Run's
-   * Session), not dropped, so the checkout survives the human-rejection window
-   * and Session retirement is the sole owner of its removal. Runs before the task
-   * settles so an escalated task always has its branch as evidence and the
-   * operator's checkout is coherent again.
+   * Tear the leased workspace down before the task settles. A **direct** Run
+   * worked in place — its commits already sit on the live branch (ADR-0046), so
+   * there is nothing to tear down. A **worktree** Run has its work snapshotted
+   * onto its branch and — since issue #148 — the worktree **retained** (bound to
+   * the Run's Session), not dropped, so the checkout survives the human-rejection
+   * window and Session retirement is the sole owner of its removal. Runs before
+   * the task settles so an escalated task always has its branch as evidence.
    */
   private async finalizeWorkspace(task: TaskRow, run: RunRow, workspace: Workspace): Promise<void> {
-    if (workspace.retainForBranchViolation) {
-      // Branch-contract violation (issue #151): the git state IS the evidence.
-      // Retain the worktree/refs exactly as the agent left them — do not restore
-      // the direct-mode checkout or tear the worktree down — until an operator
-      // dispositions the escalation (reliability-design Unit D). The harness is
-      // still killed and the tailer stopped by the `finalize()` closure; only the
-      // git teardown is skipped here.
-      return;
-    }
-    if (workspace.directIsolation) {
-      // Direct-mode execution isolation (issue #152): the Run executed on a
-      // detached HEAD so its commits never moved the live target branch. Undo
-      // the isolation symmetrically to the worktree teardown below — pin the
-      // agent's commit chain to the private ref, then restore the live checkout
-      // coherently. Runs before the lease is released at settle, so nothing
-      // else can grab the context mid-restore.
-      await this.restoreDirectCheckout(task, run, workspace.directIsolation);
-      return;
-    }
     if (!workspace.worktree) return;
     const { repoDir, path } = workspace.worktree;
     // Commit the agent's work onto the run branch (the durable artifact landing
@@ -1910,288 +1701,6 @@ export class Runner {
     }
     if (!retained) {
       await Git.removeWorktree(repoDir, path).catch(() => {});
-    }
-  }
-
-  /**
-   * Undo direct-mode execution isolation (issue #152): capture the agent's
-   * commit chain onto the private `refs/harmonic/direct/run-<id>` ref, then
-   * re-attach HEAD to the start branch and sweep the agent's changes so the
-   * operator's checkout is coherent again. The work is not lost — the full tree
-   * is frozen in the candidate (#134) and the commit chain on the private ref.
-   * Best-effort: a failed restore leaves the checkout detached for the startup
-   * sweep + owned-ref tracking to reconcile, and never breaks the settle funnel.
-   * The {@link reattachBareDetachedHead} backstop then guarantees the base repo
-   * is not left on a bare detached HEAD (issue #198) whenever HEAD already sits
-   * on the start branch's tip.
-   */
-  private async restoreDirectCheckout(
-    task: TaskRow,
-    run: RunRow,
-    isolation: { startBranch: string; startCommit: string },
-  ): Promise<void> {
-    try {
-      await captureDirectHead(task.workingDir, run.id);
-      await restoreLiveCheckout(task.workingDir, isolation.startBranch);
-    } catch {
-      // Non-fatal: recorded start-state + owned-ref tracking are the backstop.
-    }
-    // Return the base repo to its branch (issue #198, direction #1): if the
-    // restore above threw (e.g. index contention) HEAD may still be detached.
-    // When it sits exactly on the start branch's tip, a metadata-only reattach
-    // lifts it back onto the branch — no worktree write, so it survives the same
-    // contention that stranded the `checkout -f`. A divergent detached HEAD is
-    // left for crash-recovery. Never breaks the settle funnel.
-    await reattachBareDetachedHead(task.workingDir, isolation.startBranch).catch(() => {});
-  }
-
-  /**
-   * Classify an afk **direct** Run's git outcome against the branch contract in
-   * `validating` (issue #151, reliability-design Unit D). Gathers the observation
-   * the pure {@link classifyBranchOutcome} (issue #150) needs — the recorded
-   * start-state (issue #149) for the "before" side, live git reads for the
-   * "after" side — and returns it alongside the classification, or `null` when
-   * the check does not apply (worktree mode, a native direct Run, or a pre-#151
-   * Run with no recorded ref snapshot). The caller reads the observation for the
-   * structured branch-violation report, so it is never looked up twice.
-   *
-   * Pins the private direct ref (issue #152; idempotent — `finalizeWorkspace`
-   * pins it again on the clean path) so a normal detached HEAD sits on a ref
-   * Harmonic can name (the classifier's R3/R5) rather than reading as an unknown
-   * commit. It never restores or tears down the checkout — that stays
-   * `finalizeWorkspace`'s job, so a violation's evidence survives. Best-effort:
-   * any git read failure returns `null` (skip) rather than fabricating a
-   * violation; `Git.isAncestor` already resolves a missing ref to `false` (a real
-   * divergence signal) without throwing.
-   */
-  private async classifyBranchContract(
-    task: TaskRow,
-    run: RunRow,
-    workspace: Workspace,
-  ): Promise<{ observation: BranchContractObservation; verdict: BranchClassification } | null> {
-    const start = await this.startStateOf(run.id);
-    if (!workspace.directIsolation || !start || !start.refsAtStart) return null;
-    const dir = task.workingDir;
-    try {
-      // Pin the agent's commit chain onto the private owned ref now, so a normal
-      // detached HEAD is explained by an owned ref tip; idempotent.
-      await captureDirectHead(dir, run.id);
-      const [refLines, headCommit, headBranch] = await Promise.all([
-        Git.forEachRef(dir),
-        Git.revParse(dir, 'HEAD'),
-        Git.symbolicBranch(dir),
-      ]);
-      const intendedBranch = start.startBranch;
-      const [intendedContainsStart, intendedContainsHead] = await Promise.all([
-        Git.isAncestor(dir, intendedBranch, start.startCommit),
-        Git.isAncestor(dir, intendedBranch, headCommit),
-      ]);
-      const observation: BranchContractObservation = {
-        runId: run.id,
-        intendedBranch,
-        startCommit: start.startCommit,
-        expectedWorktreePath: start.worktreePath,
-        headBranch,
-        headCommit,
-        worktreePath: dir,
-        refDeltas: diffRefs(start.refsAtStart, parseRefLines(refLines)),
-        reachability: { intendedContainsStart, intendedContainsHead },
-      };
-      return { observation, verdict: classifyBranchOutcome(observation) };
-    } catch {
-      // A git read failed — treat as not-applicable rather than manufacturing a
-      // violation; the boot sweep + owned-ref tracking are the backstop.
-      return null;
-    }
-  }
-
-  /**
-   * Deterministically recover and land a **recoverable** afk-direct Run's work
-   * with **no agent turn** (issue #154, reliability-design Unit D — recovery is
-   * *preferred* over any agent re-merge). A direct Run executed detached (#152),
-   * so its verified work lives only on the frozen candidate and the live
-   * intended branch never advanced; this reconstructs-and-lands that candidate.
-   *
-   * Returns:
-   *  - `'skip'` — recovery does not apply (no classification, a `clean`/`ambiguous`
-   *    outcome, a non-`auto-merge` Merge Fate, no candidate/start-state, or the
-   *    pure {@link planDeterministicRecovery} invariant did not hold). The Run
-   *    stays on its existing path (worktree merge in `onCompleted`, or the #151
-   *    escalate for ambiguous), unchanged.
-   *  - `'landed'` — the reconstructed candidate was landed onto the intended
-   *    branch; a `branch-recovery` fact records the deterministic land.
-   *  - `'escalate'` — the intended branch moved off the recorded start under us,
-   *    or the land itself failed; refuse to close over unlanded work.
-   *
-   * Runs *after* `finalize()` has restored the direct checkout to the intended
-   * branch (clean, at the recorded start), so `landBranch` (#153) takes the
-   * coherent in-place ff under the Run's exclusive lease — ref + working tree
-   * advance together. The start OID is re-verified before the mutation.
-   */
-  private async recoverAndLand(
-    task: TaskRow,
-    run: RunRow,
-    branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
-  ): Promise<'skip' | 'landed' | 'escalate'> {
-    if (!branchClass || branchClass.verdict.outcome !== 'recoverable') return 'skip';
-    // Only land when the fate is auto-merge — open-PR/artifact leave the branch
-    // untouched, so a recovery land would contradict the fate. Same source of
-    // truth `onCompleted` applies (issue #154).
-    if (this.autoDrive?.mergeFateFor(task) !== 'auto-merge') return 'skip';
-    const start = await this.startStateOf(run.id);
-    const candidateOid = (await this.runStore.get(run.id)).candidateOid;
-    if (!start || !candidateOid) return 'skip';
-    const dir = task.workingDir;
-    try {
-      // The candidate must descend from the recorded start — the pure invariant.
-      // `isAncestor(dir, candidate, start)` asks "does the candidate contain start?"
-      const candidateDescendsFromStart = await Git.isAncestor(dir, candidateOid, start.startCommit);
-      const plan = planDeterministicRecovery({
-        classification: branchClass.verdict,
-        observation: branchClass.observation,
-        candidateOid,
-        candidateDescendsFromStart,
-      });
-      if (!plan) return 'skip'; // not deterministically recoverable → leave on the fallback path
-      // Re-verify the start OID before mutating (reliability-design Unit D): the
-      // intended branch must still be exactly where the Run started. A branch
-      // that advanced (a concurrent land) is not safe to ff over → Escalate.
-      const currentBase = await Git.revParse(dir, plan.baseBranch);
-      if (currentBase !== start.startCommit) {
-        record('lifecycle', {
-          event: 'recovery-landing-failed',
-          reason: `intended branch '${plan.baseBranch}' advanced from the recorded start commit`,
-        });
-        return 'escalate';
-      }
-      const outcome = await landBranchAndRunPostLand({
-        repoDir: dir,
-        baseBranch: plan.baseBranch,
-        branch: plan.landCommit,
-        expectedOid: plan.landCommit,
-        leaseHeld: true,
-        parent,
-        attributes: { 'task.id': task.id, 'run.id': run.id },
-      }, this.postLand);
-      if (!outcome.ok) {
-        record('lifecycle', { event: 'recovery-landing-failed', reason: outcome.detail });
-        return 'escalate';
-      }
-      await this.runFacts.append(run.id, 'branch-recovery', {
-        reason: plan.reason,
-        baseBranch: plan.baseBranch,
-        landCommit: plan.landCommit,
-        mode: outcome.mode,
-        oid: outcome.oid,
-      });
-      record('lifecycle', { event: 'recovery-landed', reason: plan.reason, oid: outcome.oid, mode: outcome.mode });
-      return 'landed';
-    } catch (err) {
-      // A git fault mid-recovery: refuse to close over unlanded work → Escalate,
-      // which retains the candidate/refs for operator disposition.
-      record('lifecycle', {
-        event: 'recovery-landing-failed',
-        reason: err instanceof Error ? err.message : String(err),
-      });
-      return 'escalate';
-    }
-  }
-
-  /**
-   * Land the result of a bounded agent re-merge turn (issue #155,
-   * reliability-design Unit D — "agent re-merge is a bounded fallback only when
-   * deterministic recovery is ambiguous; success is defined as the corrective
-   * result matching an allowed commit-set / tree-diff derived from recorded
-   * artifacts — anything else Escalates, no second mutating turn").
-   *
-   * Runs on the CORRECTIVE turn (after its verification passed) in place of
-   * {@link recoverAndLand}: the corrective turn inherits whatever ref litter the
-   * first (ambiguous) turn left behind, so the branch *classifier* would
-   * spuriously re-flag a perfectly good result. Instead the decision is the pure
-   * {@link evaluateReMergeResult} allowed-set gate over git-computed facts — the
-   * corrective candidate's tree must reproduce the recorded artifact
-   * (`remergeCtx.allowedTree`), descend from the recorded start, and the intended
-   * branch must still contain that start. The start OID is re-verified before the
-   * mutation (identical to {@link recoverAndLand}), and the land is the same
-   * journaled, crash-idempotent `landBranch` (#153).
-   *
-   * Returns `'landed'` or `'escalate'` — never `'skip'`: a corrective turn must
-   * resolve to one or the other, with no further mutating turn.
-   */
-  private async landReMerge(
-    task: TaskRow,
-    run: RunRow,
-    remergeCtx: ReMergeContext,
-    record: (type: 'lifecycle', payload: unknown) => void,
-    parent: SpanContext,
-  ): Promise<'landed' | 'escalate'> {
-    const start = await this.startStateOf(run.id);
-    const candidateOid = (await this.runStore.get(run.id)).candidateOid;
-    const dir = task.workingDir;
-    const reject = async (reason: string, detail: string): Promise<'escalate'> => {
-      await this.runFacts.append(run.id, 'branch-violation', { via: 're-merge', reason, detail });
-      record('lifecycle', { event: 'branch-remerge-rejected', reason, detail });
-      return 'escalate';
-    };
-    if (!start || !candidateOid) {
-      return await reject('no-candidate', 'the re-merge turn left no start-state or candidate to land');
-    }
-    const recordedCandidateTree = remergeCtx.allowedTree;
-    try {
-      const [correctiveTree, candidateDescendsFromStart, intendedContainsStart] = await Promise.all([
-        Git.revParse(dir, `${candidateOid}^{tree}`).catch(() => null),
-        // `isAncestor(dir, candidate, start)` asks "does the candidate contain start?"
-        Git.isAncestor(dir, candidateOid, start.startCommit),
-        Git.isAncestor(dir, start.startBranch, start.startCommit),
-      ]);
-      const judgment = evaluateReMergeResult({
-        recordedCandidateTree,
-        correctiveCandidateTree: correctiveTree,
-        candidateDescendsFromStart,
-        intendedContainsStart,
-      });
-      if (judgment.verdict === 'escalate') {
-        return await reject(judgment.reason, judgment.detail);
-      }
-      // Re-verify the start OID before mutating (reliability-design Unit D): the
-      // intended branch must still be exactly where the Run started. A branch that
-      // advanced (a concurrent land) is not safe to ff over → Escalate.
-      const currentBase = await Git.revParse(dir, start.startBranch);
-      if (currentBase !== start.startCommit) {
-        return await reject('branch-diverged', `intended branch '${start.startBranch}' advanced from the recorded start commit`);
-      }
-      // The post-land default-branch decision must resolve against the
-      // workspace's persistent base repo, not this land's own checkout — a
-      // direct-mode land runs from the task checkout parked on its start
-      // branch, which would make every land look like a default-branch advance.
-      const baseRepoDir = (await this.getWorkspace?.(task.workspaceId))?.workingDir;
-      const outcome = await landBranchAndRunPostLand({
-        repoDir: dir,
-        ...(baseRepoDir !== undefined ? { baseRepoDir } : {}),
-        baseBranch: start.startBranch,
-        branch: candidateOid,
-        expectedOid: candidateOid,
-        leaseHeld: true,
-        parent,
-        attributes: { 'task.id': task.id, 'run.id': run.id },
-      }, this.postLand);
-      if (!outcome.ok) {
-        return await reject('land-failed', outcome.detail);
-      }
-      await this.runFacts.append(run.id, 'branch-recovery', {
-        via: 're-merge',
-        reason: 'agent-remerge',
-        baseBranch: start.startBranch,
-        landCommit: candidateOid,
-        mode: outcome.mode,
-        oid: outcome.oid,
-      });
-      record('lifecycle', { event: 'recovery-landed', reason: 'agent-remerge', oid: outcome.oid, mode: outcome.mode });
-      return 'landed';
-    } catch (err) {
-      return await reject('land-failed', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -2229,19 +1738,13 @@ export class Runner {
     // that escalated Attempt's number is the base, so history numbering keeps
     // growing while the cap restarts.
     const budgetBase = await this.attempts.budgetBase(task.id);
-    // A bounded agent re-merge (issue #155) is allowed exactly ONCE per Run; seed
-    // the count from the durable queue too, so the "at most one corrective
-    // re-merge, and no mutating turn after it" bound survives a crash-resume of
-    // this loop rather than being a purely in-memory flag.
-    let remerges = (await this.turnQueue.listForSession(sessionKey)).filter((t) => t.purpose === 're-merge').length;
     let healCtx: HealContext | undefined;
-    let remergeCtx: ReMergeContext | undefined;
     // The turn_queue row id of the corrective turn currently being driven, so it
     // is settled once its turn completes (kept single-flight: at most one).
     let inFlightTurn: number | null = null;
     try {
       for (;;) {
-      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, remergeCtx, attemptNumber);
+      const outcome = await this.driveOnce(task, run, harness, parent, healCtx, attemptNumber);
       if (inFlightTurn !== null) {
         // The corrective turn we dispatched has run its course — settle its queue
         // row regardless of the verdict; a further fail enqueues the next one.
@@ -2254,55 +1757,6 @@ export class Runner {
         inFlightTurn = null;
       }
       if (outcome.kind === 'terminal') return;
-      if (outcome.kind === 'remerge-needed') {
-        // Bounded agent re-merge fallback (issue #155): dispatch exactly ONE
-        // corrective turn to consolidate the ambiguous branch outcome. A Run that
-        // has already spent its re-merge — or has no recorded candidate to derive
-        // the allowed set from — Escalates as #151 would have, rather than issuing
-        // a second mutating turn.
-        const escalateBranchViolation = async () =>
-          this.settleEscalated(
-            task,
-            await this.runStore.get(run.id),
-            `branch contract violated (${outcome.reason}): ${outcome.detail}`,
-            {},
-          );
-        // `driveOnce` only signals `remerge-needed` on the first ambiguous outcome,
-        // so this `remerges >= 1` guard is the durable backstop across a crash-resume.
-        if (remerges >= 1) {
-          await escalateBranchViolation();
-          return;
-        }
-        // The allowed set is derived from the recorded artifact — the tree of the
-        // pre-re-merge frozen candidate, captured NOW before the corrective turn
-        // re-snapshots over it.
-        const allowedTree = await this.candidateTree(task, run);
-        if (allowedTree === null) {
-          await escalateBranchViolation();
-          return;
-        }
-        remerges += 1;
-        remergeCtx = { reason: outcome.reason, detail: outcome.detail, allowedTree };
-        healCtx = undefined; // the corrective turn is a re-merge, not a heal
-        inFlightTurn = await this.enqueueReMerge(run, sessionKey);
-        // The next `driveOnce(remergeCtx)` resets the phase pointer to
-        // `executing`, resumes the work, prompts the agent to re-home it cleanly,
-        // and re-enters `validating` — where the allowed-set gate lands or
-        // Escalates it.
-        continue;
-      }
-      // Actionable verification fail (issue #137). Once a re-merge has been spent,
-      // NO further mutating turn is issued (issue #155): a verification fail on
-      // the corrective re-merge turn Escalates rather than self-healing.
-      if (remerges >= 1) {
-        await this.settleEscalated(
-          task,
-          await this.runStore.get(run.id),
-          `verification failed on the corrective re-merge turn: ${outcome.reason}`,
-          {},
-        );
-        return;
-      }
       const attempt = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
       const feedback = [outcome.reason, outcome.output].filter(Boolean).join('\n\n');
       if (attemptNumber - budgetBase >= maxAttempts) {
@@ -2329,7 +1783,6 @@ export class Runner {
         continuation,
         condensedContext: continuation.path === 'new-session-condensed' ? await this.condensedContext(run) : null,
       };
-      remergeCtx = undefined;
       inFlightTurn = await this.enqueueCorrectiveAttempt(run, sessionKey);
       // The next `driveOnce(healCtx)` resets the phase pointer to `executing` and
       // records the re-entry itself (§0.4), so the phase sequence stays fully
@@ -2383,24 +1836,6 @@ export class Runner {
   }
 
   /**
-   * The tree OID of a Run's current frozen candidate, or `null` when there is no
-   * candidate or the object cannot be resolved. Used to capture the allowed set
-   * for a bounded agent re-merge (issue #155) — the recorded artifact the
-   * corrective turn must reproduce — before the corrective turn re-snapshots a
-   * fresh candidate over `runs.candidateOid`. Best-effort: a git fault yields
-   * `null`, which the caller treats as "cannot re-merge" and Escalates.
-   */
-  private async candidateTree(task: TaskRow, run: RunRow): Promise<string | null> {
-    const candidateOid = (await this.runStore.get(run.id)).candidateOid;
-    if (!candidateOid) return null;
-    try {
-      return await Git.revParse(task.workingDir, `${candidateOid}^{tree}`);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
    * Put an Attempt N+1 corrective turn through the durable session queue before
    * dispatching it. The row fences the mutation to the failed candidate and
    * lets crash recovery escalate an interrupted corrective turn instead of
@@ -2424,42 +1859,6 @@ export class Runner {
       );
       await this.turnQueue.claim(row.id, now);
       await this.turnQueue.markInFlight(row.id, `attempt-${run.attempt}-run-${run.id}`, now);
-      return row.id;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Record the single bounded agent re-merge turn on the per-Session turn queue
-   * (issue #155): enqueue → claim → mark in-flight, exactly like
-   * {@link enqueueSelfHeal} but with `purpose: 're-merge'`. That purpose is
-   * `isMutating`, so the store enforces the `expectedWorkspaceOID` /
-   * `expectedFingerprint` binding, and — crucially for the crash requirement — a
-   * `re-merge` turn left `in_flight` by a crash is reconciled by
-   * `CrashRecoveryCoordinator` exactly as a `self-heal` is (escalate, never blind
-   * replay), for free via `isMutating`. Returns the row id to settle once the
-   * turn finishes, or `null` if the queue write failed (the corrective turn still
-   * runs — this in-process loop is the dispatch; the row is an audit record).
-   */
-  private async enqueueReMerge(run: RunRow, sessionKey: string): Promise<number | null> {
-    try {
-      const oid = (await this.runStore.get(run.id)).candidateOid ?? '';
-      const now = Date.now();
-      const row = await this.turnQueue.enqueue(
-        sessionKey,
-        run.id,
-        're-merge',
-        {
-          expectedPhase: 'verifying',
-          expectedGeneration: run.attempt,
-          expectedWorkspaceOID: oid,
-          expectedFingerprint: oid,
-        },
-        now,
-      );
-      await this.turnQueue.claim(row.id, now);
-      await this.turnQueue.markInFlight(row.id, `re-merge-run-${run.id}`, now);
       return row.id;
     } catch {
       return null;
@@ -2650,7 +2049,6 @@ export class Runner {
     harness: HarnessConfig,
     parent: SpanContext,
     healCtx?: HealContext,
-    remergeCtx?: ReMergeContext,
     attemptNumber = run.attempt,
   ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
@@ -2668,8 +2066,8 @@ export class Runner {
     let toolCallFlushTimer: ReturnType<typeof setInterval> | undefined;
 
     const attemptAtStart = await this.attempts.ensureForRun(task.id, attemptNumber, run.startedAt);
-    // A turn re-entering an Attempt that already has rows (crash-resume, the
-    // #155 re-merge turn) does not open it again.
+    // A turn re-entering an Attempt that already has rows (a crash-resume) does
+    // not open it again.
     const opensAttempt = (await this.attempts.listTasks(attemptAtStart.id)).length === 0;
 
     // Attempt Tasks, rather than Run phases, own the execution pipeline. Runs
@@ -2697,7 +2095,7 @@ export class Runner {
     let stoppedShort: string | null = null;
     const autoDriven = this.autoDrive?.handles(task) ?? false;
 
-    if (healCtx || remergeCtx) record('lifecycle', { event: 'phase', phase: 'executing' });
+    if (healCtx) record('lifecycle', { event: 'phase', phase: 'executing' });
 
     let child: ChildProcess;
     let workspace: Workspace;
@@ -2708,10 +2106,6 @@ export class Runner {
     // to record the resolved permission mode.
     let sessionInit: AcpInitializeResult | undefined;
     let sessionRowId: number | undefined;
-    // Tracked separately from `workspace` so the catch below can restore a
-    // direct-mode detach (issue #152) even if the harness never spawns —
-    // `finalize()` (which normally restores) is only wired after this try.
-    let directIsolation: Workspace['directIsolation'] = undefined;
     // A harness that dies without a clean ACP error (codex-acp exiting
     // non-zero mid-handshake) explains itself only on stderr. Retain its
     // tail so the failure reason carries the cause, not a bare exit code;
@@ -2724,7 +2118,7 @@ export class Runner {
     // the implementation turn is told to resolve it — the Attempt continues.
     let rebaseConflict: string | null = null;
     try {
-      workspace = await this.prepareWorkspace(task, run, healCtx !== undefined || remergeCtx !== undefined);
+      workspace = await this.prepareWorkspace(task, run, healCtx !== undefined);
       if (opensAttempt && workspace.worktree) {
         const baseBranch = (await this.runStore.get(run.id)).baseBranch ?? await this.resolveBaseBranch(task);
         const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, baseBranch);
@@ -2742,7 +2136,6 @@ export class Runner {
       // Workspace prep (its git ops) succeeded — clear any accumulated git
       // backoff for this context, so a later unrelated blip starts fresh (#199).
       this.gitBreaker?.recordSuccess(repoKey(task.workingDir));
-      directIsolation = workspace.directIsolation;
       // Agents reach the MCP server with zero setup: a Run Key (its
       // lifetime follows the run's) plus the endpoint, in the environment
       // — and, where the harness supports it (codex), registered directly
@@ -2781,12 +2174,6 @@ export class Runner {
       } catch {
         // Best-effort; the startup sweep is the backstop.
       }
-      // If prepareWorkspace already detached the live checkout (issue #152) but
-      // the harness never started, restore it here — `finalize()` is not reached
-      // on this path, so nothing else would re-attach HEAD to the live branch.
-      if (directIsolation) {
-        await this.restoreDirectCheckout(task, run, directIsolation);
-      }
       releaseHarnessMutex?.();
       releaseHarnessMutex = null;
       if (err instanceof EpicBaseNotReady) {
@@ -2800,12 +2187,11 @@ export class Runner {
           taskAction: 'ready',
           reason: err.reason,
         });
-      } else if (err instanceof AdmissionRejected || err instanceof BaseBranchUnresolved) {
-        // A context Harmonic cannot safely own is handed to a human with the
-        // operator-legible reason, not settled as a generic execution failure:
-        // the afk-direct admission gate (issue #149), or a worktree Run whose
-        // base cannot be resolved to a real branch because a prior landing left
-        // the base repo detached (issue #198). Both are operator-fixable.
+      } else if (err instanceof BaseBranchUnresolved) {
+        // A worktree Run whose base cannot be resolved to a real branch because a
+        // prior landing left the base repo detached (issue #198) is handed to a
+        // human with the operator-legible reason, not settled as a generic
+        // execution failure. Operator-fixable: reattach the base repo to a branch.
         await this.settleEscalated(task, run, err.reason, {});
       } else if (err instanceof GitError) {
         // A git workspace-prep failure (issue #199). Record it against the
@@ -3448,7 +2834,7 @@ export class Runner {
       // reloads the prior Session with feedback appended below. A condensed path
       // starts a fresh Session and retains the prior Session row for transcript
       // lookup until the new dispatch replaces the Run binding.
-      const continueSessionId = remergeCtx === undefined && (healCtx === undefined || healCtx.continuation.path === 'continued-session')
+      const continueSessionId = healCtx === undefined || healCtx.continuation.path === 'continued-session'
         ? run.sessionId
         : null;
       if (continueSessionId) {
@@ -3561,7 +2947,7 @@ export class Runner {
       // cause, then finish, and the full suite reruns against the new candidate.
       // The condensed prior-Session seed (#311) is always the trailing section.
       let condensed: string | null = null;
-      if (operatorSeed !== undefined && !healCtx && !remergeCtx) {
+      if (operatorSeed !== undefined && !healCtx) {
         promptText = `## Operator message\n\n${operatorSeed}`;
       } else if (healCtx) {
         promptText =
@@ -3569,27 +2955,13 @@ export class Runner {
           `Your previous attempt did not pass:\n${healCtx.reason}\n\n${healCtx.output}\n\n` +
           `Fix the cause so the full verification suite passes, then finish.`;
         condensed = healCtx.condensedContext ?? null;
-      } else if (task.continuationChoice === 'condensed' && !remergeCtx) {
+      } else if (task.continuationChoice === 'condensed') {
         // A review reject the continuation rule routed to a fresh Session (#311)
         // or the operator's "start condensed" pick (#170): the feedback already
         // rides the Task prompt; seed the new Session with the prior one's
         // condensed context.
         const src = await this.resolveContinuationSource(task);
         condensed = src ? await this.condensedContext(src.prior) : null;
-      } else if (remergeCtx) {
-        // Bounded agent re-merge turn (issue #155): the previous turn left the
-        // repository in a branch state Harmonic cannot deterministically land.
-        // Ask the agent to re-home exactly the same work cleanly — Harmonic lands
-        // it — WITHOUT extra branches or new changes (the allowed-set gate rejects
-        // a divergent tree). Marked `agent re-merge 1` so the run is one bounded
-        // corrective turn.
-        const intended = (await this.startStateOf(run.id))?.startBranch ?? 'the branch the task started on';
-        promptText =
-          `${promptText}\n\n## Branch consolidation required (agent re-merge 1)\n` +
-          `Your previous turn left the repository in a branch state Harmonic cannot land: ${remergeCtx.detail}\n\n` +
-          `Re-home the work you already did as ordinary commits on top of \`${intended}\`. ` +
-          `Do not create or switch branches, and do not change any files beyond the work you already did — ` +
-          `only reproduce that same work cleanly. Then finish.`;
       }
       if (rebaseConflict !== null) {
         promptText =
@@ -3681,25 +3053,16 @@ export class Runner {
       // verify path below, exactly as a finished Run would.
       const afkUnresolved = autoDriven && !escalating && !stoppedShort && !active.agentFinished;
       if (afkUnresolved) record('lifecycle', { event: 'unresolved', reason: 'no finish_task signal; verifying anyway' });
-      // The `validating` branch-contract classification (issue #151), hoisted so
-      // the afk landing block below can reach it for deterministic recovery
-      // landing (issue #154). Null when the check does not apply (worktree mode,
-      // native direct, a pre-#151 Run) or was skipped (escalating/stoppedShort).
-      let branchClass: { observation: BranchContractObservation; verdict: BranchClassification } | null = null;
-      // Set when a first-turn ambiguous outcome is eligible for a bounded agent
-      // re-merge (issue #155): instead of Escalating in place (#151), hand the
-      // decision up to the `drive` loop, which dispatches exactly one corrective
-      // turn. Carries the branch-contract violation for the corrective prompt.
-      let remergeNeeded: { reason: string; detail: string } | null = null;
       let implementationHead: string | null = null;
-      // The branch contract is checked at implementation end. It is a fact and
-      // escalation trigger, never a user-facing validation stage. An afk run that
-      // ended without finish_task runs it too — its candidate is verified like any
-      // other, so its head must be captured and its outcome classified here.
+      // The candidate is captured at implementation end so the verifiers review
+      // the exact commit the agent left behind. An afk run that ended without
+      // finish_task runs this too — its candidate is verified like any other.
       if (!escalating && !stoppedShort) {
         // A dirty implementation result gets one same-session reminder to
         // commit. This is corrective guidance within the current Attempt, not
-        // a new Attempt or a retry budget charge.
+        // a new Attempt or a retry budget charge. A direct Run must commit its
+        // work onto the live branch for it to become the candidate (ADR-0046);
+        // a context that was already dirty at start is left as the operator's.
         if (!workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
           const nudge = 'Your implementation left uncommitted changes. Commit the completed work now, then finish.';
           record('lifecycle', { event: 'commit-nudge' });
@@ -3707,71 +3070,17 @@ export class Runner {
           result = await driver.prompt([{ type: 'text', text: nudge }]);
           active.idle = true;
         }
-        // Branch-contract enforcement (issue #151, reliability-design Unit D):
-        // still in `validating`, before any checkout restore / worktree teardown,
-        // classify the Run's git outcome against the recorded start-state (#149)
-        // with the pure #150 classifier. A clean/recoverable outcome (the expected
-        // direct-mode detached-HEAD footprint) proceeds; its deterministic restore
-        // is `finalize()`'s job, and a recoverable afk auto-merge Run lands via
-        // {@link recoverAndLand} below (issue #154), so the classification is
-        // retained for that seam.
-        branchClass = await this.classifyBranchContract(task, run, workspace);
-        // On a CORRECTIVE re-merge turn (issue #155) the ambiguous verdict is NOT
-        // acted on here: the corrective turn inherits the first turn's ref litter,
-        // so the classifier would spuriously re-flag it. Its success is judged by
-        // the allowed-set gate in {@link landReMerge} after verification instead.
-        if (remergeCtx === undefined && branchClass && branchClass.verdict.outcome === 'ambiguous') {
-          const { observation } = branchClass;
-          const verdict = branchClass.verdict;
-          // A bounded agent re-merge (issue #155) is *preferred* over an immediate
-          // Escalate when the Run can support one: an afk-direct auto-merge Run
-          // with a recorded candidate to derive the allowed set from. Hand the
-          // decision up to `drive`, which dispatches exactly one corrective turn.
-          // Everything else Escalates in place, exactly as #151 did.
-          const remergeEligible =
-            autoDriven &&
-            !!workspace.directIsolation &&
-            this.autoDrive?.mergeFateFor(task) === 'auto-merge' &&
-            (await Git.revParse(task.workingDir, run.branch ?? 'HEAD').catch(() => null)) != null;
-          if (remergeEligible) {
-            remergeNeeded = { reason: verdict.reason, detail: verdict.detail };
-          } else {
-            // An **ambiguous** outcome Harmonic cannot silently verify or land:
-            // emit the structured branch-violation fact, retain the refs as
-            // evidence, and Escalate through the shared tail below.
-            await this.runFacts.append(run.id, 'branch-violation', {
-              outcome: verdict.outcome,
-              reason: verdict.reason,
-              detail: verdict.detail,
-              deltas: verdict.deltas,
-              intendedBranch: observation.intendedBranch,
-              headBranch: observation.headBranch,
-              headCommit: observation.headCommit,
-            });
-            record('lifecycle', { event: 'branch-violation', reason: verdict.reason, detail: verdict.detail });
-            // Retain the worktree/refs for operator disposition (finalizeWorkspace
-            // skips its teardown while this is set) and route through the shared
-            // escalation tail below — finalize → usage → settleEscalated — rather
-            // than re-implementing it here.
-            workspace.retainForBranchViolation = true;
-            escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
-          }
-        }
-        // Verification must see the commit the agent actually left behind,
-        // before direct isolation restores the live checkout. A run with no new
-        // commit has no verifiable work and fails closed below.
+        // The candidate is the commits the agent added on top of the start
+        // commit. In direct mode those already sit on the live base branch
+        // (ADR-0046); in worktree mode they are on the run branch. A run with no
+        // new commit has no verifiable work and fails closed below.
         const [head, base] = await Promise.all([
           Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
           workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
         ]);
         if (head && head !== base) {
           implementationHead = head;
-          if (workspace.directIsolation) {
-            await captureDirectHead(task.workingDir, run.id);
-            await this.runStore.update(run.id, { branch: directRefFor(run.id), candidateOid: head, candidateRef: directRefFor(run.id) });
-          } else {
-            await this.runStore.update(run.id, { candidateOid: head });
-          }
+          await this.runStore.update(run.id, { candidateOid: head });
         }
       }
       await finalize();
@@ -3790,18 +3099,6 @@ export class Runner {
       } else if (stoppedShort) {
         record('lifecycle', { event: 'stopped-short', reason: stoppedShort });
         return { kind: 'actionable-fail', reason: stoppedShort, output: '' };
-      } else if (remergeNeeded) {
-        // First-turn ambiguous outcome eligible for a bounded agent re-merge
-        // (issue #155): do NOT settle. finalize() has already restored the direct
-        // checkout and swept this turn's work into the frozen candidate, so the
-        // corrective turn resumes from it. Hand the decision up to the `drive`
-        // loop, which dispatches exactly one corrective re-merge turn.
-        record('lifecycle', {
-          event: 'branch-remerge-needed',
-          reason: remergeNeeded.reason,
-          detail: remergeNeeded.detail,
-        });
-        return { kind: 'remerge-needed', reason: remergeNeeded.reason, detail: remergeNeeded.detail };
       } else {
         // Verification gate (issue #135, ADR-0021, reliability-design Unit B):
         // agent-finish begins validation — it does not settle the Run (#114).
@@ -3896,28 +3193,15 @@ export class Runner {
             return { kind: 'terminal' };
           }
           // A mirrored Run: executing → validating → verifying → landing →
-          // terminal. A worktree
-          // auto-merge Run's branch was landed by the gate above (SHA-asserted,
-          // fast-forward-only); the Merge Fate then applies the rest in
+          // terminal. A worktree auto-merge Run's branch was landed by the gate
+          // above (SHA-asserted, fast-forward-only); a direct Run's verified
+          // commits already sit on the live base branch (ADR-0046), so there is
+          // nothing to land. Either way the Merge Fate then applies the rest in
           // onCompleted — open a PR, or (auto-merge) close the ticket — Harmonic
           // owns the close, only after verify + land (#139). A fate that can't be
           // applied (PR that can't be created, ticket close that fails)
           // Escalates; the ticket is not closed.
           //
-          // Deterministic recovery landing (issue #154, reliability-design Unit
-          // D): a direct-mode Run executed detached (#152), so its verified work
-          // lives only on the frozen candidate — the live intended branch never
-          // advanced. When the branch classifier says the outcome is
-          // **recoverable**, reconstruct-and-land that candidate here, WITHOUT an
-          // agent turn (deterministic recovery is preferred over any re-merge
-          // turn), before onCompleted closes the ticket.
-          //
-          // On a CORRECTIVE re-merge turn (issue #155) the land goes through
-          // {@link landReMerge} instead: the deterministic classifier can't gate
-          // it (the corrective turn inherits the first turn's ref litter), so the
-          // pure allowed-set gate — the corrective candidate must reproduce the
-          // recorded tree, descend from start, and the branch still contain start
-          // — decides land-or-Escalate, with no second mutating turn.
           // Parallel-Epic member land (issue #163): a worktree auto-merge Run
           // whose base is an Epic integration branch (`epic/<ref>`) lands through
           // the single-writer merge train — a fast-forward of the verified tip,
@@ -3945,27 +3229,16 @@ export class Runner {
             return { kind: 'terminal' };
           }
 
-          const recovered = remergeCtx
-              ? await this.landReMerge(task, run, remergeCtx, record, parent)
-              : await this.recoverAndLand(task, run, branchClass, record, parent);
-          if (recovered === 'escalate') {
-            const reason = remergeCtx
-              ? 'agent re-merge did not resolve the branch ambiguity'
-              : 'deterministic recovery landing failed';
-            record('lifecycle', { event: 'escalated', reason });
-            await this.settleEscalated(task, run, reason, patch);
+          const outcome = await this.autoDrive!.onCompleted(task, await this.runStore.get(run.id));
+          if (outcome === 'escalate') {
+            record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
+            await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
           } else {
-            const outcome = await this.autoDrive!.onCompleted(task, await this.runStore.get(run.id));
-            if (outcome === 'escalate') {
-              record('lifecycle', { event: 'escalated', reason: 'merge fate could not be applied' });
-              await this.settleEscalated(task, run, 'merge fate could not be applied', patch);
-            } else {
-              // The Merge Fate is applied → record `landing`, then settle
-              // terminal (the coordinator marks the Run `phase:'terminal'`).
-              await advanceTask('landing');
-              record('lifecycle', { event: 'phase', phase: 'landing' });
-              await this.settleAutoCompleted(task, run, { ...patch, ...diff });
-            }
+            // The Merge Fate is applied → record `landing`, then settle
+            // terminal (the coordinator marks the Run `phase:'terminal'`).
+            await advanceTask('landing');
+            record('lifecycle', { event: 'phase', phase: 'landing' });
+            await this.settleAutoCompleted(task, run, { ...patch, ...diff });
           }
         }
       }
@@ -4203,10 +3476,9 @@ export class Runner {
         const harness = config.harnesses[task.harness as keyof typeof config.harnesses];
         if (!harness) continue;
         // Worktree runs executed (and logged) under the worktree path;
-        // the directory is gone but the log slug derives from the string.
-        // A direct run also records a branch now (its private ref), but it
-        // executed in the live working dir.
-        const cwd = run.branch && !isDirectRef(run.branch) ? join(this.worktreesDir, `run-${run.id}`) : task.workingDir;
+        // the directory is gone but the log slug derives from the string. A
+        // direct run has no branch and executed in the live working dir.
+        const cwd = run.branch ? join(this.worktreesDir, `run-${run.id}`) : task.workingDir;
         const fresh = collectUsage({
           harnessId: task.harness,
           harness,
@@ -4234,7 +3506,7 @@ export class Runner {
     runId: number,
   ): Promise<Pick<RunRow, 'stat' | 'diffBaseOid' | 'diffHeadOid'>> {
     const run = await this.runStore.get(runId);
-    if (!run.branch || isDirectRef(run.branch) || !run.baseBranch) {
+    if (!run.branch || !run.baseBranch) {
       return { stat: null, diffBaseOid: null, diffHeadOid: null };
     }
     try {

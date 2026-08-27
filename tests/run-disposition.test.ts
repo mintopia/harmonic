@@ -32,7 +32,6 @@ describe('computeDisposition (issue #112)', () => {
       'operator-cancel',
       'operator-accept',
       'escalate',
-      'branch-violation',
       'verify-fail',
       'guardrail-trip',
       'agent-finish/unresolved',

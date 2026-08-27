@@ -15,7 +15,6 @@ import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
-import { isDirectRef } from '../execution/execution-isolation.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
@@ -435,7 +434,9 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
   return rest;
 }
 
-/** The ref an operator Accept would land: a direct Run's private ref, or a worktree Run's branch once it has a verified head. */
+/** The ref an operator Accept would land: a worktree Run's branch once it has a
+ * verified head. A direct Run has no branch — its work is already on the base
+ * branch (ADR-0046) — so this is null for it. */
 function latestVerifiedRef(run: RunRow | undefined): string | null {
   if (!run) return null;
   return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
@@ -443,8 +444,9 @@ function latestVerifiedRef(run: RunRow | undefined): string | null {
 
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
   const running = runs.find((r) => r.state === 'running');
-  const presentedBranch = (branch: string | null | undefined): string | null =>
-    branch && !isDirectRef(branch) ? branch : null;
+  // A direct Run has no branch (its work is committed straight onto the base
+  // branch, ADR-0046); only a worktree Run has an operator-facing branch.
+  const presentedBranch = (branch: string | null | undefined): string | null => branch ?? null;
   return {
     ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
@@ -452,8 +454,6 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
-    // A direct run's recorded branch is its private harmonic ref — internal
-    // plumbing, not an operator-facing branch.
     branch: presentedBranch(runs.at(-1)?.branch),
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,

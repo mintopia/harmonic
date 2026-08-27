@@ -5,11 +5,10 @@
  * integrated tree is Verified as a unit and, only on a pass, merged into the
  * default branch in one go and the integration branch retired (ADR-0024). This
  * module is the **pure** half of that step — the same seam as `merge-train.ts`
- * (`decideMergeTrainLand`) / `branch-recovery.ts` (`evaluateReMergeResult`): no
- * git I/O, no database, no clock. The coordinator gathers the observed facts
- * (does the integration branch exist, what state is each member in, what did a
- * whole-Epic Verification produce) and passes them in; this function only
- * classifies those facts into the action to execute.
+ * (`decideMergeTrainLand`): no git I/O, no database, no clock. The coordinator
+ * gathers the observed facts (does the integration branch exist, what state is
+ * each member in, what did a whole-Epic Verification produce) and passes them
+ * in; this function only classifies those facts into the action to execute.
  *
  * Two invariants the acceptance criteria pin (issue #161):
  *

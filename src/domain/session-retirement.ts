@@ -48,7 +48,7 @@ export const DEFAULT_RETENTION: RetentionConfig = {
  *   an operator Accept): the work is banked, retire immediately.
  * - `operator-cancel` — an operator disposition (cancel / Close): retire.
  * - `other` — any other non-landing ending (generic fail, escalate,
- *   guardrail-trip, branch-violation, process-death): retain as evidence under
+ *   guardrail-trip, process-death): retain as evidence under
  *   the retention-TTL backstop.
  */
 export type RetirementCause = 'landed' | 'operator-cancel' | 'other';

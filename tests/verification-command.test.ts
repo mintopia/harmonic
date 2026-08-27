@@ -107,6 +107,53 @@ describe('command verifier end-to-end (issue #135)', () => {
     ]);
   });
 
+  it('a direct Run works in place: its verified commit is the base branch tip, with no private ref and no run branch (ADR-0046)', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'direct',
+      verificationCommand: exitCommand(0),
+    });
+    const baseBefore = git(repoDir, 'rev-parse', 'main');
+    const { taskId, runId } = await createAndRun();
+
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'done' ? body : undefined;
+    });
+    expect(task.state).toBe('done');
+
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    // The candidate is the agent's own commit, and it already sits on the live
+    // base branch — the branch advanced forward in place, nothing was merged.
+    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(repoDir, 'rev-parse', 'main')).toBe(run.candidateOid);
+    expect(run.candidateOid).not.toBe(baseBefore);
+    // No private direct ref, and no operator-facing run branch: direct isolation
+    // has no candidate ref at all now.
+    expect(git(repoDir, 'for-each-ref', 'refs/harmonic/')).toBe('');
+    expect(run.branch).toBeNull();
+    expect(run.candidateRef).toBeNull();
+  });
+
+  it('a pre-existing dirty tree does not fail a direct Run; its candidate is the agent\'s own commit (ADR-0046)', async () => {
+    await server.app.ctx.workspaces.update(workspaceId, {
+      isolationMode: 'direct',
+      verificationCommand: exitCommand(0),
+    });
+    // Uncommitted changes the agent did not make, present before the Run starts.
+    writeFileSync(join(repoDir, 'operator-scratch.txt'), 'not the agent\n');
+
+    const { taskId, runId } = await createAndRun();
+    const task = await waitFor(async () => {
+      const { body } = await server.api('GET', `/api/tasks/${taskId}`);
+      return body.state === 'done' ? body : undefined;
+    });
+    expect(task.state).toBe('done'); // tolerated — never escalated for the dirty tree
+    const run = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(run.candidateOid).toMatch(/^[0-9a-f]{40}$/);
+
+    rmSync(join(repoDir, 'operator-scratch.txt'), { force: true });
+  });
+
   it('AC2/AC4: a failing command records feedback on attempt 1, then escalates after attempt 2', async () => {
     await server.app.ctx.workspaces.update(workspaceId, { verificationCommand: exitCommand(1) });
     const { taskId, runId } = await createAndRun();

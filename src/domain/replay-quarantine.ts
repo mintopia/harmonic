@@ -19,7 +19,7 @@
  * `AcpDriver`; the usage and progress seams import {@link isReplay} so they agree
  * by call, not by copy. `run_facts` need no filter of their own: no `run_fact` is
  * derived from a `session/update` — they are ending signals (cancel, escalate,
- * branch-violation, agent-finish, failed, `guardrail-trip`) — and the only one a
+ * agent-finish, failed, `guardrail-trip`) — and the only one a
  * replayed update could ever influence is a `guardrail-trip`, which is gated by
  * the progress/stall seam this file already quarantines. Exclude replay from the
  * stall input (as `guardrail-progress.ts` does) and the spurious fact cannot be

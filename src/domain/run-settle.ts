@@ -166,7 +166,7 @@ export class RunSettleCoordinator {
    * Map the winning disposition to the retirement cause a Session needs (issue
    * #148): an operator cancel retires immediately; any `completed` Run landed
    * (the phase machine only completes via landing); every other ending
-   * (escalate, guardrail-trip, branch-violation, process-death) is retained
+   * (escalate, guardrail-trip, process-death) is retained
    * under the retention-TTL backstop — an escalated ticket's branch is the
    * evidence its Accept lands.
    */

@@ -39,9 +39,9 @@ import { startOperation } from '../telemetry/operations.js';
  * was journaled therefore reconciles (issue #115 `reconcile` → `adopt`, or a
  * plain re-invocation) without a duplicate merge or a false conflict.
  *
- * Pure of the database and the Runner, like `candidate.ts` /
- * `execution-isolation.ts`: it takes explicit paths/revisions and calls only
- * `Git.*`, so every branch of the decision is exhaustively testable against a
+ * Pure of the database and the Runner, like `candidate.ts`: it takes explicit
+ * paths/revisions and calls only `Git.*`, so every branch of the decision is
+ * exhaustively testable against a
  * throwaway git repo. The `leaseHeld` gate is the one thing the caller must
  * supply, because whether an exclusive lease is held is a fact about the
  * Runner's world this module deliberately does not reach into.

@@ -16,7 +16,7 @@
  * Every terminal disposition the coordinator can land, **highest precedence
  * first**. The reliability-design §0.3 locked ordering is:
  *
- *   operator-cancel > escalate > branch-violation > verify-fail >
+ *   operator-cancel > escalate > verify-fail >
  *   guardrail-trip > agent-finish/unresolved > process-death
  *
  * `operator-accept` (issue #191) is slotted just below `operator-cancel` and
@@ -36,7 +36,6 @@ export const DISPOSITION_PRECEDENCE = [
   'operator-cancel',
   'operator-accept',
   'escalate',
-  'branch-violation',
   'verify-fail',
   'guardrail-trip',
   'agent-finish/unresolved',
@@ -53,10 +52,10 @@ export type Disposition = (typeof DISPOSITION_PRECEDENCE)[number];
  * function itself stays free of any database type.
  *
  * `type` is a free `string`, not `Disposition`: the fact-type set is open for
- * extension (schema `RUN_FACT_TYPES`), and some facts — e.g. `run-start-state`
- * (issue #149) — are recorded on the same log but are *not* terminal
- * dispositions. `computeDisposition` sinks any unranked kind to the bottom, so a
- * non-disposition fact can never decide the outcome.
+ * extension (schema `RUN_FACT_TYPES`), and some facts — e.g. the boot-time
+ * `session-resumed` / `resume-entry` markers — are recorded on the same log but
+ * are *not* terminal dispositions. `computeDisposition` sinks any unranked kind
+ * to the bottom, so a non-disposition fact can never decide the outcome.
  */
 export interface DispositionFact {
   seq: number;
