@@ -4112,6 +4112,31 @@ export class Runner {
     }
   }
 
+  /**
+   * Resolve a Session's native transcript path on demand and persist it — the
+   * read-path counterpart to {@link captureTranscriptPath}. The eager capture at
+   * dispatch races the harness writing its `${sessionId}.jsonl` and gives up after
+   * a few hundred ms; anything that delays the first turn (e.g. pre-turn work) can
+   * push the file past that window and leave `transcriptPath` null forever. By the
+   * time a reader asks for the transcript the file exists, so resolving here
+   * removes the dependence on that startup race entirely and self-heals a Session
+   * the eager pass missed. Returns the stored or freshly-resolved path, or null
+   * when it still cannot be resolved (unknown harness, no resolver, file absent).
+   */
+  async ensureSessionTranscript(sessionRowId: number): Promise<string | null> {
+    const session = await this.sessionStore.get(sessionRowId).catch(() => null);
+    if (!session) return null;
+    if (session.transcriptPath) return session.transcriptPath;
+    const resolver = adapterFor(session.harness).usage?.resolveTranscriptPath;
+    if (!resolver) return null;
+    const harnesses = this.getConfig().harnesses;
+    const sessionLogDir = harnesses[session.harness as keyof typeof harnesses]?.sessionLogDir;
+    const transcriptPath = await resolver({ sessionLogDir, sessionId: session.harnessSessionId }).catch(() => null);
+    if (!transcriptPath) return null;
+    await this.sessionStore.setTranscriptPath(sessionRowId, transcriptPath, Date.now()).catch(() => {});
+    return transcriptPath;
+  }
+
   /** The critic equivalent of {@link captureTranscriptPath}: the harness may
    * not have flushed its `${sessionId}.jsonl` by the time the critic turn ends
    * and the attempt is appended (root cause of a persistently null critic
