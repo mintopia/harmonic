@@ -4,8 +4,11 @@ import {
   isOverridable,
   hasWorkspaceOverride,
   settingSpec,
+  SETTING_TABS,
+  settingsForTab,
   type SettingKey,
   type SettingScope,
+  type SettingTab,
 } from '../src/domain/settings-registry.js';
 import { resolveScoped, resolveCap, resolveVerifiers, resolveGuardrails } from '../src/domain/setting-override.js';
 
@@ -67,6 +70,55 @@ describe('Settings registry (issue #336) — single authority for scope', () => 
       expect(spec.control).toBeTruthy();
       expect(spec.label).toBeTruthy();
       expect(spec.help).toBeTruthy();
+    }
+  });
+});
+
+describe('tab taxonomy (ADR-0044) — settings group into Settings UI tabs', () => {
+  const VALID_TAB_IDS: Set<SettingTab> = new Set(SETTING_TABS.map((t) => t.id));
+
+  it('gives every setting a tab that is one of the declared SETTING_TABS', () => {
+    for (const key of Object.keys(settingsRegistry) as SettingKey[]) {
+      const spec = settingSpec(key);
+      expect(VALID_TAB_IDS.has(spec.tab), `'${key}' has unknown tab '${spec.tab}'`).toBe(true);
+    }
+  });
+
+  it('declares exactly 6 tabs, unique ids, in the expected order', () => {
+    expect(SETTING_TABS).toHaveLength(6);
+    const ids = SETTING_TABS.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(['general', 'execution', 'verification', 'prompts', 'integrations', 'security']);
+  });
+
+  it('settingsForTab("verification") returns exactly the verification settings', () => {
+    expect(settingsForTab('verification')).toEqual(['verificationCommand', 'verificationCritic']);
+  });
+
+  it('settingsForTab("general") returns exactly the general settings', () => {
+    expect(settingsForTab('general')).toEqual(['chatHarness', 'chatModel']);
+  });
+
+  it('settingsForTab("execution") includes execution settings and excludes other tabs', () => {
+    const execution = settingsForTab('execution');
+    expect(execution).toEqual(
+      expect.arrayContaining(['harness', 'maxAttempts', 'guardrailBudget', 'toolTimeoutMinutes']),
+    );
+    expect(execution).not.toContain('verificationCommand');
+    expect(execution).not.toContain('chatHarness');
+  });
+
+  it('settingsForTab returns [] for tabs with no registry-declared fields', () => {
+    expect(settingsForTab('prompts')).toEqual([]);
+    expect(settingsForTab('integrations')).toEqual([]);
+    expect(settingsForTab('security')).toEqual([]);
+  });
+
+  it('every key returned by settingsForTab round-trips: settingSpec(key).tab === tab', () => {
+    for (const { id: tab } of SETTING_TABS) {
+      for (const key of settingsForTab(tab)) {
+        expect(settingSpec(key).tab).toBe(tab);
+      }
     }
   });
 });

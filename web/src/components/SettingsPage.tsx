@@ -20,189 +20,127 @@ import { FloatingSaveBar } from './FloatingSaveBar';
 import { ModelCombobox } from './ModelCombobox';
 import { Switch } from './Switch';
 import { EMPTY_COMMAND, EMPTY_CRITIC, argsText, setCommandField, setCriticField } from './verification-override-model';
+import { ConfigField, registryField, toOptions, withCurrent, type ScalarDescriptor } from './settings-fields';
+import { Tabs } from './Tabs';
+import { SETTING_TABS, type SettingTab } from '../../../src/domain/settings-registry.js';
 
-function TaskDefaultsFields({
-  config,
-  fieldErrors,
-  onChange,
-  onDefaultModel,
-}: {
-  config: AppConfig;
-  fieldErrors: Record<string, string>;
-  onChange: (defaults: AppConfig['defaults']) => void;
-  onDefaultModel: (model: string) => void;
-}) {
-  const d = config.defaults;
-  const set = <K extends keyof AppConfig['defaults']>(key: K, value: AppConfig['defaults'][K]) =>
-    onChange({ ...d, [key]: value });
+const INSTANCE_FIELDS: ScalarDescriptor[] = [
+  {
+    id: 'settings-instance-name',
+    control: 'text',
+    label: 'Name',
+    errorKey: 'name',
+    placeholder: 'Harmonic',
+    widthClass: 'max-w-sm',
+    get: (c) => c.name,
+    set: (c, raw) => ({ ...c, name: String(raw) }),
+  },
+];
 
-  // The default model for new tasks is the default harness's defaultModel
-  // (see TaskService.resolveExecution). Editing it here writes through to that
-  // harness so it stays a single source of truth.
-  const harness = config.harnesses[d.harness];
-  const models = harness?.models ?? [];
-  const defaultModel = harness?.defaultModel ?? '';
+const CHAT_FIELDS: ScalarDescriptor[] = [
+  registryField('chatHarness', {
+    id: 'settings-chat-harness',
+    errorKey: 'chat.harness',
+    get: (c) => c.chat.harness,
+    options: (c) => toOptions(Object.keys(c.harnesses)),
+    set: (c, raw) => {
+      const h = String(raw);
+      return { ...c, chat: { harness: h, model: c.harnesses[h]?.defaultModel ?? c.chat.model } };
+    },
+  }),
+  registryField('chatModel', {
+    id: 'settings-chat-model',
+    errorKey: 'chat.model',
+    disabled: (c) => !c.harnesses[c.chat.harness],
+    get: (c) => c.chat.model,
+    options: (c) => withCurrent(toOptions(c.harnesses[c.chat.harness]?.models ?? []), c.chat.model),
+    set: (c, raw) => ({ ...c, chat: { ...c.chat, model: String(raw) } }),
+  }),
+];
 
-  return (
-    <div className="grid gap-3.5 sm:grid-cols-2">
-      <div>
-        <label className={fieldLabel} htmlFor="settings-harness">Harness</label>
-        <select id="settings-harness" className={`${selectField} w-full`} value={d.harness} onChange={(e) => set('harness', e.target.value)}>
-          {Object.keys(config.harnesses).map((h) => (
-            <option key={h} value={h}>
-              {h}
-            </option>
-          ))}
-        </select>
-        <FieldError message={fieldErrors['defaults.harness']} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-default-model">Default model</label>
-        <select
-          id="settings-default-model"
-          className={`${selectField} w-full`}
-          value={defaultModel}
-          onChange={(e) => onDefaultModel(e.target.value)}
-          disabled={!harness}
-        >
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-          {defaultModel && !models.includes(defaultModel) && (
-            <option value={defaultModel}>{defaultModel} (not in models list)</option>
-          )}
-        </select>
-        <FieldError message={fieldErrors[`harnesses.${d.harness}.defaultModel`]} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-isolation">Isolation mode</label>
-        <select
-          id="settings-isolation"
-          className={`${selectField} w-full`}
-          value={d.isolationMode}
-          onChange={(e) => set('isolationMode', e.target.value as 'direct' | 'worktree')}
-        >
-          <option value="direct">direct</option>
-          <option value="worktree">worktree</option>
-        </select>
-        <FieldError message={fieldErrors['defaults.isolationMode']} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-priority">Priority</label>
-        <select
-          id="settings-priority"
-          className={`${selectField} w-full`}
-          value={d.priority}
-          onChange={(e) => set('priority', e.target.value as 'high' | 'normal' | 'low')}
-        >
-          <option value="high">high</option>
-          <option value="normal">normal</option>
-          <option value="low">low</option>
-        </select>
-        <FieldError message={fieldErrors['defaults.priority']} />
-      </div>
-    </div>
-  );
-}
+const TASK_DEFAULT_FIELDS: ScalarDescriptor[] = [
+  registryField('harness', {
+    id: 'settings-harness',
+    errorKey: 'defaults.harness',
+    get: (c) => c.defaults.harness,
+    options: (c) => toOptions(Object.keys(c.harnesses)),
+    set: (c, raw) => ({ ...c, defaults: { ...c.defaults, harness: String(raw) } }),
+  }),
+  registryField('model', {
+    id: 'settings-default-model',
+    errorKey: (c) => `harnesses.${c.defaults.harness}.defaultModel`,
+    disabled: (c) => !c.harnesses[c.defaults.harness],
+    get: (c) => c.harnesses[c.defaults.harness]?.defaultModel ?? '',
+    options: (c) =>
+      withCurrent(toOptions(c.harnesses[c.defaults.harness]?.models ?? []), c.harnesses[c.defaults.harness]?.defaultModel ?? ''),
+    set: (c, raw) => {
+      const h = c.defaults.harness;
+      const current = c.harnesses[h];
+      if (!current) return c;
+      return { ...c, harnesses: { ...c.harnesses, [h]: { ...current, defaultModel: String(raw) } } };
+    },
+  }),
+  registryField('isolationMode', {
+    id: 'settings-isolation',
+    errorKey: 'defaults.isolationMode',
+    get: (c) => c.defaults.isolationMode,
+    options: () => toOptions(['direct', 'worktree']),
+    set: (c, raw) => ({ ...c, defaults: { ...c.defaults, isolationMode: raw as 'direct' | 'worktree' } }),
+  }),
+  registryField('priority', {
+    id: 'settings-priority',
+    errorKey: 'defaults.priority',
+    get: (c) => c.defaults.priority,
+    options: () => toOptions(['high', 'normal', 'low']),
+    set: (c, raw) => ({ ...c, defaults: { ...c.defaults, priority: raw as 'high' | 'normal' | 'low' } }),
+  }),
+];
 
-function ChatDefaultsFields({
-  config,
-  fieldErrors,
-  onChange,
-}: {
-  config: AppConfig;
-  fieldErrors: Record<string, string>;
-  onChange: (chat: AppConfig['chat']) => void;
-}) {
-  const harness = config.harnesses[config.chat.harness];
-  const models = harness?.models ?? [];
+const AUTORUNNER_FIELDS: ScalarDescriptor[] = [
+  registryField('autoRunnerEnabled', {
+    id: 'settings-autorunner-enabled',
+    switchLabel: 'Run ready tasks unattended',
+    errorKey: 'autoRunner.enabled',
+    get: (c) => c.autoRunner.enabled,
+    set: (c, raw) => ({ ...c, autoRunner: { ...c.autoRunner, enabled: Boolean(raw) } }),
+  }),
+  // The global instance-wide ceiling (`autoRunner.maxConcurrentRuns`), NOT the
+  // registry's `maxConcurrentRuns` — that key is the per-Workspace cap clamped
+  // to this ceiling, a distinct setting that only appears on the Workspace page.
+  {
+    id: 'settings-max-runs',
+    control: 'number',
+    label: 'Machine Ceiling',
+    errorKey: 'autoRunner.maxConcurrentRuns',
+    min: 1,
+    widthClass: 'w-28',
+    get: (c) => c.autoRunner.maxConcurrentRuns,
+    set: (c, raw) => ({ ...c, autoRunner: { ...c.autoRunner, maxConcurrentRuns: Number(raw) } }),
+  },
+];
 
-  // Repointing the Harness moves the model to that harness's default, so the
-  // pair never lands on a model the new Harness doesn't serve (the config
-  // schema enforces chat.model ∈ the harness's models on save).
-  const pickHarness = (h: string) =>
-    onChange({ harness: h, model: config.harnesses[h]?.defaultModel ?? config.chat.model });
+const ATTEMPT_FIELDS: ScalarDescriptor[] = [
+  registryField('maxAttempts', {
+    id: 'settings-max-attempts',
+    errorKey: 'maxAttempts',
+    min: 1,
+    widthClass: 'w-28',
+    get: (c) => c.maxAttempts,
+    set: (c, raw) => ({ ...c, maxAttempts: Number(raw) }),
+  }),
+];
 
-  return (
-    <div className="grid gap-3.5 sm:grid-cols-2">
-      <div>
-        <label className={fieldLabel} htmlFor="settings-chat-harness">Harness</label>
-        <select
-          id="settings-chat-harness"
-          className={`${selectField} w-full`}
-          value={config.chat.harness}
-          onChange={(e) => pickHarness(e.target.value)}
-        >
-          {Object.keys(config.harnesses).map((h) => (
-            <option key={h} value={h}>
-              {h}
-            </option>
-          ))}
-        </select>
-        <FieldError message={fieldErrors['chat.harness']} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-chat-model">Model</label>
-        <select
-          id="settings-chat-model"
-          className={`${selectField} w-full`}
-          value={config.chat.model}
-          onChange={(e) => onChange({ ...config.chat, model: e.target.value })}
-          disabled={!harness}
-        >
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-          {config.chat.model && !models.includes(config.chat.model) && (
-            <option value={config.chat.model}>{config.chat.model} (not in models list)</option>
-          )}
-        </select>
-        <FieldError message={fieldErrors['chat.model']} />
-      </div>
-    </div>
-  );
-}
-
-function AutoRunnerFields({
-  config,
-  fieldErrors,
-  onChange,
-}: {
-  config: AppConfig;
-  fieldErrors: Record<string, string>;
-  onChange: (autoRunner: AppConfig['autoRunner']) => void;
-}) {
-  const a = config.autoRunner;
-  return (
-    <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-      <div>
-        <span className={fieldLabel}>Enabled</span>
-        <div className="pt-1">
-          <Switch checked={a.enabled} onChange={(enabled) => onChange({ ...a, enabled })}>
-            Run ready tasks unattended
-          </Switch>
-        </div>
-        <FieldError message={fieldErrors['autoRunner.enabled']} />
-      </div>
-      <div>
-        <label className={fieldLabel} htmlFor="settings-max-runs">Machine Ceiling</label>
-        <input
-          id="settings-max-runs"
-          type="number"
-          min={1}
-          className={`${field} w-28 tabular-nums`}
-          value={a.maxConcurrentRuns}
-          onChange={(e) => onChange({ ...a, maxConcurrentRuns: Number(e.target.value) })}
-        />
-        <FieldError message={fieldErrors['autoRunner.maxConcurrentRuns']} />
-      </div>
-    </div>
-  );
-}
+const SESSION_FIELDS: ScalarDescriptor[] = [
+  registryField('contextReuseTokenLimit', {
+    id: 'settings-context-reuse-token-limit',
+    errorKey: 'contextReuseTokenLimit',
+    min: 0,
+    step: 10_000,
+    widthClass: 'w-36',
+    get: (c) => c.contextReuseTokenLimit,
+    set: (c, raw) => ({ ...c, contextReuseTokenLimit: Number(raw) }),
+  }),
+];
 
 function VerificationFields({
   config,
@@ -454,6 +392,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [tab, setTab] = useState<SettingTab>('general');
 
   useEffect(() => {
     api.config().then((c) => {
@@ -490,6 +429,14 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
     }
   };
 
+  const fieldGrid = (fields: ScalarDescriptor[], gridClass: string) => (
+    <div className={gridClass}>
+      {fields.map((f) => (
+        <ConfigField key={f.id} descriptor={f} config={local} errors={fieldErrors} onConfig={setLocal} />
+      ))}
+    </div>
+  );
+
   return (
     <div>
       <div className="max-w-3xl">
@@ -500,175 +447,85 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </p>
       </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start">
-        <SettingsSection
-          title="Instance"
-          description="A display name for this Harmonic instance. Shows in the sidebar and the browser title as “Harmonic - {name} - {workspace}”. Leave blank to just show “Harmonic”."
-        >
-          <div className="max-w-sm">
-            <label className={fieldLabel} htmlFor="settings-instance-name">Name</label>
-            <input
-              id="settings-instance-name"
-              className={field}
-              placeholder="Harmonic"
-              value={local.name}
-              onChange={(e) => setLocal({ ...local, name: e.target.value })}
-            />
-            <FieldError message={fieldErrors['name']} />
-          </div>
-        </SettingsSection>
+      <div className="mt-5">
+        <Tabs tabs={SETTING_TABS} active={tab} onChange={(id) => setTab(id as SettingTab)} label="Settings sections" />
+      </div>
 
-        <SettingsSection
-          title="Task defaults"
-          description="Pre-filled into every new task; each task can override them."
-        >
-          <TaskDefaultsFields
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(defaults) => setLocal({ ...local, defaults })}
-            onDefaultModel={(model) =>
-              setLocal({
-                ...local,
-                harnesses: {
-                  ...local.harnesses,
-                  [local.defaults.harness]: { ...local.harnesses[local.defaults.harness]!, defaultModel: model },
-                },
-              })
-            }
-          />
-        </SettingsSection>
+      <div
+        id={`settings-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${tab}`}
+        className="mt-5 grid gap-4 xl:grid-cols-2 xl:items-start"
+      >
+        {tab === 'general' && (
+          <>
+            <SettingsSection title="Instance" description="A display name for this Harmonic instance. Shows in the sidebar and the browser title as “Harmonic - {name} - {workspace}”. Leave blank to just show “Harmonic”.">
+              {fieldGrid(INSTANCE_FIELDS, '')}
+            </SettingsSection>
+            <SettingsSection title="Chat defaults" description="The Harness and model a new Conversation starts with — separate from the task defaults, so you can chat with a different agent than the one that runs the board. Each Workspace can override these, and every new chat can still change them before its first turn.">
+              {fieldGrid(CHAT_FIELDS, 'grid gap-3.5 sm:grid-cols-2')}
+            </SettingsSection>
+          </>
+        )}
 
-        <SettingsSection
-          title="Chat defaults"
-          description="The Harness and model a new Conversation starts with — separate from the task defaults, so you can chat with a different agent than the one that runs the board. Each Workspace can override these, and every new chat can still change them before its first turn."
-        >
-          <ChatDefaultsFields
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(chat) => setLocal({ ...local, chat })}
-          />
-        </SettingsSection>
+        {tab === 'execution' && (
+          <>
+            <SettingsSection title="Task defaults" description="Pre-filled into every new task; each task can override them.">
+              {fieldGrid(TASK_DEFAULT_FIELDS, 'grid gap-3.5 sm:grid-cols-2')}
+            </SettingsSection>
+            <SettingsSection title="Auto-runner" description="Starts ready tasks unattended, up to the concurrency cap.">
+              {fieldGrid(AUTORUNNER_FIELDS, 'flex flex-wrap items-start gap-x-8 gap-y-4')}
+            </SettingsSection>
+            <SettingsSection title="Attempt limit" description="The maximum implementation attempts before a ticket is escalated. Workspaces can override this cap.">
+              {fieldGrid(ATTEMPT_FIELDS, '')}
+            </SettingsSection>
+            <SettingsSection title="Session reuse" description="Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Workspaces can override this.">
+              {fieldGrid(SESSION_FIELDS, '')}
+            </SettingsSection>
+          </>
+        )}
 
-        <SettingsSection
-          title="Auto-runner"
-          description="Starts ready tasks unattended, up to the concurrency cap."
-        >
-          <AutoRunnerFields
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(autoRunner) => setLocal({ ...local, autoRunner })}
-          />
-        </SettingsSection>
+        {tab === 'verification' && (
+          <SettingsSection title="Verification" description="Commands run in order and stop at the first failure. An optional review runs after every command passes. Each Workspace can override these defaults.">
+            <VerificationFields config={local} fieldErrors={fieldErrors} onChange={(verify) => setLocal({ ...local, verify })} />
+          </SettingsSection>
+        )}
 
-        <SettingsSection
-          title="Attempt limit"
-          description="The maximum implementation attempts before a ticket is escalated. Workspaces can override this cap."
-        >
-          <div>
-            <label className={fieldLabel} htmlFor="settings-max-attempts">Maximum attempts</label>
-            <input
-              id="settings-max-attempts"
-              type="number"
-              min={1}
-              className={`${field} w-28 tabular-nums`}
-              value={local.maxAttempts}
-              onChange={(e) => setLocal({ ...local, maxAttempts: Number(e.target.value) })}
-            />
-            <FieldError message={fieldErrors.maxAttempts} />
-          </div>
-        </SettingsSection>
+        {tab === 'prompts' && (
+          <>
+            <SettingsSection title="Task prompt" description="Wraps a native task's own prompt before it's sent to the agent. Placeholders are filled per Task; the default bare {prompt} sends the prompt verbatim. Mirrored tickets use the Drive prompt instead.">
+              <TaskPromptFields config={local} fieldErrors={fieldErrors} onChange={(taskPrompt) => setLocal({ ...local, taskPrompt })} />
+            </SettingsSection>
+            <SettingsSection title="Drive prompt" description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs how completed work lands.">
+              <DriveFields config={local} fieldErrors={fieldErrors} onChange={(drive) => setLocal({ ...local, drive })} />
+            </SettingsSection>
+          </>
+        )}
 
-        <SettingsSection
-          title="Session reuse"
-          description="Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Workspaces can override this."
-        >
-          <div>
-            <label className={fieldLabel} htmlFor="settings-context-reuse-token-limit">Context reuse token limit</label>
-            <input
-              id="settings-context-reuse-token-limit"
-              type="number"
-              min={0}
-              step={10_000}
-              className={`${field} w-36 tabular-nums`}
-              value={local.contextReuseTokenLimit}
-              onChange={(e) => setLocal({ ...local, contextReuseTokenLimit: Number(e.target.value) })}
-            />
-            <FieldError message={fieldErrors.contextReuseTokenLimit} />
-          </div>
-        </SettingsSection>
+        {tab === 'integrations' && (
+          <>
+            <SettingsSection title="Harnesses" description="The agent CLIs Harmonic drives over ACP — command, environment, and models.">
+              <HarnessesSection config={local} fieldErrors={fieldErrors} onChange={(harnesses) => setLocal({ ...local, harnesses })} />
+            </SettingsSection>
+            <SettingsSection title="Price overrides" description="$ per Mtok. Overrides or extends the shipped price table used for cost.">
+              <PriceOverridesSection config={local} fieldErrors={fieldErrors} onChange={(prices) => setLocal({ ...local, prices })} />
+            </SettingsSection>
+            <SettingsSection title="Notifications" description="Channels that receive task and queue events. Changes apply immediately.">
+              <ChannelsSection />
+            </SettingsSection>
+          </>
+        )}
 
-        <SettingsSection
-          title="Verification"
-          description="Commands run in order and stop at the first failure. An optional review runs after every command passes. Each Workspace can override these defaults."
-        >
-          <VerificationFields
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(verify) => setLocal({ ...local, verify })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Task prompt"
-          description="Wraps a native task's own prompt before it's sent to the agent. Placeholders are filled per Task; the default bare {prompt} sends the prompt verbatim. Mirrored tickets use the Drive prompt instead."
-        >
-          <TaskPromptFields
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(taskPrompt) => setLocal({ ...local, taskPrompt })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Drive prompt"
-          description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs how completed work lands."
-        >
-          <DriveFields
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(drive) => setLocal({ ...local, drive })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Harnesses"
-          description="The agent CLIs Harmonic drives over ACP — command, environment, and models."
-        >
-          <HarnessesSection
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(harnesses) => setLocal({ ...local, harnesses })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Price overrides"
-          description="$ per Mtok. Overrides or extends the shipped price table used for cost."
-        >
-          <PriceOverridesSection
-            config={local}
-            fieldErrors={fieldErrors}
-            onChange={(prices) => setLocal({ ...local, prices })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Notifications"
-          description="Channels that receive task and queue events. Changes apply immediately."
-        >
-          <ChannelsSection />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Permission rules"
-          description="Persistent 'Always allow' choices from Conversation permission prompts — each auto-approves a tool kind in a Working Directory across Conversations. Revoking one makes matching requests prompt again."
-        >
-          <PermissionRules />
-        </SettingsSection>
-
-        <SettingsSection title="Security" description="The operator password for this console.">
-          <SecuritySection />
-        </SettingsSection>
+        {tab === 'security' && (
+          <>
+            <SettingsSection title="Permission rules" description="Persistent 'Always allow' choices from Conversation permission prompts — each auto-approves a tool kind in a Working Directory across Conversations. Revoking one makes matching requests prompt again.">
+              <PermissionRules />
+            </SettingsSection>
+            <SettingsSection title="Security" description="The operator password for this console.">
+              <SecuritySection />
+            </SettingsSection>
+          </>
+        )}
       </div>
 
       {dirty && <FloatingSaveBar error={error} saving={saving} onDiscard={discard} onSave={save} />}
