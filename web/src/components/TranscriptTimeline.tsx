@@ -1,5 +1,5 @@
 import { useMemo, type JSX } from 'react';
-import { coalesceEvents, type StreamItem } from '../event-stream-model';
+import { coalesceEvents, movingBaseView, type StreamItem } from '../event-stream-model';
 import { transcriptLanes } from '../transcript-timeline-model';
 import type { RunLogEvent } from '../types';
 
@@ -116,6 +116,23 @@ function toRow(item: StreamItem<RunLogEvent>, ts: number): Row {
       failed: item.tool.status === 'failed',
       path: target || undefined,
       toolCallId: item.tool.toolCallId,
+    };
+  }
+  const movingBase = movingBaseView(item.event.payload);
+  if (movingBase) {
+    // A calm collapsed line — quiet by default, promoted (un-muted, count shown)
+    // only as the retries near the bound (ADR-0046, #368).
+    return {
+      key: item.key,
+      ts: item.event.ts,
+      glyph: 'dot',
+      label: 'Reconciling',
+      ok: false,
+      failed: false,
+      text: {
+        body: movingBase.count ? `${movingBase.label} ${movingBase.count}` : movingBase.label,
+        muted: !movingBase.nearBound,
+      },
     };
   }
   const payload = item.event.payload as { event?: unknown; text?: unknown } | null;

@@ -7,7 +7,7 @@ import { startServer, stubHarness, waitFor, seedLocalMarkdownTicket, type TestSe
 import { verificationCommandSchema, verificationCriticSchema } from '../src/config.js';
 import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import type { MirrorInput } from '../src/domain/tasks.js';
-import { landingJournal, sessions } from '../src/db/schema.js';
+import { landingJournal, runFacts, sessions } from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
 
 /**
@@ -226,6 +226,16 @@ describe('landing freshness gate (issue #313, ADR-0041)', () => {
     ]);
     expect(events.filter((e) => e.event === 'verification')).toHaveLength(2);
     expect(events.map((e) => e.event)).not.toContain('escalated');
+
+    // Moving-base observability (ADR-0046, #368): the single rebase re-entry emits
+    // one quiet per-retry event carrying its attempt index, and the completion
+    // loop records one terminal run-fact with the final count on exit.
+    const movingBase = events.filter((e) => e.event === 'moving-base') as Array<{ event: string; attempt: number; of: number }>;
+    expect(movingBase).toEqual([{ event: 'moving-base', attempt: 1, of: 5 }]);
+    const facts = await server.app.ctx.asyncDb.read((d) => d.select().from(runFacts).where(eq(runFacts.runId, runId)).all());
+    const movingBaseFacts = facts.filter((f) => f.type === 'moving-base');
+    expect(movingBaseFacts).toHaveLength(1);
+    expect(JSON.parse(movingBaseFacts[0]!.payload)).toEqual({ retries: 1 });
   });
 
   it('two afk worktree Runs landing concurrently on one base: the second is refused stale at the land, rebases + re-verifies, then lands its own SHA — no unverified merge commit', async () => {

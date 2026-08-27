@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coalesceEvents, coalesceTail, MAX_STREAM_EVENTS } from '../web/src/event-stream-model.js';
+import { coalesceEvents, coalesceTail, MAX_STREAM_EVENTS, movingBaseView } from '../web/src/event-stream-model.js';
 import type { RunEvent } from '../web/src/types.js';
 
 const evt = (id: number, type: RunEvent['type'], payload: any): RunEvent => ({
@@ -106,6 +106,54 @@ describe('coalesceEvents', () => {
   it('tolerates chunks with missing text', () => {
     const items = coalesceEvents([chunk(1, 'a'), evt(2, 'session_update', { sessionUpdate: 'agent_message_chunk' })]);
     expect(items).toEqual([{ kind: 'text', variant: 'message', text: 'a', key: 1 }]);
+  });
+});
+
+describe('moving-base folding (ADR-0046, #368)', () => {
+  const retry = (id: number, attempt: number, of: number): RunEvent =>
+    evt(id, 'lifecycle', { event: 'moving-base', attempt, of });
+
+  it('folds every rebase re-entry into one row, kept at its first-seen position with the latest attempt', () => {
+    const items = coalesceEvents([retry(1, 1, 5), retry(2, 2, 5), retry(3, 3, 5)]);
+    // One row, first event's key, payload advanced to the latest attempt.
+    expect(items).toEqual([{ kind: 'event', event: retry(3, 3, 5), key: 1 }]);
+  });
+
+  it('keeps the reconciling line in place as other events interleave between retries', () => {
+    const phase = (id: number) => evt(id, 'lifecycle', { event: 'phase', phase: 'verifying' });
+    const items = coalesceEvents([retry(1, 1, 5), phase(2), retry(3, 2, 5), phase(4)]);
+    expect(items.map((i) => i.key)).toEqual([1, 2, 4]);
+    // The single moving-base row still holds the newest attempt payload.
+    expect(items[0]).toEqual({ kind: 'event', event: retry(3, 2, 5), key: 1 });
+  });
+});
+
+describe('movingBaseView (ADR-0046, #368)', () => {
+  it('is null for any non-moving-base payload', () => {
+    expect(movingBaseView({ event: 'phase', phase: 'verifying' })).toBeNull();
+    expect(movingBaseView(null)).toBeNull();
+    expect(movingBaseView(undefined)).toBeNull();
+  });
+
+  it('stays quiet with no count while the retries are far from the bound', () => {
+    expect(movingBaseView({ event: 'moving-base', attempt: 1, of: 5 })).toEqual({
+      label: 'Reconciling with the latest base…',
+      count: null,
+      nearBound: false,
+    });
+  });
+
+  it('surfaces the count and raises prominence only within one of the bound', () => {
+    expect(movingBaseView({ event: 'moving-base', attempt: 4, of: 5 })).toEqual({
+      label: 'Reconciling with the latest base…',
+      count: '4/5',
+      nearBound: true,
+    });
+    expect(movingBaseView({ event: 'moving-base', attempt: 5, of: 5 })).toEqual({
+      label: 'Reconciling with the latest base…',
+      count: '5/5',
+      nearBound: true,
+    });
   });
 });
 

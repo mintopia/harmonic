@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import { coalesceTail, isInterrupted, type StreamEvent, type ToolCallView } from '../event-stream-model';
+import { coalesceTail, isInterrupted, movingBaseView, type StreamEvent, type ToolCallView } from '../event-stream-model';
 import { guardrailDimensionLabel } from '../guardrail-trip-model';
 import { chip, labelType, toolChip } from '../ui';
 
@@ -100,6 +100,15 @@ function renderEventLine(event: StreamEvent): ReactNode {
           Redirected before a guardrail trip
           {event.payload.pattern ? ` — ${String(event.payload.pattern)}` : ''}
         </span>
+      </div>
+    );
+  }
+  const movingBase = movingBaseView(event.payload);
+  if (movingBase) {
+    return (
+      <div className={movingBase.nearBound ? 'text-muted' : 'text-faint'}>
+        {movingBase.label}
+        {movingBase.count && <span className="ml-1 tabular-nums">{movingBase.count}</span>}
       </div>
     );
   }

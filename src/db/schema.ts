@@ -728,6 +728,10 @@ export const RUN_FACT_TYPES = [
   'session-continuation',
   /** Immutable proof that verification ran against this branch tip. */
   'verified-head',
+  /** Terminal count of moving-base rebase/CAS retries a completion loop absorbed
+   * (ADR-0046, #368). Non-ending — a moving base is normal, never a disposition;
+   * it sinks below every ranked kind in `DISPOSITION_PRECEDENCE`. */
+  'moving-base',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 

@@ -1636,6 +1636,11 @@ export class Runner {
    * advancing escalates plainly rather than tight-retrying. A rebase conflict or
    * a failing re-verification is a failed Attempt for the unified loop; direct
    * mode (no branch) or a git fault Escalates.
+   *
+   * A thin wrapper over {@link completionLoop} that, on any exit, records one
+   * terminal `moving-base` run-fact with the final retry count (ADR-0046, #368) —
+   * derived from the loop's own `moving-base` lifecycle events so it is crash-safe
+   * and needs no persisted counter; absent when the base never moved.
    */
   private async completeIntegration(
     task: TaskRow,
@@ -1646,6 +1651,31 @@ export class Runner {
     signal: AbortSignal,
     record: (type: 'lifecycle', payload: unknown) => void,
     parent: SpanContext,
+  ): Promise<LandingGate> {
+    // The loop's own moving-base retry tally — transient loop state, never a
+    // persisted per-retry counter (ADR-0046, #368). Reading it back here rather
+    // than re-counting the event log means the terminal fact is the exact final
+    // count, independent of whether the fire-and-forget per-retry events have
+    // flushed yet.
+    const retries = { count: 0 };
+    try {
+      return await this.completionLoop(task, run, workspace, attemptNumber, autoDriven, signal, record, parent, retries);
+    } finally {
+      // Best-effort terminal telemetry; never let it mask the loop's outcome.
+      if (retries.count > 0) await this.runFacts.append(run.id, 'moving-base', { retries: retries.count }).catch(() => {});
+    }
+  }
+
+  private async completionLoop(
+    task: TaskRow,
+    run: RunRow,
+    workspace: Workspace,
+    attemptNumber: number,
+    autoDriven: boolean,
+    signal: AbortSignal,
+    record: (type: 'lifecycle', payload: unknown) => void,
+    parent: SpanContext,
+    retries: { count: number },
   ): Promise<LandingGate> {
     let current = await this.runStore.get(run.id);
     // How many times this completion may re-enter Rebase → Verification because
@@ -1693,6 +1723,14 @@ export class Runner {
       if (reentries >= maxReentries) {
         return { kind: 'escalate', reason: `base kept advancing through ${maxReentries} rebase+verify re-entries` };
       }
+      // A moving base is normal, not an alarm (ADR-0046, #368): record each rebase
+      // re-entry as a fire-and-forget lifecycle event carrying its attempt index
+      // (`3/5`) so the UI shows a single quiet collapsed line whose prominence
+      // rises only near the bound. The UI derives its cumulative count from these
+      // events; the tally here feeds only the terminal fact, never a persisted
+      // per-retry counter.
+      retries.count += 1;
+      record('lifecycle', { event: 'moving-base', attempt: retries.count, of: maxReentries });
       const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, current.baseBranch);
       if (!rebase.ok) {
         // A raw GitError never reaches the operator (git.ts): the rebase Task row
