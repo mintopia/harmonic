@@ -14,6 +14,7 @@ import {
   reduceMemberState,
   type EpicGit,
   type EpicLandTrigger,
+  type EpicRefreshTrigger,
 } from '../src/execution/epic-integration.js';
 import type { MemberLandState } from '../src/domain/epic-land.js';
 import { allWorkspaces } from './helpers.js';
@@ -75,6 +76,15 @@ class FakeGit implements EpicGit {
   }
   async isAncestor(_dir: string, _baseBranch: string, branch: string): Promise<boolean> {
     return this.contained.has(branch);
+  }
+}
+
+/** Records which Epic refs the coordinator asks to merge develop forward into. */
+class FakeRefresh implements EpicRefreshTrigger {
+  readonly calls: number[] = [];
+  async refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown> {
+    this.calls.push(target.ref);
+    return { status: 'refreshed' as const, oid: 'deadbeef' };
   }
 }
 
@@ -411,6 +421,65 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     // The same member with the branch absent is deferred (gated), not escalated.
     const missing = new EpicIntegrationCoordinator(tasks, dir, new FakeGit([], 'develop'));
     expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
+  });
+
+  it('level-triggered currency: a poll refreshes a behind epic/<ref> (develop advanced by a non-land path) and skips a current one', async () => {
+    const tickets = epicTickets();
+    const mirrored = await mscan(tickets);
+    // epic/10 exists but does NOT contain develop — develop advanced via a direct
+    // commit / revert / external push, no Harmonic land, so no edge refresh fired.
+    const git = new FakeGit(['epic/10'], 'develop');
+    git.contained.delete('epic/10'); // develop is not an ancestor ⇒ behind
+    const refresh = new FakeRefresh();
+    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    coord.attachRefreshTrigger(refresh);
+
+    await coord.reconcile(tickets, mirrored);
+    expect(refresh.calls).toEqual([10]);
+
+    // Once develop is contained again, the next poll is a no-op — no FIFO churn.
+    git.contained.add('epic/10');
+    refresh.calls.length = 0;
+    await coord.reconcile(tickets, await mscan(tickets));
+    expect(refresh.calls).toEqual([]);
+  });
+
+  it('refreshes a behind epic even with an empty ready frontier (currency is not gated by the ready-frontier early return)', async () => {
+    // Epic 10's only member is closed ⇒ empty ready frontier and no land trigger,
+    // which in the edge-triggered design short-circuited before any refresh. The
+    // live epic/10 has still fallen behind develop and must be caught up.
+    const tickets = [
+      ticket({ number: 10, title: 'Epic' }),
+      ticket({ number: 11, parent: 10, state: 'closed', closedAt: '2026-08-08T00:00:00Z' }),
+    ];
+    const git = new FakeGit(['epic/10'], 'develop');
+    git.contained.delete('epic/10');
+    const refresh = new FakeRefresh();
+    const coord = new EpicIntegrationCoordinator(tasks, dir, git);
+    coord.attachRefreshTrigger(refresh);
+
+    await coord.reconcile(tickets, await mscan(tickets));
+    expect(refresh.calls).toEqual([10]);
+  });
+
+  it('never refreshes an epic whose integration branch does not exist, and skips currency on a detached HEAD', async () => {
+    const tickets = epicTickets();
+    // No epic/10 branch yet ⇒ nothing to keep current.
+    const noBranch = new FakeGit([], 'develop');
+    const r1 = new FakeRefresh();
+    const c1 = new EpicIntegrationCoordinator(tasks, dir, noBranch);
+    c1.attachRefreshTrigger(r1);
+    await c1.reconcile(tickets, await mscan(tickets));
+    expect(r1.calls).toEqual([]);
+
+    // Detached working dir ⇒ no default branch to merge forward, defer.
+    const detached = new FakeGit(['epic/10'], null);
+    detached.contained.delete('epic/10');
+    const r2 = new FakeRefresh();
+    const c2 = new EpicIntegrationCoordinator(tasks, dir, detached);
+    c2.attachRefreshTrigger(r2);
+    await c2.reconcile(tickets, await mscan(tickets));
+    expect(r2.calls).toEqual([]);
   });
 });
 

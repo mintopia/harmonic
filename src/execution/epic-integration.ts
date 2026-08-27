@@ -160,19 +160,32 @@ export class EpicIntegrationCoordinator {
   }
 
   /**
-   * Handle one observed default-branch advance. This is an edge hook called by
-   * the landing path, never by the poll loop. Derived Epics without a current
-   * integration branch are retired or closed and are intentionally skipped.
+   * Handle one observed default-branch advance from Harmonic's own landing path
+   * — the edge trigger. The poll loop drives the same convergence level-triggered
+   * (see {@link reconcile}); both share {@link refreshDriftedEpics} so an Epic
+   * already containing `defaultBranch` is skipped and neither path can diverge.
    */
   async refreshAfterDefaultBranchAdvance(defaultBranch: string): Promise<void> {
     if (!this.epicRefresh) return;
     const tickets = this.latestTickets.length > 0
       ? this.latestTickets
       : await persistedTickets(await this.tasks.list(), await this.tasks.listTrackerContainers());
-    const epics = deriveEpics(tickets);
+    await this.refreshDriftedEpics(defaultBranch, deriveEpics(tickets));
+  }
+
+  /**
+   * Merge `defaultBranch` forward into every derived Epic whose integration
+   * branch EXISTS and has fallen behind it. Drift is cheap to detect: the Epic
+   * is behind iff `defaultBranch` is not already an ancestor of `epic/<ref>`.
+   * Skipping the contained ones keeps this idempotent and off the per-branch
+   * FIFO. One Epic's failure is logged, never allowed to abort the rest.
+   */
+  private async refreshDriftedEpics(defaultBranch: string, epics: readonly { ref: number }[]): Promise<void> {
+    if (!this.epicRefresh) return;
     for (const epic of epics) {
       const branch = integrationBranchName(epic.ref);
       if (!(await this.git.branchExists(this.workingDir, branch))) continue;
+      if (await this.git.isAncestor(this.workingDir, defaultBranch, branch)) continue;
       try {
         await this.epicRefresh.refresh({ ref: epic.ref, repoDir: this.workingDir, defaultBranch });
       } catch (err) {
@@ -201,6 +214,29 @@ export class EpicIntegrationCoordinator {
     // Publish the gate set before any await so a racing pick already sees these
     // refs as base-pending (their `baseBranch` is still null until below).
     this.readyMemberRefs = readyRefs;
+
+    // The "default branch" an integration branch is cut from and refreshed
+    // against is the working dir's symbolic HEAD — the same branch a Run's base
+    // resolves to today (issue #157). Detached HEAD (a concurrent afk-direct
+    // Run, issue #152) yields null: defer this poll. Resolved at most once and
+    // memoised, shared by the currency refresh and the base-set half below.
+    let cachedDefault: string | null | undefined;
+    const defaultBranchOnce = async (): Promise<string | null> => {
+      if (cachedDefault === undefined) cachedDefault = await this.git.symbolicBranch(this.workingDir);
+      return cachedDefault;
+    };
+
+    // Level-triggered epic-branch currency: every poll, merge develop forward
+    // into any live `epic/<ref>` that has fallen behind — from ANY source of
+    // drift (a direct commit, a revert, an external push), not just Harmonic's
+    // own lands. Runs BEFORE the ready-frontier early return, since a behind
+    // Epic with no ready members still needs catching up. No-op without a
+    // refresh trigger, so the per-branch FIFO stays untouched in that case.
+    if (this.epicRefresh) {
+      const defaultBranch = await defaultBranchOnce();
+      if (defaultBranch !== null) await this.refreshDriftedEpics(defaultBranch, epics);
+    }
+
     // Nothing to base and no land trigger ⇒ no work this poll (preserves #159's
     // no-op when the whole-Epic land isn't wired). With a land trigger present we
     // must run even with an empty ready frontier: an Epic whose members are all
@@ -211,12 +247,7 @@ export class EpicIntegrationCoordinator {
     for (const task of mirrored) {
       if (task.trackerRef != null) byRef.set(task.trackerRef, task);
     }
-    // The "default branch" an integration branch is cut from is the working
-    // dir's symbolic HEAD — the same branch a Run's base resolves to today
-    // (issue #157). Detached HEAD (a concurrent afk-direct Run, issue #152)
-    // yields null: defer this poll rather than anchor a durable branch on a
-    // transient OID. Members stay base-pending (gated), retried next poll.
-    const defaultBranch = await this.git.symbolicBranch(this.workingDir);
+    const defaultBranch = await defaultBranchOnce();
     if (defaultBranch === null) {
       // Detached working dir (a concurrent afk-direct Run): we can't safely cut a
       // durable branch off a transient OID this poll, so skip the base-set half.
