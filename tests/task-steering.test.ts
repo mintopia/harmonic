@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdtempSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
@@ -207,9 +208,21 @@ describe('steering a settled task continues its warm session', () => {
   });
 
   it('409s when the settled task has no warm session (e.g. a plain done native task)', async () => {
-    const created = await server.api('POST', '/api/tasks', { prompt: 'quick native task' });
+    // Own workspace: the sibling test above leaves a warm, un-retired Session on
+    // the default workspace that still holds its `direct:<workdir>` work-context
+    // lease. A native task sharing that workspace would 409 on `/run` (lease held)
+    // and sit `ready` forever — the flake. A distinct workingDir gives this run
+    // its own lease key so it launches and settles independently.
+    const workingDir = mkdtempSync(join(tmpdir(), 'harmonic-steer-native-'));
+    execFileSync('git', ['init', '-b', 'main', workingDir]);
+    execFileSync('git', ['-C', workingDir, 'config', 'user.name', 'Test']);
+    execFileSync('git', ['-C', workingDir, 'config', 'user.email', 'test@example.com']);
+    execFileSync('git', ['-C', workingDir, 'commit', '--allow-empty', '-m', 'init']);
+
+    const created = await server.api('POST', '/api/tasks', { prompt: 'quick native task', workingDir });
     const taskId = created.body.id;
-    await server.api('POST', `/api/tasks/${taskId}/run`);
+    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect(started.status).toBe(201);
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
     const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'too late' });
     expect(res.status).toBe(409);
