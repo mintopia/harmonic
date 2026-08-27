@@ -16,7 +16,8 @@ import {
 import { adapterFor, adapterVersion, wholeFileReader, type SessionTailReader } from './harness/adapter.js';
 import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLine, agentsFromTree, toolCallName, totalTokensOf, type RunUsage, type RunUsageSnapshot, type ParsedSession } from './usage.js';
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
-import { driveFields, promptForTask } from './prompt-template.js';
+import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
+import { indexWorktree, dropIndexForPath } from './code-index.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
@@ -724,9 +725,10 @@ export class Runner {
       // branch it checks out cannot be deleted while it exists.
       const session = run.sessionRowId === null ? null : await this.sessionStore.get(run.sessionRowId).catch(() => null);
       if (session?.worktreePath && session.worktreeRepoDir && existsSync(session.worktreePath)) {
-        await Git.removeWorktree(session.worktreeRepoDir, session.worktreePath).catch((err) =>
-          logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`),
-        );
+        const removedPath = session.worktreePath;
+        await Git.removeWorktree(session.worktreeRepoDir, removedPath)
+          .then(() => dropIndexForPath(removedPath))
+          .catch((err) => logger.error(`task ${task.id} close: worktree removal failed: ${String(err)}`));
       }
       if (run.branch && !isDirectRef(run.branch) && (await Git.branchCheckedOutAt(task.workingDir, run.branch).catch(() => null)) === null) {
         await Git.deleteBranch(task.workingDir, run.branch).catch((err) =>
@@ -3613,6 +3615,16 @@ export class Runner {
           `Resolve the conflicted files, stage them, and run \`git rebase --continue\` before doing anything else.`;
       }
       if (condensed) promptText = `${promptText}\n\n${condensed}`;
+      // Worktree-isolation Run: index this worktree as its own jCodeMunch repo and
+      // tell the agent to query that id, so its code-index navigation reflects the
+      // branch it is working on instead of the canonical checkout jCodeMunch serves
+      // for a bare `.` (`code-index.ts`). Direct Runs operate in the canonical
+      // checkout itself — which jCodeMunch already indexes — so they are skipped
+      // (and its shared index is never reaped at teardown).
+      if (workspace.cwd !== task.workingDir) {
+        const codeIndexRepoId = await indexWorktree(workspace.cwd);
+        if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
+      }
       // Persist the exact text sent so Task detail can show it on every Run —
       // native or mirrored — without re-deriving a template that may since have
       // changed (the "Prompt" tab reads this column). Steer/continue turns are

@@ -30,6 +30,7 @@ import { EscalationService } from '../domain/escalation.js';
 import { RunSettleCoordinator } from '../domain/run-settle.js';
 import { SessionStore } from '../domain/sessions.js';
 import { SessionRetirementCoordinator } from '../domain/session-retirement-coordinator.js';
+import { dropIndexForPath } from '../execution/code-index.js';
 import { OrphanWorktreeReconciler } from '../domain/orphan-worktree-reconciler.js';
 import { Git } from '../execution/git.js';
 import { RunFactStore } from '../domain/run-facts.js';
@@ -319,7 +320,11 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     sessionStore,
     runs,
     leases,
-    (repoDir, worktreePath) => Git.removeWorktree(repoDir, worktreePath).then(() => {}),
+    (repoDir, worktreePath) =>
+      Git.removeWorktree(repoDir, worktreePath)
+        // Reap the worktree's jCodeMunch index once its files are gone (no-op if
+        // it was never indexed, e.g. the CLI is absent); `code-index.ts`.
+        .then(() => dropIndexForPath(worktreePath)),
   );
   const orphanWorktrees = new OrphanWorktreeReconciler(
     sessionStore,
@@ -327,6 +332,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     () => workspaces.list(),
     Git,
     worktreesDir,
+    dropIndexForPath,
   );
   // Single-flight the retirement drain (issue #219): it is fired on every
   // `run_changed`, so a burst of settling Runs would otherwise fan out

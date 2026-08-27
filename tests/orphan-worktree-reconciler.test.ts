@@ -22,6 +22,7 @@ describe('orphan worktree reconcile (issue #304)', () => {
   it('removes only unowned managed worktrees and their checked-out branches', async () => {
     const managedRoot = '/harmonic/worktrees';
     const removed: Array<{ repoDir: string; path: string; branch: string | null }> = [];
+    const reaped: string[] = [];
     const reconciler = new OrphanWorktreeReconciler(
       {
         listWorktreeOwners: async () => [
@@ -45,12 +46,17 @@ describe('orphan worktree reconcile (issue #304)', () => {
         },
       },
       managedRoot,
+      async (path) => {
+        reaped.push(path);
+      },
     );
 
     await expect(reconciler.reconcile()).resolves.toEqual({ removed: 1 });
     expect(removed).toEqual([
       { repoDir: '/repo', path: join(managedRoot, 'run-1'), branch: 'harmonic/task-1-run-1' },
     ]);
+    // The removed worktree's code-index is reaped; nothing else is.
+    expect(reaped).toEqual([join(managedRoot, 'run-1')]);
   });
 
   it('rechecks ownership under the repository lock before removal', async () => {

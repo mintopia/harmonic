@@ -4,6 +4,7 @@ import type { HarnessConfig, VerificationCritic } from '../config.js';
 import { AcpDriver } from '../acp/driver.js';
 import { adapterFor } from '../execution/harness/adapter.js';
 import { withDetachedWorktree } from '../execution/detached-worktree.js';
+import { indexWorktree, dropIndex } from '../execution/code-index.js';
 import type { DriveFields } from '../execution/prompt-template.js';
 import { buildCriticPrompt } from './critic-prompt.js';
 import { parseCriticOutput, type Verdict } from './critic-schema.js';
@@ -341,33 +342,46 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   let proof: { mutated: boolean };
   try {
     proof = await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
-      const prompt = buildCriticPrompt({
-        operatorPrompt: args.critic.prompt,
-        fields: args.fields,
-        ...(args.operatorNote !== undefined ? { operatorNote: args.operatorNote } : {}),
-        ...(args.mergeCleanliness !== undefined ? { mergeCleanliness: args.mergeCleanliness } : {}),
-      });
-
+      // Index this disposable checkout as its own jCodeMunch repo and hand the
+      // critic that id, so its code-index queries hit the candidate tree rather
+      // than resolving `.` to the canonical checkout on another branch
+      // (`code-index.ts`). The index lives outside the worktree, so it never
+      // trips the mutation fingerprint. Best-effort: null ⇒ skip the injection.
+      const codeIndexRepoId = await indexWorktree(dir);
       try {
-        const result = await drive.run({
-          harness: args.harness,
-          harnessId: args.harnessId,
-          model: args.critic.model,
-          cwd: dir,
-          prompt,
-          timeoutMs,
+        const prompt = buildCriticPrompt({
+          operatorPrompt: args.critic.prompt,
+          fields: args.fields,
+          ...(args.operatorNote !== undefined ? { operatorNote: args.operatorNote } : {}),
+          ...(args.mergeCleanliness !== undefined ? { mergeCleanliness: args.mergeCleanliness } : {}),
+          ...(codeIndexRepoId ? { codeIndexRepoId } : {}),
         });
-        output = result.output;
-        sessionId = result.sessionId ?? null;
-        const parsed = parseCriticOutput(result.output);
-        if (parsed.ok) {
-          verdict = parsed.value.verdict;
-          summary = parsed.value.summary;
-        } else {
-          summary = parsed.reason;
+
+        try {
+          const result = await drive.run({
+            harness: args.harness,
+            harnessId: args.harnessId,
+            model: args.critic.model,
+            cwd: dir,
+            prompt,
+            timeoutMs,
+          });
+          output = result.output;
+          sessionId = result.sessionId ?? null;
+          const parsed = parseCriticOutput(result.output);
+          if (parsed.ok) {
+            verdict = parsed.value.verdict;
+            summary = parsed.value.summary;
+          } else {
+            summary = parsed.reason;
+          }
+        } catch (err) {
+          summary = `critic drive failed: ${err instanceof Error ? err.message : String(err)}`;
         }
-      } catch (err) {
-        summary = `critic drive failed: ${err instanceof Error ? err.message : String(err)}`;
+      } finally {
+        // Reap the ephemeral index whichever way the turn went; the worktree is
+        // about to be torn down, so the index would otherwise dangle.
+        if (codeIndexRepoId) await dropIndex(codeIndexRepoId);
       }
     });
   } catch (err) {
