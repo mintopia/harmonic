@@ -216,7 +216,7 @@ describe('mcp server & scoped keys', () => {
     expect(followUp).toBeDefined();
     expect(followUp.state).toBe('ready');
     expect(followUp.dependsOn).toEqual([created.body.id]);
-    // The parent landing (done) is what unblocked the agent-scheduled follow-up.
+    // The parent merging (done) is what unblocked the agent-scheduled follow-up.
     expect(followUp.openBlockerCount).toBe(0);
     expect(followUp.agentWorkable).toBe(true);
   });

@@ -47,7 +47,7 @@ export function taskActions(state: TaskState): TaskAction[] {
 }
 
 export interface EscalationActions {
-  /** Accept lands the verified branch head, so it needs one. */
+  /** Accept merges the verified branch head, so it needs one. */
   accept: boolean;
   reject: boolean;
   close: boolean;

@@ -32,7 +32,7 @@ export const touchTargetInline = 'inline-flex min-h-11 items-center';
  * parent must establish a positioning context (`relative`, or already
  * `absolute`); the `aria-hidden` span overflows into the surrounding inert
  * space, so the glyph, alignment and row height are untouched while the touch
- * target meets the floor. Clicks on the overflow land on the parent button. */
+ * target meets the floor. Clicks on the overflow merge on the parent button. */
 export const touchOverlay = 'absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2';
 
 /** Quiet, but destructive (§5 Buttons: "destructive quiet actions hover to
@@ -138,7 +138,7 @@ export const toolChip = `${chip} bg-tool-tint text-tool`;
  * will cost you") — the one deliberate exception to DESIGN.md's "state colour on
  * the state layer only" rule; `warm`/`unknown` stay neutral — differing
  * by muted vs faint ink so cold is never the only distinguishable band. Because
- * the two paths trade places on which is cheaper, amber lands on **whichever
+ * the two paths trade places on which is cheaper, amber merges on **whichever
  * path is the pricier one right now** — never both, never dressing the cheaper
  * one up as the promoted choice. One shared vocabulary so the chip can't fork
  * registers between surfaces (#99). */
@@ -350,7 +350,7 @@ export const runChipActive =
   'flex min-w-[132px] flex-col gap-1 rounded-lg border border-transparent bg-await-tint px-3 py-2 text-left shadow-[0_0_0_1.5px_var(--hm-await)]';
 
 /** Phase-stepper node (DESIGN.md § 6): the Run's executing → validating →
- * verifying → review → landing machine. A done step is an emerald ✓ node, the
+ * verifying → review → merging machine. A done step is an emerald ✓ node, the
  * current step a cobalt node, a pending step a hollow Edge node, a failed step a
  * rose ✗ node (a failed Run stops there). */
 export const PHASE_NODE_STYLES = {

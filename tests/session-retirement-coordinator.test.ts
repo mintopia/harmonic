@@ -81,14 +81,14 @@ describe('Session retirement (issue #148)', () => {
 
     it('markRetired stamps retiredAt and is terminal', async () => {
       const s = await dispatch();
-      await sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'merged', now);
       const retired = await sessions.markRetired(s.id, now + 1);
       expect(retired).toMatchObject({ status: 'retired', retiredAt: now + 1 });
     });
 
     it('never walks a retiring/retired Session back to idle', async () => {
       const s = await dispatch();
-      await sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'merged', now);
       const stuck = await sessions.markIdle(s.id, now + 5_000, 'retention-ttl', now);
       expect(stuck.status).toBe('retiring'); // markIdle was a no-op
     });
@@ -104,7 +104,7 @@ describe('Session retirement (issue #148)', () => {
       const a = await dispatch({ harnessSessionId: 'a' });
       const b = await dispatch({ harnessSessionId: 'b' });
       const c = await dispatch({ harnessSessionId: 'c' });
-      await sessions.beginRetiring(a.id, 'landed', now);
+      await sessions.beginRetiring(a.id, 'merged', now);
       await sessions.markIdle(b.id, now + 10, 'retention-ttl', now); // not yet due at `now`
       await sessions.markIdle(c.id, now - 10, 'retention-ttl', now); // overdue
       expect((await sessions.listRetiring()).map((s) => s.id)).toEqual([a.id]);
@@ -116,11 +116,11 @@ describe('Session retirement (issue #148)', () => {
     const makeCoord = (removeWorktree = vi.fn(async () => {})) =>
       new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
-    it('marks the Session retiring on a landed disposition', async () => {
+    it('marks the Session retiring on a merged disposition', async () => {
       const s = await dispatch();
       const run = await runForSession(s.id);
-      await makeCoord().onRunSettled(run, 'landed', now);
-      expect(await sessions.get(s.id)).toMatchObject({ status: 'retiring', retireReason: 'landed' });
+      await makeCoord().onRunSettled(run, 'merged', now);
+      expect(await sessions.get(s.id)).toMatchObject({ status: 'retiring', retireReason: 'merged' });
     });
 
     it('retires immediately on an operator cancel (the Close action)', async () => {
@@ -138,14 +138,14 @@ describe('Session retirement (issue #148)', () => {
     it('is a no-op for a Run with no Session', async () => {
       const task = await tasks.create({ prompt: 'p', state: 'ready' });
       const run = await runs.create(task.id); // sessionRowId null
-      await expect(makeCoord().onRunSettled(run, 'landed', now)).resolves.toBeUndefined();
+      await expect(makeCoord().onRunSettled(run, 'merged', now)).resolves.toBeUndefined();
     });
 
     it('does not re-decide a Session already retiring', async () => {
       const s = await dispatch();
       const run = await runForSession(s.id);
       const coord = makeCoord();
-      await coord.onRunSettled(run, 'landed', now);
+      await coord.onRunSettled(run, 'merged', now);
       await coord.onRunSettled(run, 'other', now + 1); // a later ending must not un-retire it
       expect((await sessions.get(s.id)).status).toBe('retiring');
     });
@@ -155,7 +155,7 @@ describe('Session retirement (issue #148)', () => {
     it('removes a retiring Session\'s worktree and marks it retired', async () => {
       const s = await dispatch();
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      await sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
@@ -184,7 +184,7 @@ describe('Session retirement (issue #148)', () => {
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
       const run = await runForSession(s.id);
       await leases.acquire('worktree:/wt/run-1::branch', run.id, 'running'); // still held
-      await sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
@@ -216,7 +216,7 @@ describe('Session retirement (issue #148)', () => {
     it('is idempotent — a second drain changes nothing and removes nothing again', async () => {
       const s = await dispatch();
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      await sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {});
       const coord = new SessionRetirementCoordinator(sessions, runs, leases, removeWorktree, cfg, () => now);
 
@@ -230,7 +230,7 @@ describe('Session retirement (issue #148)', () => {
     it('survives a worktree-removal failure (best-effort) and still retires', async () => {
       const s = await dispatch();
       await sessions.bindWorktree(s.id, '/repo', '/wt/run-1', now);
-      await sessions.beginRetiring(s.id, 'landed', now);
+      await sessions.beginRetiring(s.id, 'merged', now);
       const removeWorktree = vi.fn(async () => {
         throw new Error('worktree already gone');
       });

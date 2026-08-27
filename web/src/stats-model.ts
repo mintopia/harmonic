@@ -5,7 +5,7 @@ export interface RunStateCount {
   count: number;
 }
 
-/** The canonical Run-state order (mirrors the server's `RUN_STATES`): live, then landed, then the failure slices. */
+/** The canonical Run-state order (mirrors the server's `RUN_STATES`): live, then merged, then the failure slices. */
 const RUN_STATE_ORDER = ['running', 'completed', 'failed', 'cancelled'] as const satisfies readonly Run['state'][];
 
 /** Run-state distribution in canonical Run-state order, with zero-count states dropped.

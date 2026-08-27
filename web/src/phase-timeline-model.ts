@@ -15,13 +15,13 @@ export interface PhaseStep {
   phase: RunPhase;
   status: 'done' | 'current' | 'gap' | 'pending';
   /** The phase's first-recorded entry timestamp, or null when no phase
-   * lifecycle event for it has landed yet (including the live current phase,
+   * lifecycle event for it has merged yet (including the live current phase,
    * before its own event arrives). */
   at: number | null;
   /** Time spent in this phase: the nearest later `RUN_PHASES` entry's `at`
    * minus this phase's own `at`. Null when this phase has no `at` (never
    * entered, or entered only via `currentPhase` with no event yet), or when
-   * no later phase has landed an `at` yet (open-ended — still the last known
+   * no later phase has merged an `at` yet (open-ended — still the last known
    * phase, whether that's genuinely running or just unreported). */
   durationMs: number | null;
 }
@@ -32,7 +32,7 @@ export interface PhaseStep {
  * total: never throws, and always returns one `PhaseStep` per `RUN_PHASES`
  * entry in order.
  *
- * A phase counts as *entered* when its first lifecycle event has landed, or
+ * A phase counts as *entered* when its first lifecycle event has merged, or
  * it is `currentPhase` (a live phase the client already knows about from
  * `Run.phase`, even before its own event arrives over the wire). An entered
  * phase is `current` when it is `currentPhase` and the run hasn't settled
@@ -72,7 +72,7 @@ export function phaseTimelineFromEvents(
 
   // Two single backward walks, each a cascade off the previous index: whether
   // *any* later phase was entered (decides gap vs pending), and the nearest
-  // later `at` that landed (decides durationMs's open end).
+  // later `at` that merged (decides durationMs's open end).
   const laterEntered: boolean[] = new Array(RUN_PHASES.length).fill(false);
   const nextAt: (number | null)[] = new Array(RUN_PHASES.length).fill(null);
   for (let i = RUN_PHASES.length - 2; i >= 0; i--) {

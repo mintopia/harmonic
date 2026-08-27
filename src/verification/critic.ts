@@ -50,12 +50,12 @@ function grantOptionId(request: unknown): string | null {
  * read-only reviewer Harness that judges a frozen candidate's diff and
  * returns a schema-validated {@link Verdict}. This module is a
  * self-contained, fully-tested unit invoked via `runCritic(...)`, wired into
- * the `verifying` phase of the live Runner settle/landing path by issue #164
+ * the `verifying` phase of the live Runner settle/merging path by issue #164
  * (`runVerification` in `execution/runner.ts`) — where its verdict folds into
  * `combineVerdicts` alongside the command verifier, so a fail/inconclusive
  * critic blocks or escalates the Run. The sibling substrate tickets #132
  * (config) and #133 (`combineVerdicts`) shipped as
- * real-but-unwired units the same way before their own integration landed.
+ * real-but-unwired units the same way before their own integration merged.
  *
  * Everything the critic sees is bracketed by `withDetachedWorktree`
  * (`execution/detached-worktree.ts`): the fixed OID is checked out into a

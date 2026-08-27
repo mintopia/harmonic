@@ -18,8 +18,8 @@ describe('decideRetirement (issue #148)', () => {
   const now = 1_000_000;
   const cfg: RetentionConfig = { retentionTtlMs: 100_000 };
 
-  it('retires immediately on a successful land', () => {
-    expect(decideRetirement('landed', now, cfg)).toEqual({ kind: 'retire', reason: 'landed' });
+  it('retires immediately on a successful merge', () => {
+    expect(decideRetirement('merged', now, cfg)).toEqual({ kind: 'retire', reason: 'merged' });
   });
 
   it('retires immediately on an operator cancel', () => {

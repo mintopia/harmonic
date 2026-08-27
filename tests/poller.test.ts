@@ -231,7 +231,7 @@ describe('TrackerPoller.poll', () => {
 
   it('a working Task whose ticket closed is left alone — tracker state is never a control path (ADR-0041)', async () => {
     const { taskId } = await pollThenReWorking('closed');
-    // The poll never moves a Task off working; the Run's own landing closes
+    // The poll never moves a Task off working; the Run's own merging closes
     // the ticket idempotently when it gets there.
     expect((await tasks.get(taskId)).state).toBe('working');
   });

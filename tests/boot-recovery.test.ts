@@ -63,7 +63,7 @@ describe('boot crash-recovery', () => {
     expect(recovered.body.state).toBe('ready'); // an interruption is not a failed Attempt (ADR-0041)
   });
 
-  it('leaves a done ticket and its landed Run untouched across a restart', async () => {
+  it('leaves a done ticket and its merged Run untouched across a restart', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -109,7 +109,7 @@ describe('boot crash-recovery', () => {
     server = await startServer({ ...stubHarness(), maxAttempts: 1 }, { dataDir });
   });
 
-  it('reconciles a Run crashed mid-landing whose effect already applied — completes it without re-merging or duplicating the journal (issue #117, AC1/AC5)', async () => {
+  it('reconciles a Run crashed mid-merging whose effect already applied — completes it without re-merging or duplicating the journal (issue #117, AC1/AC5)', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -118,40 +118,40 @@ describe('boot crash-recovery', () => {
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
 
-    // Simulate the crash: the process died right after the merge landed and
+    // Simulate the crash: the process died right after the merge merged and
     // its result was journaled, but before the finishing settle ran.
     await server.app.close();
     const branch = 'run-branch';
     const baseBranch = 'main';
     const idempotencyKey = `${baseBranch}<-${branch}`;
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'landing', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'merging', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
     await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
-    // Same fact type `LandingCoordinator.land()` writes at its step 2, before
-    // the PONC (landing-coordinator.ts's `LAND_FACT_TYPE`); the landed Run's log
+    // Same fact type `MergeCoordinator.merge()` writes at its step 2, before
+    // the PONC (merge-coordinator.ts's `MERGE_FACT_TYPE`); the merged Run's log
     // already holds its own facts, so the seed appends at the next seq.
-    const landSeq = await nextFactSeq(sqlite, runId);
+    const mergeSeq = await nextFactSeq(sqlite, runId);
     await sqlite.execute({
       sql: 'INSERT INTO run_facts (run_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)',
-      args: [runId, landSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
+      args: [runId, mergeSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: landSeq })],
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: mergeSeq })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [runId, 2, Date.now(), 'intent', 'target-ref', idempotencyKey, JSON.stringify({ expected: { baseBranch, branch } })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [runId, 3, Date.now(), 'result', 'target-ref', idempotencyKey, JSON.stringify({ ok: true, observed: { baseBranch, branch } })],
     });
     sqlite.close();
 
     server = await startServer(stubHarness(), { dataDir });
 
-    // The boot sweep completed the landing exactly as `land()` itself would
+    // The boot sweep completed the merging exactly as `merge()` itself would
     // have, without touching git (the journal already showed it applied).
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('completed');
@@ -163,7 +163,7 @@ describe('boot crash-recovery', () => {
     const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const results = (
       await check.execute({
-        sql: "SELECT COUNT(*) as n FROM landing_journal WHERE run_id = ? AND kind = 'result' AND idempotency_key = ?",
+        sql: "SELECT COUNT(*) as n FROM merge_journal WHERE run_id = ? AND kind = 'result' AND idempotency_key = ?",
         args: [runId, idempotencyKey],
       })
     ).rows[0] as unknown as {n: number };
@@ -171,7 +171,7 @@ describe('boot crash-recovery', () => {
     expect(results.n).toBe(1);
   });
 
-  it('is idempotent across repeated boots once a mid-landing reconcile completes (issue #117, AC4)', async () => {
+  it('is idempotent across repeated boots once a mid-merging reconcile completes (issue #117, AC4)', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -184,22 +184,22 @@ describe('boot crash-recovery', () => {
     const baseBranch = 'main';
     const idempotencyKey = `${baseBranch}<-${branch}`;
     let sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'landing', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
-    const landSeq = await nextFactSeq(sqlite, runId);
+    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'merging', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    const mergeSeq = await nextFactSeq(sqlite, runId);
     await sqlite.execute({
       sql: 'INSERT INTO run_facts (run_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)',
-      args: [runId, landSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
+      args: [runId, mergeSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: landSeq })],
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: mergeSeq })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [runId, 2, Date.now(), 'intent', 'target-ref', idempotencyKey, JSON.stringify({ expected: { baseBranch, branch } })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [runId, 3, Date.now(), 'result', 'target-ref', idempotencyKey, JSON.stringify({ ok: true, observed: { baseBranch, branch } })],
     });
     sqlite.close();
@@ -210,23 +210,23 @@ describe('boot crash-recovery', () => {
     await server.app.close();
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const factCount = ((await sqlite.execute({ sql: 'SELECT COUNT(*) as n FROM run_facts WHERE run_id = ?', args: [runId] })).rows[0] as unknown as {n: number }).n;
-    const journalCount = ((await sqlite.execute({ sql: 'SELECT COUNT(*) as n FROM landing_journal WHERE run_id = ?', args: [runId] })).rows[0] as unknown as {n: number }).n;
+    const journalCount = ((await sqlite.execute({ sql: 'SELECT COUNT(*) as n FROM merge_journal WHERE run_id = ?', args: [runId] })).rows[0] as unknown as {n: number }).n;
     sqlite.close();
 
-    // A second boot: the Run already left `state:'running'`, so `listLandingOrphans`
+    // A second boot: the Run already left `state:'running'`, so `listMergeOrphans`
     // no longer selects it — nothing for this sweep to do.
     server = await startServer(stubHarness(), { dataDir });
     expect((await server.api('GET', `/api/runs/${runId}`)).body.state).toBe('completed');
 
     sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const factCount2 = ((await sqlite.execute({ sql: 'SELECT COUNT(*) as n FROM run_facts WHERE run_id = ?', args: [runId] })).rows[0] as unknown as {n: number }).n;
-    const journalCount2 = ((await sqlite.execute({ sql: 'SELECT COUNT(*) as n FROM landing_journal WHERE run_id = ?', args: [runId] })).rows[0] as unknown as {n: number }).n;
+    const journalCount2 = ((await sqlite.execute({ sql: 'SELECT COUNT(*) as n FROM merge_journal WHERE run_id = ?', args: [runId] })).rows[0] as unknown as {n: number }).n;
     sqlite.close();
     expect(factCount2).toBe(factCount);
     expect(journalCount2).toBe(journalCount);
   });
 
-  it('reconciles all three stores together in one boot sweep — facts, journal, and queue for the same mid-landing Run (issue #117, AC1)', async () => {
+  it('reconciles all three stores together in one boot sweep — facts, journal, and queue for the same mid-merging Run (issue #117, AC1)', async () => {
     server = await startServer(stubHarness());
     const created = await server.api('POST', '/api/tasks', { prompt: JSON.stringify({ stopReason: 'end_turn' }) });
     const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
@@ -235,9 +235,9 @@ describe('boot crash-recovery', () => {
     const runId = started.body.id as number;
     const taskId = created.body.id as number;
 
-    // Seed an inconsistent mid-landing state across all THREE stores at once
-    // (issue #117 AC1): run_facts + landing_journal already show a completed
-    // landing (same seed as the mid-landing test above), AND the turn_queue
+    // Seed an inconsistent mid-merging state across all THREE stores at once
+    // (issue #117 AC1): run_facts + merge_journal already show a completed
+    // merging (same seed as the mid-merging test above), AND the turn_queue
     // still has a stale pending (non-mutating) `continue` turn for this same
     // Run that a live process never got to sweep before the crash.
     await server.app.close();
@@ -245,23 +245,23 @@ describe('boot crash-recovery', () => {
     const baseBranch = 'main';
     const idempotencyKey = `${baseBranch}<-${branch}`;
     const sqlite = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
-    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'landing', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
+    await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'merging', finished_at = NULL, branch = ?, base_branch = ? WHERE id = ?", args: [branch, baseBranch, runId] });
     await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });
-    const landSeq = await nextFactSeq(sqlite, runId);
+    const mergeSeq = await nextFactSeq(sqlite, runId);
     await sqlite.execute({
       sql: 'INSERT INTO run_facts (run_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)',
-      args: [runId, landSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
+      args: [runId, mergeSeq, Date.now(), 'agent-finish/unresolved', JSON.stringify({ runState: 'completed', taskAction: 'done', reason: null })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: landSeq })],
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [runId, 1, Date.now(), 'ponc', null, null, JSON.stringify({ cutoffSeq: mergeSeq })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [runId, 2, Date.now(), 'intent', 'target-ref', idempotencyKey, JSON.stringify({ expected: { baseBranch, branch } })],
     });
     await sqlite.execute({
-      sql: 'INSERT INTO landing_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO merge_journal (run_id, seq, ts, kind, effect, idempotency_key, payload) VALUES (?, ?, ?, ?, ?, ?, ?)',
       args: [runId, 3, Date.now(), 'result', 'target-ref', idempotencyKey, JSON.stringify({ ok: true, observed: { baseBranch, branch } })],
     });
     await sqlite.execute({
@@ -273,7 +273,7 @@ describe('boot crash-recovery', () => {
 
     server = await startServer(stubHarness(), { dataDir });
 
-    // Consistent, non-duplicating outcome: pass A completes the landing
+    // Consistent, non-duplicating outcome: pass A completes the merging
     // exactly once, and pass B (same boot) sweeps the stale queued turn.
     const run = await server.api('GET', `/api/runs/${runId}`);
     expect(run.body.state).toBe('completed');
@@ -284,7 +284,7 @@ describe('boot crash-recovery', () => {
     const check = createClient({ url: `file:${join(dataDir, 'harmonic.db')}` });
     const results = (
       await check.execute({
-        sql: "SELECT COUNT(*) as n FROM landing_journal WHERE run_id = ? AND kind = 'result' AND idempotency_key = ?",
+        sql: "SELECT COUNT(*) as n FROM merge_journal WHERE run_id = ? AND kind = 'result' AND idempotency_key = ?",
         args: [runId, idempotencyKey],
       })
     ).rows[0] as unknown as {n: number };
@@ -410,7 +410,7 @@ describe('boot crash-recovery', () => {
       const key = workContextKey({ isolationMode: 'direct', workingDir: repo });
 
       // Simulate the crash: the process died mid-flight — the Run is left
-      // `running` in a generic (non-parked, non-landing) phase, and its Work
+      // `running` in a generic (non-parked, non-merging) phase, and its Work
       // Context lease was never released (a Run that settled cleanly would have
       // released it itself).
       await server.app.close();
@@ -475,7 +475,7 @@ describe('boot crash-recovery', () => {
    * durable Session: run a native Task to `done` (which persists the Session,
    * issue #141), then rewrite it to a plain executing orphan (`state:'running'`)
    * with its Session binding intact, as a crash between the ready→working flip
-   * and the landing would leave it.
+   * and the merging would leave it.
    * Returns the dataDir, the interrupted Run id, the Task id, and the harness
    * session id / Session row id the resume must reload against.
    */
@@ -499,7 +499,7 @@ describe('boot crash-recovery', () => {
       sid: string;
       srid: number;
     };
-    // Rewrite the landed Run into a plain executing orphan so the boot orphan
+    // Rewrite the merged Run into a plain executing orphan so the boot orphan
     // sweep fails it `interrupted` — the resume input.
     await sqlite.execute({ sql: "UPDATE runs SET state = 'running', phase = 'validating' WHERE id = ?", args: [runId] });
     await sqlite.execute({ sql: "UPDATE tasks SET state = 'working' WHERE id = ?", args: [taskId] });

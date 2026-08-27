@@ -64,7 +64,7 @@ describe('GET /api/stats — failedRuns + durationMs', () => {
     taskId = task.body.id;
 
     // Two completed runs with measurable durations:
-    //  A — agent-finish fact at 4000, finished far later (a long landing):
+    //  A — agent-finish fact at 4000, finished far later (a long merging):
     //      active duration is the fact span 3000, not the wall-clock 99000.
     await seedRun({ state: 'completed', startedAt: 1000, finishedAt: 100000, agentFinishTs: 4000 });
     //  B — no fact: falls back to wall-clock finished − started = 5000.

@@ -10,7 +10,7 @@ import type { AppConfig, DeepPartial } from '../src/config.js';
 /**
  * The eager transcript capture at dispatch races the harness writing its
  * `${sessionId}.jsonl` and gives up after a short window, so a Session can be left
- * with a null `transcriptPath` even though the log lands moments later. This
+ * with a null `transcriptPath` even though the log merges moments later. This
  * proves the read-path fallback (`Runner.ensureSessionTranscript`) resolves and
  * persists it on demand — removing the dependence on that startup race.
  */
@@ -49,7 +49,7 @@ describe('on-demand transcript resolution (Runner.ensureSessionTranscript)', () 
     const before = (await asyncDb.read((d) => d.select().from(sessions).where(eq(sessions.id, sessionId)).get()))!;
     expect(before.transcriptPath).toBeNull();
 
-    // The harness's log lands after dispatch: drop it where the claude resolver
+    // The harness's log merges after dispatch: drop it where the claude resolver
     // looks (a project subdir of the configured sessionLogDir).
     const projectDir = join(logDir, 'some-project');
     mkdirSync(projectDir, { recursive: true });

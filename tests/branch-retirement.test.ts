@@ -51,7 +51,7 @@ function git(over: Partial<BranchRetirementGit> = {}): BranchRetirementGit {
 }
 
 describe('BranchRetirementCoordinator', () => {
-  it('retires a drifted branch whose content already landed under a different SHA', async () => {
+  it('retires a drifted branch whose content already merged under a different SHA', async () => {
     const branchGit = git();
     const coordinator = new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }, branchGit);
 
@@ -84,17 +84,17 @@ describe('BranchRetirementCoordinator', () => {
     expect(branchGit.deleteBranch).toHaveBeenCalledWith('/repo', 'harmonic/task-2-run-1');
   });
 
-  it('retires a drifted branch after equivalent content lands under another SHA', async () => {
+  it('retires a drifted branch after equivalent content merges under another SHA', async () => {
     const repo = makeRepo();
     try {
       raw(repo, 'checkout', '-b', 'harmonic/task-2-run-1');
-      writeFileSync(join(repo, 'work.txt'), 'landed work\\n');
+      writeFileSync(join(repo, 'work.txt'), 'merged work\\n');
       raw(repo, 'add', '-A');
       raw(repo, 'commit', '-m', 'candidate work');
       raw(repo, 'checkout', 'main');
-      writeFileSync(join(repo, 'work.txt'), 'landed work\\n');
+      writeFileSync(join(repo, 'work.txt'), 'merged work\\n');
       raw(repo, 'add', '-A');
-      raw(repo, 'commit', '-m', 'landed work');
+      raw(repo, 'commit', '-m', 'merged work');
       expect(await Git.isAncestor(repo, 'main', 'harmonic/task-2-run-1')).toBe(false);
 
       await new BranchRetirementCoordinator({ listAll: async () => [] }, { get: async () => task }).onRunSettled(
@@ -113,13 +113,13 @@ describe('BranchRetirementCoordinator', () => {
     try {
       raw(repo, 'branch', 'epic/333');
       raw(repo, 'checkout', '-b', 'harmonic/task-2-run-1', 'epic/333');
-      writeFileSync(join(repo, 'work.txt'), 'landed work\\n');
+      writeFileSync(join(repo, 'work.txt'), 'merged work\\n');
       raw(repo, 'add', '-A');
       raw(repo, 'commit', '-m', 'candidate work');
       raw(repo, 'checkout', 'main');
-      writeFileSync(join(repo, 'work.txt'), 'landed work\\n');
+      writeFileSync(join(repo, 'work.txt'), 'merged work\\n');
       raw(repo, 'add', '-A');
-      raw(repo, 'commit', '-m', 'landed work');
+      raw(repo, 'commit', '-m', 'merged work');
       raw(repo, 'branch', '-D', 'epic/333');
       expect(await Git.branchExists(repo, 'epic/333')).toBe(false);
 

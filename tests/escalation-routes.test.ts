@@ -32,7 +32,7 @@ const critic = () =>
 
 /**
  * ADR-0041's escalation surface on a worktree ticket the critic rejected twice:
- * Accept lands the verified head as-is (the critic's opinion is not a gate any
+ * Accept merges the verified head as-is (the critic's opinion is not a gate any
  * more once a human decides), Reject with guidance resumes the loop with the
  * budget reset, Close removes the branch and worktree. Replaces the retired
  * "Adopt & review" / "Note to critic" escape hatches (ADR-0027).
@@ -113,7 +113,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
   });
 
   describe('POST /tasks/:id/accept', () => {
-    it('lands the verified head into the base branch and moves the ticket to done — an operator accept outranks the retained escalate fact', async () => {
+    it('merges the verified head into the base branch and moves the ticket to done — an operator accept outranks the retained escalate fact', async () => {
       const baseOidBefore = git(repoDir, 'rev-parse', 'main');
       const { taskId, runId, file } = await escalateViaCriticFail();
 
@@ -134,7 +134,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(git(repoDir, 'show', `main:${file}`)).toBe('work');
     });
 
-    it('409s invalid_state when the ticket is not escalated (a passing critic lands on its own)', async () => {
+    it('409s invalid_state when the ticket is not escalated (a passing critic merges on its own)', async () => {
       criticResult = { verdict: 'pass', summary: 'looks correct' };
       const { taskId } = await createAndRun();
       await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
@@ -185,7 +185,7 @@ describe('escalation actions on a worktree ticket (ADR-0041)', () => {
       expect(rejected.status).toBe(200);
       expect(rejected.body.escalationReason).toBeNull();
 
-      // Attempt 3 is the fresh budget: it runs, the critic now passes, it lands.
+      // Attempt 3 is the fresh budget: it runs, the critic now passes, it merges.
       const done = await waitFor(async () => {
         const { body } = await server.api('GET', `/api/tasks/${taskId}`);
         return body.state === 'done' ? body : undefined;

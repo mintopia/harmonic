@@ -353,15 +353,25 @@ function isToolCall(payload: unknown): payload is Record<string, unknown> {
   return isRecord(payload) && payload.sessionUpdate === 'tool_call';
 }
 
+// ACP puts unbounded per-call detail (the shell command, the file path, the
+// search query, the URL) in the tool-call title. Bucketing by title turns every
+// call into its own stats row, so map those kinds to a stable tool name. Kinds
+// whose title is already bounded (edit → "Editing files", think, other) keep it.
+const KIND_TOOL: Record<string, string> = {
+  execute: 'Bash',
+  read: 'Read',
+  search: 'Grep',
+  fetch: 'WebFetch',
+  delete: 'Bash',
+  move: 'Bash',
+};
+
 /** The stable stats label for an ACP tool-call update. */
 export function toolCallName(payload: unknown, preferredName: (payload: unknown) => string | null): string {
   const update = isRecord(payload) ? payload : null;
   const kind = typeof update?.kind === 'string' ? update.kind : null;
   const title = typeof update?.title === 'string' ? update.title : null;
-  // ACP uses the full shell command as the execute call's title. Keep it
-  // useful in the activity stream, but aggregate it under the tool name so
-  // every command does not become its own stats bucket.
-  return preferredName(payload) ?? (kind === 'execute' ? 'Bash' : title ?? kind ?? 'unknown');
+  return preferredName(payload) ?? (kind && KIND_TOOL[kind]) ?? title ?? kind ?? 'unknown';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -441,7 +451,7 @@ export function totalTokensOf(usage: RunUsage): number | null {
 /**
  * Run-end collection races the harness's final session-log flush: the
  * log file exists from session start, but the last assistant usage
- * lines can land milliseconds after the prompt result. When the file
+ * lines can merge milliseconds after the prompt result. When the file
  * exists and yields no per-model split yet, re-read briefly before
  * settling for aggregate totals. No file at all means no log is coming
  * (stub harnesses) — return immediately.

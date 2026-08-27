@@ -59,7 +59,7 @@ describe('taskActions', () => {
   });
 });
 
-// ADR-0041: Accept lands the verified branch head, so it needs one; Reject with
+// ADR-0041: Accept merges the verified branch head, so it needs one; Reject with
 // guidance and Close never depend on a candidate.
 describe('escalationActions', () => {
   it('is null off the escalation surface, even with a candidate', () => {

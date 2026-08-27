@@ -1,4 +1,4 @@
-import { landBranch, type LandBranchArgs, type LandBranchOutcome } from './branch-landing.js';
+import { mergeIntoBase, type MergeIntoBaseArgs, type MergeIntoBaseOutcome } from './branch-merge.js';
 import { Git } from './git.js';
 import { integrationBranchName } from './epic-integration.js';
 import type { MergeTrainCoordinator, MergeTrainGit } from './merge-train-coordinator.js';
@@ -23,7 +23,7 @@ export type EpicRefreshResolveDispatchOutcome =
 /**
  * Merges a newly advanced default branch into live Epic integration branches.
  *
- * The queue belongs to MergeTrainCoordinator, so refreshes and member landings
+ * The queue belongs to MergeTrainCoordinator, so refreshes and member merges
  * share one FIFO per `epic/<ref>`. A merge conflict is allowed one agent turn;
  * a second conflict escalates the Epic, never one of its members.
  */
@@ -34,7 +34,7 @@ export class EpicRefreshCoordinator {
     train: MergeTrainCoordinator;
     /** Default = real {@link Git}. */
     git?: Pick<MergeTrainGit, 'revParse'>;
-    land?: (args: LandBranchArgs) => Promise<LandBranchOutcome>;
+    merge?: (args: MergeIntoBaseArgs) => Promise<MergeIntoBaseOutcome>;
     dispatchResolve: (
       target: EpicRefreshTarget,
       detail: string,
@@ -45,7 +45,7 @@ export class EpicRefreshCoordinator {
   refresh(target: EpicRefreshTarget): Promise<EpicRefreshOutcome> {
     const branch = integrationBranchName(target.ref);
     return this.deps.train.runOnIntegrationBranch(branch, async () => {
-      const outcome = await (this.deps.land ?? landBranch)({
+      const outcome = await (this.deps.merge ?? mergeIntoBase)({
         repoDir: target.repoDir,
         baseBranch: branch,
         branch: target.defaultBranch,

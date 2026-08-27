@@ -9,7 +9,7 @@ import { MirrorCoordinator } from './coordinator.js';
 import { TrackerPoller } from './poller.js';
 import { deriveMaps, type DerivedMap } from './mirror.js';
 import { EpicIntegrationCoordinator, integrationBranchName } from '../execution/epic-integration.js';
-import { EpicLandCoordinator, type EpicLandOutcome } from '../execution/epic-land-coordinator.js';
+import { EpicIntegrateCoordinator, type EpicIntegrateOutcome } from '../execution/epic-integrate-coordinator.js';
 import { verifyEpicIntegration } from '../execution/epic-verification.js';
 import { EpicOperations } from '../execution/epic-operations.js';
 import {
@@ -18,7 +18,7 @@ import {
   type EpicRefreshTarget,
 } from '../execution/epic-refresh-coordinator.js';
 import type { MergeTrainCoordinator } from '../execution/merge-train-coordinator.js';
-import type { PostLandHook } from '../execution/branch-landing.js';
+import type { PostMergeHook } from '../execution/branch-merge.js';
 import { deriveEpics, type DerivedEpic } from '../domain/epic-derivation.js';
 import { composeEpicView, type Epic, type EpicFacts } from '../domain/epic-view.js';
 import { persistedTickets } from './persisted.js';
@@ -31,9 +31,9 @@ interface Entry {
   mirror: MirrorCoordinator;
   /** This Workspace's per-Epic integration-branch coordinator (issue #159) — the pick gate routes to it. */
   epics: EpicIntegrationCoordinator;
-  /** This Workspace's whole-Epic land coordinator (issue #161) — the operator
-   * force-land action routes to it. Absent when no config resolver was supplied. */
-  epicLand?: EpicLandCoordinator;
+  /** This Workspace's whole-Epic integrate coordinator (issue #161) — the operator
+   * force-integrate action routes to it. Absent when no config resolver was supplied. */
+  epicIntegrate?: EpicIntegrateCoordinator;
   /** `${workingDir}|${intervalMs}` — a change here means tear down and rebuild. */
   sig: string;
   unregister: () => void;
@@ -71,9 +71,9 @@ export class TrackerPollerManager {
     private readonly onError: (msg: string) => void = logger.error,
     /**
      * The effective app config, read per poll to resolve a Workspace's
-     * Verification verifiers for the whole-Epic land (issue #161). Absent ⇒ no
-     * automatic whole-Epic land is wired (the integration-branch base-set half,
-     * #159, still runs) — used by tests that don't exercise the land path.
+     * Verification verifiers for the whole-Epic integrate (issue #161). Absent ⇒ no
+     * automatic whole-Epic integrate is wired (the integration-branch base-set half,
+     * #159, still runs) — used by tests that don't exercise the integrate path.
      */
     private readonly getConfig?: () => Pick<AppConfig, 'verify'>,
     private readonly epicOperations: EpicOperations = new EpicOperations(),
@@ -91,7 +91,7 @@ export class TrackerPollerManager {
        * resolved merge completes it, an unresolved one escalates (issue #315). */
       retry: () => Promise<unknown>,
     ) => Promise<EpicRefreshResolveDispatchOutcome> = async () => ({ status: 'dispatched' }),
-    private readonly postLand?: PostLandHook,
+    private readonly postMerge?: PostMergeHook,
   ) {}
 
   /**
@@ -138,16 +138,16 @@ export class TrackerPollerManager {
     // member, and each ready member's base branch pointed at it before the next pick.
     const epics = new EpicIntegrationCoordinator(this.tasks, ws.workingDir);
     epics.attachOperations(this.epicOperations);
-    // The whole-Epic land (issue #161): once every member has landed onto the
-    // integration branch, Verify the integrated whole and, on a pass, land it
+    // The whole-Epic integrate (issue #161): once every member has merged onto the
+    // integration branch, Verify the integrated whole and, on a pass, integrate it
     // atomically into the default branch and retire it. Wired only when a config
     // resolver is present (it resolves this Workspace's Verification verifiers).
     // Built after `epics` so its `retire` closes over that instance's retire
-    // method, then attached back into the reconcile as the land trigger.
-    let epicLand: EpicLandCoordinator | undefined;
+    // method, then attached back into the reconcile as the integrate trigger.
+    let epicIntegrate: EpicIntegrateCoordinator | undefined;
     const getConfig = this.getConfig;
     if (getConfig) {
-      epicLand = new EpicLandCoordinator({
+      epicIntegrate = new EpicIntegrateCoordinator({
         repoDir: ws.workingDir,
         verify: async ({ repoDir, candidateOid }) => {
           // Resolve verifiers against the *live* Workspace row (its verifier
@@ -157,15 +157,15 @@ export class TrackerPollerManager {
           return verifyEpicIntegration({ repoDir, candidateOid, verifiers: resolveVerifiers(live, getConfig()) });
         },
         retire: (epicRef) => epics.retireIntegrationBranch(epicRef),
-        escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic land escalated: ${reason}`),
+        escalate: (epicRef, reason) => this.onError(`epic ${epicRef} whole-Epic integrate escalated: ${reason}`),
         operations: this.epicOperations,
-        ...(this.postLand ? { postLand: this.postLand } : {}),
+        ...(this.postMerge ? { postMerge: this.postMerge } : {}),
       });
-      epics.attachLandTrigger(epicLand);
+      epics.attachIntegrateTrigger(epicIntegrate);
     }
     if (this.mergeTrain) {
       const escalateRefresh = (ref: number, reason: string): void => {
-        if (epicLand) epicLand.escalateRefresh(ref, reason);
+        if (epicIntegrate) epicIntegrate.escalateRefresh(ref, reason);
         else this.onError(`epic ${ref} integration refresh escalated: ${reason}`);
       };
       const refresh: EpicRefreshCoordinator = new EpicRefreshCoordinator({
@@ -209,22 +209,22 @@ export class TrackerPollerManager {
           enabled: () => this.resolved.get(ws.id)?.ok === true,
         })
       : (poller.start(), () => poller.stop());
-    this.entries.set(ws.id, { poller, mirror, epics, ...(epicLand ? { epicLand } : {}), sig: sigOf(ws), unregister });
+    this.entries.set(ws.id, { poller, mirror, epics, ...(epicIntegrate ? { epicIntegrate } : {}), sig: sigOf(ws), unregister });
   }
 
   /**
-   * Operator force-land-the-ready-subset for an Epic (issue #161): land whatever
+   * Operator force-integrate-the-ready-subset for an Epic (issue #161): integrate whatever
    * subset is currently folded into the Epic's integration branch, even though a
    * sibling member is stuck — bypassing the all-members-`completed` gate but
    * **not** Verification (a failing whole-Epic Verification still escalates). The
-   * explicit, never-automatic partial-land action the acceptance criteria pin.
-   * Returns `null` when the Workspace has no running loop / no land coordinator
+   * explicit, never-automatic partial-integrate action the acceptance criteria pin.
+   * Returns `null` when the Workspace has no running loop / no integrate coordinator
    * (tracking off), so the caller can surface a 404/409.
    */
-  async forceLandEpic(workspaceId: number, epicRef: number): Promise<EpicLandOutcome | null> {
-    const epicLand = this.entries.get(workspaceId)?.epicLand;
-    if (!epicLand) return null;
-    return epicLand.submit({ ref: epicRef, members: [] }, { force: true });
+  async forceIntegrateEpic(workspaceId: number, epicRef: number): Promise<EpicIntegrateOutcome | null> {
+    const epicIntegrate = this.entries.get(workspaceId)?.epicIntegrate;
+    if (!epicIntegrate) return null;
+    return epicIntegrate.submit({ ref: epicRef, members: [] }, { force: true });
   }
 
   /**
@@ -297,26 +297,26 @@ export class TrackerPollerManager {
    * The server-only facts {@link composeOne} folds into the `Epic` DTO (issue
    * #167 sourcing notes):
    *  - `integration`: the branch's existence/tip via the Workspace's
-   *    {@link EpicLandCoordinator} (it already holds the `EpicLandGit` slice
-   *    the land attempt itself uses) — `exists:false, tip:null` when no land
+   *    {@link EpicIntegrateCoordinator} (it already holds the `EpicIntegrateGit` slice
+   *    the integrate attempt itself uses) — `exists:false, tip:null` when no integrate
    *    coordinator is active for this Workspace (tracking config resolver
    *    absent), same as an Epic whose branch was never cut.
-   *  - `land`: `inFlight`/`held` straight off the coordinator's own guards.
+   *  - `integrate`: `inFlight`/`held` straight off the coordinator's own guards.
    *  - `verification`: the whole-Epic Verification status retained on the
-   *    {@link EpicLandCoordinator} (issue #178) — `pending` while a verify is in
+   *    {@link EpicIntegrateCoordinator} (issue #178) — `pending` while a verify is in
    *    flight, `pass`/`fail` for the last verdict, `null` when none has run for
-   *    the current integration branch (or no land coordinator is active).
+   *    the current integration branch (or no integrate coordinator is active).
    */
   private async epicFacts(entry: Entry | undefined, epicRef: number): Promise<EpicFacts> {
     const branch = integrationBranchName(epicRef);
-    const epicLand = entry?.epicLand;
-    const integration = epicLand ? await epicLand.integrationFacts(epicRef) : { exists: false, tip: null };
+    const epicIntegrate = entry?.epicIntegrate;
+    const integration = epicIntegrate ? await epicIntegrate.integrationFacts(epicRef) : { exists: false, tip: null };
     return {
       integration: { branch, ...integration },
-      verification: { status: epicLand?.verificationStatus(epicRef) ?? null },
-      land: {
-        inFlight: epicLand?.isInFlight(epicRef) ?? false,
-        held: epicLand?.heldReason(epicRef) ?? null,
+      verification: { status: epicIntegrate?.verificationStatus(epicRef) ?? null },
+      integrate: {
+        inFlight: epicIntegrate?.isInFlight(epicRef) ?? false,
+        held: epicIntegrate?.heldReason(epicRef) ?? null,
       },
     };
   }

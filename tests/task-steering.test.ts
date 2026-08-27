@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdtempSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
@@ -8,7 +9,7 @@ import type { AppConfig } from '../src/config.js';
 
 const scenario = (s: object) => JSON.stringify(s);
 
-/** A first turn that streams for a while, so a steer lands while it runs. */
+/** A first turn that streams for a while, so a steer merges while it runs. */
 const slowFirstTurn = (n = 6, delayMs = 80) =>
   scenario({
     updates: Array.from({ length: n }, (_, i) => ({
@@ -52,7 +53,7 @@ describe('steering a running task', () => {
       const runId = started.body.id;
 
       // Queue the steer once the run is active (the task flips running before the
-      // ActiveRun registers, so a steer can 409 briefly — retry until it lands).
+      // ActiveRun registers, so a steer can 409 briefly — retry until it merges).
       const steered = await waitFor(async () => {
         const res = await noSteerServer.api('POST', `/api/tasks/${taskId}/steer`, { text: 'reread the tests first' });
         return res.status === 200 ? res : undefined;
@@ -77,11 +78,11 @@ describe('steering a running task', () => {
   });
 
   it('injects a steer into the running turn when the harness supports it', async () => {
-    // The steer must land while the turn is in flight, and no fixed sleep can
+    // The steer must merge while the turn is in flight, and no fixed sleep can
     // guarantee that under parallel-suite CPU contention. Instead the stub (a)
     // writes a marker file at turn start — the test's proof that session/prompt
     // has been received — and (b) holds the turn open via `waitForSteer` until
-    // the injection lands, so the turn boundary can never race the steer.
+    // the injection merges, so the turn boundary can never race the steer.
     const turnStartedFile = join(mkdtempSync(join(tmpdir(), 'harmonic-steer-')), 'turn-started');
     const created = await server.api('POST', '/api/tasks', {
       prompt: scenario({
@@ -207,9 +208,21 @@ describe('steering a settled task continues its warm session', () => {
   });
 
   it('409s when the settled task has no warm session (e.g. a plain done native task)', async () => {
-    const created = await server.api('POST', '/api/tasks', { prompt: 'quick native task' });
+    // Own workspace: the sibling test above leaves a warm, un-retired Session on
+    // the default workspace that still holds its `direct:<workdir>` work-context
+    // lease. A native task sharing that workspace would 409 on `/run` (lease held)
+    // and sit `ready` forever — the flake. A distinct workingDir gives this run
+    // its own lease key so it launches and settles independently.
+    const workingDir = mkdtempSync(join(tmpdir(), 'harmonic-steer-native-'));
+    execFileSync('git', ['init', '-b', 'main', workingDir]);
+    execFileSync('git', ['-C', workingDir, 'config', 'user.name', 'Test']);
+    execFileSync('git', ['-C', workingDir, 'config', 'user.email', 'test@example.com']);
+    execFileSync('git', ['-C', workingDir, 'commit', '--allow-empty', '-m', 'init']);
+
+    const created = await server.api('POST', '/api/tasks', { prompt: 'quick native task', workingDir });
     const taskId = created.body.id;
-    await server.api('POST', `/api/tasks/${taskId}/run`);
+    const started = await server.api('POST', `/api/tasks/${taskId}/run`);
+    expect(started.status).toBe(201);
     await waitFor(async () => ((await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done' ? true : undefined));
     const res = await server.api('POST', `/api/tasks/${taskId}/steer`, { text: 'too late' });
     expect(res.status).toBe(409);

@@ -68,7 +68,7 @@ describe('Git branch primitives (issue #159)', () => {
 });
 
 describe('Git.isContentContained (issue #218)', () => {
-  it('is true when the branch is an ancestor (merge-landed)', async () => {
+  it('is true when the branch is an ancestor (merge-merged)', async () => {
     const dir = makeRepo();
     try {
       raw(dir, 'checkout', '-b', 'feature');
@@ -84,7 +84,7 @@ describe('Git.isContentContained (issue #218)', () => {
     }
   });
 
-  it('is true when the content is squash-landed but the tip is NOT an ancestor', async () => {
+  it('is true when the content is squash-merged but the tip is NOT an ancestor', async () => {
     const dir = makeRepo();
     try {
       raw(dir, 'checkout', '-b', 'feature');
@@ -95,7 +95,7 @@ describe('Git.isContentContained (issue #218)', () => {
       raw(dir, 'add', '-A');
       raw(dir, 'commit', '-m', 'feat 2');
       raw(dir, 'checkout', 'main');
-      // Squash-land: the same net content as a single unrelated commit.
+      // Squash-merge: the same net content as a single unrelated commit.
       writeFileSync(join(dir, 'f.txt'), 'a\nb\n');
       raw(dir, 'add', '-A');
       raw(dir, 'commit', '-m', 'squash of feature');

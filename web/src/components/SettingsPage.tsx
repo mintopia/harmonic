@@ -496,7 +496,7 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             <SettingsSection title="Task prompt" description="Wraps a native task's own prompt before it's sent to the agent. Placeholders are filled per Task; the default bare {prompt} sends the prompt verbatim. Mirrored tickets use the Drive prompt instead.">
               <TaskPromptFields config={local} fieldErrors={fieldErrors} onChange={(taskPrompt) => setLocal({ ...local, taskPrompt })} />
             </SettingsSection>
-            <SettingsSection title="Drive prompt" description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs how completed work lands.">
+            <SettingsSection title="Drive prompt" description="The prompt Harmonic sends when it runs a mirrored ticket unattended. Placeholders are filled per Task; merge fate governs what happens to completed work.">
               <DriveFields config={local} fieldErrors={fieldErrors} onChange={(drive) => setLocal({ ...local, drive })} />
             </SettingsSection>
           </>

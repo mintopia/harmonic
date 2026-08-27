@@ -1,5 +1,5 @@
 import { Git } from './git.js';
-import { decideMergeTrainLand, type MergeTrainDecision, type MergeTrainGitFacts } from '../domain/merge-train.js';
+import { decideMergeTrainMerge, type MergeTrainDecision, type MergeTrainGitFacts } from '../domain/merge-train.js';
 import { EpicOperations } from './epic-operations.js';
 import { parseIntegrationBranch } from './epic-integration.js';
 import type { Operation } from '../telemetry/operations.js';
@@ -8,20 +8,20 @@ import type { Operation } from '../telemetry/operations.js';
  * The single-writer merge train per Epic integration branch (issue #160,
  * ADR-0024; freshness gate ADR-0041).
  *
- * Each ready Task member of an Epic lands onto the Epic's integration branch
+ * Each ready Task member of an Epic merges onto the Epic's integration branch
  * (`epic/<ref>`, cut by #159) one at a time. Two members finishing "at the
- * same time" must not race the observe→land window against each other, so
- * this coordinator serialises land attempts **per integration branch** the
- * same way `LandingCoordinator`/`RunSettleCoordinator` serialise a single
- * Run's settle: a pure decision (`decideMergeTrainLand`,
+ * same time" must not race the observe→merge window against each other, so
+ * this coordinator serialises merge attempts **per integration branch** the
+ * same way `MergeCoordinator`/`RunSettleCoordinator` serialise a single
+ * Run's settle: a pure decision (`decideMergeTrainMerge`,
  * `src/domain/merge-train.ts`) classifies observed git facts into an action,
  * and this class is purely the injected-effects shell around it — gather
  * facts, call the decision, execute the action. This is a different seam from
  * the per-op repo-lock (#121): `withRepoLock` spans exactly one git mutation
  * and imposes no ordering between callers beyond mutual exclusion during that
- * call, whereas this coordinator's lock spans a whole land attempt and gives
+ * call, whereas this coordinator's lock spans a whole merge attempt and gives
  * members on the *same* integration branch a strict FIFO order. Distinct
- * integration branches never share a lock key, so Epics land members fully
+ * integration branches never share a lock key, so Epics merge members fully
  * in parallel with each other — only same-branch members contend.
  *
  * The train never rebases. Rebasing is the Attempt's Rebase Task, run and
@@ -42,23 +42,23 @@ export interface MergeTrainGit {
   casUpdateRef(dir: string, branch: string, newOid: string, expectedOld: string): Promise<{ ok: boolean; detail?: string }>;
 }
 
-/** A ready Task member attempting to land onto its Epic's integration branch. */
+/** A ready Task member attempting to merge onto its Epic's integration branch. */
 export interface MergeTrainMember {
   runId: number;
   taskId: number;
   /** Base repo owning `epic/<ref>`. */
   repoDir: string;
-  /** e.g. `epic/42` — the chain key this member's land attempt serialises on. */
+  /** e.g. `epic/42` — the chain key this member's merge attempt serialises on. */
   integrationBranch: string;
   /** e.g. `harmonic/task-<id>-run-<n>`. */
   memberBranch: string;
-  /** The branch tip verification recorded; the only object the train lands. */
+  /** The branch tip verification recorded; the only object the train merges. */
   verifiedTip: string;
 }
 
 export type MergeTrainOutcome =
-  | { status: 'landed'; oid: string }
-  | { status: 'already-landed' }
+  | { status: 'merged'; oid: string }
+  | { status: 'already-merged' }
   | { status: 'stale'; reason: string }
   | { status: 'escalated'; reason: string };
 
@@ -84,18 +84,18 @@ export class MergeTrainCoordinator {
     this.operations = deps.operations ?? new EpicOperations();
   }
 
-  /** A member's land attempt at its verified tip. Resubmitted by the Runner
+  /** A member's merge attempt at its verified tip. Resubmitted by the Runner
    * after a `stale` outcome once it has rebased and re-verified. */
   submit(member: MergeTrainMember): Promise<MergeTrainOutcome> {
-    return this.withEpicOperation(member, (memberLand) =>
-      this.withBranchTrain(member.integrationBranch, () => this.land(member, memberLand)),
+    return this.withEpicOperation(member, (memberMerge) =>
+      this.withBranchTrain(member.integrationBranch, () => this.merge(member, memberMerge)),
     );
   }
 
   /**
    * Run another integration-branch mutation through the same FIFO as member
-   * landings. Integration refreshes use this rather than a second lock: a
-   * member can therefore never land against a branch while its refresh is
+   * merges. Integration refreshes use this rather than a second lock: a
+   * member can therefore never merge against a branch while its refresh is
    * half applied.
    */
   runOnIntegrationBranch<T>(branch: string, work: () => Promise<T>): Promise<T> {
@@ -126,12 +126,12 @@ export class MergeTrainCoordinator {
 
   /** The critical section: observe git facts, decide, execute. Runs inside
    * this member's integration branch's lock slot. */
-  private async land(member: MergeTrainMember, memberLand: Operation): Promise<MergeTrainOutcome> {
+  private async merge(member: MergeTrainMember, memberMerge: Operation): Promise<MergeTrainOutcome> {
     const { repoDir, integrationBranch, memberBranch, verifiedTip } = member;
 
     const integrationExists = await this.git.branchExists(repoDir, integrationBranch);
     if (!integrationExists) {
-      return this.execute(member, memberLand, decideMergeTrainLand({
+      return this.execute(member, memberMerge, decideMergeTrainMerge({
         integrationExists: false, alreadyMerged: false, memberTip: verifiedTip, verifiedTip, basedOnIntegrationTip: false,
       }));
     }
@@ -147,7 +147,7 @@ export class MergeTrainCoordinator {
       verifiedTip,
       basedOnIntegrationTip: await this.git.isAncestor(repoDir, memberTip, integrationTip),
     };
-    return this.execute(member, memberLand, decideMergeTrainLand(facts), integrationTip);
+    return this.execute(member, memberMerge, decideMergeTrainMerge(facts), integrationTip);
   }
 
   /** Execute the pure decision's action against the injected git slice and
@@ -156,7 +156,7 @@ export class MergeTrainCoordinator {
    * only ever arises after the integration branch has been observed to exist. */
   private async execute(
     member: MergeTrainMember,
-    memberLand: Operation,
+    memberMerge: Operation,
     decision: MergeTrainDecision,
     integrationTip?: string,
   ): Promise<MergeTrainOutcome> {
@@ -168,7 +168,7 @@ export class MergeTrainCoordinator {
           repoDir: member.repoDir,
           epicRef: this.epicRef(member),
           type: 'git.fast-forward',
-          parent: memberLand,
+          parent: memberMerge,
           attributes: { 'task.id': member.taskId, 'run.id': member.runId, 'git.operation': 'fast-forward' },
           work: async () => {
             const checkedOutAt = await this.git.branchCheckedOutAt(repoDir, integrationBranch);
@@ -185,12 +185,12 @@ export class MergeTrainCoordinator {
               this.failEpic(member, reason);
               return { status: 'escalated', reason };
             }
-            return { status: 'landed', oid: decision.toOid };
+            return { status: 'merged', oid: decision.toOid };
           },
         });
       }
-      case 'already-landed':
-        return { status: 'already-landed' };
+      case 'already-merged':
+        return { status: 'already-merged' };
       case 'stale':
         return { status: 'stale', reason: decision.reason };
       case 'escalate':
@@ -206,16 +206,16 @@ export class MergeTrainCoordinator {
 
   private withEpicOperation(
     member: MergeTrainMember,
-    work: (memberLand: Operation) => Promise<MergeTrainOutcome>,
+    work: (memberMerge: Operation) => Promise<MergeTrainOutcome>,
   ): Promise<MergeTrainOutcome> {
     return this.operations.run({
       repoDir: member.repoDir,
       epicRef: this.epicRef(member),
-      type: 'member-land',
+      type: 'member-merge',
       attributes: { 'task.id': member.taskId, 'run.id': member.runId, 'epic.integration_branch': member.integrationBranch },
-      work: async (memberLand) => {
+      work: async (memberMerge) => {
         try {
-          return await work(memberLand);
+          return await work(memberMerge);
         } catch (error) {
           this.failEpic(member, error instanceof Error ? error.message : String(error));
           throw error;

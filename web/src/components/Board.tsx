@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Task, TaskState } from '../types';
-import type { Epic, EpicLandOutcome, RailSegmentStatus } from '../epic-model';
+import type { Epic, EpicIntegrateOutcome, RailSegmentStatus } from '../epic-model';
 import { railSegments } from '../epic-model';
 import {
   boardSections,
@@ -166,7 +166,7 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
             {task.state === 'escalated' ? (
               <span className={stateChip(task.state)}>escalated</span>
             ) : task.state === 'working' && task.phase && task.phase !== 'terminal' ? (
-              <span className={stateChip(task.state)}>{task.phase === 'landing' ? 'merging' : task.phase}</span>
+              <span className={stateChip(task.state)}>{task.phase === 'merging' ? 'merging' : task.phase}</span>
             ) : null}
           </span>
         </div>
@@ -213,7 +213,7 @@ function TaskCard({ task, onOpen, onChanged }: { task: Task; onOpen: () => void;
 }
 
 const SEGMENT_FILL: Record<RailSegmentStatus, string> = {
-  landed: 'bg-merged-dot',
+  merged: 'bg-merged-dot',
   running: 'bg-running-dot',
   healing: 'bg-running-dot motion-safe:animate-pulse',
   waiting: 'bg-raised',
@@ -264,8 +264,8 @@ function EpicAttentionCard({ epic, onOpenEpic }: { epic: Epic; onOpenEpic?: (epi
           {epic.title}
         </button>
         <div className="mt-2 text-[12.5px]">
-          <span className="line-clamp-2 text-await" title={epic.land.held ?? undefined}>
-            {epic.land.held}
+          <span className="line-clamp-2 text-await" title={epic.integrate.held ?? undefined}>
+            {epic.integrate.held}
           </span>
         </div>
         <div className="mt-auto flex items-center gap-2.5 pt-3 text-small text-muted">
@@ -546,7 +546,7 @@ function FirstRunBoard({ onNewTask }: { onNewTask: () => void }) {
   const steps = [
     { title: 'Create a task', body: 'Describe the work and point it at a repo on this machine.' },
     { title: 'Run it', body: 'Press Run now, or turn the auto-runner on to start ready tasks for you.' },
-    { title: 'Watch it land', body: "The agent's steps stream live; verified work merges on its own, and only an escalated ticket asks for you." },
+    { title: 'Watch it merge', body: "The agent's steps stream live; verified work merges on its own, and only an escalated ticket asks for you." },
   ];
   return (
     <div className="mx-auto mt-16 max-w-md text-center">
@@ -638,7 +638,7 @@ export function Board({
   onChanged: () => void;
   onNewTask: () => void;
   onOpenEpic?: (epic: Epic) => void;
-  onForceLandEpic: (epicRef: number) => Promise<EpicLandOutcome>;
+  onForceIntegrateEpic: (epicRef: number) => Promise<EpicIntegrateOutcome>;
   focusEpic?: Epic | null;
   onClearFocus?: () => void;
 }) {

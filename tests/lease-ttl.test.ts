@@ -18,7 +18,7 @@ describe('lease-ttl (issue #122)', () => {
       expect(leaseTtlMsForPhase('executing')).toBe(DEFAULT_LEASE_TTL.executionMs);
       expect(leaseTtlMsForPhase('validating')).toBe(DEFAULT_LEASE_TTL.executionMs);
       expect(leaseTtlMsForPhase('verifying')).toBe(DEFAULT_LEASE_TTL.executionMs);
-      expect(leaseTtlMsForPhase('landing')).toBe(DEFAULT_LEASE_TTL.executionMs);
+      expect(leaseTtlMsForPhase('merging')).toBe(DEFAULT_LEASE_TTL.executionMs);
     });
 
     it('the pre-phase-machine literal "running" gets the execution budget', () => {
@@ -33,7 +33,7 @@ describe('lease-ttl (issue #122)', () => {
     it('respects a custom LeaseTtl override, for every phase (no phase parks a lease awaiting a human)', () => {
       const ttl = { executionMs: 111 };
       expect(leaseTtlMsForPhase('executing', ttl)).toBe(111);
-      expect(leaseTtlMsForPhase('landing', ttl)).toBe(111);
+      expect(leaseTtlMsForPhase('merging', ttl)).toBe(111);
       expect(leaseTtlMsForPhase('terminal', ttl)).toBe(111);
     });
   });
@@ -42,7 +42,7 @@ describe('lease-ttl (issue #122)', () => {
     it('is now + the phase budget', () => {
       const now = 1_000_000;
       expect(leaseExpiryFor('executing', now)).toBe(now + DEFAULT_LEASE_TTL.executionMs);
-      expect(leaseExpiryFor('landing', now)).toBe(now + DEFAULT_LEASE_TTL.executionMs);
+      expect(leaseExpiryFor('merging', now)).toBe(now + DEFAULT_LEASE_TTL.executionMs);
     });
 
     it('respects a custom LeaseTtl override', () => {

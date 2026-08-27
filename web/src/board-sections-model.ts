@@ -89,17 +89,17 @@ export interface BoardSections {
 
 /**
  * An Epic stays on the Board until every member has folded in (and no whole-Epic
- * merge is mid-flight). `land.inFlight` keeps a fully-folded Epic visible while
- * its subset is still merging; `land.held` keeps a fully-folded Epic whose
- * whole-Epic merge escalated — it needs the operator, not silence.
+ * integrate is mid-flight). `merge.inFlight` keeps a fully-folded Epic visible while
+ * its subset is still integrating; `merge.held` keeps a fully-folded Epic whose
+ * whole-Epic integrate escalated — it needs the operator, not silence.
  */
 export function isActiveEpic(epic: Epic): boolean {
-  return epic.foldedCount < epic.memberCount || epic.land.inFlight || epic.land.held != null;
+  return epic.foldedCount < epic.memberCount || epic.integrate.inFlight || epic.integrate.held != null;
 }
 
-/** The whole-Epic merge escalated — the coordinator is holding for the operator. */
+/** The whole-Epic integrate escalated — the coordinator is holding for the operator. */
 export function isEscalatedEpic(epic: Epic): boolean {
-  return epic.land.held != null;
+  return epic.integrate.held != null;
 }
 
 function itemLabel(task: Task | undefined, taskId: number): string {
@@ -191,7 +191,7 @@ export function epicPendingColumns(epic: Epic, tasks: Task[]): BlockerColumn[] {
   const mirrored: Task[] = [];
   const unmirrored: PendingItem[] = [];
   for (const member of epic.members) {
-    if (member.landStatus === 'completed') continue;
+    if (member.mergeStatus === 'completed') continue;
     const task = member.taskId == null ? undefined : tasksById.get(member.taskId);
     if (!task) {
       if (member.taskId == null) unmirrored.push(unmirroredItem(member));

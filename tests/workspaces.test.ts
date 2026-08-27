@@ -265,7 +265,7 @@ describe('Task/Conversation binding + scoping (issue #41)', () => {
     rmSync(dirB, { recursive: true, force: true });
   });
 
-  it('a Task created with no workspaceId lands in the default (earliest) Workspace, carrying it on the payload', async () => {
+  it('a Task created with no workspaceId merges in the default (earliest) Workspace, carrying it on the payload', async () => {
     const { status, body } = await server.api('POST', '/api/tasks', { prompt: 'Unscoped task' });
     expect(status).toBe(201);
     expect(body.workspaceId).toBe(workspaceA);

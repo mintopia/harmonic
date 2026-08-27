@@ -13,10 +13,10 @@ import {
   parseIntegrationBranch,
   reduceMemberState,
   type EpicGit,
-  type EpicLandTrigger,
+  type EpicIntegrateTrigger,
   type EpicRefreshTrigger,
 } from '../src/execution/epic-integration.js';
-import type { MemberLandState } from '../src/domain/epic-land.js';
+import type { MemberMergeState } from '../src/domain/epic-integrate.js';
 import { allWorkspaces } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
@@ -423,11 +423,11 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
     expect(await missing.memberBaseNotReady(await tasks.get(m11Id))).toBe(true);
   });
 
-  it('level-triggered currency: a poll refreshes a behind epic/<ref> (develop advanced by a non-land path) and skips a current one', async () => {
+  it('level-triggered currency: a poll refreshes a behind epic/<ref> (develop advanced by a non-merge path) and skips a current one', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     // epic/10 exists but does NOT contain develop — develop advanced via a direct
-    // commit / revert / external push, no Harmonic land, so no edge refresh fired.
+    // commit / revert / external push, no Harmonic merge, so no edge refresh fired.
     const git = new FakeGit(['epic/10'], 'develop');
     git.contained.delete('epic/10'); // develop is not an ancestor ⇒ behind
     const refresh = new FakeRefresh();
@@ -445,7 +445,7 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   });
 
   it('refreshes a behind epic even with an empty ready frontier (currency is not gated by the ready-frontier early return)', async () => {
-    // Epic 10's only member is closed ⇒ empty ready frontier and no land trigger,
+    // Epic 10's only member is closed ⇒ empty ready frontier and no integrate trigger,
     // which in the edge-triggered design short-circuited before any refresh. The
     // live epic/10 has still fallen behind develop and must be caught up.
     const tickets = [
@@ -499,7 +499,7 @@ describe('reduceMemberState (issue #161)', () => {
   });
 });
 
-describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () => {
+describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
@@ -507,7 +507,7 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
   const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-land-'));
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     wsId = (await allWorkspaces(asyncDb)())[0]!.id;
@@ -517,9 +517,9 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
     rmSync(dir, { recursive: true, force: true });
   });
 
-  class FakeLand implements EpicLandTrigger {
-    readonly calls: { ref: number; members: MemberLandState[]; force: boolean }[] = [];
-    async submit(target: { ref: number; members: MemberLandState[] }, opts?: { force?: boolean }) {
+  class FakeIntegrate implements EpicIntegrateTrigger {
+    readonly calls: { ref: number; members: MemberMergeState[]; force: boolean }[] = [];
+    async submit(target: { ref: number; members: MemberMergeState[] }, opts?: { force?: boolean }) {
       this.calls.push({ ref: target.ref, members: target.members, force: opts?.force ?? false });
       return { status: 'noop' as const };
     }
@@ -532,50 +532,50 @@ describe('EpicIntegrationCoordinator whole-Epic land trigger (issue #161)', () =
   ];
   const memberTaskId = async (ref: number) => (await tasks.list()).find((t) => t.trackerRef === ref)!.id;
 
-  it('offers each derived Epic for a land attempt with its members reduced from live Task state', async () => {
+  it('offers each derived Epic for an integrate attempt with its members reduced from live Task state', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
-    const land = new FakeLand();
+    const trigger = new FakeIntegrate();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
-    coord.attachLandTrigger(land);
-    // Both members have landed onto the integration branch (Task state completed).
+    coord.attachIntegrateTrigger(trigger);
+    // Both members have merged onto the integration branch (Task state completed).
     await tasks.setState(await memberTaskId(11), 'done');
     await tasks.setState(await memberTaskId(12), 'done');
 
     await coord.reconcile(tickets, mirrored);
 
-    expect(land.calls).toEqual([{ ref: 10, members: ['completed', 'completed'], force: false }]);
+    expect(trigger.calls).toEqual([{ ref: 10, members: ['completed', 'completed'], force: false }]);
   });
 
-  it('reduces an escalated member to blocked in the land attempt', async () => {
+  it('reduces an escalated member to blocked in the integrate attempt', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
-    const land = new FakeLand();
+    const trigger = new FakeIntegrate();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
-    coord.attachLandTrigger(land);
+    coord.attachIntegrateTrigger(trigger);
     await tasks.setState(await memberTaskId(11), 'done');
-    await tasks.escalate(await memberTaskId(12), 'escalated to human: attempt 2 of 2 failed'); // a member that cannot land
+    await tasks.escalate(await memberTaskId(12), 'escalated to human: attempt 2 of 2 failed'); // a member that cannot merge
 
     await coord.reconcile(tickets, mirrored);
 
-    expect(land.calls).toHaveLength(1);
-    expect(land.calls[0]!.members.slice().sort()).toEqual(['blocked', 'completed']);
+    expect(trigger.calls).toHaveLength(1);
+    expect(trigger.calls[0]!.members.slice().sort()).toEqual(['blocked', 'completed']);
   });
 
-  it('runs the land pass even with an empty ready frontier (all members completed)', async () => {
+  it('runs the integrate pass even with an empty ready frontier (all members completed)', async () => {
     const tickets = epicTickets();
     const mirrored = await mscan(tickets);
     const git = new FakeGit(['epic/10'], 'develop');
-    const land = new FakeLand();
+    const trigger = new FakeIntegrate();
     const coord = new EpicIntegrationCoordinator(tasks, dir, git);
-    coord.attachLandTrigger(land);
+    coord.attachIntegrateTrigger(trigger);
     await tasks.setState(await memberTaskId(11), 'done');
     await tasks.setState(await memberTaskId(12), 'done');
 
     await coord.reconcile(tickets, mirrored);
-    expect(land.calls).toHaveLength(1); // the empty-ready early return no longer fires with a trigger attached
+    expect(trigger.calls).toHaveLength(1); // the empty-ready early return no longer fires with a trigger attached
   });
 });
 

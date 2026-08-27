@@ -70,7 +70,7 @@ function transitionsFor(items: StreamItem[]): Transition[] {
       const status = item.tool.status;
       if (status && TERMINAL_TOOL_STATUS.has(status)) {
         const label = item.tool.title || 'Tool call';
-        // Keyed on toolCallId + status so a call announces once when it lands,
+        // Keyed on toolCallId + status so a call announces once when it merges,
         // and (defensively) once more only if it somehow flips terminal state.
         out.push({
           key: `tool:${item.tool.toolCallId ?? item.key}:${status}`,

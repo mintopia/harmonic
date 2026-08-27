@@ -27,7 +27,7 @@ describe('projectSettle (issue #113 — settle coordinator projection)', () => {
 
   it('a cancel arriving close to an agent-finish resolves to cancelled (operator-cancel > agent-finish)', () => {
     // The agent finished its turn (Run row would settle completed, first-writer),
-    // then an operator-cancel lands. Precedence — not write order — decides.
+    // then an operator-cancel merges. Precedence — not write order — decides.
     const facts = [
       fact(1, 'agent-finish/unresolved', AGENT_FINISH_NATIVE),
       fact(2, 'operator-cancel', OPERATOR_CANCEL),
@@ -61,7 +61,7 @@ describe('projectSettle (issue #113 — settle coordinator projection)', () => {
   });
 
   it('escalate outranks a bare failure even though both settle the Run failed (the taskAction differs)', () => {
-    // Both land runState 'failed', so a coordinator keying idempotency on the
+    // Both merge runState 'failed', so a coordinator keying idempotency on the
     // Run state alone would wrongly drop the escalate; keying on the disposition
     // keeps the Task-level override (failed → escalate).
     const facts = [fact(1, 'failed', FAILED), fact(2, 'escalate', ESCALATED)];

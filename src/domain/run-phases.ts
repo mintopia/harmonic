@@ -10,7 +10,7 @@
  */
 
 /** Every phase a Run passes through, in traversal order; `terminal` is the sink. */
-export const RUN_PHASES = ['executing', 'validating', 'verifying', 'landing', 'terminal'] as const;
+export const RUN_PHASES = ['executing', 'validating', 'verifying', 'merging', 'terminal'] as const;
 
 export type RunPhase = (typeof RUN_PHASES)[number];
 

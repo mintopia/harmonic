@@ -10,12 +10,12 @@ describe('nextPhase (issue #114, linear since ADR-0041 removed the review gate)'
     expect(nextPhase('validating')).toBe('verifying');
   });
 
-  it('verifying -> landing (no human gate in between)', () => {
-    expect(nextPhase('verifying')).toBe('landing');
+  it('verifying -> merging (no human gate in between)', () => {
+    expect(nextPhase('verifying')).toBe('merging');
   });
 
-  it('landing -> terminal', () => {
-    expect(nextPhase('landing')).toBe('terminal');
+  it('merging -> terminal', () => {
+    expect(nextPhase('merging')).toBe('terminal');
   });
 
   it('terminal -> null (the sink, no forward transition)', () => {
@@ -40,16 +40,16 @@ describe('nextPhase (issue #114, linear since ADR-0041 removed the review gate)'
 });
 
 describe('phasePath (issue #114)', () => {
-  it('executing -> landing collects every intermediate phase', () => {
-    expect(phasePath('executing', 'landing')).toEqual(['validating', 'verifying', 'landing']);
+  it('executing -> merging collects every intermediate phase', () => {
+    expect(phasePath('executing', 'merging')).toEqual(['validating', 'verifying', 'merging']);
   });
 
   it('executing -> terminal walks the whole chain', () => {
-    expect(phasePath('executing', 'terminal')).toEqual(['validating', 'verifying', 'landing', 'terminal']);
+    expect(phasePath('executing', 'terminal')).toEqual(['validating', 'verifying', 'merging', 'terminal']);
   });
 
   it('verifying -> terminal is just the tail of the chain', () => {
-    expect(phasePath('verifying', 'terminal')).toEqual(['landing', 'terminal']);
+    expect(phasePath('verifying', 'terminal')).toEqual(['merging', 'terminal']);
   });
 
   it('a phase to itself is never reachable (the machine is acyclic)', () => {
@@ -57,7 +57,7 @@ describe('phasePath (issue #114)', () => {
   });
 
   it('a backward hop is unreachable', () => {
-    expect(phasePath('landing', 'executing')).toEqual([]);
+    expect(phasePath('merging', 'executing')).toEqual([]);
   });
 
   it('terminal has no forward path to anything, including itself', () => {
@@ -67,6 +67,6 @@ describe('phasePath (issue #114)', () => {
 
   it('a single-step hop returns exactly the one next phase', () => {
     expect(phasePath('executing', 'validating')).toEqual(['validating']);
-    expect(phasePath('verifying', 'landing')).toEqual(['landing']);
+    expect(phasePath('verifying', 'merging')).toEqual(['merging']);
   });
 });

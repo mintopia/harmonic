@@ -1,25 +1,25 @@
 /**
- * Journaled non-interruptible landing — the PONC and reconciliation logic
+ * Journaled non-interruptible merging — the PONC and reconciliation logic
  * (issue #115, reliability-design §0.3, Unit D).
  *
- * "Landing" is the set of irreversible side effects a Run's completion
+ * "Merging" is the set of irreversible side effects a Run's completion
  * triggers once a human (or an auto-accept gate) has said yes: merging a
  * worktree branch into its base, opening a PR, closing a tracker ticket. Once
  * the first of these starts, a racing cancel/guardrail-trip signal must NOT
  * be allowed to flip the Run's outcome to "cancelled" out from under an
  * effect that already fired (or is mid-flight) — that would either leave a
- * merged branch with a Run the operator believes never landed, or worse,
+ * merged branch with a Run the operator believes never merged, or worse,
  * invite a "cancel, then retry" flow that reapplies an already-applied
  * effect (a duplicate merge/PR/ticket-close).
  *
  * The **PONC** ("Point Of No Cancel") is how the spine draws that line
- * without a lock: it is a `run_facts` seq recorded in the landing journal
+ * without a lock: it is a `run_facts` seq recorded in the merging journal
  * before the first irreversible effect runs. `RunSettleCoordinator.settle`
  * (run-settle.ts) clamps its disposition cutoff to the PONC once one exists,
- * so any fact appended after it — a cancel that raced in mid-landing — is
+ * so any fact appended after it — a cancel that raced in mid-merging — is
  * audit-only: it stays in the log for the record, but cannot become the
  * winning disposition. This module is that decision (`poncCutoff`) plus the
- * journal fold/reconcile logic that makes a landing **resumable** after a
+ * journal fold/reconcile logic that makes a merging **resumable** after a
  * crash: no database, no clock, no I/O — the same seam as
  * `run-disposition.ts` — so the precedence and reconciliation contracts are
  * exhaustively unit-testable in isolation from the store and the coordinator
@@ -27,30 +27,30 @@
  */
 
 /**
- * The landing side effects the journal understands. Only `target-ref` (a
+ * The merging side effects the journal understands. Only `target-ref` (a
  * worktree merge) has a live executor today (issue #115 wires the accept
  * path); `open-pr` and `ticket-close` are modelled here so later units slot
  * in without touching this module's contract — same "open for extension"
  * shape as `RUN_FACT_TYPES` (db/schema.ts).
  */
-export const LANDING_EFFECTS = ['target-ref', 'open-pr', 'ticket-close'] as const;
-export type LandingEffect = (typeof LANDING_EFFECTS)[number];
+export const MERGE_EFFECTS = ['target-ref', 'open-pr', 'ticket-close'] as const;
+export type MergeEffect = (typeof MERGE_EFFECTS)[number];
 
-/** The journal row kinds, in the order a landing writes them: a `ponc` marker
+/** The journal row kinds, in the order a merging writes them: a `ponc` marker
  * (once, before the first effect), then an `intent`/`result` pair per effect
  * attempted, and `abandoned` when an effect failed — nothing irreversible
  * happened, so the PONC no longer freezes the disposition (ADR-0041 escalates
- * the failed landing instead of parking it for review). */
-export const LANDING_JOURNAL_KINDS = ['ponc', 'intent', 'result', 'abandoned'] as const;
-export type LandingJournalKind = (typeof LANDING_JOURNAL_KINDS)[number];
+ * the failed merging instead of parking it for review). */
+export const MERGE_JOURNAL_KINDS = ['ponc', 'intent', 'result', 'abandoned'] as const;
+export type MergeJournalKind = (typeof MERGE_JOURNAL_KINDS)[number];
 
 /** What the coordinator intends to do: apply `effect`, identified for
  * idempotency/reconciliation purposes by `idempotencyKey` (e.g. for
  * `target-ref`, the base branch + the branch being merged), carrying
  * `expected` — whatever detail a later `observed` check needs to tell
  * "already done" from "not done yet" (e.g. the branch name / target OID). */
-export interface LandingIntent {
-  effect: LandingEffect;
+export interface MergeIntent {
+  effect: MergeEffect;
   idempotencyKey: string;
   expected: Record<string, unknown>;
 }
@@ -58,13 +58,13 @@ export interface LandingIntent {
 /** The outcome of attempting an intended effect. `observed` is whatever the
  * effect's own apply step captured about the resulting world state (e.g. the
  * merge commit OID); `detail` is a human-readable failure/aux message. */
-export interface LandingResult {
-  effect: LandingEffect;
+export interface MergeResult {
+  effect: MergeEffect;
   idempotencyKey: string;
   ok: boolean;
   // `| undefined` (not just `?`) throughout this interface because callers
   // build these objects by forwarding an effect's own optional-shaped
-  // outcome (`LandingEffectOutcome`, landing-coordinator.ts) verbatim —
+  // outcome (`MergeEffectOutcome`, merge-coordinator.ts) verbatim —
   // under `exactOptionalPropertyTypes`, a property typed merely `?:` refuses
   // an explicit `undefined` value, only an absent key.
   observed?: Record<string, unknown> | undefined;
@@ -80,10 +80,10 @@ export interface LandingResult {
  * it to the pure coordinator functions) — this module never parses JSON
  * itself, keeping it free of any serialization concern.
  */
-export interface LandingJournalRowView {
+export interface MergeJournalRowView {
   seq: number;
-  kind: LandingJournalKind;
-  effect: LandingEffect | null;
+  kind: MergeJournalKind;
+  effect: MergeEffect | null;
   idempotencyKey: string | null;
   payload: Record<string, unknown>;
 }
@@ -91,7 +91,7 @@ export interface LandingJournalRowView {
 /** Per-idempotency-key fold of the journal: what was intended, and what the
  * result rows say happened. */
 export interface JournalEntry {
-  effect: LandingEffect;
+  effect: MergeEffect;
   idempotencyKey: string;
   /** An `intent` row exists for this key. */
   intended: boolean;
@@ -100,18 +100,18 @@ export interface JournalEntry {
   appliedOk: boolean;
   /** A `result` row with `ok:false` exists for this key (independent of
    * `appliedOk` — a failed attempt does not erase an earlier or later ok one,
-   * though in practice `land` stops at the first failure so the two rarely
+   * though in practice `merge` stops at the first failure so the two rarely
    * coexist; kept independent so this fold stays a pure, total summary of
    * whatever the log actually contains). */
   appliedFailed: boolean;
 }
 
 /**
- * Fold a Run's landing journal into one entry per idempotency key —
- * `land`/`reconcileLanding`'s shared view of "what has this landing tried,
+ * Fold a Run's merging journal into one entry per idempotency key —
+ * `merge`/`reconcileMerge`'s shared view of "what has this merging tried,
  * and did it work". `ponc` rows carry no effect/idempotencyKey and are
  * skipped; every `intent`/`result` row is attributed to its `idempotencyKey`
- * (not `effect` alone, since a landing can intend the same effect kind
+ * (not `effect` alone, since a merging can intend the same effect kind
  * multiple times with different identities — not true for `target-ref` today,
  * but true in general, e.g. `ticket-close` against different tracker refs).
  *
@@ -119,7 +119,7 @@ export interface JournalEntry {
  * being the log's true order (append-only, so callers pass rows in seq order,
  * but this fold doesn't itself depend on that — it merges by key regardless).
  */
-export function foldJournal(rows: readonly LandingJournalRowView[]): JournalEntry[] {
+export function foldJournal(rows: readonly MergeJournalRowView[]): JournalEntry[] {
   const byKey = new Map<string, JournalEntry>();
   for (const row of rows) {
     if (row.kind === 'ponc' || row.effect === null || row.idempotencyKey === null) continue;
@@ -139,21 +139,21 @@ export function foldJournal(rows: readonly LandingJournalRowView[]): JournalEntr
 
 /**
  * The run_facts cutoff seq frozen by this Run's `ponc` journal row — the
- * Point Of No Cancel (see the module doc comment) — or `null` if landing
+ * Point Of No Cancel (see the module doc comment) — or `null` if merging
  * never got that far (no PONC written yet, e.g. a Run still parked in
  * `review`). `RunSettleCoordinator.settle` reads this to clamp its
  * disposition cutoff (run-settle.ts): a fact appended with `seq >
  * poncCutoff` can never win, no matter how high its precedence.
  *
- * A landing writes at most one `ponc` row (the coordinator writes it once,
- * synchronously, before the first effect — see landing-coordinator.ts); if
+ * A merging writes at most one `ponc` row (the coordinator writes it once,
+ * synchronously, before the first effect — see merge-coordinator.ts); if
  * more than one is ever found (defensive — should not happen against an
  * append-only log written by one coordinator), the **first** one in `rows`
  * order wins, matching "the PONC is the earliest point past which nothing
- * can undo the landing" rather than a later, larger cutoff quietly widening
+ * can undo the merging" rather than a later, larger cutoff quietly widening
  * the window a cancel could still have won in.
  */
-export function poncCutoff(rows: readonly LandingJournalRowView[]): number | null {
+export function poncCutoff(rows: readonly MergeJournalRowView[]): number | null {
   const index = rows.findIndex((r) => r.kind === 'ponc');
   if (index < 0) return null;
   if (rows.slice(index + 1).some((r) => r.kind === 'abandoned')) return null;
@@ -169,17 +169,17 @@ export type ObservedState = 'present' | 'absent';
 
 /** One reconciliation decision for an intended-but-not-confirmed effect. */
 export interface ReconcileAction {
-  effect: LandingEffect;
+  effect: MergeEffect;
   key: string;
   action: 'already-applied' | 'adopt' | 'apply';
 }
 
 /**
- * Reconcile a Run's landing journal against the observed world
- * (issue #115). This is what makes a journaled landing survive a crash: a
+ * Reconcile a Run's merging journal against the observed world
+ * (issue #115). This is what makes a journaled merging survive a crash: a
  * process that dies between `recordIntent` and `recordResult` leaves an
  * effect in an ambiguous state — it may have actually applied (e.g. the merge
- * commit landed just before the process died) or may never have started. A
+ * commit merged just before the process died) or may never have started. A
  * fresh coordinator can't tell from the journal alone, so it asks the world
  * (`observed`) and decides:
  *
@@ -190,7 +190,7 @@ export interface ReconcileAction {
  *     effect. Re-applying here is exactly the bug this module exists to
  *     prevent — a second merge attempt on an already-merged branch is either
  *     a silent duplicate or (worse) a false conflict that parks a Run that
- *     actually landed.
+ *     actually merged.
  *   - no ok result, and the world reports the effect absent -> `'apply'`:
  *     genuinely never happened (or definitively failed and left no trace);
  *     safe, in fact necessary, to run it.
@@ -198,7 +198,7 @@ export interface ReconcileAction {
  * An intended effect with no `intent` row at all is impossible by
  * construction (every entry in `foldJournal`'s output came from an intent or
  * result row); an effect with **no** intent row in the raw journal — i.e.
- * `land` never got to it — is correctly absent from the result: reconcile
+ * `merge` never got to it — is correctly absent from the result: reconcile
  * only ever resumes work that was actually started.
  *
  * Idempotent by construction: once every intended effect has an `ok:true`
@@ -207,8 +207,8 @@ export interface ReconcileAction {
  * set, a no-op for the caller to iterate over.
  */
 export function reconcile(
-  rows: readonly LandingJournalRowView[],
-  observed: (effect: LandingEffect, idempotencyKey: string) => ObservedState,
+  rows: readonly MergeJournalRowView[],
+  observed: (effect: MergeEffect, idempotencyKey: string) => ObservedState,
 ): ReconcileAction[] {
   const actions: ReconcileAction[] = [];
   for (const entry of foldJournal(rows)) {

@@ -35,7 +35,7 @@ interface Transcript {
  * updated line-by-line so a whole-file scan (`scanTranscript`) and an
  * incremental tail (`TranscriptCursor`, #217) share the exact accounting.
  * `seen` and `completed` persist across incremental reads, so a chunked
- * assistant message (repeated id) is deduped even when its chunks land in two
+ * assistant message (repeated id) is deduped even when its chunks merge in two
  * different ticks.
  */
 class TranscriptAcc implements LineAccumulator {

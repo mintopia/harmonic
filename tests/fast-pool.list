@@ -19,8 +19,6 @@ tests/attempts.test.ts
 tests/auto-drive.test.ts
 tests/board-sections-model.test.ts
 tests/boot-resume.test.ts
-tests/branch-observation.test.ts
-tests/branch-recovery.test.ts
 tests/branch-retirement.test.ts
 tests/config-migration.test.ts
 tests/config-store.test.ts

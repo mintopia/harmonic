@@ -5,7 +5,7 @@ import {
   runToolCalls,
   runEvents,
   runFacts,
-  landingJournal,
+  mergeJournal,
   turnQueue,
   verificationAttempts,
   guardrailEvents,
@@ -18,7 +18,7 @@ import {
  * `Db.transaction` (ADR-0029) — child-before-parent deletion order, every
  * statement awaited. Deletes a set of Runs together with every row that
  * references them (issue #162): every table with an FK to `runs.id` is purged
- * first — `run_tool_calls`, `run_events`, `run_facts`, `landing_journal`, `turn_queue`,
+ * first — `run_tool_calls`, `run_events`, `run_facts`, `merge_journal`, `turn_queue`,
  * `verification_attempts`, `guardrail_events`, `work_context_leases` (via
  * `ownerRunId`) — plus the non-FK scoped `api_keys` rows that would otherwise
  * dangle once their Run is gone, then the `runs` themselves. This is the one
@@ -34,7 +34,7 @@ export async function deleteRunsAndChildrenAsync(tx: AsyncTx, runIds: number[]):
   await tx.delete(runToolCalls).where(inArray(runToolCalls.runId, runIds)).run();
   await tx.delete(runEvents).where(inArray(runEvents.runId, runIds)).run();
   await tx.delete(runFacts).where(inArray(runFacts.runId, runIds)).run();
-  await tx.delete(landingJournal).where(inArray(landingJournal.runId, runIds)).run();
+  await tx.delete(mergeJournal).where(inArray(mergeJournal.runId, runIds)).run();
   await tx.delete(turnQueue).where(inArray(turnQueue.runId, runIds)).run();
   await tx.delete(verificationAttempts).where(inArray(verificationAttempts.runId, runIds)).run();
   await tx.delete(guardrailEvents).where(inArray(guardrailEvents.runId, runIds)).run();

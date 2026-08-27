@@ -8,48 +8,48 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
-import { LandingJournalStore } from '../src/domain/landing-journal.js';
+import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { RunSettleCoordinator } from '../src/domain/run-settle.js';
-import { LandingCoordinator, type LandingEffectExec, type LandingEffectOutcome } from '../src/domain/landing-coordinator.js';
+import { MergeCoordinator, type MergeEffectExec, type MergeEffectOutcome } from '../src/domain/merge-coordinator.js';
 import { EscalationService } from '../src/domain/escalation.js';
 import type { SettleProjection } from '../src/domain/run-coordinator.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import { allWorkspaces } from './helpers.js';
 
-/** The land projection every landing intends: the Run completed, the ticket done. */
-const LAND_PROJECTION: SettleProjection = { runState: 'completed', taskAction: 'done', reason: null };
+/** The merge projection every merging intends: the Run completed, the ticket done. */
+const MERGE_PROJECTION: SettleProjection = { runState: 'completed', taskAction: 'done', reason: null };
 const CANCEL_PROJECTION: SettleProjection = { runState: 'cancelled', taskAction: 'none', reason: null };
 
 /**
- * The AC harness for issue #115: `LandingCoordinator.land`/`reconcileLanding`
+ * The AC harness for issue #115: `MergeCoordinator.merge`/`reconcileMerge`
  * exercised against the real stores over a real (temp) sqlite DB — the PONC
  * freeze is a genuine race between two independent `RunSettleCoordinator`
  * writers over the same Run row, so this needs the real store discipline
  * (monotonic seq, unique index), not a hand-rolled fake.
  */
-describe('LandingCoordinator (issue #115)', () => {
+describe('MergeCoordinator (issue #115)', () => {
   let dir: string;
-  // These stores (RunStore, TaskService, leases, RunFactStore, LandingJournalStore)
-  // are all on the async libsql Db (ADR-0029; landing journal migrated in #209).
+  // These stores (RunStore, TaskService, leases, RunFactStore, MergeJournalStore)
+  // are all on the async libsql Db (ADR-0029; merging journal migrated in #209).
   let asyncDb: AsyncDbHandle;
   let tasks: TaskService;
   let runStore: RunStore;
   let leases: WorkContextLeaseStore;
   let runFacts: RunFactStore;
-  let journal: LandingJournalStore;
+  let journal: MergeJournalStore;
   let settle: RunSettleCoordinator;
-  let coordinator: LandingCoordinator;
+  let coordinator: MergeCoordinator;
 
   beforeEach(async () => {
-    dir = mkdtempSync(join(tmpdir(), 'harmonic-landing-coordinator-'));
+    dir = mkdtempSync(join(tmpdir(), 'harmonic-merge-coordinator-'));
     asyncDb = await openAsyncDb(dir);
     tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
-    journal = new LandingJournalStore(asyncDb);
+    journal = new MergeJournalStore(asyncDb);
     settle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, journal);
-    coordinator = new LandingCoordinator(runStore, asyncDb, journal, settle);
+    coordinator = new MergeCoordinator(runStore, asyncDb, journal, settle);
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -58,9 +58,9 @@ describe('LandingCoordinator (issue #115)', () => {
 
   /** A Task+Run pair where an operator Accept finds them: the ticket
    * `escalated`, its Run still `running` past verification (the live shape a
-   * landing settles from). */
+   * merging settles from). */
   async function fixture(): Promise<{ task: TaskRow; run: RunRow }> {
-    const created = await tasks.create({ prompt: 'land me', state: 'ready' });
+    const created = await tasks.create({ prompt: 'merge me', state: 'ready' });
     await tasks.setState(created.id, 'working');
     let run = await runStore.create(created.id);
     run = await runStore.update(run.id, { phase: 'verifying', candidateOid: 'a'.repeat(40) });
@@ -68,14 +68,14 @@ describe('LandingCoordinator (issue #115)', () => {
     return { task: await tasks.get(created.id), run };
   }
 
-  function ok(observed: Record<string, unknown> = {}): Promise<LandingEffectOutcome> {
+  function ok(observed: Record<string, unknown> = {}): Promise<MergeEffectOutcome> {
     return Promise.resolve({ ok: true, observed });
   }
 
   it('each effect writes intent -> apply -> result, keyed by idempotency identity', async () => {
     const { task, run } = await fixture();
     let applied = 0;
-    const effect: LandingEffectExec = {
+    const effect: MergeEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@deadbeef',
       expected: { branch: 'harmonic/task-1-run-1' },
@@ -85,7 +85,7 @@ describe('LandingCoordinator (issue #115)', () => {
       },
     };
 
-    const outcome = await coordinator.land(task, run, LAND_PROJECTION, [effect]);
+    const outcome = await coordinator.merge(task, run, MERGE_PROJECTION, [effect]);
     expect(outcome).toEqual({ ok: true });
     expect(applied).toBe(1);
 
@@ -96,23 +96,23 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(resultRow).toMatchObject({ effect: 'target-ref', idempotencyKey: 'main@deadbeef', payload: { ok: true, observed: { mergedOid: 'deadbeef' } } });
     expect(poncRow!.payload['cutoffSeq']).toEqual(expect.any(Number));
 
-    // The Run actually landed.
-    const landedRun = await runStore.get(run.id);
-    expect(landedRun.state).toBe('completed');
-    expect(landedRun.phase).toBe('terminal');
+    // The Run actually merged.
+    const mergedRun = await runStore.get(run.id);
+    expect(mergedRun.state).toBe('completed');
+    expect(mergedRun.phase).toBe('terminal');
     expect((await tasks.get(task.id)).state).toBe('done');
   });
 
-  it('a merge-conflict-style failure stops the loop, abandons the landing (PONC lifted), and leaves the Task escalated', async () => {
+  it('a merge-conflict-style failure stops the loop, abandons the merging (PONC lifted), and leaves the Task escalated', async () => {
     const { task, run } = await fixture();
-    const effect: LandingEffectExec = {
+    const effect: MergeEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@conflict',
       expected: {},
       apply: async () => ({ ok: false, detail: 'merge conflict' }),
     };
 
-    const outcome = await coordinator.land(task, run, LAND_PROJECTION, [effect]);
+    const outcome = await coordinator.merge(task, run, MERGE_PROJECTION, [effect]);
     expect(outcome).toEqual({ ok: false, detail: 'merge conflict' });
 
     // Nothing settled: the Run never left `running`, the Task never left
@@ -124,32 +124,32 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(rows.map((r) => r.kind)).toEqual(['ponc', 'intent', 'result', 'abandoned']);
     expect(rows[2]).toMatchObject({ payload: { ok: false, detail: 'merge conflict' } });
     // The PONC no longer freezes the disposition: an escalate fact appended
-    // after the abandoned landing decides the Run instead of the land fact.
+    // after the abandoned merging decides the Run instead of the merge fact.
     expect(await journal.ponc(run.id)).toBeNull();
-    await settle.settle(task, run, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: landing failed' });
+    await settle.settle(task, run, 'escalate', { runState: 'failed', taskAction: 'escalate', reason: 'escalated to human: merging failed' });
     expect(await runStore.get(run.id)).toMatchObject({ state: 'failed', phase: 'terminal' });
   });
 
-  it('a cancel fact appended after the PONC is audit-only: the land still wins and settles the Run "completed"', async () => {
+  it('a cancel fact appended after the PONC is audit-only: the merge still wins and settles the Run "completed"', async () => {
     const { task, run } = await fixture();
-    let resolveApply!: (v: LandingEffectOutcome) => void;
-    const effect: LandingEffectExec = {
+    let resolveApply!: (v: MergeEffectOutcome) => void;
+    const effect: MergeEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@race',
       expected: {},
-      apply: () => new Promise<LandingEffectOutcome>((resolve) => (resolveApply = resolve)),
+      apply: () => new Promise<MergeEffectOutcome>((resolve) => (resolveApply = resolve)),
     };
 
-    const landPromise = coordinator.land(task, run, LAND_PROJECTION, [effect]);
+    const mergePromise = coordinator.merge(task, run, MERGE_PROJECTION, [effect]);
 
-    // Mid-landing: an operator-cancel races in on a SEPARATE settle call —
+    // Mid-merging: an operator-cancel races in on a SEPARATE settle call —
     // exactly the scenario the PONC exists for. It must not be able to flip
-    // the Run to cancelled once the land fact is frozen in.
+    // the Run to cancelled once the merge fact is frozen in.
     await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
     // The racing cancel's OWN settle call is forced by the PONC clamp to see
-    // the land fact (already at/under the frozen cutoff) as decisive — the
-    // Run is landed by the time the cancel's settle call returns.
+    // the merge fact (already at/under the frozen cutoff) as decisive — the
+    // Run is merged by the time the cancel's settle call returns.
     const afterCancelRace = await runStore.get(run.id);
     expect(afterCancelRace.state).toBe('completed');
     expect(afterCancelRace.phase).toBe('terminal');
@@ -159,35 +159,35 @@ describe('LandingCoordinator (issue #115)', () => {
     const cancelFacts = (await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel');
     expect(cancelFacts).toHaveLength(1);
 
-    // The effect now finishes; `land`'s own deferred settle call idempotently
+    // The effect now finishes; `merge`'s own deferred settle call idempotently
     // no-ops (the Run is already terminal).
     resolveApply({ ok: true, observed: {} });
-    const outcome = await landPromise;
+    const outcome = await mergePromise;
     expect(outcome).toEqual({ ok: true });
-    expect((await runStore.get(run.id)).state).toBe('completed'); // unchanged, still landed
+    expect((await runStore.get(run.id)).state).toBe('completed'); // unchanged, still merged
   });
 
   it('a cancel racing through a SEPARATE PONC-aware coordinator (the Runner\'s) is still audit-only', async () => {
     // Regression for the cross-instance race (issue #115 review): in production
     // the operator-cancel path travels through `Runner.settleCoordinator`, a
     // DIFFERENT `RunSettleCoordinator` instance than the review-side one that
-    // drives `land`. Both must honour the same PONC, which they do only because
-    // both are handed a `LandingJournalStore` over the same DB. This builds that
+    // drives `merge`. Both must honour the same PONC, which they do only because
+    // both are handed a `MergeJournalStore` over the same DB. This builds that
     // second instance exactly as the Runner does and races the cancel through
-    // it — the land must still win. (Without the Runner-side journal wiring,
-    // this cancel would flip the Run to `cancelled` and "un-land" a merge.)
-    const runnerSettle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, new LandingJournalStore(asyncDb));
+    // it — the merge must still win. (Without the Runner-side journal wiring,
+    // this cancel would flip the Run to `cancelled` and "un-merge" a merge.)
+    const runnerSettle = new RunSettleCoordinator(runStore, tasks, leases, runFacts, undefined, new MergeJournalStore(asyncDb));
 
     const { task, run } = await fixture();
-    let resolveApply!: (v: LandingEffectOutcome) => void;
-    const effect: LandingEffectExec = {
+    let resolveApply!: (v: MergeEffectOutcome) => void;
+    const effect: MergeEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@cross-instance',
       expected: {},
-      apply: () => new Promise<LandingEffectOutcome>((resolve) => (resolveApply = resolve)),
+      apply: () => new Promise<MergeEffectOutcome>((resolve) => (resolveApply = resolve)),
     };
 
-    const landPromise = coordinator.land(task, run, LAND_PROJECTION, [effect]);
+    const mergePromise = coordinator.merge(task, run, MERGE_PROJECTION, [effect]);
 
     // The cancel arrives through the Runner's own coordinator instance.
     await runnerSettle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
@@ -199,25 +199,25 @@ describe('LandingCoordinator (issue #115)', () => {
     expect((await runFacts.list(run.id)).filter((f) => f.type === 'operator-cancel')).toHaveLength(1);
 
     resolveApply({ ok: true, observed: {} });
-    expect(await landPromise).toEqual({ ok: true });
+    expect(await mergePromise).toEqual({ ok: true });
     expect((await runStore.get(run.id)).state).toBe('completed');
   });
 
-  it('simulated mid-landing crash: intent written, no result — a fresh coordinator reconciles', async () => {
+  it('simulated mid-merging crash: intent written, no result — a fresh coordinator reconciles', async () => {
     const { run } = await fixture();
-    // Simulate the crash directly against the journal: `land` got as far as
+    // Simulate the crash directly against the journal: `merge` got as far as
     // recording intent for the merge but the process died before `apply()`
     // resolved (or before the result was recorded) — no result row exists.
-    await journal.writePonc(run.id, (await runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION })).seq);
+    await journal.writePonc(run.id, (await runFacts.append(run.id, 'agent-finish/unresolved', { ...MERGE_PROJECTION })).seq);
     await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey: 'main@crash', expected: { branch: 'harmonic/task-1-run-1' } });
 
     // A FRESH coordinator instance — the "restarted process" — reconciles.
-    const freshCoordinator = new LandingCoordinator(runStore, asyncDb, journal, settle);
+    const freshCoordinator = new MergeCoordinator(runStore, asyncDb, journal, settle);
 
-    // Case 1: the world shows the effect already happened (the merge landed
+    // Case 1: the world shows the effect already happened (the merge merged
     // just before the crash) -> adopt: record the result, do NOT re-apply.
     let reapplyCount = 0;
-    const adoptActions = await freshCoordinator.reconcileLanding(
+    const adoptActions = await freshCoordinator.reconcileMerge(
       run,
       () => 'present',
       { 'target-ref': async () => { reapplyCount++; return { ok: true }; } },
@@ -227,14 +227,14 @@ describe('LandingCoordinator (issue #115)', () => {
     expect((await journal.views(run.id)).at(-1)).toMatchObject({ kind: 'result', effect: 'target-ref', idempotencyKey: 'main@crash', payload: { ok: true } });
   });
 
-  it('simulated mid-landing crash with observed=absent -> apply exactly once', async () => {
+  it('simulated mid-merging crash with observed=absent -> apply exactly once', async () => {
     const { run } = await fixture();
-    await journal.writePonc(run.id, (await runFacts.append(run.id, 'agent-finish/unresolved', { ...LAND_PROJECTION })).seq);
+    await journal.writePonc(run.id, (await runFacts.append(run.id, 'agent-finish/unresolved', { ...MERGE_PROJECTION })).seq);
     await journal.recordIntent(run.id, { effect: 'target-ref', idempotencyKey: 'main@crash2', expected: {} });
 
-    const freshCoordinator = new LandingCoordinator(runStore, asyncDb, journal, settle);
+    const freshCoordinator = new MergeCoordinator(runStore, asyncDb, journal, settle);
     let applyCount = 0;
-    const actions = await freshCoordinator.reconcileLanding(
+    const actions = await freshCoordinator.reconcileMerge(
       run,
       () => 'absent',
       { 'target-ref': async () => { applyCount++; return { ok: true, observed: { mergedOid: 'cafe' } }; } },
@@ -244,9 +244,9 @@ describe('LandingCoordinator (issue #115)', () => {
     expect((await journal.views(run.id)).at(-1)).toMatchObject({ kind: 'result', payload: { ok: true, observed: { mergedOid: 'cafe' } } });
   });
 
-  it('an operator-accept land (issue #191) settles under `operator-accept`, not the default `agent-finish/unresolved`', async () => {
+  it('an operator-accept merge (issue #191) settles under `operator-accept`, not the default `agent-finish/unresolved`', async () => {
     const { task, run } = await fixture();
-    const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
+    const outcome = await coordinator.merge(task, run, MERGE_PROJECTION, [], {}, 'operator-accept');
     expect(outcome).toEqual({ ok: true });
     expect((await runStore.get(run.id)).state).toBe('completed');
     const types = (await runFacts.list(run.id)).map((f) => f.type);
@@ -269,7 +269,7 @@ describe('LandingCoordinator (issue #115)', () => {
         effect: 'target-ref',
         idempotencyKey: 'main@dirty-target',
         expected: {},
-        apply: async () => ({ ok: false, detail: 'target branch has uncommitted changes; land via PR/manual' }),
+        apply: async () => ({ ok: false, detail: 'target branch has uncommitted changes; merge via PR/manual' }),
       }],
       { resume: async () => {}, cleanup: async () => {} },
     );
@@ -282,15 +282,15 @@ describe('LandingCoordinator (issue #115)', () => {
     expect(await runStore.countRunning()).toBe(0);
   });
 
-  it('an operator-accept loses to a racing operator-cancel appended BEFORE the land\'s PONC (issue #191)', async () => {
+  it('an operator-accept loses to a racing operator-cancel appended BEFORE the merge\'s PONC (issue #191)', async () => {
     const { task, run } = await fixture();
-    // The cancel is already settled on this Run's log before `land` is ever
+    // The cancel is already settled on this Run's log before `merge` is ever
     // called — e.g. a cancel that raced in and fully resolved just ahead of
     // the operator's accept request reaching this coordinator.
     await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
     expect((await runStore.get(run.id)).state).toBe('cancelled');
 
-    const outcome = await coordinator.land(task, run, LAND_PROJECTION, [], {}, 'operator-accept');
+    const outcome = await coordinator.merge(task, run, MERGE_PROJECTION, [], {}, 'operator-accept');
     expect(outcome).toEqual({ ok: true }); // effects still applied; the loop doesn't check prior disposition
     // But the disposition replay still finds the earlier, higher-precedence
     // operator-cancel fact within the frozen PONC window — the accept cannot
@@ -299,20 +299,20 @@ describe('LandingCoordinator (issue #115)', () => {
     expect((await tasks.get(task.id)).state).toBe('escalated'); // taskAction 'none' on cancel left it here
   });
 
-  it('an operator-accept still wins over a cancel appended AFTER the land\'s PONC (issue #191)', async () => {
+  it('an operator-accept still wins over a cancel appended AFTER the merge\'s PONC (issue #191)', async () => {
     const { task, run } = await fixture();
-    let resolveApply!: (v: LandingEffectOutcome) => void;
-    const effect: LandingEffectExec = {
+    let resolveApply!: (v: MergeEffectOutcome) => void;
+    const effect: MergeEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@accept-race',
       expected: {},
-      apply: () => new Promise<LandingEffectOutcome>((resolve) => (resolveApply = resolve)),
+      apply: () => new Promise<MergeEffectOutcome>((resolve) => (resolveApply = resolve)),
     };
 
-    const landPromise = coordinator.land(task, run, LAND_PROJECTION, [effect], {}, 'operator-accept');
+    const mergePromise = coordinator.merge(task, run, MERGE_PROJECTION, [effect], {}, 'operator-accept');
 
-    // Mid-landing: a cancel races in on a separate settle call, after this
-    // land's PONC has already frozen the cutoff at the operator-accept fact.
+    // Mid-merging: a cancel races in on a separate settle call, after this
+    // merge's PONC has already frozen the cutoff at the operator-accept fact.
     await settle.settle(task, run, 'operator-cancel', CANCEL_PROJECTION);
 
     const afterCancelRace = await runStore.get(run.id);
@@ -321,24 +321,24 @@ describe('LandingCoordinator (issue #115)', () => {
     expect((await tasks.get(task.id)).state).toBe('done');
 
     resolveApply({ ok: true, observed: {} });
-    expect(await landPromise).toEqual({ ok: true });
-    expect((await runStore.get(run.id)).state).toBe('completed'); // unchanged, still landed
+    expect(await mergePromise).toEqual({ ok: true });
+    expect((await runStore.get(run.id)).state).toBe('completed'); // unchanged, still merged
   });
 
-  it('reconcile after a completed landing is a no-op (all already-applied, no executor calls)', async () => {
+  it('reconcile after a completed merging is a no-op (all already-applied, no executor calls)', async () => {
     const { task, run } = await fixture();
     let applied = 0;
-    const effect: LandingEffectExec = {
+    const effect: MergeEffectExec = {
       effect: 'target-ref',
       idempotencyKey: 'main@done',
       expected: {},
       apply: async () => { applied++; return ok(); },
     };
-    await coordinator.land(task, run, LAND_PROJECTION, [effect]);
+    await coordinator.merge(task, run, MERGE_PROJECTION, [effect]);
     expect(applied).toBe(1);
 
     const before = (await journal.list(run.id)).length;
-    const actions = await coordinator.reconcileLanding(run, () => 'present', {
+    const actions = await coordinator.reconcileMerge(run, () => 'present', {
       'target-ref': async () => { applied++; return ok(); },
     });
     expect(actions).toEqual([{ effect: 'target-ref', key: 'main@done', action: 'already-applied' }]);

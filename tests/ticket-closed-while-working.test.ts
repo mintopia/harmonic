@@ -14,7 +14,7 @@ import { allWorkspaces } from './helpers.js';
 // Tracker state is an input, never a control path (ADR-0041): a mirrored
 // ticket closed in the tracker while its Task is `working` changes nothing
 // locally — no reopen, no escalation, no premature "done". Harmonic's own
-// landing closes the ticket idempotently when the Run gets there; a human
+// merging closes the ticket idempotently when the Run gets there; a human
 // closing it early is simply mirrored once the Task rests.
 
 const mirrored = (ref: number, over: Partial<MirrorInput> = {}): MirrorInput => ({
@@ -115,7 +115,7 @@ describe('a mirrored ticket closed while its Task is working', () => {
 
     await mirrorScan(tasks, [ticket({ number: 1, state: 'closed', closedAt: '2026-08-07T01:00:00Z' })], wsId);
 
-    // Still working, still blocking: only the Run's verdict and landing finish it.
+    // Still working, still blocking: only the Run's verdict and merging finish it.
     expect((await tasks.get(blocker.id)).state).toBe('working');
     expect((await tasks.withDeps(await tasks.get(dependent.id))).openBlockerCount).toBe(1);
     expect((await tasks.withDeps(await tasks.get(dependent.id))).agentWorkable).toBe(false);

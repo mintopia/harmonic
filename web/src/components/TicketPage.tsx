@@ -614,7 +614,7 @@ function SteerBox({ taskId }: { taskId: number }) {
 
 function runPillState(run: Run): string {
   if (run.state === 'completed') return 'merged';
-  if (run.state === 'running') return run.phase === 'landing' ? 'merging' : (run.phase ?? 'running');
+  if (run.state === 'running') return run.phase === 'merging' ? 'merging' : (run.phase ?? 'running');
   return run.state;
 }
 
@@ -775,7 +775,7 @@ export function TicketPage({
   // The worktree diffstat while a run is in flight. `task.stat` is only
   // snapshotted at settle, so the rail's changed-file list would be empty for
   // the whole run; poll the live diffstat instead so files appear as the agent
-  // writes them, falling back to the settled `task.stat` once it lands.
+  // writes them, falling back to the settled `task.stat` once it merges.
   const [liveStat, setLiveStat] = useState<string | null>(null);
 
   useEffect(() => {
@@ -865,7 +865,7 @@ export function TicketPage({
   }, [task.id]);
 
   // Live token/cost deltas for the in-flight Run (the `run_usage` firehose, ~1s)
-  // — `run_changed` only lands at phase edges, so without this the metric row
+  // — `run_changed` only merges at phase edges, so without this the metric row
   // holds the stale settled figures while the Run is executing.
   useEffect(
     () =>

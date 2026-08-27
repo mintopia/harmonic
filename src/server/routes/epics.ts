@@ -37,7 +37,7 @@ const epicMemberSchema = z
     taskId: z.number().int().nullable().meta({ example: 12 }),
     state: z.string().nullable().meta({ example: 'working' }),
     escalated: z.boolean(),
-    landStatus: z.enum(['completed', 'blocked', 'pending']).meta({ example: 'pending' }),
+    mergeStatus: z.enum(['completed', 'blocked', 'pending']).meta({ example: 'pending' }),
     ready: z.boolean(),
   })
   .meta({ id: 'EpicMember' });
@@ -54,12 +54,12 @@ const epicVerificationSchema = z
   .object({ status: z.enum(['pass', 'fail', 'pending']).nullable() })
   .meta({ id: 'EpicVerification' });
 
-const epicLandStateSchema = z
+const epicIntegrateStateSchema = z
   .object({
     inFlight: z.boolean(),
     held: z.string().nullable().meta({ example: 'already escalated for this member state; awaiting operator or a state change' }),
   })
-  .meta({ id: 'EpicLandState' });
+  .meta({ id: 'EpicIntegrateState' });
 
 const epicSchema = z
   .object({
@@ -70,7 +70,7 @@ const epicSchema = z
     ready: z.array(z.number().int()),
     integration: epicIntegrationSchema,
     verification: epicVerificationSchema,
-    land: epicLandStateSchema,
+    integrate: epicIntegrateStateSchema,
     foldedCount: z.number().int(),
     memberCount: z.number().int(),
   })
@@ -78,21 +78,21 @@ const epicSchema = z
 
 const epicsListResponseSchema = listResponse('epics', epicSchema);
 
-/** `EpicLandOutcome` (`execution/epic-land-coordinator.ts`) as the API serves it — a discriminated union on `status`. */
-const epicLandOutcomeSchema = z
+/** `EpicIntegrateOutcome` (`execution/epic-integrate-coordinator.ts`) as the API serves it — a discriminated union on `status`. */
+const epicIntegrateOutcomeSchema = z
   .discriminatedUnion('status', [
-    z.object({ status: z.literal('landed'), oid: z.string().meta({ example: 'a1b2c3d' }) }),
+    z.object({ status: z.literal('integrated'), oid: z.string().meta({ example: 'a1b2c3d' }) }),
     z.object({ status: z.literal('blocked'), reason: z.string().meta({ example: 'member 4821 is not completed' }) }),
     z.object({
       status: z.literal('waiting'),
-      reason: z.string().meta({ example: 'default branch is detached; deferring the land' }),
+      reason: z.string().meta({ example: 'default branch is detached; deferring the integrate' }),
     }),
     z.object({ status: z.literal('escalated'), reason: z.string().meta({ example: 'whole-Epic verification failed' }) }),
     z.object({ status: z.literal('noop'), reason: z.string().meta({ example: 'no integration branch for this Epic' }) }),
-    /** A land attempt for this Epic is already in flight; the caller re-submits later. */
+    /** An integrate attempt for this Epic is already in flight; the caller re-submits later. */
     z.object({ status: z.literal('busy') }),
   ])
-  .meta({ id: 'EpicLandOutcome' });
+  .meta({ id: 'EpicIntegrateOutcome' });
 
 const epicToApi = (epic: Epic): Epic => epic;
 
@@ -107,7 +107,7 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Epics'],
         description:
           "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its " +
-          'member land state, integration-branch tip, and whole-Epic land/verification state. Searched (`q`, ' +
+          'member merge state, integration-branch tip, and whole-Epic integrate/verification state. Searched (`q`, ' +
           'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicListParamsSchema,
@@ -156,30 +156,30 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
   );
 
   app.post(
-    '/workspaces/:workspaceId/epics/:epicRef/force-land',
+    '/workspaces/:workspaceId/epics/:epicRef/force-integrate',
     {
       schema: {
         tags: ['Epics'],
         description:
-          "Force-land an Epic's ready subset: merge whatever is folded into its integration branch into the " +
+          "Force-integrate an Epic's ready subset: merge whatever is folded into its integration branch into the " +
           'default branch now, bypassing the all-members-completed gate — but not Verification, which still ' +
           'gates the merge. Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicParamsSchema,
         response: {
-          200: epicLandOutcomeSchema.describe("The force-land attempt's outcome."),
+          200: epicIntegrateOutcomeSchema.describe("The force-integrate attempt's outcome."),
           404: errorResponse('No Workspace has that id.'),
-          409: errorResponse('No active whole-Epic land coordinator for this Workspace (tracking is off or the loop has not started).'),
+          409: errorResponse('No active whole-Epic integrate coordinator for this Workspace (tracking is off or the loop has not started).'),
         },
       },
     },
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
-      const outcome = await ctx.trackerManager.forceLandEpic(req.params.workspaceId, req.params.epicRef);
+      const outcome = await ctx.trackerManager.forceIntegrateEpic(req.params.workspaceId, req.params.epicRef);
       if (!outcome) {
         throw new DomainError(
           'conflict',
-          `no active whole-Epic land coordinator for workspace ${req.params.workspaceId} (tracking is off or the loop has not started)`,
+          `no active whole-Epic integrate coordinator for workspace ${req.params.workspaceId} (tracking is off or the loop has not started)`,
         );
       }
       return outcome;

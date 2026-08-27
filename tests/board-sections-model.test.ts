@@ -26,7 +26,9 @@ const task = (id: number, state: TaskState, extra: Partial<Task> = {}): Task => 
   isolationMode: 'direct',
   priority: 'normal',
   baseBranch: null,
-  overrides: { harness: null, model: null, isolationMode: null, priority: null },
+  integrationRetries: 5,
+  conflictResolveTurns: 2,
+  overrides: { harness: null, model: null, isolationMode: null, priority: null, integrationRetries: null, conflictResolveTurns: null },
   state,
   feedback: null,
   createdAt: 100,
@@ -76,7 +78,7 @@ const member = (ref: number, taskId: number | null, extra: Partial<EpicMember> =
   taskId,
   state: null,
   escalated: false,
-  landStatus: 'pending',
+  mergeStatus: 'pending',
   ready: false,
   ...extra,
 });
@@ -89,8 +91,8 @@ const epic = (ref: number, members: EpicMember[], extra: Partial<Epic> = {}): Ep
   ready: [],
   integration: { branch: `epic/${ref}`, exists: true, tip: 'a1f9c02' },
   verification: { status: 'pending' },
-  land: { inFlight: false, held: null },
-  foldedCount: members.filter((entry) => entry.landStatus === 'completed').length,
+  integrate: { inFlight: false, held: null },
+  foldedCount: members.filter((entry) => entry.mergeStatus === 'completed').length,
   memberCount: members.length,
   ...extra,
 });
@@ -122,7 +124,7 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
     const sections = boardSections(
       [task(1, 'working'), task(2, 'done'), task(3, 'ready')],
       [
-        epic(30, [member(301, 1, { state: 'working' }), member(302, 2, { landStatus: 'completed', state: 'done' })]),
+        epic(30, [member(301, 1, { state: 'working' }), member(302, 2, { mergeStatus: 'completed', state: 'done' })]),
         epic(31, [member(311, 3)]),
       ],
     );
@@ -130,8 +132,8 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
   });
 
   it('surfaces an escalated Epic (held whole-Epic merge) in Attention after the escalated tickets', () => {
-    const held = epic(60, [member(1, 601, { landStatus: 'completed', state: 'done' })], {
-      land: { inFlight: false, held: 'already escalated for this member state; awaiting operator or a state change' },
+    const held = epic(60, [member(1, 601, { mergeStatus: 'completed', state: 'done' })], {
+      integrate: { inFlight: false, held: 'already escalated for this member state; awaiting operator or a state change' },
     });
     const sections = boardSections([task(601, 'done'), task(7, 'escalated')], [held]);
     expect(isEscalatedEpic(held)).toBe(true);
@@ -201,7 +203,7 @@ describe('boardSections — Attention / Running / Pending (ADR-0041)', () => {
   });
 
   it('drops fully merged Epics and returns their members to standalone treatment', () => {
-    const merged = epic(50, [member(1, 501, { landStatus: 'completed', state: 'done' })]);
+    const merged = epic(50, [member(1, 501, { mergeStatus: 'completed', state: 'done' })]);
     const sections = boardSections([task(501, 'ready')], [merged]);
     expect(isActiveEpic(merged)).toBe(false);
     expect(sections.pending).toEqual([{ epic: null, columns: [expect.objectContaining({ label: 'Frontier' })] }]);
@@ -226,7 +228,7 @@ describe('epicPendingColumns', () => {
   it('hides merged members while retaining their satisfied dependency chip on a dependant', () => {
     const merged = task(1, 'done', { origin: 'mirrored', trackerRef: 1 });
     const dependant = blocked(2, [1, 99], { openBlockerCount: 1 });
-    const columns = epicPendingColumns(epic(90, [member(1, 1, { landStatus: 'completed' }), member(2, 2)]), [merged, dependant]);
+    const columns = epicPendingColumns(epic(90, [member(1, 1, { mergeStatus: 'completed' }), member(2, 2)]), [merged, dependant]);
     expect(layout(columns)).toEqual([['1 blocker', ['#2']]]);
     expect(columns[0]!.items[0]!.blockers).toEqual([
       { taskId: 1, label: '#1', satisfied: true },

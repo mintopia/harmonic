@@ -47,13 +47,13 @@ const exitCommand = (code: number): VerificationCommand =>
  * Run over the stub harness against a real git Workspace, with a critic
  * configured. The wired `runVerification` invokes `runCritic` at the frozen
  * candidate OID, feeds its verdict into `combineVerdicts`, and a fail /
- * inconclusive critic blocks/escalates the Run so broken work never lands.
+ * inconclusive critic blocks/escalates the Run so broken work never merges.
  *
  * The critic's ACP turn is faked via the injectable `criticDrive` seam (the
  * same seam `tests/critic.test.ts` uses at the unit level) so a verdict can be
  * scripted without spawning a real reviewer harness; everything else — the
  * builder turn, the candidate snapshot, the disposable read-only worktree
- * checkout, the settle/land path — is the real Runner.
+ * checkout, the settle/merge path — is the real Runner.
  */
 describe('agent critic end-to-end (issue #164)', () => {
   let server: TestServer;
@@ -114,7 +114,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     });
   });
 
-  // A landed run merges its file into main, so a repeated identical write would
+  // A merged run merges its file into main, so a repeated identical write would
   // leave the next stub agent nothing to commit. A unique file per run keeps
   // every run's commit real.
   let implSeq = 0;
@@ -136,7 +136,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'verification')
       .map((e: any) => e.payload);
 
-  it('AC1/AC2: a passing critic lands a native Run to done; the attempt persists at the verified head OID', async () => {
+  it('AC1/AC2: a passing critic merges a native Run to done; the attempt persists at the verified head OID', async () => {
     criticResult = { verdict: 'pass', summary: 'looks correct' };
     await server.app.ctx.workspaces.update(workspaceId, { verificationCritic: critic() });
     const { taskId, runId } = await createAndRun();
@@ -173,7 +173,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('merging');
     expect(run.finishedAt).not.toBeNull();
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
@@ -191,7 +191,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
     expect(timeline.body.attempts[0].feedback).toContain('the change breaks the contract');
 
-    // The base branch never moved — nothing landed.
+    // The base branch never moved — nothing merged.
     expect(git(repoDir, 'rev-parse', 'main')).toBe(baseOidBefore);
   });
 
@@ -205,7 +205,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('merging');
 
     const rows = await attempts(runId);
     expect(rows).toHaveLength(2);
@@ -225,7 +225,7 @@ describe('agent critic end-to-end (issue #164)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('merging');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');
@@ -242,7 +242,7 @@ describe('agent critic end-to-end (issue #164)', () => {
     ]);
   });
 
-  it('AC1: command pass + critic pass together lands the Run (all verifiers passed)', async () => {
+  it('AC1: command pass + critic pass together merges the Run (all verifiers passed)', async () => {
     criticResult = { verdict: 'pass', summary: 'correct and complete' };
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: exitCommand(0),

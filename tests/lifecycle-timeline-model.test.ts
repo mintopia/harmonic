@@ -11,7 +11,7 @@ describe('lifecycleTimelineRows', () => {
       event('verification', 20, { outcome: 'skipped', command: 'npm test' }),
       event('escalation', 30, {}),
       event('operator-reject', 40, { feedback: 'Use the documented timeout.' }),
-      event('landing', 50, { effect: 'target-ref', payload: { ok: true } }),
+      event('merging', 50, { effect: 'target-ref', payload: { ok: true } }),
     ]);
 
     expect(rows.map((row) => [row.at, row.label, row.detail, row.tone])).toEqual([
@@ -35,8 +35,8 @@ describe('lifecycleTimelineRows', () => {
 
   it('uses merging and failed copy for journal entries that are not successful merge results', () => {
     const rows = lifecycleTimelineRows([
-      event('landing', 1, { effect: 'target-ref', payload: {} }),
-      event('landing', 2, { effect: 'target-ref', payload: { ok: false } }),
+      event('merging', 1, { effect: 'target-ref', payload: {} }),
+      event('merging', 2, { effect: 'target-ref', payload: { ok: false } }),
     ]);
 
     expect(rows.map((row) => [row.label, row.tone])).toEqual([

@@ -13,30 +13,29 @@
  */
 
 /**
- * Every terminal disposition the coordinator can land, **highest precedence
+ * Every terminal disposition the coordinator can merge, **highest precedence
  * first**. The reliability-design §0.3 locked ordering is:
  *
- *   operator-cancel > escalate > branch-violation > verify-fail >
+ *   operator-cancel > escalate > verify-fail >
  *   guardrail-trip > agent-finish/unresolved > process-death
  *
  * `operator-accept` (issue #191) is slotted just below `operator-cancel` and
  * just above `escalate`: an operator's explicit Accept of an escalated-then-
  * adopted-for-review Run is a deliberate human disposition that must outrank
  * the automatic `escalate` fact already sitting on that Run's log (otherwise
- * the accept's irreversible land runs, but the disposition still collapses
+ * the accept's irreversible merge runs, but the disposition still collapses
  * back to the earlier escalate — a split-brain between the merge that
  * happened and the bookkeeping that says it didn't). An operator cancel still
  * wins over an accept, though: cancel-vs-accept is resolved the same way every
- * other cancel race is (`landing-coordinator.ts`'s PONC) — safety wins, but
- * only up to the point of no return; a cancel fact appended *after* the land's
- * PONC cutoff is late and cannot un-land a Run the accept has already
+ * other cancel race is (`merge-coordinator.ts`'s PONC) — safety wins, but
+ * only up to the point of no return; a cancel fact appended *after* the merge's
+ * PONC cutoff is late and cannot un-merge a Run the accept has already
  * committed.
  */
 export const DISPOSITION_PRECEDENCE = [
   'operator-cancel',
   'operator-accept',
   'escalate',
-  'branch-violation',
   'verify-fail',
   'guardrail-trip',
   'agent-finish/unresolved',
@@ -53,10 +52,10 @@ export type Disposition = (typeof DISPOSITION_PRECEDENCE)[number];
  * function itself stays free of any database type.
  *
  * `type` is a free `string`, not `Disposition`: the fact-type set is open for
- * extension (schema `RUN_FACT_TYPES`), and some facts — e.g. `run-start-state`
- * (issue #149) — are recorded on the same log but are *not* terminal
- * dispositions. `computeDisposition` sinks any unranked kind to the bottom, so a
- * non-disposition fact can never decide the outcome.
+ * extension (schema `RUN_FACT_TYPES`), and some facts — e.g. the boot-time
+ * `session-resumed` / `resume-entry` markers — are recorded on the same log but
+ * are *not* terminal dispositions. `computeDisposition` sinks any unranked kind
+ * to the bottom, so a non-disposition fact can never decide the outcome.
  */
 export interface DispositionFact {
   seq: number;

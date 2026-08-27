@@ -325,7 +325,7 @@ function buildEndpoint(
 }
 
 /**
- * Groups by first tag (untagged operations land in "Other", always last).
+ * Groups by first tag (untagged operations merge in "Other", always last).
  * Group order follows the spec's own `tags` array when present, then any
  * remaining encountered tags alphabetically.
  */

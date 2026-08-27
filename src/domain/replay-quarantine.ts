@@ -19,13 +19,13 @@
  * `AcpDriver`; the usage and progress seams import {@link isReplay} so they agree
  * by call, not by copy. `run_facts` need no filter of their own: no `run_fact` is
  * derived from a `session/update` — they are ending signals (cancel, escalate,
- * branch-violation, agent-finish, failed, `guardrail-trip`) — and the only one a
+ * agent-finish, failed, `guardrail-trip`) — and the only one a
  * replayed update could ever influence is a `guardrail-trip`, which is gated by
  * the progress/stall seam this file already quarantines. Exclude replay from the
  * stall input (as `guardrail-progress.ts` does) and the spurious fact cannot be
  * emitted; the `run_facts` guarantee holds transitively, not by accident. The
  * live-runner wiring that stores the deduped history and drives a resumed turn
- * lands in a later ticket of the unit — this file only decides.
+ * merges in a later ticket of the unit — this file only decides.
  */
 
 /**
@@ -63,7 +63,7 @@ export function isReplay(event: QuarantinableEvent): boolean {
  * Split a Run's event log into replayed `history` and `current`-turn events,
  * order preserved within each. `history` is what a reload dedupes into Session
  * history; `current` is the sole input to usage / `run_facts` / stall detection.
- * Pure and total: every event lands in exactly one bucket.
+ * Pure and total: every event merges in exactly one bucket.
  */
 export function partitionReplay<T extends QuarantinableEvent>(
   events: readonly T[],

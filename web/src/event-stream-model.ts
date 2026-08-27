@@ -51,7 +51,7 @@ const TEXT_VARIANT: Record<string, 'message' | 'thought' | 'operator'> = {
 };
 
 /**
- * A Stop/Interrupt lands as a `finished` lifecycle event carrying a
+ * A Stop/Interrupt merges as a `finished` lifecycle event carrying a
  * `cancelled` stop reason — the one turn-end worth surfacing specially (as
  * EventStream's "Interrupted" transcript line, and as the announcer's "Turn
  * interrupted"). Shared so that rule lives in exactly one place.
@@ -111,10 +111,38 @@ export function coalesceTail<E extends StreamEvent>(
   return { hidden, items };
 }
 
+/**
+ * The single calm line a folded moving-base row renders as (ADR-0046, #368): a
+ * base that moves under running work is normal, so the default is a quiet
+ * "Reconciling with the latest base…" with no number. Prominence rises only as
+ * the retries near the configured bound — within one of it — where the
+ * `attempt/of` count surfaces so an operator sees a genuinely stubborn base
+ * before it escalates. Returns null for any non-moving-base payload.
+ */
+export function movingBaseView(
+  payload: unknown,
+): { label: string; count: string | null; nearBound: boolean } | null {
+  const p = payload as { event?: string; attempt?: number; of?: number } | null | undefined;
+  if (p?.event !== 'moving-base') return null;
+  const attempt = Number(p.attempt) || 0;
+  const of = Number(p.of) || 0;
+  const nearBound = of > 0 && of - attempt <= 1;
+  return {
+    label: 'Reconciling with the latest base…',
+    count: nearBound ? `${attempt}/${of}` : null,
+    nearBound,
+  };
+}
+
 export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E>[] {
   const items: StreamItem<E>[] = [];
   // toolCallId → index in `items`, so an update folds into its call's row.
   const toolIndex = new Map<string, number>();
+  // Index of the single moving-base row (ADR-0046, #368). Every rebase/CAS
+  // re-entry folds into this one line — kept at its first-seen position with a
+  // stable key — so a churning base reads as one quiet status that ticks its
+  // attempt index up, never a stack of near-identical alarms.
+  let movingBaseIndex: number | undefined;
 
   for (const event of events) {
     const sessionUpdate =
@@ -143,6 +171,19 @@ export function coalesceEvents<E extends StreamEvent>(events: E[]): StreamItem<E
       } else {
         if (view.toolCallId !== undefined) toolIndex.set(view.toolCallId, items.length);
         items.push({ kind: 'tool', tool: view, key: event.id });
+      }
+      continue;
+    }
+
+    if (event.type === 'lifecycle' && event.payload?.event === 'moving-base') {
+      if (movingBaseIndex !== undefined) {
+        // Advance in place to the latest attempt payload, keeping the first
+        // event's id as the React key so the row never remounts as it ticks.
+        const key = items[movingBaseIndex]!.key;
+        items[movingBaseIndex] = { kind: 'event', event, key };
+      } else {
+        movingBaseIndex = items.length;
+        items.push({ kind: 'event', event, key: event.id });
       }
       continue;
     }

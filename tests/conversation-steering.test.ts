@@ -32,7 +32,7 @@ describe('conversation steering — queue and interrupt (issue 14)', () => {
     const second = await server.api('POST', `/api/conversations/${convo.id}/turns`, { text: slowTurn(1, 5, 'b') });
     expect(second.body).toEqual({ ok: true, queued: true });
 
-    // Both Turns run, in order: the second Turn's user_turn lands only after
+    // Both Turns run, in order: the second Turn's user_turn merges only after
     // the first Turn's finished lifecycle.
     await waitFor(async () => (finishedEvents(await events(server, convo.id)).length === 2 ? true : undefined));
     const evs = await events(server, convo.id);

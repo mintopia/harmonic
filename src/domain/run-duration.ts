@@ -1,7 +1,7 @@
 /**
  * Active-execution duration (CONTEXT.md / ADR-0028): how long a Run's agent
  * actually worked, measured from the Run's start to the `agent-finish` run_fact
- * timestamp — deliberately excluding the review-park and landing wait that
+ * timestamp — deliberately excluding the review-park and merging wait that
  * follow. It falls back to wall-clock `finished − started` only when a Run has
  * no agent-finish fact (it errored, or predates run_facts).
  *

@@ -3,32 +3,32 @@ import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunSettleCoordinator } from './run-settle.js';
-import type { LandingCoordinator, LandingEffectExecutor } from './landing-coordinator.js';
-import type { LandingJournalStore } from './landing-journal.js';
+import type { MergeCoordinator, MergeEffectExecutor } from './merge-coordinator.js';
+import type { MergeJournalStore } from './merge-journal.js';
 import type { TurnQueueStore } from './turn-queue-store.js';
-import { foldJournal, type LandingEffect, type ObservedState } from './landing.js';
+import { foldJournal, type MergeEffect, type ObservedState } from './merge.js';
 import { isMutating, survivesRestart } from './turn-queue.js';
 import { Git } from '../execution/git.js';
-import { landBranchAndRunPostLand, type PostLandHook } from '../execution/branch-landing.js';
+import { mergeIntoBaseAndRunPostMerge, type PostMergeHook } from '../execution/branch-merge.js';
 import { forEachYielding, type YieldOptions } from '../reliability/yield.js';
 import { startOperation } from '../telemetry/operations.js';
 
 /**
  * Unified crash recovery across facts/journal/queue (issue #117): one boot-time
- * sweep that reconciles `run_facts`, `landing_journal`, and `turn_queue`
+ * sweep that reconciles `run_facts`, `merge_journal`, and `turn_queue`
  * together, so a restart reconstructs one consistent picture instead of
  * several independent sweeps that could each draw a different — possibly
  * contradictory — conclusion about the same Run. In particular: a Run
- * mid-landing when the process died must never be blindly failed by the
+ * mid-merging when the process died must never be blindly failed by the
  * generic orphan sweep (it may have already applied an irreversible effect —
- * see landing.ts's module doc comment), and a turn the queue still marks
+ * see merge.ts's module doc comment), and a turn the queue still marks
  * `in_flight` has no live harness to finish it once this process starts, so it
  * needs its own boot decision too.
  *
  * Four ordered passes, run once at boot before anything can execute:
  *
- *   A. Landing runs first (so nothing later blind-fails them): resolve every
- *      Run parked `state:'running', phase:'landing'` against its journal.
+ *   A. Merging runs first (so nothing later blind-fails them): resolve every
+ *      Run parked `state:'running', phase:'merging'` against its journal.
  *   B. The turn queue: cancel every not-yet-dispatched pending turn, and
  *      resolve whatever the queue still marks `in_flight` — escalating the
  *      Run if it was a mutating corrective turn (self-heal/re-merge), since
@@ -41,8 +41,8 @@ import { startOperation } from '../telemetry/operations.js';
  *      each is released if its context is provably clean or flipped to `suspect`
  *      otherwise — never left silently `held`.
  *
- * Idempotent: after pass A a completed/failed landing Run is terminal
- * (excluded from `RunStore.listLandingOrphans` on the next boot); after pass B
+ * Idempotent: after pass A a completed/failed merging Run is terminal
+ * (excluded from `RunStore.listMergeOrphans` on the next boot); after pass B
  * every queue row is cancelled/failed (excluded from `TurnQueueStore.listUnsettled`);
  * `markInterrupted` only ever selects `state:'running'`; after pass D a
  * reconciled lease is either gone (released) or `suspect`, and pass D skips
@@ -54,16 +54,16 @@ export class CrashRecoveryCoordinator {
     private readonly taskService: TaskService,
     private readonly leaseStore: WorkContextLeaseStore,
     private readonly settle: RunSettleCoordinator,
-    private readonly landing: LandingCoordinator,
-    private readonly landingJournal: LandingJournalStore,
+    private readonly merging: MergeCoordinator,
+    private readonly mergeJournal: MergeJournalStore,
     private readonly turnQueue: TurnQueueStore,
     private readonly opts: {
       now?: () => number;
       isMerged?: (dir: string, baseBranch: string, branch: string) => Promise<boolean>;
       isDirectContextClean?: (workingDir: string) => Promise<boolean>;
-      postLand?: PostLandHook;
+      postMerge?: PostMergeHook;
       yieldOptions?: YieldOptions;
-      /** Closes a mirrored Task's ticket (the `ticket-close` landing effect); absent ⇒ the effect re-applies as a no-op. */
+      /** Closes a mirrored Task's ticket (the `ticket-close` merging effect); absent ⇒ the effect re-applies as a no-op. */
       closeTicket?: (task: TaskRow) => Promise<boolean>;
     } = {},
   ) {}
@@ -81,7 +81,7 @@ export class CrashRecoveryCoordinator {
 
   private async reconcileInterrupted(now?: number): Promise<void> {
     const ts = now ?? (this.opts.now ?? Date.now)();
-    await this.reconcileLandingOrphans();
+    await this.reconcileMergeOrphans();
     await this.reconcileTurnQueue(ts);
     // Pass C: the generic orphan sweep, moved here so it runs after A/B have
     // already resolved anything more specific about a `running` Run. Lease
@@ -123,27 +123,27 @@ export class CrashRecoveryCoordinator {
     }, this.opts.yieldOptions);
   }
 
-  /** Pass A: resolve every Run mid-landing when the process died. */
-  private async reconcileLandingOrphans(): Promise<void> {
-    await forEachYielding(await this.runStore.listLandingOrphans(), async (run) => {
+  /** Pass A: resolve every Run mid-merging when the process died. */
+  private async reconcileMergeOrphans(): Promise<void> {
+    await forEachYielding(await this.runStore.listMergeOrphans(), async (run) => {
       const task = await this.taskService.get(run.taskId);
-      const poncSeq = await this.landingJournal.ponc(run.id);
+      const poncSeq = await this.mergeJournal.ponc(run.id);
       if (poncSeq === null) {
         // Died before the PONC ever froze — no irreversible effect could have
-        // started (see landing.ts's module doc comment). Settle it as an
+        // started (see merge.ts's module doc comment). Settle it as an
         // interrupted orphan, the same disposition the generic sweep would use.
         await this.settle.settle(task, run, 'process-death', { runState: 'failed', taskAction: 'ready', reason: 'interrupted' });
         return;
       }
 
-      // A landing died between intent and result: ask the world (a worktree
+      // A merging died between intent and result: ask the world (a worktree
       // merge is the only live effect today) rather than trusting the journal
-      // alone — see landing.ts's `reconcile` doc comment. Only actually asks
+      // alone — see merge.ts's `reconcile` doc comment. Only actually asks
       // (spawns `git`) when the journal itself doesn't already answer: an
       // effect with an `ok:true` result is `'already-applied'`
-      // (landing.ts's `reconcile`) and never reaches `observed` at all, so a
-      // fully-applied landing reconciles hermetically, no process spawned.
-      const journalViews = await this.landingJournal.views(run.id);
+      // (merge.ts's `reconcile`) and never reaches `observed` at all, so a
+      // fully-applied merging reconciles hermetically, no process spawned.
+      const journalViews = await this.mergeJournal.views(run.id);
       const priorEntries = foldJournal(journalViews);
       const latestResults = new Map<string, typeof journalViews[number]>();
       for (const row of journalViews) {
@@ -152,7 +152,7 @@ export class CrashRecoveryCoordinator {
       const failedResult = [...latestResults.values()].find((row) => row.payload['ok'] === false);
       if (failedResult) {
         const detail = failedResult.payload['detail'];
-        await this.escalateFailedLanding(task, run, typeof detail === 'string' ? detail : 'landing failed');
+        await this.escalateFailedMerge(task, run, typeof detail === 'string' ? detail : 'merging failed');
         return;
       }
       const needsWorldCheck = priorEntries.some((entry) => entry.effect === 'target-ref' && entry.intended && !entry.appliedOk);
@@ -161,8 +161,8 @@ export class CrashRecoveryCoordinator {
         const isMergedFn = this.opts.isMerged ?? Git.isAncestor;
         merged = await isMergedFn(task.workingDir, run.baseBranch, run.branch);
       }
-      const observed = (effect: LandingEffect): ObservedState => (effect === 'target-ref' && merged ? 'present' : 'absent');
-      const executors: Partial<Record<LandingEffect, LandingEffectExecutor>> = {
+      const observed = (effect: MergeEffect): ObservedState => (effect === 'target-ref' && merged ? 'present' : 'absent');
+      const executors: Partial<Record<MergeEffect, MergeEffectExecutor>> = {
         // Idempotent (the adapter reads the ticket's state first), so a close
         // the pre-crash attempt already issued is a no-op here.
         'ticket-close': async () =>
@@ -172,52 +172,52 @@ export class CrashRecoveryCoordinator {
         'target-ref': async (_key, expected) => {
           const baseBranch = expected['baseBranch'] as string;
           const branch = expected['branch'] as string;
-          // Re-drive the land through the same SHA-asserted operation as the
+          // Re-drive the merge through the same SHA-asserted operation as the
           // live path (issue #153, ADR-0041); idempotent, so a target already
           // advanced by the pre-crash attempt is a no-op here. Recovery cannot
-          // run an agent turn, so a stale head/base refuses rather than landing
+          // run an agent turn, so a stale head/base refuses rather than merging
           // what verification never saw.
           if (!run.candidateOid) return { ok: false, detail: 'no verified branch head recorded for this Run' };
-          const outcome = await landBranchAndRunPostLand(
+          const outcome = await mergeIntoBaseAndRunPostMerge(
             { repoDir: task.workingDir, baseBranch, branch, expectedOid: run.candidateOid, leaseHeld: true },
-            this.opts.postLand,
+            this.opts.postMerge,
           );
           return outcome.ok ? { ok: true, observed: { baseBranch, branch } } : { ok: false, detail: outcome.detail };
         },
       };
-      await this.landing.reconcileLanding(run, observed, executors);
+      await this.merging.reconcileMerge(run, observed, executors);
 
       // Complete iff every intended effect has an ok result — mirrors exactly
-      // what `LandingCoordinator.land()` checks before its own finishing
+      // what `MergeCoordinator.merge()` checks before its own finishing
       // settle call (vacuously true when nothing was ever intended).
-      const entries = foldJournal(await this.landingJournal.views(run.id));
+      const entries = foldJournal(await this.mergeJournal.views(run.id));
       if (entries.every((entry) => entry.appliedOk)) {
-        // Finish with the land fact the PONC froze — same type and projection
-        // as the landing that died (`LandingCoordinator.land` appends it before
+        // Finish with the merge fact the PONC froze — same type and projection
+        // as the merging that died (`MergeCoordinator.merge` appends it before
         // its first effect), so an operator Accept still outranks the escalate
         // fact it was answering.
-        const landFact = (await this.settle.facts(run.id)).find((fact) => fact.seq === poncSeq);
+        const mergeFact = (await this.settle.facts(run.id)).find((fact) => fact.seq === poncSeq);
         await this.settle.settle(
           task,
           run,
-          (landFact?.type as RunFactType | undefined) ?? 'agent-finish/unresolved',
-          landFact?.projection ?? { runState: 'completed', taskAction: 'done', reason: null },
+          (mergeFact?.type as RunFactType | undefined) ?? 'agent-finish/unresolved',
+          mergeFact?.projection ?? { runState: 'completed', taskAction: 'done', reason: null },
         );
       } else {
-        const failed = (await this.landingJournal.views(run.id)).findLast((row) => row.kind === 'result' && row.payload['ok'] === false);
+        const failed = (await this.mergeJournal.views(run.id)).findLast((row) => row.kind === 'result' && row.payload['ok'] === false);
         const detail = failed?.payload['detail'];
-        await this.escalateFailedLanding(task, run, typeof detail === 'string' ? detail : 'landing effect could not be re-applied');
+        await this.escalateFailedMerge(task, run, typeof detail === 'string' ? detail : 'merging effect could not be re-applied');
       }
     }, this.opts.yieldOptions);
   }
 
-  /** A landing that cannot complete is escalation trigger 3 (infrastructure): lift the PONC and hand the ticket to a human. */
-  private async escalateFailedLanding(task: TaskRow, run: RunRow, detail: string): Promise<void> {
-    await this.landing.abandon(run, detail);
+  /** A merging that cannot complete is escalation trigger 3 (infrastructure): lift the PONC and hand the ticket to a human. */
+  private async escalateFailedMerge(task: TaskRow, run: RunRow, detail: string): Promise<void> {
+    await this.merging.abandon(run, detail);
     await this.settle.settle(task, run, 'escalate', {
       runState: 'failed',
       taskAction: 'escalate',
-      reason: `escalated to human: landing failed after restart: ${detail}`,
+      reason: `escalated to human: merging failed after restart: ${detail}`,
     });
   }
 
@@ -247,7 +247,7 @@ export class CrashRecoveryCoordinator {
         // drove this Run terminal, the stale in_flight turn is audit-only —
         // settling the turn below is enough. Re-opening a settled disposition
         // would let a rank-2 `escalate` wrongly flip an already-completed
-        // landing, since `RunSettleCoordinator.settle` re-projects whenever the
+        // merging, since `RunSettleCoordinator.settle` re-projects whenever the
         // winning disposition changes even when `state !== 'running'`.
         if (run.state === 'running') {
           const task = await this.taskService.get(run.taskId);
@@ -268,7 +268,7 @@ export class CrashRecoveryCoordinator {
  * tree has no uncommitted changes AND its HEAD is on a real branch. A detached
  * HEAD is the fingerprint of a direct Run that crashed mid-flight before its live
  * checkout was restored (issue #152): the tree can read clean, yet the context is
- * not coherently on its landing branch, so it is not safe to hand to a new Run —
+ * not coherently on its merging branch, so it is not safe to hand to a new Run —
  * reconciliation marks it `suspect` instead. Any probe error (a non-git or
  * unreadable context) is likewise treated as "cannot prove clean".
  */

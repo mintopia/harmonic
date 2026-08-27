@@ -17,7 +17,7 @@ import { TASK_STATES, type TaskState } from './types.js';
  * view's state at once (board peek + table filters) in the query string, so a Ticket
  * URL still remembers which underlying view/filters to return to. Unknown or
  * malformed params fall back to defaults rather than throwing: a hand-edited or
- * stale link lands somewhere sane, never on a blank screen.
+ * stale link merges somewhere sane, never on a blank screen.
  */
 
 /** Table sort keys. TableView imports `SortKey` from here as its single source. */

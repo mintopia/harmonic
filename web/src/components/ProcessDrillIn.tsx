@@ -29,7 +29,7 @@ export function ProcessDrillIn({ process, now }: { process: RunWithTree; now: nu
   const [events, setEvents] = useState<RunLogEvent[]>([]);
   const [logUnavailable, setLogUnavailable] = useState(false);
 
-  // Age off `now` (the prop), but stamp writes at the moment a snapshot lands —
+  // Age off `now` (the prop), but stamp writes at the moment a snapshot merges —
   // so re-tracking only happens when the tree object actually changes, not once
   // a second. A ref carries the live `now` into that tree-triggered effect.
   const nowRef = useRef(now);

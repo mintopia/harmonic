@@ -2,17 +2,17 @@ import type { TaskRow, RunRow } from '../db/schema.js';
 import { DomainError } from './errors.js';
 import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
-import type { LandingCoordinator, LandingEffectExec } from './landing-coordinator.js';
+import type { MergeCoordinator, MergeEffectExec } from './merge-coordinator.js';
 
 /**
- * The landing side effects Accept must apply for this Task/Run, built
+ * The merge side effects Accept must apply for this Task/Run, built
  * synchronously from what's already known about them (issue #115) — a worktree
  * Task's merge, identified for idempotency by its base/run branch pair, and a
  * mirrored Task's ticket close. Empty for a direct-mode native Task: "no
- * effects -> straight land" (`LandingCoordinator.land` with `effects: []` just
+ * effects -> straight merge" (`MergeCoordinator.merge` with `effects: []` just
  * settles terminal).
  */
-export type LandingEffectsHook = (task: TaskRow, run: RunRow) => LandingEffectExec[];
+export type MergeEffectsHook = (task: TaskRow, run: RunRow) => MergeEffectExec[];
 
 export interface EscalationHooks {
   /** Resume the Attempt loop with the operator's guidance (Reject). Owns the
@@ -24,10 +24,10 @@ export interface EscalationHooks {
 
 /**
  * ADR-0041's one human surface: an `escalated` ticket exposes exactly three
- * actions. Accept lands the verified branch head as-is through the journaled
- * `LandingCoordinator` (so the disposition is race-safe against a concurrent
+ * actions. Accept merges the verified branch head as-is through the journaled
+ * `MergeCoordinator` (so the disposition is race-safe against a concurrent
  * cancel and outranks the retained `escalate` fact) and the success path
- * continues — land, close the ticket, clean up. Reject with guidance records
+ * continues — merge, close the ticket, clean up. Reject with guidance records
  * the guidance as feedback, resets the attempt budget, and resumes the loop.
  * Close cancels the ticket and cleans up. Nothing else moves a ticket out of
  * `escalated`.
@@ -36,8 +36,8 @@ export class EscalationService {
   constructor(
     private readonly runStore: RunStore,
     private readonly taskService: TaskService,
-    private readonly landing: LandingCoordinator,
-    private readonly landingEffects: LandingEffectsHook,
+    private readonly mergeCoordinator: MergeCoordinator,
+    private readonly mergeEffects: MergeEffectsHook,
     private readonly hooks: EscalationHooks,
   ) {}
 
@@ -54,17 +54,17 @@ export class EscalationService {
     if (!run || run.candidateOid == null) {
       throw new DomainError('conflict', `task ${taskId} has no verified branch head to accept`);
     }
-    const outcome = await this.landing.land(
+    const outcome = await this.mergeCoordinator.merge(
       task,
       run,
       { runState: 'completed', taskAction: 'done', reason: null },
-      this.landingEffects(task, run),
+      this.mergeEffects(task, run),
       {},
       'operator-accept',
     );
     // A failed effect (merge conflict, ticket close) leaves the ticket
-    // escalated with the landing abandoned; the detail is the operator's cue.
-    if (!outcome.ok) throw new DomainError('conflict', outcome.detail ?? 'landing failed on accept');
+    // escalated with the merge abandoned; the detail is the operator's cue.
+    if (!outcome.ok) throw new DomainError('conflict', outcome.detail ?? 'merge failed on accept');
     return await this.taskService.get(taskId);
   }
 

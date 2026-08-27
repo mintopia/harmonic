@@ -56,7 +56,7 @@ async function gitEnv(cwd: string, env: Record<string, string>, ...args: string[
     });
     return stdout.trim();
   } catch (err: any) {
-    // Conflict explanations land on stdout, other failures on stderr.
+    // Conflict explanations merge on stdout, other failures on stderr.
     const output = [err.stderr?.trim(), err.stdout?.trim()].filter(Boolean).join('\n');
     throw new GitError(`git ${args.join(' ')} failed: ${output || err.message}`, err.stderr ?? '');
   }
@@ -116,7 +116,7 @@ function warnOnceIfMergeTreeUnsupported(err: unknown): void {
   if (!/unknown option|unknown switch|usage:|not a git command/i.test(msg)) return;
   warnedMergeTreeUnsupported = true;
   process.emitWarning(
-    'git is older than 2.38 (no `merge-tree --write-tree`): epic-land tier-2 ' +
+    'git is older than 2.38 (no `merge-tree --write-tree`): epic-merge tier-2 ' +
       'squash/rebase containment detection is disabled; upgrade git to restore it (#218).',
     { code: 'HARMONIC_GIT_TOO_OLD' },
   );
@@ -267,7 +267,7 @@ export const Git = {
   forEachRef: (dir: string) => git(dir, 'for-each-ref', '--format=%(objectname) %(refname)'),
 
   /** Add a disposable worktree with a DETACHED HEAD at `oid` — no branch is
-   * created or moved, so a verifier sees a stable tree it cannot land. */
+   * created or moved, so a verifier sees a stable tree it cannot merge. */
   addDetachedWorktree: (dir: string, worktreePath: string, oid: string) =>
     withRepoLock(dir, () => git(dir, 'worktree', 'add', '--detach', worktreePath, oid)),
 
@@ -356,7 +356,7 @@ export const Git = {
 
   /**
    * Delete local branch `name` (`-D`, force) — retiring an Epic integration
-   * branch once its Epic has landed (issue #159, the retire half of the
+   * branch once its Epic has merged (issue #159, the retire half of the
    * Harmonic-owned lifecycle). Under the base-repo lock.
    */
   deleteBranch: (dir: string, name: string) =>
@@ -470,7 +470,7 @@ export const Git = {
   /**
    * Whether `branch` is already merged into `baseBranch` — i.e. `git
    * merge-base --is-ancestor <branch> <baseBranch>` exits 0. Used by
-   * crash-recovery (issue #117) to ask the world "is this landing's branch
+   * crash-recovery (issue #117) to ask the world "is this merging's branch
    * already merged into its base?" without re-running the merge. Never
    * throws: any non-zero exit (including "not an ancestor") resolves
    * `false`.
@@ -489,12 +489,12 @@ export const Git = {
    * content** — `branch`'s work is already present in `baseBranch` even when its
    * commits were **squashed or rebased** so the tip is *not* a literal ancestor
    * (issue #218). Where {@link isAncestor} only catches a fast-forwardable /
-   * merge-landed branch, this catches a squash-landed one: a real 3-way merge
+   * merge-merged branch, this catches a squash-merged one: a real 3-way merge
    * via `merge-tree --write-tree` yields the merged tree, and the work is
    * contained iff that tree equals `baseBranch`'s own tree (the merge adds
    * nothing). A merge **conflict** (divergent edits) makes `merge-tree` exit
    * non-zero — treated as not-contained (`false`), so the caller falls through
-   * to a real land rather than wrongly retiring. Requires git ≥ 2.38
+   * to a real merge rather than wrongly retiring. Requires git ≥ 2.38
    * (`--write-tree`); no checkout or worktree needed. Never throws.
    */
   async isContentContained(dir: string, baseBranch: string, branch: string): Promise<boolean> {
@@ -508,7 +508,7 @@ export const Git = {
       return mergedTree !== '' && mergedTree === baseTree;
     } catch (err) {
       // A conflict (the common, expected outcome) is not-contained → false.
-      // But a git older than 2.38 lacks `--write-tree`, so *every* call lands
+      // But a git older than 2.38 lacks `--write-tree`, so *every* call merges
       // here and the tier-2 storm protection silently no-ops forever. Distinguish
       // that once so a mis-provisioned host is visible in logs rather than
       // degrading in silence (issue #218). Behaviour is unchanged either way.
@@ -564,10 +564,10 @@ export const Git = {
 
   /**
    * The absolute path of the worktree that currently has `branch` checked out,
-   * or `null` when no worktree does (issue #153). Landing must never update a
+   * or `null` when no worktree does (issue #153). Merging must never update a
    * target ref out from under a live index/worktree via a plumbing `update-ref`
-   * (reliability-design Unit D): this is how a landing tells "the target is
-   * checked out — land coherently in place under a lease" from "nobody has it
+   * (reliability-design Unit D): this is how a merging tells "the target is
+   * checked out — merge coherently in place under a lease" from "nobody has it
    * out — a CAS ref-update is safe". Parses `worktree list --porcelain`, whose
    * per-worktree records pair a `worktree <path>` line with a `branch
    * refs/heads/<name>` line (absent on a detached worktree, which is why an
@@ -588,7 +588,7 @@ export const Git = {
    * `newOid` (issue #153) — git's own `update-ref <ref> <new> <old>` atomic CAS,
    * the reliability-design Unit D "expected-old-OID CAS". Returns `{ ok:false }`
    * (never throws) when the ref no longer points at `expectedOld` — a hand-merge
-   * or another landing that advanced the target in between is rejected instead
+   * or another merging that advanced the target in between is rejected instead
    * of being silently overwritten. Only ever touches the ref, never a checkout,
    * so it is used exclusively on a target that no worktree has checked out.
    */
@@ -636,7 +636,7 @@ export const Git = {
    * Merge `branch` into the worktree at `worktreeDir`'s checked-out HEAD,
    * LEAVING a conflicted merge in progress (conflict markers + `MERGE_HEAD`)
    * instead of aborting — unlike {@link mergeNoEdit}, whose abort-on-conflict
-   * contract suits a land that must leave its admin worktree pristine. This is
+   * contract suits a merge that must leave its admin worktree pristine. This is
    * the reproduction step for an integration-refresh corrective turn (issue
    * #315): the agent resolves the markers in place and completes the merge. A
    * clean merge commits immediately (`--no-edit`) and returns `{ ok: true }`.
@@ -690,7 +690,7 @@ export const Git = {
   /**
    * Fast-forward the checkout at `dir` to `oid` (`merge --ff-only`), under the
    * base-repo lock (issue #153) — the **coherent checkout/reset** a checked-out
-   * target lands through (reliability-design Unit D), advancing the branch ref
+   * target merges through (reliability-design Unit D), advancing the branch ref
    * and the working tree together rather than a desyncing plumbing ref-update.
    * `--ff-only` is itself a compare-and-swap: it refuses (→ `{ ok:false }`,
    * never throws) unless the current tip is an ancestor of `oid`, so a target

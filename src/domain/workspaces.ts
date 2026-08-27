@@ -48,6 +48,10 @@ export const workspaceOverridesSchema = z.object({
   chatModel: z.string().min(1).nullable().optional().meta({ example: 'gpt-5.6-sol' }),
   isolationMode: z.enum(['direct', 'worktree']).nullable().optional().meta({ example: 'worktree' }),
   priority: z.enum(['high', 'normal', 'low']).nullable().optional().meta({ example: 'high' }),
+  /** Integration-retry bound (ADR-0046) override; null inherits `config.defaults.integrationRetries`. */
+  integrationRetries: z.number().int().min(1).nullable().optional().meta({ example: 5 }),
+  /** Conflict-resolve-turn bound (ADR-0046) override; null inherits `config.defaults.conflictResolveTurns`. */
+  conflictResolveTurns: z.number().int().min(0).nullable().optional().meta({ example: 2 }),
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
@@ -168,6 +172,8 @@ export class WorkspaceService {
           chatModel: patch(input.chatModel, current.chatModel),
           isolationMode: patch(input.isolationMode, current.isolationMode),
           priority: patch(input.priority, current.priority),
+          integrationRetries: patch(input.integrationRetries, current.integrationRetries),
+          conflictResolveTurns: patch(input.conflictResolveTurns, current.conflictResolveTurns),
           maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
           autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
           maxAttempts: patch(input.maxAttempts, current.maxAttempts),
@@ -189,7 +195,7 @@ export class WorkspaceService {
    * Delete a Workspace and everything on its board (issue #45 needs deletion to
    * tear down its poll loop). Refuses any Workspace with a running Task (the
    * mid-run guard #42 deferred deletion for). Deleting the last Workspace is
-   * allowed (issue #61): the app lands in the empty state (#68), and the
+   * allowed (issue #61): the app merges in the empty state (#68), and the
    * default-Workspace fallback (ADR-0008) resolves the next one created.
    * Cascades in a transaction: its Tasks (+ their Runs, Run events, Dependency
    * edges, Channel links) and Conversations (+ their events) go first, since no

@@ -43,19 +43,21 @@ export const createTaskInputSchema = z.object({
   workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
   isolationMode: z.enum(ISOLATION_MODES).optional().meta({ example: 'worktree' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'normal' }),
+  integrationRetries: z.number().int().min(1).optional().meta({ example: 5 }),
+  conflictResolveTurns: z.number().int().min(0).optional().meta({ example: 2 }),
   state: z.enum(['draft', 'ready']).optional().meta({ example: 'ready' }),
   dependsOn: z.array(z.number().int().positive()).optional().meta({ example: [4818] }),
-  /** Explicit base branch a worktree Run is cut from and lands back onto
+  /** Explicit base branch a worktree Run is cut from and merges back onto
    * (issue #157, ADR-0024). Omitted ⇒ resolves at spawn to the working dir's
    * current branch (today's behaviour). Not an inheritable default — it is a
-   * plain per-Task target, so unlike the four overrides it never resolves
+   * plain per-Task target, so unlike the inheritable overrides it never resolves
    * against a Workspace/global value. */
   baseBranch: z.string().min(1).optional().meta({ example: 'integration/epic-42' }),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 // A Task's Workspace is fixed at creation (no cross-Workspace move in this slice).
-// The four Task-default overrides accept `null` (ADR-0012): clearing one back to
+// The inheritable Task-default overrides accept `null` (ADR-0012): clearing one back to
 // *inherit* is a first-class edit, so an operator can un-pin a field as well as
 // pin it. `undefined` (omitted) leaves the stored value untouched.
 export const updateTaskInputSchema = createTaskInputSchema
@@ -66,19 +68,23 @@ export const updateTaskInputSchema = createTaskInputSchema
     model: createTaskInputSchema.shape.model.nullable(),
     isolationMode: createTaskInputSchema.shape.isolationMode.nullable(),
     priority: createTaskInputSchema.shape.priority.nullable(),
+    integrationRetries: createTaskInputSchema.shape.integrationRetries.nullable(),
+    conflictResolveTurns: createTaskInputSchema.shape.conflictResolveTurns.nullable(),
     // Nullable so an operator can clear an explicit base branch back to
     // "inherit the current branch at spawn" (issue #157), same null-clears
-    // idiom as the four overrides above.
+    // idiom as the inheritable overrides above.
     baseBranch: createTaskInputSchema.shape.baseBranch.nullable(),
   });
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
-/** The four inheritable Task defaults as stored (raw): `null` ⇒ inherit. */
+/** The inheritable Task defaults as stored (raw): `null` ⇒ inherit. */
 export interface TaskOverrides {
   harness: string | null;
   model: string | null;
   isolationMode: string | null;
   priority: string | null;
+  integrationRetries: number | null;
+  conflictResolveTurns: number | null;
 }
 
 export const taskListQuerySchema = z.object({
@@ -111,7 +117,7 @@ export interface TaskWithDeps extends TaskRow {
    * human wayfinder kind) — visible because it can block others. Independent of
    * blockers, unlike `agentWorkable`. */
   humanOnly: boolean;
-  /** The four defaults as stored (`null` ⇒ inherited): lets the editor tell an
+  /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
 }
@@ -197,7 +203,7 @@ export class TaskService {
   }
 
   /**
-   * The effective values of the four inheritable Task defaults, resolved at
+   * The effective values of the inheritable Task defaults, resolved at
    * read time down the three-level chain (ADR-0012): a non-null Task override
    * wins, else this Task's Workspace override, else the global default. Never
    * throws — a stored harness that isn't configured in this instance still
@@ -215,10 +221,12 @@ export class TaskService {
       model: over.model ?? resolveScoped('model', workspace.model, harnessConfig?.defaultModel ?? ''),
       isolationMode: over.isolationMode ?? resolveScoped('isolationMode', workspace.isolationMode, config.defaults.isolationMode),
       priority: over.priority ?? resolveScoped('priority', workspace.priority, config.defaults.priority),
+      integrationRetries: over.integrationRetries ?? resolveScoped('integrationRetries', workspace.integrationRetries, config.defaults.integrationRetries),
+      conflictResolveTurns: over.conflictResolveTurns ?? resolveScoped('conflictResolveTurns', workspace.conflictResolveTurns, config.defaults.conflictResolveTurns),
     };
   }
 
-  /** Fill a raw row's four inheritable defaults with their resolved values —
+  /** Fill a raw row's inheritable defaults with their resolved values —
    * the sole boundary where a `RawTaskRow` becomes the public `TaskRow`. */
   private async resolve(raw: RawTaskRow): Promise<TaskRow> {
     const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
@@ -231,6 +239,8 @@ export class TaskService {
       model: raw.model,
       isolationMode: raw.isolationMode,
       priority: raw.priority,
+      integrationRetries: raw.integrationRetries,
+      conflictResolveTurns: raw.conflictResolveTurns,
     };
   }
 
@@ -313,6 +323,8 @@ export class TaskService {
           model: input.model ?? null,
           isolationMode: input.isolationMode ?? null,
           priority: input.priority ?? null,
+          integrationRetries: input.integrationRetries ?? null,
+          conflictResolveTurns: input.conflictResolveTurns ?? null,
           baseBranch: input.baseBranch ?? null,
           workingDir: input.workingDir ?? workspace.workingDir,
           state,
@@ -370,7 +382,7 @@ export class TaskService {
                 // only on a tracker Harmonic can close (a genuine external
                 // reopen). An inbound-only adapter that can't close leaves the
                 // ticket open by design, so suppress the flip — otherwise the
-                // Task re-runs, lands, the close no-ops, and it re-readies
+                // Task re-runs, merges, the close no-ops, and it re-readies
                 // forever (issue #237).
                 existing.state === 'done' && input.trackerCanClose !== false
                 ? 'ready'
@@ -411,20 +423,22 @@ export class TaskService {
         return { row: updated, dirty: true };
       }
       // Each Workspace's poll loop mirrors into its own board (issue #45): the
-      // Task lands in the polling Workspace, and (workspaceId, trackerRef) keys
+      // Task merges in the polling Workspace, and (workspaceId, trackerRef) keys
       // the upsert so overlapping issue numbers across repos stay distinct.
       const inserted = await db
         .insert(tasks)
         .values({
           prompt: input.prompt,
           workspaceId: workspace.id,
-          // A mirrored Task has no operator picks: the four defaults inherit
+          // A mirrored Task has no operator picks: the inheritable defaults inherit
           // (null) and resolve to the Workspace/global defaults on read, so
           // retargeting the board's model is a single Workspace-setting change.
           harness: null,
           model: null,
           isolationMode: null,
           priority: null,
+          integrationRetries: null,
+          conflictResolveTurns: null,
           workingDir: workspace.workingDir,
           state: input.closed ? 'done' : 'ready',
           origin: 'mirrored',
@@ -819,7 +833,7 @@ export class TaskService {
    * Point a not-yet-spawned Task at a base branch (issue #159). The
    * Epic-integration coordinator calls this to retarget a ready member's
    * `baseBranch` onto its Epic's integration branch before the Auto-Runner
-   * spawns the worktree Run, so the Run forks from — and later lands onto — the
+   * spawns the worktree Run, so the Run forks from — and later merges onto — the
    * integration branch (`resolveBaseBranch` reads this column, issue #157).
    * Idempotent: a no-op that returns the current row when the value is unchanged,
    * so a re-poll never churns `updatedAt` or fires a spurious change. Unlike

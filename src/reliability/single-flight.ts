@@ -13,7 +13,7 @@
  * {@link singleFlight} wraps such a loop so it runs at most once at a time.
  * A call that arrives while a pass is in flight does not start a second pass; it
  * schedules exactly one rerun to fire after the current pass finishes, so work
- * that landed mid-pass is still picked up — coalescing any number of overlapping
+ * that merged mid-pass is still picked up — coalescing any number of overlapping
  * triggers into a single trailing pass. Every caller waiting during an in-flight
  * window resolves with that final pass's result.
  *

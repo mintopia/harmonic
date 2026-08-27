@@ -9,7 +9,7 @@
 
 /** TTL budget for the occupancy a Work Context lease spans. */
 export interface LeaseTtl {
-  /** TTL budget (ms) for the execution phases (executing/validating/verifying/landing). */
+  /** TTL budget (ms) for the execution phases (executing/validating/verifying/merging). */
   executionMs: number;
 }
 

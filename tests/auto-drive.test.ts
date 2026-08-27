@@ -10,7 +10,7 @@ import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { workContextKey } from '../src/domain/work-context-key.js';
-import { DomainError } from '../src/domain/errors.js';
+import { logger } from '../src/logger.js';
 import { Runner } from '../src/execution/runner.js';
 import { AutoDrive } from '../src/execution/auto-drive.js';
 import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-template.js';
@@ -158,7 +158,7 @@ describe('Drive Prompt fill (issue #33)', () => {
   it('closeTicket is idempotent and carries the caller\'s comment (the operator Close)', async () => {
     const open = fakeAdapter('open');
     const drive = new AutoDrive(() => defaultConfig(), () => null, async () => open.adapter);
-    expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without landing (task 1).')).toBe(true);
+    expect(await drive.closeTicket(worktreeTask(), 'Closed by a Harmonic operator without merging (task 1).')).toBe(true);
     expect(open.calls.close).toEqual([7]); // worktreeTask trackerRef
 
     // An already-closed ticket needs no second close (some trackers error on it).
@@ -171,7 +171,7 @@ describe('Drive Prompt fill (issue #33)', () => {
     expect(await drive.closeTicket(worktreeTask({ trackerRef: null }))).toBe(true);
   });
 
-  it('completes after a verified landing when the adapter only supports inbound status', async () => {
+  it('completes after a verified merging when the adapter only supports inbound status', async () => {
     const inboundOnly: TrackerAdapter = {
       name: 'other',
       scan: async () => [],
@@ -222,7 +222,7 @@ describe('AutoDrive.onCompleted — Merge Fate close-after-verify (issue #139)',
   // ticket, is the signal that gets a Run here — so every fixture leaves the
   // ticket OPEN and asserts what Harmonic itself does about the close.
 
-  it('auto-merge: the Runner has landed the verified tip, so Harmonic closes the ticket', async () => {
+  it('auto-merge: the Runner has merged the verified tip, so Harmonic closes the ticket', async () => {
     const { adapter, calls } = fakeAdapter('open');
     const drive = new AutoDrive(() => cfg('auto-merge'), () => null, async () => adapter);
     expect(await drive.onCompleted(worktreeTask(), run())).toBe('completed');
@@ -317,11 +317,9 @@ describe('Runner auto-drive settle (issue #33)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     asyncDb = await openAsyncDb(dir);
     // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
-    // Harmonic repo during a test run. The afk-direct admission gate (issue
-    // #149) rejects a dirty git context, which is irrelevant to these
-    // settle-logic tests. Point the workspace at an isolated non-git directory
-    // where the branch contract does not apply, so the gate skips and each Run
-    // exercises its intended settle path.
+    // Harmonic repo during a test run, which these settle-logic tests must not
+    // touch. Point the workspace at an isolated non-git directory so each Run
+    // exercises its intended settle path (a non-git context yields no candidate).
     workDir = mkdtempSync(join(tmpdir(), 'harmonic-drive-wd-'));
     await asyncDb.write((d) => d.update(workspaces).set({ workingDir: workDir }).run());
   });
@@ -465,7 +463,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
     // Pre-#139 a ticket the agent closed was the completion signal. Now
     // finish_task is: a Run whose ticket is already closed but which never signals
     // finish is NOT completed — it runs the continue budget and then Escalates as
-    // unresolved. (The finish→verify→land→close happy path needs the MCP endpoint
+    // unresolved. (The finish→verify→merge→close happy path needs the MCP endpoint
     // and is covered at the execution seam.)
     build(config({ continueAttempts: 0 }, 1), 'closed');
     const task = await tasks.upsertMirrored(mirroredAfk(7));
@@ -527,7 +525,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
       expect(await leaseStore.getByOwner(predecessorId)).toBeUndefined();
     });
 
-    it('an unrelated (different-chain) predecessor still conflicts — the funnel does not transfer indiscriminately', async () => {
+    it('an unrelated (different-chain) direct predecessor no longer conflicts — the second worker attaches, lease untouched, traced at debug (ADR-0046, #369)', async () => {
       build(config());
       const otherTask = await tasks.upsertMirrored(mirroredAfk(8));
       const target = await tasks.upsertMirrored(mirroredAfk(9));
@@ -538,19 +536,22 @@ describe('Runner auto-drive settle (issue #33)', () => {
 
       // `target` has no chained Run of its own and no reattempt ancestry, so
       // resolveForTask mints it a fresh chain (branch 3) — different from the
-      // predecessor's. sharesLineOfWork is false, so the funnel falls through
-      // to acquire, which still hits the unique-key CAS.
+      // predecessor's. sharesLineOfWork is false, so the funnel falls through to
+      // acquire, which hits the unique-key CAS. Direct isolation no longer blocks
+      // on that conflict (ADR-0046): the second worker attaching to the already-
+      // claimed direct checkout is the operator's accepted risk — the funnel
+      // proceeds and traces it at debug rather than throwing.
       await tasks.setState(target.id, 'working');
-      let caught: unknown;
-      try {
-        await runner.launchClaimed(target.id);
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).toBeInstanceOf(DomainError);
-      expect((caught as DomainError).code).toBe('conflict');
+      const debugSpy = vi.spyOn(logger, 'debug');
+      await expect(runner.launchClaimed(target.id)).resolves.toBeDefined();
 
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`second worker attaching to already-claimed direct Work Context "${key}"`),
+      );
+      // The predecessor still owns the lease — the attach neither transferred nor
+      // released it.
       expect(await leaseStore.getByKey(key)).toMatchObject({ ownerRunId: predecessorId });
+      debugSpy.mockRestore();
     });
   });
 });

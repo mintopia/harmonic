@@ -21,12 +21,12 @@ function installOperations() {
 }
 
 describe('Epic Operations (issue #291)', () => {
-  it('keeps cut, member work, healing, verification, landing, and retirement under one root across ticks', async () => {
+  it('keeps cut, member work, healing, verification, integration, and retirement under one root across ticks', async () => {
     const exporter = installOperations();
     const operations = new EpicOperations();
     const context = { repoDir: '/workspaces/harmonic', epicRef: 291 };
 
-    for (const type of ['cut', 'member-land', 'heal', 'member-land', 'verify', 'merge', 'retire'] as const) {
+    for (const type of ['cut', 'member-merge', 'heal', 'member-merge', 'verify', 'merge', 'retire'] as const) {
       await operations.run({ ...context, type, work: async () => {} });
     }
     operations.complete(context);
@@ -46,7 +46,7 @@ describe('Epic Operations (issue #291)', () => {
     const operations = new EpicOperations();
     const context = { repoDir: '/workspaces/harmonic', epicRef: 291 };
 
-    await operations.run({ ...context, type: 'member-land', work: async () => {} });
+    await operations.run({ ...context, type: 'member-merge', work: async () => {} });
     operations.fail({ ...context, reason: 'rebase conflicted after the bounded heal' });
 
     const root = exporter.getFinishedSpans().find((span) => span.name === 'harmonic.epic');

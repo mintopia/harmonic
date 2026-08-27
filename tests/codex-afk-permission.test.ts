@@ -15,7 +15,7 @@ import type { MirrorInput } from '../src/domain/tasks.js';
  * command-line YOLO flags do not take effect there). A Codex build that
  * advertises no full-access mode falls back to the per-request handler, which
  * declines the request and fails the Attempt like every other unattended Run
- * (until ADR-0007 held-request approval lands); with a one-attempt budget that
+ * (until ADR-0007 held-request approval merges); with a one-attempt budget that
  * exhausts the cap and escalates. These pin both paths.
  */
 

@@ -9,13 +9,12 @@ import type {
   RunState,
   VerificationAttemptRow,
 } from '../db/schema.js';
-import { attempts, attemptTasks, guardrailEvents, landingJournal, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
+import { attempts, attemptTasks, guardrailEvents, mergeJournal, runEvents, runFacts, runs, verificationAttempts } from '../db/schema.js';
 import { and, desc, eq } from 'drizzle-orm';
 import type { TaskWithDeps } from '../domain/tasks.js';
 import { resolveVerifiers } from '../domain/setting-override.js';
 import { verifierStatuses, type VerifierStatus } from '../domain/verifier-status.js';
 import { costOfUsages, resolveContextWindow, resolvePrices, sumCosts, type Cost } from '../execution/pricing.js';
-import { isDirectRef } from '../execution/execution-isolation.js';
 import type { ProcessTree, RunUsage, RunUsageSnapshot } from '../execution/usage.js';
 import type { OperationEvent, OperationSnapshot } from '../telemetry/operations.js';
 import { z } from 'zod';
@@ -161,7 +160,7 @@ type TicketTimelineKind =
   | 'escalation'
   | 'operator-accept'
   | 'operator-reject'
-  | 'landing'
+  | 'merge'
   | 'fact';
 
 export interface ApiTicketTimelineEvent {
@@ -181,7 +180,7 @@ type PendingTicketTimelineEvent = ApiTicketTimelineEvent & { order: number };
 const TICKET_TIMELINE_SOURCE_LIMIT = 1_000;
 
 export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Promise<{ events: ApiTicketTimelineEvent[] }> {
-  const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails, facts, landing] = await Promise.all([
+  const [taskRuns, taskAttempts, lifecycle, verification, skippedVerification, guardrails, facts, mergeEntries] = await Promise.all([
     ctx.asyncDb.read((db) => db.select().from(runs).where(eq(runs.taskId, taskId)).orderBy(desc(runs.startedAt), desc(runs.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select().from(attempts).where(eq(attempts.taskId, taskId)).orderBy(desc(attempts.startedAt), desc(attempts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: runEvents }).from(runEvents).innerJoin(runs, eq(runEvents.runId, runs.id)).where(and(eq(runs.taskId, taskId), eq(runEvents.type, 'lifecycle'))).orderBy(desc(runEvents.ts), desc(runEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
@@ -189,7 +188,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     ctx.asyncDb.read((db) => db.select({ task: attemptTasks }).from(attemptTasks).innerJoin(attempts, eq(attemptTasks.attemptId, attempts.id)).where(eq(attempts.taskId, taskId)).orderBy(desc(attemptTasks.endedAt), desc(attemptTasks.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ event: guardrailEvents }).from(guardrailEvents).innerJoin(runs, eq(guardrailEvents.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(guardrailEvents.ts), desc(guardrailEvents.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
     ctx.asyncDb.read((db) => db.select({ fact: runFacts }).from(runFacts).innerJoin(runs, eq(runFacts.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(runFacts.ts), desc(runFacts.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
-    ctx.asyncDb.read((db) => db.select({ entry: landingJournal }).from(landingJournal).innerJoin(runs, eq(landingJournal.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(landingJournal.ts), desc(landingJournal.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
+    ctx.asyncDb.read((db) => db.select({ entry: mergeJournal }).from(mergeJournal).innerJoin(runs, eq(mergeJournal.runId, runs.id)).where(eq(runs.taskId, taskId)).orderBy(desc(mergeJournal.ts), desc(mergeJournal.id)).limit(TICKET_TIMELINE_SOURCE_LIMIT).all()),
   ]);
   const task = await ctx.tasks.get(taskId);
   const workspace = await ctx.workspaces.get(atRestWorkspaceId(task.workspaceId));
@@ -237,7 +236,7 @@ export async function ticketTimelineToApi(ctx: AppContext, taskId: number): Prom
     const kind: TicketTimelineKind = fact.type === 'escalate' ? 'escalation' : fact.type === 'operator-accept' ? 'operator-accept' : 'fact';
     add({ runId: fact.runId, ts: fact.ts, kind, data: { type: fact.type, payload: JSON.parse(fact.payload) } }, 4);
   });
-  await forEachYielding(landing, async ({ entry }) => { add({ runId: entry.runId, ts: entry.ts, kind: 'landing', data: { kind: entry.kind, effect: entry.effect, idempotencyKey: entry.idempotencyKey, payload: JSON.parse(entry.payload) } }, 6); });
+  await forEachYielding(mergeEntries, async ({ entry }) => { add({ runId: entry.runId, ts: entry.ts, kind: 'merge', data: { kind: entry.kind, effect: entry.effect, idempotencyKey: entry.idempotencyKey, payload: JSON.parse(entry.payload) } }, 6); });
 
   return {
     events: pending
@@ -435,7 +434,9 @@ function stripTrackerFactCols(task: TaskWithDeps): Omit<TaskWithDeps, TrackerFac
   return rest;
 }
 
-/** The ref an operator Accept would land: a direct Run's private ref, or a worktree Run's branch once it has a verified head. */
+/** The ref an operator Accept would merge: a worktree Run's branch once it has a
+ * verified head. A direct Run has no branch — its work is already on the base
+ * branch (ADR-0046) — so this is null for it. */
 function latestVerifiedRef(run: RunRow | undefined): string | null {
   if (!run) return null;
   return run.candidateRef ?? (run.candidateOid && run.branch ? run.branch : null);
@@ -443,8 +444,9 @@ function latestVerifiedRef(run: RunRow | undefined): string | null {
 
 function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], toolCount: number | null): ApiTask {
   const running = runs.find((r) => r.state === 'running');
-  const presentedBranch = (branch: string | null | undefined): string | null =>
-    branch && !isDirectRef(branch) ? branch : null;
+  // A direct Run has no branch (its work is committed straight onto the base
+  // branch, ADR-0046); only a worktree Run has an operator-facing branch.
+  const presentedBranch = (branch: string | null | undefined): string | null => branch ?? null;
   return {
     ...stripTrackerFactCols(task),
     workspaceId: atRestWorkspaceId(task.workspaceId),
@@ -452,8 +454,6 @@ function taskToApiWithRuns(ctx: AppContext, task: TaskWithDeps, runs: RunRow[], 
     cost: sumCosts(runs.map((run) => parseCost(run.cost))),
     url: ctx.trackerManager.urlFor(task.workspaceId, task.trackerRef),
     mapTitle: ctx.trackerManager.titleForMap(task.workspaceId, task.mapRef),
-    // A direct run's recorded branch is its private harmonic ref — internal
-    // plumbing, not an operator-facing branch.
     branch: presentedBranch(runs.at(-1)?.branch),
     stat: runs.at(-1)?.stat ?? null,
     runStartedAt: running?.startedAt ?? null,

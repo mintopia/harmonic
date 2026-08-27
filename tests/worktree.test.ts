@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { startServer, stubHarness, waitFor, type TestServer } from './helpers.js';
-import { tasks } from '../src/db/schema.js';
+import { tasks, workspaces } from '../src/db/schema.js';
 
 const git = (dir: string, ...args: string[]) =>
   execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -50,7 +50,7 @@ describe('worktree isolation mode', () => {
     return { taskId: created.body.id, runId: started.body.id };
   }
 
-  it('executes on its own branch in a temp worktree, lands, and the worktree is removed at Session retirement (issue #148)', async () => {
+  it('executes on its own branch in a temp worktree, merges, and the worktree is removed at Session retirement (issue #148)', async () => {
     const repo = makeRepo();
     const { taskId, runId } = await runWorktreeTask(repo, { 'feature.txt': 'made by agent\n' });
 
@@ -60,29 +60,31 @@ describe('worktree isolation mode', () => {
 
     // The branch exists and carries the file; the checkout was never touched.
     expect(git(repo, 'show', `${run.branch}:feature.txt`)).toBe('made by agent');
-    // The verified head landed on main by fast-forward (ADR-0041: no human gate).
+    // The verified head merged on main by fast-forward (ADR-0041: no human gate).
     expect(git(repo, 'show', 'main:feature.txt')).toBe('made by agent');
     expect(git(repo, 'rev-parse', 'main')).toBe(run.candidateOid);
 
-    // Issue #148: landing retires the Session, which is the sole owner of
+    // Issue #148: merging retires the Session, which is the sole owner of
     // builder-worktree removal; the async retirement drain reclaims it.
     await waitFor(async () => git(repo, 'worktree', 'list').split('\n').length === 1);
     // Only the main checkout remains — the retained worktree was removed at retirement.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
   });
 
-  it('escalates (does NOT land) when the agent commits onto the canonical checkout instead of its worktree', async () => {
+  it('a worktree run whose base branch advances externally mid-turn still verifies and merges normally (ADR-0046)', async () => {
     const repo = makeRepo();
     const mainBefore = git(repo, 'rev-parse', 'main');
 
-    // The stub does its legit work in the worktree, then — simulating the agent
-    // `cd`-ing to the canonical repo and committing onto the protected branch it
-    // is parked on — runs a commit against `repo` (main) from inside its turn.
-    // The trailing absolute `-C repo` wins over the stub's own `-C <worktree>`.
+    // The stub does its legit work in its own worktree, and — simulating the
+    // base moving underneath the run (a push, a pull, another Run's merge; here
+    // an empty commit onto the checked-out main via the trailing absolute
+    // `-C repo`) — advances main during the turn. A worktree Run is isolated in
+    // its own worktree, so a moving base is legitimate and must never fail it:
+    // the merge path reconciles the moved target and the run merges normally.
     const created = await server.api('POST', '/api/tasks', {
       prompt: JSON.stringify({
         writeFiles: { 'feature.txt': 'legit worktree work\n' },
-        gitExec: [['-C', repo, 'commit', '--allow-empty', '-m', 'stray commit straight onto canonical']],
+        gitExec: [['-C', repo, 'commit', '--allow-empty', '-m', 'base advanced externally']],
       }),
       workingDir: repo,
       isolationMode: 'worktree',
@@ -94,19 +96,16 @@ describe('worktree isolation mode', () => {
       return t.state === 'done' || t.state === 'escalated' ? t : undefined;
     });
 
-    // The stray canonical mutation is caught and the Run Escalates rather than
-    // verifying/landing over a protected branch an agent moved by hand.
-    expect(task.state).toBe('escalated');
-    expect(task.escalationReason).toMatch(/canonical/);
-
-    // main carries ONLY the agent's stray commit (a direct child of its prior
-    // tip) — the worktree work never landed onto it.
-    expect(git(repo, 'log', '-1', '--format=%s', 'main')).toBe('stray commit straight onto canonical');
-    expect(git(repo, 'rev-parse', 'main^')).toBe(mainBefore);
-    expect(() => git(repo, 'show', 'main:feature.txt')).toThrow();
+    // No canonical-mutation escalation — the run verified against its own
+    // candidate and merged onto the moved base.
+    expect(task.state).toBe('done');
+    // main carries BOTH the external advance and the run's merged work.
+    expect(git(repo, 'show', 'main:feature.txt')).toBe('legit worktree work');
+    expect(git(repo, 'log', 'main', '--format=%s').split('\n')).toContain('base advanced externally');
+    expect(git(repo, 'rev-parse', 'main')).not.toBe(mainBefore);
   });
 
-  it('landing merges the run branch into the base branch and refreshes its checkout', async () => {
+  it('merging merges the run branch into the base branch and refreshes its checkout', async () => {
     const repo = makeRepo();
     const { taskId } = await runWorktreeTask(repo, { 'feature.txt': 'merged\n' });
 
@@ -115,7 +114,7 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
-  it('a Task with an explicit baseBranch (issue #157, ADR-0024) forks from it, not the current branch, and lands back onto it', async () => {
+  it('a Task with an explicit baseBranch (issue #157, ADR-0024) forks from it, not the current branch, and merges back onto it', async () => {
     const repo = makeRepo(); // current branch is main
     // A second branch carrying a commit that never touches main — the tell
     // for "did the worktree fork from feature-base, or from main (today's
@@ -142,17 +141,17 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'show', `${run.branch}:base-marker.txt`)).toBe('from feature-base');
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
 
-    // The landing put the run onto feature-base — the recorded base — not main.
+    // The merging put the run onto feature-base — the recorded base — not main.
     expect((await server.api('GET', `/api/tasks/${taskId}`)).body.state).toBe('done');
     expect(git(repo, 'show', 'feature-base:feature.txt')).toBe('made on feature-base');
-    // main's checkout was never touched by either the fork or the landing.
+    // main's checkout was never touched by either the fork or the merging.
     expect(existsSync(join(repo, 'feature.txt'))).toBe(false);
     expect(git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('main');
   });
 
-  it('two Runs forking the same main and touching the same file: the first lands, the conflicting second never merges a tree nobody verified', async () => {
+  it('two Runs forking the same main and touching the same file: the first merges, the conflicting second never merges a tree nobody verified', async () => {
     const repo = makeRepo();
-    // Both fork the same main before either lands.
+    // Both fork the same main before either merges.
     const startBoth = async () => {
       const created = await Promise.all(
         [{ 'conflict.txt': 'version A\n' }, { 'conflict.txt': 'version B\n' }].map((files) =>
@@ -171,7 +170,7 @@ describe('worktree isolation mode', () => {
       });
     const [ta, tb] = [await settled(a!), await settled(b!)];
 
-    // Exactly one landed (the other's stale landing re-entered Rebase, where
+    // Exactly one merged (the other's stale merging re-entered Rebase, where
     // the conflict is agent work the stub never resolves — a failed Attempt
     // per try, escalated at the cap). Nothing half-merged, no merge commit.
     const states = [ta.state, tb.state].sort();
@@ -252,8 +251,8 @@ describe('worktree isolation mode', () => {
 
     // The base repo is intact: a clean tree, still on main — the repo-op lock
     // (issue #121) serialised the concurrent create windows without corruption.
-    // Every Run landed (fast-forward, serialised by the freshness gate: a Run
-    // whose base moved re-based and re-verified before landing), and each
+    // Every Run merged (fast-forward, serialised by the freshness gate: a Run
+    // whose base moved re-based and re-verified before merging), and each
     // builder worktree is reclaimed at Session retirement (issue #148).
     for (const file of ['a.txt', 'b.txt', 'c.txt']) expect(git(repo, 'ls-tree', '--name-only', 'main', file)).toBe(file);
     await waitFor(async () => (git(repo, 'worktree', 'list').split('\n').length === 1 ? true : undefined));
@@ -275,7 +274,7 @@ describe('worktree isolation mode', () => {
 
     const runA = (await server.api('GET', `/api/runs/${a.runId}`)).body;
     const runB = (await server.api('GET', `/api/runs/${b.runId}`)).body;
-    // Both landed: distinct keys admitted both, and the freshness gate
+    // Both merged: distinct keys admitted both, and the freshness gate
     // serialised their fast-forwards onto main.
     expect(runA.state).toBe('completed');
     expect(runB.state).toBe('completed');
@@ -291,8 +290,8 @@ describe('worktree isolation mode', () => {
 
   it('escalates instead of forking off "HEAD" when the base repo is detached and no base branch is set (issue #198)', async () => {
     const repo = makeRepo(); // on branch main
-    // Simulate the state a prior landing/merge-train leaves behind: the base
-    // repo detached at a commit (== main here, no divergence — the landing just
+    // Simulate the state a prior merging/merge-train leaves behind: the base
+    // repo detached at a commit (== main here, no divergence — the merging just
     // didn't return HEAD to the branch). `--abbrev-ref HEAD` now reports the
     // literal "HEAD"; the Run must NOT record that as its base branch.
     git(repo, 'checkout', '--detach', 'HEAD');
@@ -419,5 +418,53 @@ describe('worktree isolation mode', () => {
     // Base repo untouched: no worktree, no run branch forged off main.
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(worktreesBefore);
     expect(git(repo, 'branch', '--list', `harmonic/task-${created.body.id}-run-*`)).toBe('');
+  });
+});
+
+describe('worktree isolation — afk no-candidate fail-closed (ADR-0046)', () => {
+  let server: TestServer;
+  let ref = 4630;
+
+  beforeAll(async () => {
+    // One attempt so the first terminal settle stands; continueAttempts:0 so an
+    // unfinished afk turn isn't re-prompted before it settles unresolved.
+    server = await startServer({ ...stubHarness(), maxAttempts: 1, drive: { continueAttempts: 0 } });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('an afk worktree run that produced no candidate of its own fails closed (Escalates) rather than merging', async () => {
+    const repo = makeRepo();
+    const mainBefore = git(repo, 'rev-parse', 'main');
+
+    // Point the sole workspace at this repo and script a mirrored (afk) drive
+    // turn whose agent writes nothing — the run's own worktree gains no commit,
+    // the genuine "work went to the wrong place" case. With the canonical guard
+    // deleted, this must still fail closed via the existing no-candidate path.
+    await server.app.ctx.asyncDb.write((d) => d.update(workspaces).set({ workingDir: repo }).run());
+    await server.app.ctx.configStore.update({ drive: { prompt: JSON.stringify({ writeFiles: {}, stopReason: 'end_turn' }) } });
+
+    const task = await server.app.ctx.tasks.upsertMirrored({
+      trackerRef: ref++,
+      prompt: 'go',
+      workflow: 'implement',
+      wayfinderType: null,
+      mapRef: null,
+      closed: false,
+    });
+    // Force worktree isolation on the mirrored Task — the run path the guard protected.
+    await server.app.ctx.asyncDb.write((d) => d.update(tasks).set({ isolationMode: 'worktree' }).where(eq(tasks.id, task.id)).run());
+    await server.app.ctx.tasks.setState(task.id, 'working');
+    await server.app.ctx.runner.launchClaimed(task.id);
+
+    const settled = await waitFor(async () => {
+      const t = (await server.api('GET', `/api/tasks/${task.id}`)).body;
+      return t.state === 'escalated' ? t : undefined;
+    });
+    // Fails closed with a surfaced reason; the base branch was never touched.
+    expect(settled.state).toBe('escalated');
+    expect(settled.escalationReason).toBeTruthy();
+    expect(git(repo, 'rev-parse', 'main')).toBe(mainBefore);
   });
 });

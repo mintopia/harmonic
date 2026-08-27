@@ -24,14 +24,14 @@ describe('usage collection retry (log-flush race)', () => {
     message: { id: 'm1', model: 'claude-sonnet-5', usage: { input_tokens: 10, output_tokens: 20 } },
   });
 
-  it('re-reads an existing session log until the per-model lines land', async () => {
+  it('re-reads an existing session log until the per-model lines merge', async () => {
     const { collectUsageWithRetry } = await import('../src/execution/usage.js');
     const logRoot = mkdtempSync(join(tmpdir(), 'harmonic-race-logs-'));
     const cwd = mkdtempSync(join(tmpdir(), 'harmonic-race-work-'));
     const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-');
     const file = join(logRoot, slug, 'race-session.jsonl');
     mkdirSync(join(logRoot, slug), { recursive: true });
-    // The file exists (session started) but the usage lines land late.
+    // The file exists (session started) but the usage lines merge late.
     writeFileSync(file, JSON.stringify({ type: 'user', text: 'hi' }));
     setTimeout(() => writeFileSync(file, assistantLine), 50);
 
@@ -197,6 +197,27 @@ describe('replay quarantine (issue #144)', () => {
     ];
 
     expect(tallyToolCalls(events, () => null)).toEqual({ Bash: 1 });
+  });
+
+  it('buckets read/search/fetch kinds by tool, not their per-call title', async () => {
+    const { tallyToolCalls } = await import('../src/execution/usage.js');
+    const tc = (id: string, kind: string, title: string): PersistedRunEvent => ({
+      id: 1,
+      runId: 1,
+      seq: 1,
+      ts: 1,
+      type: 'session_update',
+      payload: { sessionUpdate: 'tool_call', toolCallId: id, title, kind },
+    });
+    const events: PersistedRunEvent[] = [
+      tc('t1', 'read', "Read file '/a/one.ts'"),
+      tc('t2', 'read', "Read file '/b/two.ts'"),
+      tc('t3', 'search', "Search for 'foo' in App.tsx"),
+      tc('t4', 'fetch', 'https://example.com/x'),
+      tc('t5', 'fetch', 'https://example.com/y'),
+    ];
+
+    expect(tallyToolCalls(events, () => null)).toEqual({ Read: 2, Grep: 1, WebFetch: 2 });
   });
 
   it('currentTurnEvents returns only the non-replay events', () => {

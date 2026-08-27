@@ -35,7 +35,7 @@ describe('attention announcements (ADR-0041)', () => {
     expect(result.assertive).toBe('Add live region merged.');
   });
 
-  it('uses an assertive merge outcome when a working Task lands on its own', () => {
+  it('uses an assertive merge outcome when a working Task merges on its own', () => {
     const seeded = advanceReviewAnnouncements([task(1, 'working', 'Add live region')], 0, EMPTY_REVIEW_ANNOUNCEMENT_CURSOR);
     const result = advanceReviewAnnouncements([task(1, 'done', 'Add live region')], 0, seeded.cursor);
 

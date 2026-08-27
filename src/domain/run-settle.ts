@@ -3,7 +3,7 @@ import type { RunStore } from './runs.js';
 import type { TaskService } from './tasks.js';
 import type { WorkContextLeaseStore } from './work-context-leases.js';
 import type { RunFactStore } from './run-facts.js';
-import type { LandingJournalStore } from './landing-journal.js';
+import type { MergeJournalStore } from './merge-journal.js';
 import { computeDisposition, type Disposition } from './run-disposition.js';
 import { projectSettle, type CoordinatorFact, type SettleProjection } from './run-coordinator.js';
 import type { SessionRetirementHook } from './session-retirement-coordinator.js';
@@ -26,21 +26,21 @@ export interface RunBranchRetirementHook {
  *
  * #113 kept this logic private to the Runner because the Runner was the only
  * settle authority. A **second** authority — the operator Accept on an
- * escalated ticket (`EscalationService.accept`, via `LandingCoordinator`) —
+ * escalated ticket (`EscalationService.accept`, via `MergeCoordinator`) —
  * settles a Run long after its harness is gone. Extracting the coordinator to a
  * shared, dependency-injected class lets both drive it with identical
  * race-safety, instead of the operator path racing the Runner around the Run row.
  *
- * `landingJournal` is a **third** settle-adjacent concern layered on top by
- * issue #115: the journaled non-interruptible landing's Point Of No Cancel
- * (PONC, see domain/landing.ts's module doc comment). Once a landing has
+ * `mergeJournal` is a **third** settle-adjacent concern layered on top by
+ * issue #115: the journaled non-interruptible merge's Point Of No Cancel
+ * (PONC, see domain/merge.ts's module doc comment). Once a merge has
  * written its PONC, a cancel/guardrail-trip fact that races in afterward must
- * never be allowed to flip the winning disposition away from the land that's
- * already underway (or, worse, retroactively "unland" an effect that already
+ * never be allowed to flip the winning disposition away from the merge that's
+ * already underway (or, worse, retroactively "unmerge" an effect that already
  * fired). The dependency is **optional** — every existing call site and test
  * that constructs this coordinator without it keeps behaving exactly as
  * before #115 shipped: `poncCutoffFor` degrades to "no clamp" when
- * `landingJournal` is undefined.
+ * `mergeJournal` is undefined.
  */
 export class RunSettleCoordinator {
   constructor(
@@ -49,7 +49,7 @@ export class RunSettleCoordinator {
     private readonly leaseStore: WorkContextLeaseStore,
     private readonly runFacts: RunFactStore,
     private readonly onRunFinished?: (run: RunRow) => void,
-    private readonly landingJournal?: LandingJournalStore,
+    private readonly mergeJournal?: MergeJournalStore,
     private readonly sessionRetirement?: SessionRetirementHook,
     private readonly branchRetirement?: RunBranchRetirementHook,
   ) {}
@@ -63,7 +63,7 @@ export class RunSettleCoordinator {
    * the winning write.
    *
    * Settles once under the close-together race: a lower-or-equal-precedence
-   * straggler arriving after the winning disposition already landed recomputes the
+   * straggler arriving after the winning disposition already in place recomputes the
    * same winner and no-ops; a higher-precedence signal arriving late overrides the
    * Run row to the new winner.
    */
@@ -81,21 +81,21 @@ export class RunSettleCoordinator {
 
     await this.runFacts.append(run.id, type, { ...projection });
 
-    // The PONC freeze (issue #115, reliability-design §0.3): if a landing has
+    // The PONC freeze (issue #115, reliability-design §0.3): if a merge has
     // already frozen this Run's disposition cutoff, no fact appended after it
     // — including the very signal this call just appended — can move the
     // decision past that point.
     //
     // Read *after* our own append (ADR-0029): under the async single-writer
-    // queue, a landing that reserved a lower `seq` than ours enqueued its
-    // land-fact-plus-PONC transaction (`LandingCoordinator.land`) ahead of this
-    // append, so by strict write-queue FIFO that whole transaction — land fact
+    // queue, a merge that reserved a lower `seq` than ours enqueued its
+    // merge-fact-plus-PONC transaction (`MergeCoordinator.merge`) ahead of this
+    // append, so by strict write-queue FIFO that whole transaction — merge fact
     // AND PONC row — has committed by the time our own append resolves here.
-    // (Land writes both in ONE transaction precisely so no append can interleave
+    // (Merge writes both in ONE transaction precisely so no append can interleave
     // between them.) Reading the PONC before the append would instead observe
     // `null` in that race window and let this signal wrongly win. Read once so
     // both cutoffs below clamp against the same value.
-    const poncCutoffSeq = (await this.landingJournal?.ponc(run.id)) ?? null;
+    const poncCutoffSeq = (await this.mergeJournal?.ponc(run.id)) ?? null;
 
     const priorDisposition = priorFacts.length
       ? computeDisposition(priorFacts, this.clampCutoff(priorFacts[priorFacts.length - 1]!.seq, poncCutoffSeq))
@@ -106,10 +106,10 @@ export class RunSettleCoordinator {
     // frozen (issue #115): a Run only appends a disposition fact at a settle
     // decision point, so "the whole log decides, up to the freeze" holds even
     // with the phase machine (phases are recorded separately, not as
-    // disposition facts). A fact landing after the PONC (`seq > poncCutoffSeq`)
-    // — e.g. a cancel racing in mid-landing — stays in the log for the record
+    // disposition facts). A fact appended after the PONC (`seq > poncCutoffSeq`)
+    // — e.g. a cancel racing in mid-merge — stays in the log for the record
     // but this clamp is exactly what keeps it from ever being decisive: the
-    // land that already started stands, and the operator sees "landed," not
+    // merge that already started stands, and the operator sees "merged," not
     // "cancelled."
     const cutoff = this.clampCutoff(facts[facts.length - 1]!.seq, poncCutoffSeq);
     const disposition = computeDisposition(facts, cutoff);
@@ -124,7 +124,7 @@ export class RunSettleCoordinator {
     // action (e.g. escalate after a bare failure).
     // A terminal Run already showing the winning projection is a duplicate
     // straggler. A terminal Run whose row does not (an escalated ticket's Run
-    // being landed by an operator Accept, whose land fact is on the log before
+    // being merged by an operator Accept, whose merge fact is on the log before
     // this settle) still applies.
     if (before.state !== 'running' && disposition === priorDisposition && before.state === winner.runState) return;
 
@@ -142,7 +142,7 @@ export class RunSettleCoordinator {
     await this.releaseLease(run.id);
     // Session retirement (issue #148, reliability-design Unit C): the moment the
     // lease is released, record the intent for this Run's Session — retire now
-    // (a land/abandon/cancel) or retain under a deadline (a reject / other
+    // (a merge/abandon/cancel) or retain under a deadline (a reject / other
     // ending). Ordered strictly *after* `releaseLease` so the worktree's owner is
     // gone before its fate is decided (removal is coordinated with the lease).
     // Awaited but best-effort: it only marks the Session's status; the async
@@ -164,20 +164,20 @@ export class RunSettleCoordinator {
 
   /**
    * Map the winning disposition to the retirement cause a Session needs (issue
-   * #148): an operator cancel retires immediately; any `completed` Run landed
-   * (the phase machine only completes via landing); every other ending
-   * (escalate, guardrail-trip, branch-violation, process-death) is retained
+   * #148): an operator cancel retires immediately; any `completed` Run merged
+   * (the phase machine only completes via merging); every other ending
+   * (escalate, guardrail-trip, process-death) is retained
    * under the retention-TTL backstop — an escalated ticket's branch is the
-   * evidence its Accept lands.
+   * evidence its Accept merges.
    */
   private retirementCause(disposition: Disposition | null, winner: SettleProjection): RetirementCause {
     if (disposition === 'operator-cancel') return 'operator-cancel';
-    if (winner.runState === 'completed') return 'landed';
+    if (winner.runState === 'completed') return 'merged';
     return 'other';
   }
 
   /** `min(latestSeq, poncCutoffSeq)`, or `latestSeq` unclamped when
-   * `poncCutoffSeq` is `null` (no PONC frozen yet, or `landingJournal` was
+   * `poncCutoffSeq` is `null` (no PONC frozen yet, or `mergeJournal` was
    * never injected — the #115 back-compat path). */
   private clampCutoff(latestSeq: number, poncCutoffSeq: number | null): number {
     return poncCutoffSeq === null ? latestSeq : Math.min(latestSeq, poncCutoffSeq);
@@ -200,7 +200,7 @@ export class RunSettleCoordinator {
    * Apply the winning fact's Task transition. `none` leaves the Task to its
    * caller (operator cancel/complete already moved it). Every other action moves
    * only a Task that is still `working` — or `escalated`, for the operator
-   * Accept that lands an escalated ticket (`done`). A Task already in a terminal state (a racing cancel that moved it) makes the
+   * Accept that merges an escalated ticket (`done`). A Task already in a terminal state (a racing cancel that moved it) makes the
    * action no-op, so the higher-precedence signal still wins the Run row while the
    * Task keeps the disposition the race already gave it.
    */

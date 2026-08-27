@@ -113,7 +113,7 @@ export function TaskActions({
         const label = variant === 'footer' ? 'Accept & merge' : 'Accept';
         if (escalation && !escalation.accept) {
           return (
-            <button key={action} className={btnAccept} disabled title="No verified branch head to land">
+            <button key={action} className={btnAccept} disabled title="No verified branch head to merge">
               {label}
             </button>
           );

@@ -2,7 +2,7 @@ import type { Workspace } from './types.js';
 
 /**
  * The active Workspace (ADR-0008): which one the board/table/stats and the
- * status strip are scoped to, and where a new Task/Conversation lands.
+ * status strip are scoped to, and where a new Task/Conversation merges.
  * Persisted like the rail's collapse state (rail-model.ts) so a reload
  * returns to the same Workspace.
  */

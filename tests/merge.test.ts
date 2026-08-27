@@ -3,18 +3,18 @@ import {
   foldJournal,
   poncCutoff,
   reconcile,
-  type LandingJournalRowView,
+  type MergeJournalRowView,
   type ObservedState,
-} from '../src/domain/landing.js';
+} from '../src/domain/merge.js';
 
 /** A journal-row view at `seq` of `kind`, carrying whatever effect/key/payload
  * the real store would have decoded off the row (mirrors the `fact` helper in
  * tests/run-coordinator.test.ts). */
 const row = (
   seq: number,
-  kind: LandingJournalRowView['kind'],
-  detail: Partial<Pick<LandingJournalRowView, 'effect' | 'idempotencyKey' | 'payload'>> = {},
-): LandingJournalRowView => ({
+  kind: MergeJournalRowView['kind'],
+  detail: Partial<Pick<MergeJournalRowView, 'effect' | 'idempotencyKey' | 'payload'>> = {},
+): MergeJournalRowView => ({
   seq,
   kind,
   effect: detail.effect ?? null,
@@ -22,9 +22,9 @@ const row = (
   payload: detail.payload ?? {},
 });
 
-const intent = (seq: number, effect: LandingJournalRowView['effect'], key: string) =>
+const intent = (seq: number, effect: MergeJournalRowView['effect'], key: string) =>
   row(seq, 'intent', { effect, idempotencyKey: key, payload: { expected: {} } });
-const result = (seq: number, effect: LandingJournalRowView['effect'], key: string, ok: boolean) =>
+const result = (seq: number, effect: MergeJournalRowView['effect'], key: string, ok: boolean) =>
   row(seq, 'result', { effect, idempotencyKey: key, payload: { ok } });
 const ponc = (seq: number, cutoffSeq: number) => row(seq, 'ponc', { payload: { cutoffSeq } });
 

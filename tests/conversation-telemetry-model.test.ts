@@ -42,7 +42,7 @@ describe('totalTokens', () => {
 });
 
 describe('formatTokens', () => {
-  it('renders "no usage yet" — never a fake zero — before any usage lands', () => {
+  it('renders "no usage yet" — never a fake zero — before any usage merges', () => {
     expect(formatTokens(null)).toBe('no usage yet');
   });
 

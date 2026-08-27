@@ -1,7 +1,7 @@
 import type { TaskRow } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
 import { deriveEpics } from '../domain/epic-derivation.js';
-import type { MemberLandState } from '../domain/epic-land.js';
+import type { MemberMergeState } from '../domain/epic-integrate.js';
 import type { Ticket } from '../tracker/adapter.js';
 import { persistedTickets } from '../tracker/persisted.js';
 import { Git } from './git.js';
@@ -22,7 +22,7 @@ export function integrationBranchName(epicRef: number): string {
  * The inverse of {@link integrationBranchName}: the Epic ref a branch name
  * encodes, or `null` when `name` is not an integration branch. The single
  * source of truth for "is this base branch an Epic integration branch?" — the
- * member-finish landing path (issue #163) uses it to tell an Epic member's Run
+ * member-finish merge path (issue #163) uses it to tell an Epic member's Run
  * (whose base is `epic/<ref>`) from an ordinary worktree Run, so the detection
  * never drifts from the `epic/<ref>` format this module owns.
  */
@@ -52,32 +52,32 @@ export interface EpicGit {
 const PRE_SPAWN: ReadonlySet<string> = new Set(['draft', 'ready']);
 
 /**
- * The whole-Epic land trigger (issue #161) the reconcile fires per derived Epic
- * each poll. A structural interface, not the concrete {@link EpicLandCoordinator}
+ * The whole-Epic integrate trigger (issue #161) the reconcile fires per derived Epic
+ * each poll. A structural interface, not the concrete {@link EpicIntegrateCoordinator}
  * import, so this module and the coordinator (which imports
  * {@link integrationBranchName} from here) don't form a cycle. `submit` is a
  * *level* trigger: harmless to call every poll — it no-ops until every member is
- * `completed`, and after a successful land the retired branch makes it a `noop`.
+ * `completed`, and after a successful integrate the retired branch makes it a `noop`.
  */
-export interface EpicLandTrigger {
-  submit(target: { ref: number; members: MemberLandState[] }, opts?: { force?: boolean }): Promise<unknown>;
+export interface EpicIntegrateTrigger {
+  submit(target: { ref: number; members: MemberMergeState[] }, opts?: { force?: boolean }): Promise<unknown>;
 }
 
 /** Edge-triggered default-branch refresh hook. It is deliberately separate
- * from reconcile: polls discover Epics, but only a successful develop landing
+ * from reconcile: polls discover Epics, but only a successful develop integrating
  * is allowed to request a refresh. */
 export interface EpicRefreshTrigger {
   refresh(target: { ref: number; repoDir: string; defaultBranch: string }): Promise<unknown>;
 }
 
 /**
- * Reduce a member's mirrored Task to its land state for the whole-Epic land
- * decision (issue #161): `completed` once it has landed onto the integration
- * branch (Task state `done`); `blocked` when it cannot land (escalated to a
+ * Reduce a member's mirrored Task to its merge state for the whole-Epic integrate
+ * decision (issue #161): `completed` once it has merged onto the integration
+ * branch (Task state `done`); `blocked` when it cannot merge (escalated to a
  * human, or `failed`/`cancelled`) and so holds the whole Epic back; `pending`
  * otherwise (still in progress, awaiting review, not yet started, or not mirrored).
  */
-export function reduceMemberState(task: TaskRow | undefined): MemberLandState {
+export function reduceMemberState(task: TaskRow | undefined): MemberMergeState {
   if (!task) return 'pending';
   if (task.state === 'done') return 'completed';
   if (task.state === 'escalated' || task.state === 'cancelled') return 'blocked';
@@ -106,8 +106,8 @@ export function reduceMemberState(task: TaskRow | undefined): MemberLandState {
  * today's per-Run behaviour.
  *
  * The branch is solely Harmonic's: no agent creates or switches it (ADR-0023).
- * The merge train that lands members onto the integration branch (#160) and the
- * whole-Epic land + retire trigger (#161) arrive later in the tranche; this unit
+ * The merge train that merges members onto the integration branch (#160) and the
+ * whole-Epic integrate + retire trigger (#161) arrive later in the tranche; this unit
  * owns the create/reuse/retire operations, and wires create/reuse + the gate.
  */
 export class EpicIntegrationCoordinator {
@@ -136,23 +136,23 @@ export class EpicIntegrationCoordinator {
     private readonly git: EpicGit = Git,
     private readonly onError: (msg: string) => void = logger.error,
     /**
-     * The whole-Epic land trigger (issue #161). Absent ⇒ no automatic land (the
+     * The whole-Epic integrate trigger (issue #161). Absent ⇒ no automatic integrate (the
      * base-set half of the lifecycle runs unchanged, #159). When present, each
-     * poll offers every derived Epic for a land attempt — a level trigger that
+     * poll offers every derived Epic for a integrate attempt — a level trigger that
      * no-ops until every member is `completed` and the integrated whole Verifies.
-     * Usually attached after construction via {@link attachLandTrigger} so its
+     * Usually attached after construction via {@link attachIntegrateTrigger} so its
      * `retire` callback can close over this same coordinator's retire method
      * without a construction cycle.
      */
-    private epicLand?: EpicLandTrigger,
+    private epicIntegrate?: EpicIntegrateTrigger,
     private epicRefresh?: EpicRefreshTrigger,
   ) {}
 
-  /** Attach (or replace) the whole-Epic land trigger after construction (issue
-   * #161). The manager builds the land coordinator with a `retire` bound to this
+  /** Attach (or replace) the whole-Epic integrate trigger after construction (issue
+   * #161). The manager builds the integrate coordinator with a `retire` bound to this
    * instance's {@link retireIntegrationBranch}, then wires it back in here. */
-  attachLandTrigger(trigger: EpicLandTrigger): void {
-    this.epicLand = trigger;
+  attachIntegrateTrigger(trigger: EpicIntegrateTrigger): void {
+    this.epicIntegrate = trigger;
   }
 
   attachRefreshTrigger(trigger: EpicRefreshTrigger): void {
@@ -160,7 +160,7 @@ export class EpicIntegrationCoordinator {
   }
 
   /**
-   * Handle one observed default-branch advance from Harmonic's own landing path
+   * Handle one observed default-branch advance from Harmonic's own merge path
    * — the edge trigger. The poll loop drives the same convergence level-triggered
    * (see {@link reconcile}); both share {@link refreshDriftedEpics} so an Epic
    * already containing `defaultBranch` is skipped and neither path can diverge.
@@ -229,7 +229,7 @@ export class EpicIntegrationCoordinator {
     // Level-triggered epic-branch currency: every poll, merge develop forward
     // into any live `epic/<ref>` that has fallen behind — from ANY source of
     // drift (a direct commit, a revert, an external push), not just Harmonic's
-    // own lands. Runs BEFORE the ready-frontier early return, since a behind
+    // own merges. Runs BEFORE the ready-frontier early return, since a behind
     // Epic with no ready members still needs catching up. No-op without a
     // refresh trigger, so the per-branch FIFO stays untouched in that case.
     if (this.epicRefresh) {
@@ -237,11 +237,11 @@ export class EpicIntegrationCoordinator {
       if (defaultBranch !== null) await this.refreshDriftedEpics(defaultBranch, epics);
     }
 
-    // Nothing to base and no land trigger ⇒ no work this poll (preserves #159's
-    // no-op when the whole-Epic land isn't wired). With a land trigger present we
+    // Nothing to base and no integrate trigger ⇒ no work this poll (preserves #159's
+    // no-op when the whole-Epic integrate isn't wired). With a integrate trigger present we
     // must run even with an empty ready frontier: an Epic whose members are all
-    // `completed` has no ready members yet still needs its land attempt.
-    if (readyRefs.size === 0 && this.epicLand === undefined) return;
+    // `completed` has no ready members yet still needs its integrate attempt.
+    if (readyRefs.size === 0 && this.epicIntegrate === undefined) return;
 
     const byRef = new Map<number, TaskRow>();
     for (const task of mirrored) {
@@ -289,21 +289,21 @@ export class EpicIntegrationCoordinator {
         }
       }
 
-      // Land half (#161): offer the Epic for a whole-Epic land. Fire-and-forget —
+      // Integrate half (#161): offer the Epic for a whole-Epic integrate. Fire-and-forget —
       // a whole-Epic Verification can take minutes and must not stall the poll
       // loop; the coordinator's own in-flight guard prevents a redundant second
-      // attempt while one is running. Its outcome (land/escalate/wait) is the
+      // attempt while one is running. Its outcome (integrate/escalate/wait) is the
       // coordinator's to surface; here only an unexpected throw is logged.
-      if (this.epicLand) {
+      if (this.epicIntegrate) {
         const members = await Promise.all(
           epic.members.map(async (ref) => {
             const task = byRef.get(ref);
             return reduceMemberState(task ? await this.tasks.get(task.id) : undefined);
           }),
         );
-        void this.epicLand
+        void this.epicIntegrate
           .submit({ ref: epic.ref, members })
-          .catch((err) => this.onError(`epic ${epic.ref} whole-Epic land attempt failed: ${String(err)}`));
+          .catch((err) => this.onError(`epic ${epic.ref} whole-Epic integrate attempt failed: ${String(err)}`));
       }
     }
   }
@@ -411,7 +411,7 @@ export class EpicIntegrationCoordinator {
   /**
    * Create the integration branch from `defaultBranch` when absent; reuse it
    * as-is when it already exists — idempotent, and deliberately never reset:
-   * members have already forked from it and the merge train lands their work
+   * members have already forked from it and the merge train merges their work
    * onto it, so moving it would strand that work.
    */
   private async ensureIntegrationBranch(branch: string, defaultBranch: string): Promise<void> {
@@ -421,8 +421,8 @@ export class EpicIntegrationCoordinator {
 
   /**
    * Retire an Epic's integration branch (the retire half of the Harmonic-owned
-   * lifecycle, ADR-0023) once its Epic has fully landed. Idempotent: a no-op
-   * when the branch is already gone. The whole-Epic land that triggers this
+   * lifecycle, ADR-0023) once its Epic has fully integrated. Idempotent: a no-op
+   * when the branch is already gone. The whole-Epic integrate that triggers this
    * arrives with the merge train (#160/#161) — #159 owns the operation, not yet
    * its trigger.
    */

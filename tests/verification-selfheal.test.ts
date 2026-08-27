@@ -115,7 +115,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     expect(run.state).toBe('completed');
     expect(run.phase).toBe('terminal');
 
-    // The healed work landed: the base branch moved and carries the fixed marker.
+    // The healed work merged: the base branch moved and carries the fixed marker.
     const baseOidAfter = git(repoDir, 'rev-parse', 'main');
     expect(baseOidAfter).not.toBe(baseOidBefore);
     expect(git(repoDir, 'show', `${baseOidAfter}:marker.txt`)).toBe('ok');
@@ -148,7 +148,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['verifying', 'executing', 'verifying', 'landing']);
+    expect(phases).toEqual(['verifying', 'executing', 'verifying', 'merging']);
   });
 
   /** The durable Session an Attempt's implementation Task points at (`session:<row id>`). */
@@ -225,7 +225,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
     const run = (await server.api('GET', `/api/runs/${runId}`)).body;
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('merging');
 
     // The verifier runs once per Attempt and the failed Attempt retains feedback.
     const rows = await attempts(runId);
@@ -247,7 +247,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
       return body.state === 'failed' ? body : undefined;
     });
     expect(run.state).toBe('failed');
-    expect(run.phase).not.toBe('landing');
+    expect(run.phase).not.toBe('merging');
 
     const task = (await server.api('GET', `/api/tasks/${taskId}`)).body;
     expect(task.state).toBe('escalated');

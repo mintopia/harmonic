@@ -60,12 +60,12 @@ describe('run execution over ACP (direct mode)', () => {
     expect(run.status).toBe(200);
     expect(run.body).toMatchObject({ taskId, attempt: 1, state: 'completed', phase: 'terminal', stopReason: 'end_turn' });
     expect(run.body.finishedAt).toBeGreaterThan(0);
-    // Agent-finish took it executing → verifying → landing, never jumping
+    // Agent-finish took it executing → verifying → merging, never jumping
     // straight to a terminal phase (`validating` retired by the reshape).
     const phaseEvents = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phaseEvents).toEqual(['verifying', 'landing']);
+    expect(phaseEvents).toEqual(['verifying', 'merging']);
 
     const events = await server.api('GET', `/api/runs/${runId}/events`);
     expect(events.status).toBe(200);
@@ -80,27 +80,27 @@ describe('run execution over ACP (direct mode)', () => {
     );
   });
 
-  it('a native Run lands terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
+  it('a native Run merges terminal exactly once — done is final and the escalation actions refuse (ADR-0041)', async () => {
     const { taskId, runId } = await createAndRun({
       updates: [{ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done' } }],
       stopReason: 'end_turn',
     });
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskId}`)).body.state === 'done');
 
-    const landed = (await server.api('GET', `/api/runs/${runId}`)).body;
-    expect(landed.state).toBe('completed');
-    expect(landed.phase).toBe('terminal');
-    expect(landed.finishedAt).toBeGreaterThan(0);
+    const merged = (await server.api('GET', `/api/runs/${runId}`)).body;
+    expect(merged.state).toBe('completed');
+    expect(merged.phase).toBe('terminal');
+    expect(merged.finishedAt).toBeGreaterThan(0);
 
     // The full phase path is reconstructable from the persisted event log:
-    // executing → verifying → landing (the drive loop lands itself; `validating`
+    // executing → verifying → merging (the drive loop merges itself; `validating`
     // retired by the reshape). `terminal` is the coordinator's row write, not a
     // drive-loop phase event.
     const phases = (await server.api('GET', `/api/runs/${runId}/events`)).body.events
       .filter((e: any) => e.type === 'lifecycle' && e.payload.event === 'phase')
       .map((e: any) => e.payload.phase);
-    expect(phases).toEqual(['verifying', 'landing']);
-    // Done is terminal: the human surface does not apply, and nothing re-lands.
+    expect(phases).toEqual(['verifying', 'merging']);
+    // Done is terminal: the human surface does not apply, and nothing re-merges.
     expect((await server.api('POST', `/api/tasks/${taskId}/accept`)).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/reject`, { guidance: 'nope' })).status).toBe(409);
     expect((await server.api('POST', `/api/tasks/${taskId}/close`)).status).toBe(409);
@@ -393,13 +393,10 @@ describe('run execution over ACP (direct mode)', () => {
   });
 });
 
-describe('Work Context lease (issue #119)', () => {
+describe('Work Context lease (issue #119, ADR-0046)', () => {
   let server: TestServer;
   const workingDirA = mkdtempSync(join(tmpdir(), 'harmonic-lease-a-'));
   const workingDirC = mkdtempSync(join(tmpdir(), 'harmonic-lease-c-'));
-  let taskAId: number;
-  let taskBId: number;
-  let runAId: number;
 
   beforeAll(async () => {
     server = await startServer(stubHarness());
@@ -414,34 +411,41 @@ describe('Work Context lease (issue #119)', () => {
     await server.close();
   });
 
-  it('blocks a second Run into an already-held context (409), leaving the Task ready with no run rows', async () => {
+  it('attaches a second Run to an already-held direct context (201), not blocked — the operator\'s accepted risk (ADR-0046, #369)', async () => {
     const createdA = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirA,
     });
     expect(createdA.status).toBe(201);
-    taskAId = createdA.body.id;
+    const taskAId = createdA.body.id;
     const startedA = await server.api('POST', `/api/tasks/${taskAId}/run`);
     expect(startedA.status).toBe(201);
-    runAId = startedA.body.id;
+    const runAId = startedA.body.id;
     await waitFor(async () => (await server.api('GET', `/api/tasks/${taskAId}`)).body.state === 'working');
 
     // Task B collides on the exact same workingDir (direct-mode keys ignore
-    // branch, so the two are contending for the same physical occupancy).
+    // branch, so the two are contending for the same physical occupancy). Direct
+    // isolation no longer blocks the second worker (ADR-0046): the attach is the
+    // operator's accepted risk, traced at debug rather than rejected.
     const createdB = await server.api('POST', '/api/tasks', {
       prompt: scenario({ exit: 'hang' }),
       workingDir: workingDirA,
     });
     expect(createdB.status).toBe(201);
-    taskBId = createdB.body.id;
+    const taskBId = createdB.body.id;
     const startedB = await server.api('POST', `/api/tasks/${taskBId}/run`);
-    expect(startedB.status).toBe(409);
+    expect(startedB.status).toBe(201);
 
-    // Not stranded running, and the rolled-back transaction left no run row.
-    const taskB = await server.api('GET', `/api/tasks/${taskBId}`);
-    expect(taskB.body.state).toBe('ready');
+    // B's Run row is created and it proceeds — not rolled back, not left ready.
     const runsB = await server.api('GET', `/api/tasks/${taskBId}/runs`);
-    expect(runsB.body.runs).toHaveLength(0);
+    expect(runsB.body.runs).toHaveLength(1);
+
+    // The existing lease is untouched: worker A still owns the context — the
+    // attaching Run neither stole nor released it.
+    const leases = await server.api('GET', '/api/leases');
+    const held = leases.body.leases.filter((l: { ownerTaskId: number }) => l.ownerTaskId === taskAId);
+    expect(held).toHaveLength(1);
+    expect(held[0].ownerRunId).toBe(runAId);
   });
 
   it('does not block a different Work Context while A still holds its lease (control)', async () => {
@@ -454,18 +458,6 @@ describe('Work Context lease (issue #119)', () => {
     expect(startedC.status).toBe(201);
     await waitFor(async () => (await server.api('GET', `/api/tasks/${createdC.body.id}`)).body.state === 'working');
     // Left running; the harness process dies with the server on afterAll.
-  });
-
-  it('admits the blocked Task once the holder settles and releases its lease', async () => {
-    const cancelled = await server.api('POST', `/api/tasks/${taskAId}/cancel`);
-    expect(cancelled.status).toBe(200);
-    await waitFor(async () => {
-      const run = await server.api('GET', `/api/runs/${runAId}`);
-      return run.body.state === 'cancelled';
-    });
-
-    const startedB = await server.api('POST', `/api/tasks/${taskBId}/run`);
-    expect(startedB.status).toBe(201);
   });
 });
 
@@ -547,7 +539,7 @@ describe('wall-clock guardrail (issue #127)', () => {
     }
   });
 
-  it('does not kill an over-budget run after its attempt tasks enter landing', async () => {
+  it('does not kill an over-budget run after its attempt tasks enter merging', async () => {
     const server = await startServer({
       ...stubHarness(),
       // 600ms budget: enough headroom for the stub spawn + attempt waitFors

@@ -32,7 +32,7 @@ describe('dependencies', () => {
     expect(dependent.agentWorkable).toBe(false);
     expect(dependent.dependsOn).toEqual([dep.id]);
 
-    // The dependency landing (done) immediately changes the derived fields,
+    // The dependency merging (done) immediately changes the derived fields,
     // without a stored flip — there is no human gate in between (ADR-0041).
     await runToDone(dep.id);
     expect((await getTask(dependent.id)).openBlockerCount).toBe(0);
@@ -83,7 +83,7 @@ describe('dependencies', () => {
     expect(blocked.openBlockerCount).toBe(1);
     expect(blocked.blockedOnFailed).toBe(true);
 
-    // The human resolves it: Accept has nothing to land (the agent never
+    // The human resolves it: Accept has nothing to merge (the agent never
     // committed), so the escalated dependency is Closed and the dependent stays
     // blocked on a cancelled blocker — a decision, not a cascade.
     expect((await server.api('POST', `/api/tasks/${dep.id}/accept`)).status).toBe(409);
@@ -92,7 +92,7 @@ describe('dependencies', () => {
     expect(after.state).toBe('ready');
     expect(after.openBlockerCount).toBe(1);
     expect(after.blockedOnFailed).toBe(true);
-    // Uncancelling the blocker and landing it unblocks the dependent.
+    // Uncancelling the blocker and merging it unblocks the dependent.
     await server.api('POST', `/api/tasks/${dep.id}/uncancel`);
     await server.api('PATCH', `/api/tasks/${dep.id}`, { prompt: JSON.stringify({}) });
     await runToDone(dep.id);

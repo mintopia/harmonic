@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startServer, stubHarness, captureRunEnv, type TestServer } from './helpers.js';
-import type { EpicLandOutcome } from '../src/execution/epic-land-coordinator.js';
+import type { EpicIntegrateOutcome } from '../src/execution/epic-integrate-coordinator.js';
 
 async function mcpClient(server: TestServer, token: string): Promise<Client> {
   const client = new Client({ name: 'test', version: '0.0.0' });
@@ -15,15 +15,15 @@ async function mcpClient(server: TestServer, token: string): Promise<Client> {
 const parse = (result: any) => JSON.parse(result.content[0].text);
 
 /**
- * The operator force-land-the-ready-subset surface over a whole Epic (issue
- * #161, ADR-0024), over both REST and MCP. `TrackerPollerManager.forceLandEpic`
+ * The operator force-integrate-the-ready-subset surface over a whole Epic (issue
+ * #161, ADR-0024), over both REST and MCP. `TrackerPollerManager.forceIntegrateEpic`
  * itself (src/tracker/manager.ts) is already covered by
- * epic-land-coordinator.test.ts; these tests exercise the operator-facing
+ * epic-integrate-coordinator.test.ts; these tests exercise the operator-facing
  * plumbing around it — routing, param parsing, the null→404/409 mapping, and
  * the operator-only auth gate — spying on the manager rather than standing up
  * a real tracker loop.
  */
-describe('Whole-Epic force-land operator surface (issue #161)', () => {
+describe('Whole-Epic force-integrate operator surface (issue #161)', () => {
   let server: TestServer;
 
   beforeEach(async () => {
@@ -36,48 +36,48 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
   const ctx = () => server.app.ctx;
   const defaultWorkspaceId = async () => (await ctx().workspaces.list())[0]!.id;
 
-  describe('POST /api/workspaces/:workspaceId/epics/:epicRef/force-land', () => {
-    it('returns the outcome from TrackerPollerManager.forceLandEpic on a 200', async () => {
-      const outcome: EpicLandOutcome = { status: 'landed', oid: 'deadbeef' };
-      const spy = vi.spyOn(ctx().trackerManager, 'forceLandEpic').mockResolvedValue(outcome);
+  describe('POST /api/workspaces/:workspaceId/epics/:epicRef/force-integrate', () => {
+    it('returns the outcome from TrackerPollerManager.forceIntegrateEpic on a 200', async () => {
+      const outcome: EpicIntegrateOutcome = { status: 'integrated', oid: 'deadbeef' };
+      const spy = vi.spyOn(ctx().trackerManager, 'forceIntegrateEpic').mockResolvedValue(outcome);
 
-      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`);
+      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(outcome);
       expect(spy).toHaveBeenCalledWith((await defaultWorkspaceId()), 42);
     });
 
-    it('passes through a non-landed outcome (e.g. escalated) unchanged', async () => {
-      const outcome: EpicLandOutcome = { status: 'escalated', reason: 'whole-Epic verification failed' };
-      vi.spyOn(ctx().trackerManager, 'forceLandEpic').mockResolvedValue(outcome);
+    it('passes through a non-integrated outcome (e.g. escalated) unchanged', async () => {
+      const outcome: EpicIntegrateOutcome = { status: 'escalated', reason: 'whole-Epic verification failed' };
+      vi.spyOn(ctx().trackerManager, 'forceIntegrateEpic').mockResolvedValue(outcome);
 
-      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`);
+      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(outcome);
     });
 
     it('404s when the Workspace does not exist', async () => {
-      const res = await server.api('POST', '/api/workspaces/999999/epics/42/force-land');
+      const res = await server.api('POST', '/api/workspaces/999999/epics/42/force-integrate');
       expect(res.status).toBe(404);
     });
 
-    it('409s when the Workspace exists but has no active land coordinator (tracking off, the default in tests)', async () => {
-      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`);
+    it('409s when the Workspace exists but has no active integrate coordinator (tracking off, the default in tests)', async () => {
+      const res = await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`);
       expect(res.status).toBe(409);
     });
 
     it('400s on a non-numeric workspaceId or epicRef', async () => {
-      expect((await server.api('POST', '/api/workspaces/abc/epics/42/force-land')).status).toBe(400);
-      expect((await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz/force-land`)).status).toBe(400);
+      expect((await server.api('POST', '/api/workspaces/abc/epics/42/force-integrate')).status).toBe(400);
+      expect((await server.api('POST', `/api/workspaces/${(await defaultWorkspaceId())}/epics/xyz/force-integrate`)).status).toBe(400);
     });
   });
 
   describe('operator-only gating', () => {
-    it('denies a run-scoped Run Key on POST /api/workspaces/:id/epics/:ref/force-land', async () => {
+    it('denies a run-scoped Run Key on POST /api/workspaces/:id/epics/:ref/force-integrate', async () => {
       const { env } = await captureRunEnv(server, ['HARMONIC_API_KEY']);
       const token = env.HARMONIC_API_KEY as string;
 
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`, {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
       });
@@ -86,7 +86,7 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
 
     it('denies a read-scoped key', async () => {
       const { body } = await server.api('POST', '/api/keys', { name: 'viz', scope: 'read' });
-      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-land`, {
+      const res = await fetch(`${server.baseUrl}/api/workspaces/${(await defaultWorkspaceId())}/epics/42/force-integrate`, {
         method: 'POST',
         headers: { authorization: `Bearer ${body.token}` },
       });
@@ -95,7 +95,7 @@ describe('Whole-Epic force-land operator surface (issue #161)', () => {
   });
 });
 
-describe('force_land_epic MCP tool (issue #161)', () => {
+describe('force_integrate_epic MCP tool (issue #161)', () => {
   let server: TestServer;
   let operatorToken: string;
 
@@ -117,14 +117,14 @@ describe('force_land_epic MCP tool (issue #161)', () => {
   it('is registered and returns the outcome to a full-scope operator key', async () => {
     const client = await mcpClient(server, operatorToken);
     const tools = (await client.listTools()).tools.map((t) => t.name);
-    expect(tools).toEqual(expect.arrayContaining(['force_land_epic']));
+    expect(tools).toEqual(expect.arrayContaining(['force_integrate_epic']));
 
-    const outcome: EpicLandOutcome = { status: 'landed', oid: 'cafef00d' };
-    const spy = vi.spyOn(ctx().trackerManager, 'forceLandEpic').mockResolvedValue(outcome);
+    const outcome: EpicIntegrateOutcome = { status: 'integrated', oid: 'cafef00d' };
+    const spy = vi.spyOn(ctx().trackerManager, 'forceIntegrateEpic').mockResolvedValue(outcome);
 
     const result = parse(
       await client.callTool({
-        name: 'force_land_epic',
+        name: 'force_integrate_epic',
         arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
       }),
     );
@@ -137,18 +137,18 @@ describe('force_land_epic MCP tool (issue #161)', () => {
   it('reports a not-found/conflict domain error, not a raw 500, when tracking is off for the Workspace', async () => {
     const client = await mcpClient(server, operatorToken);
     const result = await client.callTool({
-      name: 'force_land_epic',
+      name: 'force_integrate_epic',
       arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
     });
     expect(result.isError).toBe(true);
-    expect((result.content as any)[0].text).toContain('no active whole-Epic land coordinator');
+    expect((result.content as any)[0].text).toContain('no active whole-Epic integrate coordinator');
     await client.close();
   });
 
   it('validates its input (rejects a missing epicRef)', async () => {
     const client = await mcpClient(server, operatorToken);
     const result = await client.callTool({
-      name: 'force_land_epic',
+      name: 'force_integrate_epic',
       arguments: { workspaceId: (await defaultWorkspaceId()) },
     });
     expect(result.isError).toBe(true);
@@ -162,7 +162,7 @@ describe('force_land_epic MCP tool (issue #161)', () => {
 
     const client = await mcpClient(server, runToken);
     const forbidden = await client.callTool({
-      name: 'force_land_epic',
+      name: 'force_integrate_epic',
       arguments: { workspaceId: (await defaultWorkspaceId()), epicRef: 7 },
     });
     expect(forbidden.isError).toBe(true);

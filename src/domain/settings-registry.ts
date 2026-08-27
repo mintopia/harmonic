@@ -8,7 +8,7 @@
  * resolver (`setting-override.ts`) reads scope from here rather than each call
  * site deciding independently, so a global-only setting can never be resolved
  * from a per-Workspace value. It is also the seam a later phase's Settings UI
- * consumes for control/label/help — no UI change lands with this ticket.
+ * consumes for control/label/help — no UI change ships with this ticket.
  *
  * Keys match the `workspaces` override columns (`db/schema.ts`) so every
  * resolution path names its setting by the same key.
@@ -102,19 +102,33 @@ export const settingsRegistry = {
     label: 'Context reuse token limit',
     help: 'Token ceiling above which a Session is not reused for continuation.',
   },
+  integrationRetries: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'execution',
+    label: 'Integration retries',
+    help: 'How many times a Run re-attempts integrating when its base branch moves underneath it before deferring.',
+  },
+  conflictResolveTurns: {
+    scope: 'overridable',
+    control: 'number',
+    tab: 'execution',
+    label: 'Conflict resolve turns',
+    help: 'How many agentic turns may attempt to resolve a merge conflict before the Run escalates.',
+  },
   verificationCommand: {
     scope: 'overridable',
     control: 'verifier',
     tab: 'verification',
     label: 'Verification command',
-    help: 'Command verifier(s) run against a candidate before landing.',
+    help: 'Command verifier(s) run against a candidate before merging.',
   },
   verificationCritic: {
     scope: 'overridable',
     control: 'verifier',
     tab: 'verification',
     label: 'Verification critic',
-    help: 'Critic reviewer run against a candidate before landing.',
+    help: 'Critic reviewer run against a candidate before merging.',
   },
   guardrailBudget: {
     scope: 'overridable',

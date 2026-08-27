@@ -15,7 +15,9 @@ const task = (id: number, state: TaskState = 'ready', extra: Partial<Task> = {})
   isolationMode: 'direct',
   priority: 'normal',
   baseBranch: null,
-  overrides: { harness: null, model: null, isolationMode: null, priority: null },
+  integrationRetries: 5,
+  conflictResolveTurns: 2,
+  overrides: { harness: null, model: null, isolationMode: null, priority: null, integrationRetries: null, conflictResolveTurns: null },
   state,
   feedback: null,
   createdAt: id,
@@ -119,7 +121,7 @@ describe('flattenElkLayout', () => {
       width: 0,
       height: 0,
     });
-    // A node elk placed with no explicit x/y/size lands at the origin with 0 size.
+    // A node elk placed with no explicit x/y/size merges at the origin with 0 size.
     const layout = flattenElkLayout({ children: [{ id: 't1' }] }, new Map(), byId, []);
     expect(layout.nodes[0]).toEqual({ id: 1, task: byId.get(1), x: 0, y: 0, w: 0, h: 0 });
   });

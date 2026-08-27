@@ -58,7 +58,7 @@ describe('failuresByReason', () => {
     ];
     expect(failuresByReason(failures)).toEqual({
       failed: 2, // two distinct error messages collapse into one disposition bucket
-      'process-death': 2, // the fact and the 'interrupted' fallback land together
+      'process-death': 2, // the fact and the 'interrupted' fallback merge together
       'guardrail-trip': 1,
       unknown: 1,
     });

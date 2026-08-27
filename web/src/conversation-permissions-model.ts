@@ -60,7 +60,7 @@ export function removePendingForConversation(
  * `type: 'permission_request'` whose `payload` is `{ request, outcome,
  * reqId }` once a prompt is answered (or auto-cleared on end/crash). This
  * is the other half of that signal — call it for every conversation_event
- * that lands for the open conversation, not just ones known to be
+ * that merges for the open conversation, not just ones known to be
  * permission-related; it's a no-op for anything else.
  */
 export function resolvePendingPermissionFromEvent(

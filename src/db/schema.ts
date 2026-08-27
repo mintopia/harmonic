@@ -12,12 +12,12 @@ import type { Verdict } from '../verification/critic-schema.js';
 // cancel-reason columns without a runtime db→domain import cycle
 // (domain/turn-queue-store.ts already imports this schema).
 import type { TurnStatus, TurnPurpose, TurnCancelReason } from '../domain/turn-queue.js';
-// Type-only import, same reasoning: brands `landing_journal`'s kind/effect
-// columns without a runtime db→domain import cycle (domain/landing.ts already
+// Type-only import, same reasoning: brands `merge_journal`'s kind/effect
+// columns without a runtime db→domain import cycle (domain/merge.ts already
 // imports nothing from this schema — it is deliberately DB-free — but the
-// canonical `LandingEffect`/`LandingJournalKind` enums still live there so
+// canonical `MergeEffect`/`MergeJournalKind` enums still live there so
 // the pure module stays the single source of truth for them).
-import type { LandingEffect, LandingJournalKind } from '../domain/landing.js';
+import type { MergeEffect, MergeJournalKind } from '../domain/merge.js';
 // Type-only import (erased at compile): brands the durable tracker-fact columns
 // on `tasks` with the tracker's own normalised shapes, so the persisted facts
 // stay literally the `Ticket` fields — no redefinition to drift against. The
@@ -92,6 +92,10 @@ export const workspaces = sqliteTable('workspaces', {
   isolationMode: text('isolation_mode'),
   /** Task-default Priority override; null inherits `config.defaults.priority`. */
   priority: text('priority'),
+  /** Task-default integration-retry bound (ADR-0046); null inherits `config.defaults.integrationRetries`. */
+  integrationRetries: integer('integration_retries'),
+  /** Task-default conflict-resolve-turn bound (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
+  conflictResolveTurns: integer('conflict_resolve_turns'),
   /** Per-Workspace concurrency cap; null inherits the Machine Ceiling
    * (`config.autoRunner.maxConcurrentRuns`). Clamped to the ceiling on read —
    * an override can never breach the machine's limit (`resolveCap`). */
@@ -159,6 +163,10 @@ export const tasks = sqliteTable('tasks', {
   workingDir: text('working_dir').notNull(),
   isolationMode: text('isolation_mode'),
   priority: text('priority'),
+  /** Integration-retry bound override (ADR-0046); null inherits `config.defaults.integrationRetries`. */
+  integrationRetries: integer('integration_retries'),
+  /** Conflict-resolve-turn bound override (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
+  conflictResolveTurns: integer('conflict_resolve_turns'),
   state: text('state').$type<TaskState>().notNull(),
   /** The owning Workspace (ADR-0008). Nullable at the SQL level only because
    * SQLite can't add a NOT NULL column with no default to an existing table;
@@ -191,7 +199,7 @@ export const tasks = sqliteTable('tasks', {
   /** The parent Map issue's number, for the query-time Map rollup. Not a Dependency edge. */
   mapRef: integer('map_ref'),
   /**
-   * Explicit base branch a worktree Run is cut from and lands back onto
+   * Explicit base branch a worktree Run is cut from and merges back onto
    * (issue #157, ADR-0024). Null ⇒ resolves at spawn to the working dir's
    * current branch — today's behaviour, unchanged. This is the *expand* half
    * of an expand/contract that later lets an Epic point its members at a
@@ -291,7 +299,7 @@ export const runs = sqliteTable('runs', {
   state: text('state').$type<RunState>().notNull(),
   /**
    * The Run's position in the phase machine (issue #114, reliability-design
-   * §0.2): `executing → validating → verifying → landing → terminal`. Persisted
+   * §0.2): `executing → validating → verifying → merging → terminal`. Persisted
    * so the phase survives a restart and is reconstructable from the Run row
    * alone (never inferred from Task columns); surfaced on the Run API + card.
    * Null on pre-feature Runs. Distinct from `state`: `state` is the
@@ -330,7 +338,7 @@ export const runs = sqliteTable('runs', {
   branch: text('branch'),
   baseBranch: text('base_branch'),
   /** Immutable revisions for the settled worktree diff. They outlive the run
-   * branch, which landing or cleanup can advance or delete. */
+   * branch, which merging or cleanup can advance or delete. */
   diffBaseOid: text('diff_base_oid'),
   diffHeadOid: text('diff_head_oid'),
   /** `git diff --stat` snapshot taken when the run settles; null in direct
@@ -569,17 +577,22 @@ export const apiKeys = sqliteTable('api_keys', {
 
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
 
-/** The raw `tasks` row: the four Task-default overrides read back nullable
+/** The raw `tasks` row: the inheritable Task-default overrides read back nullable
  * (`null` ⇒ inherit). Used only inside TaskService, which resolves them. */
 export type RawTaskRow = typeof tasks.$inferSelect;
-/** A `tasks` row as every consumer sees it: the four inheritable defaults
+/** A `tasks` row as every consumer sees it: the inheritable defaults
  * already resolved to their effective values (never null). TaskService.get/
  * list/etc. return this; storage speaks `RawTaskRow`. */
-export type TaskRow = Omit<RawTaskRow, 'harness' | 'model' | 'isolationMode' | 'priority'> & {
+export type TaskRow = Omit<
+  RawTaskRow,
+  'harness' | 'model' | 'isolationMode' | 'priority' | 'integrationRetries' | 'conflictResolveTurns'
+> & {
   harness: string;
   model: string;
   isolationMode: string;
   priority: string;
+  integrationRetries: number;
+  conflictResolveTurns: number;
 };
 
 /** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */
@@ -683,33 +696,20 @@ export type WorkContextLeaseDispositionRow = typeof workContextLeaseDispositions
  * The ending-signal fact types the coordinator understands **today** (issue
  * #112, reliability-design §0.3). Every way a Run can end is recorded as a
  * `run_fact`; this is the set that has an emitter now. Later spine units append
- * their own kinds (branch-violation, verify-fail) without touching the
- * coordinator contract — the column is free `text`, and the single place a new
- * kind is *ranked* is `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So
- * this list is a convenience type, not a closed constraint: the store never
- * rejects an unknown `type`. `guardrail-trip` now has an emitter (issue #127,
- * the phase-scoped wall-clock Guardrail) — its structured evidence lives in
- * the separate `guardrail_events` log (see below); this fact type is the
- * disposition-facing signal that a trip happened.
- *
- * `branch-violation` (issue #151, reliability-design Unit D) now has an emitter
- * too: the `validating`-phase branch-contract check (`classifyBranchOutcome`,
- * issue #150). On an ambiguous git outcome the Runner appends this fact carrying
- * the structured branch-violation report and Escalates. It holds the precedence
- * slot already reserved in `DISPOSITION_PRECEDENCE` (just below `escalate`).
- *
- * `run-start-state` (issue #149, reliability-design Unit D) is the one **non-
- * ending** fact in this set: it records an afk direct Run's admitted start-state
- * (repo identity, start branch, start commit OID, worktree path, dirty
- * fingerprint) for the later branch-contract check. It is deliberately absent
- * from `DISPOSITION_PRECEDENCE`, so `computeDisposition` sinks it to the bottom
- * (rank ∞) — a start-state fact can never be mistaken for a terminal
- * disposition, and a Run that has only recorded its start is still "not ended".
+ * their own kinds (e.g. verify-fail) without touching the coordinator contract —
+ * the column is free `text`, and the single place a new kind is *ranked* is
+ * `DISPOSITION_PRECEDENCE` (domain/run-disposition.ts). So this list is a
+ * convenience type, not a closed constraint: the store never rejects an unknown
+ * `type`, so historical rows carrying a since-removed kind still read back.
+ * `guardrail-trip` now has an emitter (issue #127, the phase-scoped wall-clock
+ * Guardrail) — its structured evidence lives in the separate `guardrail_events`
+ * log (see below); this fact type is the disposition-facing signal that a trip
+ * happened.
  *
  * `session-resumed` and `resume-entry` (issue #146, reliability-design Unit C)
- * are the two boot-time crash-resume markers, both **non-ending** like
- * `run-start-state` (absent from `DISPOSITION_PRECEDENCE`, so they never read as a
- * terminal disposition). `session-resumed` is stamped on the interrupted Run that
+ * are the two boot-time crash-resume markers, both **non-ending** (absent from
+ * `DISPOSITION_PRECEDENCE`, so they never read as a terminal
+ * disposition). `session-resumed` is stamped on the interrupted Run that
  * was resumed (recording the new Run it resumed into); `resume-entry` is stamped
  * on that **new** Run (recording the interrupted Run it continues). Together they
  * make the boot resume sweep idempotent: a Run carrying either marker is never
@@ -719,18 +719,19 @@ export const RUN_FACT_TYPES = [
   'operator-cancel',
   'operator-accept',
   'escalate',
-  'branch-violation',
-  'branch-recovery',
   'agent-finish/unresolved',
   'failed',
   'process-death',
   'guardrail-trip',
-  'run-start-state',
   'session-resumed',
   'resume-entry',
   'session-continuation',
   /** Immutable proof that verification ran against this branch tip. */
   'verified-head',
+  /** Terminal count of moving-base rebase/CAS retries a completion loop absorbed
+   * (ADR-0046, #368). Non-ending — a moving base is normal, never a disposition;
+   * it sinks below every ranked kind in `DISPOSITION_PRECEDENCE`. */
+  'moving-base',
 ] as const;
 export type RunFactType = (typeof RUN_FACT_TYPES)[number];
 
@@ -768,18 +769,18 @@ export const runFacts = sqliteTable('run_facts', {
 export type RunFactRow = typeof runFacts.$inferSelect;
 
 /**
- * The journaled non-interruptible landing log (issue #115, reliability-design
- * §0.3, Unit D). Landing is the set of irreversible side effects a Run's
+ * The journaled non-interruptible merge log (issue #115, reliability-design
+ * §0.3, Unit D). Merging is the set of irreversible side effects a Run's
  * completion triggers once accepted — merging a worktree branch, opening a
- * PR, closing a tracker ticket (`LandingEffect`, domain/landing.ts) — and
+ * PR, closing a tracker ticket (`MergeEffect`, domain/merge.ts) — and
  * this table is the append-only record of that process, mirroring
  * `run_facts`'s discipline exactly (same `(run_id, seq)` unique index, same
- * "only ever appended, never updated" rule) so a landing can be replayed and
+ * "only ever appended, never updated" rule) so a merge can be replayed and
  * reconciled from the log alone after a crash.
  *
- * Three row kinds (`kind`), written in this order per landing:
+ * Three row kinds (`kind`), written in this order per merge:
  *   - `ponc` — written once, before the first irreversible effect: freezes
- *     `run_facts`'s cutoff at the seq the land disposition fact just took
+ *     `run_facts`'s cutoff at the seq the merge disposition fact just took
  *     (`payload.cutoffSeq`), so `RunSettleCoordinator.settle` (run-settle.ts)
  *     can exclude any cancel/guardrail fact that races in after this point
  *     from ever winning. `effect`/`idempotency_key` are null for this kind —
@@ -790,7 +791,7 @@ export type RunFactRow = typeof runFacts.$inferSelect;
  *   - `result` — the outcome of that attempt, `payload.ok`
  *     (+ `payload.observed`/`payload.detail`). An effect counts as **applied**
  *     iff a `result` row with `ok:true` exists for its key
- *     (`foldJournal`/`reconcile`, domain/landing.ts).
+ *     (`foldJournal`/`reconcile`, domain/merge.ts).
  *
  * `idempotency_key` is what makes reconciliation crash-safe: a process that
  * dies between `intent` and `result` leaves the effect ambiguous, and
@@ -798,7 +799,7 @@ export type RunFactRow = typeof runFacts.$inferSelect;
  * key applied (`'adopt'`, no re-apply) rather than blindly retrying
  * (`'apply'`) and risking a duplicate merge/PR/ticket-close.
  */
-export const landingJournal = sqliteTable('landing_journal', {
+export const mergeJournal = sqliteTable('merge_journal', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   runId: integer('run_id')
     .notNull()
@@ -807,18 +808,18 @@ export const landingJournal = sqliteTable('landing_journal', {
   seq: integer('seq').notNull(),
   ts: integer('ts').notNull(),
   /** 'ponc' | 'intent' | 'result'. */
-  kind: text('kind').$type<LandingJournalKind>().notNull(),
+  kind: text('kind').$type<MergeJournalKind>().notNull(),
   /** 'target-ref' | 'open-pr' | 'ticket-close'; null for 'ponc'. */
-  effect: text('effect').$type<LandingEffect>(),
+  effect: text('effect').$type<MergeEffect>(),
   /** The effect's identity for idempotency/reconciliation; null for 'ponc'. */
   idempotencyKey: text('idempotency_key'),
   /** JSON payload — kind-specific detail (cutoffSeq / expected / ok+observed+detail). */
   payload: text('payload').notNull().default('{}'),
 }, (t) => [
-  uniqueIndex('landing_journal_run_seq_unique').on(t.runId, t.seq),
+  uniqueIndex('merge_journal_run_seq_unique').on(t.runId, t.seq),
 ]);
 
-export type LandingJournalRow = typeof landingJournal.$inferSelect;
+export type MergeJournalRow = typeof mergeJournal.$inferSelect;
 
 /**
  * The Session turn queue's persisted substrate (issue #116, reliability-design
@@ -909,7 +910,7 @@ export type VerificationMechanism = (typeof VERIFICATION_MECHANISMS)[number];
  * Written for real during a live Run: the command verifier (#135) and the
  * agent critic (#136, wired in #164) both append their per-attempt record here
  * from the `verifying` phase (`execution/runner.ts` `runVerification`), and
- * `combineVerdicts` folds the verdicts into the block/escalate/land decision.
+ * `combineVerdicts` folds the verdicts into the block/escalate/merge decision.
  * `domain/verification-attempts.ts`'s `VerificationAttemptStore` stays
  * append+list only — this is its durable audit log.
  */
@@ -1035,7 +1036,7 @@ export type GuardrailEventRow = typeof guardrailEvents.$inferSelect;
  * A Session's lifecycle status (reliability-design Unit C): `active → idle →
  * retiring → retired`. **Session retirement is the sole owner of builder-worktree
  * removal** (issue #148): a worktree Session's checkout is retained through the
- * human-rejection window (so a reject-and-continue lands in the same workspace)
+ * human-rejection window (so a reject-and-continue merges in the same workspace)
  * and its builder worktree is removed **only** at retirement, coordinated with
  * the Work Context lease. `active` — a live Run owns it; `idle`
  * — no live Run, retained under a `retireDeadline` (reject-continuation / warm
@@ -1046,11 +1047,11 @@ export const SESSION_STATUSES = ['active', 'idle', 'retiring', 'retired'] as con
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**
- * Why a Session retired (issue #148), for the operator-legible record: `landed`
- * (a successful land + terminal success), `operator-disposition` (cancel / Close),
+ * Why a Session retired (issue #148), for the operator-legible record: `merged`
+ * (a successful merge + terminal success), `operator-disposition` (cancel / Close),
  * `retention-ttl` (the backstop so no idle Session retains its worktree forever).
  */
-export const SESSION_RETIRE_REASONS = ['landed', 'operator-disposition', 'retention-ttl'] as const;
+export const SESSION_RETIRE_REASONS = ['merged', 'operator-disposition', 'retention-ttl'] as const;
 export type SessionRetireReason = (typeof SESSION_RETIRE_REASONS)[number];
 
 /**

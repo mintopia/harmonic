@@ -10,7 +10,7 @@ import type { VerificationAttemptInput } from '../domain/verification-attempts.j
 /**
  * The command verifier (issue #135, ADR-0021, reliability-design Unit B): the
  * first real verifier and the first end-to-end proof that broken work never
- * lands unattended. The operator-configured command (`VerificationCommand`,
+ * merges unattended. The operator-configured command (`VerificationCommand`,
  * #132) is spawned against the frozen candidate — an argv/args exec with an
  * explicit cwd/env, a hard timeout, an output cap, and cancellation — and its
  * exit code maps to a {@link Verdict} per the table in {@link exitCodeToVerdict}.
@@ -18,7 +18,7 @@ import type { VerificationAttemptInput } from '../domain/verification-attempts.j
  * Like the sibling critic (`verification/critic.ts`, #136) this is a
  * self-contained, fully-tested unit: everything the command sees is bracketed
  * by `withDetachedWorktree` (`execution/detached-worktree.ts`), so the command
- * runs against a stable, detached candidate checkout it can never land, and it
+ * runs against a stable, detached candidate checkout it can never merge, and it
  * never throws for a verdict — every plumbing failure (missing command, spawn
  * error, timeout, cancellation, a checkout that could not be created) folds
  * into `inconclusive`, which the combination function (#133) treats as

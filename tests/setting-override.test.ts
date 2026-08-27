@@ -101,7 +101,7 @@ describe('Setting Override resolution (ADR-0012, issue #59)', () => {
       expect(resolved.commands).toEqual([globalCommand]); // commands still inherit their own global
     });
 
-    it('resolves no auto-accept at all — a passing verification lands, there is no gate to skip (ADR-0041)', () => {
+    it('resolves no auto-accept at all — a passing verification merges, there is no gate to skip (ADR-0041)', () => {
       const config = { verify: { commands: [], review: { enabled: false } } };
       const resolved = resolveVerifiers({ verificationCommand: null, verificationCritic: null }, config as any);
       expect(resolved).not.toHaveProperty('autoAccept');

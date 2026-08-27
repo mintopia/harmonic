@@ -24,7 +24,7 @@ export type TurnPurpose = (typeof TURN_PURPOSES)[number];
 /**
  * Mutating corrective turns — `self-heal` and `re-merge` — are the two
  * purposes that touch the workspace out from under the live agent turn (a
- * self-heal replays a fixup, a re-merge re-lands a stale branch) and then
+ * self-heal replays a fixup, a re-merge re-merges a stale branch) and then
  * re-enter the pipeline at `validating`. They are the only purposes for which
  * `expectedWorkspaceOID` binding is meaningful in practice: a mutating turn
  * enqueued against one workspace state must never dispatch onto a workspace

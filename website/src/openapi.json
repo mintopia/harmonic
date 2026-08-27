@@ -1777,7 +1777,7 @@
                   "executing",
                   "validating",
                   "verifying",
-                  "landing",
+                  "merging",
                   "terminal"
                 ]
               },
@@ -1909,7 +1909,7 @@
                   "executing",
                   "validating",
                   "verifying",
-                  "landing",
+                  "merging",
                   "terminal"
                 ]
               },
@@ -2261,7 +2261,7 @@
           "escalated": {
             "type": "boolean"
           },
-          "landStatus": {
+          "mergeStatus": {
             "type": "string",
             "enum": [
               "completed",
@@ -2280,7 +2280,7 @@
           "taskId",
           "state",
           "escalated",
-          "landStatus",
+          "mergeStatus",
           "ready"
         ]
       },
@@ -2335,7 +2335,7 @@
           "status"
         ]
       },
-      "EpicLandStateInput": {
+      "EpicIntegrateStateInput": {
         "type": "object",
         "properties": {
           "inFlight": {
@@ -2398,8 +2398,8 @@
           "verification": {
             "$ref": "#/components/schemas/EpicVerificationInput"
           },
-          "land": {
-            "$ref": "#/components/schemas/EpicLandStateInput"
+          "integrate": {
+            "$ref": "#/components/schemas/EpicIntegrateStateInput"
           },
           "foldedCount": {
             "type": "integer",
@@ -2420,19 +2420,19 @@
           "ready",
           "integration",
           "verification",
-          "land",
+          "integrate",
           "foldedCount",
           "memberCount"
         ]
       },
-      "EpicLandOutcomeInput": {
+      "EpicIntegrateOutcomeInput": {
         "oneOf": [
           {
             "type": "object",
             "properties": {
               "status": {
                 "type": "string",
-                "const": "landed"
+                "const": "integrated"
               },
               "oid": {
                 "type": "string",
@@ -2470,7 +2470,7 @@
               },
               "reason": {
                 "type": "string",
-                "example": "default branch is detached; deferring the land"
+                "example": "default branch is detached; deferring the integrate"
               }
             },
             "required": [
@@ -3448,7 +3448,7 @@
           },
           "agentReview": {
             "example": false,
-            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.",
+            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still applies non-exposing behaviour.",
             "type": "boolean"
           },
           "verification": {
@@ -5532,7 +5532,7 @@
                   "executing",
                   "validating",
                   "verifying",
-                  "landing",
+                  "merging",
                   "terminal"
                 ]
               },
@@ -5665,7 +5665,7 @@
                   "executing",
                   "validating",
                   "verifying",
-                  "landing",
+                  "merging",
                   "terminal"
                 ]
               },
@@ -6021,7 +6021,7 @@
           "escalated": {
             "type": "boolean"
           },
-          "landStatus": {
+          "mergeStatus": {
             "type": "string",
             "enum": [
               "completed",
@@ -6040,7 +6040,7 @@
           "taskId",
           "state",
           "escalated",
-          "landStatus",
+          "mergeStatus",
           "ready"
         ],
         "additionalProperties": false
@@ -6098,7 +6098,7 @@
         ],
         "additionalProperties": false
       },
-      "EpicLandState": {
+      "EpicIntegrateState": {
         "type": "object",
         "properties": {
           "inFlight": {
@@ -6162,8 +6162,8 @@
           "verification": {
             "$ref": "#/components/schemas/EpicVerification"
           },
-          "land": {
-            "$ref": "#/components/schemas/EpicLandState"
+          "integrate": {
+            "$ref": "#/components/schemas/EpicIntegrateState"
           },
           "foldedCount": {
             "type": "integer",
@@ -6184,20 +6184,20 @@
           "ready",
           "integration",
           "verification",
-          "land",
+          "integrate",
           "foldedCount",
           "memberCount"
         ],
         "additionalProperties": false
       },
-      "EpicLandOutcome": {
+      "EpicIntegrateOutcome": {
         "oneOf": [
           {
             "type": "object",
             "properties": {
               "status": {
                 "type": "string",
-                "const": "landed"
+                "const": "integrated"
               },
               "oid": {
                 "type": "string",
@@ -6237,7 +6237,7 @@
               },
               "reason": {
                 "type": "string",
-                "example": "default branch is detached; deferring the land"
+                "example": "default branch is detached; deferring the integrate"
               }
             },
             "required": [
@@ -7250,7 +7250,7 @@
           },
           "agentReview": {
             "example": false,
-            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still lands non-exposing behaviour.",
+            "description": "Deprecated (#140): folded into verification.autoAccept; retained so a pre-upgrade client PATCHing it still applies non-exposing behaviour.",
             "type": "boolean"
           },
           "verification": {
@@ -7932,7 +7932,7 @@
                   "executing",
                   "validating",
                   "verifying",
-                  "landing",
+                  "merging",
                   "terminal"
                 ]
               },
@@ -8388,7 +8388,7 @@
                   "executing",
                   "validating",
                   "verifying",
-                  "landing",
+                  "merging",
                   "terminal"
                 ]
               },
@@ -9136,7 +9136,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Force a working task to done (operator override): stop the agent and settle it done, skipping verification and landing. Operator only.",
+        "description": "Force a working task to done (operator override): stop the agent and settle it done, skipping verification and merging. Operator only.",
         "parameters": [
           {
             "schema": {
@@ -9393,7 +9393,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Accept an escalated ticket (ADR-0041): land its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
+        "description": "Accept an escalated ticket (ADR-0041): merge its verified branch head as-is and continue the success path — merge (worktree mode), close the tracker issue, clean up — moving it to done. Human-only.",
         "parameters": [
           {
             "schema": {
@@ -9419,7 +9419,7 @@
             }
           },
           "409": {
-            "description": "The task is not escalated, has no verified branch head to land, or the landing failed (the detail says why); it stays escalated.",
+            "description": "The task is not escalated, has no verified branch head to merge, or the merge failed (the detail says why); it stays escalated.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9839,7 +9839,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and landing event logs.",
+        "description": "A chronological projection of the ticket lifecycle, verification, guardrail, operator, and merge event logs.",
         "parameters": [
           {
             "schema": {
@@ -9914,7 +9914,7 @@
                               "escalation",
                               "operator-accept",
                               "operator-reject",
-                              "landing",
+                              "merge",
                               "fact"
                             ]
                           },
@@ -10397,7 +10397,7 @@
                               "executing",
                               "validating",
                               "verifying",
-                              "landing",
+                              "merging",
                               "terminal"
                             ],
                             "example": "executing"
@@ -10572,7 +10572,7 @@
                               "executing",
                               "validating",
                               "verifying",
-                              "landing",
+                              "merging",
                               "terminal"
                             ],
                             "example": "verifying"
@@ -17166,7 +17166,7 @@
         "tags": [
           "Epics"
         ],
-        "description": "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its member land state, integration-branch tip, and whole-Epic land/verification state. Operator only.",
+        "description": "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its member merge state, integration-branch tip, and whole-Epic integrate/verification state. Operator only.",
         "parameters": [
           {
             "schema": {
@@ -17316,12 +17316,12 @@
         }
       }
     },
-    "/api/workspaces/{workspaceId}/epics/{epicRef}/force-land": {
+    "/api/workspaces/{workspaceId}/epics/{epicRef}/force-integrate": {
       "post": {
         "tags": [
           "Epics"
         ],
-        "description": "Force-land an Epic's ready subset: merge whatever is folded into its integration branch into the default branch now, bypassing the all-members-completed gate — but not Verification, which still gates the merge. Operator only.",
+        "description": "Force-integrate an Epic's ready subset: merge whatever is folded into its integration branch into the default branch now, bypassing the all-members-completed gate — but not Verification, which still gates the merge. Operator only.",
         "parameters": [
           {
             "schema": {
@@ -17356,11 +17356,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The force-land attempt's outcome.",
+            "description": "The force-integrate attempt's outcome.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EpicLandOutcome"
+                  "$ref": "#/components/schemas/EpicIntegrateOutcome"
                 }
               }
             }
@@ -17376,7 +17376,7 @@
             }
           },
           "409": {
-            "description": "No active whole-Epic land coordinator for this Workspace (tracking is off or the loop has not started).",
+            "description": "No active whole-Epic integrate coordinator for this Workspace (tracking is off or the loop has not started).",
             "content": {
               "application/json": {
                 "schema": {
