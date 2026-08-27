@@ -43,7 +43,7 @@ import type { SessionRetirementHook } from '../domain/session-retirement-coordin
 import type { RunPhase } from '../domain/run-phases.js';
 import type { RunFactType } from '../db/schema.js';
 import type { TaskService } from '../domain/tasks.js';
-import { resolveGuardrails, resolveVerifiers, type ResolvedGuardrails } from '../domain/setting-override.js';
+import { resolveGuardrails, resolveVerifiers, resolveScoped, type ResolvedGuardrails } from '../domain/setting-override.js';
 import { VerificationAttemptStore } from '../domain/verification-attempts.js';
 import { GuardrailEventStore } from '../domain/guardrail-events.js';
 import {
@@ -2236,7 +2236,7 @@ export class Runner {
    */
   private async drive(task: TaskRow, run: RunRow, harness: HarnessConfig, parent: SpanContext): Promise<void> {
     const workspace = await this.getWorkspace?.(task.workspaceId);
-    const maxAttempts = workspace?.maxAttempts ?? this.getConfig().maxAttempts;
+    const maxAttempts = resolveScoped('maxAttempts', workspace?.maxAttempts, this.getConfig().maxAttempts);
     // The Session key for this Run's turn queue. There is no first-class Session
     // entity yet (reliability-design §0), so the globally-unique Run id anchors
     // it — stable across heal turns even as each turn's ACP session id changes.
@@ -2384,7 +2384,7 @@ export class Runner {
       harness: task.harness,
       contextTokens,
       lastActiveAt: session?.lastActiveAt ?? now,
-      contextReuseTokenLimit: workspace?.contextReuseTokenLimit ?? this.getConfig().contextReuseTokenLimit,
+      contextReuseTokenLimit: resolveScoped('contextReuseTokenLimit', workspace?.contextReuseTokenLimit, this.getConfig().contextReuseTokenLimit),
       now,
     });
   }

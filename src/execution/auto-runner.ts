@@ -3,7 +3,7 @@ import type { AppConfig } from '../config.js';
 import type { OrderedEligibleTask, TaskService } from '../domain/tasks.js';
 import type { RunStore } from '../domain/runs.js';
 import type { TaskRow, WorkspaceRow } from '../db/schema.js';
-import { resolve, resolveCap } from '../domain/setting-override.js';
+import { resolveScoped, resolveCap } from '../domain/setting-override.js';
 import { workContextKey } from '../domain/work-context-key.js';
 import { repoKey } from './repo-lock.js';
 import type { GitCircuitBreaker } from './git-failure.js';
@@ -355,7 +355,7 @@ export class AutoRunner {
         return;
       }
       const workspace = task.workspaceId == null ? undefined : workspacesById.get(task.workspaceId);
-      if (!resolve(workspace?.autoRunnerEnabled, true)) {
+      if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) {
         record(task.id, 'workspace disabled');
         return;
       }
@@ -523,7 +523,7 @@ export class AutoRunner {
     const workspace = t.workspaceId != null ? workspacesById.get(t.workspaceId) : undefined;
     // Master is on (fill returned early otherwise), so an inheriting
     // Workspace (null) is enabled; only an explicit `false` opts out.
-    if (!resolve(workspace?.autoRunnerEnabled, true)) return false;
+    if (!resolveScoped('autoRunnerEnabled', workspace?.autoRunnerEnabled, true)) return false;
     const cap = resolveCap(workspace?.maxConcurrentRuns, ceiling);
     const wsRunning = t.workspaceId != null ? (runningByWorkspace.get(t.workspaceId) ?? 0) : 0;
     if (wsRunning >= cap) return false;

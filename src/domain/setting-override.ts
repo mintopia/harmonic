@@ -8,6 +8,7 @@ import {
   type VerificationReview,
   type BudgetGuardrail,
 } from '../config.js';
+import { isOverridable, type SettingKey } from './settings-registry.js';
 
 /**
  * Setting Overrides (ADR-0012, issue #59). An overridable setting resolves as
@@ -28,13 +29,28 @@ export function resolve<T>(workspaceVal: T | null | undefined, globalDefault: T)
 }
 
 /**
+ * Resolve an overridable setting by its registry key: the scoped resolver. The
+ * settings registry (issue #336) is the single authority for scope, so a
+ * `global-only` setting ignores any per-Workspace value and always resolves to
+ * the global default — a Workspace can never override it. An `overridable`
+ * setting resolves exactly like {@link resolve} (`workspace ?? global`).
+ *
+ * Every per-Workspace override path routes through here (or a specialised
+ * resolver below that itself consults the registry) so overridability lives in
+ * one place, not at each call site.
+ */
+export function resolveScoped<T>(key: SettingKey, workspaceVal: T | null | undefined, globalDefault: T): T {
+  return isOverridable(key) ? resolve(workspaceVal, globalDefault) : globalDefault;
+}
+
+/**
  * A Workspace's concurrency cap resolves like any override, then is clamped to
  * the Machine Ceiling: a per-Workspace override can never breach the machine's
  * safety limit, so total concurrency across all Workspaces still cannot exceed
  * the ceiling (ADR-0012). Inherit (`null`) resolves straight to the ceiling.
  */
 export function resolveCap(workspaceCap: number | null | undefined, machineCeiling: number): number {
-  return Math.min(resolve(workspaceCap, machineCeiling), machineCeiling);
+  return Math.min(resolveScoped('maxConcurrentRuns', workspaceCap, machineCeiling), machineCeiling);
 }
 
 /** A Workspace's effective Verification verifiers, each null when unconfigured. */
@@ -60,8 +76,12 @@ export function resolveVerifiers(
   ws: Pick<WorkspaceRow, 'verificationCommand' | 'verificationCritic'>,
   config: Pick<AppConfig, 'verify'>,
 ): ResolvedVerifiers {
-  const commands = resolveCommands(ws.verificationCommand, config.verify.commands);
-  const review = resolveReview(ws.verificationCritic, config.verify.review);
+  // Route each verifier column through the registry: a column only overrides the
+  // global default when the registry declares its setting overridable.
+  const commandStored = isOverridable('verificationCommand') ? ws.verificationCommand : null;
+  const criticStored = isOverridable('verificationCritic') ? ws.verificationCritic : null;
+  const commands = resolveCommands(commandStored, config.verify.commands);
+  const review = resolveReview(criticStored, config.verify.review);
   return {
     commands,
     review,
@@ -119,8 +139,10 @@ export function resolveGuardrails(
   config: Pick<AppConfig, 'guardrails'>,
 ): ResolvedGuardrails {
   return {
-    budget: resolve(parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
-    progress: resolve(ws.guardrailProgress, config.guardrails.progress),
+    budget: resolveScoped('guardrailBudget', parseGuardrailBudget(ws.guardrailBudget), config.guardrails.budget),
+    progress: resolveScoped('guardrailProgress', ws.guardrailProgress, config.guardrails.progress),
+    // `toolTimeoutMinutes` is `global-only` in the registry: instance-wide, never
+    // resolved from a per-Workspace value.
     toolTimeoutMinutes: config.guardrails.toolTimeoutMinutes,
   };
 }

@@ -21,7 +21,7 @@ import {
   type TrackerContainerRow,
 } from '../db/schema.js';
 import { resolveWorkspace } from './workspaces.js';
-import { resolve as resolveOverride } from './setting-override.js';
+import { resolveScoped } from './setting-override.js';
 import { HARNESS_IDS, ISOLATION_MODES, PRIORITIES, type AppConfig } from '../config.js';
 import { DomainError } from './errors.js';
 import { decideTaskDeletion } from './task-deletion.js';
@@ -206,15 +206,15 @@ export class TaskService {
    */
   private resolveDefaults(over: Partial<TaskOverrides>, workspace: WorkspaceRow) {
     const config = this.getConfig();
-    const harness = over.harness ?? resolveOverride(workspace.harness, config.defaults.harness);
+    const harness = over.harness ?? resolveScoped('harness', workspace.harness, config.defaults.harness);
     // `harness` is plain text (a stored override or Workspace value), so it may
     // name a harness this instance doesn't configure — `?.` handles that.
     const harnessConfig = config.harnesses[harness as keyof typeof config.harnesses];
     return {
       harness,
-      model: over.model ?? resolveOverride(workspace.model, harnessConfig?.defaultModel ?? ''),
-      isolationMode: over.isolationMode ?? resolveOverride(workspace.isolationMode, config.defaults.isolationMode),
-      priority: over.priority ?? resolveOverride(workspace.priority, config.defaults.priority),
+      model: over.model ?? resolveScoped('model', workspace.model, harnessConfig?.defaultModel ?? ''),
+      isolationMode: over.isolationMode ?? resolveScoped('isolationMode', workspace.isolationMode, config.defaults.isolationMode),
+      priority: over.priority ?? resolveScoped('priority', workspace.priority, config.defaults.priority),
     };
   }
 
