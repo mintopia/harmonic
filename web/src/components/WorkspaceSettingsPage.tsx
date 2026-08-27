@@ -82,6 +82,7 @@ export function WorkspaceSettingsPage({
         priority: local.priority,
         maxConcurrentRuns: local.maxConcurrentRuns,
         autoRunnerEnabled: local.autoRunnerEnabled,
+        contextReuseTokenLimit: local.contextReuseTokenLimit,
         verificationCommand: local.verificationCommand,
         verificationCritic: local.verificationCritic,
         guardrailBudget: local.guardrailBudget,
@@ -229,6 +230,34 @@ export function WorkspaceSettingsPage({
               </InheritField>
               <FieldError message={fieldErrors['maxConcurrentRuns']} />
             </div>
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          title="Session reuse"
+          description="Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Inherits the global default until overridden."
+        >
+          <div>
+            <InheritField
+              label="Context reuse token limit"
+              htmlFor="workspace-context-reuse-token-limit"
+              value={local.contextReuseTokenLimit}
+              inherited={config.contextReuseTokenLimit}
+              onChange={(contextReuseTokenLimit) => set('contextReuseTokenLimit', contextReuseTokenLimit)}
+            >
+              {({ id, value, onChange }) => (
+                <input
+                  id={id}
+                  type="number"
+                  min={0}
+                  step={10_000}
+                  className={`${field} w-36 tabular-nums`}
+                  value={value}
+                  onChange={(e) => onChange(Number(e.target.value))}
+                />
+              )}
+            </InheritField>
+            <FieldError message={fieldErrors['contextReuseTokenLimit']} />
           </div>
         </SettingsSection>
 

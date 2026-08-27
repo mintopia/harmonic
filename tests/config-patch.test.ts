@@ -91,9 +91,9 @@ describe('PATCH /api/config verification', () => {
     expect(patched.body.verify).toEqual(current.verify);
   });
 
-  it('round-trips the global context reuse threshold', async () => {
-    const patched = await server.api('PATCH', '/api/config', { contextReuseThreshold: 0.35 });
+  it('round-trips the global context reuse token limit', async () => {
+    const patched = await server.api('PATCH', '/api/config', { contextReuseTokenLimit: 150_000 });
     expect(patched.status).toBe(200);
-    expect(patched.body.contextReuseThreshold).toBe(0.35);
+    expect(patched.body.contextReuseTokenLimit).toBe(150_000);
   });
 });

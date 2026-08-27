@@ -81,21 +81,30 @@ export function resolvePrices(overrides: PriceTable): PriceTable {
  * overrides these; a model with neither shows raw tokens, never a fabricated %.
  */
 export const DEFAULT_CONTEXT_WINDOWS: Record<string, number> = {
-  // Anthropic Claude — 200k standard context.
-  'claude-fable-5': 200_000, 'claude-mythos-5': 200_000, 'claude-opus-5': 200_000,
-  'claude-sonnet-5': 200_000, 'claude-opus-4-8': 200_000, 'claude-opus-4-7': 200_000,
-  'claude-opus-4-6': 200_000, 'claude-sonnet-4-6': 200_000, 'claude-haiku-4-5': 200_000,
-  'claude-sonnet-4.6': 200_000, 'claude-sonnet-4.5': 200_000, 'claude-haiku-4.5': 200_000,
-  'claude-opus-4.8': 200_000, 'claude-opus-4.7': 200_000, 'claude-opus-4.6': 200_000, 'claude-opus-4.5': 200_000,
-  // OpenAI GPT-5 family — 400k context.
+  // Anthropic Claude — current-generation (Opus 4.6+, Sonnet 4.6, the 5 family)
+  // ships 1M context under standard pricing, no beta header.
+  'claude-fable-5': 1_000_000, 'claude-mythos-5': 1_000_000, 'claude-opus-5': 1_000_000,
+  'claude-sonnet-5': 1_000_000, 'claude-opus-4-8': 1_000_000, 'claude-opus-4-7': 1_000_000,
+  'claude-opus-4-6': 1_000_000, 'claude-sonnet-4-6': 1_000_000,
+  'claude-sonnet-4.6': 1_000_000, 'claude-opus-4.8': 1_000_000, 'claude-opus-4.7': 1_000_000, 'claude-opus-4.6': 1_000_000,
+  // Older Claude capped at 200k: Haiku 4.5 has no 1M tier; Sonnet 4.5's 1M is a
+  // beta (context-1m-2025-08-07) retiring 2026-04-30; Opus 4.5 has no 1M option.
+  'claude-haiku-4-5': 200_000, 'claude-haiku-4.5': 200_000,
+  'claude-sonnet-4-5': 200_000, 'claude-sonnet-4.5': 200_000,
+  'claude-opus-4-5': 200_000, 'claude-opus-4.5': 200_000,
+  // OpenAI GPT-5 family — 400k, except 5.4/5.5 which lift to ~1.05M.
   'gpt-5.6-sol': 400_000, 'gpt-5.6-terra': 400_000, 'gpt-5.6-luna': 400_000,
-  'gpt-5.5': 400_000, 'gpt-5.4': 400_000, 'gpt-5.4-mini': 400_000, 'gpt-5.2': 400_000,
+  'gpt-5.5': 1_050_000, 'gpt-5.4': 1_050_000, 'gpt-5.4-mini': 400_000, 'gpt-5.2': 400_000,
   'gpt-5.2-codex': 400_000, 'gpt-5.2-codex-mini': 400_000, 'gpt-5.3-codex': 400_000,
   'gpt-5-mini': 400_000, 'gpt-5-codex': 400_000,
   // OpenAI GPT-4.1 — 1M context.
   'gpt-4.1': 1_047_576,
-  // Bare family aliases some Harnesses report.
-  opus: 200_000, sonnet: 200_000, haiku: 200_000,
+  // Google Gemini — 1M across the 2.5 and 3.x Pro/Flash lines.
+  'gemini-3-pro': 1_000_000, 'gemini-3-flash': 1_000_000,
+  'gemini-2.5-pro': 1_048_576, 'gemini-2.5-flash': 1_048_576,
+  // Bare family aliases some Harnesses report. Current-gen opus/sonnet are 1M;
+  // haiku stays 200k.
+  opus: 1_000_000, sonnet: 1_000_000, haiku: 200_000,
 };
 
 /** Effective context window (tokens): config override, then shipped default,

@@ -44,9 +44,13 @@ export const HARNESS_SESSION_WARM_WINDOWS_MS: Readonly<Record<string, number>> =
 
 export type DeterministicContinuation = {
   path: 'continued-session' | 'new-session-condensed';
-  reason: 'continued-within-limits' | 'context-usage' | 'session-cold' | 'missing-context-usage' | 'missing-warm-window';
-  contextUsage: number | null;
-  contextReuseThreshold: number;
+  reason: 'continued-within-limits' | 'context-tokens' | 'session-cold' | 'missing-context-tokens' | 'missing-warm-window';
+  /** The session's context-window occupancy in raw tokens (the last turn's
+   * input-side footprint), or null when it can't be known. */
+  contextTokens: number | null;
+  /** Reuse the warm Session while occupancy stays below this many tokens; at or
+   * above it, start a condensed new Session. A raw token count, not a fraction. */
+  contextReuseTokenLimit: number;
   lastActiveAt: number;
   lastActiveAgeMs: number;
   warmWindowMs: number | null;
@@ -55,17 +59,17 @@ export type DeterministicContinuation = {
 /** Deterministically choose Attempt N+1's Session. Boundary values start fresh. */
 export function decideAttemptContinuation(input: {
   harness: string;
-  contextUsage: number | null;
+  contextTokens: number | null;
   lastActiveAt: number;
-  contextReuseThreshold: number;
+  contextReuseTokenLimit: number;
   now: number;
 }): DeterministicContinuation {
   const warmWindowMs = HARNESS_SESSION_WARM_WINDOWS_MS[input.harness] ?? null;
   const lastActiveAgeMs = input.now - input.lastActiveAt;
-  const facts = { contextUsage: input.contextUsage, contextReuseThreshold: input.contextReuseThreshold, lastActiveAt: input.lastActiveAt, lastActiveAgeMs, warmWindowMs };
-  if (input.contextUsage === null) return { path: 'new-session-condensed', reason: 'missing-context-usage', ...facts };
-  if (warmWindowMs ===null) return { path: 'new-session-condensed', reason: 'missing-warm-window', ...facts };
-  if (input.contextUsage >= input.contextReuseThreshold) return { path: 'new-session-condensed', reason: 'context-usage', ...facts };
+  const facts = { contextTokens: input.contextTokens, contextReuseTokenLimit: input.contextReuseTokenLimit, lastActiveAt: input.lastActiveAt, lastActiveAgeMs, warmWindowMs };
+  if (input.contextTokens === null) return { path: 'new-session-condensed', reason: 'missing-context-tokens', ...facts };
+  if (warmWindowMs === null) return { path: 'new-session-condensed', reason: 'missing-warm-window', ...facts };
+  if (input.contextTokens >= input.contextReuseTokenLimit) return { path: 'new-session-condensed', reason: 'context-tokens', ...facts };
   if (lastActiveAgeMs >= warmWindowMs) return { path: 'new-session-condensed', reason: 'session-cold', ...facts };
   return { path: 'continued-session', reason: 'continued-within-limits', ...facts };
 }

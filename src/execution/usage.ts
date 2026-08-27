@@ -213,12 +213,20 @@ export function collectUsage(input: CollectUsageInput): RunUsage | null {
   const toolCalls = tallyToolCalls(input.events ?? [], (payload) => collector?.toolName(payload) ?? null);
 
   if (!acpTotals && Object.keys(models).length === 0) return null;
+  // Context-window occupancy is the LAST turn's input-side footprint (the parsed
+  // tree's root, the same figure the live tailer shows), NOT the ACP prompt-result
+  // aggregate — that sums input+cache across every internal round-trip of an
+  // agentic turn, so a multi-tool Run over-counts into the millions and reads far
+  // past its window. Fall back to the ACP figure only when no tree was parsed
+  // (a stub/aggregate-only harness), where a single round-trip makes them equal.
+  const contextTokens = parsed?.tree.contextTokens ?? contextInputTokens(input.promptResult?.usage);
   return {
     models,
     ...(agents && Object.keys(agents).length > 0 ? { agents } : {}),
     ...(attribution ?? {}),
     totals: hasSubagents ? sumModels(models) : acpTotals ?? sumModels(models),
     toolCalls,
+    ...(contextTokens !== null ? { contextTokens } : {}),
     source: acpTotals && Object.keys(models).length > 0 ? 'combined' : acpTotals ? 'acp' : 'session-log',
   };
 }

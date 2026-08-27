@@ -51,7 +51,7 @@ export const workspaceOverridesSchema = z.object({
   maxConcurrentRuns: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
   autoRunnerEnabled: z.boolean().nullable().optional().meta({ example: true }),
   maxAttempts: z.number().int().min(1).nullable().optional().meta({ example: 2 }),
-  contextReuseThreshold: z.number().min(0).max(1).nullable().optional().meta({ example: 0.2 }),
+  contextReuseTokenLimit: z.number().int().min(0).nullable().optional().meta({ example: 200_000 }),
   /**
    * Command-verifier override (issue #132), tri-state (issue #174): null/absent
    * inherits `config.verification.command`, a verifier object overrides it, and
@@ -171,7 +171,7 @@ export class WorkspaceService {
           maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
           autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
           maxAttempts: patch(input.maxAttempts, current.maxAttempts),
-          contextReuseThreshold: patch(input.contextReuseThreshold, current.contextReuseThreshold),
+          contextReuseTokenLimit: patch(input.contextReuseTokenLimit, current.contextReuseTokenLimit),
           verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
           verificationCritic: patchJson(input.verificationCritic, current.verificationCritic),
           guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),

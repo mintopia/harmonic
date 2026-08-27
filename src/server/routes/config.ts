@@ -90,7 +90,7 @@ const configPatchBodySchema = z
       .optional(),
     /** Maximum implementation attempts before a ticket is escalated. */
     maxAttempts: z.number().int().min(1).meta({ example: 2 }),
-    contextReuseThreshold: z.number().min(0).max(1).meta({ example: 0.2 }),
+    contextReuseTokenLimit: z.number().int().min(0).meta({ example: 200_000 }),
     drive: z
       .object({
         prompt: z.string().meta({ example: '{skill}\n\nResolve #{ref} ({url}) end to end — read the issue yourself.' }),

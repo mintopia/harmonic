@@ -579,6 +579,25 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
         </SettingsSection>
 
         <SettingsSection
+          title="Session reuse"
+          description="Reuse a warm session into the next attempt while its context is below this many tokens; at or above it, a condensed new session starts. Workspaces can override this."
+        >
+          <div>
+            <label className={fieldLabel} htmlFor="settings-context-reuse-token-limit">Context reuse token limit</label>
+            <input
+              id="settings-context-reuse-token-limit"
+              type="number"
+              min={0}
+              step={10_000}
+              className={`${field} w-36 tabular-nums`}
+              value={local.contextReuseTokenLimit}
+              onChange={(e) => setLocal({ ...local, contextReuseTokenLimit: Number(e.target.value) })}
+            />
+            <FieldError message={fieldErrors.contextReuseTokenLimit} />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
           title="Verification"
           description="Commands run in order and stop at the first failure. An optional review runs after every command passes. Each Workspace can override these defaults."
         >

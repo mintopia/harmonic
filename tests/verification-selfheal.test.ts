@@ -160,13 +160,12 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
     return server.app.ctx.sessions.get(Number(match![1]));
   }
 
-  /** Attempt 1 reports `inputTokens` of a 100-token window; the rule (threshold 0.2)
-   * decides Attempt 2's Session from that. */
+  /** Attempt 1 reports `inputTokens` as its context footprint; the rule (a raw
+   * 20-token reuse limit) decides Attempt 2's Session from that. */
   async function runContinuationScenario(inputTokens: number) {
-    await server.app.ctx.configStore.update({ modelInfo: { 'stub-model': { contextWindow: 100 } } });
     await server.app.ctx.workspaces.update(workspaceId, {
       verificationCommand: markerCommand('ok'),
-      contextReuseThreshold: 0.2,
+      contextReuseTokenLimit: 20,
     });
     const { taskId, runId } = await runWorktreeTask({
       turns: [
@@ -187,7 +186,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
   it('continues the prior Session below the threshold: attempt 2 reloads the same session id', async () => {
     const { continuation, first, second, run, reloaded } = await runContinuationScenario(10);
-    expect(continuation).toMatchObject({ path: 'continued-session', reason: 'continued-within-limits', contextUsage: 0.1, contextReuseThreshold: 0.2 });
+    expect(continuation).toMatchObject({ path: 'continued-session', reason: 'continued-within-limits', contextTokens: 10, contextReuseTokenLimit: 20 });
     expect(second.id).toBe(first.id);
     expect(reloaded).toEqual([first.harnessSessionId]);
     expect(run.sessionId).toBe(first.harnessSessionId);
@@ -197,7 +196,7 @@ describe('verification Attempt loop end-to-end (issue #310)', () => {
 
   it('starts a condensed Session at/above the threshold: fresh session id, condensed section after the corrective feedback', async () => {
     const { continuation, first, second, run, reloaded } = await runContinuationScenario(90);
-    expect(continuation).toMatchObject({ path: 'new-session-condensed', reason: 'context-usage', contextUsage: 0.9, contextReuseThreshold: 0.2 });
+    expect(continuation).toMatchObject({ path: 'new-session-condensed', reason: 'context-tokens', contextTokens: 90, contextReuseTokenLimit: 20 });
     expect(second.id).not.toBe(first.id);
     expect(second.harnessSessionId).not.toBe(first.harnessSessionId);
     expect(reloaded).toEqual([]);
