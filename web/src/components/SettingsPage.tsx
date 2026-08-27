@@ -3,7 +3,8 @@ import { api } from '../api';
 import { SecuritySection } from './SecuritySection';
 import { ChannelsSection } from './Channels';
 import { PermissionRules } from './PermissionRules';
-import type { AppConfig, VerificationCommand, VerificationCritic, VerificationReview } from '../types';
+import type { AppConfig, Channel, VerificationCommand, VerificationCritic, VerificationReview } from '../types';
+import { changedChannelEvents, channelsDirty, toggleChannelEvent } from '../channels-save-model';
 import { displayTitle, field, selectField } from '../ui';
 import { HarnessesSection, PriceOverridesSection } from './HarnessSettings';
 import { FieldError, PlaceholderList, PromptPreview, SettingsSection, fieldLabel, parseFieldErrors } from './SettingsSection';
@@ -389,6 +390,8 @@ function DriveFields({
 export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void }) {
   const [pristine, setPristine] = useState<AppConfig | null>(null);
   const [local, setLocal] = useState<AppConfig | null>(null);
+  const [pristineChannels, setPristineChannels] = useState<Channel[]>([]);
+  const [localChannels, setLocalChannels] = useState<Channel[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -399,14 +402,23 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       setPristine(c);
       setLocal(c);
     });
+    api
+      .channels()
+      .then(({ channels }) => {
+        setPristineChannels(channels);
+        setLocalChannels(channels);
+      })
+      .catch(() => {});
   }, []);
 
   if (!local || !pristine) return null;
 
-  const dirty = JSON.stringify(local) !== JSON.stringify(pristine);
+  const dirty =
+    JSON.stringify(local) !== JSON.stringify(pristine) || channelsDirty(localChannels, pristineChannels);
 
   const discard = () => {
     setLocal(pristine);
+    setLocalChannels(pristineChannels);
     setError(null);
     setFieldErrors({});
   };
@@ -419,6 +431,14 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       const updated = await api.replaceConfig(local);
       setPristine(updated);
       setLocal(updated);
+      // Advance the saved baseline per successful PATCH so a mid-loop failure
+      // leaves only the still-unsaved channels marked dirty, not the persisted ones.
+      let savedChannels = pristineChannels;
+      for (const { id, events } of changedChannelEvents(localChannels, pristineChannels)) {
+        await api.updateChannel(id, { events });
+        savedChannels = savedChannels.map((c) => (c.id === id ? { ...c, events } : c));
+        setPristineChannels(savedChannels);
+      }
       onSaved(updated);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -442,8 +462,8 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
       <div className="max-w-3xl">
         <h1 className={displayTitle}>Settings</h1>
         <p className="mt-1 text-muted">
-          Defaults, harnesses, and how the runner behaves. Config sections save together; notifications and
-          security apply immediately.
+          Defaults, harnesses, and how the runner behaves. Changes stage until you save; only side-effect
+          actions — password changes, adding or removing a channel — apply immediately.
         </p>
       </div>
 
@@ -510,8 +530,19 @@ export function SettingsPage({ onSaved }: { onSaved: (config: AppConfig) => void
             <SettingsSection title="Price overrides" description="$ per Mtok. Overrides or extends the shipped price table used for cost.">
               <PriceOverridesSection config={local} fieldErrors={fieldErrors} onChange={(prices) => setLocal({ ...local, prices })} />
             </SettingsSection>
-            <SettingsSection title="Notifications" description="Channels that receive task and queue events. Changes apply immediately.">
-              <ChannelsSection />
+            <SettingsSection title="Notifications" description="Channels that receive task and queue events. Event subscriptions save with the bar; adding or removing a channel applies immediately.">
+              <ChannelsSection
+                channels={localChannels}
+                onToggleEvent={(id, event) => setLocalChannels((cs) => toggleChannelEvent(cs, id, event))}
+                onCreated={(created) => {
+                  setPristineChannels((cs) => [...cs, created]);
+                  setLocalChannels((cs) => [...cs, created]);
+                }}
+                onDeleted={(id) => {
+                  setPristineChannels((cs) => cs.filter((c) => c.id !== id));
+                  setLocalChannels((cs) => cs.filter((c) => c.id !== id));
+                }}
+              />
             </SettingsSection>
           </>
         )}

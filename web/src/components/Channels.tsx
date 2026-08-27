@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import type { Channel } from '../types';
 import { btnGhost, btnQuiet, btnQuietDestructive, chip, field, selectField } from '../ui';
@@ -7,11 +7,22 @@ import { EmptyState } from './EmptyState';
 const EVENTS = ['task.created', 'run.started', 'task.escalated', 'task.done', 'queue.idle'] as const;
 
 /**
- * Channels are their own REST resources saved immediately — they never touch
- * the config dirty-state/save-bar machinery.
+ * Event subscriptions buffer through the settings save bar (ADR-0044 G): a
+ * checkbox edits the parent's staged channel list and persists on Save.
+ * Provisioning or removing a channel is an immediate side-effect action, so
+ * create/delete still hit the REST resource directly and sync the parent lists.
  */
-export function ChannelsSection() {
-  const [channelList, setChannelList] = useState<Channel[]>([]);
+export function ChannelsSection({
+  channels,
+  onToggleEvent,
+  onCreated,
+  onDeleted,
+}: {
+  channels: Channel[];
+  onToggleEvent: (id: number, event: string) => void;
+  onCreated: (channel: Channel) => void;
+  onDeleted: (id: number) => void;
+}) {
   const [adding, setAdding] = useState(false);
   const [type, setType] = useState<Channel['type']>('discord');
   const [name, setName] = useState('');
@@ -19,11 +30,6 @@ export function ChannelsSection() {
   const [secret, setSecret] = useState('');
   const [smtp, setSmtp] = useState({ host: '', port: '587', from: '', to: '' });
   const [error, setError] = useState<string | null>(null);
-
-  const load = () => api.channels().then(({ channels }) => setChannelList(channels));
-  useEffect(() => {
-    load().catch(() => {});
-  }, []);
 
   const create = async () => {
     setError(null);
@@ -34,30 +40,22 @@ export function ChannelsSection() {
           ? { url, secret }
           : { url };
     try {
-      await api.createChannel({ name, type, config });
+      const created = await api.createChannel({ name, type, config });
       setName('');
       setUrl('');
       setSecret('');
       setAdding(false);
-      load();
+      onCreated(created);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const toggleEvent = async (channel: Channel, event: string) => {
-    const events = channel.events.includes(event)
-      ? channel.events.filter((e) => e !== event)
-      : [...channel.events, event];
-    await api.updateChannel(channel.id, { events });
-    load();
-  };
-
   return (
     <div>
-      {channelList.length > 0 && (
+      {channels.length > 0 && (
         <ul className="flex flex-col gap-3">
-          {channelList.map((channel) => (
+          {channels.map((channel) => (
             <li key={channel.id}>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{channel.name}</span>
@@ -67,7 +65,7 @@ export function ChannelsSection() {
                 </span>
                 <button
                   className={`${btnQuietDestructive} px-2 py-1.5`}
-                  onClick={() => api.deleteChannel(channel.id).then(load)}
+                  onClick={() => api.deleteChannel(channel.id).then(() => onDeleted(channel.id))}
                 >
                   Delete
                 </button>
@@ -79,7 +77,7 @@ export function ChannelsSection() {
                       type="checkbox"
                       className="accent-accent"
                       checked={channel.events.includes(event)}
-                      onChange={() => toggleEvent(channel, event)}
+                      onChange={() => onToggleEvent(channel.id, event)}
                     />
                     {event}
                   </label>
@@ -90,7 +88,7 @@ export function ChannelsSection() {
         </ul>
       )}
 
-      {channelList.length === 0 && !adding && (
+      {channels.length === 0 && !adding && (
         <EmptyState title="No channels yet" className="my-8">
           Add Discord, Slack, a webhook, or SMTP email to get notified when a ticket needs you.
         </EmptyState>
