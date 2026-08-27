@@ -3782,31 +3782,6 @@ export class Runner {
             escalating = `branch contract violated (${verdict.reason}): ${verdict.detail}`;
           }
         }
-        // Worktree-isolation backstop to the worktree-path prompt guard: a
-        // worktree Run works only in its own worktree, so the branch the
-        // canonical checkout is parked on must not advance across the turn except
-        // through a Harmonic land ({@link wasSanctionedLand}). An un-sanctioned
-        // advance means an agent `cd`-ed to the canonical checkout and committed
-        // onto the protected branch — refuse to verify/land it and Escalate. The
-        // stray commit itself is the operator's evidence on canonical, so the
-        // (innocent) worktree tears down normally rather than being retained.
-        if (workspace.canonicalGuard && !escalating) {
-          const { branch, tip } = workspace.canonicalGuard;
-          const now = await Git.revParse(task.workingDir, branch).catch(() => null);
-          if (now && now !== tip && !wasSanctionedLand(task.workingDir, branch, now)) {
-            const detail = `${branch} in ${task.workingDir} advanced ${tip.slice(0, 12)} → ${now.slice(0, 12)} outside any Harmonic land`;
-            await this.runFacts.append(run.id, 'branch-violation', {
-              outcome: 'canonical-mutation',
-              reason: 'worktree Run advanced the canonical protected branch',
-              detail,
-              intendedBranch: run.branch ?? null,
-              headBranch: branch,
-              headCommit: now,
-            });
-            record('lifecycle', { event: 'branch-violation', reason: 'canonical protected branch advanced outside a Harmonic land', detail });
-            escalating = `an agent committed onto the canonical checkout instead of its worktree: ${detail}`;
-          }
-        }
         // Verification must see the commit the agent actually left behind,
         // before direct isolation restores the live checkout. A run with no new
         // commit has no verifiable work and fails closed below.
@@ -3814,6 +3789,33 @@ export class Runner {
           Git.revParse(workspace.cwd, 'HEAD').catch(() => null),
           workspace.baseRev ? Git.revParse(workspace.cwd, workspace.baseRev).catch(() => null) : Promise.resolve(null),
         ]);
+        const producedCandidate = !!(head && head !== base);
+        // A worktree Run is isolated in its own worktree, so the shared checkout's
+        // branch moving during the turn (a push, a pull, another Run's merge — any
+        // change Harmonic doesn't drive) cannot affect this Run's candidate, and
+        // the merge path already reconciles a moved target. So we let the shared
+        // branch move freely. The only worrying case is a Run that produced NO
+        // candidate of its own while that branch advanced: the tell-tale of an
+        // agent that worked in the shared checkout by mistake instead of its
+        // worktree, leaving the worktree empty. Its commit stays on the shared
+        // checkout as evidence, so the (innocent) worktree tears down normally.
+        if (workspace.canonicalGuard && !escalating && !producedCandidate) {
+          const { branch, tip } = workspace.canonicalGuard;
+          const now = await Git.revParse(task.workingDir, branch).catch(() => null);
+          if (now && now !== tip && !wasSanctionedLand(task.workingDir, branch, now)) {
+            const detail = `${branch} moved ${tip.slice(0, 12)} → ${now.slice(0, 12)} during the run, and the worktree gained no commit`;
+            await this.runFacts.append(run.id, 'branch-violation', {
+              outcome: 'canonical-mutation',
+              reason: 'worktree run produced no commit; its changes appear to be in the shared checkout',
+              detail,
+              intendedBranch: run.branch ?? null,
+              headBranch: branch,
+              headCommit: now,
+            });
+            record('lifecycle', { event: 'branch-violation', reason: 'worktree run left its work in the shared checkout', detail });
+            escalating = `This run wrote its changes to the shared ${branch} checkout instead of its own worktree, so the worktree has nothing to verify.`;
+          }
+        }
         if (head && head !== base) {
           implementationHead = head;
           if (workspace.directIsolation) {
