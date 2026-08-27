@@ -43,19 +43,21 @@ export const createTaskInputSchema = z.object({
   workingDir: z.string().min(1).optional().meta({ example: '/home/dev/harmonic' }),
   isolationMode: z.enum(ISOLATION_MODES).optional().meta({ example: 'worktree' }),
   priority: z.enum(PRIORITIES).optional().meta({ example: 'normal' }),
+  integrationRetries: z.number().int().min(1).optional().meta({ example: 5 }),
+  conflictResolveTurns: z.number().int().min(0).optional().meta({ example: 2 }),
   state: z.enum(['draft', 'ready']).optional().meta({ example: 'ready' }),
   dependsOn: z.array(z.number().int().positive()).optional().meta({ example: [4818] }),
   /** Explicit base branch a worktree Run is cut from and lands back onto
    * (issue #157, ADR-0024). Omitted ⇒ resolves at spawn to the working dir's
    * current branch (today's behaviour). Not an inheritable default — it is a
-   * plain per-Task target, so unlike the four overrides it never resolves
+   * plain per-Task target, so unlike the inheritable overrides it never resolves
    * against a Workspace/global value. */
   baseBranch: z.string().min(1).optional().meta({ example: 'integration/epic-42' }),
 });
 export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 
 // A Task's Workspace is fixed at creation (no cross-Workspace move in this slice).
-// The four Task-default overrides accept `null` (ADR-0012): clearing one back to
+// The inheritable Task-default overrides accept `null` (ADR-0012): clearing one back to
 // *inherit* is a first-class edit, so an operator can un-pin a field as well as
 // pin it. `undefined` (omitted) leaves the stored value untouched.
 export const updateTaskInputSchema = createTaskInputSchema
@@ -66,19 +68,23 @@ export const updateTaskInputSchema = createTaskInputSchema
     model: createTaskInputSchema.shape.model.nullable(),
     isolationMode: createTaskInputSchema.shape.isolationMode.nullable(),
     priority: createTaskInputSchema.shape.priority.nullable(),
+    integrationRetries: createTaskInputSchema.shape.integrationRetries.nullable(),
+    conflictResolveTurns: createTaskInputSchema.shape.conflictResolveTurns.nullable(),
     // Nullable so an operator can clear an explicit base branch back to
     // "inherit the current branch at spawn" (issue #157), same null-clears
-    // idiom as the four overrides above.
+    // idiom as the inheritable overrides above.
     baseBranch: createTaskInputSchema.shape.baseBranch.nullable(),
   });
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 
-/** The four inheritable Task defaults as stored (raw): `null` ⇒ inherit. */
+/** The inheritable Task defaults as stored (raw): `null` ⇒ inherit. */
 export interface TaskOverrides {
   harness: string | null;
   model: string | null;
   isolationMode: string | null;
   priority: string | null;
+  integrationRetries: number | null;
+  conflictResolveTurns: number | null;
 }
 
 export const taskListQuerySchema = z.object({
@@ -111,7 +117,7 @@ export interface TaskWithDeps extends TaskRow {
    * human wayfinder kind) — visible because it can block others. Independent of
    * blockers, unlike `agentWorkable`. */
   humanOnly: boolean;
-  /** The four defaults as stored (`null` ⇒ inherited): lets the editor tell an
+  /** The inheritable defaults as stored (`null` ⇒ inherited): lets the editor tell an
    * inherited field from a pinned one, since the row's own fields are resolved. */
   overrides: TaskOverrides;
 }
@@ -197,7 +203,7 @@ export class TaskService {
   }
 
   /**
-   * The effective values of the four inheritable Task defaults, resolved at
+   * The effective values of the inheritable Task defaults, resolved at
    * read time down the three-level chain (ADR-0012): a non-null Task override
    * wins, else this Task's Workspace override, else the global default. Never
    * throws — a stored harness that isn't configured in this instance still
@@ -215,10 +221,12 @@ export class TaskService {
       model: over.model ?? resolveOverride(workspace.model, harnessConfig?.defaultModel ?? ''),
       isolationMode: over.isolationMode ?? resolveOverride(workspace.isolationMode, config.defaults.isolationMode),
       priority: over.priority ?? resolveOverride(workspace.priority, config.defaults.priority),
+      integrationRetries: over.integrationRetries ?? resolveOverride(workspace.integrationRetries, config.defaults.integrationRetries),
+      conflictResolveTurns: over.conflictResolveTurns ?? resolveOverride(workspace.conflictResolveTurns, config.defaults.conflictResolveTurns),
     };
   }
 
-  /** Fill a raw row's four inheritable defaults with their resolved values —
+  /** Fill a raw row's inheritable defaults with their resolved values —
    * the sole boundary where a `RawTaskRow` becomes the public `TaskRow`. */
   private async resolve(raw: RawTaskRow): Promise<TaskRow> {
     const workspace = await this.resolveWorkspace(raw.workspaceId ?? undefined);
@@ -231,6 +239,8 @@ export class TaskService {
       model: raw.model,
       isolationMode: raw.isolationMode,
       priority: raw.priority,
+      integrationRetries: raw.integrationRetries,
+      conflictResolveTurns: raw.conflictResolveTurns,
     };
   }
 
@@ -313,6 +323,8 @@ export class TaskService {
           model: input.model ?? null,
           isolationMode: input.isolationMode ?? null,
           priority: input.priority ?? null,
+          integrationRetries: input.integrationRetries ?? null,
+          conflictResolveTurns: input.conflictResolveTurns ?? null,
           baseBranch: input.baseBranch ?? null,
           workingDir: input.workingDir ?? workspace.workingDir,
           state,
@@ -418,13 +430,15 @@ export class TaskService {
         .values({
           prompt: input.prompt,
           workspaceId: workspace.id,
-          // A mirrored Task has no operator picks: the four defaults inherit
+          // A mirrored Task has no operator picks: the inheritable defaults inherit
           // (null) and resolve to the Workspace/global defaults on read, so
           // retargeting the board's model is a single Workspace-setting change.
           harness: null,
           model: null,
           isolationMode: null,
           priority: null,
+          integrationRetries: null,
+          conflictResolveTurns: null,
           workingDir: workspace.workingDir,
           state: input.closed ? 'done' : 'ready',
           origin: 'mirrored',

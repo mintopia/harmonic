@@ -103,6 +103,30 @@ function TaskDefaultsFields({
         </select>
         <FieldError message={fieldErrors['defaults.priority']} />
       </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-integration-retries">Integration retries</label>
+        <input
+          id="settings-integration-retries"
+          type="number"
+          min={1}
+          className={`${field} w-full`}
+          value={d.integrationRetries}
+          onChange={(e) => set('integrationRetries', e.target.valueAsNumber)}
+        />
+        <FieldError message={fieldErrors['defaults.integrationRetries']} />
+      </div>
+      <div>
+        <label className={fieldLabel} htmlFor="settings-conflict-turns">Conflict resolve turns</label>
+        <input
+          id="settings-conflict-turns"
+          type="number"
+          min={0}
+          className={`${field} w-full`}
+          value={d.conflictResolveTurns}
+          onChange={(e) => set('conflictResolveTurns', e.target.valueAsNumber)}
+        />
+        <FieldError message={fieldErrors['defaults.conflictResolveTurns']} />
+      </div>
     </div>
   );
 }

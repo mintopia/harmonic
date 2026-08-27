@@ -453,14 +453,6 @@ type TurnOutcome =
   // corrective re-merge turn. `reason`/`detail` are the branch-contract violation.
   | { kind: 'remerge-needed'; reason: string; detail: string };
 
-/**
- * How many times one landing may re-enter Rebase → Verification on the same
- * Attempt because the base advanced meanwhile (ADR-0041). Each re-entry costs
- * a full verification pass, so a base that keeps moving escalates rather than
- * spinning.
- */
-const MAX_FRESHNESS_REENTRIES = 3;
-
 /** The landing freshness gate's verdict (ADR-0041): land at `oid`, hand a
  * failed re-entry (rebase conflict / verification fail) up to the unified
  * Attempt loop, or Escalate. `train` is set for an Epic member — its merge-train
@@ -1801,6 +1793,11 @@ export class Runner {
     parent: SpanContext,
   ): Promise<LandingGate> {
     let current = await this.runStore.get(run.id);
+    // How many times this landing may re-enter Rebase → Verification because
+    // the base advanced meanwhile (ADR-0046). Each re-entry costs a full
+    // verification pass, so a base that keeps moving escalates rather than
+    // spinning. Resolved per-Task (Task → Workspace → global default).
+    const maxReentries = task.integrationRetries;
     for (let reentries = 0; ; reentries += 1) {
       const freshness = await this.landingFreshness(task, current);
       let stale = freshness.fresh ? null : freshness.reason;
@@ -1838,8 +1835,8 @@ export class Runner {
       if (!workspace.worktree || !current.baseBranch) {
         return { kind: 'escalate', reason: `${stale}; no ticket branch to rebase` };
       }
-      if (reentries >= MAX_FRESHNESS_REENTRIES) {
-        return { kind: 'escalate', reason: `base kept advancing through ${MAX_FRESHNESS_REENTRIES} rebase+verify re-entries` };
+      if (reentries >= maxReentries) {
+        return { kind: 'escalate', reason: `base kept advancing through ${maxReentries} rebase+verify re-entries` };
       }
       const rebase = await this.runRebaseTask(task, attemptNumber, run.startedAt, workspace.worktree.path, current.baseBranch);
       if (!rebase.ok) {

@@ -260,6 +260,12 @@ export const appConfigSchema = z.object({
     workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
     isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
     priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
+    /** How many times a worktree Run's integration may re-read the base and
+     * rebase+re-verify before it defers/escalates (ADR-0046). */
+    integrationRetries: z.number().int().min(1).meta({ example: 5 }),
+    /** Bounded agentic resolve-turns a rebase content conflict gets before it
+     * escalates; 0 escalates on the first conflict (ADR-0046). */
+    conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
   }),
   /**
    * The default Harness and model a new Conversation ("chat") starts with,
@@ -484,6 +490,8 @@ export function defaultConfig(): AppConfig {
       workingDir: process.cwd(),
       isolationMode: 'direct',
       priority: 'normal',
+      integrationRetries: 5,
+      conflictResolveTurns: 2,
     },
     chat: {
       harness: 'claude',

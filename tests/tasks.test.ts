@@ -325,6 +325,33 @@ describe('task-default inheritance', () => {
     expect(stillPinned.model).toBe('pinned-model'); // the pinned task did not
   });
 
+  it('resolves the integration-retry and conflict-resolve bounds through the same chain as isolationMode', async () => {
+    // Bare task: resolves the global defaults (config.ts), unpinned.
+    const inherited = (await server.api('POST', '/api/tasks', { prompt: 'inherit the integration bounds' })).body;
+    expect(inherited.integrationRetries).toBe(5);
+    expect(inherited.conflictResolveTurns).toBe(2);
+    expect(inherited.overrides.integrationRetries).toBeNull();
+    expect(inherited.overrides.conflictResolveTurns).toBeNull();
+
+    // Per-task override pins the value and marks it in `overrides`.
+    const pinned = (await server.api('POST', '/api/tasks', { prompt: 'pin K', integrationRetries: 9 })).body;
+    expect(pinned.integrationRetries).toBe(9);
+    expect(pinned.overrides.integrationRetries).toBe(9);
+
+    // Workspace override moves every unpinned task; the pinned one holds.
+    const patched = await server.api('PATCH', `/api/workspaces/${await workspaceId()}`, { conflictResolveTurns: 4 });
+    expect(patched.status).toBe(200);
+    const afterWs = (await server.api('GET', `/api/tasks/${inherited.id}`)).body;
+    expect(afterWs.conflictResolveTurns).toBe(4); // followed the workspace
+    expect(afterWs.overrides.conflictResolveTurns).toBeNull(); // still inheriting
+
+    // Clearing a pinned override falls back to inherit.
+    const cleared = await server.api('PATCH', `/api/tasks/${pinned.id}`, { integrationRetries: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.overrides.integrationRetries).toBeNull();
+    expect(cleared.body.integrationRetries).toBe(5); // back to the global default
+  });
+
   it('edits a task with open blockers to re-point its model, and clears it back to inherit', async () => {
     const dep = await server.api('POST', '/api/tasks', { prompt: 'Dependency', state: 'draft' });
     const blocked = await server.api('POST', '/api/tasks', {

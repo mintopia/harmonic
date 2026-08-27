@@ -80,6 +80,8 @@ export function WorkspaceSettingsPage({
         chatModel: local.chatModel,
         isolationMode: local.isolationMode,
         priority: local.priority,
+        integrationRetries: local.integrationRetries,
+        conflictResolveTurns: local.conflictResolveTurns,
         maxConcurrentRuns: local.maxConcurrentRuns,
         autoRunnerEnabled: local.autoRunnerEnabled,
         contextReuseTokenLimit: local.contextReuseTokenLimit,
@@ -354,6 +356,48 @@ export function WorkspaceSettingsPage({
                 )}
               </InheritField>
               <FieldError message={fieldErrors['priority']} />
+            </div>
+            <div>
+              <InheritField
+                label="Integration retries"
+                htmlFor="workspace-integration-retries"
+                value={local.integrationRetries}
+                inherited={config.defaults.integrationRetries}
+                onChange={(integrationRetries) => set('integrationRetries', integrationRetries)}
+              >
+                {({ id, value, onChange }) => (
+                  <input
+                    id={id}
+                    type="number"
+                    min={1}
+                    className={`${field} w-28 tabular-nums`}
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                  />
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['integrationRetries']} />
+            </div>
+            <div>
+              <InheritField
+                label="Conflict resolve turns"
+                htmlFor="workspace-conflict-turns"
+                value={local.conflictResolveTurns}
+                inherited={config.defaults.conflictResolveTurns}
+                onChange={(conflictResolveTurns) => set('conflictResolveTurns', conflictResolveTurns)}
+              >
+                {({ id, value, onChange }) => (
+                  <input
+                    id={id}
+                    type="number"
+                    min={0}
+                    className={`${field} w-28 tabular-nums`}
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                  />
+                )}
+              </InheritField>
+              <FieldError message={fieldErrors['conflictResolveTurns']} />
             </div>
           </div>
         </SettingsSection>

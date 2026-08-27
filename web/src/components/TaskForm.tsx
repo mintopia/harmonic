@@ -10,7 +10,7 @@ import { taskLabel } from '../id-format.js';
 
 const label = `mb-1 block ${labelType} text-muted`;
 
-/** The four inheritable Task defaults as the form holds them: `null` ⇒ inherit
+/** The inheritable Task defaults as the form holds them: `null` ⇒ inherit
  * (track the Workspace/global default), a value ⇒ pin to this Task (ADR-0012). */
 type Overrides = Task['overrides'];
 
@@ -51,7 +51,14 @@ export function TaskForm({
     };
   }, [task]);
   const [ov, setOv] = useState<Overrides>(
-    task?.overrides ?? { harness: null, model: null, isolationMode: null, priority: null },
+    task?.overrides ?? {
+      harness: null,
+      model: null,
+      isolationMode: null,
+      priority: null,
+      integrationRetries: null,
+      conflictResolveTurns: null,
+    },
   );
   const [workingDir, setWorkingDir] = useState(task?.workingDir ?? config.defaults.workingDir);
   const [busy, setBusy] = useState(false);
@@ -189,6 +196,46 @@ export function TaskForm({
                 <option value="normal">normal</option>
                 <option value="low">low</option>
               </select>
+            )}
+          </InheritField>
+
+          <InheritField
+            label="Integration retries"
+            htmlFor="task-integration-retries"
+            value={ov.integrationRetries}
+            inherited={workspace?.integrationRetries ?? config.defaults.integrationRetries}
+            inheritedFrom={inheritSource(workspace?.integrationRetries)}
+            onChange={(integrationRetries) => set('integrationRetries', integrationRetries)}
+          >
+            {({ id, value, onChange }) => (
+              <input
+                id={id}
+                type="number"
+                min={1}
+                className={`${field} w-full tabular-nums`}
+                value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+              />
+            )}
+          </InheritField>
+
+          <InheritField
+            label="Conflict resolve turns"
+            htmlFor="task-conflict-turns"
+            value={ov.conflictResolveTurns}
+            inherited={workspace?.conflictResolveTurns ?? config.defaults.conflictResolveTurns}
+            inheritedFrom={inheritSource(workspace?.conflictResolveTurns)}
+            onChange={(conflictResolveTurns) => set('conflictResolveTurns', conflictResolveTurns)}
+          >
+            {({ id, value, onChange }) => (
+              <input
+                id={id}
+                type="number"
+                min={0}
+                className={`${field} w-full tabular-nums`}
+                value={value}
+                onChange={(e) => onChange(Number(e.target.value))}
+              />
             )}
           </InheritField>
         </div>

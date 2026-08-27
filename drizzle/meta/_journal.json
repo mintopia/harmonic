@@ -386,6 +386,13 @@
       "when": 1787739300000,
       "tag": "0054_context_reuse_token_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1787739400000,
+      "tag": "0055_integration_bounds",
+      "breakpoints": true
     }
   ]
 }

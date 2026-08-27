@@ -92,6 +92,10 @@ export const workspaces = sqliteTable('workspaces', {
   isolationMode: text('isolation_mode'),
   /** Task-default Priority override; null inherits `config.defaults.priority`. */
   priority: text('priority'),
+  /** Task-default integration-retry bound (ADR-0046); null inherits `config.defaults.integrationRetries`. */
+  integrationRetries: integer('integration_retries'),
+  /** Task-default conflict-resolve-turn bound (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
+  conflictResolveTurns: integer('conflict_resolve_turns'),
   /** Per-Workspace concurrency cap; null inherits the Machine Ceiling
    * (`config.autoRunner.maxConcurrentRuns`). Clamped to the ceiling on read —
    * an override can never breach the machine's limit (`resolveCap`). */
@@ -159,6 +163,10 @@ export const tasks = sqliteTable('tasks', {
   workingDir: text('working_dir').notNull(),
   isolationMode: text('isolation_mode'),
   priority: text('priority'),
+  /** Integration-retry bound override (ADR-0046); null inherits `config.defaults.integrationRetries`. */
+  integrationRetries: integer('integration_retries'),
+  /** Conflict-resolve-turn bound override (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
+  conflictResolveTurns: integer('conflict_resolve_turns'),
   state: text('state').$type<TaskState>().notNull(),
   /** The owning Workspace (ADR-0008). Nullable at the SQL level only because
    * SQLite can't add a NOT NULL column with no default to an existing table;
@@ -569,17 +577,22 @@ export const apiKeys = sqliteTable('api_keys', {
 
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
 
-/** The raw `tasks` row: the four Task-default overrides read back nullable
+/** The raw `tasks` row: the inheritable Task-default overrides read back nullable
  * (`null` ⇒ inherit). Used only inside TaskService, which resolves them. */
 export type RawTaskRow = typeof tasks.$inferSelect;
-/** A `tasks` row as every consumer sees it: the four inheritable defaults
+/** A `tasks` row as every consumer sees it: the inheritable defaults
  * already resolved to their effective values (never null). TaskService.get/
  * list/etc. return this; storage speaks `RawTaskRow`. */
-export type TaskRow = Omit<RawTaskRow, 'harness' | 'model' | 'isolationMode' | 'priority'> & {
+export type TaskRow = Omit<
+  RawTaskRow,
+  'harness' | 'model' | 'isolationMode' | 'priority' | 'integrationRetries' | 'conflictResolveTurns'
+> & {
   harness: string;
   model: string;
   isolationMode: string;
   priority: string;
+  integrationRetries: number;
+  conflictResolveTurns: number;
 };
 
 /** Persisted facts for tracker containers that deliberately have no Task row, currently Maps. */

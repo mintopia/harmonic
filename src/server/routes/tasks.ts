@@ -86,6 +86,10 @@ const taskWithDepsSchema = z
     baseBranch: z.string().nullable().meta({ example: 'integration/epic-42' }),
     /** 'high' | 'normal' | 'low' (config.ts PRIORITIES); stored as plain text. */
     priority: z.string().meta({ example: 'normal' }),
+    /** Resolved integration-retry bound (ADR-0046). */
+    integrationRetries: z.number().int().meta({ example: 5 }),
+    /** Resolved conflict-resolve-turn bound (ADR-0046). */
+    conflictResolveTurns: z.number().int().meta({ example: 2 }),
     /** ADR-0041: draft → ready → working → done, plus escalated (the one human surface) and cancelled. Blocked-ness is derived (`openBlockerCount`), never stored. */
     state: z.enum(TASK_STATES).meta({ example: 'working' }),
     /** Why the ticket is `escalated` — the trigger's recorded reason; null in every other state. */
@@ -116,7 +120,7 @@ const taskWithDepsSchema = z
     agentWorkable: z.boolean().meta({ example: false }),
     /** A mirrored ticket Harmonic never works (no `ready-for-agent`, an Epic container, or a human wayfinder kind); false on native Tasks. Independent of blockers, so a blocked human-only ticket still reads human-only. */
     humanOnly: z.boolean().meta({ example: false }),
-    /** The four Task-default overrides as stored (ADR-0012): `null` ⇒ this field
+    /** The inheritable Task-default overrides as stored (ADR-0012): `null` ⇒ this field
      * *inherits* (Workspace override → global default), so the sibling
      * harness/model/isolationMode/priority above are the resolved effective
      * values while these say whether each was pinned. The editor reads both. */
@@ -126,8 +130,10 @@ const taskWithDepsSchema = z
         model: z.string().nullable().meta({ example: 'opus-4.8' }),
         isolationMode: z.string().nullable().meta({ example: null }),
         priority: z.string().nullable().meta({ example: null }),
+        integrationRetries: z.number().int().nullable().meta({ example: null }),
+        conflictResolveTurns: z.number().int().nullable().meta({ example: null }),
       })
-      .meta({ example: { harness: null, model: 'opus-4.8', isolationMode: null, priority: null } }),
+      .meta({ example: { harness: null, model: 'opus-4.8', isolationMode: null, priority: null, integrationRetries: null, conflictResolveTurns: null } }),
   })
   .meta({ id: 'TaskWithDeps' });
 

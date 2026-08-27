@@ -206,6 +206,9 @@ export interface Workspace {
   chatModel: string | null;
   isolationMode: 'direct' | 'worktree' | null;
   priority: 'high' | 'normal' | 'low' | null;
+  /** Integration bounds (ADR-0046); `null` inherits `config.defaults.*`. */
+  integrationRetries: number | null;
+  conflictResolveTurns: number | null;
   maxConcurrentRuns: number | null;
   autoRunnerEnabled: boolean | null;
   /** Per-workspace attempt cap; null inherits `config.maxAttempts`. */
@@ -292,7 +295,10 @@ export interface Task {
    * current branch. */
   baseBranch: string | null;
   priority: 'high' | 'normal' | 'low';
-  /** The four defaults as stored: `null` ⇒ inherited (tracks the Workspace/
+  /** Resolved integration bounds (ADR-0046). */
+  integrationRetries: number;
+  conflictResolveTurns: number;
+  /** The defaults as stored: `null` ⇒ inherited (tracks the Workspace/
    * global default), a value ⇒ pinned to this Task. The editor seeds its
    * inherit/override toggles from these. */
   overrides: {
@@ -300,6 +306,8 @@ export interface Task {
     model: string | null;
     isolationMode: 'direct' | 'worktree' | null;
     priority: 'high' | 'normal' | 'low' | null;
+    integrationRetries: number | null;
+    conflictResolveTurns: number | null;
   };
   state: TaskState;
   /** Why the ticket is `escalated` — the trigger's recorded reason (ADR-0041); null in every other state. */
@@ -707,6 +715,9 @@ export interface AppConfig {
     workingDir: string;
     isolationMode: 'direct' | 'worktree';
     priority: 'high' | 'normal' | 'low';
+    /** Integration bounds (ADR-0046). */
+    integrationRetries: number;
+    conflictResolveTurns: number;
   };
   /** The default Harness and model a new Conversation ("chat") starts with,
    * separate from the Task defaults. Global-default with a per-Workspace

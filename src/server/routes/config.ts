@@ -69,6 +69,8 @@ const configPatchBodySchema = z
         workingDir: z.string().meta({ example: '/home/dev/harmonic' }),
         isolationMode: z.enum(ISOLATION_MODES).meta({ example: 'worktree' }),
         priority: z.enum(PRIORITIES).meta({ example: 'normal' }),
+        integrationRetries: z.number().int().min(1).meta({ example: 5 }),
+        conflictResolveTurns: z.number().int().min(0).meta({ example: 2 }),
       })
       .partial()
       .optional(),
