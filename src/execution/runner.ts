@@ -3458,6 +3458,17 @@ export class Runner {
       const onInitialize = (result: AcpInitializeResult) => {
         sessionInit = result;
       };
+      // Index this worktree as its own jCodeMunch repo BEFORE the handshake, so
+      // the agent's code-index queries hit the branch it is working on rather
+      // than the canonical checkout jCodeMunch serves for a bare `.`
+      // (`code-index.ts`). It must run here, not just before the prompt: the
+      // multi-second index would otherwise sit between the handshake and the
+      // first prompt and push the harness's `${sessionId}.jsonl` past
+      // `captureTranscriptPath`'s short resolve window, leaving the Run with no
+      // recorded transcript. Direct Runs work in the canonical checkout itself —
+      // which jCodeMunch already indexes — so they are skipped (and its shared
+      // index is never reaped at teardown). Best-effort: null ⇒ skip injection.
+      const codeIndexRepoId = workspace.cwd !== task.workingDir ? await indexWorktree(workspace.cwd) : null;
       // A corrective Attempt follows the recorded continuation decision. Reuse
       // reloads the prior Session with feedback appended below. A condensed path
       // starts a fresh Session and retains the prior Session row for transcript
@@ -3612,16 +3623,9 @@ export class Runner {
           `Resolve the conflicted files, stage them, and run \`git rebase --continue\` before doing anything else.`;
       }
       if (condensed) promptText = `${promptText}\n\n${condensed}`;
-      // Worktree-isolation Run: index this worktree as its own jCodeMunch repo and
-      // tell the agent to query that id, so its code-index navigation reflects the
-      // branch it is working on instead of the canonical checkout jCodeMunch serves
-      // for a bare `.` (`code-index.ts`). Direct Runs operate in the canonical
-      // checkout itself — which jCodeMunch already indexes — so they are skipped
-      // (and its shared index is never reaped at teardown).
-      if (workspace.cwd !== task.workingDir) {
-        const codeIndexRepoId = await indexWorktree(workspace.cwd);
-        if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
-      }
+      // Tell the agent to query the worktree's own jCodeMunch repo (indexed above,
+      // before the handshake) rather than resolving the repo by `.`.
+      if (codeIndexRepoId) promptText = `${promptText}${codeIndexRepoGuidance(codeIndexRepoId)}`;
       // Persist the exact text sent so Task detail can show it on every Run —
       // native or mirrored — without re-deriving a template that may since have
       // changed (the "Prompt" tab reads this column). Steer/continue turns are
