@@ -853,9 +853,13 @@ export async function taskRoutes(fastify: FastifyInstance): Promise<void> {
       } catch {
         return { status: 'unavailable' as const, liveCursor: ctx.bus.latestRunLogSeq({ runId: run.id }) };
       }
+      // Resolve the transcript locator on demand when the eager capture at
+      // dispatch missed it (the harness had not flushed its log inside that
+      // window). By read time the file exists, so this removes the startup race.
+      const path = session.transcriptPath ?? (await ctx.runner.ensureSessionTranscript(run.sessionRowId));
       const log = await readTranscriptLog({
         harness: session.harness,
-        path: session.transcriptPath,
+        path,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
       });
