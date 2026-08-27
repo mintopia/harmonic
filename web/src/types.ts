@@ -147,6 +147,22 @@ export interface Cost {
   incomplete: boolean;
 }
 
+/**
+ * A derived Map rollup (D7, issue #35) as `GET /api/maps` serves it — the
+ * server's `mapSchema`: a `wayfinder:map` issue paired with its member Tasks and
+ * per-state counts. Query-time, not stored; kept in lockstep with the route.
+ */
+export interface MapRollup {
+  workspaceId: number;
+  ref: number;
+  title: string;
+  url: string;
+  /** Tracker refs of the mirrored Tasks under this Map. */
+  taskRefs: number[];
+  /** Task count per state present under this Map. */
+  counts: Record<string, number>;
+}
+
 /** One immediate child directory from `GET /api/fs` (issue #62). */
 export interface FsEntry {
   name: string;

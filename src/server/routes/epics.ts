@@ -18,6 +18,12 @@ const epicListParamsSchema = z.object({
   workspaceId: z.coerce.number().int().meta({ example: 1 }),
 });
 
+/** The `GET …/epics` querystring: the shared pagination fragment plus a
+ * case-insensitive substring search over the Epic title (ADR-0045). */
+const epicListQuerySchema = paginationQuerySchema.extend({
+  q: z.string().optional().meta({ example: 'operator UI' }),
+});
+
 /**
  * `Epic` (`src/domain/epic-view.ts`) as the API serves it (issue #167, ADR-0026
  * — the frozen contract in `.notes/issue-167-dto-contract.md`). Server and web
@@ -101,10 +107,11 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
         tags: ['Epics'],
         description:
           "Every derived Epic for a Workspace's last tracker poll scan (issue #167, ADR-0026), each folded with its " +
-          'member land state, integration-branch tip, and whole-Epic land/verification state. Operator only.',
+          'member land state, integration-branch tip, and whole-Epic land/verification state. Searched (`q`, ' +
+          'case-insensitive substring over the Epic title) and paginated (`limit`/`offset`, with a `total`). Operator only.',
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
         params: epicListParamsSchema,
-        querystring: paginationQuerySchema,
+        querystring: epicListQuerySchema,
         response: {
           200: epicsListResponseSchema.describe("Every derived Epic for this Workspace's last scan (possibly empty)."),
           404: errorResponse('No Workspace has that id.'),
@@ -114,8 +121,10 @@ export async function epicRoutes(fastify: FastifyInstance): Promise<void> {
     async (req) => {
       await ctx.workspaces.assertExists(req.params.workspaceId);
       const epics = await ctx.trackerManager.listEpics(req.params.workspaceId);
-      const { limit, offset } = req.query;
-      const { items, total } = paginate(epics.map(epicToApi), { limit, offset });
+      const { limit, offset, q } = req.query;
+      const needle = q?.trim().toLowerCase();
+      const matched = needle ? epics.filter((e) => e.title.toLowerCase().includes(needle)) : epics;
+      const { items, total } = paginate(matched.map(epicToApi), { limit, offset });
       return { epics: items, total };
     },
   );

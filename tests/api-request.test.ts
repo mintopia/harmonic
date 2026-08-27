@@ -47,3 +47,45 @@ describe('api request()', () => {
     await expect(api.deletePermissionRule(1)).resolves.toBeNull();
   });
 });
+
+/**
+ * The Epic + Map list clients migrated onto the shared pagination contract
+ * (ADR-0045, issue #351): each threads `limit`/`offset`/`q` into the query so the
+ * Board can walk later pages and search, and drops to the bare path when it wants
+ * the whole list (the additive default).
+ */
+describe('paginated list clients (epics, maps)', () => {
+  it('epics() requests the bare workspace path when it wants the whole list', async () => {
+    const fetch = fakeFetch(JSON.stringify({ epics: [], total: 0 }), { status: 200 });
+    vi.stubGlobal('fetch', fetch);
+    await api.epics(7);
+    expect(fetch).toHaveBeenCalledWith('/api/workspaces/7/epics', { method: 'GET' });
+  });
+
+  it('epics() threads limit/offset/q so the Board can page and search', async () => {
+    const fetch = fakeFetch(JSON.stringify({ epics: [], total: 0 }), { status: 200 });
+    vi.stubGlobal('fetch', fetch);
+    await api.epics(7, { limit: 100, offset: 200, q: 'operator UI' });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/workspaces/7/epics?limit=100&offset=200&q=operator+UI',
+      { method: 'GET' },
+    );
+  });
+
+  it('maps() requests the bare path by default', async () => {
+    const fetch = fakeFetch(JSON.stringify({ maps: [], total: 0 }), { status: 200 });
+    vi.stubGlobal('fetch', fetch);
+    await api.maps();
+    expect(fetch).toHaveBeenCalledWith('/api/maps', { method: 'GET' });
+  });
+
+  it('maps() threads workspaceId/limit/offset/q into the query', async () => {
+    const fetch = fakeFetch(JSON.stringify({ maps: [], total: 0 }), { status: 200 });
+    vi.stubGlobal('fetch', fetch);
+    await api.maps({ workspaceId: 3, limit: 50, offset: 50, q: 'Wayfinder' });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/maps?workspaceId=3&limit=50&offset=50&q=Wayfinder',
+      { method: 'GET' },
+    );
+  });
+});

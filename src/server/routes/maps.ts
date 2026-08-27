@@ -31,6 +31,12 @@ const workspaceQuerySchema = z.object({
   workspaceId: z.coerce.number().int().positive().optional().meta({ example: 1 }),
 });
 
+/** The `GET /maps` querystring: the optional Workspace scope and shared pagination
+ * fragment plus a case-insensitive substring search over the Map title (ADR-0045). */
+const mapsListQuerySchema = workspaceQuerySchema.extend(paginationQuerySchema.shape).extend({
+  q: z.string().optional().meta({ example: 'Wayfinder' }),
+});
+
 export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
   const { ctx } = fastify as App;
   const app = fastify.withTypeProvider<ZodTypeProvider>();
@@ -41,14 +47,17 @@ export async function mapRoutes(fastify: FastifyInstance): Promise<void> {
       schema: {
         tags: ['Maps'],
         description:
-          "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
-        querystring: workspaceQuerySchema.extend(paginationQuerySchema.shape),
+          "The derived Map rollup: every Map from the last tracker poll with its member Tasks and per-state counts, each stamped with its Workspace. `?workspaceId=` scopes to one Workspace's board (issue #45). Searched (`q`, case-insensitive substring over the Map title) and paginated (`limit`/`offset`, with a `total`). Query-time (no table); empty when tracker mirroring is off or before the first poll. Reachable with a read-scoped API Key.",
+        querystring: mapsListQuerySchema,
         response: { 200: mapsListResponseSchema.describe('Every derived Map, newest tracker scan.') },
       },
     },
     async (req) => {
-      const { workspaceId, limit, offset } = req.query;
-      const { items, total } = paginate(await ctx.trackerManager.maps(workspaceId), { limit, offset });
+      const { workspaceId, limit, offset, q } = req.query;
+      const maps = await ctx.trackerManager.maps(workspaceId);
+      const needle = q?.trim().toLowerCase();
+      const matched = needle ? maps.filter((m) => m.title.toLowerCase().includes(needle)) : maps;
+      const { items, total } = paginate(matched, { limit, offset });
       return { maps: items, total };
     },
   );

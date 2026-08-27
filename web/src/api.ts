@@ -10,6 +10,7 @@ import type {
   DiffFile,
   FsListing,
   GuardrailEvent,
+  MapRollup,
   PermissionRule,
   Run,
   RunEvent,
@@ -275,9 +276,32 @@ export const api = {
 
   // Parallel-Epic read model + force-land (issue #167, ADR-0026): operator-scope
   // only, mirroring the force-land allowlist. See epic-model.ts for the DTO shape.
-  epics: (workspaceId: number) => request<{ epics: Epic[]; total: number }>('GET', `/api/workspaces/${workspaceId}/epics`),
+  // Paginated on the shared envelope (ADR-0045, issue #351): pass `limit`/`offset`
+  // to page, `q` to substring-search the Epic title; omit `limit` for the whole list.
+  epics: (workspaceId: number, { limit, offset, q }: { limit?: number; offset?: number; q?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    if (q) params.set('q', q);
+    const query = params.toString();
+    const base = `/api/workspaces/${workspaceId}/epics`;
+    return request<{ epics: Epic[]; total: number }>('GET', query ? `${base}?${query}` : base);
+  },
   epic: (workspaceId: number, epicRef: number) =>
     request<Epic>('GET', `/api/workspaces/${workspaceId}/epics/${epicRef}`),
   forceLandEpic: (workspaceId: number, epicRef: number) =>
     request<EpicLandOutcome>('POST', `/api/workspaces/${workspaceId}/epics/${epicRef}/force-land`),
+
+  // Derived Map rollup (D7, issue #35), paginated on the shared envelope
+  // (ADR-0045, issue #351): `workspaceId` scopes to one board, `limit`/`offset`
+  // page, `q` substring-searches the Map title; omit `limit` for the whole list.
+  maps: ({ workspaceId, limit, offset, q }: { workspaceId?: number; limit?: number; offset?: number; q?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (workspaceId !== undefined) params.set('workspaceId', String(workspaceId));
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    if (q) params.set('q', q);
+    const query = params.toString();
+    return request<{ maps: MapRollup[]; total: number }>('GET', query ? `/api/maps?${query}` : '/api/maps');
+  },
 };

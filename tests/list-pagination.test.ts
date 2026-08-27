@@ -76,9 +76,9 @@ describe('derived-rollup pagination (epics, maps)', () => {
     vi.restoreAllMocks();
   });
 
-  const epic = (ref: number): Epic => ({
+  const epic = (ref: number, title = `Epic ${ref}`): Epic => ({
     ref,
-    title: `Epic ${ref}`,
+    title,
     kind: 'spec',
     members: [],
     ready: [],
@@ -89,10 +89,10 @@ describe('derived-rollup pagination (epics, maps)', () => {
     memberCount: 0,
   });
 
-  const map = (ref: number, workspaceId: number): DerivedMap => ({
+  const map = (ref: number, workspaceId: number, title = `Map ${ref}`): DerivedMap => ({
     workspaceId,
     ref,
-    title: `Map ${ref}`,
+    title,
     url: `https://example.test/${ref}`,
     taskRefs: [],
     counts: {},
@@ -117,6 +117,35 @@ describe('derived-rollup pagination (epics, maps)', () => {
     expect((await server.api('GET', `/api/workspaces/${workspaceId}/epics?limit=1000`)).status).toBe(400);
   });
 
+  it('/api/epics filters by a case-insensitive title substring, then reports the matched total', async () => {
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    vi.spyOn(server.app.ctx.trackerManager, 'listEpics').mockResolvedValue([
+      epic(1, 'Parallel operator UI'),
+      epic(2, 'Async DB migration'),
+      epic(3, 'Operator force-land'),
+    ]);
+
+    const res = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=operator`);
+    expect(res.body.total).toBe(2);
+    expect(res.body.epics.map((e: Epic) => e.ref)).toEqual([1, 3]);
+
+    // A blank query matches every Epic (whitespace-only ⇒ no filter).
+    const blank = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=%20`);
+    expect(blank.body.total).toBe(3);
+  });
+
+  it('/api/epics applies q before slicing so the page and total agree', async () => {
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    vi.spyOn(server.app.ctx.trackerManager, 'listEpics').mockResolvedValue([
+      epic(1, 'operator a'),
+      epic(2, 'operator b'),
+      epic(3, 'unrelated'),
+    ]);
+
+    const page = await server.api('GET', `/api/workspaces/${workspaceId}/epics?q=operator&limit=1&offset=1`);
+    expect(page.body).toEqual({ epics: [epic(2, 'operator b')], total: 2 });
+  });
+
   it('/api/maps slices to a page while total stays the full derived count', async () => {
     const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
     vi.spyOn(server.app.ctx.trackerManager, 'maps').mockResolvedValue([
@@ -137,5 +166,21 @@ describe('derived-rollup pagination (epics, maps)', () => {
 
   it('/api/maps rejects a limit over the shared max', async () => {
     expect((await server.api('GET', '/api/maps?limit=1000')).status).toBe(400);
+  });
+
+  it('/api/maps filters by a case-insensitive title substring before slicing', async () => {
+    const workspaceId = (await server.app.ctx.workspaces.list())[0]!.id;
+    vi.spyOn(server.app.ctx.trackerManager, 'maps').mockResolvedValue([
+      map(1, workspaceId, 'Wayfinder'),
+      map(2, workspaceId, 'Reliability'),
+      map(3, workspaceId, 'Wayfinder redesign'),
+    ]);
+
+    const res = await server.api('GET', '/api/maps?q=wayfinder');
+    expect(res.body.total).toBe(2);
+    expect(res.body.maps.map((m: DerivedMap) => m.ref)).toEqual([1, 3]);
+
+    const page = await server.api('GET', '/api/maps?q=wayfinder&limit=1&offset=1');
+    expect(page.body).toEqual({ maps: [map(3, workspaceId, 'Wayfinder redesign')], total: 2 });
   });
 });

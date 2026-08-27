@@ -133,6 +133,19 @@ async function fetchOpenTasks(workspaceId: number): Promise<Task[]> {
   }
 }
 
+// The Board folds every derived Epic into its focus/peek chrome, so — like the
+// task list — it walks the paginated Epic contract (ADR-0045, issue #351) in
+// bounded pages and assembles the whole set rather than pulling it back in one
+// unbounded response.
+async function fetchAllEpics(workspaceId: number): Promise<Epic[]> {
+  const all: Epic[] = [];
+  for (let offset = 0; ; offset += BOARD_PAGE) {
+    const { epics, total } = await api.epics(workspaceId, { limit: BOARD_PAGE, offset });
+    all.push(...epics);
+    if (epics.length === 0 || all.length >= total) return all;
+  }
+}
+
 const THEME_ICONS: Record<ThemePref, IconName> = {
   system: 'circle-half',
   light: 'sun',
@@ -284,7 +297,7 @@ export function App() {
   const refreshEpics = useCallback(async () => {
     if (activeWorkspaceId === null) return;
     try {
-      const { epics } = await api.epics(activeWorkspaceId);
+      const epics = await fetchAllEpics(activeWorkspaceId);
       setEpics(epics);
       setOpenEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
       setFocusEpic((current) => (current ? (epics.find((e) => e.ref === current.ref) ?? null) : current));
