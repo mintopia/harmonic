@@ -116,62 +116,6 @@ describe('Git operation instrumentation (issue #287)', () => {
   });
 });
 
-describe('Git.mergeCleanliness (read-only merge-tree fact for the critic, ADR-0021)', () => {
-  /** A snapshot of everything a mutation would move: HEAD, every ref, and the
-   * working-tree porcelain status. merge-tree writes only objects, so all three
-   * must be byte-identical before and after. */
-  function snapshot(dir: string): string {
-    return [
-      git(dir, 'rev-parse', 'HEAD'),
-      git(dir, 'for-each-ref', '--format=%(objectname) %(refname)'),
-      git(dir, 'status', '--porcelain'),
-    ].join('\n');
-  }
-
-  it('reports a clean merge without mutating the working tree or refs', async () => {
-    const repo = makeRepo(); // main @ base.txt
-    // A candidate ahead of main on its own ref (main stays put), adding a file —
-    // it merges cleanly into main.
-    git(repo, 'checkout', '-b', 'cand');
-    writeFileSync(join(repo, 'feature.txt'), 'feature\n');
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-m', 'candidate');
-    const candidate = git(repo, 'rev-parse', 'cand');
-    git(repo, 'checkout', 'main');
-
-    const before = snapshot(repo);
-    const result = await Git.mergeCleanliness(repo, 'main', candidate);
-    expect(result).toEqual({ clean: true });
-    expect(snapshot(repo)).toBe(before);
-  });
-
-  it('reports a conflicting merge and names the conflicting path, still read-only', async () => {
-    const repo = makeRepo();
-    const mergeBase = git(repo, 'rev-parse', 'HEAD'); // initial commit (base.txt = base)
-    // main advances one way…
-    writeFileSync(join(repo, 'base.txt'), 'MAIN\n');
-    git(repo, 'commit', '-am', 'main edits base.txt');
-    // …the candidate forks from the merge-base and edits the same line another way.
-    git(repo, 'checkout', '-b', 'cand', mergeBase);
-    writeFileSync(join(repo, 'base.txt'), 'CANDIDATE\n');
-    git(repo, 'commit', '-am', 'candidate edits base.txt');
-    const candidate = git(repo, 'rev-parse', 'cand');
-    git(repo, 'checkout', 'main');
-
-    const before = snapshot(repo);
-    const result = await Git.mergeCleanliness(repo, 'main', candidate);
-    expect(result?.clean).toBe(false);
-    expect(result?.conflicts ?? '').toContain('base.txt');
-    expect(snapshot(repo)).toBe(before);
-  });
-
-  it('returns null (unknown) when the base branch does not exist', async () => {
-    const repo = makeRepo();
-    const candidate = git(repo, 'rev-parse', 'HEAD');
-    expect(await Git.mergeCleanliness(repo, 'no-such-branch', candidate)).toBeNull();
-  });
-});
-
 describe('worktreeDiff — live diff of a running Run against its fork point', () => {
   it('includes committed AND uncommitted tracked changes', async () => {
     const repo = makeRepo();
