@@ -299,8 +299,12 @@ export const appConfigSchema = z.object({
    * completed worktree Run's branch (research Tasks are always artifacts);
    * `continueAttempts` is how many times a
    * Run that ended its turn without an explicit finish/escalate signal is
-   * re-prompted to continue before the Run is treated as unresolved — 0 keeps
-   * the old single-turn behaviour. `finish_task` (not the agent closing the
+   * re-prompted to continue before the Run is treated as unresolved and verified
+   * as-is — 0 keeps the old single-turn behaviour. It is a generous cap, not the
+   * primary runaway guard: the Progress Guardrail (issue #131) already escalates a
+   * Run that stalls, so this only needs to be high enough that a genuinely-
+   * progressing multi-turn Task is not cut short (a budget of 1 escalated real
+   * multi-turn work — Task 340). `finish_task` (not the agent closing the
    * ticket) is the execution-complete signal: Harmonic verifies, merges per
    * `mergeFate`, and closes the ticket itself (issue #139).
    */
@@ -310,7 +314,7 @@ export const appConfigSchema = z.object({
       unattendedReminder: z.string().default(UNATTENDED_REMINDER).meta({ example: UNATTENDED_REMINDER }),
       continuePrompt: z.string().default(DEFAULT_CONTINUE_PROMPT).meta({ example: DEFAULT_CONTINUE_PROMPT }),
       mergeFate: z.enum(MERGE_FATES).default('auto-merge').meta({ example: 'auto-merge' }),
-      continueAttempts: z.number().int().min(0).default(1).meta({ example: 1 }),
+      continueAttempts: z.number().int().min(0).default(10).meta({ example: 10 }),
     })
     .prefault({}),
   /**
@@ -498,7 +502,7 @@ export function defaultConfig(): AppConfig {
       unattendedReminder: UNATTENDED_REMINDER,
       continuePrompt: DEFAULT_CONTINUE_PROMPT,
       mergeFate: 'auto-merge',
-      continueAttempts: 1,
+      continueAttempts: 10,
     },
     taskPrompt: DEFAULT_TASK_PROMPT,
     conversationIdleTimeoutMinutes: 30,
