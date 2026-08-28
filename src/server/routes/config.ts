@@ -99,6 +99,7 @@ const configPatchBodySchema = z
         unattendedReminder: z.string().meta({ example: '## Running unattended\n\nYou are Harmonic Task {taskId}…' }),
         continuePrompt: z.string().meta({ example: "Your last turn ended but Task {taskId} isn't finished…" }),
         mergeFate: z.enum(MERGE_FATES).meta({ example: 'auto-merge' }),
+        continueAttempts: z.number().int().min(0).meta({ example: 1 }),
       })
       .partial()
       .optional(),

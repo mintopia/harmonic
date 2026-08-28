@@ -467,6 +467,22 @@ function DriveFields({
           </select>
           <FieldError message={fieldErrors['drive.mergeFate']} />
         </div>
+        <div>
+          <label className={fieldLabel} htmlFor="settings-continue-attempts">Continue attempts</label>
+          <p className="mb-1 text-small text-muted">
+            Re-prompts a Run that ended its turn without <code>finish_task</code> before it's verified anyway. 0 = single turn.
+          </p>
+          <input
+            id="settings-continue-attempts"
+            type="number"
+            min={0}
+            step={1}
+            className={`${field} w-24`}
+            value={d.continueAttempts}
+            onChange={(e) => onChange({ ...d, continueAttempts: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })}
+          />
+          <FieldError message={fieldErrors['drive.continueAttempts']} />
+        </div>
       </div>
     </div>
   );

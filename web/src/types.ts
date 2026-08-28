@@ -744,6 +744,8 @@ export interface AppConfig {
     /** The re-prompt nudge sent when a turn ends without finish/escalate, with {taskId} placeholder. */
     continuePrompt: string;
     mergeFate: 'auto-merge' | 'open-PR' | 'artifact';
+    /** How many times a Run that ended its turn without finish/escalate is re-prompted to continue before it is treated as unresolved and verified. 0 keeps single-turn behaviour. */
+    continueAttempts: number;
   };
   /** Maximum implementation attempts before the ticket is escalated. */
   maxAttempts: number;
