@@ -17,6 +17,7 @@ Subagents must use an appropriate model, defaults:
 
 Explicitly specify the model when starting a subagent.
 Subagents must use an appropriate subagent type.
+Do not start a subagent without explicitly setting the model.
 
 ### Testing
 
