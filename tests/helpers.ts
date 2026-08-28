@@ -24,12 +24,10 @@ export const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 
 /**
  * Cancel every still-`running` Task on `server` and wait for its Run to settle.
- * Test hygiene for the process-global Claude harness lock (#237): the Runner
- * holds a whole-run mutex per Claude process and releases it only when the Run
- * finalizes, so a hung `exit:'hang'` Run a test leaves behind wedges every later
- * Claude Run in the same file. Call from `afterEach` in files that start hanging
- * Runs so the lock drains between tests. Best-effort — a Run that already
- * settled between the list and the cancel is fine.
+ * Test hygiene: a hung `exit:'hang'` Run a test leaves behind keeps its harness
+ * process and run slot until it settles, which can leak into later tests in the
+ * same file. Call from `afterEach`/`afterAll` in files that start hanging Runs.
+ * Best-effort — a Run that already settled between the list and the cancel is fine.
  */
 export async function cancelRunningTasks(server: TestServer): Promise<void> {
   const running = (await server.app.ctx.tasks.list()).filter((t) => t.state === 'working');

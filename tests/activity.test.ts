@@ -55,8 +55,8 @@ describe('GET /api/activity snapshot (issue #51)', () => {
     server = await startServer(config);
   });
   afterEach(async () => {
-    // Release the process-global Claude harness lock (#237) that this file's
-    // hanging Runs would otherwise hold into the next test.
+    // Cancel this file's hanging Runs so they don't linger (leaked harness
+    // process, consumed run slot) into the next test.
     await cancelRunningTasks(server);
   });
   afterAll(async () => {
