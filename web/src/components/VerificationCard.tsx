@@ -117,7 +117,6 @@ export function VerificationCard({ attempts }: { attempts: VerificationAttempt[]
                   {a.verdict}
                 </span>
                 <span className="text-muted">{a.phase}</span>
-                {a.mutated && <span className={`${chip} bg-raised text-muted`}>mutated</span>}
                 <span className="min-w-0 text-muted">{a.summary}</span>
               </div>
             ))}

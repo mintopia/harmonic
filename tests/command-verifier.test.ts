@@ -267,18 +267,16 @@ describe('command verifier (issue #135)', () => {
     expect(attempt.verdict).toBe('pass');
   });
 
-  it('a command that mutates its checkout still reports its exit-code verdict (not overridden)', async () => {
+  it('a command that writes to its checkout reports its exit-code verdict', async () => {
     const { repo, oid } = await repoWithCandidate();
     const attempt = await runCommandVerifier({
       repoDir: repo,
       candidateOid: oid,
       worktreePath: freshWorktreePath(),
-      // Writes a file (mutating the disposable checkout) then exits 0.
+      // Writes a file into the disposable checkout then exits 0.
       command: nodeCommand('require("node:fs").writeFileSync("artifact.txt", "built"); process.exit(0)'),
       spawn: createChildProcessSpawn(),
     });
-    expect(attempt.mutated).toBe(true);
-    // Unlike the critic, a command's verdict is NOT overridden by mutation.
     expect(attempt.verdict).toBe('pass');
   });
 

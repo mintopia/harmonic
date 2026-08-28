@@ -19,7 +19,6 @@ export interface VerificationAttemptInput {
   /** Defaults to `'verifying'` — the only phase a Verification attempt runs
    * in today (mirrors the schema column's default). */
   phase?: RunPhase;
-  mutated: boolean;
   /** Locator for the critic's native transcript + the harness that wrote it
    * (ADR-0040). Both null for the command verifier and where no transcript was
    * resolved; the pair is what the attempt-log endpoint parses on demand. */
@@ -76,7 +75,6 @@ export class VerificationAttemptStore {
           summary: attempt.summary,
           output: attempt.output,
           phase: attempt.phase ?? 'verifying',
-          mutated: attempt.mutated,
           transcriptPath: attempt.transcriptPath ?? null,
           harness: attempt.harness ?? null,
         })

@@ -301,8 +301,6 @@ const verificationAttemptSchema = z.object({
   output: z.string().meta({ example: '' }),
   /** The Run phase the attempt was recorded in. */
   phase: z.enum(RUN_PHASES).meta({ example: 'verifying' }),
-  /** Whether the verifier mutated the worktree. */
-  mutated: z.boolean().meta({ example: false }),
   /** Whether a critic-session transcript is available for this attempt
    * (ADR-0040). The raw path is server-only; fetch the parsed log from
    * `GET /api/verification-attempts/:id/log`. */

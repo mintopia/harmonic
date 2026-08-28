@@ -958,12 +958,6 @@ export const verificationAttempts = sqliteTable('verification_attempts', {
   output: text('output').notNull(),
   /** The Run phase this attempt ran in; every attempt today runs in `verifying`. */
   phase: text('phase').$type<RunPhase>().notNull().default('verifying'),
-  /** Whether the verifier mutated the disposable checkout it ran against
-   * (`execution/candidate.ts`'s fingerprint bracket) — 0/1. A `true` here
-   * forces the critic's verdict to `inconclusive` regardless of what it
-   * reported (`verification/critic.ts`'s fail-safe rule); this column is the
-   * persisted trace of that override having fired. */
-  mutated: integer('mutated', { mode: 'boolean' }).notNull().default(false),
   /** Locator for the critic's native harness transcript (ADR-0040): resolved
    * from its harness `sessionId` before the disposable worktree is disposed, so
    * the operator can read the critic's own session log (reads, greps, builds)

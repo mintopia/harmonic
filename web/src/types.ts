@@ -106,7 +106,6 @@ export interface VerificationAttempt {
   summary: string;
   output: string;
   phase: RunPhase;
-  mutated: boolean;
   /** Whether a critic-session transcript can be read for this attempt
    * (ADR-0040) — fetch it with `api.criticLog(id)`. */
   hasTranscript: boolean;

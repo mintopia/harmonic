@@ -30,7 +30,6 @@ const attempt = (
   summary: `${mechanism} attempt ${seq}`,
   output: '',
   phase: 'verifying',
-  mutated: false,
   hasTranscript: false,
   ...overrides,
 });
