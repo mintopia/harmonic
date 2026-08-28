@@ -3,6 +3,12 @@
 Status: accepted
 Date: 2026-08-25
 
+Amended by: 0047-run-and-attempt-coexist-single-counter.md — the "Run and Phase
+are deleted" claim, and the deletion of the candidate snapshot machinery and
+self-heal, are corrected to **coexistence**. Those remain load-bearing (and are
+relied on by ADR-0042 and ADR-0046); only the double-booked attempt counter is
+unified onto the Attempt ledger. The rest of this ADR stands.
+
 ## Context
 
 The ticket/task workflow has grown three loop mechanisms at three granularities:
@@ -34,6 +40,8 @@ implementation and review steps, never in routing.
   command, ordered, fail-fast) → Review Task** (if enabled).
 - **Run and Phase are deleted.** "When is a run done" has no answer because Run
   bundled too much; an Attempt ends at its verification verdict.
+  _(Amended by ADR-0047: Run and Phase were never deleted and are load-bearing;
+  they coexist with Attempt. Only the double-booked counter is unified.)_
 
 ### Ticket states
 
@@ -155,7 +163,10 @@ config): `verify.commands[]`, `verify.review {enabled, harness, model, prompt}`,
 - Deleted: `reattempt` + `reattemptOf`, self-heal, Auto-Retry, Run phases, the
   review gate, Drive (afk/hitl) as a stored mode (replaced by the derived
   agent-workable flag), the candidate snapshot machinery, escalation-flag
-  actions.
+  actions. _(Amended by ADR-0047: self-heal, Run phases, and the candidate
+  snapshot machinery were **not** deleted — they remain load-bearing and are
+  used by ADR-0042/0046. Auto-Retry and `reattempt`/`reattemptOf` are the
+  loop mechanisms that genuinely collapsed into the Attempt counter.)_
 - Revised: ADR-0021 (verdict folding — `inconclusive` now fails the attempt;
   the command verifier becomes an ordered list), ADR-0011 (closure is an
   output, not the success signal), ADR-0027 (escape hatches collapse into the
