@@ -368,58 +368,30 @@ satisfies dependent Tickets.
 **cancelled**: Terminal. Abandoned deliberately.
 
 **Merge**:
-The Ticket-level step after a passing verdict: assert the ticket branch still
-points at the verified SHA, then merge — onto the Integration branch for an
-Epic Member (via the merge train), onto develop otherwise. If the base moved
-since the verdict, the Ticket re-enters Rebase → Verification without
-re-implementing and without touching the counter; with the freshness gate a
-merge conflict cannot otherwise occur. Merge mints no synthetic candidate
-commit: the verified-tree-is-merged-tree guarantee is the SHA assertion. (The
-**Candidate** ref itself is not deleted — it is the worktree-isolation freeze
-kept by ADR-0046; ADR-0047 corrects ADR-0041 on this.)
-_Avoid_: accept, merge gate
+The Ticket-level step after a passing verdict, one policy on every path
+(ADR-0049): under an in-process mutex, an ordinary merge commit of the ticket
+branch — onto the Integration branch for an Epic Member, onto develop
+otherwise — then the deterministic verify commands once on the merged base
+tip. Green releases the mutex; red reverts the merge commit and escalates. A
+textual conflict gets bounded agentic resolve-turns, then escalates. Base
+movement since the verdict is irrelevant — the merge commit reconciles the
+trees, and a verdict attaches to the Attempt, never to a SHA. There is no
+freshness gate, no SHA assertion, and no re-verification loop.
+_Avoid_: accept, merge gate, land (banned)
 
 ### Execution
 
-**Run**:
-One execution of a Ticket's work by a Harness — a single harness process and
-prompt turn, on branch `harmonic/task-<id>-run-<n>` in worktree mode. The unit
-Usage, Cost, and Guardrails attach to, that a Session prompts over, and that
-crash recovery reasons about. A Run carries a **Phase** and, in worktree mode, a
-**Candidate** ref. Run and **Attempt** coexist (ADR-0047, correcting ADR-0041's
-"Run is deleted"): a Run is one execution; an Attempt is one implement→verify
-iteration and is the ledger that owns the attempt counter. Today that counter is
-still double-booked — `runs.attempt` and `attempts.number` kept in step by hand —
-which ADR-0047 resolves by making the Attempt row the single source of truth a Run
-references by FK (that FK is follow-up work, not yet in the schema).
-_Avoid_: attempt (the loop-iteration ledger, not the execution), job
-
-**Phase**:
-The coarse execution stage of a Run — `executing → validating → verifying →
-merging → terminal` (`src/domain/run-phases.ts`). Not cosmetic: it scopes
-guardrail trips and routes crash recovery (which running Runs get force-failed on
-boot keys off Phase). Distinct from an Attempt's **Tasks**, the fine-grained
-timeline rows; Phase and Task coexist (ADR-0047).
-_Avoid_: stage, status; Ticket *state* is a separate axis
-
-**Candidate**:
-In worktree mode, a Run's frozen tree snapshot — a private
-`refs/harmonic/candidate/run-<id>` ref — that the verifiers run against, so the
-verified tree is the tree that merges. Kept and extended by ADR-0046
-for worktree-completion reconciliation; ADR-0041's "candidate machinery deleted"
-is corrected to coexistence by ADR-0047. Merge itself still
-asserts the verified SHA rather than minting a synthetic candidate commit.
-_Avoid_: snapshot commit, stash
-
-**Self-heal**:
-A corrective execution turn (`src/domain/turn-queue.ts`, a `TURN_PURPOSES`
-member — distinct from the Conversation-level **Turn**) that re-enters a Run's
-`validating` phase to fix a failed verification on the same branch. Its old
-per-turn budget folded into **Max Attempts** (#310), but the
-mechanism remains load-bearing — turn-queue admission, git-ref handling, crash
-recovery, and the verification-attempt UI all use it (ADR-0047 corrects
-ADR-0041's "self-heal deleted").
-_Avoid_: retry, auto-retry (those are Attempt-level; self-heal is a within-Run turn)
+**Attempt**:
+One iteration of a Ticket's implement→verify loop, and the single execution
+noun (ADR-0049 — **Run**, **Phase**, **Candidate**, and **Self-heal** are
+deleted concepts). The Attempt carries the attempt counter, the Session it
+prompts over, Usage, Cost, guardrail scoping, the transcript locator, and the
+timeline of its steps (implement → verify commands → review). A failed step
+feeds back into the next Attempt in the same worktree, counter +1;
+`maxAttempts` exhausted escalates the Ticket. Crash recovery reasons about
+Attempts directly.
+_Avoid_: run (deleted concept), job, phase (deleted — "what is running" is the
+current step on the Attempt timeline)
 
 **Harness**:
 An agent CLI that Harmonic drives to execute Runs — Claude (Claude Code),
@@ -429,22 +401,20 @@ _Avoid_: agent (ambiguous), backend, provider
 **Session**:
 One ACP conversation with a Harness — 1:1 with the harness's own session
 (`sessionId`), the unit a Run or Conversation prompts over `session/prompt`, and
-a durable first-class resource. A Session outlives a single Run: a retry, an
+a durable first-class resource. A Session outlives a single Attempt: a retry, an
 automated or human rejection, or a crash-recovery continue in the **same**
 Session — reloaded into a fresh harness process via `session/load` (supported by
-all three harnesses) as a **new Run and new prompt turn**, never by reattaching a
-dead process. Reuse is always valid; the provider prompt-cache being warm only
+all three harnesses) as a **new Attempt and new prompt turn**, never by
+reattaching a dead process. Reuse is always valid; the provider prompt-cache being warm only
 makes the resumed turn **cheaper** — it is a cost signal, not a correctness gate.
 The warm window is a per-Harness **cost estimate** (Claude ~1 h on a subscription
 via `ENABLE_PROMPT_CACHING_1H`; others shorter), never a promise: Harmonic
 records `lastActiveAt` and an estimated warm-until, and frames reuse as
 full-context vs a condensed new Session by cost, not a hard TTL cutoff.
-A Session moves `active → idle → retiring → retired`, and **Session retirement
-is the sole owner of builder-worktree removal**: a worktree Session's checkout is
-retained through the human-rejection window (so a reject-and-continue merges in the
-same workspace) and removed only when the Session retires — on a successful merge,
-a reject-continuation timeout, a review-abandonment SLA, an operator disposition,
-or a retention-TTL backstop — coordinated with the Work Context lease.
+A Session moves `active → idle → retiring → retired`. Builder-worktree removal
+is owned by the **Task**, not the Session (ADR-0046 Amendment 2 / ADR-0049):
+the per-Task worktree is retained across Attempts and removed only at the
+Task's terminal disposition (merged, or operator close/cancel).
 _Avoid_: thread, chat (the interactive sibling is a Conversation)
 
 **Working Directory**:
@@ -454,11 +424,12 @@ if the Workspace is later renamed, repointed, or deleted.
 _Avoid_: cwd, project dir
 
 **Isolation Mode**:
-How a Run touches its Working Directory — **direct** (in place, unlocked;
-concurrent collisions are the operator's problem) or **worktree** (a
-temporary git worktree on branch `harmonic/task-<id>-run-<n>` off the base
-branch; the branch remains as the artifact). Workspace default, per-Task
-override.
+How a Task's Attempts touch the Working Directory — **direct** (in place on
+the base branch, no isolation machinery; the single checkout naturally
+serialises to one worker) or **worktree** (one per-Task checkout on a stable
+`harmonic/task-<id>` branch cut from the base, created at task start, reused
+by every Attempt, removed at task done). Declared on the Task — never
+inferred from branch shape. Workspace default, per-Task override.
 
 **Auto-Runner**:
 The single scheduler across all Workspaces. When a Workspace has it enabled,
@@ -501,11 +472,9 @@ harness, model, and prompt, run only after the commands pass. Resolved global
 default with per-Workspace override; zero verifiers configured = the gate
 passes. Any command fail, review reject, or review *inconclusive* is a
 **failed Attempt** — feedback into the next Attempt, counter +1 (ADR-0041,
-revising ADR-0021's inconclusive-escalates). Runs against the branch head SHA,
-which Merge then asserts.
-_Avoid_: review gate (deleted); validation — the Run's `validating` **Phase** is
-a real but distinct concept (the coarse execution stage), not this Attempt-level
-gate; lint, test (it is more than either)
+revising ADR-0021's inconclusive-escalates). The verdict attaches to the
+Attempt, never to a SHA (ADR-0049); Merge never re-checks it.
+_Avoid_: review gate (deleted), validation, lint, test (it is more than either)
 
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback

@@ -1,5 +1,10 @@
 # At most one automatic Run per Work Context (the House Rule)
 
+Amended by: 0049-execution-model-one-merge-policy.md — the post-review "durable
+lease" reframing below is reverted; the rule returns to what this ADR originally
+decided: a scheduler pick predicate. `work_context_leases`, the heartbeat, phase
+TTLs, and the `suspect` state are deleted.
+
 A Work Context is a Working Directory plus branch. In direct mode it is the shared
 directory on its live branch; in worktree mode it is the Run's own worktree and
 branch. The Auto-Runner will not start an afk Run into a Work Context already

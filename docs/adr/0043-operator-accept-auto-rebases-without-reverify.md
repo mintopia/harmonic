@@ -1,7 +1,12 @@
 # Decision: Operator Accept auto-rebases onto an advanced base without re-verifying
 
-Status: accepted
+Status: superseded
 Date: 2026-08-26
+
+Superseded by: 0049-execution-model-one-merge-policy.md — no path re-verifies on
+base movement any more, so the operator-Accept special case (and its
+`rebaseOnAdvance` replay machinery) is obsolete; Accept simply runs the one
+merge policy.
 
 ## Context
 

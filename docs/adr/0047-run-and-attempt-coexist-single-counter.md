@@ -1,7 +1,12 @@
 # Decision: Run and Attempt coexist — amend ADR-0041's deletions, unify only the double-booked counter
 
-Status: accepted
+Status: superseded
 Date: 2026-08-28
+
+Superseded by: 0049-execution-model-one-merge-policy.md — the narrowing this ADR
+anticipated ("a future ADR may still narrow the surface"): with the frozen
+candidate and phase machinery deleted, the coexistence rationale no longer
+applies. Run collapses into Attempt, which carries the only counter.
 
 ## Context
 

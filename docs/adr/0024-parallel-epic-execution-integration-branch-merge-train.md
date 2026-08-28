@@ -10,6 +10,12 @@ Refined by: [ADR-0030](0030-local-db-source-of-truth-for-agent-work.md)
 > "no assignee"), and Epic structure/frontier is derived from persisted DB facts (not
 > the live tracker scan). The integration-branch and merge-train design here stands unchanged.
 
+> Amended by [ADR-0049](0049-execution-model-one-merge-policy.md): the per-Epic
+> integration branch and the whole-Epic verify + integrate gate stand; the
+> single-writer merge train and its rebase-then-fast-forward mechanics are
+> replaced by 0049's one merge policy (ordinary merge commit under an in-process
+> mutex, post-merge check, revert on red).
+
 To implement a large feature faster, Harmonic runs the ready children of a
 leaf-most Epic (a Spec or a Map) concurrently in per-Run worktrees, then
 merges them back safely through a single-writer merge train onto a

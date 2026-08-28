@@ -1,7 +1,15 @@
 # Decision: Deterministic base-branch integration — direct works in place, worktree reconciles by optimistic CAS, no forensic guards
 
-Status: accepted
+Status: superseded
 Date: 2026-08-27
+
+Superseded by: 0049-execution-model-one-merge-policy.md — the optimistic-CAS
+completion, the always-re-verify rule, and the retry bounds are replaced by a
+single merge policy (ordinary merge commit under an in-process mutex, one
+post-merge check, revert on red). The parts that survive — direct-works-in-place,
+the per-Task worktree (Amendment 2), the quiet epic refresh (Amendment 1),
+"no forensic guards", and the merge/integrate vocabulary — are restated as
+decisions of 0049.
 
 ## Context
 
