@@ -39,6 +39,20 @@ export function codeIndexRepoGuidance(repoId: string): string {
   return `\n\nCODE INDEX: this worktree is indexed as jCodeMunch repo \`${repoId}\`. If you use a code-index / jCodeMunch tool, pass \`${repoId}\` as the repo for every query. Do NOT resolve the repo by \`.\` or index path — that points at a different checkout of this repository, on another branch, WITHOUT the changes in this worktree, so it would show you stale code.`;
 }
 
+/**
+ * Guidance for the critic, handed the change as its two revisions — the base
+ * (fork point, before the change) and the candidate (the change under review) —
+ * each indexed by Harmonic as its own jCodeMunch repo (`code-index.ts`). The
+ * critic never receives a git diff; it derives what changed by comparing the two
+ * indexed revisions itself. Pure and dependency-free so the web settings preview
+ * compiles the same text. Either id empty ⇒ nothing rendered (the caller then
+ * falls back to single-repo guidance or none).
+ */
+export function codeIndexComparisonGuidance(baseRepoId: string, candidateRepoId: string): string {
+  if (!baseRepoId || !candidateRepoId) return '';
+  return `\n\nCODE INDEX: the change under review is available as its two revisions, each indexed as its own jCodeMunch repo:\n- BASE (before the change): \`${baseRepoId}\`\n- CANDIDATE (the change under review): \`${candidateRepoId}\`\nTo see exactly what this change did, compare the two via the code index — e.g. \`get_parity_map\` with source_repo \`${baseRepoId}\` and target_repo \`${candidateRepoId}\`, then read the changed symbols in \`${candidateRepoId}\`. Query \`${candidateRepoId}\` for the candidate's current code and \`${baseRepoId}\` for the prior state. Do NOT resolve either repo by \`.\` or index path — that points at a different checkout on another branch and would show you stale code.`;
+}
+
 /** research→`research`, everything else→`implement` (issue #33). */
 export function skillFor(task: Pick<DriveTask, 'wayfinderType' | 'harness'>): string {
   const prefix = task.harness === 'codex' ? '$' : '/';

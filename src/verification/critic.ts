@@ -230,7 +230,15 @@ export interface RunCriticArgs {
   repoDir: string;
   /** The fixed commit checked out into the disposable worktree the critic reads from. */
   candidateOid: string;
-  /** Where to check out the disposable detached worktree for this attempt. */
+  /** The base revision (fork point) the candidate diverged from — the "before"
+   * of the change. Indexed as its own jCodeMunch repo alongside the candidate so
+   * the critic is given the two revisions and derives what changed by comparing
+   * them, never a git diff (the standing design contract). Omitted ⇒ the critic
+   * reviews the candidate alone (the base is unknown, e.g. a direct-mode Run with
+   * no branch to take a merge-base against). */
+  baseOid?: string;
+  /** Where to check out the disposable detached worktree for this attempt. The
+   * base revision is checked out alongside it at `${worktreePath}-base`. */
   worktreePath: string;
   critic: VerificationCritic;
   /** The Drive-Prompt interpolation tokens (`drive-prompt.ts` `driveFields`) —
@@ -320,6 +328,42 @@ export async function runCritic(args: RunCriticArgs): Promise<CriticAttempt> {
   }
 }
 
+/**
+ * Check out `baseOid` into a disposable worktree, index it as its own jCodeMunch
+ * repo, and invoke `body` with that repo id (null when the base could not be
+ * checked out or indexed). Best-effort: any failure setting up the base tree
+ * degrades to `body(null)` — a candidate-only review — rather than throwing, so a
+ * missing/broken base never fails the critic. The base index and worktree are
+ * reaped when `body` resolves.
+ */
+async function withBaseWorktreeIndexed(
+  repoDir: string,
+  baseOid: string,
+  worktreePath: string,
+  body: (baseRepoId: string | null) => Promise<void>,
+): Promise<void> {
+  let ran = false;
+  const run = async (baseRepoId: string | null): Promise<void> => {
+    ran = true;
+    await body(baseRepoId);
+  };
+  try {
+    await withDetachedWorktree(repoDir, baseOid, worktreePath, async (baseDir) => {
+      const baseRepoId = await indexWorktree(baseDir);
+      try {
+        await run(baseRepoId);
+      } finally {
+        if (baseRepoId) await dropIndex(baseRepoId);
+      }
+    });
+  } catch {
+    // Base checkout/index failed. If `body` never ran (the checkout itself
+    // failed), fall back to a candidate-only review; if it already ran, a
+    // base-worktree teardown error must not discard the verdict it produced.
+    if (!ran) await run(null);
+  }
+}
+
 async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   const drive = args.drive ?? createAcpCriticDrive();
   const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -330,28 +374,32 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
   let sessionId: string | null = null;
 
   try {
-    await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (dir) => {
-      // Index this disposable checkout as its own jCodeMunch repo and hand the
-      // critic that id, so its code-index queries hit the candidate tree rather
-      // than resolving `.` to the canonical checkout on another branch
-      // (`code-index.ts`). The index lives outside the worktree, so it never
-      // trips the mutation fingerprint. Best-effort: null ⇒ skip the injection.
-      const codeIndexRepoId = await indexWorktree(dir);
-      try {
+    await withDetachedWorktree(args.repoDir, args.candidateOid, args.worktreePath, async (candidateDir) => {
+      // Index the candidate checkout as its own jCodeMunch repo (`code-index.ts`)
+      // so the critic's code-index queries hit THIS tree, not `.` resolving to
+      // the canonical checkout on another branch. The index lives outside the
+      // worktree, so it never trips the mutation fingerprint. Best-effort: null
+      // ⇒ skip the injection.
+      const candidateRepoId = await indexWorktree(candidateDir);
+
+      // One read-only review turn, given the candidate checkout plus whichever
+      // code-index repo ids we managed to build. Extracted so it runs identically
+      // whether or not the base revision could be indexed alongside it.
+      const review = async (baseRepoId: string | null): Promise<void> => {
         const prompt = buildCriticPrompt({
           operatorPrompt: args.critic.prompt,
           fields: args.fields,
           ...(args.operatorNote !== undefined ? { operatorNote: args.operatorNote } : {}),
           ...(args.mergeCleanliness !== undefined ? { mergeCleanliness: args.mergeCleanliness } : {}),
-          ...(codeIndexRepoId ? { codeIndexRepoId } : {}),
+          ...(candidateRepoId ? { candidateRepoId } : {}),
+          ...(baseRepoId ? { baseRepoId } : {}),
         });
-
         try {
           const result = await drive.run({
             harness: args.harness,
             harnessId: args.harnessId,
             model: args.critic.model,
-            cwd: dir,
+            cwd: candidateDir,
             prompt,
             timeoutMs,
           });
@@ -367,10 +415,23 @@ async function runCriticUnchecked(args: RunCriticArgs): Promise<CriticAttempt> {
         } catch (err) {
           summary = `critic drive failed: ${err instanceof Error ? err.message : String(err)}`;
         }
+      };
+
+      try {
+        // Hand the critic the two revisions: check out and index the base (fork
+        // point) alongside the candidate, so it derives what the change did by
+        // comparing the two indexed revisions rather than being fed a diff. Best-
+        // effort and nested — a base checkout/index failure degrades to a
+        // candidate-only review, never a failed critic.
+        if (args.baseOid) {
+          await withBaseWorktreeIndexed(args.repoDir, args.baseOid, `${args.worktreePath}-base`, review);
+        } else {
+          await review(null);
+        }
       } finally {
-        // Reap the ephemeral index whichever way the turn went; the worktree is
+        // Reap the candidate index whichever way the turn went; the worktree is
         // about to be torn down, so the index would otherwise dangle.
-        if (codeIndexRepoId) await dropIndex(codeIndexRepoId);
+        if (candidateRepoId) await dropIndex(candidateRepoId);
       }
     });
   } catch (err) {
