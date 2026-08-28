@@ -41,7 +41,7 @@ There is no `lint` script.
 Migrations live in `drizzle/` and are applied automatically at server
 startup. To add one, edit `src/db/schema.ts` then generate SQL with
 `npx drizzle-kit generate` (there is no wrapper npm script). See
-[ADR 0016](/harmonic/how-it-works/design-decisions/) for the
+[ADR 0007](/harmonic/how-it-works/design-decisions/) for the
 foreign_keys-disabled migration behaviour.
 
 ## CI
@@ -81,4 +81,4 @@ npm run build    # astro build
 ```
 
 It deploys to GitHub Pages at https://mintopia.github.io/harmonic/
-([ADR 0013](/harmonic/how-it-works/design-decisions/)).
+([ADR 0012](/harmonic/how-it-works/design-decisions/)).

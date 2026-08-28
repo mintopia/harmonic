@@ -17,18 +17,18 @@
          escalated / "needs you." Deck's "awaiting-review = the accent" is
          retired; in Paper the escalated state owns its own hue.
        · Board (home): attention-ordered sections — Attention → Running →
-         Pending (ADR-0041, 2026-08-26) — as horizontal card strips (Attention /
+         Pending (ADR-0011, reset 2026-08-28) — as horizontal card strips (Attention /
          Running) and, inside Pending, collapsible Epic bands plus a standalone
          group, each laid out in open-blocker-count columns (Frontier / 1 blocker
          / 2 blockers …), not panelled row-lists. State is never a column.
        · Vocabulary: "merged" / "merging", never "landing" / "landed", on every
-         surface (code-internal landBranch / EpicLandCoordinator unaffected).
+         surface — code-internal names were purged with ADR-0001's vocabulary rule.
 
      Retired with Deck: the cobalt one-accent framing, the panelled-list Deck
      home, and every Deck token below. The shipped Paper implementation and this
      file are the design reference.
      Accessibility decisions from the 2026-08-21 audit are recorded inline in § 2;
-     the running-amber sub-AA exception is ADR-0033. -->
+     the running-amber sub-AA exception is ADR-0011. -->
 
 ---
 name: Harmonic
@@ -167,7 +167,7 @@ spacing:
 
 **"Paper" is a register, not a picture.** No paper texture, no skeuomorphism, no costume — the name means *matte, low-chroma, tactile-but-flat, quiet*. This is the correction to any temptation to theme the tool: Paper is restrained and serious (Linear-grade / terminal-adjacent), never whimsical or metaphor-dressed.
 
-This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop lands its own verified work), reach `escalated` when they need a human (ADR-0041), and Epics **merge** as a batch through an integration branch and a merge train. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
+This is a redesign, not a retheme: the UI is organised around the real lifecycle. Tickets flow `draft → ready → working → done` (the Attempt loop merges its own verified work under the one merge policy), reach `escalated` when they need a human (ADR-0001/0002), and Epics **merge** as a batch through an integration branch. The old cobalt "Deck" skin, its panelled row-lists, and its kanban ancestry are gone.
 
 **The Prime Directive — the operator's attention leads.** Every surface is ordered so the thing that needs the operator *now* is first and loudest: escalations at the top of the Board; the escalation surface (Accept / Reject with guidance / Close) as the one loud element on a Ticket. Density is a virtue here, not a risk — but density is earned by structure (grouping, hierarchy, alignment), never bought with clutter.
 
@@ -180,11 +180,11 @@ Paper keeps rejecting PRODUCT.md's anti-references: **CI/CD console gloom** (str
 - Matte, low-chroma, quiet: near-neutral grounds, quiet real elevation, generous but disciplined density.
 - **Two deliberate voices** — teal for actions/tooling, indigo for the review state — over a semantic state-signal family (§ 2). No third accent.
 - Monospace is reserved for **code** — file paths, branch refs, commit oids, shell commands, tool targets, session ids, inline code. Everything read as language or as a figure is sans with `tabular-nums`.
-- True dual theme + Soft/Bold density, **WCAG 2.1 AA** floor in both themes (one documented amber exception, § 2 / ADR-0033).
+- True dual theme + Soft/Bold density, **WCAG 2.1 AA** floor in both themes (one documented amber exception, § 2 / ADR-0011).
 
 ## 2. Colours
 
-Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes. The one deliberate exception is the running amber (below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper lands in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 non-exception failures across Light/Dark × Soft/Bold, 2026-08-21).
+Two voices — a **teal action accent** and an **indigo review hue** — over a low-chroma near-neutral ground and a semantic state-signal family. Every informational pairing holds WCAG AA against its documented background in its theme: text-on-tint state pills and metadata at ≥4.5:1, non-text affordances (dividers, seams, the switch off-track) at ≥3:1, in **both** themes. The one deliberate exception is the running amber (below). `web/src/index.css` + `tests/contrast.test.ts` are the implementation gate when Paper ships in the app; this file is the intent, and the mockup's in-browser WCAG sampler is the current source of truth (0 non-exception failures across Light/Dark × Soft/Bold, 2026-08-21).
 
 ### The two voices
 - **Teal Accent** (`#0D7271` light / `#33BDB4` dark): the interface's action/tooling voice — primary actions, active nav, current selection, focus rings, the *ready* frontier and `Run now`, tooling/branch/epic refs, and the escalation `Accept` button. Filled buttons pair it with white in light / near-black (`#0E1413`) in dark. Hover: `#0B6360` light, `#4CD0C7` dark. **Accent Tint** (`#E0F0EF` / `#123330`): fill under active nav, the `Run now` ghost, tooling badges.
@@ -203,11 +203,11 @@ Two voices — a **teal action accent** and an **indigo review hue** — over a 
 - **Ink** (`#1B1E24` / `#E8E9EC`): primary text. **Muted** (`#656B73` / `#A3A8B0`): secondary text — the informational floor, ≥4.5:1. **Faint** (`#61676F` / `#979BA2`): quiet metadata (branch names, ids, timestamps, zero counts) — held at ≥4.5:1 on every neutral background.
 
 ### State-signal family (belongs to the work, not the chrome)
-Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, run-chip states, and merge-train segments:
+Each state is a text colour + a dot colour + a tint fill, per theme, rendered as dots, tinted count pills, state pills, run-chip states, and member-status pips:
 - **Working amber** (`#C0722A` / tint `#F6EBDC` · dark `#DE9A45` / tint `#3A2C16`): work in flight — the Attempt loop is executing.
 - **Escalated = indigo** (see the two voices above) — the state that needs you.
 - **Ready = teal** (`#0D7271` / tint `#DDEFEE` · dark `#33BDB4` / tint `#123330`): queued to run, in the ready frontier — the same hue as the action accent, because *ready* is "actionable now."
-- **Done emerald** (`#267356` / tint `#E1F1EA` · dark `#37C48E` / tint `#12302A`): verified, landed, folded. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald).
+- **Done emerald** (`#267356` / tint `#E1F1EA` · dark `#37C48E` / tint `#12302A`): verified, merged. **Distinct green from teal on purpose** — never give *ready* its own separate green (two greens confused the operator; ready is teal, merged is emerald).
 - **Failed rose** (`#AF3C52` / tint `#F9E4E8` · dark `#F0768A` / tint `#3B1D24`): failed, rejected, blocked member, destructive.
 - **Blocked slate** (`#6A7079` / tint `#ECEDEA` · dark `#8A9099` / tint `#282B31`): waiting on a dependency. (Light slate darkened from `#868C95` in the AA retune.)
 - **Tooling = teal** (`= accent`): tool calls, branch/epic refs, harness metadata, the Epic kind badge. Paper folds Deck's separate tooling-cyan into the teal voice.
@@ -215,7 +215,7 @@ Each state is a text colour + a dot colour + a tint fill, per theme, rendered as
 ### Named accessibility rules (2026-08-21 audit)
 **The Ink-Flip Rule.** The white-on-solid *await* and *merged* fills fail AA in the dark theme (white on the bright periwinkle/emerald measures ~2.7 / ~2.2:1). Do **not** darken the fills — that mutes the colour. Instead the glyph ink flips per theme via `--on-await` / `--on-done`: white in light, dark ink (`#15161A` / `#0E1413`) on the bright fills in dark. Any new white-on-state-fill pairing follows this.
 
-**The Amber Exception (ADR-0033).** The running amber measures **3.1–3.7:1** at the ~10px sizes where it appears as text — below AA. It is an *accepted, bounded* exception because running state is **never carried by colour alone**: a pulsing dot, a text label, and structural position always accompany it. The amber stays vivid; we do not chase 4.5:1 at 10px. The constraint: if amber ever becomes the *sole* carrier of a state (no dot, label, or position), that usage must meet AA independently.
+**The Amber Exception (ADR-0011).** The running amber measures **3.1–3.7:1** at the ~10px sizes where it appears as text — below AA. It is an *accepted, bounded* exception because running state is **never carried by colour alone**: a pulsing dot, a text label, and structural position always accompany it. The amber stays vivid; we do not chase 4.5:1 at 10px. The constraint: if amber ever becomes the *sole* carrier of a state (no dot, label, or position), that usage must meet AA independently.
 
 **The Cool-Neutral-ish Rule.** Neutrals stay low-chroma in both themes; the little warmth in the paper ground is deliberate and quiet — all real hue comes from the two voices and the state family.
 
@@ -259,8 +259,8 @@ Depth is real but quiet, **declared once per element** (never a border *and* a w
 **App shell (landmarked).** A slim left **`<nav>` rail** (~224px, Shell fill, hairline right edge): the wordmark, the Workspace switcher, and primary nav grouped **Workspace** (Board / Activity / Table / Graph / Stats) and **Instance** (API / Workspace), as line-icon + label rows (active = teal text on Accent Tint; a badge carries a count, **indigo** when it's the Attention count). A collapse toggle pins bottom; below ~860px the rail collapses to icons. A thin **`<header>` status strip** carries *status, not navigation* — the auto-runner switch, running count (amber dot) + machine ceiling, today's cost — then, right-aligned, the Soft/Bold toggle, the theme cycle, Settings, and the one primary action (**New task**). The working column is `<main>`; the shell is pinned and only the working area scrolls.
 
 ### The Board (home / signature surface)
-Full-width, attention-ordered sections, top → bottom (ADR-0041 Visibility; state is implied by colour, **never a column**):
-- **Attention** — the sacred core, always first: *escalated* Tickets **and escalated Epics** (a held whole-Epic merge), indigo, with the escalation reason at a glance; the Epic card carries its merge-train and opens the Epic peek. Human-only tickets are never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
+Full-width, attention-ordered sections, top → bottom (ADR-0011 Visibility; state is implied by colour, **never a column**):
+- **Attention** — the sacred core, always first: *escalated* Tickets **and escalated Epics** (a held whole-Epic merge), indigo, with the escalation reason at a glance; the Epic card carries its member-status pips and opens the Epic view. Human-only tickets are never here. A horizontal **card strip** (fixed ~420px cards; overflow shows a right-edge fade + "→ N more" chip). Its section label + count are **indigo**, the one section that isn't faint.
 - **Running** — the working Tickets, a card strip; the count (amber tint) matches "N working." A running Epic member is promoted here, out of its band.
 - **Pending** — every ready / draft ticket, **grouped into Epics** (collapsible **bands**, ascending by ref) with a **standalone** group last (loose nodes on the canvas, not boxed). Each group lays its tickets out in **open-blocker-count columns** (below). Standalone (non-Epic) Tasks and Epic members are both first-class.
 
@@ -268,7 +268,7 @@ Full-width, attention-ordered sections, top → bottom (ADR-0041 Visibility; sta
 The one place the parallel-Epic machinery is legible at a glance:
 - **Column 0 = Frontier** (zero open blockers — actionable now), then **1 blocker / 2 blockers / …** by the API's derived `openBlockerCount` (#308) — never a client-side re-derivation. Horizontal scroll **inside** the panel; fixed ~300px node cards, never squashed to fit. Columns update live as blockers resolve (the server re-broadcasts dependants on completion).
 - **Ready ≠ blocked.** A node is in the Frontier only when its open-blocker count is zero; "blocked" is the count, not a state — a **blocker-count badge** (Blocked slate; Failed rose when a blocker is escalated/cancelled and will not clear on its own) sits top-right on every blocked node and card.
-- **Merged members are hidden entirely** (folded into the epic branch); working / escalated members are promoted to Running / Attention. An epic whose remaining members are all promoted or merged collapses to its header + merge-train; empty columns drop out. An Epic member no Task mirrors yet sits in a trailing **Unmirrored** column (its blocker count is unknown).
+- **Merged/closed members drop to a closed rail below the columns** (ADR-0011 — finished work stays visible without crowding); working / escalated members are promoted to Running / Attention. An epic whose remaining members are all promoted or closed collapses to its header + member-status pips; empty columns drop out. A complete epic that is integrating shows a steps/progress bar of the integration (whole-Epic verify → merge → post-merge check → retire). An Epic member no Task mirrors yet sits in a trailing **Unmirrored** column (its blocker count is unknown).
 - **Cross-epic dependencies are chips, never drawn lines.** No connector lines at all — column position + colour carry flow. Satisfied blockers are struck-through chips.
 - **Node state = the dot only** (plus an sr-only status word). No status text, no colored left bar on nodes; runnable frontier nodes get a subtle teal border, everything else hairline.
 - **Human-only (HITL) nodes render in place, muted** — faint dot, muted title, a neutral **HITL badge** (person icon), no Run now — so a blocker chain through a human ticket stays visually contiguous.
@@ -279,7 +279,7 @@ The one place the parallel-Epic machinery is legible at a glance:
 A full-width page you navigate into. Crumb: `harmonic / Epic epic/166 / Task 172 · issue #185` (the epic crumb only when the task is in an epic). It separates **task-level** facts (constant) from **run-level** facts (per attempt):
 - **Task header:** Display title + state pill; a **flat metrics row** — Cost · Tokens · Elapsed · Runs · Diff — as non-card, hairline-separated figures (never stat-cards); a meta line (origin · priority · agent · deps · notify); a clamped Brief/description with Show-more.
 - **Run-centric body** (`.tkshell`): a full-height right **run rail** (`<aside>`) + a main pane that shows **Run OR Changes**, driven by the rail's selection:
-  - **Run rail** holds **Run attempts** (one selectable row per attempt: dot + `Run N` + `state · cost · duration`, selected on Await Tint + indigo ring), the **Worktree** (branch ref, base, isolation), and **Changed files** (per-file M/A badge + ± stat).
+  - **Run rail** holds **Run attempts** (one selectable row per attempt: dot + `Attempt N` + `state · cost · duration`, selected on Await Tint + indigo ring), the **Worktree** (branch ref, base, isolation), and **Changed files** (per-file M/A badge + ± stat).
   - **Run** view (an attempt selected): the attempt's **timeline rows** (rebase, implementation, each verification command, review) with command, output and verdict, the **transcript** (native harness event stream), and a **per-agent usage table** (read/write/cached bars + cost per agent). A warm/continued run names its session continuity.
   - **Changes** view (a changed file selected): the **run-agnostic worktree diff** — the cumulative diff of the worktree, not tied to any single run.
 - **Escalation surface:** on an escalated ticket, exactly three actions on the escalated attempt's timeline entry — **Close (quiet destructive)**, **Reject with guidance… (ghost)**, then **Accept (teal fill, last)** — the loudest element on the page, and **sticky** so it stays reachable when the sidebar stacks below at narrow widths. Accept is disabled when no verified head exists. Every other state shows the plain state actions.
@@ -290,14 +290,14 @@ Activity, Table, Graph (dependency DAG), Stats, API, Workspace, Settings inherit
 ## 6. Components
 
 ### Board card (Attention / Running strips)
-A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** put harness·model on its own line below the escalation-reason line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right: the state chip (escalated / the running phase) and, when blocked, the **blocker-count badge**. Right-aligned action by state: **Resolve →** (indigo, escalated), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket. The **escalated Epic card** shares the shape: kind badge · `epic/<ref>` · title · the held-merge reason (indigo) · merge-train + "n of m merged" · **Resolve →** into the Epic peek.
+A colored **left accent bar** (state) · state dot · faint mono id (`T-<id>` native / `#<ref>` mirrored) · loud title · ≤2 quiet meta facts · a right-aligned action or signal. **Attention cards** put harness·model on its own line below the escalation-reason line. Bottom-left: a git branch/worktree icon + ref (mono); bottom-right: `runtime · ctx %`. Top-left **Epic badge** (`epic/260`, teal mono) only if in an epic. Top-right: the state chip (escalated / the running Step) and, when blocked, the **blocker-count badge**. Right-aligned action by state: **Resolve →** (indigo, escalated), **Run now** (teal). Hover raises the card; the card is the click target to the Ticket. The **escalated Epic card** shares the shape: kind badge · `epic/<ref>` · title · the held-merge reason (indigo) · member-status pips + "n of m merged" · **Resolve →** into the Epic view.
 
 ### Epic band + blocker-column node
-Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono), the title, an indigo "N in attention" chip when members are escalated, the **merge-train** pips, a disclosure chevron. Expands to the blocker columns (§ 5). A **node**: state dot + mono id + title + dependency chips (satisfied = struck-through); runnable frontier nodes get a teal ▷ **Run now**; blocked nodes carry the **blocker-count badge** (slate / rose) and their blocker chips; human-only nodes the neutral **HITL badge** (person icon) and muted ink — the 2026-08-26 ADR-0041 rework retired the amber HITL badge, since HITL is not a state and amber is Running's. Merged nodes are hidden.
+Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono), the title, an indigo "N in attention" chip when members are escalated, the **member-status** pips (one per member, colour = state), a disclosure chevron. Expands to the blocker columns (§ 5). A **node**: state dot + mono id + title + dependency chips (satisfied = struck-through); runnable frontier nodes get a teal ▷ **Run now**; blocked nodes carry the **blocker-count badge** (slate / rose) and their blocker chips; human-only nodes the neutral **HITL badge** (person icon) and muted ink — the ADR-0001 lifecycle retired the amber HITL badge, since HITL is not a state and amber is Running's. Merged/closed nodes live in the closed rail below the columns.
 
 ### Run rail, stepper & verification
-- **Run attempt row:** dot + `Run N` + `state · cost · duration`; selected on Await Tint + indigo ring.
-- **Phase stepper:** `executing → validating → verifying → review → merging`. Done = emerald ✓ node (ink flips per theme), current = indigo node, pending = hollow Edge node, **failed = rose ✕** (a failed run stops there); connectors fill emerald behind completed steps.
+- **Attempt row:** dot + `Attempt N` + `state · cost · duration`; selected on Await Tint + indigo ring.
+- **Step stepper:** `implementing → verifying → review → merging`. Done = emerald ✓ node (ink flips per theme), current = indigo node, pending = hollow Edge node, **failed = rose ✕** (a failed Attempt stops there); connectors fill emerald behind completed steps.
 - **Verification block:** a header verdict (proceed emerald / block·escalate rose) + one row per mechanism (Command, Critic·model) with a pass/fail icon, one-line summary, and verdict word. Fail-safe reads never render as a silent pass.
 - **Per-agent usage table:** one row per agent — role (+ `subagent` tag), model, a read/write/cached stacked bar with a legend, and cost. Flat rows, hairline-separated, never cards.
 
@@ -306,7 +306,7 @@ Band header: the **kind** badge (`Map` / `Spec`, teal tint), `epic/<ref>` (mono)
 - **Review / Go:** indigo (`btn-go`) — the review state's forward move (`Review →`), and Bold fills it solid indigo.
 - **Run:** teal on Accent Tint (`btn-run` / `Run now`).
 - **Ghost:** Surface fill, 1px Edge border, ink text; hover darkens the border (`Take over`, `Reject…`).
-- **Escalation surface:** **Close (quiet destructive)**, **Reject with guidance… (ghost)**, then **Accept (teal, last)** — the affirmative holds the terminal position. Accept lands the verified head as-is; it refuses when the head has moved or none exists.
+- **Escalation surface:** **Close (quiet destructive)**, **Reject with guidance… (ghost)**, then **Accept (teal, last)** — the affirmative holds the terminal position. Accept runs the one merge policy now (merge commit, post-merge check); there is nothing to refuse on base movement (ADR-0001).
 - **Hit targets:** every interactive control gets a ≥44×44px hit area via an overlay pseudo-element (expand the hit box, not the visual). **Hover/Focus:** ~150ms ease; 2px teal `:focus-visible` outline.
 
 ### Dialogs & tooltips
@@ -321,7 +321,7 @@ Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions
 ### Do
 - **Do** order every surface by the operator's attention — escalations first, loudest.
 - **Do** keep the **two voices** clean: teal = action / tooling / ready; indigo = the operator's turn (escalated / needs-you). Each ≤~10% of a screen.
-- **Do** keep state colour on the state layer only (dot, count pill, state pill, merge-train segment, run-chip state word).
+- **Do** keep state colour on the state layer only (dot, count pill, state pill, member-status pip, run-chip state word).
 - **Do** flip glyph ink per theme on the bright await/merged fills (`--on-await` / `--on-done`) to hold AA — never darken the fill.
 - **Do** set everything read as language or a figure in sans with `tabular-nums`; reserve mono for genuine code and code-identity tokens.
 - **Do** declare elevation once (shadow *or* ring); floor informational text at Muted (4.5:1); design every change in both themes **and** both densities; give every control default/hover/focus-visible/disabled and every animation a reduced-motion alternative; give every control a ≥44px hit area.
@@ -329,7 +329,7 @@ Landmarks (`<nav>` / `<main>` / `<header>` / `<aside>`); **`aria-live`** regions
 - **Do** say **merged / merging** in all UI copy.
 
 ### Don't
-- **Don't** say "landing" / "landed" anywhere in the UI (code-internal `landBranch` / `EpicLandCoordinator` are unaffected).
+- **Don't** say "landing" / "landed" anywhere — UI or code (the pre-reset internals were renamed with ADR-0001's vocabulary rule).
 - **Don't** use teal for the review state or indigo for a generic action; there is no third accent and no generic info-blue.
 - **Don't** give *ready* its own green — ready is teal, merged is emerald; two greens confused the operator.
 - **Don't** draw connector lines in the frontier-DAG (position + colour + chips carry flow), reintroduce a kanban board with drag-between-columns, or a docked master/detail Task panel.

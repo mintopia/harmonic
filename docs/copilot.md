@@ -38,7 +38,7 @@ spike and encoded by issue 26.
   keyed by session id (override the `~/.copilot` root with
   `harnesses.copilot.sessionLogDir`). Usage is attributed to the model
   that actually served each call, and Subagent rows
-  (`parent_tool_call_id`) roll up into the Run (ADR 0009). The OTel file
+  (`parent_tool_call_id`) roll up into the parent execution (ADR 0008). The OTel file
   exporter is gone.
 - **AI Units** (Copilot's native consumption unit) come from the same
   rows (`total_nano_aiu`) and are shown on the run detail as actual spend

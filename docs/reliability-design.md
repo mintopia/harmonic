@@ -1,4 +1,13 @@
-# Harmonic reliability design — v5 (after a 5-round Codex adversarial review)
+# Harmonic reliability design — v5 (RISK REGISTER, not a specification)
+
+> **Demoted 2026-08-28 (ADR-0001).** This document was never approved: its
+> adversarial review ended after five rounds, all `VERDICT: REVISE`, and it
+> shipped on `MAX_ROUNDS reached` — which the reset records as a rejection.
+> Its **failure-mode inventory remains useful as a risk register**; its
+> **mechanisms are void** where they conflict with the definitive ADRs
+> (`docs/adr/`) — in particular the frozen-candidate/CAS pipeline, phases,
+> the turn queue, the merge journal, and the Work Context lease are deleted
+> concepts. The historical text below is preserved unedited.
 
 *Four units (Guardrails, Verification, Session/resume, branch enforcement) + a
 Work Context lease, on a shared coordination spine. It went through a 5-round Codex

@@ -57,6 +57,14 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 
 Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+The ADR set was **reset on 2026-08-28** to 12 definitive target-state ADRs
+(`docs/adr/README.md` has the old→new mapping; the pre-reset set lives at git
+tag `adr-reset-2026-08-28`). Until the ADR-0001 implementation epic ships,
+code, comments, migrations, and historical docs still cite pre-reset ADR
+numbers and vocabulary (Run, phases, candidate refs, leases): treat those as
+**legacy references into the archived set**, never as the current decision —
+where code and the ADRs disagree, the ADRs win.
+
 ### Design context
 
 Strategic design context (register, users, personality, anti-references, design
@@ -79,7 +87,7 @@ be reconciled and written down, not a standing caveat to route around.)
 Harmonic runs every HTTP handler and every background loop on one Node event
 loop. Any background loop that iterates a collection whose size grows with the
 database or the workload MUST chunk its synchronous work and yield the loop
-between chunks, so it can never freeze the process (issue #200, ADR-0029 §5).
+between chunks, so it can never freeze the process (issue #200, ADR-0007).
 This covers the boot sweep, periodic polls, reconcile passes, and the Auto-Runner
 fill. Use `forEachYielding` / `yieldToEventLoop` from `src/reliability/yield.ts`.
 This is distinct from bounding retries/subprocess spawns (#219) and routing heavy
