@@ -49,8 +49,11 @@ history unit on the Ticket page and carries the counter — which counts
 implementation failures only (a base-moved re-verify, or a commit-your-work
 nudge, increments nothing). The system never creates a new Ticket in response
 to failure.
-_Avoid_: run (deleted concept), retry, heal, reattempt (all three old loop
-mechanisms collapsed into this one)
+_Avoid_: retry, reattempt (the old loop mechanisms Auto-Retry and reattempt
+collapsed into this counter). Not _Run_: a Run is one harness execution / prompt
+turn that **coexists** with Attempt (ADR-0047) — the Attempt owns the counter, a
+Run references it. Not _self-heal_ either: that mechanism survives as a within-Run
+turn purpose (its budget folded into Max Attempts, #310).
 
 **Task**:
 One individually undertaken step within an Attempt, each a timeline row with
@@ -59,7 +62,8 @@ the current base; conflicts are work the agent resolves here), the
 **Implementation Task** (the agent implements and commits — only the agent
 ever commits), one **Verification Task** per configured command (ordered,
 fail-fast), and the optional **Review Task** (the critic).
-_Avoid_: run, phase, stage, step
+_Avoid_: run, phase (both real, but Run-scoped and coarser — a Task is the finer
+Attempt step; see Run, Phase), stage, step
 
 **Task Event**:
 One ACP `session/update` (message chunk, thought, tool call, plan update)
@@ -226,8 +230,9 @@ _Avoid_: merge policy
 **Max Attempts**:
 The configured bound on a Ticket's Attempt loop (global default, per-Workspace
 override). Exhausting it is escalation trigger (1) — never a silent retry
-beyond the cap, never a new Ticket. Replaces Auto-Retry, self-heal, and
-reattempt (ADR-0041).
+beyond the cap, never a new Ticket. Replaces Auto-Retry and reattempt, and folds
+in self-heal's old per-turn budget (#310) — though the self-heal turn purpose
+itself survives as a Run mechanism (ADR-0041, amended by ADR-0047).
 _Avoid_: auto-retry, retry cap
 
 ### Parallel Epic execution
@@ -368,11 +373,53 @@ points at the verified SHA, then merge — onto the Integration branch for an
 Epic Member (via the merge train), onto develop otherwise. If the base moved
 since the verdict, the Ticket re-enters Rebase → Verification without
 re-implementing and without touching the counter; with the freshness gate a
-merge conflict cannot otherwise occur. There is no synthetic candidate
-commit: the verified-tree-is-merged-tree guarantee is the SHA assertion.
-_Avoid_: accept, merge gate, candidate (deleted machinery)
+merge conflict cannot otherwise occur. Merge mints no synthetic candidate
+commit: the verified-tree-is-merged-tree guarantee is the SHA assertion. (The
+**Candidate** ref itself is not deleted — it is the worktree-isolation freeze
+kept by ADR-0046; ADR-0047 corrects ADR-0041 on this.)
+_Avoid_: accept, merge gate
 
 ### Execution
+
+**Run**:
+One execution of a Ticket's work by a Harness — a single harness process and
+prompt turn, on branch `harmonic/task-<id>-run-<n>` in worktree mode. The unit
+Usage, Cost, and Guardrails attach to, that a Session prompts over, and that
+crash recovery reasons about. A Run carries a **Phase** and, in worktree mode, a
+**Candidate** ref. Run and **Attempt** coexist (ADR-0047, correcting ADR-0041's
+"Run is deleted"): a Run is one execution; an Attempt is one implement→verify
+iteration and is the ledger that owns the attempt counter. Today that counter is
+still double-booked — `runs.attempt` and `attempts.number` kept in step by hand —
+which ADR-0047 resolves by making the Attempt row the single source of truth a Run
+references by FK (that FK is follow-up work, not yet in the schema).
+_Avoid_: attempt (the loop-iteration ledger, not the execution), job
+
+**Phase**:
+The coarse execution stage of a Run — `executing → validating → verifying →
+merging → terminal` (`src/domain/run-phases.ts`). Not cosmetic: it scopes
+guardrail trips and routes crash recovery (which running Runs get force-failed on
+boot keys off Phase). Distinct from an Attempt's **Tasks**, the fine-grained
+timeline rows; Phase and Task coexist (ADR-0047).
+_Avoid_: stage, status; Ticket *state* is a separate axis
+
+**Candidate**:
+In worktree mode, a Run's frozen tree snapshot — a private
+`refs/harmonic/candidate/run-<id>` ref — that the verifiers run against, so the
+verified tree is the tree that merges. Kept and extended by ADR-0046
+for worktree-completion reconciliation; ADR-0041's "candidate machinery deleted"
+is corrected to coexistence by ADR-0047. Merge itself still
+asserts the verified SHA rather than minting a synthetic candidate commit.
+_Avoid_: snapshot commit, stash
+
+**Self-heal**:
+A corrective execution turn (`src/domain/turn-queue.ts`, a `TURN_PURPOSES`
+member — distinct from the Conversation-level **Turn**) that re-enters a Run's
+`validating` phase to fix a failed verification on the same branch. Its old
+per-turn budget folded into **Max Attempts** (#310), but the
+mechanism remains load-bearing — turn-queue admission, git-ref handling, crash
+recovery, and the verification-attempt UI all use it (ADR-0047 corrects
+ADR-0041's "self-heal deleted").
+_Avoid_: retry, auto-retry (those are Attempt-level; self-heal is a within-Run turn)
 
 **Harness**:
 An agent CLI that Harmonic drives to execute Runs — Claude (Claude Code),
@@ -456,8 +503,9 @@ passes. Any command fail, review reject, or review *inconclusive* is a
 **failed Attempt** — feedback into the next Attempt, counter +1 (ADR-0041,
 revising ADR-0021's inconclusive-escalates). Runs against the branch head SHA,
 which Merge then asserts.
-_Avoid_: review gate (deleted), validation (deleted phase), lint, test (it is
-more than either)
+_Avoid_: review gate (deleted); validation — the Run's `validating` **Phase** is
+a real but distinct concept (the coarse execution stage), not this Attempt-level
+gate; lint, test (it is more than either)
 
 **Continuation rule**:
 The deterministic choice at Attempt N+1: continue the prior Session (feedback
