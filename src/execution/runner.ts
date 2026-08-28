@@ -1715,7 +1715,7 @@ export class Runner {
         return { kind: 'escalate', reason: `${stale}; no ticket branch to rebase` };
       }
       if (reentries >= maxReentries) {
-        return { kind: 'escalate', reason: `base kept advancing through ${maxReentries} rebase+verify re-entries` };
+        return { kind: 'escalate', reason: `${stale}; unresolved after ${maxReentries} rebase+verify re-entries` };
       }
       // A moving base is normal, not an alarm (ADR-0046, #368): record each rebase
       // re-entry as a fire-and-forget lifecycle event carrying its attempt index
