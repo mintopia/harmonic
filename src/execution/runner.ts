@@ -2175,6 +2175,37 @@ export class Runner {
   }
 
   /**
+   * Persist a turn's run event, fire-and-forget, on the hottest drive path. A
+   * racing task-delete cascade can remove the Run row mid-turn, so this append
+   * can FK-violate against a Run that no longer exists — dropping the event is
+   * correct there, a crashed server is not. The rejection is contained here (it
+   * used to reach the process as an unhandled rejection and take the server
+   * down); the run-gone race logs at debug, any other failure at error, and the
+   * Run settles normally either way (issue #371).
+   */
+  private recordRunEvent(
+    task: TaskRow,
+    run: RunRow,
+    type: 'permission_request' | 'lifecycle',
+    payload: unknown,
+  ): void {
+    this.runStore
+      .appendEvent(run.id, { type, payload })
+      .then((event) => {
+        this.events.onRunEvent?.(event);
+      })
+      .catch((err: unknown) => {
+        if (isForeignKeyViolation(err)) {
+          logger.debug(`task ${task.id} run ${run.id}: dropped ${type} event — run row gone (racing delete)`);
+          return;
+        }
+        logger.error(
+          `task ${task.id} run ${run.id}: ${type} event append failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+  }
+
+  /**
    * Drive ONE builder turn end to end and report its {@link TurnOutcome}. A
    * `healCtx` re-drives the Run as a self-heal turn (issue #137): it resumes the
    * prior work (`prepareWorkspace(resume)`), prompts the builder with the
@@ -2192,9 +2223,7 @@ export class Runner {
     attemptNumber = run.attempt,
   ): Promise<TurnOutcome> {
     const record = (type: 'permission_request' | 'lifecycle', payload: unknown) => {
-      void this.runStore.appendEvent(run.id, { type, payload }).then((event) => {
-        this.events.onRunEvent?.(event);
-      });
+      this.recordRunEvent(task, run, type, payload);
     };
     const toolCalls = this.toolCallTotals.get(run.id) ?? (await this.runStore.listToolCalls(run.id));
     this.toolCallTotals.set(run.id, toolCalls);
