@@ -3286,6 +3286,18 @@ export class Runner {
           result = await driver.prompt([{ type: 'text', text: nudge }]);
           active.idle = true;
         }
+        // A worktree Run's work lives on its own branch, not the live one, so if
+        // the agent left it uncommitted (and did not comply with the nudge) it
+        // must be committed here — before the candidate is captured from HEAD —
+        // or the branch head stays at base, the candidate is null, and verifiable
+        // work is left orphaned by finalizeWorkspace's later commit. Direct Runs
+        // need nothing: their commits already sit on the live branch (ADR-0046).
+        // A pre-existing dirty context is the operator's; never commit it as the
+        // candidate. Best-effort, mirroring finalizeWorkspace — a commit hiccup
+        // must not throw the drive.
+        if (workspace.worktree && !workspace.startDirty && (await Git.isDirty(workspace.cwd).catch(() => false))) {
+          await Git.commitAll(workspace.cwd, `harmonic: task ${task.id} run ${run.attempt}`).catch(() => {});
+        }
         // The candidate is the commits the agent added on top of the start
         // commit. In direct mode those already sit on the live base branch
         // (ADR-0046); in worktree mode they are on the run branch. A run with no

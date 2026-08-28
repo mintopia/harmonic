@@ -71,6 +71,30 @@ describe('worktree isolation mode', () => {
     expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1);
   });
 
+  it('a worktree run that leaves its work uncommitted has it captured as the candidate and merged, not orphaned (task 340)', async () => {
+    const repo = makeRepo();
+    // `commit: false` scripts a misbehaving agent that writes real work but never
+    // commits it and does not comply with the commit-nudge. The worktree stays
+    // dirty at implementation end; the work must be committed onto the run branch
+    // and captured as the candidate BEFORE verification — not left with a null
+    // candidate that escalates while finalizeWorkspace orphans the commit.
+    const created = await server.api('POST', '/api/tasks', {
+      prompt: JSON.stringify({ writeFiles: { 'feature.txt': 'uncommitted work\n' }, commit: false }),
+      workingDir: repo,
+      isolationMode: 'worktree',
+    });
+    const started = await server.api('POST', `/api/tasks/${created.body.id}/run`);
+    await waitFor(
+      async () => (await server.api('GET', `/api/tasks/${created.body.id}`)).body.state === 'done',
+    );
+
+    const run = (await server.api('GET', `/api/runs/${started.body.id}`)).body;
+    // A real candidate was captured (non-null) and merged onto main by fast-forward.
+    expect(run.candidateOid).toBeTruthy();
+    expect(git(repo, 'rev-parse', 'main')).toBe(run.candidateOid);
+    expect(git(repo, 'show', 'main:feature.txt')).toBe('uncommitted work');
+  });
+
   it('a worktree run whose base branch advances externally mid-turn still verifies and merges normally (ADR-0046)', async () => {
     const repo = makeRepo();
     const mainBefore = git(repo, 'rev-parse', 'main');
