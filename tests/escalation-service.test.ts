@@ -14,7 +14,8 @@ import { MergeCoordinator, type MergeEffectExec } from '../src/domain/merge-coor
 import { EscalationService } from '../src/domain/escalation.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { RunRow, TaskRow } from '../src/db/schema.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * `EscalationService` against the real stores (ADR-0041): exactly three
@@ -26,6 +27,7 @@ import { allWorkspaces } from './helpers.js';
 describe('EscalationService', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
   let settle: RunSettleCoordinator;
@@ -38,7 +40,8 @@ describe('EscalationService', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-escalation-service-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     const journal = new MergeJournalStore(asyncDb);
     settle = new RunSettleCoordinator(runStore, tasks, new WorkContextLeaseStore(asyncDb), new RunFactStore(asyncDb), undefined, journal);

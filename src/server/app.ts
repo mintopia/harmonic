@@ -19,6 +19,7 @@ import { openAsyncDb, type AsyncDbHandle } from '../db/async.js';
 import { openStatsReader, type StatsReader } from '../db/stats-reader.js';
 import type { AppConfig, DeepPartial } from '../config.js';
 import { ConfigStore } from './config-store.js';
+import { SettingsStore } from './settings-store.js';
 import { TaskService } from '../domain/tasks.js';
 import { RunStore } from '../domain/runs.js';
 import { AttemptStore } from '../domain/attempts.js';
@@ -207,6 +208,7 @@ async function requestIsOperator(req: FastifyRequest, auth: AuthService): Promis
 export interface AppContext {
   asyncDb: AsyncDbHandle;
   statsReader: StatsReader;
+  settingsStore: SettingsStore;
   configStore: ConfigStore;
   workspaces: WorkspaceService;
   tasks: TaskService;
@@ -259,8 +261,9 @@ export async function buildApp(opts: AppOptions): Promise<App> {
   });
   for (const registration of opts.scheduledJobRegistrations ?? []) scheduler.register(registration);
   operationRegistry.setBus(bus);
-  const configStore = await ConfigStore.create(asyncDb, opts.configOverrides);
-  const workspaces = new WorkspaceService(asyncDb);
+  const settingsStore = await SettingsStore.create(opts.dataDir, opts.configOverrides);
+  const configStore = new ConfigStore(settingsStore);
+  const workspaces = new WorkspaceService(asyncDb, settingsStore);
   const channels = new ChannelService(asyncDb);
   const notifier = new Notifier(channels, logger.error);
   const tasks = new TaskService(
@@ -676,7 +679,7 @@ export async function buildApp(opts: AppOptions): Promise<App> {
     })().catch(() => {});
   });
 
-  const ctx: AppContext = { asyncDb, statsReader, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
+  const ctx: AppContext = { asyncDb, statsReader, settingsStore, configStore, workspaces, tasks, runs, attempts, sessions: sessionStore, leases, runner, conversations, conversationDriver, permissionRules, escalation, autoRunner, guardrailEvents, verificationAttempts, trackerManager, scheduler, auth, channels, notifier, bus };
 
   const app = Fastify({ logger: false }) as unknown as App;
   app.decorate('ctx', ctx);

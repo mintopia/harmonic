@@ -22,7 +22,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { VerificationAttemptStore } from '../src/domain/verification-attempts.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -410,7 +410,8 @@ describe('runCritic (issue #136)', () => {
     // A one-off local fixture (not the shared beforeEach pattern), so the
     // connection is opened and closed inline within the test.
     const asyncDb = await openAsyncDb(dbDir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dbDir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
     const store = new VerificationAttemptStore(asyncDb);
     const runId = (await runStore.create((await tasks.create({ prompt: 'verify me', state: 'ready' })).id)).id;

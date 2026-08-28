@@ -13,7 +13,7 @@ import { Runner } from '../src/execution/runner.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { MergeTrainMember } from '../src/execution/merge-train-coordinator.js';
 import { turnQueue } from '../src/db/schema.js';
-import { startServer, stubHarness, waitFor, allWorkspaces, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
+import { startServer, stubHarness, waitFor, allWorkspaces, makeSettingsStore, seedLocalMarkdownTicket, type TestServer } from './helpers.js';
 
 /**
  * Issue #163 / #313 — the single-writer merge train wired into the Epic
@@ -86,7 +86,8 @@ describe('Runner merge-train adapters (issue #163)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mergetrain-adapters-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig());
   });

@@ -10,7 +10,8 @@ import { TaskService } from '../src/domain/tasks.js';
 import { deriveRole, mirrorScan, deriveMaps, toMirrorInput } from '../src/tracker/mirror.js';
 import { mirroredAgentEligible } from '../src/domain/agent-workable.js';
 import type { Ticket } from '../src/tracker/adapter.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -70,6 +71,7 @@ describe('mirroredAgentEligible (labels → agent-workable, ADR-0041; the label 
 describe('mirrorScan upsert', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let wsId: number;
   const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
@@ -77,8 +79,9 @@ describe('mirrorScan upsert', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-mirror-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -319,6 +322,7 @@ describe('mirrorScan upsert', () => {
 describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let wsId: number;
   const rawRow = async (ref: number) => {
@@ -332,8 +336,9 @@ describe('durable tracker facts (issue #233, ADR-0030 expand)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-facts-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -420,8 +425,9 @@ describe('deriveMaps (query-time rollup)', () => {
   it('groups mirrored Tasks under their map by mapRef, with per-state counts', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harmonic-maps-'));
     const asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    const wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    const settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    const wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
     const scan = [
       ticket({ number: 19, isMap: true, title: 'Wayfinder', labels: ['wayfinder:map'] }),
       ticket({ number: 30, parent: 19, labels: ['ready-for-agent'] }),

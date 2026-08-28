@@ -16,7 +16,8 @@ import {
   type ResumeCapabilities,
 } from '../src/domain/boot-resume-coordinator.js';
 import type { RunRow, SessionRow } from '../src/db/schema.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 import type { YieldOptions } from '../src/reliability/yield.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 
@@ -31,6 +32,7 @@ import { yieldToEventLoop } from '../src/reliability/yield.js';
 describe('BootResumeCoordinator (issue #146)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
   let attemptStore: AttemptStore;
@@ -41,7 +43,8 @@ describe('BootResumeCoordinator (issue #146)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-boot-resume-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     attemptStore = new AttemptStore(asyncDb);
     sessions = new SessionStore(asyncDb);

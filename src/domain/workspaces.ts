@@ -13,7 +13,9 @@ import {
   conversationEvents,
   trackerDismissals,
   type WorkspaceRow,
+  type WorkspaceIdentityRow,
 } from '../db/schema.js';
+import type { SettingsStore } from '../server/settings-store.js';
 import { DomainError } from './errors.js';
 import { deleteRunsAndChildrenAsync } from './run-cascade.js';
 import {
@@ -94,6 +96,7 @@ export const workspaceOverridesSchema = z.object({
   /** Task Prompt override; null inherits `config.taskPrompt`. */
   taskPrompt: z.string().min(1).nullable().optional(),
 });
+export type WorkspaceOverrides = z.infer<typeof workspaceOverridesSchema>;
 
 export const updateWorkspaceInputSchema = createWorkspaceInputSchema
   .partial()
@@ -125,16 +128,58 @@ export function resolveWorkspace(list: WorkspaceRow[], id?: number): WorkspaceRo
  * Workspace or one with a running Task.
  */
 export class WorkspaceService {
-  constructor(private readonly db: AsyncDbHandle) {}
+  constructor(
+    private readonly db: AsyncDbHandle,
+    private readonly settings: SettingsStore,
+  ) {}
 
-  list(): Promise<WorkspaceRow[]> {
-    return this.db.read((db) => db.select().from(workspaces).orderBy(workspaces.createdAt).all());
+  /** Overlays this Workspace's setting overrides (`SettingsStore`, ADR-0009)
+   * onto its identity row — the sole place a `WorkspaceRow` is produced, so
+   * every existing `.harness`/`.verificationCommand`/… reader keeps working
+   * unchanged. `verificationCommand`/`guardrailBudget` are re-stringified to
+   * preserve the JSON-text shape those fields have always had on `WorkspaceRow`. */
+  private compose(row: WorkspaceIdentityRow): WorkspaceRow {
+    const o = this.settings.getOverrides(row.id);
+    return {
+      ...row,
+      harness: o.harness,
+      model: o.model,
+      chatHarness: o.chatHarness,
+      chatModel: o.chatModel,
+      isolationMode: o.isolationMode,
+      priority: o.priority,
+      integrationRetries: o.integrationRetries,
+      conflictResolveTurns: o.conflictResolveTurns,
+      maxConcurrentRuns: o.maxConcurrentRuns,
+      autoRunnerEnabled: o.autoRunnerEnabled,
+      maxAttempts: o.maxAttempts,
+      contextReuseTokenLimit: o.contextReuseTokenLimit,
+      verificationCommand: o.verificationCommand != null ? JSON.stringify(o.verificationCommand) : null,
+      reviewEnabled: o.reviewEnabled,
+      reviewPrompt: o.reviewPrompt,
+      reviewModel: o.reviewModel,
+      reviewHarness: o.reviewHarness,
+      guardrailBudget: o.guardrailBudget != null ? JSON.stringify(o.guardrailBudget) : null,
+      guardrailProgress: o.guardrailProgress,
+      toolTimeoutMinutes: o.toolTimeoutMinutes,
+      drivePrompt: o.drivePrompt,
+      driveUnattendedReminder: o.driveUnattendedReminder,
+      driveContinuePrompt: o.driveContinuePrompt,
+      driveMergeFate: o.driveMergeFate,
+      driveContinueAttempts: o.driveContinueAttempts,
+      taskPrompt: o.taskPrompt,
+    };
+  }
+
+  async list(): Promise<WorkspaceRow[]> {
+    const rows = await this.db.read((db) => db.select().from(workspaces).orderBy(workspaces.createdAt).all());
+    return rows.map((r) => this.compose(r));
   }
 
   async get(id: number): Promise<WorkspaceRow> {
     const row = await this.db.read((db) => db.select().from(workspaces).where(eq(workspaces.id, id)).get());
     if (!row) throw new DomainError('not_found', `workspace ${id} not found`);
-    return row;
+    return this.compose(row);
   }
 
   async assertExists(id: number): Promise<void> {
@@ -150,7 +195,7 @@ export class WorkspaceService {
     const workingDir = this.assertUsableDir(input.workingDir);
     await this.assertUniquePath(workingDir);
     const now = Date.now();
-    return this.db.write((db) =>
+    const inserted = await this.db.write((db) =>
       db
         .insert(workspaces)
         .values({
@@ -164,62 +209,33 @@ export class WorkspaceService {
         .returning()
         .get(),
     );
+    return this.compose(inserted);
   }
 
   async update(id: number, input: UpdateWorkspaceInput): Promise<WorkspaceRow> {
     const current = await this.get(id);
     const workingDir = input.workingDir !== undefined ? this.assertUsableDir(input.workingDir) : current.workingDir;
     if (workingDir !== current.workingDir) await this.assertUniquePath(workingDir, id);
-    // Overridable settings are nullable, so `null` (clear to inherit) and
-    // `undefined` (field omitted) mean different things: `?? current` would
-    // wrongly treat a clear as a keep. `patch` keeps a field only when it is
-    // genuinely absent, letting a null through as an explicit inherit.
-    const patch = <T>(next: T | null | undefined, kept: T | null): T | null => (next === undefined ? kept : next);
-    // Verifier overrides are object-valued but stored as JSON text: undefined keeps
-    // the current column, null clears to inherit, an object is serialised.
-    const patchJson = <T>(next: T | null | undefined, kept: string | null): string | null =>
-      next === undefined ? kept : next === null ? null : JSON.stringify(next);
-    return this.db.write(async (db) => {
-      const row = await db
+    const identityRow = await this.db.write((db) =>
+      db
         .update(workspaces)
         .set({
           name: input.name ?? current.name,
           workingDir,
           trackerEnabled: input.trackerEnabled ?? current.trackerEnabled,
           trackerPollIntervalSeconds: input.trackerPollIntervalSeconds ?? current.trackerPollIntervalSeconds,
-          harness: patch(input.harness, current.harness),
-          model: patch(input.model, current.model),
-          chatHarness: patch(input.chatHarness, current.chatHarness),
-          chatModel: patch(input.chatModel, current.chatModel),
-          isolationMode: patch(input.isolationMode, current.isolationMode),
-          priority: patch(input.priority, current.priority),
-          integrationRetries: patch(input.integrationRetries, current.integrationRetries),
-          conflictResolveTurns: patch(input.conflictResolveTurns, current.conflictResolveTurns),
-          maxConcurrentRuns: patch(input.maxConcurrentRuns, current.maxConcurrentRuns),
-          autoRunnerEnabled: patch(input.autoRunnerEnabled, current.autoRunnerEnabled),
-          maxAttempts: patch(input.maxAttempts, current.maxAttempts),
-          contextReuseTokenLimit: patch(input.contextReuseTokenLimit, current.contextReuseTokenLimit),
-          verificationCommand: patchJson(input.verificationCommand, current.verificationCommand),
-          reviewEnabled: patch(input.reviewEnabled, current.reviewEnabled),
-          reviewPrompt: patch(input.reviewPrompt, current.reviewPrompt),
-          reviewModel: patch(input.reviewModel, current.reviewModel),
-          reviewHarness: patch(input.reviewHarness, current.reviewHarness),
-          guardrailBudget: patchJson(input.guardrailBudget, current.guardrailBudget),
-          guardrailProgress: patch(input.guardrailProgress, current.guardrailProgress),
-          toolTimeoutMinutes: patch(input.toolTimeoutMinutes, current.toolTimeoutMinutes),
-          drivePrompt: patch(input.drivePrompt, current.drivePrompt),
-          driveUnattendedReminder: patch(input.driveUnattendedReminder, current.driveUnattendedReminder),
-          driveContinuePrompt: patch(input.driveContinuePrompt, current.driveContinuePrompt),
-          driveMergeFate: patch(input.driveMergeFate, current.driveMergeFate),
-          driveContinueAttempts: patch(input.driveContinueAttempts, current.driveContinueAttempts),
-          taskPrompt: patch(input.taskPrompt, current.taskPrompt),
           updatedAt: Date.now(),
         })
         .where(eq(workspaces.id, id))
         .returning()
-        .get();
-      return row!;
-    });
+        .get(),
+    );
+    // Everything but the four identity fields above is an override, three-state
+    // merged onto the stored overrides by `SettingsStore.setOverrides` (undefined
+    // = keep, null = clear to inherit, a value = override).
+    const { name: _name, workingDir: _workingDir, trackerEnabled: _trackerEnabled, trackerPollIntervalSeconds: _trackerPollIntervalSeconds, ...overridesPatch } = input;
+    await this.settings.setOverrides(id, overridesPatch);
+    return this.compose(identityRow!);
   }
 
   /**
@@ -274,6 +290,7 @@ export class WorkspaceService {
       await tx.delete(trackerDismissals).where(eq(trackerDismissals.workspaceId, id)).run();
       await tx.delete(workspaces).where(eq(workspaces.id, id)).run();
     });
+    await this.settings.deleteOverrides(id);
   }
 
   /** Resolves to an absolute path and rejects one that isn't a real, existing directory. */

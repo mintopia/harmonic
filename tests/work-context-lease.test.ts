@@ -9,7 +9,7 @@ import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { DomainError } from '../src/domain/errors.js';
 import { DEFAULT_LEASE_TTL } from '../src/domain/lease-ttl.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The Work Context lease store (issue #118, ADR-0022, reliability-design
@@ -28,7 +28,8 @@ describe('WorkContextLeaseStore (issue #118)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-wcl-'));
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
 

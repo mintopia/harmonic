@@ -9,7 +9,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { computeDisposition } from '../src/domain/run-disposition.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The append-only Run fact log store (issue #112, reliability-design §0.3).
@@ -24,7 +24,8 @@ describe('RunFactStore (issue #112)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-run-facts-'));
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
     facts = new RunFactStore(asyncDb);
 

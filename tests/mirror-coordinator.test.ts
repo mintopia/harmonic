@@ -7,7 +7,8 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService, type MirrorInput } from '../src/domain/tasks.js';
 import { MirrorCoordinator } from '../src/tracker/coordinator.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 const ticket = (number: number, assignees: string[] = []): Ticket => ({
   number,
@@ -62,14 +63,16 @@ function fakeAdapter(opts: { claimThrows?: boolean } = {}) {
 describe('MirrorCoordinator (issue #32)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let wsId: number;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-coord-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

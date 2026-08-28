@@ -11,7 +11,8 @@ import { SessionStore, type DispatchSessionInput } from '../src/domain/sessions.
 import { SessionRetirementCoordinator } from '../src/domain/session-retirement-coordinator.js';
 import type { RetentionConfig } from '../src/domain/session-retirement.js';
 import type { RunRow } from '../src/db/schema.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * Session retirement store transitions + coordinator (issue #148,
@@ -21,6 +22,7 @@ import { allWorkspaces } from './helpers.js';
 describe('Session retirement (issue #148)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let sessions: SessionStore;
   let runs: RunStore;
   let leases: WorkContextLeaseStore;
@@ -53,11 +55,12 @@ describe('Session retirement (issue #148)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-retire-'));
     asyncDb = await openAsyncDb(dir);
+    settingsStore = await makeSettingsStore(dir);
     sessions = new SessionStore(asyncDb);
     runs = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    workspaceId = (await allWorkspaces(asyncDb)())[0]!.id;
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    workspaceId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

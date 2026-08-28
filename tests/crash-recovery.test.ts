@@ -18,7 +18,8 @@ import { Git } from '../src/execution/git.js';
 import { workContextKey } from '../src/domain/work-context-key.js';
 import { DomainError } from '../src/domain/errors.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const git = (dir: string, ...args: string[]) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
@@ -47,6 +48,7 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
   let dir: string;
   let repo: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
   let leases: WorkContextLeaseStore;
@@ -60,7 +62,8 @@ describe('CrashRecoveryCoordinator (issue #117, isMerged/now seams)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-'));
     repo = makeRepo();
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);
@@ -240,6 +243,7 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
   let dir: string;
   let repo: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
   let leases: WorkContextLeaseStore;
@@ -253,7 +257,8 @@ describe('CrashRecoveryCoordinator lease reconciliation (issue #123)', () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-crash-recovery-leases-'));
     repo = makeRepo();
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);

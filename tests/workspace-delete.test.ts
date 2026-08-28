@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 import { defaultConfig } from '../src/config.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * Delete-guard behaviour after issue #61: the "refuse the last Workspace" guard
@@ -23,8 +23,9 @@ describe('WorkspaceService.delete guards (issue #61)', () => {
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-del-'));
     asyncDb = await openAsyncDb(dataDir); // backfills the single Default Workspace
-    workspaces = new WorkspaceService(asyncDb);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dataDir);
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();

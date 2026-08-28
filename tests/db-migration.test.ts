@@ -123,8 +123,8 @@ describe('run diff revision migration (issue #323)', () => {
   });
 });
 
-describe('Setting Override migration (ADR-0012, issue #59)', () => {
-  it('adds nullable override columns; an existing Workspace reads them as inherit (null)', async () => {
+describe('Setting Override storage move (ADR-0009, issue #391)', () => {
+  it('drops the per-Workspace override columns at head — overrides live in the YAML settings file, not the DB', async () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'harmonic-override-migrate-'));
     const migrationsFolder = migrationsFolderBefore('0018');
 
@@ -142,18 +142,16 @@ describe('Setting Override migration (ADR-0012, issue #59)', () => {
     });
     client.close();
 
-    // Boot to head applies 0018 and leaves the existing row's overrides null.
+    // Boot to head: 0018 added the override columns, 0061 dropped them again
+    // (clean break, ADR-0009) — the workspaces row is identity-only now, and a
+    // Workspace with no YAML override entry resolves every override as inherit.
     const db = await openAsyncDb(dataDir);
     const ws = await db.read((d) => d.select().from(schema.workspaces).all());
     const legacy = ws.find((w) => w.name === 'Legacy')!;
-    expect(legacy).toMatchObject({
-      harness: null,
-      model: null,
-      isolationMode: null,
-      priority: null,
-      maxConcurrentRuns: null,
-      autoRunnerEnabled: null,
-    });
+    expect(legacy).not.toHaveProperty('harness');
+    expect(legacy).not.toHaveProperty('model');
+    expect(legacy).not.toHaveProperty('autoRunnerEnabled');
+    expect(legacy).toMatchObject({ name: 'Legacy', trackerEnabled: false });
 
     await db.close();
     rmSync(dataDir, { recursive: true, force: true });

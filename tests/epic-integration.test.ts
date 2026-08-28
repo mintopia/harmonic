@@ -17,7 +17,8 @@ import {
   type EpicRefreshTrigger,
 } from '../src/execution/epic-integration.js';
 import type { MemberMergeState } from '../src/domain/epic-integrate.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
   number: 100,
@@ -124,6 +125,7 @@ describe('parseIntegrationBranch (issue #163)', () => {
 describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let wsId: number;
   const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
@@ -132,8 +134,9 @@ describe('EpicIntegrationCoordinator.reconcile (issue #159)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -502,6 +505,7 @@ describe('reduceMemberState (issue #161)', () => {
 describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let wsId: number;
   const mscan = (tickets: Ticket[]) => mirrorScan(tasks, tickets, wsId);
@@ -509,8 +513,9 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-integrate-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -582,12 +587,14 @@ describe('EpicIntegrationCoordinator whole-Epic integrate trigger (issue #161)',
 describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-retire-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -623,12 +630,14 @@ describe('EpicIntegrationCoordinator.retireIntegrationBranch (issue #159)', () =
 describe('TaskService.setBaseBranch (issue #159)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-setbase-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
   });
   afterEach(async () => {
     await asyncDb.close();

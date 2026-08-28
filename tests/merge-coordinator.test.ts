@@ -14,7 +14,8 @@ import { MergeCoordinator, type MergeEffectExec, type MergeEffectOutcome } from 
 import { EscalationService } from '../src/domain/escalation.js';
 import type { SettleProjection } from '../src/domain/run-coordinator.js';
 import type { TaskRow, RunRow } from '../src/db/schema.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /** The merge projection every merging intends: the Run completed, the ticket done. */
 const MERGE_PROJECTION: SettleProjection = { runState: 'completed', taskAction: 'done', reason: null };
@@ -32,6 +33,7 @@ describe('MergeCoordinator (issue #115)', () => {
   // These stores (RunStore, TaskService, leases, RunFactStore, MergeJournalStore)
   // are all on the async libsql Db (ADR-0029; merging journal migrated in #209).
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
   let leases: WorkContextLeaseStore;
@@ -43,7 +45,8 @@ describe('MergeCoordinator (issue #115)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-merge-coordinator-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     leases = new WorkContextLeaseStore(asyncDb);
     runFacts = new RunFactStore(asyncDb);

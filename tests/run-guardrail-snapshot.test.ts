@@ -8,7 +8,8 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { resolveGuardrails } from '../src/domain/setting-override.js';
 import { resolvePrices } from '../src/execution/pricing.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The Run Guardrail snapshot (issue #126, ADR-0019): the effective Guardrail
@@ -20,13 +21,15 @@ describe('RunStore.create Guardrail snapshot (issue #126, ADR-0019)', () => {
   // RunStore migrated to the async libsql Db (ADR-0029 #203); this fixture
   // runs both connections on the one file.
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-grs-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
   });
   afterEach(async () => {

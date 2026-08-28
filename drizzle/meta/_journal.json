@@ -428,6 +428,13 @@
       "when": 1787739900000,
       "tag": "0060_drop_verification_mutated",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1787740000000,
+      "tag": "0061_settings_to_yaml",
+      "breakpoints": true
     }
   ]
 }

@@ -13,7 +13,8 @@ import { RunStore } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { Runner } from '../src/execution/runner.js';
 import type { CriticDriveRequest } from '../src/verification/critic.js';
-import { allWorkspaces, waitFor } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
 
 const train = () => new MergeTrainCoordinator({
   escalate: async () => {},
@@ -180,13 +181,15 @@ describe('epic refresh corrective turn (issue #315)', () => {
   let dir: string;
   let repo: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-epic-refresh-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
     // A repo whose default branch is develop, with epic/5 cut off it and BOTH
     // sides editing shared.txt — the develop→epic/5 refresh merge conflicts.

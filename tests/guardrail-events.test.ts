@@ -7,7 +7,7 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { GuardrailEventStore } from '../src/domain/guardrail-events.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The append-only Guardrail-trip event log store (issue #127, ADR-0019,
@@ -26,7 +26,8 @@ describe('GuardrailEventStore (issue #127)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-guardrail-events-'));
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
     events = new GuardrailEventStore(asyncDb);
 

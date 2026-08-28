@@ -6,18 +6,21 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { AttemptStore } from '../src/domain/attempts.js';
 import { TaskService } from '../src/domain/tasks.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 describe('AttemptStore', () => {
   let dir: string;
   let db: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let attempts: AttemptStore;
   let taskId: number;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-attempts-'));
     db = await openAsyncDb(dir);
-    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(db, () => defaultConfig(), allWorkspaces(db, settingsStore));
     taskId = (await tasks.create({ prompt: 'timeline', state: 'ready' })).id;
     attempts = new AttemptStore(db);
   });

@@ -66,12 +66,35 @@ construction, not of keeping two forms in sync by hand.
   inline ("On · inherited from global"). All values flow through one
   buffered save bar; only genuine side-effect actions stay immediate.
 
-## Configuration lives in the DB
+## Configuration lives in a YAML file
 
-The database is the sole home of configuration; there is no out-of-band seed
-and no config repository (ADR-0007 records the persistence side). Telemetry
-config is the one deliberate exception — `OTEL_*` env/CLI only, resolved at
-process init, never in the settings table (ADR-0010).
+Configuration — the global settings and every Workspace's setting overrides —
+lives in a single `settings.yaml` in the data directory, beside `harmonic.db`
+(#391). It is the sole home of configuration; there is no out-of-band seed and
+no second copy in the DB. The settings API and UI read and write this file; a
+UI edit rewrites it. The DB keeps only Workspace *identity* (id, name, Working
+Directory, tracker settings) — the override values that were nullable columns
+on `workspaces` moved to the file, keyed by Workspace id, and the resolution
+model is unchanged (`workspace ?? global` at read time; `null`/absent = inherit).
+
+- **Loud on load, never silent.** The file is parsed and schema-validated with
+  the same zod schemas that guard the API (`appConfigSchema` for the global
+  block, the Workspace-overrides schema per entry). A malformed file fails the
+  boot with a legible error naming the file; it never silently reverts to
+  defaults and buries an operator's mistake.
+- **On-disk edits are picked up.** A hand-edit to the file is reloaded on the
+  next read (a throttled mtime check), so the operator can edit the YAML
+  directly, not only through the UI.
+- **Clean break, no migration** (ADR-0007): the old DB settings storage is
+  dropped, not converted — the `config` row and the `workspaces` override
+  columns go away. Settings start from defaults; the operator hand-fills the
+  YAML once if they want non-defaults. Nothing worth keeping lived only in the
+  DB.
+- Telemetry config stays the one deliberate exception — `OTEL_*` env/CLI only,
+  resolved at process init, never in the settings file (ADR-0010). The operator
+  password is a credential, not settings, and stays in the DB `settings` table
+  (it is set through the change-password flow, not hand-edited).
+- Parsing YAML adds one dependency, `yaml`.
 
 ## Consequences
 

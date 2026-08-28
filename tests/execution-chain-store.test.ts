@@ -7,7 +7,8 @@ import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The Execution Chain's persisted identity + resolver (issue #129,
@@ -16,6 +17,7 @@ import { allWorkspaces } from './helpers.js';
 describe('ExecutionChainStore (issue #129)', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runStore: RunStore;
   let chains: ExecutionChainStore;
@@ -23,7 +25,8 @@ describe('ExecutionChainStore (issue #129)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-exec-chain-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runStore = new RunStore(asyncDb);
     chains = new ExecutionChainStore(asyncDb);
   });

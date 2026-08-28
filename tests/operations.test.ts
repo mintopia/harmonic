@@ -13,7 +13,7 @@ import { AutoRunner } from '../src/execution/auto-runner.js';
 import { EventBus } from '../src/server/bus.js';
 import { initializeTelemetry, resolveTelemetryOptions } from '../src/telemetry.js';
 import { OperationRegistry, startOperation } from '../src/telemetry/operations.js';
-import { allWorkspaces, startServer, stubHarness } from './helpers.js';
+import { allWorkspaces, makeSettingsStore, startServer, stubHarness } from './helpers.js';
 
 const providers: NodeTracerProvider[] = [];
 
@@ -189,9 +189,10 @@ describe('Auto-Runner operations (issue #289)', () => {
   it('marks a failed task start as an error and returns the Task to ready', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-failure-'));
     const db = await openAsyncDb(directory);
+    const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
     const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
-    const tasks = new TaskService(db, () => config, allWorkspaces(db));
+    const tasks = new TaskService(db, () => config, allWorkspaces(db, settingsStore));
     const task = await tasks.create({ prompt: 'fail a scheduled start', isolationMode: 'worktree' });
     let launchAttempts = 0;
     const autoRunner = new AutoRunner(
@@ -208,7 +209,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         },
       },
       () => config,
-      allWorkspaces(db),
+      allWorkspaces(db, settingsStore),
     );
 
     try {
@@ -230,9 +231,10 @@ describe('Auto-Runner operations (issue #289)', () => {
   it('starts no tick Operation for an idle pass that attempts no Task', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'harmonic-operation-auto-runner-idle-'));
     const db = await openAsyncDb(directory);
+    const settingsStore = await makeSettingsStore(directory);
     const { exporter, registry } = installOperations();
     const config = { ...defaultConfig(), autoRunner: { enabled: true, maxConcurrentRuns: 1 } };
-    const tasks = new TaskService(db, () => config, allWorkspaces(db));
+    const tasks = new TaskService(db, () => config, allWorkspaces(db, settingsStore));
     let launchAttempts = 0;
     const autoRunner = new AutoRunner(
       tasks,
@@ -247,7 +249,7 @@ describe('Auto-Runner operations (issue #289)', () => {
         },
       },
       () => config,
-      allWorkspaces(db),
+      allWorkspaces(db, settingsStore),
     );
 
     try {

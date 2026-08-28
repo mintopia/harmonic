@@ -11,14 +11,33 @@ import type { CriticHarnessDrive } from '../src/verification/critic.js';
 import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { settings, workspaces } from '../src/db/schema.js';
 import type { ScheduledJobRegistration } from '../src/scheduler/scheduler.js';
+import { SettingsStore } from '../src/server/settings-store.js';
+import { WorkspaceService } from '../src/domain/workspaces.js';
+
+/**
+ * Build the one `SettingsStore` a hand-built-service test should share for its
+ * whole lifetime (issue #391). `SettingsStore` throttles disk reloads to once
+ * per second, so two instances pointed at the same `dataDir` can disagree for
+ * up to that long — every reader (`allWorkspaces`, a hand-built
+ * `WorkspaceService`) and writer (`setOverrides`, `workspaces.update`) in a
+ * single test must share the instance this returns, never each construct
+ * their own.
+ */
+export function makeSettingsStore(dataDir: string, overrides?: DeepPartial<AppConfig>): Promise<SettingsStore> {
+  return SettingsStore.create(dataDir, overrides);
+}
 
 /** A `TaskService`/`AutoRunner`-shaped `getWorkspaces` callback over
  * whatever Workspaces already exist in `db` (openAsyncDb's boot-time backfill
- * seeds a default one) — the plumbing every domain test that constructs
+ * seeds a default one), composed with `settings`'s per-Workspace overrides
+ * (ADR-0009, issue #391) — the plumbing every domain test that constructs
  * `TaskService` by hand needs, without repeating the select everywhere.
  * Async (`() => Promise<WorkspaceRow[]>`) to match the migrated
- * `TaskService`/`AutoRunner` `getWorkspaces` contract (ADR-0029). */
-export const allWorkspaces = (db: AsyncDbHandle) => () => db.read((d) => d.select().from(workspaces).all());
+ * `TaskService`/`AutoRunner` `getWorkspaces` contract (ADR-0029). `settings`
+ * must be the SAME `SettingsStore` instance any override writer in the test
+ * uses — see {@link makeSettingsStore}. */
+export const allWorkspaces = (db: AsyncDbHandle, settings: SettingsStore) => () =>
+  new WorkspaceService(db, settings).list();
 
 export const STUB_HARNESS = join(import.meta.dirname, 'stub-harness.mjs');
 

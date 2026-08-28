@@ -8,7 +8,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { TurnQueueStore } from '../src/domain/turn-queue-store.js';
 import { isUniqueViolation } from '../src/domain/work-context-leases.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The Session turn queue's persisted substrate (issue #116, reliability-design
@@ -26,7 +26,8 @@ describe('TurnQueueStore (issue #116)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-turn-queue-'));
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
     store = new TurnQueueStore(asyncDb);
 

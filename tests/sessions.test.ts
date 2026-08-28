@@ -13,7 +13,7 @@ import {
   estimateWarmUntil,
   type DispatchSessionInput,
 } from '../src/domain/sessions.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The durable Session store and its pure helpers (issue #141, reliability-design
@@ -139,7 +139,8 @@ describe('Sessions (issue #141)', () => {
       dir = mkdtempSync(join(tmpdir(), 'harmonic-sessions-'));
       asyncDb = await openAsyncDb(dir);
       store = new SessionStore(asyncDb);
-      workspaceId = (await allWorkspaces(asyncDb)())[0]!.id;
+      const settingsStore = await makeSettingsStore(dir);
+      workspaceId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
     });
     afterEach(async () => {
       await asyncDb.close();

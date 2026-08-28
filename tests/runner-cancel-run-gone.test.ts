@@ -10,7 +10,8 @@ import { WorkContextLeaseStore, isForeignKeyViolation } from '../src/domain/work
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { RunFactStore } from '../src/domain/run-facts.js';
 import { Runner } from '../src/execution/runner.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 describe('isForeignKeyViolation', () => {
   it('detects a drizzle-wrapped FK violation via the cause chain', () => {
@@ -34,6 +35,7 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
   let dir: string;
   let repoDir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
   let chains: ExecutionChainStore;
@@ -45,7 +47,8 @@ describe('Runner.cancelForTask — run row deleted mid-settle', () => {
     repoDir = join(dir, 'repo');
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
     chains = new ExecutionChainStore(asyncDb);
     facts = new RunFactStore(asyncDb);

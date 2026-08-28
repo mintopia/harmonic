@@ -60,11 +60,14 @@ export type TaskState = (typeof TASK_STATES)[number];
  * per-Workspace (issue #45): each tracker-enabled Workspace polls its own
  * Working Directory on its own interval into its own board.
  *
- * Setting Overrides (ADR-0012, issue #59): the overridable execution settings
- * — Task defaults (harness, model, Isolation Mode, Priority), the concurrency
- * cap, and Auto-Runner enable — are nullable columns here where `null` means
- * *inherit* the global default. A non-null value overrides it. Effective values
- * are resolved at read time by `resolve`/`resolveCap` (domain/setting-override.ts).
+ * Setting Overrides (ADR-0012, issue #59) no longer live as columns here
+ * (issue #391, ADR-0009): the overridable execution settings — Task defaults,
+ * chat defaults, the concurrency cap, Auto-Runner enable, the verifier/review/
+ * guardrail/drive overrides — now live in the YAML settings file alongside the
+ * global config, keyed by this Workspace's id (`SettingsStore`). `null` there
+ * still means *inherit* the global default; a non-null value still overrides
+ * it. `WorkspaceService` composes them onto this identity row at read time
+ * (see `WorkspaceRow` below) so downstream field access is unchanged.
  */
 export const workspaces = sqliteTable('workspaces', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -74,88 +77,30 @@ export const workspaces = sqliteTable('workspaces', {
   trackerEnabled: integer('tracker_enabled', { mode: 'boolean' }).notNull().default(false),
   /** How often this Workspace's poll loop scans its repo, in seconds. */
   trackerPollIntervalSeconds: integer('tracker_poll_interval_seconds').notNull().default(60),
-  // --- Setting Overrides (ADR-0012, issue #59). Null ⇒ inherit the global
-  // default; a non-null value overrides it. Task defaults resolved here are the
-  // middle tier of a three-level chain (Task override → this Workspace override
-  // → global default), resolved at read time so a change follows every Task
-  // that hasn't pinned its own value. ---
-  /** Task-default Harness override; null inherits `config.defaults.harness`. */
-  harness: text('harness'),
-  /** Task-default model override; null inherits the harness's default model. */
-  model: text('model'),
-  /** Chat-default Harness override; null inherits `config.chat.harness`. New
-   * Conversations here start with this Harness (ADR-0012). */
-  chatHarness: text('chat_harness'),
-  /** Chat-default model override; null inherits `config.chat.model`. */
-  chatModel: text('chat_model'),
-  /** Task-default Isolation Mode override; null inherits `config.defaults.isolationMode`. */
-  isolationMode: text('isolation_mode'),
-  /** Task-default Priority override; null inherits `config.defaults.priority`. */
-  priority: text('priority'),
-  /** Task-default integration-retry bound (ADR-0046); null inherits `config.defaults.integrationRetries`. */
-  integrationRetries: integer('integration_retries'),
-  /** Task-default conflict-resolve-turn bound (ADR-0046); null inherits `config.defaults.conflictResolveTurns`. */
-  conflictResolveTurns: integer('conflict_resolve_turns'),
-  /** Per-Workspace concurrency cap; null inherits the Machine Ceiling
-   * (`config.autoRunner.maxConcurrentRuns`). Clamped to the ceiling on read —
-   * an override can never breach the machine's limit (`resolveCap`). */
-  maxConcurrentRuns: integer('max_concurrent_runs'),
-  /** Per-Workspace Auto-Runner enable; null inherits the global default. Gated
-   * by the global master switch — a Task runs only if `master ∧ resolved`. */
-  autoRunnerEnabled: integer('auto_runner_enabled', { mode: 'boolean' }),
-  /** Per-Workspace command-verifier override (issue #132, ADR-0021), list-grain
-   * (ADR-0044 §D, issue #338): a JSON array of `verificationCommandSchema` that
-   * overrides the whole global list — a non-empty array is that ordered list, an
-   * empty array `[]` is *off* (run no commands here) — or null to inherit
-   * `config.verify.commands`. No per-command inheritance and no `{"off":true}`
-   * sentinel (migrated away in 0057). Resolved at read time by `resolveVerifiers`
-   * (setting-override.ts). */
-  verificationCommand: text('verification_command'),
-  /** Per-Workspace critic-review override (issue #337, ADR-0044 §C), decomposed
-   * into four independently-inheritable scalar columns — each null inherits the
-   * matching `config.verify.review.*` field. Resolved at read time by
-   * `resolveVerifiers` (setting-override.ts). Replaces the old atomic
-   * `verification_critic` blob + `{"off":true}` sentinel (migrated in 0059). */
-  reviewEnabled: integer('review_enabled', { mode: 'boolean' }),
-  reviewPrompt: text('review_prompt'),
-  reviewModel: text('review_model'),
-  reviewHarness: text('review_harness'),
-  /** Per-Workspace budget-Guardrail override (issue #126, ADR-0019): JSON of
-   * `budgetGuardrailSchema`, or null to inherit `config.guardrails.budget`.
-   * Resolved by `resolveGuardrails` (setting-override.ts). */
-  guardrailBudget: text('guardrail_budget'),
-  /** Per-Workspace progress-detector toggle override (issue #126); null inherits
-   * `config.guardrails.progress`. */
-  guardrailProgress: integer('guardrail_progress', { mode: 'boolean' }),
-  /** Per-Workspace attempt cap; null inherits `config.maxAttempts`. */
-  maxAttempts: integer('max_attempts'),
-  /** Per-Workspace context-reuse token limit; null inherits the global default. */
-  contextReuseTokenLimit: integer('context_reuse_token_limit'),
-  // --- Drive + Task Prompt overrides (ADR-0044): the `drive.*` block decomposes
-  // into five independently-inheritable fields, plus the Task Prompt and the
-  // tool-timeout bound. Null ⇒ inherit the global default; resolved at read time
-  // (`resolveDrive` / `resolveScoped`, setting-override.ts). ---
-  /** Per-Workspace Drive Prompt override; null inherits `config.drive.prompt`. */
-  drivePrompt: text('drive_prompt'),
-  /** Per-Workspace unattended-reminder override; null inherits `config.drive.unattendedReminder`. */
-  driveUnattendedReminder: text('drive_unattended_reminder'),
-  /** Per-Workspace continue-prompt override; null inherits `config.drive.continuePrompt`. */
-  driveContinuePrompt: text('drive_continue_prompt'),
-  /** Per-Workspace Merge Fate override; null inherits `config.drive.mergeFate`. */
-  driveMergeFate: text('drive_merge_fate'),
-  /** Per-Workspace continue-attempts override; null inherits `config.drive.continueAttempts`. */
-  driveContinueAttempts: integer('drive_continue_attempts'),
-  /** Per-Workspace Task Prompt override; null inherits `config.taskPrompt`. */
-  taskPrompt: text('task_prompt'),
-  /** Per-Workspace tool-timeout override (ADR-0044); null inherits `config.guardrails.toolTimeoutMinutes`. */
-  toolTimeoutMinutes: integer('tool_timeout_minutes'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (t) => [
   uniqueIndex('workspaces_working_dir_idx').on(t.workingDir),
 ]);
 
-export type WorkspaceRow = typeof workspaces.$inferSelect;
+export type WorkspaceIdentityRow = typeof workspaces.$inferSelect;
+/**
+ * A Workspace as consumed across the app: DB identity columns plus its setting
+ * overrides composed in from the YAML settings file (ADR-0009). `WorkspaceService`
+ * is the sole producer — it overlays overrides onto the identity row on read, so
+ * downstream field access (`.harness`, `.verificationCommand`, …) is unchanged.
+ * `null` on any override field means *inherit* the global default.
+ */
+export type WorkspaceRow = WorkspaceIdentityRow & {
+  harness: string | null; model: string | null; chatHarness: string | null; chatModel: string | null;
+  isolationMode: string | null; priority: string | null; integrationRetries: number | null;
+  conflictResolveTurns: number | null; maxConcurrentRuns: number | null; autoRunnerEnabled: boolean | null;
+  maxAttempts: number | null; contextReuseTokenLimit: number | null; verificationCommand: string | null;
+  reviewEnabled: boolean | null; reviewPrompt: string | null; reviewModel: string | null; reviewHarness: string | null;
+  guardrailBudget: string | null; guardrailProgress: boolean | null; toolTimeoutMinutes: number | null;
+  drivePrompt: string | null; driveUnattendedReminder: string | null; driveContinuePrompt: string | null;
+  driveMergeFate: string | null; driveContinueAttempts: number | null; taskPrompt: string | null;
+};
 
 /**
  * Durable bookkeeping for recurring Scheduled Jobs (ADR-0038). `jobKey` is a

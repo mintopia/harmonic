@@ -9,7 +9,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { ToolCallAggregateStore, totalsForRange } from '../src/domain/tool-call-aggregates.js';
 import { defaultConfig } from '../src/config.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 describe('ToolCallAggregateStore (issue #241)', () => {
   let dir: string;
@@ -26,11 +26,12 @@ describe('ToolCallAggregateStore (issue #241)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-tool-call-aggregates-'));
     db = await openAsyncDb(dir);
-    const taskService = new TaskService(db, () => defaultConfig(), allWorkspaces(db));
+    const settingsStore = await makeSettingsStore(dir);
+    const taskService = new TaskService(db, () => defaultConfig(), allWorkspaces(db, settingsStore));
     const runStore = new RunStore(db);
     toolCalls = new ToolCallAggregateStore(db);
 
-    const [workspace] = await allWorkspaces(db)();
+    const [workspace] = await allWorkspaces(db, settingsStore)();
     workspaceId = workspace!.id;
     otherWorkspaceId = (
       await db.write((d) =>

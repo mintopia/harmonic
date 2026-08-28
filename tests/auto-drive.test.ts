@@ -17,7 +17,8 @@ import { fillTemplate, skillFor, splitTitleBody } from '../src/execution/prompt-
 import type { TaskRow, RunRow } from '../src/db/schema.js';
 import { workspaces } from '../src/db/schema.js';
 import type { Ticket, TrackerAdapter, OpenPRInput } from '../src/tracker/adapter.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 const STUB = join(import.meta.dirname, 'stub-harness.mjs');
 
@@ -320,6 +321,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   let dir: string;
   let workDir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
   let runner: Runner;
@@ -342,6 +344,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-drive-'));
     asyncDb = await openAsyncDb(dir);
+    settingsStore = await makeSettingsStore(dir);
     // The default workspace seeds `workingDir` to `process.cwd()` — the (dirty)
     // Harmonic repo during a test run, which these settle-logic tests must not
     // touch. Point the workspace at an isolated non-git directory so each Run
@@ -357,7 +360,7 @@ describe('Runner auto-drive settle (issue #33)', () => {
   });
 
   function build(cfg: AppConfig, ticketState: 'open' | 'closed' = 'closed') {
-    tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb));
+    tasks = new TaskService(asyncDb, () => cfg, allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
     // Default: a resolved (agent-closed) ticket so a clean run completes (ADR 0011).
     // 'open' leaves the ticket unresolved, so the continue loop engages.

@@ -6,6 +6,8 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { WorkspaceService } from '../src/domain/workspaces.js';
 import { verificationCommandSchema, budgetGuardrailSchema } from '../src/config.js';
 import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { makeSettingsStore } from './helpers.js';
 
 /**
  * Per-workspace setting overrides on the Workspace API (ADR-0012, issue #64).
@@ -17,12 +19,14 @@ import { resolveVerifiers, resolveDrive } from '../src/domain/setting-override.j
 describe('WorkspaceService override persistence (issue #64)', () => {
   let dataDir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let workspaces: WorkspaceService;
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-ws-over-'));
     asyncDb = await openAsyncDb(dataDir); // backfills the single Default Workspace
-    workspaces = new WorkspaceService(asyncDb);
+    settingsStore = await makeSettingsStore(dataDir);
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
   });
   afterEach(async () => {
     await asyncDb.close();
@@ -274,5 +278,57 @@ describe('WorkspaceService override persistence (issue #64)', () => {
     } as any);
     expect(resolved.continueAttempts).toBe(0); // the stored override wins over the global 1
     expect(resolved.mergeFate).toBe('auto-merge'); // an unset field still inherits
+  });
+
+  // issue #391: overrides now persist through `SettingsStore`'s YAML file rather
+  // than nullable `workspaces` columns — proves `update` writes through the
+  // shared store, `list()`/`get()` compose it back (a fresh `WorkspaceService`
+  // over the SAME store instance sees it too), and `delete()` removes the
+  // store's entry outright (not just leaves it all-null).
+  it('persists overrides to the YAML settings store; list()/get() compose them back; delete() removes the entry (issue #391)', async () => {
+    const ws = (await workspaces.list())[0]!;
+    await workspaces.update(ws.id, { harness: 'codex', maxConcurrentRuns: 3 });
+
+    // The write is visible through `SettingsStore.getOverrides` directly, not
+    // just via `WorkspaceService` — proves it actually reached the store.
+    expect(settingsStore.getOverrides(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentRuns: 3 });
+
+    // A second `WorkspaceService` over the SAME store instance composes the
+    // same overrides back on both `list()` and `get()`.
+    const reopened = new WorkspaceService(asyncDb, settingsStore);
+    expect((await reopened.list())[0]).toMatchObject({ harness: 'codex', maxConcurrentRuns: 3 });
+    expect(await reopened.get(ws.id)).toMatchObject({ harness: 'codex', maxConcurrentRuns: 3 });
+
+    await workspaces.delete(ws.id);
+    // `delete` removes the whole per-Workspace entry from the store (sparse),
+    // not merely clearing each field back to null.
+    expect(settingsStore.getOverrides(ws.id)).toEqual({
+      harness: null,
+      model: null,
+      chatHarness: null,
+      chatModel: null,
+      isolationMode: null,
+      priority: null,
+      integrationRetries: null,
+      conflictResolveTurns: null,
+      maxConcurrentRuns: null,
+      autoRunnerEnabled: null,
+      maxAttempts: null,
+      contextReuseTokenLimit: null,
+      verificationCommand: null,
+      reviewEnabled: null,
+      reviewPrompt: null,
+      reviewModel: null,
+      reviewHarness: null,
+      guardrailBudget: null,
+      guardrailProgress: null,
+      toolTimeoutMinutes: null,
+      drivePrompt: null,
+      driveUnattendedReminder: null,
+      driveContinuePrompt: null,
+      driveMergeFate: null,
+      driveContinueAttempts: null,
+      taskPrompt: null,
+    });
   });
 });

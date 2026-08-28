@@ -7,7 +7,8 @@ import { openAsyncDb, type AsyncDbHandle } from '../src/db/async.js';
 import { defaultConfig } from '../src/config.js';
 import { TaskService } from '../src/domain/tasks.js';
 import { runs, runEvents, runFacts, sessions, taskDependencies, trackerDismissals, tasks } from '../src/db/schema.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * `TaskService.delete` (issue #162, ADR-0025): hard-delete cascades the whole
@@ -18,17 +19,19 @@ import { allWorkspaces } from './helpers.js';
 describe('TaskService.delete (issue #162)', () => {
   let dataDir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasksSvc: TaskService;
   let removedIds: number[];
 
   beforeEach(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'harmonic-task-del-'));
     asyncDb = await openAsyncDb(dataDir);
+    settingsStore = await makeSettingsStore(dataDir);
     removedIds = [];
     tasksSvc = new TaskService(
       asyncDb,
       () => defaultConfig(),
-      allWorkspaces(asyncDb),
+      allWorkspaces(asyncDb, settingsStore),
       () => {},
       () => {},
       (id) => removedIds.push(id),
@@ -101,7 +104,7 @@ describe('TaskService.delete (issue #162)', () => {
   });
 
   it('writes a tracker_dismissals row and removes the task for a mirrored delete; a second delete throws not_found', async () => {
-    const workspace = (await allWorkspaces(asyncDb)())[0]!;
+    const workspace = (await allWorkspaces(asyncDb, settingsStore)())[0]!;
     const mirrored = await tasksSvc.upsertMirrored(
       {
         trackerRef: 4242,

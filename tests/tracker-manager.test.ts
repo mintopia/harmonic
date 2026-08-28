@@ -11,7 +11,8 @@ import { deriveEpics } from '../src/domain/epic-derivation.js';
 import { deriveMaps } from '../src/tracker/mirror.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
 import { TrackerResolutionError } from '../src/tracker/adapter.js';
-import { allWorkspaces, waitFor } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore, waitFor } from './helpers.js';
 import { yieldToEventLoop } from '../src/reliability/yield.js';
 
 const ticket = (number: number): Ticket => ({
@@ -36,6 +37,7 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
   let repoA: string;
   let repoB: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let workspaces: WorkspaceService;
   let manager: TrackerPollerManager;
@@ -51,8 +53,9 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     repoA = mkdtempSync(join(tmpdir(), 'harmonic-repoA-'));
     repoB = mkdtempSync(join(tmpdir(), 'harmonic-repoB-'));
     asyncDb = await openAsyncDb(dataDir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    workspaces = new WorkspaceService(asyncDb);
+    settingsStore = await makeSettingsStore(dataDir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
     polled = [];
     ticketsByRepo = new Map();
     unresolvable = new Set();
@@ -168,8 +171,8 @@ describe('TrackerPollerManager — per-Workspace poll loops (issue #45)', () => 
     manager.stopAll();
     await asyncDb.close();
     asyncDb = await openAsyncDb(dataDir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
-    workspaces = new WorkspaceService(asyncDb);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
+    workspaces = new WorkspaceService(asyncDb, settingsStore);
     manager = new TrackerPollerManager(tasks, () => workspaces.list(), async () => {
       throw new Error('restart query must not resolve or poll the tracker');
     });

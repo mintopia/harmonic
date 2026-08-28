@@ -9,7 +9,8 @@ import { RunStore } from '../src/domain/runs.js';
 import { mirrorScan } from '../src/tracker/mirror.js';
 import { TrackerPoller } from '../src/tracker/poller.js';
 import type { Ticket, TrackerAdapter } from '../src/tracker/adapter.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 // Tracker state is an input, never a control path (ADR-0041): a mirrored
 // ticket closed in the tracker while its Task is `working` changes nothing
@@ -71,6 +72,7 @@ function writeSpy(tickets: () => Ticket[]) {
 describe('a mirrored ticket closed while its Task is working', () => {
   let dir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
   let wsId: number;
@@ -78,9 +80,10 @@ describe('a mirrored ticket closed while its Task is working', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-closed-working-'));
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
-    wsId = (await allWorkspaces(asyncDb)())[0]!.id;
+    wsId = (await allWorkspaces(asyncDb, settingsStore)())[0]!.id;
   });
   afterEach(async () => {
     await asyncDb.close();

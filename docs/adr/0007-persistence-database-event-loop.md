@@ -15,9 +15,11 @@ rejection of the loser, transactions as exclusive units within the write queue
 of a predictable single-writer model in a single-instance tool.
 
 The local DB is the source of truth for execution state (ADR-0004 defines the
-tracker seam); the DB is also the sole home of configuration — there is no
-out-of-band seed, no config repository, and anyone wanting config in git
-should supersede this ADR rather than resurrect one.
+tracker seam). Configuration is no longer in the DB: it lives in a `settings.yaml`
+file in the data directory (ADR-0009, #391), validated on load and dropped-not-
+migrated under the clean-break policy below. The DB retains the `settings` table
+only for the operator-password credential and small internal markers, not
+user-facing configuration.
 
 ## The event-loop guarantee
 

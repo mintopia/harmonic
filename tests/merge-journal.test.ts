@@ -9,7 +9,7 @@ import { TaskService } from '../src/domain/tasks.js';
 import { RunStore } from '../src/domain/runs.js';
 import { MergeJournalStore } from '../src/domain/merge-journal.js';
 import { poncCutoff } from '../src/domain/merge.js';
-import { allWorkspaces } from './helpers.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 /**
  * The append-only merging journal store (issue #115, reliability-design
@@ -26,7 +26,8 @@ describe('MergeJournalStore (issue #115)', () => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'harmonic-merge-journal-'));
     asyncDb = await openAsyncDb(dir);
-    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    const settingsStore = await makeSettingsStore(dir);
+    const tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     const runStore = new RunStore(asyncDb);
     journal = new MergeJournalStore(asyncDb);
 

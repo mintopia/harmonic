@@ -9,7 +9,8 @@ import { RunStore, type RunGuardrailSnapshot } from '../src/domain/runs.js';
 import { WorkContextLeaseStore } from '../src/domain/work-context-leases.js';
 import { ExecutionChainStore } from '../src/domain/execution-chain-store.js';
 import { Runner } from '../src/execution/runner.js';
-import { allWorkspaces } from './helpers.js';
+import type { SettingsStore } from '../src/server/settings-store.js';
+import { allWorkspaces, makeSettingsStore } from './helpers.js';
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -23,6 +24,7 @@ describe('Runner.start (issue #272)', () => {
   let dir: string;
   let repoDir: string;
   let asyncDb: AsyncDbHandle;
+  let settingsStore: SettingsStore;
   let tasks: TaskService;
   let runs: RunStore;
   let chains: ExecutionChainStore;
@@ -33,7 +35,8 @@ describe('Runner.start (issue #272)', () => {
     repoDir = join(dir, 'repo');
     mkdirSync(repoDir);
     asyncDb = await openAsyncDb(dir);
-    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb));
+    settingsStore = await makeSettingsStore(dir);
+    tasks = new TaskService(asyncDb, () => defaultConfig(), allWorkspaces(asyncDb, settingsStore));
     runs = new RunStore(asyncDb);
     chains = new ExecutionChainStore(asyncDb);
     runner = new Runner(runs, tasks, new WorkContextLeaseStore(asyncDb), asyncDb, () => defaultConfig());
