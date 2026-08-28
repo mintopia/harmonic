@@ -10,11 +10,15 @@ const FIELDS: DriveFields = {
   body: 'The request hangs forever.',
 };
 
+const CANDIDATE = 'cand0000000000000000000000000000000000000';
+const BASE = 'base0000000000000000000000000000000000000';
+
 describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => {
   it('interpolates the Drive-Prompt tokens into the operator prompt', () => {
     const prompt = buildCriticPrompt({
       operatorPrompt: 'Review issue {ref} ({url}): {title}. Skill {skill}. Body: {body}',
       fields: FIELDS,
+      candidateOid: CANDIDATE,
     });
     expect(prompt).toContain('Review issue 123 (https://tracker.example/issues/123): Fix the timeout.');
     expect(prompt).toContain('Skill /implement.');
@@ -24,13 +28,13 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
   });
 
   it('injects no diff and no nonce/delimiter markers', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
     expect(prompt).not.toContain('HARMONIC_UNTRUSTED_DIFF');
     expect(prompt).not.toContain('<<<END');
   });
 
   it('states the read-only contract — may read/fetch, must not modify', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
     expect(prompt).toMatch(/READ-ONLY/i);
     expect(prompt).toMatch(/must not edit/i);
     expect(prompt).toMatch(/may read/i);
@@ -38,84 +42,54 @@ describe('buildCriticPrompt (issue #136; 2026-08 containment amendment)', () => 
   });
 
   it('warns that file contents and fetched pages are untrusted data', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
     expect(prompt).toMatch(/untrusted/i);
     expect(prompt).toMatch(/never instructions/i);
   });
 
   it('specifies the exact JSON output contract', () => {
-    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+    const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE });
     expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
     expect(prompt).toContain('"summary"');
   });
 
   it('is pure — same inputs give the same output', () => {
-    const args = { operatorPrompt: 'Review it.', fields: FIELDS } as const;
+    const args = { operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE } as const;
     expect(buildCriticPrompt(args)).toBe(buildCriticPrompt(args));
   });
 
-  describe('candidateRepoId (Runner-indexed candidate worktree, so the critic reads the candidate tree)', () => {
-    it('renders nothing when no repo id is supplied (CLI absent / indexing failed)', () => {
-      const prompt = buildCriticPrompt({ operatorPrompt: 'Review it.', fields: FIELDS });
+  describe('revision block (the critic is given the two revisions, never a git diff)', () => {
+    it('names both revisions and points the critic at `git diff` itself when the base is known', () => {
+      const prompt = buildCriticPrompt({
+        operatorPrompt: 'Review it.',
+        fields: FIELDS,
+        candidateOid: CANDIDATE,
+        baseOid: BASE,
+      });
+      expect(prompt).toContain(CANDIDATE);
+      expect(prompt).toContain(BASE);
+      expect(prompt).toMatch(/branched from/);
+      expect(prompt).toContain(`git diff ${BASE} ${CANDIDATE}`);
+      expect(prompt).toContain('You are NOT handed a diff.');
       expect(prompt).not.toMatch(/CODE INDEX/);
-    });
-
-    it('names the candidate repo id and forbids resolving the repo by `.`', () => {
-      const prompt = buildCriticPrompt({
-        operatorPrompt: 'Review it.',
-        fields: FIELDS,
-        candidateRepoId: 'local/critic-42-deadbeef',
-      });
-      expect(prompt).toMatch(/CODE INDEX/);
-      expect(prompt).toContain('local/critic-42-deadbeef');
-      expect(prompt).toMatch(/do not resolve the repo by `\.`/i);
-    });
-
-    it('keeps the reply schema intact with the repo id present', () => {
-      const prompt = buildCriticPrompt({
-        operatorPrompt: 'Review it.',
-        fields: FIELDS,
-        candidateRepoId: 'local/critic-42-deadbeef',
-      });
-      expect(prompt).toContain('"verdict":"pass|fail|inconclusive"');
-    });
-  });
-
-  describe('base + candidate revisions (the critic is given the two revisions, never a git diff)', () => {
-    it('names BOTH revisions and tells the critic to compare them via the index', () => {
-      const prompt = buildCriticPrompt({
-        operatorPrompt: 'Review it.',
-        fields: FIELDS,
-        baseRepoId: 'local/critic-42-base-cafe',
-        candidateRepoId: 'local/critic-42-deadbeef',
-      });
-      expect(prompt).toMatch(/CODE INDEX/);
-      expect(prompt).toContain('local/critic-42-base-cafe');
-      expect(prompt).toContain('local/critic-42-deadbeef');
-      expect(prompt).toMatch(/BASE \(before the change\)/);
-      expect(prompt).toMatch(/CANDIDATE \(the change under review\)/);
-      expect(prompt).toMatch(/get_parity_map/);
-      // No raw diff is ever injected — the critic derives the change from the index.
       expect(prompt).not.toMatch(/diff --git/);
     });
 
-    it('falls back to candidate-only guidance when the base revision was not indexed', () => {
+    it('reviews the candidate on its own merits when the base is unknown', () => {
       const prompt = buildCriticPrompt({
         operatorPrompt: 'Review it.',
         fields: FIELDS,
-        candidateRepoId: 'local/critic-42-deadbeef',
+        candidateOid: CANDIDATE,
       });
-      expect(prompt).toContain('local/critic-42-deadbeef');
-      expect(prompt).not.toMatch(/BASE \(before the change\)/);
+      expect(prompt).toContain(CANDIDATE);
+      expect(prompt).toMatch(/on its own merits/i);
+      expect(prompt).not.toContain(BASE);
+      expect(prompt).not.toMatch(/branched from/);
     });
 
-    it('renders no comparison block when only the base was indexed (the candidate is the reviewed tree)', () => {
-      const prompt = buildCriticPrompt({
-        operatorPrompt: 'Review it.',
-        fields: FIELDS,
-        baseRepoId: 'local/critic-42-base-cafe',
-      });
-      expect(prompt).not.toMatch(/CODE INDEX/);
+    it('is pure with both revisions present', () => {
+      const args = { operatorPrompt: 'Review it.', fields: FIELDS, candidateOid: CANDIDATE, baseOid: BASE } as const;
+      expect(buildCriticPrompt(args)).toBe(buildCriticPrompt(args));
     });
   });
 });

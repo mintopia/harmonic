@@ -2,8 +2,9 @@
 
 Status: accepted
 Date: 2026-08-28
-Part of the 2026-08-28 ADR reset (see README.md). Target-state: the critic
-still runs in a provisioned checkout in current code; this ADR wins.
+Part of the 2026-08-28 ADR reset (see README.md). The in-place critic is
+implemented (#385): the provisioned checkout, its index management, the mutation
+fingerprint, and merge-cleanliness are gone; restraint is by prompt instruction.
 
 ## The Verification gate
 

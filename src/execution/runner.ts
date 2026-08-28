@@ -9,6 +9,7 @@ import { collectUsage, collectUsageWithRetry, observedModelMismatch, activityLin
 import { LiveUsageTailer, type TailerCadence } from './live-usage-tailer.js';
 import { codeIndexRepoGuidance, driveFields, promptForTask } from './prompt-template.js';
 import { indexWorktree, dropIndexForPath } from './code-index.js';
+import { AFK_PERMISSION_MODES, afkRequestGated, afkSessionMode } from './afk-permissions.js';
 import type { AutoDrive } from './auto-drive.js';
 import type { AppConfig, HarnessConfig, MergeFate } from '../config.js';
 import type { TaskRow, RunRow, WorkspaceRow, SessionRow } from '../db/schema.js';
@@ -88,35 +89,6 @@ const STDERR_TAIL_CAP = 8000;
 const PROGRESS_NUDGE_TEXT =
   'You appear to be repeating the same step without making progress. Stop, re-read the task and the most ' +
   'recent error or result, and try a genuinely different approach — or finish if the work is already done.';
-
-/** ACP session modes an afk Run tries, in order: Claude's 'auto' classifier
- * (asks only on risky tools) first, then 'bypassPermissions' (no callback) for
- * harnesses without 'auto'. Set via session/set_mode after the handshake. */
-const AFK_PERMISSION_MODES = ['auto', 'bypassPermissions'] as const;
-
-/** Harnesses that advertise no {@link AFK_PERMISSION_MODES} mode and gate
- * permissions per action (Codex `approval_policy: on-request`). Under afk these
- * are put into their {@link AFK_FULL_ACCESS_MODES} mode when they advertise one;
- * a harness that advertises none instead falls back to the per-request handler.
- * (Held-request + Permission-Rule approval for Runs is planned per ADR-0007; until
- * then a fallback request Escalates like every other afk Run.) */
-const AFK_REQUEST_GATED_HARNESSES = ['codex'] as const;
-const afkRequestGated = (harness: string): boolean => (AFK_REQUEST_GATED_HARNESSES as readonly string[]).includes(harness);
-
-/** For a request-gated harness, the ACP session mode **id** that grants
- * unattended full access (no per-action approval) — Codex's `agent-full-access`
- * mode (its `approvalPolicy: never`, sandbox `danger-full-access`). Forced under
- * afk when {@link AFK_PERMISSION_MODES} offers nothing, so the Run runs
- * unattended (matching Claude's `auto`/`bypassPermissions`) instead of Escalating
- * on the first privileged tool. Codex's `approval_policy`/command-line YOLO flags
- * do not take effect over ACP — a `session/set_mode` to this id is the only
- * mechanism that does. NB the id is `agent-full-access`, not the sandbox-policy
- * name `danger-full-access` (codex-acp `_AgentMode.AgentFullAccess`). */
-const AFK_FULL_ACCESS_MODES: Partial<Record<string, string>> = { codex: 'agent-full-access' };
-const afkFullAccessMode = (harness: string, available: readonly string[]): string | undefined => {
-  const mode = AFK_FULL_ACCESS_MODES[harness];
-  return mode && available.includes(mode) ? mode : undefined;
-};
 
 /**
  * Default review SLA (issue #114): how long a native Run may sit parked in
@@ -1463,15 +1435,14 @@ export class Runner {
     }
 
     if (criticEnabled && review.enabled && review.prompt && review.model && verdicts.every((entry) => entry.verdict === 'pass')) {
-      // The agent critic (issue #136/#164, ADR-0021, reliability-design Unit B;
-      // containment relaxed by the 2026-08 amendment): a second verdict folded
-      // into the same `combineVerdicts`. It reads the frozen candidate from a
-      // disposable read-only worktree (read + fetch tools, no mutation), never
-      // the live checkout, with the operator's interpolated review prompt.
+      // The agent critic (ADR-0003): a second verdict folded into the same
+      // `combineVerdicts`. It reviews IN PLACE — the Task's own worktree (or the
+      // live checkout in direct mode), checked out at the candidate — reading the
+      // change itself with read/fetch tools, no disposable checkout, with the
+      // operator's interpolated review prompt.
       if (!oid) {
         verdicts.push(await this.noVerifiedHeadVerdict(task, run, run.id, 'critic', record));
       } else {
-        mkdirSync(this.worktreesDir, { recursive: true });
         // The critic's own harness (issue #174 FIX 2): reuses the builder's
         // harness only when `critic.harness` is unset ("Same as task"); a
         // configured critic harness is resolved independently, mirroring the
@@ -1482,25 +1453,29 @@ export class Runner {
           throw new DomainError('validation', `critic harness '${criticHarnessId}' is not configured`);
         }
         // The base (fork point) the candidate diverged from — the same revision
-        // the settled review diff uses (`diffSnapshotFor`). Handed to the critic
+        // the settled review diff uses (`diffSnapshotFor`). Named to the critic
         // so it is given the change's two revisions and derives what changed by
-        // comparing them via the code index (never a git diff). Null ⇒ omitted:
-        // a Run with no branch/base to take a merge-base against, or a git
-        // failure, leaves the critic to review the candidate alone.
+        // comparing them itself (never a git diff). Null ⇒ omitted: a Run with no
+        // branch/base to take a merge-base against, or a git failure, leaves the
+        // critic to review the candidate alone.
         const baseOid =
           run.branch && run.baseBranch
             ? await Git.mergeBase(task.workingDir, run.baseBranch, run.branch).catch(() => null)
             : null;
+        // Review in place: the directory the builder worked in — the per-Task
+        // worktree for a branch Run, the live checkout for a direct Run — still
+        // present at the candidate head at verify time (removed only at the
+        // Task's terminal disposition). Matches `prepareWorkspace`'s cwd.
+        const criticCwd = run.branch ? this.worktreePathForTask(task) : task.workingDir;
         const attempt = await runCritic({
-          repoDir: task.workingDir,
+          cwd: criticCwd,
           candidateOid: oid,
           ...(baseOid ? { baseOid } : {}),
-          worktreePath: join(this.worktreesDir, `critic-${run.id}`),
           critic: { prompt: review.prompt!, model: review.model!, ...(review.harness ? { harness: review.harness } : {}) },
           fields: driveFields(task, this.urlFor),
           // `runCritic` strips the tracker credentials and registers no MCP
-          // servers, and only approves read/fetch tool calls, so the turn is
-          // contained (issue #136) regardless of which harness runs it.
+          // servers, so the critic can never reach the tracker (issue #136,
+          // ADR-0003) regardless of which harness runs it.
           harness: criticHarness,
           harnessId: criticHarnessId,
           parent,
@@ -3109,9 +3084,7 @@ export class Runner {
         // runs unattended without per-action approval. Codex advertises no
         // auto/bypass mode, so without forcing this it would Escalate on the
         // first privileged tool.
-        const mode =
-          AFK_PERMISSION_MODES.find((m) => driver.availableModes.includes(m)) ??
-          afkFullAccessMode(task.harness, driver.availableModes);
+        const mode = afkSessionMode(task.harness, driver.availableModes);
         if (!mode) {
           // A request-gated harness that advertises no full-access mode still
           // governs unattended permissions through its spawn-time approval policy

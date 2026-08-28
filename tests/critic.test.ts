@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,11 +68,6 @@ const FIELDS: DriveFields = {
 
 describe('runCritic (issue #136)', () => {
   const tmpDirs: string[] = [];
-  const freshWorktreePath = (prefix: string) => {
-    const parent = mkdtempSync(join(tmpdir(), prefix));
-    tmpDirs.push(parent);
-    return join(parent, 'wt');
-  };
 
   afterAll(() => {
     for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
@@ -102,10 +97,9 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output, permissionRequests: [] }) };
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath(`harmonic-critic-wt-${value.verdict}-`),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -125,25 +119,25 @@ describe('runCritic (issue #136)', () => {
     });
   });
 
-  it('given the base revision, drives the CANDIDATE checkout and reaps both worktrees (two-revision plumbing)', async () => {
+  it('given the base revision, drives the in-place cwd and names both revisions in the prompt', async () => {
     const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-two-rev');
     // The candidate's parent is the fork point the critic gets as the base.
     const baseOid = git(repo, 'rev-parse', `${oid}~1`);
     let drivenCwd: string | null = null;
+    let drivenPrompt: string | null = null;
     const drive: CriticHarnessDrive = {
       run: async (req: CriticDriveRequest) => {
         drivenCwd = req.cwd;
+        drivenPrompt = req.prompt;
         return { output: '{"verdict":"pass","summary":"ok"}', permissionRequests: [] };
       },
     };
-    const worktreePath = freshWorktreePath('harmonic-critic-wt-two-rev-');
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       baseOid,
       fields: FIELDS,
-      worktreePath,
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -151,11 +145,10 @@ describe('runCritic (issue #136)', () => {
     });
 
     expect(attempt.verdict).toBe('pass');
-    // The critic always reviews from the candidate checkout, never the base worktree.
-    expect(drivenCwd).toBe(worktreePath);
-    // Both disposable worktrees (candidate + `${path}-base`) are torn down.
-    expect(existsSync(worktreePath)).toBe(false);
-    expect(existsSync(`${worktreePath}-base`)).toBe(false);
+    // No checkout is performed — the critic reviews the Task's own in-place cwd.
+    expect(drivenCwd).toBe(repo);
+    expect(drivenPrompt).toContain(oid);
+    expect(drivenPrompt).toContain(baseOid);
   });
 
   it('resolves a critic transcript already flushed at the turn boundary, and returns the sessionId', async () => {
@@ -177,10 +170,9 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-flushed-transcript-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: { ...FAKE_HARNESS, sessionLogDir },
       harnessId: 'claude',
@@ -202,10 +194,9 @@ describe('runCritic (issue #136)', () => {
 
     const attempt = await parent.run(() =>
       runCritic({
-        repoDir: repo,
+        cwd: repo,
         candidateOid: oid,
         fields: FIELDS,
-        worktreePath: freshWorktreePath('harmonic-critic-wt-operation-'),
         critic: { prompt: 'Review the diff.', model: 'stub-model' },
         harness: FAKE_HARNESS,
         harnessId: 'claude',
@@ -236,10 +227,9 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output: 'not json at all, just prose', permissionRequests: [] }) };
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-garbage-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -261,10 +251,9 @@ describe('runCritic (issue #136)', () => {
     };
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-drive-throws-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -287,10 +276,9 @@ describe('runCritic (issue #136)', () => {
     };
 
     await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-readonly-'),
       critic: { prompt: 'Review issue {ref}: {title}.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -311,24 +299,24 @@ describe('runCritic (issue #136)', () => {
     expect(captured!.prompt).toContain('"verdict":"pass|fail|inconclusive"');
   });
 
-  it('a drive that writes into the disposable worktree is still trusted — the verdict is taken as reported', async () => {
+  it('a drive that writes into its checkout is still trusted — the verdict is taken as reported', async () => {
     const { repo, oid } = await makeCandidate('refs/harmonic/candidate/run-critic-write');
 
     const drive: CriticHarnessDrive = {
       run: async (req) => {
-        // A critic tool writing a scratch file into its checkout no longer
-        // affects the verdict: the mutation-fingerprint override was removed
-        // because a base branch advancing mid-review tripped it too.
+        // A critic tool writing a scratch file into its checkout doesn't
+        // affect the verdict — runCritic does no checkout of its own and
+        // never inspects the working tree after the turn; the reported
+        // verdict is trusted as-is.
         writeFileSync(join(req.cwd, 'critic-side-effect.txt'), 'scratch\n');
         return { output: '{"verdict":"pass","summary":"looks great, definitely no problems here"}', permissionRequests: [] };
       },
     };
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-write-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -343,10 +331,9 @@ describe('runCritic (issue #136)', () => {
     const drive: CriticHarnessDrive = { run: async () => ({ output: '{"verdict":"pass","summary":"clean"}', permissionRequests: [] }) };
 
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-noop-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -368,10 +355,9 @@ describe('runCritic (issue #136)', () => {
       const drive: CriticHarnessDrive = { run: async () => ({ output: c.output, permissionRequests: [] }) };
 
       const attempt = await runCritic({
-        repoDir: repo,
+        cwd: repo,
         candidateOid: oid,
         fields: FIELDS,
-        worktreePath: freshWorktreePath(`harmonic-critic-wt-combine-${c.verdict}-`),
         critic: { prompt: 'Review the diff.', model: 'stub-model' },
         harness: FAKE_HARNESS,
         harnessId: 'claude',
@@ -395,10 +381,9 @@ describe('runCritic (issue #136)', () => {
       run: async () => ({ output: '{"verdict":"fail","summary":"the diff drops a null check"}', permissionRequests: [] }),
     };
     const attempt = await runCritic({
-      repoDir: repo,
+      cwd: repo,
       candidateOid: oid,
       fields: FIELDS,
-      worktreePath: freshWorktreePath('harmonic-critic-wt-persist-'),
       critic: { prompt: 'Review the diff.', model: 'stub-model' },
       harness: FAKE_HARNESS,
       harnessId: 'claude',
@@ -486,7 +471,7 @@ describe('createAcpCriticDrive (issue #136): the real ACP drive has builder-equi
     expect(result.output).toContain('"HARMONIC_MCP_URL":null');
     // The critic has the builder's tool access — a permission request is
     // GRANTED (allow_always → optionId 'always'), not declined. Read-only-ness
-    // is the prompt's + the mutation fingerprint's job, not the handler's.
+    // is the prompt's job, not the handler's.
     expect(result.output).toContain('permission:{"outcome":"selected","optionId":"always"}');
     expect(result.permissionRequests).toHaveLength(1);
   }, 20_000);

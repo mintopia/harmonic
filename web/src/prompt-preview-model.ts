@@ -22,6 +22,10 @@ export const SAMPLE_DRIVE_FIELDS: DriveFields = {
 /** Illustrative value for the `{taskId}` token. */
 export const SAMPLE_TASK_ID = '123';
 
+/** Illustrative candidate/base revisions for the critic preview's revision block. */
+const SAMPLE_CANDIDATE_OID = 'c4nd1da7e0000000000000000000000000000000';
+const SAMPLE_BASE_OID = 'ba5e0000000000000000000000000000000000000';
+
 /** Placeholder metadata (token, description) shared by the drive prompt and the
  * critic review prompt — they take the same five tokens. */
 export const DRIVE_PLACEHOLDERS: [string, string][] = [
@@ -64,7 +68,13 @@ export function compileTaskIdPreview(template: string): string {
 }
 
 /** Compile the critic review prompt exactly as `runCritic` would: the operator
- * note interpolated, plus the appended read-only + JSON-verdict scaffolding. */
+ * note interpolated, plus the appended revision block, restraint instruction, and
+ * JSON-verdict scaffolding. Sample revisions stand in for a live Task's. */
 export function compileCriticPreview(operatorPrompt: string): string {
-  return buildCriticPrompt({ operatorPrompt, fields: SAMPLE_DRIVE_FIELDS });
+  return buildCriticPrompt({
+    operatorPrompt,
+    fields: SAMPLE_DRIVE_FIELDS,
+    candidateOid: SAMPLE_CANDIDATE_OID,
+    baseOid: SAMPLE_BASE_OID,
+  });
 }
