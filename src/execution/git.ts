@@ -491,51 +491,6 @@ export const Git = {
   },
 
   /**
-   * Read-only merge-cleanliness of `candidateOid` against `baseBranch`, computed
-   * entirely in the object store — no working tree, index, or ref is touched.
-   * The Verification critic (ADR-0021) reviews inside a disposable worktree
-   * whose before/after fingerprint force-downgrades its verdict to `inconclusive`
-   * if it mutated anything, so it must never run git; the Runner computes this
-   * and injects it as a trusted fact instead. `merge-tree --write-tree` (git ≥
-   * 2.38) performs a real 3-way merge and writes only blobs/trees: exit 0 = clean
-   * (the merged tree OID is printed), exit 1 = conflicts (the merged tree OID,
-   * then a blank line, then a human-readable conflict report on stdout). Any
-   * other outcome — a missing/unresolvable base branch, a git older than 2.38,
-   * any plumbing error — resolves to `null` (unknown), so the caller omits the
-   * fact rather than failing the Run. Never throws.
-   */
-  async mergeCleanliness(
-    dir: string,
-    baseBranch: string,
-    candidateOid: string,
-  ): Promise<{ clean: boolean; conflicts?: string } | null> {
-    try {
-      await execFileAsync('git', ['-C', dir, 'merge-tree', '--write-tree', baseBranch, candidateOid], {
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: GIT_TIMEOUT_MS,
-        killSignal: 'SIGKILL',
-      });
-      // Exit 0: merged with no conflicts (stdout is just the merged tree OID).
-      return { clean: true };
-    } catch (err: any) {
-      // A genuine conflict AND a failure (bad base ref, git < 2.38) both exit
-      // non-zero, so distinguish them by stdout: a real 3-way merge prints the
-      // merged tree OID on the first line (then the conflict report); a failure
-      // prints nothing to stdout (the reason is on stderr). Only the former is a
-      // trustworthy "does not merge cleanly" answer.
-      const lines = String(err?.stdout ?? '').split('\n');
-      if (err?.code === 1 && /^[0-9a-f]{7,64}$/.test(lines[0]?.trim() ?? '')) {
-        const report = lines.slice(1).join('\n').trim();
-        return report ? { clean: false, conflicts: report } : { clean: false };
-      }
-      // Missing/unresolvable base branch, git < 2.38, or any other plumbing
-      // failure is unknown — surface the too-old-git case once, then omit the fact.
-      warnOnceIfMergeTreeUnsupported({ message: String(err?.stderr ?? err?.message ?? err) });
-      return null;
-    }
-  },
-
-  /**
    * The absolute path of the worktree that currently has `branch` checked out,
    * or `null` when no worktree does (issue #153). Merging must never update a
    * target ref out from under a live index/worktree via a plumbing `update-ref`
